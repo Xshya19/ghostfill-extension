@@ -22,6 +22,26 @@
 
 ---
 
+## 🎬 Demo Videos
+
+### OTP Auto-Fill Demo
+
+> Testing on [Mistral AI Chat](https://chat.mistral.ai)
+
+https://github.com/user-attachments/assets/otp-autofill-demo.mp4
+
+[📥 Download OTP Demo](demos/otp-autofill-demo.mp4)
+
+### Activation Link Auto-Open Demo
+
+> Testing on [Qwen AI Chat](https://chat.qwen.ai)
+
+https://github.com/user-attachments/assets/activation-link-demo.mp4
+
+[📥 Download Link Demo](demos/activation-link-demo.mp4)
+
+---
+
 ## Features
 
 ### 📧 Temporary Email
