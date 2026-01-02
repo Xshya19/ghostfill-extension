@@ -55,13 +55,6 @@
 - Context menu integration
 - Floating action button on input fields
 
-### ⌨️ Keyboard Shortcuts
-
-- `Ctrl+Shift+E` - Open GhostFill
-- `Ctrl+Shift+M` - Generate new email
-- `Ctrl+Shift+P` - Generate new password
-- `Ctrl+Shift+F` - Auto-fill form
-
 ## Installation
 
 ### From Source (Development)
