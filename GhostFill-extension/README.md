@@ -24,21 +24,12 @@
 
 ## 🎬 Demo Videos
 
-### OTP Auto-Fill Demo
+| Demo                 | Description                              | Download                                                                                                |
+| -------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| **OTP Auto-Fill**    | Auto-fills verification codes from email | [📥 Watch Demo](https://github.com/Xshya19/ghostfill-extension/raw/main/demos/otp-autofill-demo.mp4)    |
+| **Activation Links** | Auto-opens verification links in new tab | [📥 Watch Demo](https://github.com/Xshya19/ghostfill-extension/raw/main/demos/activation-link-demo.mp4) |
 
-> Testing on [Mistral AI Chat](https://chat.mistral.ai)
-
-https://github.com/Xshya19/ghostfill-extension/raw/main/demos/otp-autofill-demo.mp4
-
-[📥 Download OTP Demo](demos/otp-autofill-demo.mp4)
-
-### Activation Link Auto-Open Demo
-
-> Testing on [Qwen AI Chat](https://chat.qwen.ai)
-
-https://github.com/Xshya19/ghostfill-extension/raw/main/demos/activation-link-demo.mp4
-
-[📥 Download Link Demo](demos/activation-link-demo.mp4)
+> 🧪 **Tested on:** [Mistral AI](https://chat.mistral.ai) and [Qwen AI](https://chat.qwen.ai)
 
 ---
 
