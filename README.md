@@ -97,8 +97,8 @@ npm run build
 
 5. **Setup AI Features (Required for OTP extraction):**
    - Click the GhostFill extension icon
-   - You'll see a banner: "Enable AI Features"
-   - Click it to open Settings
+   - You'll see a setup screen: "Enable AI Features"
+   - Click to open Settings
    - Go to [console.groq.com](https://console.groq.com) and create a free account
    - Generate an API key
    - Paste it in the "Groq API Key" field
@@ -111,6 +111,31 @@ npm run dev
 ```
 
 This will watch for changes and rebuild automatically.
+
+## Usage
+
+### 1. Generate Temporary Email
+
+- Click the GhostFill icon in your browser toolbar
+- Your temporary email is displayed on the main screen
+- Click 📋 to copy, or 🔄 to generate a new one
+
+### 2. Auto-Fill OTP Codes
+
+- Sign up on any website using your temp email
+- GhostFill monitors your inbox automatically
+- When an OTP arrives, click the green code badge to copy
+- Or use the Auto-Fill button to fill it directly
+
+### 3. Activation Links
+
+- When a verification link is detected in an email
+- Click the purple 🔗 badge to open it in a new tab
+
+### 4. Password Generation
+
+- Secure passwords are auto-generated
+- Click 📋 to copy, or 🔄 to regenerate
 
 ## Project Structure
 
