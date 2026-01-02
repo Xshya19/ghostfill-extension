@@ -85,6 +85,7 @@ npm run build
 ```
 
 4. Load in Chrome:
+
    - Open `chrome://extensions/`
    - Enable "Developer mode"
    - Click "Load unpacked"
@@ -160,6 +161,24 @@ ghostfill-extension/
 | `npm run test`   | Run tests                   |
 | `npm run lint`   | Run ESLint                  |
 | `npm run format` | Format with Prettier        |
+
+## ⚠️ Limitations
+
+### Disposable Email Blocking
+
+Some websites actively block temporary/disposable email domains. This is a limitation of **ALL disposable email services**, not specific to GhostFill.
+
+| ✅ Works Great On      | ❌ May Be Blocked On |
+| ---------------------- | -------------------- |
+| Newsletter signups     | Amazon, eBay         |
+| Free trials            | Banks, PayPal        |
+| One-time verifications | Netflix, Spotify     |
+| Forum registrations    | Some social media    |
+| Testing & development  | Government sites     |
+
+> **💡 Tip**: For sites that block disposable emails, consider using email aliasing services like SimpleLogin or Firefox Relay.
+
+---
 
 ## Contributing
 
