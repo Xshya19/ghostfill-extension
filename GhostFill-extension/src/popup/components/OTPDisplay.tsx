@@ -38,7 +38,7 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
         if (lastOTP) {
             const updateTimer = () => {
                 const elapsed = Date.now() - lastOTP.extractedAt;
-                const total = 10 * 60 * 1000; // Extended to 10 minutes
+                const total = 5 * 60 * 1000; // 5 minutes - realistic OTP expiry
                 const remaining = total - elapsed;
 
                 if (remaining <= 0) {
@@ -48,7 +48,8 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
                     setTimePercentage((remaining / total) * 100);
                     const minutes = Math.floor(remaining / 60000);
                     const seconds = Math.floor((remaining % 60000) / 1000);
-                    setTimeText(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+                    // Format as "4m 30s" for clarity
+                    setTimeText(minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`);
                 }
             };
 
@@ -64,7 +65,7 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
             await navigator.clipboard.writeText(lastOTP.code);
             setCopied(true);
             onToast('OTP copied');
-            setTimeout(() => setCopied(false), 2000);
+            setTimeout(() => setCopied(false), 2500); // Longer confirmation
         } catch (error) {
             onToast('Copy failed');
         }
@@ -80,8 +81,8 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
                     payload: { otp: lastOTP.code, fieldSelectors: [] },
                 });
                 if (res) {
-                    onToast('OTP filled');
-                    window.close();
+                    onToast('OTP filled successfully!');
+                    // Don't close popup - let user verify
                 } else {
                     onToast('GhostFill not found on page');
                 }
@@ -97,7 +98,7 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
                     <div className="widget-label">
                         <Hash size={14} className="sf-icon" />
-                        Secured Passcode
+                        Verification Code
                     </div>
                     <ShieldCheck size={18} color="var(--ios-success)" />
                 </div>

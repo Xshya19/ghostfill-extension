@@ -53,7 +53,7 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
             await navigator.clipboard.writeText(password.password);
             setCopied(true);
             onToast('Password copied');
-            setTimeout(() => setCopied(false), 2000);
+            setTimeout(() => setCopied(false), 2500); // Longer confirmation
         } catch (error) {
             onToast('Copy failed');
         }
@@ -166,8 +166,8 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
 
                 <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
                     <button className="ios-button button-primary" style={{ flex: 1 }} onClick={generatePassword} disabled={loading}>
-                        <Zap size={16} fill="white" />
-                        Regen
+                        {loading ? <span className="spinner-small" /> : <Zap size={16} fill="white" />}
+                        {loading ? 'Generating...' : 'Regen'}
                     </button>
                     <button className="ios-button button-secondary" style={{ flex: 1 }} onClick={copyPassword}>
                         {copied ? <Check size={16} color="var(--success)" /> : <Copy size={16} />}
@@ -192,9 +192,10 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
                     <input
                         type="range"
                         style={{ width: '100%' }}
-                        min="8" max="64"
+                        min="12" max="64"
                         value={options.length}
                         onChange={(e) => handleOptionChange('length', Number(e.target.value))}
+                        aria-label="Password length"
                     />
                 </div>
 
@@ -208,14 +209,17 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
                     ].map((opt) => {
                         const isActive = Boolean(options[opt.id as keyof PasswordOptions]);
                         return (
-                            <div
+                            <button
                                 key={opt.id}
+                                type="button"
                                 className={`toggle-pill ${isActive ? 'active' : ''}`}
                                 onClick={() => handleOptionChange(opt.id as keyof PasswordOptions, !isActive)}
+                                aria-pressed={isActive}
+                                aria-label={`${opt.label}: ${isActive ? 'enabled' : 'disabled'}`}
                             >
                                 <span className="pill-icon">{opt.icon}</span>
                                 <span className="pill-label">{opt.label}</span>
-                            </div>
+                            </button>
                         );
                     })}
                 </div>

@@ -69,18 +69,9 @@ setupMessageHandler();
 // =============================================================================
 // ON-DEMAND POLLING: Email checking only starts when user clicks floating button
 // This prevents rate limiting and saves resources
+// NOTE: Alarms are already set up in onInstalled and onStartup handlers above
 // =============================================================================
-(async () => {
-    try {
-        await setupAlarms();
-        log.debug('Alarms initialized on SW load');
-
-        // NO automatic polling - polling starts when user triggers autofill
-        log.info('📧 On-demand email polling mode - waiting for user action');
-    } catch (e) {
-        log.warn('Failed to setup alarms on load', e);
-    }
-})();
+log.info('📧 On-demand email polling mode - waiting for user action');
 
 // Handle keyboard commands
 chrome.commands.onCommand.addListener(async (command) => {

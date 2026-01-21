@@ -406,14 +406,15 @@ export class AutoFiller {
 
     /**
      * Smart fill - automatically detect and fill form with retry logic
+     * Returns result object so caller can show appropriate feedback
      */
-    async smartFill(): Promise<void> {
+    async smartFill(): Promise<{ success: boolean; filledCount: number; message: string }> {
         // Retry up to 3 times with delays for dynamically rendered forms
         for (let attempt = 0; attempt < 3; attempt++) {
             const filled = await this.performSmartFillAttempt();
             if (filled > 0) {
                 log.info('Smart fill completed', { filledCount: filled, attempt });
-                return;
+                return { success: true, filledCount: filled, message: `Filled ${filled} field(s)` };
             }
             // Wait for dynamic content to render
             if (attempt < 2) {
@@ -422,8 +423,9 @@ export class AutoFiller {
             }
         }
 
-        // Log at debug level since this is expected on pages without forms
-        log.debug('Smart fill: No fields filled after all attempts (page may not have fillable forms)');
+        // No fields filled after all attempts
+        log.debug('Smart fill: No fields filled after all attempts');
+        return { success: false, filledCount: 0, message: 'No fillable fields found' };
     }
 
     /**
@@ -498,6 +500,25 @@ export class AutoFiller {
                     case 'confirm-password':
                         valueToFill = identity.password;
                         break;
+                    case 'otp':
+                        // OTP needs to be fetched separately
+                        try {
+                            const otpResponse = await safeSendMessage({ action: 'GET_LAST_OTP' });
+                            if (otpResponse && 'lastOTP' in otpResponse && otpResponse.lastOTP) {
+                                const otp = otpResponse.lastOTP as { code: string };
+                                if (otp.code) {
+                                    // Use fillOTP method for proper handling
+                                    const otpFilled = this.fillOTP(otp.code);
+                                    if (otpFilled) {
+                                        filledElements.add(field.element);
+                                        log.info('Filled OTP field with code', { code: otp.code.substring(0, 2) + '...' });
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            log.debug('Could not fetch OTP for fill', e);
+                        }
+                        break;
                 }
 
                 if (valueToFill) {
@@ -541,6 +562,26 @@ export class AutoFiller {
                     'input[name*="login" i]:not([type="password"])',
                     'input[autocomplete="username"]:not([type="email"])'
                 ], 'username');
+            }
+
+            // OTP FALLBACK - Try to fill OTP if we haven't already and there are OTP fields
+            const otpFields = this.findOTPFields();
+            if (otpFields.length > 0 && !Array.from(filledElements).some(el => otpFields.includes(el as HTMLInputElement))) {
+                try {
+                    const otpResponse = await safeSendMessage({ action: 'GET_LAST_OTP' });
+                    if (otpResponse && 'lastOTP' in otpResponse && otpResponse.lastOTP) {
+                        const otp = (otpResponse.lastOTP as { code: string }).code;
+                        if (otp) {
+                            const filled = this.fillOTP(otp);
+                            if (filled) {
+                                otpFields.forEach(f => filledElements.add(f));
+                                log.info('Filled OTP via fallback');
+                            }
+                        }
+                    }
+                } catch (e) {
+                    log.debug('OTP fallback failed', e);
+                }
             }
 
             return filledElements.size;

@@ -60,9 +60,14 @@ export const TIMING = {
     OTP_EXPIRY_MINUTES: 5,
     CLIPBOARD_CLEAR_SECONDS: 30,
     NOTIFICATION_DURATION_MS: 5000,
-    FLOATING_BUTTON_HIDE_MS: 5000,
+    FLOATING_BUTTON_HIDE_MS: 8000,
     DEBOUNCE_DELAY_MS: 300,
     ANIMATION_DURATION_MS: 200,
+    // New constants to eliminate magic numbers
+    OTP_NEW_THRESHOLD_MS: 120000, // 2 minutes - OTP considered "new"
+    COPY_CONFIRMATION_MS: 2500,   // How long to show copy success
+    HUB_POLL_INTERVAL_MS: 5000,   // Hub polling for OTP/inbox
+    INBOX_POLL_INTERVAL_MS: 30000, // EmailGenerator inbox polling
 } as const;
 
 // UI Constants

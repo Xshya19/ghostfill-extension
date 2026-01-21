@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, Transition } from 'framer-motion';
 import { ChevronLeft, Settings, Sparkles } from 'lucide-react';
 import Hub from './components/Hub';
@@ -28,9 +28,16 @@ const App: React.FC = () => {
         minHeight: 0 // Crucial for flex box handling of child scrolling
     };
 
+    // Track toast timeout to prevent race conditions
+    const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    
     const showToast = useCallback((message: string) => {
+        // Clear any existing timeout to prevent race conditions
+        if (toastTimeoutRef.current) {
+            clearTimeout(toastTimeoutRef.current);
+        }
         setToast(message);
-        setTimeout(() => setToast(null), 2500);
+        toastTimeoutRef.current = setTimeout(() => setToast(null), 2500);
     }, []);
 
     // Initial load
@@ -139,7 +146,7 @@ const App: React.FC = () => {
                     )}
                 </AnimatePresence>
 
-                {/* MANDATORY API Key Setup Overlay - Step 1 */}
+                {/* MANDATORY API Key Setup Overlay - Compact Design */}
                 <AnimatePresence>
                     {needsApiKey && (
                         <motion.div
@@ -155,193 +162,180 @@ const App: React.FC = () => {
                                 flexDirection: 'column',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                padding: '24px',
-                                background: 'linear-gradient(135deg, rgba(248, 250, 252, 0.98) 0%, rgba(241, 245, 249, 0.98) 100%)',
+                                padding: '16px 20px',
+                                background: 'linear-gradient(180deg, rgba(248, 250, 252, 0.99) 0%, rgba(241, 245, 249, 0.99) 100%)',
                                 backdropFilter: 'blur(20px)',
                             }}
                         >
-                            {/* Logo & Title */}
+                            {/* Logo Icon - Compact */}
                             <motion.div
-                                initial={{ scale: 0.8, opacity: 0 }}
+                                initial={{ scale: 0.5, opacity: 0 }}
                                 animate={{ scale: 1, opacity: 1 }}
                                 transition={{ delay: 0.1, type: 'spring', stiffness: 200 }}
                                 style={{
-                                    width: 72,
-                                    height: 72,
-                                    borderRadius: '20px',
+                                    width: 48,
+                                    height: 48,
+                                    borderRadius: '14px',
                                     background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    marginBottom: 20,
-                                    boxShadow: '0 8px 32px rgba(99, 102, 241, 0.3)',
+                                    marginBottom: 14,
+                                    boxShadow: '0 8px 24px rgba(99, 102, 241, 0.3)',
                                 }}
                             >
-                                <Sparkles size={36} color="white" />
+                                <Sparkles size={24} color="white" strokeWidth={2} />
                             </motion.div>
 
+                            {/* Title */}
                             <motion.h1
-                                initial={{ y: 20, opacity: 0 }}
+                                initial={{ y: 10, opacity: 0 }}
                                 animate={{ y: 0, opacity: 1 }}
-                                transition={{ delay: 0.2 }}
+                                transition={{ delay: 0.12 }}
                                 style={{
-                                    fontSize: 22,
+                                    fontSize: 20,
                                     fontWeight: 700,
-                                    color: 'var(--text-primary)',
-                                    marginBottom: 8,
+                                    color: '#0f172a',
+                                    marginBottom: 4,
                                     textAlign: 'center',
                                 }}
                             >
                                 Welcome to GhostFill
                             </motion.h1>
 
+                            {/* Subtitle */}
                             <motion.p
-                                initial={{ y: 20, opacity: 0 }}
+                                initial={{ y: 10, opacity: 0 }}
                                 animate={{ y: 0, opacity: 1 }}
-                                transition={{ delay: 0.3 }}
+                                transition={{ delay: 0.15 }}
                                 style={{
-                                    fontSize: 14,
-                                    color: 'var(--text-secondary)',
+                                    fontSize: 13,
+                                    color: '#64748b',
                                     textAlign: 'center',
-                                    marginBottom: 24,
-                                    lineHeight: 1.5,
+                                    marginBottom: 16,
+                                    lineHeight: 1.4,
                                 }}
                             >
-                                One quick step to unlock AI-powered<br />
-                                OTP extraction & smart autofill
+                                Quick setup to unlock AI-powered autofill
                             </motion.p>
 
-                            {/* Steps */}
+                            {/* Steps Card - Compact */}
                             <motion.div
-                                initial={{ y: 20, opacity: 0 }}
+                                initial={{ y: 15, opacity: 0 }}
                                 animate={{ y: 0, opacity: 1 }}
-                                transition={{ delay: 0.4 }}
+                                transition={{ delay: 0.18 }}
                                 style={{
                                     width: '100%',
                                     maxWidth: 280,
-                                    background: 'rgba(255, 255, 255, 0.8)',
-                                    borderRadius: '16px',
-                                    padding: '16px',
-                                    marginBottom: 20,
-                                    border: '1px solid rgba(0, 0, 0, 0.06)',
+                                    background: 'white',
+                                    borderRadius: '12px',
+                                    padding: '14px 16px',
+                                    marginBottom: 16,
+                                    boxShadow: '0 2px 12px rgba(0, 0, 0, 0.05)',
+                                    border: '1px solid rgba(0, 0, 0, 0.04)',
                                 }}
                             >
-                                <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+                                {/* Step 1 */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                                     <div style={{
-                                        width: 24,
-                                        height: 24,
+                                        width: 22,
+                                        height: 22,
                                         borderRadius: '50%',
                                         background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
                                         color: 'white',
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
-                                        fontSize: 12,
+                                        fontSize: 11,
                                         fontWeight: 700,
                                         flexShrink: 0,
                                     }}>1</div>
                                     <div>
-                                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-                                            Get Free API Key
-                                        </div>
-                                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                                            Visit <b>console.groq.com</b>
-                                        </div>
+                                        <span style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>Get API Key </span>
+                                        <span style={{ fontSize: 12, color: '#6366f1' }}>console.groq.com</span>
                                     </div>
                                 </div>
 
-                                <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+                                {/* Step 2 */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                                     <div style={{
-                                        width: 24,
-                                        height: 24,
+                                        width: 22,
+                                        height: 22,
                                         borderRadius: '50%',
-                                        background: 'rgba(99, 102, 241, 0.15)',
+                                        background: 'rgba(99, 102, 241, 0.1)',
                                         color: '#6366f1',
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
-                                        fontSize: 12,
+                                        fontSize: 11,
                                         fontWeight: 700,
                                         flexShrink: 0,
                                     }}>2</div>
-                                    <div>
-                                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-                                            Create Account & Copy Key
-                                        </div>
-                                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                                            100% free, no credit card
-                                        </div>
-                                    </div>
+                                    <span style={{ fontSize: 13, color: '#475569' }}>Create account & copy key (free)</span>
                                 </div>
 
-                                <div style={{ display: 'flex', gap: 12 }}>
+                                {/* Step 3 */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                     <div style={{
-                                        width: 24,
-                                        height: 24,
+                                        width: 22,
+                                        height: 22,
                                         borderRadius: '50%',
-                                        background: 'rgba(99, 102, 241, 0.15)',
+                                        background: 'rgba(99, 102, 241, 0.1)',
                                         color: '#6366f1',
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
-                                        fontSize: 12,
+                                        fontSize: 11,
                                         fontWeight: 700,
                                         flexShrink: 0,
                                     }}>3</div>
-                                    <div>
-                                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-                                            Paste in Settings
-                                        </div>
-                                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                                            AI → Groq API Key field
-                                        </div>
-                                    </div>
+                                    <span style={{ fontSize: 13, color: '#475569' }}>Paste in Settings → AI → API Key</span>
                                 </div>
                             </motion.div>
 
                             {/* CTA Button */}
                             <motion.button
-                                initial={{ y: 20, opacity: 0 }}
+                                initial={{ y: 10, opacity: 0 }}
                                 animate={{ y: 0, opacity: 1 }}
-                                transition={{ delay: 0.5 }}
+                                transition={{ delay: 0.22 }}
                                 onClick={handleOpenSettings}
                                 style={{
                                     width: '100%',
                                     maxWidth: 280,
-                                    padding: '14px 24px',
-                                    borderRadius: '12px',
+                                    padding: '12px 24px',
+                                    borderRadius: '10px',
                                     background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
                                     color: 'white',
                                     fontWeight: 600,
-                                    fontSize: 15,
+                                    fontSize: 14,
                                     border: 'none',
                                     cursor: 'pointer',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
                                     gap: 8,
-                                    boxShadow: '0 4px 20px rgba(99, 102, 241, 0.35)',
-                                    transition: 'transform 0.2s, box-shadow 0.2s',
+                                    boxShadow: '0 4px 16px rgba(99, 102, 241, 0.35)',
                                 }}
-                                whileHover={{ scale: 1.02, boxShadow: '0 6px 28px rgba(99, 102, 241, 0.45)' }}
+                                whileHover={{ scale: 1.02 }}
                                 whileTap={{ scale: 0.98 }}
                             >
-                                <Settings size={18} />
+                                <Settings size={16} />
                                 Open Settings
                             </motion.button>
 
+                            {/* Footer */}
                             <motion.p
                                 initial={{ opacity: 0 }}
                                 animate={{ opacity: 1 }}
-                                transition={{ delay: 0.6 }}
+                                transition={{ delay: 0.3 }}
                                 style={{
-                                    fontSize: 11,
-                                    color: 'var(--text-tertiary)',
-                                    marginTop: 16,
+                                    fontSize: 10,
+                                    color: '#94a3b8',
+                                    marginTop: 12,
                                     textAlign: 'center',
                                 }}
                             >
-                                Uses Llama 3.1 8B • 560 tokens/sec • Free forever
+                                Llama 3.1 8B • Free forever
                             </motion.p>
                         </motion.div>
                     )}
@@ -371,7 +365,6 @@ const App: React.FC = () => {
                                 onNavigate={(v) => setView(v)}
                                 emailAccount={emailAccount}
                                 onGenerate={generateIdentity}
-                                syncing={loading}
                                 onToast={showToast}
                             />
                         </motion.div>

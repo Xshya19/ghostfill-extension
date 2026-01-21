@@ -43,13 +43,14 @@ export async function setupAlarms(): Promise<void> {
     log.info('Alarms setup complete (on-demand mode)');
 }
 
-// Track email polling interval
-let emailPollingInterval: any = null;
+// Track email polling interval with proper types
+let emailPollingInterval: ReturnType<typeof setInterval> | null = null;
+let emailPollingTimeout: ReturnType<typeof setTimeout> | null = null;
 let emailPollingActive = false;
 
 /**
  * Start email polling - called when user autofills a form
- * Checks inbox every 5 seconds until OTP/link is found
+ * Checks inbox every 10 seconds until OTP/link is found
  */
 export function startEmailPolling(): void {
     if (emailPollingActive) {
@@ -69,7 +70,7 @@ export function startEmailPolling(): void {
     }, 10000); // 10 seconds
 
     // Auto-stop after 2 minutes to prevent indefinite polling
-    setTimeout(() => {
+    emailPollingTimeout = setTimeout(() => {
         stopEmailPolling();
     }, 120000); // 2 minutes max
 }
@@ -78,22 +79,27 @@ export function startEmailPolling(): void {
  * Stop email polling - called when OTP is filled or link is opened
  */
 export function stopEmailPolling(): void {
-    if (!emailPollingActive) return;
-
-    emailPollingActive = false;
+    // Always clear resources even if not marked active (defensive cleanup)
     if (emailPollingInterval) {
         clearInterval(emailPollingInterval);
         emailPollingInterval = null;
     }
     
-    // Also clear the fast-check-inbox Chrome alarm
-    chrome.alarms.clear(ALARM_NAMES.FAST_CHECK_INBOX);
+    if (emailPollingTimeout) {
+        clearTimeout(emailPollingTimeout);
+        emailPollingTimeout = null;
+    }
     
-    log.info('📧 Email polling STOPPED');
+    if (emailPollingActive) {
+        emailPollingActive = false;
+        // Also clear the fast-check-inbox Chrome alarm
+        chrome.alarms.clear(ALARM_NAMES.FAST_CHECK_INBOX);
+        log.info('📧 Email polling STOPPED');
+    }
 }
 
-// Track fast polling interval
-let fastPollingInterval: any = null;
+// Track fast polling interval with proper type
+let fastPollingInterval: ReturnType<typeof setInterval> | null = null;
 
 /**
  * Start fast OTP polling for a specific tab
@@ -111,17 +117,20 @@ export function startFastOTPPolling(tabId: number, url: string, fieldSelectors: 
         }
     });
 
-    // AGGRESSIVE: If we're in a persistent environment, use a real interval for 2s polling
+    // Use interval for faster 1.5s polling (aggressive but safe)
     if (!fastPollingInterval) {
         fastPollingInterval = setInterval(() => {
             if (otpWaitingTabs.size > 0) {
                 checkInboxForOTP();
             } else {
-                clearInterval(fastPollingInterval);
-                fastPollingInterval = null;
+                // Clean up when no tabs waiting
+                if (fastPollingInterval) {
+                    clearInterval(fastPollingInterval);
+                    fastPollingInterval = null;
+                }
             }
-        }, 2000); // 2-second check for ultra-fast response
-        log.info('Fast OTP interval started (2s)');
+        }, 1500); // 1.5-second check for ultra-fast response
+        log.info('Fast OTP interval started (1.5s)');
     }
 
     // Trigger immediate check
@@ -134,8 +143,12 @@ export function startFastOTPPolling(tabId: number, url: string, fieldSelectors: 
 export function stopFastOTPPolling(tabId: number): void {
     otpWaitingTabs.delete(tabId);
 
-    // If no more tabs waiting, clear fast polling alarm
+    // If no more tabs waiting, clear fast polling
     if (otpWaitingTabs.size === 0) {
+        if (fastPollingInterval) {
+            clearInterval(fastPollingInterval);
+            fastPollingInterval = null;
+        }
         chrome.alarms.clear(ALARM_NAMES.FAST_CHECK_INBOX);
         log.info('Fast OTP polling stopped');
     }
@@ -428,3 +441,24 @@ async function cleanupAlarm(): Promise<void> {
 // =============================================================================
 chrome.alarms.onAlarm.addListener(handleAlarm);
 log.debug('Alarm listener registered at module level');
+
+// =============================================================================
+// TAB CLEANUP: Remove closed tabs from OTP waiting list
+// This prevents memory leaks when users close tabs without completing OTP flow
+// =============================================================================
+chrome.tabs.onRemoved.addListener((tabId) => {
+    if (otpWaitingTabs.has(tabId)) {
+        log.debug('Tab closed, removing from OTP waiting list', { tabId });
+        otpWaitingTabs.delete(tabId);
+        
+        // If no more tabs waiting, stop polling
+        if (otpWaitingTabs.size === 0) {
+            stopEmailPolling();
+            if (fastPollingInterval) {
+                clearInterval(fastPollingInterval);
+                fastPollingInterval = null;
+            }
+            chrome.alarms.clear(ALARM_NAMES.FAST_CHECK_INBOX);
+        }
+    }
+});

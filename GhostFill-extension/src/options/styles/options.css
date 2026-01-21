@@ -442,6 +442,12 @@ input[type="password"]:hover {
     box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
 }
 
+/* Focus state for keyboard accessibility */
+.toggle input:focus-visible + .toggle-slider {
+    outline: 2px solid var(--brand-primary);
+    outline-offset: 2px;
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    🔳 Buttons
    ═══════════════════════════════════════════════════════════════════ */

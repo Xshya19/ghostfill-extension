@@ -25,7 +25,8 @@
         "https://api.mail.gw/*",
         "https://api.tmailor.com/*",
         "https://api.groq.com/*",
-        "https://*/*"
+        "https://maildrop.cc/*",
+        "https://dropmail.me/*"
     ],
     "background": {
         "service_worker": "background.js"

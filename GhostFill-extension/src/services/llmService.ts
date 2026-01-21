@@ -27,10 +27,30 @@ export interface LinkClassification {
 class LLMService {
     private cache = new Map<string, { result: any; timestamp: number }>();
     private readonly CACHE_TTL = 60 * 60 * 1000; // 1 hour
+    private readonly MAX_CACHE_SIZE = 100; // Prevent unbounded cache growth
     private apiKey: string | null = null;
+    private lastRateLimitTime = 0;
+    private readonly RATE_LIMIT_COOLDOWN = 60 * 1000; // 1 minute cooldown after rate limit
+
+    constructor() {
+        // Listen for storage changes to invalidate cached API key
+        if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+            chrome.storage.onChanged.addListener((changes, areaName) => {
+                if (areaName === 'local' && changes.settings) {
+                    const newApiKey = changes.settings.newValue?.llmApiKey;
+                    const oldApiKey = changes.settings.oldValue?.llmApiKey;
+                    if (newApiKey !== oldApiKey) {
+                        log.info('API key changed, invalidating cache');
+                        this.apiKey = null; // Force re-fetch on next call
+                        this.cache.clear(); // Clear results cache as they may be from different key
+                    }
+                }
+            });
+        }
+    }
 
     /**
-     * Get API key from settings
+     * Get API key from settings (with cache invalidation support)
      */
     private async getApiKey(): Promise<string | null> {
         if (this.apiKey) return this.apiKey;
@@ -45,6 +65,25 @@ class LLMService {
             log.debug('Failed to get API key from settings');
         }
         return null;
+    }
+
+    /**
+     * Clean up expired cache entries to prevent memory leaks
+     */
+    private cleanupCache(): void {
+        const now = Date.now();
+        for (const [key, value] of this.cache.entries()) {
+            if (now - value.timestamp > this.CACHE_TTL) {
+                this.cache.delete(key);
+            }
+        }
+        // If still over limit, remove oldest entries
+        if (this.cache.size > this.MAX_CACHE_SIZE) {
+            const entries = Array.from(this.cache.entries())
+                .sort((a, b) => a[1].timestamp - b[1].timestamp);
+            const toRemove = entries.slice(0, this.cache.size - this.MAX_CACHE_SIZE);
+            toRemove.forEach(([key]) => this.cache.delete(key));
+        }
     }
 
     // Simple hash for cache keys
@@ -319,9 +358,30 @@ JSON:`;
 
     // Compatibility methods
     async init(): Promise<void> { log.info('LLM Service initialized (Groq)'); }
-    async ensureInitialized(): Promise<void> { }
+    async ensureInitialized(): Promise<void> { this.cleanupCache(); }
     isAvailable(): boolean { return true; }
-    setApiKey(_key: string): void { }
+    
+    /**
+     * Update API key (used when settings change externally)
+     */
+    setApiKey(key: string): void {
+        if (key && key.length > 10) {
+            this.apiKey = key;
+            log.debug('API key updated via setApiKey');
+        } else {
+            this.apiKey = null;
+            log.debug('API key cleared via setApiKey');
+        }
+    }
+
+    /**
+     * Clear API key cache (for security - call on logout/clear data)
+     */
+    clearApiKey(): void {
+        this.apiKey = null;
+        this.cache.clear();
+        log.info('API key and cache cleared');
+    }
 }
 
 export const llmService = new LLMService();

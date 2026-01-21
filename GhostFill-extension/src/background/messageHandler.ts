@@ -349,16 +349,32 @@ async function handleGetIdentity(): Promise<ExtensionResponse> {
     }
 
     // GUARANTEED FALLBACK: Always return SOMETHING so autofill works
-    // Generate a random secure fallback password
-    const randomNum = Math.floor(Math.random() * 9999).toString().padStart(4, '0');
-    const fallbackPassword = `Gf${randomNum}Sx!`;
+    // Generate cryptographically secure random values
+    const getSecureRandom = (max: number): number => {
+        const array = new Uint32Array(1);
+        crypto.getRandomValues(array);
+        return array[0] % max;
+    };
+    
+    const randomNum = getSecureRandom(10000).toString().padStart(4, '0');
+    const randomSuffix1 = getSecureRandom(100000).toString().padStart(5, '0');
+    const randomSuffix2 = getSecureRandom(100000).toString().padStart(5, '0');
+    const randomSuffix3 = getSecureRandom(100000).toString().padStart(5, '0');
+    
+    // Generate a truly random password with mixed characters
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
+    let fallbackPassword = '';
+    for (let i = 0; i < 16; i++) {
+        fallbackPassword += chars[getSecureRandom(chars.length)];
+    }
+    
     const fallbackIdentity = {
-        firstName: 'John',
-        lastName: 'Doe',
-        fullName: 'John Doe',
-        username: 'johndoe' + Math.floor(Math.random() * 9999),
-        emailPrefix: 'johndoe' + Math.floor(Math.random() * 9999),
-        email: 'johndoe' + Math.floor(Math.random() * 9999) + '@gmail.com',
+        firstName: 'Ghost',
+        lastName: 'User',
+        fullName: 'Ghost User',
+        username: 'ghost' + randomSuffix1,
+        emailPrefix: 'ghost' + randomSuffix2,
+        email: 'ghost' + randomSuffix3 + '@tempmail.com',
         password: fallbackPassword
     };
     log.info('Using guaranteed fallback identity');

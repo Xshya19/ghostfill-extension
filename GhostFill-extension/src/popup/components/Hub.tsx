@@ -3,12 +3,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Lock, Copy, RefreshCw, Check, Inbox, ChevronRight, Eye, EyeOff, Clock } from 'lucide-react';
 import { EmailAccount, LastOTP, Email } from '../../types';
 import { safeSendMessage } from '../../utils/messaging';
+import { formatRelativeTime, extractOTP } from '../../utils/formatters';
+import { TIMING } from '../../utils/constants';
 
 interface Props {
     onNavigate: (tab: 'email' | 'password' | 'otp') => void;
     emailAccount: EmailAccount | null;
     onGenerate: () => void;
-    syncing: boolean;
     onToast: (message: string) => void;
 }
 
@@ -49,11 +50,11 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
                 const otp = response.lastOTP as LastOTP;
                 if (otp.code !== lastOTPCode) {
                     setLastOTPCode(otp.code);
-                    if (Date.now() - otp.extractedAt < 120000) setHasNewOTP(true);
+                    if (Date.now() - otp.extractedAt < TIMING.OTP_NEW_THRESHOLD_MS) setHasNewOTP(true);
                 }
             }
         } catch (e) {
-            // Silent fail for OTP check - not critical
+            console.debug('[Hub] OTP check failed:', e);
         }
     }, [lastOTPCode]);
 
@@ -73,7 +74,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
         if (!password) generatePassword();
         checkForNewOTP();
         checkInbox();
-        const interval = setInterval(() => { checkForNewOTP(); checkInbox(); }, 5000);
+        const interval = setInterval(() => { checkForNewOTP(); checkInbox(); }, TIMING.HUB_POLL_INTERVAL_MS);
         return () => clearInterval(interval);
     }, [generatePassword, checkForNewOTP, checkInbox, password]);
 
@@ -83,7 +84,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
         await navigator.clipboard.writeText(emailAccount.fullEmail);
         setEmailCopied(true);
         onToast('Email copied!');
-        setTimeout(() => setEmailCopied(false), 2000);
+        setTimeout(() => setEmailCopied(false), TIMING.COPY_CONFIRMATION_MS);
     };
 
     const copyPassword = async () => {
@@ -91,7 +92,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
         await navigator.clipboard.writeText(password);
         setPasswordCopied(true);
         onToast('Password copied!');
-        setTimeout(() => setPasswordCopied(false), 2000);
+        setTimeout(() => setPasswordCopied(false), TIMING.COPY_CONFIRMATION_MS);
     };
 
     const copyOTP = async (code: string) => {
@@ -99,21 +100,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
         onToast('Code copied!');
     };
 
-    const formatRelativeTime = (timestamp: number) => {
-        const now = Date.now();
-        const diffMs = now - timestamp;
-        const diffMins = Math.floor(diffMs / 60000);
-        if (diffMins < 1) return 'Just now';
-        if (diffMins < 60) return `${diffMins}m ago`;
-        const diffHours = Math.floor(diffMins / 60);
-        if (diffHours < 24) return `${diffHours}h ago`;
-        return `${Math.floor(diffHours / 24)}d ago`;
-    };
-
-    const extractOTP = (text: string): string | null => {
-        const match = text.match(/\b(\d{4,8})\b/);
-        return match ? match[1] : null;
-    };
+    // formatRelativeTime and extractOTP imported from utils/formatters
 
     return (
         <div className="ghost-dashboard">
@@ -138,6 +125,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
                             onClick={copyEmail}
                             whileTap={{ scale: 0.85 }}
                             title="Copy email"
+                            aria-label="Copy email to clipboard"
                         >
                             {emailCopied ? <Check size={16} /> : <Copy size={16} />}
                         </motion.button>
@@ -146,6 +134,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
                             onClick={onGenerate}
                             whileTap={{ scale: 0.85 }}
                             title="New email"
+                            aria-label="Generate new email"
                         >
                             <RefreshCw size={16} />
                         </motion.button>
@@ -174,6 +163,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
                             onClick={copyPassword}
                             whileTap={{ scale: 0.85 }}
                             title="Copy password"
+                            aria-label="Copy password to clipboard"
                         >
                             {passwordCopied ? <Check size={16} /> : <Copy size={16} />}
                         </motion.button>
@@ -182,6 +172,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
                             onClick={() => setShowPassword(!showPassword)}
                             whileTap={{ scale: 0.85 }}
                             title={showPassword ? "Hide" : "Show"}
+                            aria-label={showPassword ? "Hide password" : "Show password"}
                         >
                             {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                         </motion.button>

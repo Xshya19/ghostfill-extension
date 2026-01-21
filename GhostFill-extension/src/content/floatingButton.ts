@@ -24,8 +24,11 @@ export class FloatingButton {
     private currentField: HTMLElement | null = null;
     private isMenuOpen: boolean = false;
     private autoFiller: AutoFiller;
-
     private isEnabled: boolean = true;
+    
+    // Track message listener to prevent accumulation
+    private messageListener: ((message: any) => void) | null = null;
+    private listenerRegistered: boolean = false;
 
     constructor(autoFiller: AutoFiller) {
         this.autoFiller = autoFiller;
@@ -58,14 +61,16 @@ export class FloatingButton {
             log.warn('Failed to fetch settings, defaulting to enabled');
         }
 
-        // Listen for updates
-        if (chrome?.runtime?.onMessage) {
-            chrome.runtime.onMessage.addListener((message) => {
+        // Listen for updates - only register once to prevent listener accumulation
+        if (chrome?.runtime?.onMessage && !this.listenerRegistered) {
+            this.messageListener = (message: any) => {
                 if (message.action === 'SETTINGS_CHANGED' && message.settings) {
                     this.isEnabled = message.settings.showFloatingButton;
                     if (!this.isEnabled) this.hide();
                 }
-            });
+            };
+            chrome.runtime.onMessage.addListener(this.messageListener);
+            this.listenerRegistered = true;
         }
     }
 
@@ -120,10 +125,16 @@ export class FloatingButton {
             try {
                 // DIRECT CALL TO AUTOFILLER
                 log.info('Floating button triggering direct smart fill...');
-                await this.autoFiller.smartFill();
+                const result = await this.autoFiller.smartFill();
 
-                // Success is visual (forms filled), but we can show a subtle toast
-                pageStatus.success('Form filled!', 1500);
+                // Show appropriate message based on result
+                if (result.success && result.filledCount > 0) {
+                    pageStatus.success(`Filled ${result.filledCount} field(s)!`, 1500);
+                } else {
+                    // Silent fail - don't show irritating error messages
+                    // User will understand nothing happened
+                    log.debug('No fields filled, silent dismiss');
+                }
 
             } catch (error) {
                 log.error('Smart fill error:', error);
@@ -144,13 +155,7 @@ export class FloatingButton {
         });
     }
 
-    /**
-     * Perform smart fill on the current form - returns count of fields filled
-     * @deprecated Used direct AutoFiller call instead
-     */
-    private async performSmartFill(): Promise<number> {
-        return 0; // No-op, logic moved to event listener
-    }
+
 
     /**
      * Check if a field is visible and fillable
@@ -225,10 +230,16 @@ export class FloatingButton {
     }
 
     /**
-     * Show button near a field
+     * Show button near a field - SMART PAGE DETECTION
      */
     showNearField(field: HTMLElement): void {
         if (!this.isEnabled) return;
+
+        // SMART PAGE DETECTION: Only show on auth-related pages
+        if (!this.isAuthPage()) {
+            log.debug('Not an auth page, hiding floating button');
+            return;
+        }
 
         // Don't show button on tiny OTP input boxes (maxlength=1 or very small)
         const input = field as HTMLInputElement;
@@ -326,7 +337,61 @@ export class FloatingButton {
     }
 
     /**
-     * Update button icon based on field type
+     * Check if current page is an auth/signup/login page
+     * Smart detection using URL patterns and form presence
+     */
+    private isAuthPage(): boolean {
+        const url = window.location.href.toLowerCase();
+        const path = window.location.pathname.toLowerCase();
+        
+        // URL patterns that indicate auth pages
+        const authPatterns = [
+            'login', 'signin', 'sign-in', 'sign_in',
+            'signup', 'sign-up', 'sign_up', 'register', 
+            'auth', 'authenticate', 'account/create',
+            'join', 'enroll', 'subscribe', 'checkout',
+            'password', 'forgot', 'reset', 'verify',
+            'otp', 'code', 'confirm', 'activate'
+        ];
+        
+        // Check URL for auth patterns
+        const isAuthURL = authPatterns.some(pattern => 
+            url.includes(pattern) || path.includes(pattern)
+        );
+        
+        if (isAuthURL) {
+            log.debug('Auth page detected via URL pattern');
+            return true;
+        }
+        
+        // Check for presence of password or email fields (form-based detection)
+        const hasPasswordField = document.querySelector('input[type="password"]') !== null;
+        const hasEmailField = document.querySelector('input[type="email"]') !== null;
+        const hasEmailNameField = document.querySelector('input[name*="email"], input[id*="email"]') !== null;
+        
+        if (hasPasswordField || hasEmailField || hasEmailNameField) {
+            log.debug('Auth page detected via form fields');
+            return true;
+        }
+        
+        // Check for OTP/verification fields (for 2FA pages without email/password)
+        const hasOTPField = document.querySelector(
+            'input[autocomplete="one-time-code"], input[name*="otp"], input[name*="code"], ' +
+            'input[id*="otp"], input[id*="code"], input[name*="verify"], input[maxlength="1"], ' +
+            'input[maxlength="4"], input[maxlength="6"], input[maxlength="8"]'
+        ) !== null;
+        
+        if (hasOTPField) {
+            log.debug('Auth page detected via OTP fields');
+            return true;
+        }
+        
+        return false;
+    }
+
+    /**
+     * Update button icon based on field type - CONTEXTUAL MODES
+     * Shows appropriate icon based on what the field expects
      */
     private updateButtonIcon(field: HTMLElement): void {
         if (!this.button) return;
@@ -334,18 +399,67 @@ export class FloatingButton {
         const input = field as HTMLInputElement;
         const type = input.type?.toLowerCase() || '';
         const name = (input.name || input.id || '').toLowerCase();
+        const placeholder = (input.placeholder || '').toLowerCase();
+        const label = this.getFieldLabel(input).toLowerCase();
+        const combined = `${name} ${placeholder} ${label}`;
 
         let icon = 'magic';
 
-        if (type === 'email' || name.includes('email')) {
+        // 📧 Email mode
+        if (type === 'email' || combined.includes('email') || combined.includes('e-mail')) {
             icon = 'email';
-        } else if (type === 'password') {
+        }
+        // 🔑 Password mode
+        else if (type === 'password' || combined.includes('password') || combined.includes('pwd')) {
             icon = 'key';
-        } else if (name.includes('otp') || name.includes('code') || name.includes('verify')) {
+        }
+        // 🔢 OTP/Code mode
+        else if (combined.includes('otp') || combined.includes('code') || combined.includes('verify') || 
+                 combined.includes('pin') || combined.includes('token') || input.maxLength <= 8 && /^\d*$/.test(input.value)) {
             icon = 'pin';
+        }
+        // 👤 First Name mode
+        else if (combined.includes('first') && combined.includes('name') || combined.includes('fname') || 
+                 combined.includes('given') || combined.includes('firstname')) {
+            icon = 'user';
+        }
+        // 👥 Last Name mode
+        else if (combined.includes('last') && combined.includes('name') || combined.includes('lname') || 
+                 combined.includes('surname') || combined.includes('family') || combined.includes('lastname')) {
+            icon = 'user';
+        }
+        // 👤 Full Name mode
+        else if (combined.includes('name') && !combined.includes('user')) {
+            icon = 'user';
+        }
+        // 👤 Username mode (usually can use email)
+        else if (combined.includes('user') && combined.includes('name') || combined.includes('username')) {
+            icon = 'email';
         }
 
         this.button.innerHTML = this.getButtonIcon(icon);
+    }
+
+    /**
+     * Get the label text associated with an input field
+     */
+    private getFieldLabel(input: HTMLInputElement): string {
+        // Check for aria-label
+        if (input.getAttribute('aria-label')) {
+            return input.getAttribute('aria-label') || '';
+        }
+        // Check for associated label
+        if (input.id) {
+            const label = document.querySelector(`label[for="${input.id}"]`);
+            if (label) return label.textContent || '';
+        }
+        // Check for parent label
+        const parentLabel = input.closest('label');
+        if (parentLabel) return parentLabel.textContent || '';
+        // Check for preceding text
+        const prev = input.previousElementSibling;
+        if (prev && prev.tagName !== 'INPUT') return prev.textContent || '';
+        return '';
     }
 
     /**
@@ -403,6 +517,18 @@ export class FloatingButton {
                 <rect x="3" y="11" width="18" height="11" rx="3" fill="url(#pinGrad)"/>
                 <path d="M7 11V7a5 5 0 0 1 10 0v4" stroke="url(#pinGrad)" stroke-width="2.5" stroke-linecap="round"/>
                 <circle cx="12" cy="16" r="1.5" fill="white"/>
+            </svg>`,
+
+            // User/Name icon (for first name, last name, full name)
+            user: `<svg viewBox="0 0 24 24" fill="none">
+                <defs>
+                    <linearGradient id="userGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style="stop-color:#8B5CF6"/>
+                        <stop offset="100%" style="stop-color:#6D28D9"/>
+                    </linearGradient>
+                </defs>
+                <circle cx="12" cy="8" r="5" fill="url(#userGrad)"/>
+                <path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8" fill="url(#userGrad)"/>
             </svg>`,
         };
 

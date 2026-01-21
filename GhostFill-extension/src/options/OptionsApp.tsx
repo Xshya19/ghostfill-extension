@@ -39,7 +39,7 @@ const OptionsApp: React.FC = () => {
                 payload: settings,
             });
             setSaved(true);
-            setTimeout(() => setSaved(false), 2000);
+            setTimeout(() => setSaved(false), 2500); // Longer confirmation
         } catch (error) {
             console.error('Failed to save settings:', error);
         }
@@ -146,7 +146,7 @@ const OptionsApp: React.FC = () => {
                     </div>
 
                     {settings.preferredEmailService === 'custom' && (
-                        <div style={{ background: 'var(--glass-background-thick)', padding: '16px', borderRadius: '12px', marginTop: '12px', border: '1px solid var(--glass-border)' }}>
+                        <div style={{ background: 'var(--glass-bg-thick)', padding: '16px', borderRadius: '12px', marginTop: '12px', border: '1px solid var(--glass-border)' }}>
                             <div className="setting-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 8, border: 'none', padding: 0 }}>
                                 <div className="setting-info" style={{ width: '100%' }}>
                                     <label style={{ fontSize: 13 }}>Custom Email Domain</label>
@@ -229,7 +229,7 @@ const OptionsApp: React.FC = () => {
                         </div>
                         <input
                             type="number"
-                            min="4"
+                            min="8"
                             max="128"
                             value={settings.passwordDefaults.length}
                             onChange={(e) => handleChange('passwordDefaults', {
@@ -458,7 +458,7 @@ const OptionsApp: React.FC = () => {
                 </section>
             </main>
 
-            <footer className="options-footer" style={{ marginTop: 'auto', padding: '20px', textAlign: 'center', opacity: 0.6 }}>
+            <footer className="options-footer" style={{ marginTop: 'auto', padding: '20px', textAlign: 'center', opacity: 0.75 }}>
                 <p>GhostFill v1.0.15 • Liquid Glass Design</p>
             </footer>
 
@@ -495,7 +495,7 @@ const OptionsApp: React.FC = () => {
                     animation: 'fadeIn 0.2s ease'
                 }} onClick={() => setConfirmModal({ ...confirmModal, open: false })}>
                     <div style={{
-                        background: 'var(--glass-background-thick)',
+                        background: 'var(--glass-bg-thick)',
                         backdropFilter: 'blur(40px)',
                         padding: 32,
                         borderRadius: 24,

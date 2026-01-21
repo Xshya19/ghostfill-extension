@@ -163,3 +163,26 @@ export function pluralize(count: number, singular: string, plural?: string): str
     if (count === 1) return singular;
     return plural || singular + 's';
 }
+
+/**
+ * Extract OTP/verification code from text
+ * Finds 4-8 digit codes commonly used for verification
+ */
+export function extractOTP(text: string): string | null {
+    if (!text) return null;
+    const match = text.match(/\b(\d{4,8})\b/);
+    return match ? match[1] : null;
+}
+
+/**
+ * Extract activation/verification link from email body
+ * Matches common verification URL patterns
+ */
+export function extractActivationLink(text: string): string | null {
+    if (!text) return null;
+    const linkMatch = text.match(
+        /https?:\/\/[^\s<>"']+(?:verify|confirm|activate|token|auth|click|register|validate|approve|accept|complete|signup)[^\s<>"']*/i
+    );
+    return linkMatch ? linkMatch[0] : null;
+}
+

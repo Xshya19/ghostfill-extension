@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, Transition } from 'framer-motion';
-import { Mail, Copy, RefreshCw, Sparkles, Inbox, Clock, Check, ChevronRight, ChevronLeft, Lock as LockIcon, Shield as ShieldIcon } from 'lucide-react';
+import { Mail, Copy, RefreshCw, Sparkles, Inbox, Clock, Check, ChevronRight, ChevronLeft } from 'lucide-react';
 import { EmailAccount, Email } from '../../types';
-import { formatRelativeTime } from '../../utils/formatters';
+import { formatRelativeTime, extractOTP, extractActivationLink } from '../../utils/formatters';
 import { safeSendMessage } from '../../utils/messaging';
+import { TIMING } from '../../utils/constants';
 
 interface Props {
     onToast: (message: string) => void;
@@ -70,10 +71,12 @@ const EmailGenerator: React.FC<Props> = ({ onToast, emailAccount, onGenerate, sy
                 setTimeLeft('Expired');
                 return;
             }
-            // Cap display at 60 minutes to avoid showing unrealistic numbers
             const totalMins = Math.floor(remaining / 60000);
-            if (totalMins > 60) {
-                setTimeLeft('60:00+');
+            // Show hours for >60 minutes
+            if (totalMins >= 60) {
+                const hours = Math.floor(totalMins / 60);
+                const mins = totalMins % 60;
+                setTimeLeft(`${hours}h ${mins}m`);
                 return;
             }
             const secs = Math.floor((remaining % 60000) / 1000);
@@ -89,7 +92,7 @@ const EmailGenerator: React.FC<Props> = ({ onToast, emailAccount, onGenerate, sy
         if (emailAccount) {
             // Initial check without toast
             checkInbox(false);
-            const interval = setInterval(() => checkInbox(false), 30000);
+            const interval = setInterval(() => checkInbox(false), TIMING.INBOX_POLL_INTERVAL_MS);
             return () => clearInterval(interval);
         }
     }, [emailAccount, checkInbox]);
@@ -190,7 +193,7 @@ const EmailGenerator: React.FC<Props> = ({ onToast, emailAccount, onGenerate, sy
                                     <div style={{ display: 'flex', gap: 12, marginTop: 10, alignItems: 'center' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--success)', fontWeight: 600 }}>
                                             <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--success)' }} />
-                                            Encrypted
+                                            Temporary
                                         </div>
                                         {timeLeft && (
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: timeLeft === 'Expired' ? 'var(--error)' : 'var(--warning)', fontWeight: 600 }}>
@@ -295,13 +298,9 @@ const EmailGenerator: React.FC<Props> = ({ onToast, emailAccount, onGenerate, sy
                                 <div className="inbox-list" style={{ flex: 1, overflowY: 'auto', marginTop: 12 }}>
                                     {inbox.length > 0 ? (
                                         inbox.map((item, i) => {
-                                            // Extract verification code from subject or body
-                                            const codeMatch = (item.subject + ' ' + (item.body || '')).match(/\b(\d{4,8})\b/);
-                                            const verificationCode = codeMatch ? codeMatch[1] : null;
-                                            
-                                            // Extract activation link from body
-                                            const linkMatch = (item.body || '').match(/https?:\/\/[^\s<>"]+(?:verify|confirm|activate|token|auth|click)[^\s<>"']*/i);
-                                            const activationLink = linkMatch ? linkMatch[0] : null;
+                                            // Use shared utility functions
+                                            const verificationCode = extractOTP(item.subject + ' ' + (item.body || ''));
+                                            const activationLink = extractActivationLink(item.body || '');
 
                                             return (
                                                 <motion.div
@@ -348,7 +347,7 @@ const EmailGenerator: React.FC<Props> = ({ onToast, emailAccount, onGenerate, sy
                                                                     className="otp-badge"
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
-                                                                        window.open(activationLink, '_blank');
+                                                                        window.open(activationLink, '_blank', 'noopener,noreferrer');
                                                                         onToast('Opening activation link...');
                                                                     }}
                                                                     whileHover={{ scale: 1.05 }}
@@ -400,13 +399,9 @@ const EmailGenerator: React.FC<Props> = ({ onToast, emailAccount, onGenerate, sy
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                                     {inbox.length > 0 ? (
                                         inbox.map((item, i) => {
-                                            // Extract verification code from subject or body
-                                            const codeMatch = (item.subject + ' ' + (item.body || '')).match(/\b(\d{4,8})\b/);
-                                            const verificationCode = codeMatch ? codeMatch[1] : null;
-                                            
-                                            // Extract activation link from body
-                                            const linkMatch = (item.body || '').match(/https?:\/\/[^\s<>"]+(?:verify|confirm|activate|token|auth|click)[^\s<>"']*/i);
-                                            const activationLink = linkMatch ? linkMatch[0] : null;
+                                            // Use shared utility functions
+                                            const verificationCode = extractOTP(item.subject + ' ' + (item.body || ''));
+                                            const activationLink = extractActivationLink(item.body || '');
 
                                             return (
                                                 <motion.div
@@ -490,7 +485,7 @@ const EmailGenerator: React.FC<Props> = ({ onToast, emailAccount, onGenerate, sy
                                                                     }}
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
-                                                                        window.open(activationLink, '_blank');
+                                                                        window.open(activationLink, '_blank', 'noopener,noreferrer');
                                                                         onToast('Opening activation link...');
                                                                     }}
                                                                     whileHover={{ scale: 1.02 }}
