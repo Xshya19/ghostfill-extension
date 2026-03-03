@@ -1,0 +1,161 @@
+/**
+ * Identity Data Pools
+ * 
+ * Externalized data pools for identity generation.
+ * These can be extended or replaced without modifying the core service logic.
+ * 
+ * @module services/data/identityData
+ */
+
+export interface IdentityDataPools {
+    firstNames: string[];
+    lastNames: string[];
+    emailDomains: string[];
+}
+
+/**
+ * Common first names for realistic identity generation
+ * Source: US Census data and popular name databases
+ */
+export const firstNames: string[] = [
+    // Male names
+    'James', 'John', 'Robert', 'Michael', 'William', 'David', 'Richard', 'Joseph',
+    'Thomas', 'Charles', 'Christopher', 'Daniel', 'Matthew', 'Anthony', 'Donald',
+    'Mark', 'Paul', 'Steven', 'Andrew', 'Kenneth', 'Joshua', 'Kevin', 'Brian',
+    'George', 'Edward', 'Ronald', 'Timothy', 'Jason', 'Jeffrey', 'Ryan',
+    'Jacob', 'Gary', 'Nicholas', 'Eric', 'Jonathan', 'Stephen', 'Larry',
+    'Justin', 'Scott', 'Brandon', 'Benjamin', 'Samuel', 'Raymond', 'Gregory',
+    'Alexander', 'Patrick', 'Frank', 'Dennis', 'Jerry', 'Tyler', 'Aaron',
+    'Jose', 'Adam', 'Henry', 'Nathan', 'Zachary', 'Douglas', 'Peter',
+    'Kyle', 'Walter', 'Ethan', 'Jeremy', 'Harold', 'Keith', 'Christian',
+    'Roger', 'Noah', 'Gerald', 'Carl', 'Terry', 'Sean', 'Austin',
+    'Arthur', 'Lawrence', 'Jesse', 'Dylan', 'Bryan', 'Joe', 'Jordan',
+    'Billy', 'Bruce', 'Albert', 'Willie', 'Gabriel', 'Logan', 'Alan',
+    'Juan', 'Wayne', 'Roy', 'Ralph', 'Randy', 'Eugene', 'Vincent',
+    'Russell', 'Elijah', 'Louis', 'Bobby', 'Philip', 'Johnny', 'Bradley',
+    // Female names
+    'Mary', 'Patricia', 'Jennifer', 'Linda', 'Elizabeth', 'Barbara', 'Susan',
+    'Jessica', 'Sarah', 'Karen', 'Nancy', 'Lisa', 'Betty', 'Margaret',
+    'Sandra', 'Ashley', 'Dorothy', 'Kimberly', 'Emily', 'Donna', 'Michelle',
+    'Carol', 'Amanda', 'Melissa', 'Deborah', 'Stephanie', 'Rebecca', 'Sharon',
+    'Laura', 'Cynthia', 'Kathleen', 'Amy', 'Shirley', 'Angela', 'Helen',
+    'Anna', 'Brenda', 'Pamela', 'Emma', 'Nicole', 'Hannah', 'Samantha',
+    'Katherine', 'Christine', 'Debra', 'Rachel', 'Carolyn', 'Janet',
+    'Catherine', 'Maria', 'Heather', 'Diane', 'Virginia', 'Julie', 'Joyce',
+    'Victoria', 'Kelly', 'Lauren', 'Christina', 'Joan', 'Evelyn', 'Judith',
+    'Megan', 'Cheryl', 'Andrea', 'Olivia', 'Hannah', 'Amanda', 'Melissa',
+    'Rebecca', 'Stephanie', 'Laura', 'Sharon', 'Cynthia', 'Kathleen',
+    // Modern popular names
+    'Liam', 'Noah', 'Oliver', 'Elijah', 'William', 'James', 'Benjamin', 'Lucas',
+    'Henry', 'Theodore', 'Jack', 'Levi', 'Alexander', 'Jackson', 'Mateo',
+    'Daniel', 'Luke', 'Mason', 'Sebastian', 'Ethan', 'Logan', 'Owen',
+    'Samuel', 'Jacob', 'Asher', 'Aiden', 'John', 'Joseph', 'Wyatt',
+    'David', 'Olivia', 'Emma', 'Charlotte', 'Amelia', 'Sophia', 'Isabella',
+    'Ava', 'Mia', 'Evelyn', 'Harper', 'Luna', 'Camila', 'Gianna',
+    'Elizabeth', 'Eleanor', 'Ella', 'Abigail', 'Sofia', 'Avery', 'Scarlett',
+    'Emily', 'Aria', 'Penelope', 'Chloe', 'Layla', 'Mila', 'Nora',
+    'Hazel', 'Madison', 'Ellie', 'Lily', 'Nova', 'Isla', 'Aurora',
+    'Viola', 'Alice', 'Stella', 'Genesis', 'Willow', 'Natalie', 'Kinsley'
+];
+
+/**
+ * Common last names for realistic identity generation
+ * Source: US Census data
+ */
+export const lastNames: string[] = [
+    'Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller',
+    'Davis', 'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Gonzalez',
+    'Wilson', 'Anderson', 'Thomas', 'Taylor', 'Moore', 'Jackson', 'Martin',
+    'Lee', 'Perez', 'Thompson', 'White', 'Harris', 'Sanchez', 'Clark',
+    'Ramirez', 'Lewis', 'Robinson', 'Walker', 'Young', 'Allen', 'King',
+    'Wright', 'Scott', 'Torres', 'Nguyen', 'Hill', 'Flores', 'Green',
+    'Adams', 'Nelson', 'Baker', 'Hall', 'Rivera', 'Campbell', 'Mitchell',
+    'Carter', 'Roberts', 'Gomez', 'Phillips', 'Evans', 'Turner', 'Diaz',
+    'Parker', 'Cruz', 'Edwards', 'Collins', 'Reyes', 'Stewart', 'Morris',
+    'Morales', 'Murphy', 'Cook', 'Rogers', 'Gutierrez', 'Ortiz', 'Morgan',
+    'Cooper', 'Peterson', 'Bailey', 'Reed', 'Kelly', 'Howard', 'Ramos',
+    'Kim', 'Cox', 'Ward', 'Richardson', 'Watson', 'Brooks', 'Chavez',
+    'Wood', 'James', 'Bennett', 'Gray', 'Mendoza', 'Ruiz', 'Hughes',
+    'Price', 'Alvarez', 'Castillo', 'Sanders', 'Patel', 'Myers', 'Long',
+    'Ross', 'Foster', 'Jimenez', 'Powell', 'Jenkins', 'Perry', 'Russell',
+    'Sullivan', 'Bell', 'Coleman', 'Butler', 'Henderson', 'Barnes', 'Gonzales',
+    'Fisher', 'Vasquez', 'Simmons', 'Romero', 'Jordan', 'Patterson', 'Alexander',
+    'Hamilton', 'Graham', 'Reynolds', 'Griffin', 'Wallace', 'Moreno', 'West',
+    'Cole', 'Hayes', 'Bryant', 'Herrera', 'Gibson', 'Ellis', 'Tran',
+    'Medina', 'Aguilar', 'Stevens', 'Murray', 'Ford', 'Castro', 'Marshall',
+    'Owens', 'Harrison', 'Fernandez', 'McDonald', 'Woods', 'Washington',
+    'Kennedy', 'Wells', 'Vargas', 'Henry', 'Chen', 'Freeman', 'Webb',
+    'Tucker', 'Guzman', 'Burns', 'Crawford', 'Olson', 'Simpson', 'Porter',
+    'Hunter', 'Gordon', 'Mendez', 'Silva', 'Shaw', 'Snyder', 'Mason',
+    'Dixon', 'Munoz', 'Hunt', 'Hicks', 'Holmes', 'Palmer', 'Wagner',
+    'Black', 'Robertson', 'Boyd', 'Rose', 'Stone', 'Salazar', 'Fox',
+    'Warren', 'Mills', 'Meyer', 'Rice', 'Schmidt', 'Garza', 'Daniels',
+    'Ferguson', 'Nichols', 'Stephens', 'Soto', 'Weaver', 'Ryan', 'Gardner',
+    'Payne', 'Grant', 'Dunn', 'Kelley', 'Spencer', 'Hawkins', 'Arnold',
+    'Pierce', 'Vazquez', 'Hansen', 'Peters', 'Santos', 'Hart', 'Bradley',
+    'Knight', 'Elliott', 'Cunningham', 'Duncan', 'Armstrong', 'Hudson',
+    'Carroll', 'Lane', 'Riley', 'Andrews', 'Alvarado', 'Ray', 'Delgado',
+    'Berry', 'Perkins', 'Hoffman', 'Johnston', 'Matthews', 'Pena', 'Richards',
+    'Contreras', 'Willis', 'Carpenter', 'Lawrence', 'Sandoval', 'Guerrero',
+    'George', 'Chapman', 'Rios', 'Estrada', 'Ortega', 'Watkins', 'Greene',
+    'Nunez', 'Wheeler', 'Valdez', 'Harper', 'Burke', 'Larson', 'Santiago',
+    'Maldonado', 'Morrison', 'Franklin', 'Carlson', 'Austin', 'Dominguez',
+    'Carr', 'Lawson', 'Jacobs', 'Obrien', 'Lynch', 'Singh', 'Vega',
+    'Bishop', 'Montgomery', 'Oliver', 'Jensen', 'Harvey', 'Williamson',
+    'Gilbert', 'Dean', 'Sims', 'Espinoza', 'Howell', 'Li', 'Wong',
+    'Reid', 'Hanson', 'Le', 'Mccoy', 'Garrett', 'Burton', 'Fuller',
+    'Wang', 'Weber', 'Welch', 'Rojas', 'Lucas', 'Marquez', 'Fields',
+    'Park', 'Yang', 'Padilla', 'Day', 'Walsh', 'Bowman', 'Schultz',
+    'Fowler', 'Mejia', 'Davidson', 'Acosta', 'Brewer', 'May', 'Holland',
+    'Juarez', 'Newman', 'Pearson', 'Curtis', 'Cortez', 'Douglas', 'Schneider',
+    'Joseph', 'Barrett', 'Navarro', 'Figueroa', 'Keller', 'Avila', 'Wade',
+    'Molina', 'Stanley', 'Hopkins', 'Campos', 'Barnett', 'Bates', 'Chambers',
+    'Caldwell', 'Beck', 'Lambert', 'Miranda', 'Byrd', 'Craig', 'Ayala',
+    'Lowe', 'Frazier', 'Powers', 'Neal', 'Leonard', 'Gregory', 'Carrillo',
+    'Sutton', 'Fleming', 'Rhodes', 'Shelton', 'Schwartz', 'Norris', 'Stevenson',
+    'Hale', 'Rios', 'Bean', 'Logan', 'Blackburn', 'Glenn', 'Pena',
+    'Drake', 'Ramos', 'Wong', 'Reynolds', 'Ball', 'Cobb', 'Mccarthy'
+];
+
+/**
+ * Common email domains for realistic identity generation
+ * Includes popular free email providers less likely to be blocked
+ */
+export const emailDomains: string[] = [
+    // Major providers (most trusted)
+    'gmail.com',
+    'outlook.com',
+    'yahoo.com',
+    'hotmail.com',
+    'icloud.com',
+    'mail.com',
+    // Privacy-focused providers
+    'protonmail.com',
+    'proton.me',
+    'tutanota.com',
+    'mailbox.org',
+    // Legacy providers
+    'aol.com',
+    'zoho.com',
+    'gmx.com',
+    'yandex.com',
+    // Regional providers
+    'live.com',
+    'msn.com',
+    'me.com',
+    'mac.com',
+    // Professional providers
+    'fastmail.com',
+    'hey.com'
+];
+
+/**
+ * Default identity data pools
+ */
+export const identityDataPools: IdentityDataPools = {
+    firstNames,
+    lastNames,
+    emailDomains,
+};
+
+export default identityDataPools;

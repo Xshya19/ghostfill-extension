@@ -1,0 +1,152 @@
+# ═══════════════════════════════════════════════════════════════════
+# GhostFill Extension - Clean .gitignore
+# ═══════════════════════════════════════════════════════════════════
+
+# ───────────────────────────────────────────────────────────────────
+# Dependencies
+# ───────────────────────────────────────────────────────────────────
+node_modules/
+bower_components/
+jspm_packages/
+
+# ───────────────────────────────────────────────────────────────────
+# Build Output
+# ───────────────────────────────────────────────────────────────────
+dist/
+build/
+out/
+
+# ───────────────────────────────────────────────────────────────────
+# Environment & Config
+# ───────────────────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+*.local
+
+# ───────────────────────────────────────────────────────────────────
+# IDE & Editors
+# ───────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# ───────────────────────────────────────────────────────────────────
+# OS Files
+# ───────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# ───────────────────────────────────────────────────────────────────
+# Logs & Debug
+# ───────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+build_errs.txt
+build_errs_utf8.txt
+error.log
+debug.log
+
+# ───────────────────────────────────────────────────────────────────
+# Test & Coverage
+# ───────────────────────────────────────────────────────────────────
+coverage/
+.nyc_output/
+*.lcov
+.jest/
+test-results/
+playwright-report/
+
+# ───────────────────────────────────────────────────────────────────
+# TypeScript
+# ───────────────────────────────────────────────────────────────────
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# ───────────────────────────────────────────────────────────────────
+# Temporary Files
+# ───────────────────────────────────────────────────────────────────
+*.tmp
+*.temp
+*.bak
+*.orig
+*.cache
+*.pid
+*.seed
+*.pid.lock
+
+# ───────────────────────────────────────────────────────────────────
+# Chrome Extension Testing & Packaging
+# ───────────────────────────────────────────────────────────────────
+extension-unpacked/
+crxmake-*
+*.zip
+ghostfill-*.zip
+
+# ───────────────────────────────────────────────────────────────────
+# Debug/Orphaned Files (Windows specific)
+# ───────────────────────────────────────────────────────────────────
+$null
+nul
+NULL
+
+# ───────────────────────────────────────────────────────────────────
+# Documentation (Keep essential docs, ignore debug docs)
+# ───────────────────────────────────────────────────────────────────
+# Keep: README.md, LICENSE, CHANGELOG.md
+# Ignore:
+DEBUG_*.md
+DEBUG_*.txt
+DEBUG_*.js
+DEBUG_*.json
+audit_*.md
+audit_*.txt
+audit_*.json
+check_*.js
+debug_*.js
+lint_*.js
+summarize_*.js
+*_report.txt
+ALL_FIXES_COMPLETE.md
+
+# ───────────────────────────────────────────────────────────────────
+# ESLint & Lint Reports
+# ───────────────────────────────────────────────────────────────────
+eslint_report.json
+eslint.json
+lint_output.json
+lint_results.json
+lint_output*.txt
+lint_report*.txt
+
+# ───────────────────────────────────────────────────────────────────
+# Build Output Files
+# ───────────────────────────────────────────────────────────────────
+build_output*.txt
+webpack_stats.json
+stats.json
+bundle-analysis/
+
+# ───────────────────────────────────────────────────────────────────
+# Package Manager (Optional - Uncomment if needed)
+# ───────────────────────────────────────────────────────────────────
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml

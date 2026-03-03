@@ -1,0 +1,84 @@
+#!/usr/bin/env sh
+# ==========================================
+# Husky Commit Message Hook for GhostFill
+# ==========================================
+#
+# This hook validates commit messages follow
+# the Conventional Commits specification:
+# https://www.conventionalcommits.org/
+#
+# Format: <type>(<scope>): <description>
+#
+# Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert
+# ==========================================
+
+# Exit on first error
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+echo "${BLUE}Validating commit message...${NC}"
+
+# Get the commit message file
+COMMIT_MSG_FILE=$1
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Skip validation for merge commits and fixup/squash commits
+if echo "$COMMIT_MSG" | grep -qE "^(Merge|fixup!|squash!)"; then
+    echo "${GREEN}✓ Skipping validation for merge/fixup commit${NC}"
+    exit 0
+fi
+
+# Conventional Commits regex pattern
+# Allows optional scope and optional breaking change indicator
+PATTERN="^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\([a-z0-9_-]+\))?(!)?: .{1,100}$"
+
+if echo "$COMMIT_MSG" | grep -qE "$PATTERN"; then
+    echo "${GREEN}✓ Commit message follows Conventional Commits${NC}"
+    exit 0
+fi
+
+# If we get here, the commit message is invalid
+echo ""
+echo "${RED}========================================${NC}"
+echo "${RED}❌ Invalid commit message format${NC}"
+echo "${RED}========================================${NC}"
+echo ""
+echo "Your commit message:"
+echo "  \"$COMMIT_MSG\""
+echo ""
+echo "Expected format (Conventional Commits):"
+echo "  <type>(<scope>): <description>"
+echo ""
+echo "Valid types:"
+echo "  feat     - New feature"
+echo "  fix      - Bug fix"
+echo "  docs     - Documentation changes"
+echo "  style    - Code style changes (formatting)"
+echo "  refactor - Code refactoring"
+echo "  test     - Adding or updating tests"
+echo "  chore    - Maintenance tasks"
+echo "  perf     - Performance improvements"
+echo "  ci       - CI/CD changes"
+echo "  build    - Build system changes"
+echo "  revert   - Reverting a commit"
+echo ""
+echo "Examples:"
+echo "  feat(auth): add OAuth2 support"
+echo "  fix(email): resolve OTP extraction bug"
+echo "  docs: update README with setup instructions"
+echo "  test(storage): add unit tests for storage service"
+echo "  refactor!: remove deprecated API (breaking)"
+echo ""
+echo "To bypass this check, use:"
+echo "  git commit --no-verify"
+echo ""
+echo "${YELLOW}Tip: Use 'npm run commit' for interactive commits${NC}"
+echo ""
+
+exit 1

@@ -1,0 +1,151 @@
+{
+    "manifest_version": 3,
+    "name": "GhostFill",
+    "version": "1.1.0",
+    "description": "GhostFill: Disposable emails, secure passwords, and automatic OTP detection & fill. Local AI engine — no API key required. 100% Free & Open Source.",
+    "content_security_policy": {
+        "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self' https://api.1secmail.com https://api.1secmail.net https://api.1secmail.org https://www.1secmail.com https://api.mail.tm https://api.mail.gw https://api.tmailor.com https://api.maildrop.cc https://api.dropmail.me https://api.guerrillamail.com https://api.tempmail.lol;"
+    },
+    "permissions": [
+        "activeTab",
+        "storage",
+        "unlimitedStorage",
+        "clipboardWrite",
+        "contextMenus",
+        "alarms",
+        "notifications",
+        "scripting",
+        "offscreen"
+    ],
+    "host_permissions": [
+        "https://api.1secmail.com/*",
+        "https://api.1secmail.net/*",
+        "https://api.1secmail.org/*",
+        "https://www.1secmail.com/*",
+        "https://api.mail.tm/*",
+        "https://api.mail.gw/*",
+        "https://api.tmailor.com/*",
+        "https://api.maildrop.cc/*",
+        "https://api.dropmail.me/*",
+        "https://api.guerrillamail.com/*",
+        "https://api.tempmail.lol/*"
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "https://*/*",
+                "http://localhost/*",
+                "http://localhost:*/",
+                "http://127.0.0.1/*",
+                "http://127.0.0.1:*/"
+            ],
+            "exclude_matches": [
+                "*://*.chase.com/*",
+                "*://*.bankofamerica.com/*",
+                "*://*.wellsfargo.com/*",
+                "*://*.citibank.com/*",
+                "*://*.capitalone.com/*",
+                "*://*.usbank.com/*",
+                "*://*.pnc.com/*",
+                "*://*.td.com/*",
+                "*://*.bbt.com/*",
+                "*://*.suntrust.com/*",
+                "*://*.regions.com/*",
+                "*://*.key.com/*",
+                "*://*.fifththird.com/*",
+                "*://*.ally.com/*",
+                "*://*.schwab.com/*",
+                "*://*.fidelity.com/*",
+                "*://*.vanguard.com/*",
+                "*://*.etrade.com/*",
+                "*://*.tdameritrade.com/*",
+                "*://*.interactivebrokers.com/*",
+                "*://*.1password.com/*",
+                "*://*.lastpass.com/*",
+                "*://*.dashlane.com/*",
+                "*://*.bitwarden.com/*",
+                "*://*.keeper-security.com/*",
+                "*://*.roboform.com/*",
+                "*://*.norton.com/password-manager/*",
+                "*://*.mcafee.com/identity-protection/*",
+                "*://chrome.google.com/*",
+                "*://chromewebstore.google.com/*"
+            ],
+            "js": [
+                "content.js"
+            ],
+            "css": [
+                "content.css"
+            ],
+            "run_at": "document_idle",
+            "all_frames": false
+        }
+    ],
+    "action": {
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "assets/icons/icon128.png",
+            "32": "assets/icons/icon128.png",
+            "48": "assets/icons/icon128.png",
+            "128": "assets/icons/icon128.png"
+        },
+        "default_title": "GhostFill"
+    },
+    "icons": {
+        "16": "assets/icons/icon128.png",
+        "32": "assets/icons/icon128.png",
+        "48": "assets/icons/icon128.png",
+        "128": "assets/icons/icon128.png"
+    },
+    "options_ui": {
+        "page": "options.html",
+        "open_in_tab": true
+    },
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "assets/icons/icon128.png"
+            ],
+            "matches": [
+                "https://*/*",
+                "http://*/*"
+            ],
+            "use_dynamic_url": false
+        }
+    ],
+    "commands": {
+        "_execute_action": {
+            "suggested_key": {
+                "default": "Ctrl+Shift+E",
+                "mac": "Command+Shift+E"
+            },
+            "description": "Open GhostFill"
+        },
+        "generate-email": {
+            "suggested_key": {
+                "default": "Ctrl+Shift+M",
+                "mac": "Command+Shift+M"
+            },
+            "description": "Generate new temp email"
+        },
+        "generate-password": {
+            "suggested_key": {
+                "default": "Ctrl+Shift+G",
+                "mac": "Command+Shift+G"
+            },
+            "description": "Generate new password"
+        },
+        "auto-fill": {
+            "suggested_key": {
+                "default": "Ctrl+Shift+F",
+                "mac": "Command+Shift+F"
+            },
+            "description": "Auto-fill current form"
+        }
+    },
+    "default_locale": "en",
+    "minimum_chrome_version": "88"
+}

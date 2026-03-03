@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GhostFill - Options</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 32px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        
+        .info-box {
+            background: #f0f4ff;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+        
+        .info-box h2 {
+            color: #667eea;
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+        
+        .info-box p {
+            color: #555;
+            line-height: 1.6;
+        }
+        
+        .feature-list {
+            list-style: none;
+            margin: 20px 0;
+        }
+        
+        .feature-list li {
+            padding: 10px 0;
+            padding-left: 30px;
+            position: relative;
+            color: #555;
+        }
+        
+        .feature-list li:before {
+            content: '✓';
+            position: absolute;
+            left: 0;
+            color: #10b981;
+            font-weight: bold;
+            font-size: 18px;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .shortcut-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .shortcut-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .shortcut-key {
+            background: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 2px solid #e0e0e0;
+            font-family: monospace;
+            font-size: 14px;
+            font-weight: bold;
+            display: inline-block;
+            margin: 5px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .shortcut-label {
+            display: block;
+            color: #666;
+            font-size: 13px;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>👻 GhostFill</h1>
+        <p class="subtitle">Privacy-Focused Auto-Fill Extension</p>
+        
+        <div class="info-box">
+            <h2>Welcome to GhostFill!</h2>
+            <p>GhostFill is your complete privacy suite for disposable emails, secure passwords, and automatic OTP detection.</p>
+            
+            <ul class="feature-list">
+                <li>Generate disposable email addresses instantly</li>
+                <li>Create strong, secure passwords</li>
+                <li>Auto-detect and fill OTP codes</li>
+                <li>Encrypted local storage</li>
+                <li>No cloud syncing - your data stays private</li>
+            </ul>
+        </div>
+        
+        <h2 style="color: #667eea; font-size: 20px; margin-bottom: 15px;">⌨️ Keyboard Shortcuts</h2>
+        <div class="shortcut-grid">
+            <div class="shortcut-item">
+                <span class="shortcut-key">Ctrl+Shift+E</span>
+                <span class="shortcut-label">Open GhostFill</span>
+            </div>
+            <div class="shortcut-item">
+                <span class="shortcut-key">Ctrl+Shift+M</span>
+                <span class="shortcut-label">Generate Email</span>
+            </div>
+            <div class="shortcut-item">
+                <span class="shortcut-key">Ctrl+Shift+G</span>
+                <span class="shortcut-label">Generate Password</span>
+            </div>
+            <div class="shortcut-item">
+                <span class="shortcut-key">Ctrl+Shift+F</span>
+                <span class="shortcut-label">Auto-Fill Form</span>
+            </div>
+        </div>
+        
+        <div style="margin-top: 30px; text-align: center;">
+            <button class="btn" onclick="window.close()">Close Options</button>
+        </div>
+        
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; text-align: center; color: #999; font-size: 13px;">
+            <p>GhostFill v1.0.19 • Your privacy is our priority</p>
+        </div>
+    </div>
+    
+    <script>
+        // Log options page load
+        console.log('[GhostFill] Options page loaded successfully');
+        
+        // Send message to background to verify connection
+        if (chrome.runtime) {
+            chrome.runtime.sendMessage({ action: 'OPTIONS_PAGE_LOADED' }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.warn('[GhostFill] Could not connect to background:', chrome.runtime.lastError.message);
+                } else {
+                    console.log('[GhostFill] Connected to background service worker');
+                }
+            });
+        }
+    </script>
+</body>
+</html>

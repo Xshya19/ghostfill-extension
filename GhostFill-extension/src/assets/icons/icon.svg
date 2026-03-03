@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <!-- Ghost Body Gradient -->
+    <radialGradient id="ghostGrad" cx="40%" cy="30%" r="60%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="60%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#d1d5db"/>
+    </radialGradient>
+    
+    <!-- Envelope Gradient -->
+    <linearGradient id="envGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+
+    <!-- Envoy Flap Gradient -->
+    <linearGradient id="envFlapGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#93c5fd"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
+    </linearGradient>
+
+    <!-- Padlock Gradient -->
+    <linearGradient id="lockGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f1f5f9"/>
+      <stop offset="100%" stop-color="#94a3b8"/>
+    </linearGradient>
+    
+    <!-- Lock Shackle Gradient -->
+    <linearGradient id="shackleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#cbd5e1"/>
+      <stop offset="50%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#94a3b8"/>
+    </linearGradient>
+
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="3" dy="8" stdDeviation="6" flood-color="#0f172a" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- GHOST BODY -->
+  <path d="M 256 50 
+           C 140 50, 90 150, 90 280 
+           C 90 400, 120 460, 160 440 
+           Q 190 425, 210 440 
+           C 230 460, 282 460, 302 440 
+           Q 322 425, 352 440 
+           C 392 460, 422 400, 422 280 
+           C 422 150, 372 50, 256 50 Z" 
+        fill="url(#ghostGrad)" filter="url(#glow)"/>
+
+  <!-- EYES -->
+  <!-- Left Eye -->
+  <ellipse cx="200" cy="190" rx="18" ry="28" fill="#1e293b"/>
+  <circle cx="206" cy="175" r="7" fill="#ffffff"/>
+  
+  <!-- Right Eye -->
+  <ellipse cx="312" cy="190" rx="18" ry="28" fill="#1e293b"/>
+  <circle cx="318" cy="175" r="7" fill="#ffffff"/>
+
+  <!-- MOUTH -->
+  <!-- Open mouth -->
+  <path d="M 230 225 C 230 265, 282 265, 282 225 Z" fill="#1e293b"/>
+  <!-- Tongue using a clipped circle to stay inside mouth -->
+  <g>
+    <clipPath id="mouthClip">
+      <path d="M 230 225 C 230 265, 282 265, 282 225 Z"/>
+    </clipPath>
+    <ellipse cx="256" cy="245" rx="16" ry="12" fill="#ef4444" clip-path="url(#mouthClip)"/>
+  </g>
+
+  <!-- LEFT HAND + ENVELOPE -->
+  <g transform="translate(60, 230) rotate(-12) scale(1.05)" filter="url(#shadow)">
+    <!-- Envelope Back -->
+    <rect x="0" y="0" width="130" height="90" rx="8" fill="#2563eb"/>
+    <!-- Paper inside -->
+    <rect x="15" y="-25" width="100" height="80" rx="4" fill="#ffffff"/>
+    <!-- Paper lines -->
+    <rect x="30" y="-10" width="60" height="6" rx="3" fill="#cbd5e1"/>
+    <rect x="30" y="5" width="70" height="6" rx="3" fill="#cbd5e1"/>
+    <rect x="30" y="20" width="40" height="6" rx="3" fill="#cbd5e1"/>
+    <!-- Flaps -->
+    <!-- Left Flap -->
+    <polygon points="0,0 65,45 0,90" fill="#3b82f6"/>
+    <!-- Right Flap -->
+    <polygon points="130,0 65,45 130,90" fill="#3b82f6"/>
+    <!-- Bottom Flap -->
+    <polygon points="0,90 65,50 130,90" fill="url(#envGrad)"/>
+    <polygon points="0,90 65,50 130,90" fill="url(#envFlapGrad)" opacity="0.6"/>
+  </g>
+  <!-- Left Thumb/Hand overlapping envelope -->
+  <ellipse cx="75" cy="300" rx="25" ry="15" transform="rotate(-15 75 300)" fill="url(#ghostGrad)" filter="url(#shadow)"/>
+
+
+  <!-- RIGHT HAND + PADLOCK -->
+  <g transform="translate(290, 220) rotate(12) scale(1.05)" filter="url(#shadow)">
+    <!-- Shackle -->
+    <path d="M 30 35 V 20 C 30 -5, 90 -5, 90 20 V 35" fill="none" stroke="url(#shackleGrad)" stroke-width="16" stroke-linecap="round"/>
+    <!-- Body -->
+    <rect x="10" y="35" width="100" height="80" rx="16" fill="url(#lockGrad)"/>
+    <!-- Keyhole -->
+    <circle cx="60" cy="65" r="9" fill="#1e293b"/>
+    <polygon points="55,70 51,92 69,92 65,70" fill="#1e293b"/>
+  </g>
+  <!-- Right Thumb/Hand overlapping padlock -->
+  <ellipse cx="435" cy="300" rx="25" ry="15" transform="rotate(15 435 300)" fill="url(#ghostGrad)" filter="url(#shadow)"/>
+
+</svg>

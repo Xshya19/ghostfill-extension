@@ -1,0 +1,201 @@
+#ghostfill-fab,
+#ghostfill-fab * {
+  all: initial;
+  box-sizing: border-box;
+  font-family:
+    "Inter",
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Display",
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   §2  D E S I G N   T O K E N S   ( c u s t o m   p r o p e r t i e s )
+   Tokens are safe here — they only cascade inside #ghostfill-fab and the
+   three highlight classes which intentionally target host-page elements.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+#ghostfill-fab {
+  /* ── Brand ── */
+  --gf-brand: #7c5cfc;
+  --gf-brand-rgb: 124, 92, 252;
+  --gf-brand-light: #a78bfa;
+  --gf-brand-glow: rgba(124, 92, 252, 0.28);
+
+  /* ── Semantic ── */
+  --gf-success: #22c55e;
+  --gf-success-rgb: 34, 197, 94;
+  --gf-success-glow: rgba(34, 197, 94, 0.28);
+  --gf-otp: #a855f7;
+  --gf-otp-rgb: 168, 85, 247;
+  --gf-otp-glow: rgba(168, 85, 247, 0.28);
+  --gf-error: #ef4444;
+  --gf-error-rgb: 239, 68, 68;
+
+  /* ── Highlight ring metrics ── */
+  --gf-ring-width: 2px;
+  --gf-ring-offset: 2px;
+  --gf-ring-radius: 8px;
+  /* softens field corners */
+  --gf-aura-spread: 6px;
+  /* outer glow size */
+  --gf-transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   §3  F I E L D   H I G H L I G H T   —   A C T I V E   S T A T E
+   Applied while GhostFill is scanning / about to fill a field.
+   Uses !important to reliably override host-page focus / border styles.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.ghostfill-highlight {
+  /* Multi-layer ring: hairline brand border + soft aura */
+  outline: var(--gf-ring-width, 2px) solid #7c5cfc !important;
+  outline-offset: var(--gf-ring-offset, 2px) !important;
+
+  box-shadow:
+    /* Inner halo — tight glow hugging the field */
+    0 0 0 var(--gf-aura-spread, 6px) rgba(124, 92, 252, 0.12),
+    /* Mid-range depth ring */
+    0 0 16px rgba(124, 92, 252, 0.18),
+    /* Far ambient bloom */
+    0 0 32px rgba(124, 92, 252, 0.08) !important;
+
+  /* Softly round sharp field corners without touching border-radius override */
+  border-radius: var(--gf-ring-radius, 8px) !important;
+
+  /* Smooth enter + exit */
+  transition: var(--gf-transition, all 0.35s cubic-bezier(0.16, 1, 0.3, 1)) !important;
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   §4  F I L L   S U C C E S S   —   V I S U A L   C O N F I R M A T I O N
+   Applied immediately after a field is filled. Pulses green then fades.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.ghostfill-success {
+  outline: var(--gf-ring-width, 2px) solid #22c55e !important;
+  outline-offset: var(--gf-ring-offset, 2px) !important;
+
+  box-shadow:
+    0 0 0 var(--gf-aura-spread, 6px) rgba(34, 197, 94, 0.14),
+    0 0 20px rgba(34, 197, 94, 0.22),
+    0 0 40px rgba(34, 197, 94, 0.08) !important;
+
+  border-radius: var(--gf-ring-radius, 8px) !important;
+  transition: var(--gf-transition) !important;
+
+  /* Spatial celebration pulse */
+  animation: gf-success-spatial 0.55s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+@keyframes gf-success-spatial {
+
+  /* Subtle 3-D press-and-spring micro-bounce */
+  0% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 0 rgba(34, 197, 94, 0),
+      0 0 0 rgba(34, 197, 94, 0);
+  }
+
+  30% {
+    transform: scale(1.012);
+    box-shadow:
+      0 0 0 8px rgba(34, 197, 94, 0.18),
+      0 0 28px rgba(34, 197, 94, 0.28);
+  }
+
+  65% {
+    transform: scale(0.996);
+  }
+
+  100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 var(--gf-aura-spread, 6px) rgba(34, 197, 94, 0.14),
+      0 0 20px rgba(34, 197, 94, 0.22),
+      0 0 40px rgba(34, 197, 94, 0.08);
+  }
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   §5  O T P   R E A D Y   —   P U R P L E   A M B I E N T   R I N G
+   Applied to OTP / verification-code fields when a code is available.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.ghostfill-otp-ready {
+  /* Thicker border signals urgency / time-sensitive code */
+  outline: calc(var(--gf-ring-width, 2px) + 1px) solid #a855f7 !important;
+  outline-offset: var(--gf-ring-offset, 2px) !important;
+
+  box-shadow:
+    0 0 0 var(--gf-aura-spread, 6px) rgba(168, 85, 247, 0.15),
+    0 0 20px rgba(168, 85, 247, 0.25),
+    0 0 48px rgba(168, 85, 247, 0.10) !important;
+
+  border-radius: var(--gf-ring-radius, 8px) !important;
+  transition: var(--gf-transition) !important;
+
+  /* Gentle breathing loop to signal "tap to autofill" */
+  animation: gf-otp-breathe 2.4s ease-in-out infinite !important;
+}
+
+@keyframes gf-otp-breathe {
+
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 4px rgba(168, 85, 247, 0.10),
+      0 0 16px rgba(168, 85, 247, 0.18),
+      0 0 36px rgba(168, 85, 247, 0.06);
+    outline-color: #a855f7;
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 8px rgba(168, 85, 247, 0.18),
+      0 0 28px rgba(168, 85, 247, 0.32),
+      0 0 56px rgba(168, 85, 247, 0.12);
+    outline-color: #c084fc;
+  }
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   §6  M O T I O N   S A F E G U A R D
+   Collapse all animations for users with vestibular / motion sensitivity.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+
+  .ghostfill-highlight,
+  .ghostfill-success,
+  .ghostfill-otp-ready {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  /* Still apply visual ring — just no movement */
+  .ghostfill-success {
+    box-shadow:
+      0 0 0 6px rgba(34, 197, 94, 0.18),
+      0 0 20px rgba(34, 197, 94, 0.22) !important;
+  }
+
+  .ghostfill-otp-ready {
+    box-shadow:
+      0 0 0 6px rgba(168, 85, 247, 0.15),
+      0 0 20px rgba(168, 85, 247, 0.25) !important;
+  }
+}

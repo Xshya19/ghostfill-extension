@@ -1,0 +1,10 @@
+{
+    "appName": {
+        "message": "AutoFill Pro",
+        "description": "The name of the extension"
+    },
+    "appDescription": {
+        "message": "Autocompletado inteligente para correos temporales, contraseñas seguras y detección automática de OTP.",
+        "description": "The description of the extension"
+    }
+}
