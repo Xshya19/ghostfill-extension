@@ -29,7 +29,6 @@ export { emailService } from './emailServices';
 export { passwordService } from './passwordService';
 export { otpService } from './otpService';
 export { storageService } from './storageService';
-export { cryptoService } from './cryptoService';
 export { clipboardService } from './clipboardService';
 export { linkService } from './linkService';
 export { identityService } from './identityService';
@@ -38,22 +37,18 @@ export { performanceService } from './performanceService';
 export { classifyWithGhostCore } from './ghostCore';
 
 // Re-export extraction module for external consumers (deprecated)
-export {
-    extractAll,
-    extractOTPStandalone,
-    extractLinkStandalone,
-} from './intelligentExtractor';
+export { extractAll, extractOTPStandalone, extractLinkStandalone } from './intelligentExtractor';
 
 // Re-export email service sub-components for advanced usage (deprecated)
 export {
-    providerHealth,
-    tempMailService,
-    mailTmService,
-    mailGwService,
-    dropMailService,
-    guerrillaMailService,
-    maildropService,
-    customDomainService,
+  providerHealth,
+  tempMailService,
+  mailTmService,
+  mailGwService,
+  dropMailService,
+  guerrillaMailService,
+  maildropService,
+  customDomainService,
 } from './emailServices';
 
 // Type exports (these are safe to re-export)

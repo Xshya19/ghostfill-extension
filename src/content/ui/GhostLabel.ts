@@ -10,6 +10,8 @@
 // §1  D E S I G N   T O K E N S   &   S T Y L E S
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { setHTML } from '../../utils/setHTML';
+
 const STYLES = `
 /* ═══════════════════════════════════════════════════
    GhostLabel 3.0 — Spatial Glass Inline Icon
@@ -406,7 +408,6 @@ const STYLES = `
 }
 `;
 
-
 // ─────────────────────────────────────────────────────────────────────────────
 // §2  I C O N   S V G   L I B R A R Y
 // ─────────────────────────────────────────────────────────────────────────────
@@ -414,8 +415,7 @@ const STYLES = `
 type FieldType = 'email' | 'password' | 'otp' | 'user' | 'generic';
 
 class GhostLabelIcons {
-
-    static readonly GHOST = `
+  static readonly GHOST = `
     <svg class="ghost-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <defs><linearGradient id="glGG" x1="0%" y1="0%" x2="100%" y2="100%">
         <stop offset="0%" stop-color="#7c5cfc"/><stop offset="100%" stop-color="#a78bfa"/>
@@ -426,7 +426,7 @@ class GhostLabelIcons {
       <circle cx="15" cy="10" r="1.5" fill="white"/>
     </svg>`;
 
-    static readonly EMAIL = `
+  static readonly EMAIL = `
     <svg class="ghost-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <defs><linearGradient id="glEG" x1="0%" y1="0%" x2="100%" y2="100%">
         <stop offset="0%" stop-color="#3b82f6"/><stop offset="100%" stop-color="#1d4ed8"/>
@@ -435,7 +435,7 @@ class GhostLabelIcons {
       <path d="M3 8l9 5 9-5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
     </svg>`;
 
-    static readonly PASSWORD = `
+  static readonly PASSWORD = `
     <svg class="ghost-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <defs><linearGradient id="glKG" x1="0%" y1="0%" x2="100%" y2="100%">
         <stop offset="0%" stop-color="#38bdf8"/><stop offset="50%" stop-color="#3b82f6"/>
@@ -447,7 +447,7 @@ class GhostLabelIcons {
       <circle cx="8" cy="15" r="2" fill="white" fill-opacity="0.35"/>
     </svg>`;
 
-    static readonly OTP = `
+  static readonly OTP = `
     <svg class="ghost-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <defs><linearGradient id="glOG" x1="0%" y1="0%" x2="100%" y2="100%">
         <stop offset="0%" stop-color="#a855f7"/><stop offset="100%" stop-color="#7c3aed"/>
@@ -458,7 +458,7 @@ class GhostLabelIcons {
       <circle cx="12" cy="16" r="1.5" fill="white"/>
     </svg>`;
 
-    static readonly USER = `
+  static readonly USER = `
     <svg class="ghost-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <defs><linearGradient id="glUG" x1="0%" y1="0%" x2="100%" y2="100%">
         <stop offset="0%" stop-color="#a855f7"/><stop offset="100%" stop-color="#7c3aed"/>
@@ -467,225 +467,300 @@ class GhostLabelIcons {
       <path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8" fill="url(#glUG)"/>
     </svg>`;
 
-    static readonly SUCCESS = `
+  static readonly SUCCESS = `
     <svg class="gl-success-icon ghost-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <circle cx="12" cy="12" r="10" fill="#22c55e"/>
       <path d="M8 12.5l2.5 2.5 5-5" stroke="white" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round"/>
     </svg>`;
 
-    static readonly ERROR = `
+  static readonly ERROR = `
     <svg class="ghost-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <circle cx="12" cy="12" r="10" fill="#ef4444"/>
       <path d="M15 9l-6 6M9 9l6 6" stroke="white" stroke-width="2"
             stroke-linecap="round"/>
     </svg>`;
 
-    static readonly SPINNER = `<div class="gl-spinner" role="status" aria-label="Loading"></div>`;
+  static readonly SPINNER = `<div class="gl-spinner" role="status" aria-label="Loading"></div>`;
 
-    static forFieldType(fieldType: FieldType): string {
-        switch (fieldType) {
-            case 'email': return this.EMAIL;
-            case 'password': return this.PASSWORD;
-            case 'otp': return this.OTP;
-            case 'user': return this.USER;
-            default: return this.GHOST;
-        }
+  static forFieldType(fieldType: FieldType): string {
+    switch (fieldType) {
+      case 'email':
+        return this.EMAIL;
+      case 'password':
+        return this.PASSWORD;
+      case 'otp':
+        return this.OTP;
+      case 'user':
+        return this.USER;
+      default:
+        return this.GHOST;
     }
+  }
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // §3  F I E L D   I N T E L L I G E N C E
 // ─────────────────────────────────────────────────────────────────────────────
 
 class FieldIntelligence {
+  /**
+   * Classify what kind of field this input is.
+   */
+  static classify(input: HTMLInputElement): FieldType {
+    const type = (input.type || '').toLowerCase();
+    const name = (input.name || '').toLowerCase();
+    const id = (input.id || '').toLowerCase();
+    const placeholder = (input.placeholder || '').toLowerCase();
+    const autocomplete = (input.autocomplete || '').toLowerCase();
+    const ariaLabel = (input.getAttribute('aria-label') || '').toLowerCase();
+    const label = this.findLabel(input).toLowerCase();
+    const combined = `${type} ${name} ${id} ${placeholder} ${autocomplete} ${ariaLabel} ${label}`;
+    const nameId = name + id;
 
-    /**
-     * Classify what kind of field this input is.
-     */
-    static classify(input: HTMLInputElement): FieldType {
-        const type = (input.type || '').toLowerCase();
-        const name = (input.name || '').toLowerCase();
-        const id = (input.id || '').toLowerCase();
-        const placeholder = (input.placeholder || '').toLowerCase();
-        const autocomplete = (input.autocomplete || '').toLowerCase();
-        const ariaLabel = (input.getAttribute('aria-label') || '').toLowerCase();
-        const label = this.findLabel(input).toLowerCase();
-        const combined = `${type} ${name} ${id} ${placeholder} ${autocomplete} ${ariaLabel} ${label}`;
-        const nameId = name + id;
-
-        // OTP / verification code
-        if (autocomplete === 'one-time-code') return 'otp';
-        if (/otp|one[-_]?time|verification[-_]?code|passcode|security[-_]?code/.test(combined)) return 'otp';
-        if (/^(code|pin|token)$/.test(name) || /^(code|pin|token)$/.test(id)) return 'otp';
-        if (input.inputMode === 'numeric' && input.maxLength >= 4 && input.maxLength <= 8) return 'otp';
-
-        // Email
-        if (type === 'email') return 'email';
-        if (/e[-_]?mail/.test(nameId)) return 'email';
-        if (/@/.test(placeholder)) return 'email';
-        if (autocomplete === 'username') return 'email';
-        if (/user[-_]?name|login[-_]?name|login[-_]?id/.test(nameId)) return 'email';
-
-        // Password — check AFTER OTP/email so `type="password"` always wins
-        if (type === 'password') return 'password';
-        if (/password|passwd|pwd/.test(nameId)) return 'password';
-        // Also catch label/aria signals for password (e.g. React Aria wrapping)
-        if (/password|passwd/.test(combined)) return 'password';
-
-        // Name / user
-        if (/first[-_]?name|last[-_]?name|full[-_]?name|given[-_]?name|family[-_]?name|surname|display[-_]?name/.test(nameId)) return 'user';
-        if (/name/.test(nameId) && !/user/.test(nameId)) return 'user';
-
-        return 'generic';
+    // OTP / verification code
+    if (autocomplete === 'one-time-code') {
+      return 'otp';
+    }
+    if (/otp|one[-_]?time|verification[-_]?code|passcode|security[-_]?code/.test(combined)) {
+      return 'otp';
+    }
+    if (/^(code|pin|token)$/.test(name) || /^(code|pin|token)$/.test(id)) {
+      return 'otp';
+    }
+    if (input.inputMode === 'numeric' && input.maxLength >= 4 && input.maxLength <= 8) {
+      return 'otp';
     }
 
-    /**
-     * Generate a contextual tooltip based on field type.
-     */
-    static tooltip(fieldType: FieldType): string {
-        const tips: Record<FieldType, string> = {
-            email: 'Fill email',
-            password: 'Fill password',
-            otp: 'Paste code',
-            user: 'Fill name',
-            generic: 'GhostFill',
-        };
-        return tips[fieldType] ?? tips.generic;
+    // Email
+    if (type === 'email') {
+      return 'email';
+    }
+    if (/e[-_]?mail/.test(nameId)) {
+      return 'email';
+    }
+    if (/@/.test(placeholder)) {
+      return 'email';
+    }
+    if (autocomplete === 'username') {
+      return 'email';
+    }
+    if (/user[-_]?name|login[-_]?name|login[-_]?id/.test(nameId)) {
+      return 'email';
     }
 
-    /**
-     * Determine if this input should get a GhostLabel.
-     */
-    static shouldDecorate(input: HTMLInputElement): boolean {
-        const excludedTypes = new Set([
-            'hidden', 'submit', 'button', 'reset', 'checkbox',
-            'radio', 'file', 'image', 'range', 'color', 'search',
-        ]);
-
-        if (excludedTypes.has(input.type)) return false;
-
-        const name = (input.name || input.id || input.placeholder || '').toLowerCase();
-        if (/search|query|q$|filter|find/.test(name)) return false;
-
-        // Individual OTP digit boxes handled separately
-        if (input.maxLength === 1) return false;
-
-        if (input.disabled || input.readOnly) return false;
-
-        const rect = input.getBoundingClientRect();
-        if (rect.width < 30 || rect.height < 15) return false;
-
-        const style = window.getComputedStyle(input);
-        if (style.display === 'none' || style.visibility === 'hidden') return false;
-
-        return true;
+    // Password — check AFTER OTP/email so `type="password"` always wins
+    if (type === 'password') {
+      return 'password';
+    }
+    if (/password|passwd|pwd/.test(nameId)) {
+      return 'password';
+    }
+    // Also catch label/aria signals for password (e.g. React Aria wrapping)
+    if (/password|passwd/.test(combined)) {
+      return 'password';
     }
 
-    /**
-     * Find the associated label text for an input.
-     * Handles: explicit <label for>, ancestor <label>, aria-labelledby, aria-label.
-     */
-    private static findLabel(input: HTMLInputElement): string {
-        // Explicit <label for="...">
-        if (input.id) {
-            try {
-                const label = document.querySelector<HTMLLabelElement>(`label[for="${CSS.escape(input.id)}"]`);
-                if (label) return label.textContent?.trim() || '';
-            } catch { /* skip if id is not a valid CSS selector */ }
+    // Name / user
+    if (
+      /first[-_]?name|last[-_]?name|full[-_]?name|given[-_]?name|family[-_]?name|surname|display[-_]?name/.test(
+        nameId
+      )
+    ) {
+      return 'user';
+    }
+    if (/name/.test(nameId) && !/user/.test(nameId)) {
+      return 'user';
+    }
+
+    return 'generic';
+  }
+
+  /**
+   * Generate a contextual tooltip based on field type.
+   */
+  static tooltip(fieldType: FieldType): string {
+    const tips: Record<FieldType, string> = {
+      email: 'Fill email',
+      password: 'Fill password',
+      otp: 'Paste code',
+      user: 'Fill name',
+      generic: 'GhostFill',
+    };
+    return tips[fieldType] ?? tips.generic;
+  }
+
+  /**
+   * Determine if this input should get a GhostLabel.
+   */
+  static shouldDecorate(input: HTMLInputElement): boolean {
+    const excludedTypes = new Set([
+      'hidden',
+      'submit',
+      'button',
+      'reset',
+      'checkbox',
+      'radio',
+      'file',
+      'image',
+      'range',
+      'color',
+      'search',
+    ]);
+
+    if (excludedTypes.has(input.type)) {
+      return false;
+    }
+
+    const name = (input.name || input.id || input.placeholder || '').toLowerCase();
+    if (/search|query|q$|filter|find/.test(name)) {
+      return false;
+    }
+
+    // Individual OTP digit boxes handled separately
+    if (input.maxLength === 1) {
+      return false;
+    }
+
+    if (input.disabled || input.readOnly) {
+      return false;
+    }
+
+    const rect = input.getBoundingClientRect();
+    if (rect.width < 30 || rect.height < 15) {
+      return false;
+    }
+
+    const style = window.getComputedStyle(input);
+    if (style.display === 'none' || style.visibility === 'hidden') {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Find the associated label text for an input.
+   * Handles: explicit <label for>, ancestor <label>, aria-labelledby, aria-label.
+   */
+  private static findLabel(input: HTMLInputElement): string {
+    // Explicit <label for="...">
+    if (input.id) {
+      try {
+        const label = document.querySelector<HTMLLabelElement>(
+          `label[for="${CSS.escape(input.id)}"]`
+        );
+        if (label) {
+          return label.textContent?.trim() || '';
         }
-
-        // aria-labelledby (important for React Aria / Headless UI patterns)
-        const labelledBy = input.getAttribute('aria-labelledby');
-        if (labelledBy) {
-            const parts = labelledBy.split(/\s+/).map(id => {
-                try { return document.getElementById(id)?.textContent?.trim() || ''; } catch { return ''; }
-            });
-            const text = parts.filter(Boolean).join(' ');
-            if (text) return text;
-        }
-
-        // Ancestor <label>
-        const parent = input.closest('label');
-        if (parent) return parent.textContent?.trim() || '';
-
-        // aria-label attribute
-        return input.getAttribute('aria-label') || '';
+      } catch {
+        /* skip if id is not a valid CSS selector */
+      }
     }
+
+    // aria-labelledby (important for React Aria / Headless UI patterns)
+    const labelledBy = input.getAttribute('aria-labelledby');
+    if (labelledBy) {
+      const parts = labelledBy.split(/\s+/).map((id) => {
+        try {
+          return document.getElementById(id)?.textContent?.trim() || '';
+        } catch {
+          return '';
+        }
+      });
+      const text = parts.filter(Boolean).join(' ');
+      if (text) {
+        return text;
+      }
+    }
+
+    // Ancestor <label>
+    const parent = input.closest('label');
+    if (parent) {
+      return parent.textContent?.trim() || '';
+    }
+
+    // aria-label attribute
+    return input.getAttribute('aria-label') || '';
+  }
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // §4  S M A R T   P O S I T I O N   E N G I N E
 // ─────────────────────────────────────────────────────────────────────────────
 
 class PositionEngine {
+  private static readonly ICON_SIZE = 28;
+  private static readonly INSET = 6; // px from field's inner right edge
+  private static readonly MIN_FIELD_W = 50; // don't show if field is too narrow
 
-    private static readonly ICON_SIZE = 28;
-    private static readonly INSET = 6;   // px from field's inner right edge
-    private static readonly MIN_FIELD_W = 50;  // don't show if field is too narrow
+  /**
+   * Calculate absolute page coordinates to position the GhostLabel
+   * inside the input field, right-aligned, vertically centred.
+   */
+  static calculate(input: HTMLInputElement): { top: number; left: number; visible: boolean } {
+    const rect = input.getBoundingClientRect();
+    const style = window.getComputedStyle(input);
 
-    /**
-     * Calculate absolute page coordinates to position the GhostLabel
-     * inside the input field, right-aligned, vertically centred.
-     */
-    static calculate(input: HTMLInputElement): { top: number; left: number; visible: boolean } {
-        const rect = input.getBoundingClientRect();
-        const style = window.getComputedStyle(input);
-
-        // Visibility gate — do NOT check opacity so React Aria hidden inputs still work
-        if (
-            rect.width === 0 || rect.height === 0 ||
-            style.display === 'none' || style.visibility === 'hidden'
-        ) {
-            return { top: 0, left: 0, visible: false };
-        }
-
-        // Field too narrow
-        if (rect.width < this.MIN_FIELD_W) {
-            return { top: 0, left: 0, visible: false };
-        }
-
-        // Off-screen check
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
-        if (rect.bottom < 0 || rect.top > vh || rect.right < 0 || rect.left > vw) {
-            return { top: 0, left: 0, visible: false };
-        }
-
-        const scrollX = window.scrollX || window.pageXOffset;
-        const scrollY = window.scrollY || window.pageYOffset;
-
-        // Account for field padding on the right to stay inside the "content" area
-        const paddingRight = parseFloat(style.paddingRight) || 0;
-        const borderRight = parseFloat(style.borderRightWidth) || 0;
-
-        // Place icon inside the field, inset from the right
-        const left = rect.right + scrollX - this.ICON_SIZE - this.INSET - paddingRight - borderRight;
-        const top = rect.top + scrollY + (rect.height - this.ICON_SIZE) / 2;
-
-        return { top, left, visible: true };
+    // Visibility gate — do NOT check opacity so React Aria hidden inputs still work
+    if (
+      rect.width === 0 ||
+      rect.height === 0 ||
+      style.display === 'none' ||
+      style.visibility === 'hidden'
+    ) {
+      return { top: 0, left: 0, visible: false };
     }
 
-    /**
-     * Check if the input's value is obscuring where the icon would sit.
-     * If text is long enough to reach under the icon, nudge opacity.
-     */
-    static isTextOverlapping(input: HTMLInputElement): boolean {
-        if (!input.value) return false;
-        if (input.type === 'password') return false; // password dots are narrow
-
-        const style = window.getComputedStyle(input);
-        const fontSize = parseFloat(style.fontSize) || 14;
-        const fieldWidth = input.getBoundingClientRect().width;
-        const approxCharWidth = fontSize * 0.6;
-        const maxCharsBeforeOverlap = Math.floor((fieldWidth - this.ICON_SIZE - this.INSET * 2) / approxCharWidth);
-
-        return input.value.length > maxCharsBeforeOverlap;
+    // Field too narrow
+    if (rect.width < this.MIN_FIELD_W) {
+      return { top: 0, left: 0, visible: false };
     }
+
+    // Off-screen check
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    if (rect.bottom < 0 || rect.top > vh || rect.right < 0 || rect.left > vw) {
+      return { top: 0, left: 0, visible: false };
+    }
+
+    const scrollX = window.scrollX || window.pageXOffset;
+    const scrollY = window.scrollY || window.pageYOffset;
+
+    // Account for field padding on the right to stay inside the "content" area
+    const paddingRight = parseFloat(style.paddingRight) || 0;
+    const borderRight = parseFloat(style.borderRightWidth) || 0;
+
+    // Place icon inside the field, inset from the right
+    const left = rect.right + scrollX - this.ICON_SIZE - this.INSET - paddingRight - borderRight;
+    const top = rect.top + scrollY + (rect.height - this.ICON_SIZE) / 2;
+
+    return { top, left, visible: true };
+  }
+
+  /**
+   * Check if the input's value is obscuring where the icon would sit.
+   * If text is long enough to reach under the icon, nudge opacity.
+   */
+  static isTextOverlapping(input: HTMLInputElement): boolean {
+    if (!input.value) {
+      return false;
+    }
+    if (input.type === 'password') {
+      return false;
+    } // password dots are narrow
+
+    const style = window.getComputedStyle(input);
+    const fontSize = parseFloat(style.fontSize) || 14;
+    const fieldWidth = input.getBoundingClientRect().width;
+    const approxCharWidth = fontSize * 0.6;
+    const maxCharsBeforeOverlap = Math.floor(
+      (fieldWidth - this.ICON_SIZE - this.INSET * 2) / approxCharWidth
+    );
+
+    return input.value.length > maxCharsBeforeOverlap;
+  }
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // §5  G H O S T   L A B E L   W E B   C O M P O N E N T
@@ -695,363 +770,374 @@ type LabelState = 'idle' | 'loading' | 'success' | 'error' | 'otp-ready';
 
 // Export the interface so autoFiller.ts can type-check
 export interface GhostLabelElement extends HTMLElement {
-    attachToAttribute(input: HTMLInputElement, onClick: () => void): void;
-    setState(state: LabelState, autoResetMs?: number): void;
-    getFieldType(): FieldType;
-    animateExit(): void;
+  attachToAttribute(input: HTMLInputElement, onClick: () => void): void;
+  setState(state: LabelState, autoResetMs?: number): void;
+  getFieldType(): FieldType;
+  animateExit(): void;
 }
 
 export class GhostLabel extends HTMLElement implements GhostLabelElement {
+  // ── DOM ──────────────────────────────────────────────────
+  private root: ShadowRoot;
+  private container: HTMLElement | null = null;
+  private tooltipEl: HTMLElement | null = null;
 
-    // ── DOM ──────────────────────────────────────────────────
-    private root: ShadowRoot;
-    private container: HTMLElement | null = null;
-    private tooltipEl: HTMLElement | null = null;
+  // ── State ────────────────────────────────────────────────
+  private inputElement: HTMLInputElement | null = null;
+  private fieldType: FieldType = 'generic';
+  private currentState: LabelState = 'idle';
+  private isAttached = false;
 
-    // ── State ────────────────────────────────────────────────
-    private inputElement: HTMLInputElement | null = null;
-    private fieldType: FieldType = 'generic';
-    private currentState: LabelState = 'idle';
-    private isAttached = false;
+  // ── Observers & timers ───────────────────────────────────
+  private resizeObserver: ResizeObserver | null = null;
+  private intersectionObserver: IntersectionObserver | null = null;
+  private inputObserver: MutationObserver | null = null;
+  private positionRafId: number | null = null;
+  private stateResetTimer: ReturnType<typeof setTimeout> | null = null;
 
-    // ── Observers & timers ───────────────────────────────────
-    private resizeObserver: ResizeObserver | null = null;
-    private intersectionObserver: IntersectionObserver | null = null;
-    private inputObserver: MutationObserver | null = null;
-    private positionRafId: number | null = null;
-    private stateResetTimer: ReturnType<typeof setTimeout> | null = null;
+  // ── Bound methods ────────────────────────────────────────
+  private _onScroll: () => void;
+  private _onInputChange: () => void;
 
-    // ── Bound methods ────────────────────────────────────────
-    private _onScroll: () => void;
-    private _onResize: () => void;
-    private _onInputChange: () => void;
+  constructor() {
+    super();
+    this.root = this.attachShadow({ mode: 'open' });
 
-    constructor() {
-        super();
-        this.root = this.attachShadow({ mode: 'open' });
+    // Pre-bind for efficient listener add/remove
+    this._onScroll = this.schedulePositionUpdate.bind(this);
+    this._onInputChange = this.handleInputValueChange.bind(this);
+  }
 
-        // Pre-bind for efficient listener add/remove
-        this._onScroll = this.schedulePositionUpdate.bind(this);
-        this._onResize = this.schedulePositionUpdate.bind(this);
-        this._onInputChange = this.handleInputValueChange.bind(this);
+  // ═══════════════════════════════════════════════════════════
+  //  LIFECYCLE
+  // ═══════════════════════════════════════════════════════════
+
+  connectedCallback(): void {
+    this.render();
+
+    // Entry animation
+    this.classList.add('gl-entering');
+    requestAnimationFrame(() => {
+      setTimeout(() => this.classList.remove('gl-entering'), 350);
+    });
+
+    this.updatePosition();
+  }
+
+  disconnectedCallback(): void {
+    this.cleanup();
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  PUBLIC API
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * Attach this label to an input element with a click handler.
+   */
+  attachToAttribute(input: HTMLInputElement, onClick: () => void): void {
+    if (this.isAttached) {
+      return;
     }
+    this.isAttached = true;
+    this.inputElement = input;
+    this.fieldType = FieldIntelligence.classify(input);
 
+    // Set appropriate icon based on field type
+    this.updateIcon();
+    this.updateTooltip();
 
-    // ═══════════════════════════════════════════════════════════
-    //  LIFECYCLE
-    // ═══════════════════════════════════════════════════════════
+    // ── Click handler ─────────────────────────────────────
+    this.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (this.currentState === 'loading') {
+        return;
+      }
+      onClick();
+    });
 
-    connectedCallback(): void {
-        this.render();
+    // Keyboard support
+    this.setAttribute('tabindex', '0');
+    this.setAttribute('role', 'button');
+    this.setAttribute('aria-label', FieldIntelligence.tooltip(this.fieldType));
 
-        // Entry animation
-        this.classList.add('gl-entering');
-        requestAnimationFrame(() => {
-            setTimeout(() => this.classList.remove('gl-entering'), 350);
-        });
-
-        this.updatePosition();
-    }
-
-    disconnectedCallback(): void {
-        this.cleanup();
-    }
-
-
-    // ═══════════════════════════════════════════════════════════
-    //  PUBLIC API
-    // ═══════════════════════════════════════════════════════════
-
-    /**
-     * Attach this label to an input element with a click handler.
-     */
-    attachToAttribute(input: HTMLInputElement, onClick: () => void): void {
-        if (this.isAttached) return;
-        this.isAttached = true;
-        this.inputElement = input;
-        this.fieldType = FieldIntelligence.classify(input);
-
-        // Set appropriate icon based on field type
-        this.updateIcon();
-        this.updateTooltip();
-
-        // ── Click handler ─────────────────────────────────────
-        this.addEventListener('click', (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            if (this.currentState === 'loading') return;
-            onClick();
-        });
-
-        // Keyboard support
-        this.setAttribute('tabindex', '0');
-        this.setAttribute('role', 'button');
-        this.setAttribute('aria-label', FieldIntelligence.tooltip(this.fieldType));
-
-        this.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                if (this.currentState !== 'loading') onClick();
-            }
-        });
-
-        // ── Observers ─────────────────────────────────────────
-
-        // Resize observer on the input
-        this.resizeObserver = new ResizeObserver(() => this.schedulePositionUpdate());
-        this.resizeObserver.observe(input);
-
-        // Intersection observer — only update when input is visible in viewport
-        this.intersectionObserver = new IntersectionObserver(
-            (entries) => {
-                const entry = entries[0];
-                const visible = entry?.isIntersecting ?? true;
-                if (visible) {
-                    this.style.display = 'block';
-                    this.schedulePositionUpdate();
-                } else {
-                    this.style.display = 'none';
-                }
-            },
-            { threshold: 0.1 },
-        );
-        this.intersectionObserver.observe(input);
-
-        // Mutation observer on the input — detect type/disabled/style changes
-        this.inputObserver = new MutationObserver(() => {
-            if (!FieldIntelligence.shouldDecorate(input)) {
-                this.animateExit();
-            } else {
-                const newType = FieldIntelligence.classify(input);
-                if (newType !== this.fieldType) {
-                    this.fieldType = newType;
-                    this.updateIcon();
-                    this.updateTooltip();
-                }
-                this.schedulePositionUpdate();
-            }
-        });
-        this.inputObserver.observe(input, {
-            attributes: true,
-            attributeFilter: ['type', 'disabled', 'readonly', 'style', 'class', 'hidden'],
-        });
-
-        // Listen for value changes to adjust opacity
-        input.addEventListener('input', this._onInputChange);
-
-        // Window listeners
-        window.addEventListener('resize', this._onResize, { passive: true });
-        window.addEventListener('scroll', this._onScroll, { capture: true, passive: true });
-
-        // Initial position
-        this.updatePosition();
-    }
-
-    /**
-     * Set visual state (loading / success / error / otp-ready / idle).
-     */
-    setState(state: LabelState, autoResetMs?: number): void {
-        if (this.currentState === state) return;
-        this.currentState = state;
-
-        if (this.stateResetTimer) {
-            clearTimeout(this.stateResetTimer);
-            this.stateResetTimer = null;
+    this.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if (this.currentState !== 'loading') {
+          onClick();
         }
+      }
+    });
 
-        if (!this.container) return;
+    // ── Observers ─────────────────────────────────────────
 
-        // Clear previous state classes
-        this.container.classList.remove('gl-loading', 'gl-success', 'gl-error', 'gl-otp-ready');
+    // Resize observer on the input
+    this.resizeObserver = new ResizeObserver(() => this.schedulePositionUpdate());
+    this.resizeObserver.observe(input);
 
-        switch (state) {
-            case 'loading':
-                this.container.classList.add('gl-loading');
-                this.container.innerHTML = GhostLabelIcons.SPINNER;
-                break;
-
-            case 'success':
-                this.container.classList.add('gl-success');
-                this.container.innerHTML = GhostLabelIcons.SUCCESS;
-                break;
-
-            case 'error':
-                this.container.classList.add('gl-error');
-                this.container.innerHTML = GhostLabelIcons.ERROR;
-                break;
-
-            case 'otp-ready':
-                this.container.classList.add('gl-otp-ready');
-                this.container.innerHTML = GhostLabelIcons.OTP;
-                break;
-
-            case 'idle':
-            default:
-                this.updateIcon();
-                break;
-        }
-
-        // Auto-reset to idle
-        if (autoResetMs && state !== 'idle') {
-            this.stateResetTimer = setTimeout(() => {
-                this.setState('idle');
-            }, autoResetMs);
-        }
-    }
-
-    /**
-     * Get the detected field type.
-     */
-    getFieldType(): FieldType {
-        return this.fieldType;
-    }
-
-    /**
-     * Trigger graceful exit animation then remove from DOM.
-     */
-    animateExit(): void {
-        this.classList.add('gl-exiting');
-        setTimeout(() => this.remove(), 200);
-    }
-
-
-    // ═══════════════════════════════════════════════════════════
-    //  RENDERING
-    // ═══════════════════════════════════════════════════════════
-
-    private render(): void {
-        // Apply styles via adoptedStyleSheets where possible (CSP-safe)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if ('adoptedStyleSheets' in (document as any)) {
-            const sheet = new CSSStyleSheet();
-            sheet.replaceSync(STYLES);
-            this.root.adoptedStyleSheets = [sheet];
+    // Intersection observer — only update when input is visible in viewport
+    this.intersectionObserver = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        const visible = entry?.isIntersecting ?? true;
+        if (visible) {
+          this.style.display = 'block';
+          this.schedulePositionUpdate();
         } else {
-            const style = document.createElement('style');
-            style.textContent = STYLES;
-            this.root.appendChild(style);
+          this.style.display = 'none';
         }
+      },
+      { threshold: 0.1 }
+    );
+    this.intersectionObserver.observe(input);
 
-        // Container
-        this.container = document.createElement('div');
-        this.container.className = 'ghost-icon-container';
-        this.container.innerHTML = GhostLabelIcons.GHOST;
-        this.root.appendChild(this.container);
+    // Mutation observer on the input — detect type/disabled/style changes
+    this.inputObserver = new MutationObserver(() => {
+      if (!FieldIntelligence.shouldDecorate(input)) {
+        this.animateExit();
+      } else {
+        const newType = FieldIntelligence.classify(input);
+        if (newType !== this.fieldType) {
+          this.fieldType = newType;
+          this.updateIcon();
+          this.updateTooltip();
+        }
+        this.schedulePositionUpdate();
+      }
+    });
+    this.inputObserver.observe(input, {
+      attributes: true,
+      attributeFilter: ['type', 'disabled', 'readonly', 'style', 'class', 'hidden'],
+    });
 
-        // Tooltip
-        this.tooltipEl = document.createElement('div');
-        this.tooltipEl.className = 'gl-tooltip';
-        this.tooltipEl.textContent = 'GhostFill';
-        this.root.appendChild(this.tooltipEl);
+    // Listen for value changes to adjust opacity
+    input.addEventListener('input', this._onInputChange);
+
+    // Window listeners
+    window.addEventListener('scroll', this._onScroll, { capture: true, passive: true });
+
+    // Initial position
+    this.updatePosition();
+  }
+
+  /**
+   * Set visual state (loading / success / error / otp-ready / idle).
+   */
+  setState(state: LabelState, autoResetMs?: number): void {
+    if (this.currentState === state) {
+      return;
+    }
+    this.currentState = state;
+
+    if (this.stateResetTimer) {
+      clearTimeout(this.stateResetTimer);
+      this.stateResetTimer = null;
     }
 
-    private updateIcon(): void {
-        if (!this.container || this.currentState !== 'idle') return;
-        this.container.innerHTML = GhostLabelIcons.forFieldType(this.fieldType);
+    if (!this.container) {
+      return;
     }
 
-    private updateTooltip(): void {
-        if (!this.tooltipEl) return;
-        this.tooltipEl.textContent = FieldIntelligence.tooltip(this.fieldType);
-        this.setAttribute('aria-label', FieldIntelligence.tooltip(this.fieldType));
+    // Clear previous state classes
+    this.container.classList.remove('gl-loading', 'gl-success', 'gl-error', 'gl-otp-ready');
+
+    switch (state) {
+      case 'loading':
+        this.container.classList.add('gl-loading');
+        setHTML(this.container, GhostLabelIcons.SPINNER);
+        break;
+
+      case 'success':
+        this.container.classList.add('gl-success');
+        setHTML(this.container, GhostLabelIcons.SUCCESS);
+        break;
+
+      case 'error':
+        this.container.classList.add('gl-error');
+        setHTML(this.container, GhostLabelIcons.ERROR);
+        break;
+
+      case 'otp-ready':
+        this.container.classList.add('gl-otp-ready');
+        setHTML(this.container, GhostLabelIcons.OTP);
+        break;
+
+      case 'idle':
+      default:
+        this.updateIcon();
+        break;
     }
 
+    // Auto-reset to idle
+    if (autoResetMs && state !== 'idle') {
+      this.stateResetTimer = setTimeout(() => {
+        this.setState('idle');
+      }, autoResetMs);
+    }
+  }
 
-    // ═══════════════════════════════════════════════════════════
-    //  POSITIONING
-    // ═══════════════════════════════════════════════════════════
+  /**
+   * Get the detected field type.
+   */
+  getFieldType(): FieldType {
+    return this.fieldType;
+  }
 
-    private schedulePositionUpdate(): void {
-        if (this.positionRafId) return;
-        this.positionRafId = requestAnimationFrame(() => {
-            this.positionRafId = null;
-            this.updatePosition();
-        });
+  /**
+   * Trigger graceful exit animation then remove from DOM.
+   */
+  animateExit(): void {
+    this.classList.add('gl-exiting');
+    setTimeout(() => this.remove(), 200);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  RENDERING
+  // ═══════════════════════════════════════════════════════════
+
+  private render(): void {
+    // Apply styles via adoptedStyleSheets where possible (CSP-safe)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ('adoptedStyleSheets' in (document as any)) {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(STYLES);
+      this.root.adoptedStyleSheets = [sheet];
+    } else {
+      const style = document.createElement('style');
+      style.textContent = STYLES;
+      this.root.appendChild(style);
     }
 
-    private updatePosition(): void {
-        if (!this.inputElement) return;
+    // Container
+    this.container = document.createElement('div');
+    this.container.className = 'ghost-icon-container';
+    setHTML(this.container, GhostLabelIcons.GHOST);
+    this.root.appendChild(this.container);
 
-        const pos = PositionEngine.calculate(this.inputElement);
+    // Tooltip
+    this.tooltipEl = document.createElement('div');
+    this.tooltipEl.className = 'gl-tooltip';
+    this.tooltipEl.textContent = 'GhostFill';
+    this.root.appendChild(this.tooltipEl);
+  }
 
-        if (!pos.visible) {
-            this.style.display = 'none';
-            return;
-        }
+  private updateIcon(): void {
+    if (!this.container || this.currentState !== 'idle') {
+      return;
+    }
+    setHTML(this.container, GhostLabelIcons.forFieldType(this.fieldType));
+  }
 
-        this.style.display = 'block';
-        this.style.top = `${pos.top}px`;
-        this.style.left = `${pos.left}px`;
+  private updateTooltip(): void {
+    if (!this.tooltipEl) {
+      return;
+    }
+    this.tooltipEl.textContent = FieldIntelligence.tooltip(this.fieldType);
+    this.setAttribute('aria-label', FieldIntelligence.tooltip(this.fieldType));
+  }
 
-        // Adjust opacity if user's text would overlap the icon
-        if (this.container && this.currentState === 'idle') {
-            const overlapping = PositionEngine.isTextOverlapping(this.inputElement);
-            this.container.style.opacity = overlapping ? '0.25' : '';
-        }
+  // ═══════════════════════════════════════════════════════════
+  //  POSITIONING
+  // ═══════════════════════════════════════════════════════════
+
+  private schedulePositionUpdate(): void {
+    if (this.positionRafId) {
+      return;
+    }
+    this.positionRafId = requestAnimationFrame(() => {
+      this.positionRafId = null;
+      this.updatePosition();
+    });
+  }
+
+  private updatePosition(): void {
+    if (!this.inputElement) {
+      return;
     }
 
-    private handleInputValueChange(): void {
-        if (!this.inputElement || !this.container || this.currentState !== 'idle') return;
-        const overlapping = PositionEngine.isTextOverlapping(this.inputElement);
-        this.container.style.opacity = overlapping ? '0.25' : '';
+    const pos = PositionEngine.calculate(this.inputElement);
+
+    if (!pos.visible) {
+      this.style.setProperty('display', 'none', 'important');
+      return;
     }
 
+    this.style.setProperty('display', 'block', 'important');
+    this.style.setProperty('position', 'absolute', 'important');
+    this.style.setProperty('z-index', '2147483647', 'important');
+    this.style.setProperty('top', `${pos.top}px`, 'important');
+    this.style.setProperty('left', `${pos.left}px`, 'important');
 
-    // ═══════════════════════════════════════════════════════════
-    //  CLEANUP
-    // ═══════════════════════════════════════════════════════════
-
-    private cleanup(): void {
-        if (this.resizeObserver) {
-            this.resizeObserver.disconnect();
-            this.resizeObserver = null;
-        }
-
-        if (this.intersectionObserver) {
-            this.intersectionObserver.disconnect();
-            this.intersectionObserver = null;
-        }
-
-        if (this.inputObserver) {
-            this.inputObserver.disconnect();
-            this.inputObserver = null;
-        }
-
-        if (this.positionRafId) {
-            cancelAnimationFrame(this.positionRafId);
-            this.positionRafId = null;
-        }
-
-        if (this.stateResetTimer) {
-            clearTimeout(this.stateResetTimer);
-            this.stateResetTimer = null;
-        }
-
-        if (this.inputElement) {
-            this.inputElement.removeEventListener('input', this._onInputChange);
-        }
-
-        window.removeEventListener('resize', this._onResize);
-        window.removeEventListener('scroll', this._onScroll, true);
-
-        this.inputElement = null;
-        this.container = null;
-        this.tooltipEl = null;
-        this.isAttached = false;
+    // Adjust opacity if user's text would overlap the icon
+    if (this.container && this.currentState === 'idle') {
+      const overlapping = PositionEngine.isTextOverlapping(this.inputElement);
+      this.container.style.opacity = overlapping ? '0.25' : '';
     }
+  }
+
+  private handleInputValueChange(): void {
+    if (!this.inputElement || !this.container || this.currentState !== 'idle') {
+      return;
+    }
+    const overlapping = PositionEngine.isTextOverlapping(this.inputElement);
+    this.container.style.opacity = overlapping ? '0.25' : '';
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  CLEANUP
+  // ═══════════════════════════════════════════════════════════
+
+  private cleanup(): void {
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
+
+    if (this.intersectionObserver) {
+      this.intersectionObserver.disconnect();
+      this.intersectionObserver = null;
+    }
+
+    if (this.inputObserver) {
+      this.inputObserver.disconnect();
+      this.inputObserver = null;
+    }
+
+    if (this.positionRafId) {
+      cancelAnimationFrame(this.positionRafId);
+      this.positionRafId = null;
+    }
+
+    if (this.stateResetTimer) {
+      clearTimeout(this.stateResetTimer);
+      this.stateResetTimer = null;
+    }
+
+    if (this.inputElement) {
+      this.inputElement.removeEventListener('input', this._onInputChange);
+    }
+
+    window.removeEventListener('scroll', this._onScroll, true);
+
+    this.inputElement = null;
+    this.container = null;
+    this.tooltipEl = null;
+    this.isAttached = false;
+  }
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // §6  C U S T O M   E L E M E N T   R E G I S T R A T I O N
 // ─────────────────────────────────────────────────────────────────────────────
 
 if (typeof customElements !== 'undefined' && customElements && !customElements.get('ghost-label')) {
-    try {
-        customElements.define('ghost-label', GhostLabel);
-    } catch (e) {
-        // Silently ignore if already defined in another context
-        // eslint-disable-next-line no-console
-        console.debug('[GhostFill] GhostLabel registration skipped:', e);
-    }
+  try {
+    customElements.define('ghost-label', GhostLabel);
+  } catch (e) {
+    // Silently ignore if already defined in another context
+    // eslint-disable-next-line no-console
+    console.debug('[GhostFill] GhostLabel registration skipped:', e);
+  }
 }

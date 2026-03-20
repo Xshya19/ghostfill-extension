@@ -12,8 +12,8 @@ export type MessageAction =
     | 'GET_CURRENT_EMAIL'
     | 'CHECK_INBOX'
     | 'READ_EMAIL'
-    | 'DELETE_EMAIL'
     | 'GET_EMAIL_HISTORY'
+    | 'GET_PROVIDER_HEALTH'
     // Password actions
     | 'GENERATE_PASSWORD'
     | 'GET_PASSWORD_HISTORY'
@@ -58,12 +58,10 @@ export type MessageAction =
     | 'CAPTURE_SITE_CONTEXT'
     // Instant OTP check action
     | 'CHECK_OTP_NOW'
-    // AI Detection actions (new local engine)
-    | 'LOAD_TRANSFORMERS_MODEL'  // Deprecated - kept for backwards compatibility
-    | 'INIT_TRANSFORMERS'  // Deprecated
-    | 'TRANSFORMERS_CLASSIFY'  // Deprecated
-    | 'TRANSFORMERS_MODEL_READY'  // Deprecated
-    | 'PING';
+    | 'MARK_OTP_USED'
+    | 'PING'
+    // ML Inference actions
+    | 'CLASSIFY_FIELD';
 
 // Base message interface
 export interface BaseMessage {
@@ -100,7 +98,7 @@ export interface CaptureSiteContextMessage extends BaseMessage {
 // ... existing interfaces ...
 export interface GenerateEmailMessage extends BaseMessage {
     action: 'GENERATE_EMAIL';
-    payload: {
+    payload?: {
         prefix?: string;
         domain?: string;
         service?: EmailService;
@@ -121,7 +119,7 @@ export interface GetCurrentEmailResponse {
 
 export interface CheckInboxMessage extends BaseMessage {
     action: 'CHECK_INBOX';
-    payload: {
+    payload?: {
         email: string;
         service: EmailService;
     };
@@ -259,8 +257,54 @@ export interface AutoFillOTPMessage extends BaseMessage {
     };
 }
 
+export interface MarkOTPUsedMessage extends BaseMessage {
+    action: 'MARK_OTP_USED';
+}
+
 export interface CheckOTPNowMessage extends BaseMessage {
     action: 'CHECK_OTP_NOW';
+}
+
+export interface GetProviderHealthMessage extends BaseMessage {
+    action: 'GET_PROVIDER_HEALTH';
+}
+
+export interface DeletePasswordMessage extends BaseMessage {
+    action: 'DELETE_PASSWORD';
+    payload?: {
+        id: string;
+    };
+}
+
+export interface ShowFloatingButtonMessage extends BaseMessage {
+    action: 'SHOW_FLOATING_BUTTON';
+}
+
+export interface HideFloatingButtonMessage extends BaseMessage {
+    action: 'HIDE_FLOATING_BUTTON';
+}
+
+export interface ClearDataMessage extends BaseMessage {
+    action: 'CLEAR_DATA';
+}
+
+export interface UpdateContextMenuMessage extends BaseMessage {
+    action: 'UPDATE_CONTEXT_MENU';
+}
+
+export interface OpenOptionsMessage extends BaseMessage {
+    action: 'OPEN_OPTIONS';
+}
+
+export interface ClipboardOperationFailedMessage extends BaseMessage {
+    action: 'CLIPBOARD_OPERATION_FAILED';
+    payload?: {
+        error: string;
+    };
+}
+
+export interface PingMessage extends BaseMessage {
+    action: 'PING';
 }
 
 export interface CheckOTPNowResponse {
@@ -382,6 +426,19 @@ export interface HighlightFieldsMessage extends BaseMessage {
     };
 }
 
+export interface ClassifyFieldMessage extends BaseMessage {
+    action: 'CLASSIFY_FIELD';
+    payload: {
+        features: import('../content/extractor').RawFieldFeatures;
+    };
+}
+
+export interface ClassifyFieldResponse {
+    success: boolean;
+    prediction?: import('../background/inferenceEngine').MLPrediction | null;
+    error?: string;
+}
+
 // Union type for all messages
 export type ExtensionMessage =
     | GenerateEmailMessage
@@ -389,8 +446,10 @@ export type ExtensionMessage =
     | CheckInboxMessage
     | ReadEmailMessage
     | GetEmailHistoryMessage
+    | GetProviderHealthMessage
     | GeneratePasswordMessage
     | SavePasswordMessage
+    | DeletePasswordMessage
     | GetPasswordHistoryMessage
     | GetIdentityMessage
     | GenerateIdentityMessage
@@ -406,16 +465,24 @@ export type ExtensionMessage =
     | FillFormMessage
     | HighlightFieldsMessage
     | SmartAutoFillMessage
+    | ShowFloatingButtonMessage
+    | HideFloatingButtonMessage
     | GetSettingsMessage
     | UpdateSettingsMessage
+    | ClearDataMessage
     | ShowNotificationMessage
     | NewEmailReceivedMessage
     | OTPDetectedMessage
     | ContextMenuClickMessage
+    | UpdateContextMenuMessage
+    | OpenOptionsMessage
+    | ClipboardOperationFailedMessage
     | AnalyzeDOMMessage
     | CaptureSiteContextMessage
     | CheckOTPNowMessage
-    | BaseMessage;
+    | MarkOTPUsedMessage
+    | ClassifyFieldMessage
+    | PingMessage;
 
 // Response union type
 export type ExtensionResponse =
@@ -432,6 +499,8 @@ export type ExtensionResponse =
     | GetLastOTPResponse
     | DetectFormsResponse
     | GetSettingsResponse
+    | ClassifyFieldResponse
+    | { success: boolean; health?: unknown[]; error?: string }
     | { success: boolean; error?: string };
 
 // Message sender info

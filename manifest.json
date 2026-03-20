@@ -4,12 +4,11 @@
     "version": "1.1.0",
     "description": "GhostFill: Disposable emails, secure passwords, and automatic OTP detection & fill. Local AI engine — no API key required. 100% Free & Open Source.",
     "content_security_policy": {
-        "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self' https://api.1secmail.com https://api.1secmail.net https://api.1secmail.org https://www.1secmail.com https://api.mail.tm https://api.mail.gw https://api.tmailor.com https://api.maildrop.cc https://api.dropmail.me https://api.guerrillamail.com https://api.tempmail.lol;"
+        "extension_pages": "script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; worker-src 'none'; child-src 'none'; frame-src 'none'; connect-src 'self' https://api.1secmail.com https://api.1secmail.net https://api.1secmail.org https://www.1secmail.com https://api.mail.tm https://api.mail.gw https://api.tmailor.com https://api.maildrop.cc https://api.dropmail.me https://api.guerrillamail.com https://api.tempmail.lol https://api.openai.com https://api.anthropic.com https://generativelanguage.googleapis.com;"
     },
     "permissions": [
         "activeTab",
         "storage",
-        "unlimitedStorage",
         "clipboardWrite",
         "contextMenus",
         "alarms",
@@ -37,10 +36,7 @@
         {
             "matches": [
                 "https://*/*",
-                "http://localhost/*",
-                "http://localhost:*/",
-                "http://127.0.0.1/*",
-                "http://127.0.0.1:*/"
+                "http://*/*"
             ],
             "exclude_matches": [
                 "*://*.chase.com/*",
@@ -63,6 +59,17 @@
                 "*://*.etrade.com/*",
                 "*://*.tdameritrade.com/*",
                 "*://*.interactivebrokers.com/*",
+                "*://*.barclays.co.uk/*",
+                "*://*.hsbc.co.uk/*",
+                "*://*.santander.co.uk/*",
+                "*://*.rbcroyalbank.com/*",
+                "*://*.scotiabank.com/*",
+                "*://*.bmo.com/*",
+                "*://*.cibc.com/*",
+                "*://*.commbank.com.au/*",
+                "*://*.westpac.com.au/*",
+                "*://*.nab.com.au/*",
+                "*://*.anz.com.au/*",
                 "*://*.1password.com/*",
                 "*://*.lastpass.com/*",
                 "*://*.dashlane.com/*",
@@ -81,23 +88,24 @@
                 "content.css"
             ],
             "run_at": "document_idle",
-            "all_frames": false
+            "all_frames": true,
+            "match_about_blank": true
         }
     ],
     "action": {
         "default_popup": "popup.html",
         "default_icon": {
-            "16": "assets/icons/icon128.png",
-            "32": "assets/icons/icon128.png",
-            "48": "assets/icons/icon128.png",
+            "16": "assets/icons/icon16.png",
+            "32": "assets/icons/icon32.png",
+            "48": "assets/icons/icon48.png",
             "128": "assets/icons/icon128.png"
         },
         "default_title": "GhostFill"
     },
     "icons": {
-        "16": "assets/icons/icon128.png",
-        "32": "assets/icons/icon128.png",
-        "48": "assets/icons/icon128.png",
+        "16": "assets/icons/icon16.png",
+        "32": "assets/icons/icon32.png",
+        "48": "assets/icons/icon48.png",
         "128": "assets/icons/icon128.png"
     },
     "options_ui": {
@@ -113,7 +121,17 @@
                 "https://*/*",
                 "http://*/*"
             ],
-            "use_dynamic_url": false
+            "use_dynamic_url": true
+        },
+        {
+            "resources": [
+                "models/*.onnx",
+                "models/*.json",
+                "*.wasm"
+            ],
+            "matches": [
+                "<all_urls>"
+            ]
         }
     ],
     "commands": {
@@ -132,10 +150,6 @@
             "description": "Generate new temp email"
         },
         "generate-password": {
-            "suggested_key": {
-                "default": "Ctrl+Shift+G",
-                "mac": "Command+Shift+G"
-            },
             "description": "Generate new password"
         },
         "auto-fill": {
@@ -144,8 +158,15 @@
                 "mac": "Command+Shift+F"
             },
             "description": "Auto-fill current form"
+        },
+        "check-inbox": {
+            "suggested_key": {
+                "default": "Ctrl+Shift+I",
+                "mac": "Command+Shift+I"
+            },
+            "description": "Check inbox now"
         }
     },
     "default_locale": "en",
-    "minimum_chrome_version": "88"
+    "minimum_chrome_version": "109"
 }

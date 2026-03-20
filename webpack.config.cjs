@@ -5,6 +5,7 @@ const CopyWebpackPlugin = require('copy-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 // FIX: Add TerserPlugin for production log stripping and bundle optimization
 const TerserPlugin = require('terser-webpack-plugin');
+const webpack = require('webpack');
 
 module.exports = (env, argv) => {
     const isDev = argv.mode !== 'production';
@@ -22,7 +23,7 @@ module.exports = (env, argv) => {
                 '@services': path.resolve(__dirname, 'src/services'),
                 '@utils': path.resolve(__dirname, 'src/utils'),
                 '@types': path.resolve(__dirname, 'src/types'),
-                // FIX: Removed @ai alias - directory does not exist
+                'onnxruntime-web': path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort.min.js'),
             },
         },
         module: {
@@ -74,7 +75,7 @@ module.exports = (env, argv) => {
                         compress: {
                             drop_debugger: true, // Remove debugger statements
                             // Custom transformer to strip console.log/debug/info/warn but keep console.error
-                            pure_funcs: [],
+                            pure_funcs: ['console.log', 'console.info', 'console.debug', 'console.warn'],
                         },
                     },
                     extractComments: false,
@@ -103,6 +104,16 @@ module.exports = (env, argv) => {
             // FIX: Explicitly disable chunk loading for service worker
             chunkLoading: false,
             chunkFormat: false,
+            // FIX: Skip the `new Function('return this')()` global-detection shim.
+            // Service workers have native `globalThis` — no shim needed.
+            globalObject: 'globalThis',
+            // FIX: Must match webConfig — Chrome enforces the extension_pages
+            // CSP (require-trusted-types-for 'script') on the service worker too.
+            // Without this, webpack's runtime uses bare string assignments that
+            // violate the Trusted Types policy, crashing background.js on load.
+            trustedTypes: {
+                policyName: 'webpack#ghostfill-bg',
+            },
         },
         plugins: [
             new MiniCssExtractPlugin({
@@ -114,6 +125,7 @@ module.exports = (env, argv) => {
             minimize: !isDev,
             splitChunks: false,
             runtimeChunk: false,
+            minimizer: commonConfig.optimization.minimizer,
         },
     });
 
@@ -122,15 +134,40 @@ module.exports = (env, argv) => {
         name: 'web',
         target: 'web', // Standard DOM environment
         entry: {
-            content: './src/content/index.ts',
-            popup: './src/popup/index.tsx',
-            options: './src/options/index.tsx',
+            content:   './src/content/index.ts',
+            popup:     './src/popup/index.tsx',
+            options:   './src/options/index.tsx',
             offscreen: './src/offscreen/offscreen.ts',
         },
         output: {
             path: path.resolve(__dirname, 'dist'),
             filename: '[name].js',
             clean: false, // Avoid deleting background.js
+            // FIX: Tell webpack the global object is already `globalThis`.
+            // Without this, webpack's target:'web' runtime emits:
+            //   var g = new Function('return this')();
+            // to detect the global scope. That bare `new Function` string
+            // violates `require-trusted-types-for 'script'` in the manifest
+            // CSP, crashing popup.js, content.js, etc. on load.
+            // All Chrome 88+ extension pages have native `globalThis` support.
+            globalObject: 'globalThis',
+            // Satisfy `require-trusted-types-for 'script'` in manifest CSP.
+            // Webpack will use trustedTypes.createPolicy() when injecting chunks
+            // instead of bare string assignment to script.src / innerHTML.
+            trustedTypes: {
+                policyName: 'webpack#ghostfill',
+            },
+        },
+        optimization: {
+            minimize: !isDev,
+            // DISABLED: Chrome Extensions cannot load async split-chunks.
+            // The webpack chunk-runtime does `t.push.bind(t)` on self.webpackChunk
+            // before it is initialized, crashing with:
+            //   "Cannot read properties of undefined (reading 'bind')"
+            // Bundling everything into per-entry files avoids this entirely.
+            splitChunks: false,
+            runtimeChunk: false,
+            minimizer: commonConfig.optimization.minimizer,
         },
         plugins: [
             new MiniCssExtractPlugin({
@@ -173,6 +210,15 @@ module.exports = (env, argv) => {
                     { from: 'manifest.json', to: 'manifest.json' },
                     { from: 'src/assets', to: 'assets' },
                     { from: 'public/_locales', to: '_locales' },
+                    // Copy ML model + class metadata to dist/models/
+                    { from: 'public/models', to: 'models', noErrorOnMissing: true },
+                    // Copy onnxruntime-web WASM binaries to dist/ root
+                    // so chrome.runtime.getURL('') resolves ort-wasm*.wasm correctly
+                    {
+                        from: 'node_modules/onnxruntime-web/dist/*.wasm',
+                        to: '[name][ext]',
+                        noErrorOnMissing: true,
+                    },
                 ],
             }),
         ],

@@ -2,10 +2,10 @@ import React from 'react';
 
 /**
  * GhostFill Feature Flags System
- * 
+ *
  * Provides runtime feature flag control for gradual rollout of
  * the new architecture during the refactoring process.
- * 
+ *
  * @module utils/featureFlags
  */
 
@@ -89,7 +89,7 @@ export const ENV_CONFIGS: Record<string, Partial<FeatureFlags>> = {
 
 /**
  * Feature Flag Manager Class
- * 
+ *
  * Manages feature flag state with support for:
  * - Persistent storage
  * - URL parameter overrides (for testing)
@@ -162,10 +162,10 @@ class FeatureFlagManager {
     // Handle percentage-based flags
     if (flag === 'AB_TEST_PERCENTAGE') {
       const hash = this.getUserHash();
-      return (hash % 100) < (value as number);
+      return hash % 100 < (value as number);
     }
 
-    return value as boolean ?? false;
+    return (value as boolean) ?? false;
   }
 
   /**
@@ -178,10 +178,7 @@ class FeatureFlagManager {
   /**
    * Set a feature flag value
    */
-  async setFlag<K extends keyof FeatureFlags>(
-    flag: K,
-    enabled: FeatureFlags[K]
-  ): Promise<void> {
+  async setFlag<K extends keyof FeatureFlags>(flag: K, enabled: FeatureFlags[K]): Promise<void> {
     this.flags[flag] = enabled;
     await this.persist();
     this.notifyListeners();
@@ -237,7 +234,8 @@ class FeatureFlagManager {
 
     const result: Partial<FeatureFlags> = {};
     for (const flag of layerFlags[layer]) {
-      (result as Record<keyof FeatureFlags, FeatureFlags[keyof FeatureFlags]>)[flag] = this.flags[flag];
+      (result as Record<keyof FeatureFlags, FeatureFlags[keyof FeatureFlags]>)[flag] =
+        this.flags[flag];
     }
     return result;
   }
@@ -247,7 +245,7 @@ class FeatureFlagManager {
    */
   isLayerComplete(layer: 'service' | 'detection' | 'ui' | 'background'): boolean {
     const layerFlags = this.getLayerFlags(layer);
-    return Object.values(layerFlags).every(v => v === true);
+    return Object.values(layerFlags).every((v) => v === true);
   }
 
   private async persist(): Promise<void> {
@@ -259,7 +257,7 @@ class FeatureFlagManager {
   }
 
   private notifyListeners(): void {
-    this.listeners.forEach(listener => {
+    this.listeners.forEach((listener) => {
       try {
         listener();
       } catch (error) {
@@ -281,7 +279,7 @@ class FeatureFlagManager {
     const id = chrome.runtime?.id || 'default';
     let hash = 0;
     for (let i = 0; i < id.length; i++) {
-      hash = ((hash << 5) - hash) + id.charCodeAt(i);
+      hash = (hash << 5) - hash + id.charCodeAt(i);
       hash |= 0;
     }
     return Math.abs(hash) % 1000;
@@ -324,5 +322,3 @@ export function withFeatureFlag<P extends object>(
     return React.createElement(WrappedComponent, props);
   };
 }
-
-

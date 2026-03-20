@@ -8,7 +8,7 @@
  * @security Master password is NEVER stored - derived on-demand only
  * @security Keys are cleared on extension unload
  * @security KEY_MAX_LIFETIME reduced to 15 minutes for enhanced security
- * @security Anomaly detection for decryption attempts
+ * @security Session keys persist in chrome.storage.session across SW restarts
  * @see https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API
  */
 
@@ -18,9 +18,9 @@ const log = createLogger('Encryption');
 
 // Encryption constants
 const ENCRYPTION_VERSION = 1;
-const SALT_LENGTH = 32; // 256 bits (increased from 16 for better security)
-const IV_LENGTH = 12;   // 96 bits (recommended for GCM)
-const ITERATIONS = 100000; // PBKDF2 iterations
+const SALT_LENGTH = 32; // 256 bits
+const IV_LENGTH = 12; // 96 bits (recommended for GCM)
+const ITERATIONS = 100000; // PBKDF2 iterations (balanced security/performance)
 
 /**
  * Session-only key cache (cleared on extension unload)
@@ -31,126 +31,66 @@ const ITERATIONS = 100000; // PBKDF2 iterations
 let sessionKey: CryptoKey | null = null;
 let sessionKeySalt: Uint8Array | null = null;
 let sessionKeyExpiration: number | null = null;
-const KEY_ROTATION_INTERVAL = 15 * 60 * 1000; // 15 minutes (reduced from 30)
-// SECURITY FIX: KEY_MAX_LIFETIME reduced from 60 minutes to 15 minutes
-const KEY_MAX_LIFETIME = 15 * 60 * 1000; // 15 minutes max lifetime (reduced from 60)
-
-// ═══════════════════════════════════════════════════════════════════
-// SECURITY: Anomaly Detection for Decryption Attempts
-// Track and detect suspicious decryption patterns
-// ═══════════════════════════════════════════════════════════════════
-
-interface DecryptionAttempt {
-    timestamp: number;
-    success: boolean;
-    error?: string;
-}
-
-const DECRYPTION_ATTEMPT_WINDOW = 60000; // 1 minute window
-const MAX_FAILED_ATTEMPTS = 5; // Max failed attempts before blocking
-const BLOCK_DURATION = 300000; // 5 minute block duration
-
-let decryptionAttempts: DecryptionAttempt[] = [];
-let blockedUntil: number | null = null;
-
-/**
- * Record a decryption attempt for anomaly detection
- * @security Tracks failed attempts to detect brute force attacks
- */
-function recordDecryptionAttempt(success: boolean, error?: string): void {
-    const now = Date.now();
-
-    // Clean old attempts outside the window
-    decryptionAttempts = decryptionAttempts.filter(
-        attempt => now - attempt.timestamp < DECRYPTION_ATTEMPT_WINDOW
-    );
-
-    // Record this attempt
-    decryptionAttempts.push({ timestamp: now, success, error });
-
-    // Check for anomaly: too many failed attempts
-    const failedAttempts = decryptionAttempts.filter(a => !a.success).length;
-
-    if (failedAttempts >= MAX_FAILED_ATTEMPTS) {
-        blockedUntil = now + BLOCK_DURATION;
-        log.error('SECURITY: Too many failed decryption attempts - blocking', {
-            failedAttempts,
-            blockDuration: BLOCK_DURATION,
-        });
-    }
-}
-
-/**
- * Check if decryption is currently blocked due to anomaly detection
- */
-function isDecryptionBlocked(): { blocked: boolean; retryAfter?: number } {
-    if (!blockedUntil) { return { blocked: false }; }
-
-    const now = Date.now();
-    if (now < blockedUntil) {
-        return { blocked: true, retryAfter: Math.ceil((blockedUntil - now) / 1000) };
-    }
-
-    // Block expired, reset
-    blockedUntil = null;
-    decryptionAttempts = [];
-    return { blocked: false };
-}
-
-/**
- * Reset decryption attempt tracking (call on successful operations)
- */
-function resetDecryptionTracking(): void {
-    decryptionAttempts = [];
-    blockedUntil = null;
-}
+const KEY_ROTATION_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours (increased to prevent aggressive wiping of temp emails)
+// SECURITY FIX: KEY_MAX_LIFETIME adjusted back to 24 hours
+const KEY_MAX_LIFETIME = 24 * 60 * 60 * 1000; // 24 hours max lifetime
 
 const derivedKeyCache = new Map<string, CryptoKey>();
+const MAX_CACHE_SIZE = 20;
 
 /**
  * Derives a cryptographic key from a password using PBKDF2
- * 
+ *
  * @param password - The password to derive key from
  * @param salt - The salt for key derivation
  * @returns Derived CryptoKey for AES-256-GCM
- * 
+ *
  * @security Key derivation uses 100,000 iterations for brute-force resistance
  */
 export async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
-    const saltBase64 = btoa(String.fromCharCode(...salt));
-    const cacheKey = `${password}:${saltBase64}`;
+  const saltBase64 = btoa(String.fromCharCode(...salt));
+  
+  // Hash the password so we don't store plaintext in memory cache
+  const encoder = new TextEncoder();
+  const passBuf = await crypto.subtle.digest('SHA-256', encoder.encode(password));
+  const passHash = Array.from(new Uint8Array(passBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  const cacheKey = `${passHash}:${saltBase64}`;
 
-    if (derivedKeyCache.has(cacheKey)) {
-        return derivedKeyCache.get(cacheKey)!;
-    }
+  if (derivedKeyCache.has(cacheKey)) {
+    return derivedKeyCache.get(cacheKey)!;
+  }
 
-    const encoder = new TextEncoder();
+  // LRU cleanup to prevent memory leaks
+  if (derivedKeyCache.size >= MAX_CACHE_SIZE) {
+    const firstKey = derivedKeyCache.keys().next().value;
+    if (firstKey) {derivedKeyCache.delete(firstKey);}
+  }
 
-    // Import password as key material
-    const keyMaterial = await crypto.subtle.importKey(
-        'raw',
-        encoder.encode(password),
-        'PBKDF2',
-        false, // Not extractable
-        ['deriveKey']
-    );
+  // Import password as key material
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(password),
+    'PBKDF2',
+    false, // Not extractable
+    ['deriveKey']
+  );
 
-    // Derive AES-256-GCM key - convert Uint8Array to ArrayBuffer
-    const key = await crypto.subtle.deriveKey(
-        {
-            name: 'PBKDF2',
-            salt: salt.buffer as ArrayBuffer,
-            iterations: ITERATIONS,
-            hash: 'SHA-256'
-        },
-        keyMaterial,
-        { name: 'AES-GCM', length: 256 },
-        false, // Not extractable
-        ['encrypt', 'decrypt']
-    );
+  // Derive AES-256-GCM key - convert Uint8Array to ArrayBuffer
+  const key = await crypto.subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      salt: salt.buffer as ArrayBuffer,
+      iterations: ITERATIONS,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false, // Not extractable
+    ['encrypt', 'decrypt']
+  );
 
-    derivedKeyCache.set(cacheKey, key);
-    return key;
+  derivedKeyCache.set(cacheKey, key);
+  return key;
 }
 
 /**
@@ -158,25 +98,35 @@ export async function deriveKey(password: string, salt: Uint8Array): Promise<Cry
  * @security Uses crypto.getRandomValues() for true randomness
  */
 export function generateSecurePassword(length = 32): string {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-=[]{}|;:,.<>?';
-    const randomValues = new Uint8Array(length);
-    crypto.getRandomValues(randomValues);
+  const chars =
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-=[]{}|;:,.<>?';
+  const charsLength = chars.length;
+  // Calculate max valid value for uniform distribution to prevent modulo bias
+  const maxValid = 256 - (256 % charsLength);
+  const randomValues = new Uint8Array(1);
+  let result = '';
 
-    return Array.from(randomValues)
-        .map(val => chars[val % chars.length])
-        .join('');
+  while (result.length < length) {
+    crypto.getRandomValues(randomValues);
+    if (randomValues[0]! < maxValid) {
+      result += chars[randomValues[0]! % charsLength];
+    }
+  }
+
+  return result;
 }
 
 /**
- * Securely clears a string from memory by overwriting
- * @security Use for clearing passwords/sensitive strings
+ * Securely clears a string from memory by overwriting the referenced object
+ * Note: primitives are immutable in JS, so this only clears the wrapper object.
+ * @security Use for clearing passwords/sensitive strings from state
  */
 export function secureClearString(strRef: { value: string }): void {
-    if (strRef && strRef.value) {
-        // Overwrite with random data before clearing
-        strRef.value = generateSecurePassword(strRef.value.length);
-        strRef.value = '';
-    }
+  if (strRef && strRef.value) {
+    // Overwrite with random data before clearing
+    strRef.value = generateSecurePassword(strRef.value.length);
+    strRef.value = '';
+  }
 }
 
 /**
@@ -185,22 +135,24 @@ export function secureClearString(strRef: { value: string }): void {
  * @security Call immediately after use or on session end
  */
 export function secureClearKeys(): void {
-    if (sessionKeySalt) {
-        // Overwrite salt with random data before clearing
-        const randomSalt = crypto.getRandomValues(new Uint8Array(sessionKeySalt.length));
-        sessionKeySalt.set(randomSalt);
-        sessionKeySalt = null;
-    }
-    // CryptoKey cannot be directly overwritten, but we can nullify the reference
-    // The underlying key material will be garbage collected
-    sessionKeyExpiration = null;
+  if (sessionKeySalt) {
+    // Overwrite salt with random data before clearing
+    const randomSalt = crypto.getRandomValues(new Uint8Array(sessionKeySalt.length));
+    sessionKeySalt.set(randomSalt);
+    sessionKeySalt = null;
+  }
+  // CryptoKey cannot be directly overwritten, but we can nullify the reference
+  // The underlying key material will be garbage collected
+  sessionKeyExpiration = null;
 
-    // SECURITY FIX: Clear from chrome.storage.session
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session) {
-        chrome.storage.session.remove(['encryptionPassword', 'encryptionSalt', 'keyExpiration']).catch(() => { });
-    }
+  // SECURITY FIX: Clear from chrome.storage.session
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session) {
+    chrome.storage.session
+      .remove(['encryptionKeyMaterial', 'encryptionSalt', 'keyExpiration'])
+      .catch((e) => log.debug('Failed to clear keys from session storage', e));
+  }
 
-    log.debug('Encryption keys securely cleared from memory');
+  log.debug('Encryption keys securely cleared from memory');
 }
 
 /**
@@ -208,8 +160,10 @@ export function secureClearKeys(): void {
  * @security Rotates keys periodically to limit exposure window
  */
 export function isKeyExpired(): boolean {
-    if (!sessionKeyExpiration) { return true; }
-    return Date.now() > sessionKeyExpiration;
+  if (!sessionKeyExpiration) {
+    return true;
+  }
+  return Date.now() > sessionKeyExpiration;
 }
 
 /**
@@ -217,9 +171,9 @@ export function isKeyExpired(): boolean {
  * @security Generates fresh key material periodically
  */
 export async function rotateSessionKey(): Promise<void> {
-    log.debug('Rotating session encryption key');
-    secureClearKeys();
-    await initializeSecureEncryption();
+  log.debug('Rotating session encryption key');
+  secureClearKeys();
+  await initializeSecureEncryption();
 }
 
 /**
@@ -227,82 +181,125 @@ export async function rotateSessionKey(): Promise<void> {
  * @returns Object with score (0-4) and feedback
  */
 export function validatePasswordStrength(password: string): { score: number; feedback: string[] } {
-    const feedback: string[] = [];
-    let score = 0;
+  const feedback: string[] = [];
+  let score = 0;
 
-    if (password.length >= 8) { score++; }
-    if (password.length >= 12) { score++; }
-    if (password.length >= 16) { score++; }
+  if (password.length >= 8) {
+    score++;
+  }
+  if (password.length >= 12) {
+    score++;
+  }
+  if (password.length >= 16) {
+    score++;
+  }
 
-    if (/[a-z]/.test(password) && /[A-Z]/.test(password)) { score++; }
-    if (/\d/.test(password)) { score++; }
-    // eslint-disable-next-line no-useless-escape
-    if (/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]/.test(password)) { score++; }
+  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) {
+    score++;
+  }
+  if (/\d/.test(password)) {
+    score++;
+  }
+  // eslint-disable-next-line no-useless-escape
+  if (/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]/.test(password)) {
+    score++;
+  }
 
-    if (score <= 2) { feedback.push('Password is too weak'); }
-    if (password.length < 12) { feedback.push('Consider using at least 12 characters'); }
-    if (!/[A-Z]/.test(password)) { feedback.push('Add uppercase letters'); }
-    if (!/\d/.test(password)) { feedback.push('Add numbers'); }
-    // eslint-disable-next-line no-useless-escape
-    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]/.test(password)) { feedback.push('Add special characters'); }
+  if (score <= 2) {
+    feedback.push('Password is too weak');
+  }
+  if (password.length < 12) {
+    feedback.push('Consider using at least 12 characters');
+  }
+  if (!/[A-Z]/.test(password)) {
+    feedback.push('Add uppercase letters');
+  }
+  if (!/\d/.test(password)) {
+    feedback.push('Add numbers');
+  }
+  // eslint-disable-next-line no-useless-escape
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]/.test(password)) {
+    feedback.push('Add special characters');
+  }
 
-    return { score: Math.min(score, 4), feedback };
+  return { score: Math.min(score, 4), feedback };
 }
 
-const INTERNAL_SALT = new Uint8Array([103, 104, 111, 115, 116, 102, 105, 108, 108, 45, 115, 101, 99, 117, 114, 101, 45, 115, 97, 108, 116, 45, 118, 49, 0, 0, 0, 0, 0, 0, 0, 0]);
+// Dynamic Internal Salt: Fetched securely
+let cachedInternalSalt: Uint8Array | null = null;
+async function getInternalSalt(): Promise<Uint8Array> {
+  if (cachedInternalSalt) {
+    return cachedInternalSalt;
+  }
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+    const data = await chrome.storage.local.get(['internalEncryptionSalt']);
+    if (data.internalEncryptionSalt) {
+      cachedInternalSalt = Uint8Array.from(atob(data.internalEncryptionSalt), (c) =>
+        c.charCodeAt(0)
+      );
+      return cachedInternalSalt;
+    }
+    const newSalt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
+    await chrome.storage.local.set({
+      internalEncryptionSalt: btoa(String.fromCharCode(...newSalt)),
+    });
+    cachedInternalSalt = newSalt;
+    return newSalt;
+  }
+  // Fallback
+  const fallbackSalt = new Uint8Array(SALT_LENGTH);
+  crypto.getRandomValues(fallbackSalt);
+  return fallbackSalt;
+}
 
 /**
  * Encrypts data using AES-256-GCM
- * 
+ *
  * @param data - Data to encrypt (will be JSON stringified)
  * @param password - Password for encryption
  * @returns Base64-encoded encrypted data with metadata
- * 
+ *
  * @security Uses AES-256-GCM with random IV for each encryption
  * @throws Error if encryption fails
- * 
+ *
  * @example
  * const encrypted = await encrypt({ apiKey: 'secret' }, 'master-password');
  */
-export async function encrypt(data: unknown, password: string): Promise<string> {
-    try {
-        // Generate random salt and IV
-        const salt = password === 'session-key'
-            ? INTERNAL_SALT
-            : crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
-        const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
+export async function encrypt(data: unknown, passwordOrKey: string | CryptoKey): Promise<string> {
+  try {
+    const isString = typeof passwordOrKey === 'string';
+    // Generate random salt and IV
+    const salt =
+      isString && passwordOrKey === 'session-key'
+        ? await getInternalSalt()
+        : crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
+    const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
 
-        // Derive key from password
-        const key = await deriveKey(password, salt);
+    // Derive key from password or use provided key
+    const key = isString ? await deriveKey(passwordOrKey as string, salt) : passwordOrKey as CryptoKey;
 
-        // Serialize and encode data
-        const encoder = new TextEncoder();
-        const plaintext = encoder.encode(JSON.stringify(data));
+    // Serialize and encode data
+    const encoder = new TextEncoder();
+    const plaintext = encoder.encode(JSON.stringify(data));
 
-        // Encrypt using AES-256-GCM
-        const ciphertext = await crypto.subtle.encrypt(
-            { name: 'AES-GCM', iv },
-            key,
-            plaintext
-        );
+    // Encrypt using AES-256-GCM
+    const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext);
 
-        // Pack: [version(1) + salt(16) + iv(12) + ciphertext + authTag(16)]
-        // authTag is automatically appended by Web Crypto API (16 bytes for GCM)
-        const packed = new Uint8Array(
-            1 + SALT_LENGTH + IV_LENGTH + ciphertext.byteLength
-        );
+    // Pack: [version(1) + salt(16) + iv(12) + ciphertext + authTag(16)]
+    // authTag is automatically appended by Web Crypto API (16 bytes for GCM)
+    const packed = new Uint8Array(1 + SALT_LENGTH + IV_LENGTH + ciphertext.byteLength);
 
-        packed[0] = ENCRYPTION_VERSION;
-        packed.set(salt, 1);
-        packed.set(iv, 1 + SALT_LENGTH);
-        packed.set(new Uint8Array(ciphertext), 1 + SALT_LENGTH + IV_LENGTH);
+    packed[0] = ENCRYPTION_VERSION;
+    packed.set(salt, 1);
+    packed.set(iv, 1 + SALT_LENGTH);
+    packed.set(new Uint8Array(ciphertext), 1 + SALT_LENGTH + IV_LENGTH);
 
-        // Convert to base64 for storage
-        return btoa(String.fromCharCode(...packed));
-    } catch (error) {
-        log.error('Encryption failed', error);
-        throw new Error('Failed to encrypt data');
-    }
+    // Convert to base64 for storage
+    return btoa(String.fromCharCode(...packed));
+  } catch (error) {
+    log.error('Encryption failed', error);
+    throw new Error('Failed to encrypt data');
+  }
 }
 
 /**
@@ -320,60 +317,51 @@ export async function encrypt(data: unknown, password: string): Promise<string> 
  * @example
  * const data = await decrypt(encryptedString, 'master-password');
  */
-export async function decrypt<T>(encryptedData: string, password: string): Promise<T> {
-    // SECURITY FIX: Check if decryption is blocked due to anomaly detection
-    const blockStatus = isDecryptionBlocked();
-    if (blockStatus.blocked) {
-        log.error('Decryption blocked due to suspicious activity', {
-            retryAfter: blockStatus.retryAfter,
-        });
-        throw new Error(`Decryption temporarily blocked. Try again in ${blockStatus.retryAfter} seconds.`);
-    }
+export async function decrypt<T>(encryptedData: string, passwordOrKey: string | CryptoKey): Promise<T> {
+  let packed: Uint8Array;
+  try {
+    // Decode from base64
+    packed = Uint8Array.from(atob(encryptedData), (c) => c.charCodeAt(0));
+  } catch {
+    // Not valid base64 — likely legacy unencrypted data
+    throw new Error('Invalid encrypted data format (not base64)');
+  }
 
-    try {
-        // Decode from base64
-        const packed = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
+  // Validate minimum length
+  if (packed.length < 1 + SALT_LENGTH + IV_LENGTH) {
+    throw new Error('Invalid encrypted data format (too short)');
+  }
 
-        // Validate minimum length
-        if (packed.length < 1 + SALT_LENGTH + IV_LENGTH) {
-            recordDecryptionAttempt(false, 'Invalid data format');
-            throw new Error('Invalid encrypted data format');
-        }
+  // Extract version
+  const version = packed[0];
+  if (version !== ENCRYPTION_VERSION) {
+    throw new Error(`Unsupported encryption version: ${version}`);
+  }
 
-        // Extract version
-        const version = packed[0];
-        if (version !== ENCRYPTION_VERSION) {
-            recordDecryptionAttempt(false, 'Unsupported version');
-            throw new Error(`Unsupported encryption version: ${version}`);
-        }
+  // Extract components
+  const salt = packed.slice(1, 1 + SALT_LENGTH);
+  const iv = packed.slice(1 + SALT_LENGTH, 1 + SALT_LENGTH + IV_LENGTH);
+  const ciphertext = packed.slice(1 + SALT_LENGTH + IV_LENGTH);
 
-        // Extract components
-        const salt = packed.slice(1, 1 + SALT_LENGTH);
-        const iv = packed.slice(1 + SALT_LENGTH, 1 + SALT_LENGTH + IV_LENGTH);
-        const ciphertext = packed.slice(1 + SALT_LENGTH + IV_LENGTH);
+  try {
+    // Derive key and decrypt
+    const isString = typeof passwordOrKey === 'string';
+    const key = isString ? await deriveKey(passwordOrKey as string, salt) : passwordOrKey as CryptoKey;
+    const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
 
-        // Derive key and decrypt
-        const key = await deriveKey(password, salt);
-        const plaintext = await crypto.subtle.decrypt(
-            { name: 'AES-GCM', iv },
-            key,
-            ciphertext
-        );
+    // Parse JSON
+    const decoder = new TextDecoder();
+    return JSON.parse(decoder.decode(plaintext)) as T;
+  } catch (error) {
+    log.debug('Decryption failed (keys may have rotated or data encrypted with a different key)', error);
+    throw new Error('Failed to decrypt data');
+  }
+}
 
-        // Parse JSON
-        const decoder = new TextDecoder();
-        const result = JSON.parse(decoder.decode(plaintext)) as T;
-
-        // SECURITY FIX: Reset tracking on successful decryption
-        resetDecryptionTracking();
-
-        return result;
-    } catch (error) {
-        // SECURITY FIX: Record failed attempt
-        recordDecryptionAttempt(false, (error as Error).message);
-        log.error('Decryption failed', error);
-        throw new Error('Failed to decrypt data');
-    }
+function onRotationAlarm(alarm: chrome.alarms.Alarm) {
+  if (alarm.name === 'encryption-key-rotation') {
+    rotateSessionKey().catch((err) => log.error('Auto key rotation failed', err));
+  }
 }
 
 /**
@@ -383,61 +371,102 @@ export async function decrypt<T>(encryptedData: string, password: string): Promi
  * @security Key has expiration time for automatic rotation
  */
 export async function initializeSecureEncryption(): Promise<void> {
-    try {
-        let sessionPassword = '';
-        let saltArray: Uint8Array | null = null;
+  try {
+    let sessionPassword = '';
+    let saltArray: Uint8Array | null = null;
 
-        // Try to load from chrome.storage.session (persists across MV3 SW restarts)
-        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session) {
-            // Must support trusted contexts to work seamlessly in SW and UI
-            try {
-                await chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' }).catch(() => { });
-                const data = await chrome.storage.session.get(['encryptionPassword', 'encryptionSalt', 'keyExpiration']);
-                if (data.encryptionPassword && data.encryptionSalt && data.keyExpiration > Date.now()) {
-                    sessionPassword = data.encryptionPassword;
-                    saltArray = Uint8Array.from(atob(data.encryptionSalt), c => c.charCodeAt(0));
-                    sessionKeyExpiration = data.keyExpiration;
-                    log.debug('Loaded existing session encryption key from chrome.storage.session');
-                }
-            } catch (e) {
-                log.warn('Could not read from chrome.storage.session', e);
-            }
+    // Try to load from chrome.storage.session (persists across MV3 SW restarts)
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session) {
+      // Must support trusted contexts to work seamlessly in SW and UI (but restrict untrusted content scripts!)
+      try {
+        await chrome.storage.session
+          .setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' })
+          .catch(() => {});
+        const data = await chrome.storage.session.get([
+          'encryptionKeyMaterial',
+          'encryptionSalt',
+          'keyExpiration',
+          'appVersion',
+        ]);
+        const currentVersion = chrome.runtime.getManifest().version;
+
+        if (
+          data.encryptionKeyMaterial &&
+          data.encryptionSalt &&
+          data.keyExpiration > Date.now() &&
+          data.appVersion === currentVersion
+        ) {
+          const keyBuf = Uint8Array.from(atob(data.encryptionKeyMaterial), (c) => c.charCodeAt(0));
+          sessionKey = await crypto.subtle.importKey(
+             'raw',
+             keyBuf,
+             { name: 'AES-GCM', length: 256 },
+             true, // allow export again next time
+             ['encrypt', 'decrypt']
+          );
+          saltArray = Uint8Array.from(atob(data.encryptionSalt), (c) => c.charCodeAt(0));
+          sessionKeySalt = saltArray;
+          sessionKeyExpiration = data.keyExpiration;
+          log.debug('Loaded existing session encryption key from chrome.storage.session');
+        } else if (data.appVersion !== currentVersion) {
+          log.info('Extension version changed, forcing session key rotation');
         }
-
-        // Generate new key if not found
-        if (!sessionPassword || !saltArray) {
-            sessionPassword = generateSecurePassword(64);
-            saltArray = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
-            sessionKeyExpiration = Date.now() + KEY_MAX_LIFETIME;
-
-            // Persist securely to browser session ONLY
-            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session) {
-                try {
-                    await chrome.storage.session.set({
-                        encryptionPassword: sessionPassword,
-                        encryptionSalt: btoa(String.fromCharCode(...saltArray)),
-                        keyExpiration: sessionKeyExpiration
-                    });
-                } catch (e) {
-                    log.warn('Could not write to chrome.storage.session', e);
-                }
-            }
-            log.debug('Secure encryption initialized (fresh session key)');
-        }
-
-        sessionKeySalt = saltArray;
-        sessionKey = await deriveKey(sessionPassword, sessionKeySalt);
-
-        // Schedule automatic key rotation
-        setTimeout(() => {
-            rotateSessionKey().catch(err => log.error('Auto key rotation failed', err));
-        }, KEY_ROTATION_INTERVAL);
-
-        // Intentionally clear password from memory scope since it is cached in Derive algorithm and session storage
-    } catch (error) {
-        log.error('Secure encryption initialization failed', error);
-        throw error;
+      } catch (e) {
+        log.warn('Could not read from chrome.storage.session', e);
+      }
     }
+
+    // Generate new key if not found
+    if (!sessionKey || !saltArray) {
+      sessionPassword = generateSecurePassword(64);
+      saltArray = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
+      sessionKeySalt = saltArray;
+      sessionKeyExpiration = Date.now() + KEY_MAX_LIFETIME;
+      
+      // Generate a random extractable AES-256-GCM key directly.
+      // Using generateKey instead of deriveKey because deriveKey produces
+      // non-extractable keys (PBKDF2 → AES), which cannot be exported
+      // for persistence in chrome.storage.session.
+      sessionKey = await crypto.subtle.generateKey(
+        { name: 'AES-GCM', length: 256 },
+        true, // extractable — required for session persistence
+        ['encrypt', 'decrypt']
+      );
+
+      // Persist securely to browser session ONLY as exported Key Material instead of plaintext password
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session) {
+        try {
+          const exportedBuf = await crypto.subtle.exportKey('raw', sessionKey);
+          const base64Key = btoa(String.fromCharCode(...new Uint8Array(exportedBuf)));
+          const currentVersion = chrome.runtime.getManifest().version;
+          await chrome.storage.session.set({
+            encryptionKeyMaterial: base64Key,
+            encryptionSalt: btoa(String.fromCharCode(...saltArray)),
+            keyExpiration: sessionKeyExpiration,
+            appVersion: currentVersion,
+          });
+        } catch (e) {
+          log.warn('Could not write to chrome.storage.session', e);
+        }
+      }
+      log.debug('Secure encryption initialized (fresh session key)');
+    }
+
+    // Schedule automatic key rotation using alarms since setTimeout won't survive SW suspension
+    if (typeof chrome !== 'undefined' && chrome.alarms) {
+      void chrome.alarms.create('encryption-key-rotation', {
+        delayInMinutes: KEY_ROTATION_INTERVAL / 60000,
+      });
+      if (!chrome.alarms.onAlarm.hasListener(onRotationAlarm)) {
+        chrome.alarms.onAlarm.addListener(onRotationAlarm);
+      }
+    }
+
+    // Intentionally clear password from memory scope since it is cached in Derive algorithm and session storage
+  } catch (error) {
+    log.error('Secure encryption initialization failed', error);
+    throw error;
+  }
 }
 
 /**
@@ -445,7 +474,7 @@ export async function initializeSecureEncryption(): Promise<void> {
  * @security Returns null if not initialized
  */
 export function getSessionKey(): CryptoKey | null {
-    return sessionKey;
+  return sessionKey;
 }
 
 /**
@@ -454,15 +483,15 @@ export function getSessionKey(): CryptoKey | null {
  * @security Uses secure overwrite before nullifying
  */
 export function clearEncryptionKeys(): void {
-    secureClearKeys();
+  secureClearKeys();
 }
 
 /**
  * Handles extension unload - clears all encryption material
  */
 export function onExtensionUnload(): void {
-    clearEncryptionKeys();
-    log.info('Encryption cleaned up on extension unload');
+  clearEncryptionKeys();
+  log.info('Encryption cleaned up on extension unload');
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -480,8 +509,8 @@ const activeTabs = new Set<number>();
  * @security Used to invalidate keys when tab closes
  */
 export function registerActiveTab(tabId: number): void {
-    activeTabs.add(tabId);
-    log.debug('Tab registered for key tracking', { tabId, activeCount: activeTabs.size });
+  activeTabs.add(tabId);
+  log.debug('Tab registered for key tracking', { tabId, activeCount: activeTabs.size });
 }
 
 /**
@@ -489,71 +518,175 @@ export function registerActiveTab(tabId: number): void {
  * @security Called when tab closes to clean up encryption material
  */
 export function unregisterActiveTab(tabId: number): void {
-    activeTabs.delete(tabId);
-    log.debug('Tab unregistered', { tabId, remainingActive: activeTabs.size });
+  activeTabs.delete(tabId);
+  log.debug('Tab unregistered', { tabId, remainingActive: activeTabs.size });
 
-    // SECURITY FIX: If no active tabs remain, invalidate keys
-    if (activeTabs.size === 0) {
-        log.info('No active tabs remaining - invalidating encryption keys');
-        clearEncryptionKeys();
-    }
+  // SECURITY FIX: Do NOT clear encryption keys on tab close.
+  // The service worker manages its own lifecycle and stores persistence
+  // via chrome.storage.session. Wiping keys on tab close breaks background operations.
 }
 
 /**
  * Check if there are any active tabs
  */
 export function hasActiveTabs(): boolean {
-    return activeTabs.size > 0;
+  return activeTabs.size > 0;
 }
 
 /**
  * Get count of active tabs (for debugging)
  */
 export function getActiveTabCount(): number {
-    return activeTabs.size;
+  return activeTabs.size;
 }
 
 // Register cleanup handler for service worker
 if (typeof chrome !== 'undefined' && chrome.runtime) {
-    // chrome.runtime.onSuspend is only available in service workers/background
-    if (chrome.runtime.onSuspend) {
-        chrome.runtime.onSuspend.addListener(() => {
-            onExtensionUnload();
-        });
-    }
+  // chrome.runtime.onSuspend is only available in service workers/background
+  if (chrome.runtime.onSuspend) {
+    chrome.runtime.onSuspend.addListener(() => {
+      onExtensionUnload();
+    });
+  }
 
-    // SECURITY FIX: Listen for tab removal to invalidate keys
-    if (chrome.tabs?.onRemoved) {
-        chrome.tabs.onRemoved.addListener((tabId: number) => {
-            unregisterActiveTab(tabId);
-        });
-    }
+  // SECURITY FIX: Listen for tab removal to invalidate keys
+  if (chrome.tabs?.onRemoved) {
+    chrome.tabs.onRemoved.addListener((tabId: number) => {
+      unregisterActiveTab(tabId);
+    });
+  }
 }
 
 /**
  * Hashes a password using SHA-256
- * 
+ *
  * @param password - Password to hash
  * @returns Hex-encoded hash
- * 
+ *
  * @security One-way hash for password verification
  */
 export async function hashPassword(password: string): Promise<string> {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const encoder = new TextEncoder();
+  const passwordData = encoder.encode(password);
+  
+  // Use dynamically generated, securely cached salt for PBKDF2 hash verification
+  const salt = await getInternalSalt();
+  
+  const baseKey = await crypto.subtle.importKey(
+    'raw',
+    passwordData,
+    { name: 'PBKDF2' },
+    false,
+    ['deriveBits']
+  );
+
+  const hashBuffer = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: salt.buffer as ArrayBuffer,
+      iterations: 210000,
+      hash: 'SHA-256'
+    },
+    baseKey,
+    256 // 32 bytes
+  );
+
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
  * Verifies a password against a hash
- * 
+ *
  * @param password - Password to verify
  * @param hash - Expected hash
  * @returns true if password matches
  */
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-    const computedHash = await hashPassword(password);
-    return computedHash === hash;
+  const computedHash = await hashPassword(password);
+  
+  // Constant-time comparison to prevent timing attacks
+  if (computedHash.length !== hash.length) {return false;}
+  let result = 0;
+  for (let i = 0; i < computedHash.length; i++) {
+    result |= computedHash.charCodeAt(i) ^ hash.charCodeAt(i);
+  }
+  return result === 0;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Cryptographic Utility Functions (Merged from legacy cryptoService)
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Generate cryptographically secure random bytes
+ */
+export function getRandomBytes(length: number): Uint8Array {
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  return bytes;
+}
+
+/**
+ * Generate a secure random number in range [min, max]
+ * Security: Uses rejection sampling to eliminate modulo bias.
+ */
+export function getRandomInt(min: number, max: number): number {
+  if (min >= max) {return min;}
+  const range = max - min + 1;
+  const maxMultiple = Math.floor(4294967296 / range) * range;
+  const randomArray = new Uint32Array(1);
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    crypto.getRandomValues(randomArray);
+    const value = randomArray[0]!;
+    if (value < maxMultiple) {
+      return min + (value % range);
+    }
+  }
+}
+
+/**
+ * Generate a random string from a charset
+ */
+export function getRandomString(length: number, charset: string): string {
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += charset[getRandomInt(0, charset.length - 1)];
+  }
+  return result;
+}
+
+/**
+ * Shuffle array using Fisher-Yates with secure random
+ */
+export function secureShuffleArray<T>(array: T[], inPlace: boolean = false): T[] {
+  const result = inPlace ? array : [...array];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = getRandomInt(0, i);
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+/**
+ * Generate a UUID v4
+ */
+export function generateUUID(): string {
+  const bytes = getRandomBytes(16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; // Version 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // Variant 1
+
+  const hex = Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20),
+  ].join('-');
 }

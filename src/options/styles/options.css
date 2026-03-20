@@ -37,24 +37,15 @@
   --glass-blur: blur(40px) saturate(180%);
 
   /* Shadow System */
-  --shadow-sm:
-    0 1px 3px rgba(0, 0, 0, 0.03),
-    0 4px 8px rgba(0, 0, 0, 0.03);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.03), 0 4px 8px rgba(0, 0, 0, 0.03);
   --shadow-md:
-    0 2px 4px rgba(0, 0, 0, 0.02),
-    0 4px 12px rgba(0, 0, 0, 0.04),
-    0 12px 24px rgba(0, 0, 0, 0.04);
+    0 2px 4px rgba(0, 0, 0, 0.02), 0 4px 12px rgba(0, 0, 0, 0.04), 0 12px 24px rgba(0, 0, 0, 0.04);
   --shadow-lg:
-    0 4px 8px rgba(0, 0, 0, 0.03),
-    0 8px 24px rgba(0, 0, 0, 0.05),
-    0 16px 48px rgba(0, 0, 0, 0.06);
+    0 4px 8px rgba(0, 0, 0, 0.03), 0 8px 24px rgba(0, 0, 0, 0.05), 0 16px 48px rgba(0, 0, 0, 0.06);
   --shadow-xl:
-    0 8px 16px rgba(0, 0, 0, 0.03),
-    0 16px 40px rgba(0, 0, 0, 0.06),
-    0 32px 64px rgba(0, 0, 0, 0.08);
+    0 8px 16px rgba(0, 0, 0, 0.03), 0 16px 40px rgba(0, 0, 0, 0.06), 0 32px 64px rgba(0, 0, 0, 0.08);
   --shadow-brand:
-    0 4px 16px rgba(99, 102, 241, 0.2),
-    0 8px 32px rgba(99, 102, 241, 0.15),
+    0 4px 16px rgba(99, 102, 241, 0.2), 0 8px 32px rgba(99, 102, 241, 0.15),
     0 2px 8px rgba(99, 102, 241, 0.1);
 
   /* Animation */
@@ -109,20 +100,12 @@
 
     --glass-bg: rgba(21, 29, 48, 0.92);
     --glass-bg-thick: rgba(26, 36, 56, 0.95);
-    --glass-border: rgba(255, 255, 255, 0.10);
+    --glass-border: rgba(255, 255, 255, 0.1);
 
-    --shadow-sm:
-      0 2px 8px rgba(0, 0, 0, 0.40),
-      0 4px 16px rgba(0, 0, 0, 0.30);
-    --shadow-md:
-      0 4px 16px rgba(0, 0, 0, 0.50),
-      0 8px 32px rgba(0, 0, 0, 0.40);
-    --shadow-lg:
-      0 8px 32px rgba(0, 0, 0, 0.55),
-      0 16px 48px rgba(0, 0, 0, 0.45);
-    --shadow-brand:
-      0 0 30px rgba(99, 102, 241, 0.35),
-      0 4px 20px rgba(99, 102, 241, 0.25);
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5), 0 8px 32px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.55), 0 16px 48px rgba(0, 0, 0, 0.45);
+    --shadow-brand: 0 0 30px rgba(99, 102, 241, 0.35), 0 4px 20px rgba(99, 102, 241, 0.25);
 
     --brand-primary: #818cf8;
     --brand-secondary: #a78bfa;
@@ -239,7 +222,6 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-
   .blob-1,
   .blob-2 {
     animation: none !important;
@@ -293,7 +275,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: var(--shadow-xl), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  box-shadow:
+    var(--shadow-xl),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
   border: 1px solid var(--glass-border);
   transition: var(--transition-normal);
   flex-shrink: 0;
@@ -320,14 +304,6 @@ body {
   font-weight: 500;
   color: var(--text-secondary);
   margin-top: 4px;
-}
-
-.logo-img-options {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transform: scale(1.25);
-  filter: drop-shadow(0 4px 12px rgba(99, 102, 241, 0.25)) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.15));
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -362,7 +338,9 @@ body {
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-2xl);
   padding: var(--space-3);
-  box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  box-shadow:
+    var(--shadow-md),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 .sidebar-tab {
@@ -417,10 +395,14 @@ body {
    ═══════════════════════════════════════════════════════════════════ */
 
 .options-main {
+  min-height: 480px;
+}
+
+[role='tabpanel'] {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
-  min-height: 480px;
+  width: 100%;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -434,31 +416,18 @@ body {
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-2xl);
   padding: var(--space-6);
-  box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  box-shadow:
+    var(--shadow-md),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
   transition: var(--transition-normal);
   position: relative;
-  overflow: hidden;
-}
-
-.settings-section::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 50%;
-  background: linear-gradient(180deg,
-      rgba(255, 255, 255, 0.4) 0%,
-      rgba(255, 255, 255, 0.1) 40%,
-      transparent 100%);
-  pointer-events: none;
-  opacity: 0.5;
-  border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
 }
 
 .settings-section:hover {
   transform: translateY(-1px);
-  box-shadow: var(--shadow-lg), 0 8px 32px rgba(99, 102, 241, 0.06);
+  box-shadow:
+    var(--shadow-lg),
+    0 8px 32px rgba(99, 102, 241, 0.06);
 }
 
 .settings-section h2 {
@@ -513,10 +482,10 @@ body {
    ═══════════════════════════════════════════════════════════════════ */
 
 select,
-input[type="number"],
-input[type="text"],
-input[type="password"],
-input[type="url"] {
+input[type='number'],
+input[type='text'],
+input[type='password'],
+input[type='url'] {
   background: rgba(0, 0, 0, 0.04);
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: var(--radius-md);
@@ -530,31 +499,30 @@ input[type="url"] {
 }
 
 @media (prefers-color-scheme: dark) {
-
   select,
-  input[type="number"],
-  input[type="text"],
-  input[type="password"],
-  input[type="url"] {
+  input[type='number'],
+  input[type='text'],
+  input[type='password'],
+  input[type='url'] {
     background: rgba(255, 255, 255, 0.06);
     border-color: rgba(255, 255, 255, 0.1);
   }
 }
 
 select:focus,
-input[type="number"]:focus,
-input[type="text"]:focus,
-input[type="password"]:focus,
-input[type="url"]:focus {
+input[type='number']:focus,
+input[type='text']:focus,
+input[type='password']:focus,
+input[type='url']:focus {
   border-color: var(--brand-primary);
   box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15);
 }
 
 select:hover,
-input[type="number"]:hover,
-input[type="text"]:hover,
-input[type="password"]:hover,
-input[type="url"]:hover {
+input[type='number']:hover,
+input[type='text']:hover,
+input[type='password']:hover,
+input[type='url']:hover {
   border-color: rgba(99, 102, 241, 0.3);
 }
 
@@ -595,7 +563,7 @@ input[type="url"]:hover {
 }
 
 .toggle-slider:before {
-  content: "";
+  content: '';
   position: absolute;
   height: 26px;
   width: 26px;
@@ -606,7 +574,7 @@ input[type="url"]:hover {
   transition: all 350ms cubic-bezier(0.23, 1, 0.32, 1);
   box-shadow:
     0 2px 6px rgba(0, 0, 0, 0.15),
-    0 1px 3px rgba(0, 0, 0, 0.10);
+    0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .toggle--active .toggle-slider {
@@ -966,9 +934,7 @@ input[type="url"]:hover {
 }
 
 .settings-section.danger::before {
-  background: linear-gradient(180deg,
-      rgba(239, 68, 68, 0.06) 0%,
-      transparent 100%);
+  background: linear-gradient(180deg, rgba(239, 68, 68, 0.06) 0%, transparent 100%);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -998,7 +964,7 @@ input[type="url"]:hover {
   position: fixed;
   bottom: 24px;
   right: 24px;
-  background: #32D74B;
+  background: #32d74b;
   color: white;
   padding: 12px 24px;
   border-radius: var(--radius-full);
@@ -1248,17 +1214,17 @@ input[type="url"]:hover {
 }
 
 /* Invalid Input */
-input[aria-invalid="true"],
-select[aria-invalid="true"],
-textarea[aria-invalid="true"] {
+input[aria-invalid='true'],
+select[aria-invalid='true'],
+textarea[aria-invalid='true'] {
   border-color: #ef4444;
   border-width: 2px;
   padding: 9px 13px;
 }
 
-input[aria-invalid="true"]:focus,
-select[aria-invalid="true"]:focus,
-textarea[aria-invalid="true"]:focus {
+input[aria-invalid='true']:focus,
+select[aria-invalid='true']:focus,
+textarea[aria-invalid='true']:focus {
   border-color: #ef4444;
   box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.2);
   outline-color: #ef4444;
@@ -1272,8 +1238,8 @@ textarea[aria-invalid="true"]:focus {
 }
 
 button:focus-visible,
-[role="button"]:focus-visible,
-[role="switch"]:focus-visible {
+[role='button']:focus-visible,
+[role='switch']:focus-visible {
   outline: 3px solid var(--brand-primary);
   outline-offset: 3px;
   box-shadow: 0 0 0 5px rgba(99, 102, 241, 0.25);
@@ -1290,7 +1256,6 @@ textarea:focus-visible {
 
 /* Reduced Motion */
 @media (prefers-reduced-motion: reduce) {
-
   *,
   *::before,
   *::after {
@@ -1308,7 +1273,6 @@ textarea:focus-visible {
 
 /* High Contrast Mode */
 @media (forced-colors: active) {
-
   .btn,
   input,
   select,

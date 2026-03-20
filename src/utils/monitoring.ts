@@ -59,11 +59,19 @@ class PerformanceMonitor {
    * Initialize all performance observers
    */
   init(): void {
-    this.observeLCP();
-    this.observeFID();
-    this.observeCLS();
-    this.observeINP();
-    this.observeLongTasks();
+    // LCP / FID / CLS / INP / longtask are page-level entry types that only
+    // exist in real browser pages, not in service workers.  Calling observe()
+    // with these types in a SW throws a "does not exist or isn't supported"
+    // error. Guard on window + document before setting them up.
+    const isPage = typeof window !== 'undefined' && typeof document !== 'undefined';
+    if (isPage) {
+      this.observeLCP();
+      this.observeFID();
+      this.observeCLS();
+      this.observeINP();
+      this.observeLongTasks();
+    }
+    // Resource timing is supported in both pages and service workers.
     this.observeResourceTiming();
   }
 
@@ -201,7 +209,8 @@ class PerformanceMonitor {
         const metric: LocalMetric = {
           name: 'LongTask',
           value: entry.duration,
-          rating: entry.duration > 500 ? 'poor' : entry.duration > 200 ? 'needs-improvement' : 'good',
+          rating:
+            entry.duration > 500 ? 'poor' : entry.duration > 200 ? 'needs-improvement' : 'good',
           entries: [entry as unknown as PerformanceEntry],
         };
 
@@ -225,13 +234,26 @@ class PerformanceMonitor {
   /**
    * Observe resource timing for network performance
    */
+  // Endpoints that are expected to be slow (long-polling / frequent API calls).
+  // Logging these as "slow" is noise, not signal.
+  private static POLLING_ENDPOINTS: readonly string[] = [
+    'api.mail.gw/messages',
+    'api.guerrillamail',
+    'tempmail',
+  ];
+
   private observeResourceTiming(): void {
     const observer = new PerformanceObserver((entryList) => {
       const entries = entryList.getEntries() as PerformanceResourceTiming[];
 
       entries.forEach((entry) => {
-        // Track slow resources
-        if (entry.duration > 1000) {
+        // Skip known polling endpoints — their latency is expected and not
+        // a sign of a performance problem worth logging.
+        const isPolling = PerformanceMonitor.POLLING_ENDPOINTS.some((endpoint) =>
+          entry.name.includes(endpoint)
+        );
+        // Only flag genuinely slow non-polling resources (>5 s).
+        if (!isPolling && entry.duration > 5000) {
           this.reportSlowResource(entry);
         }
       });
@@ -271,8 +293,12 @@ class PerformanceMonitor {
    */
   private getRating(metric: MetricType, value: number): 'good' | 'needs-improvement' | 'poor' {
     const budget = PERFORMANCE_BUDGETS[metric];
-    if (value <= budget * 0.8) { return 'good'; }
-    if (value <= budget) { return 'needs-improvement'; }
+    if (value <= budget * 0.8) {
+      return 'good';
+    }
+    if (value <= budget) {
+      return 'needs-improvement';
+    }
     return 'poor';
   }
 
@@ -312,7 +338,9 @@ class PerformanceMonitor {
    */
   getAverage(name: string): number | null {
     const metrics = this.metrics.get(name);
-    if (!metrics || metrics.length === 0) { return null; }
+    if (!metrics || metrics.length === 0) {
+      return null;
+    }
 
     const sum = metrics.reduce((acc, m) => acc + m.value, 0);
     return sum / metrics.length;
@@ -339,25 +367,28 @@ class PerformanceMonitor {
  */
 export class MemoryMonitor {
   private snapshots: MemoryUsage[] = [];
-  private intervalId?: number;
+  private timeoutId?: number;
 
   /**
    * Start memory monitoring
    */
   start(intervalMs: number = 10000): void {
-    // FIX: use globalThis to avoid window undefined errors in Service Worker
-    this.intervalId = globalThis.setInterval(() => {
+    const tick = () => {
       this.takeSnapshot();
-    }, intervalMs) as unknown as number;
+      this.timeoutId = globalThis.setTimeout(tick, intervalMs) as unknown as number;
+    };
+
+    this.stop();
+    this.timeoutId = globalThis.setTimeout(tick, intervalMs) as unknown as number;
   }
 
   /**
    * Stop memory monitoring
    */
   stop(): void {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = undefined;
+    if (this.timeoutId) {
+      clearTimeout(this.timeoutId);
+      this.timeoutId = undefined;
     }
   }
 
@@ -392,7 +423,9 @@ export class MemoryMonitor {
    * Check for memory leak indicators
    */
   private checkForLeaks(): void {
-    if (this.snapshots.length < 10) { return; }
+    if (this.snapshots.length < 10) {
+      return;
+    }
 
     const recent = this.snapshots.slice(-10);
     const first = recent[0].usedJSHeapSize;
@@ -413,14 +446,20 @@ export class MemoryMonitor {
    * Get memory usage trend
    */
   getTrend(): MemoryTrend {
-    if (this.snapshots.length < 2) { return 'stable'; }
+    if (this.snapshots.length < 2) {
+      return 'stable';
+    }
 
     const first = this.snapshots[0].usedJSHeapSize;
     const last = this.snapshots[this.snapshots.length - 1].usedJSHeapSize;
     const change = (last - first) / first;
 
-    if (change > 0.1) { return 'increasing'; }
-    if (change < -0.1) { return 'decreasing'; }
+    if (change > 0.1) {
+      return 'increasing';
+    }
+    if (change < -0.1) {
+      return 'decreasing';
+    }
     return 'stable';
   }
 
@@ -453,25 +492,28 @@ export class ErrorTracker {
    */
   init(): void {
     // FIX: Handle both window (popup/content) and self (service worker) environments
-    const globalContext = typeof window !== 'undefined' ? window : (typeof self !== 'undefined' ? self : null);
+    const globalContext =
+      typeof window !== 'undefined' ? window : typeof self !== 'undefined' ? self : null;
 
     if (globalContext) {
-      globalContext.addEventListener('error', (event: any) => {
+      globalContext.addEventListener('error', (event: Event) => {
+        const errorEvent = event as ErrorEvent;
         this.trackError({
           type: 'uncaught',
-          message: this.sanitizeMessage(event.message || 'Unknown error'),
-          filename: event.filename,
-          lineno: event.lineno,
-          colno: event.colno,
-          stack: event.error?.stack,
+          message: this.sanitizeMessage(errorEvent.message || 'Unknown error'),
+          filename: errorEvent.filename,
+          lineno: errorEvent.lineno,
+          colno: errorEvent.colno,
+          stack: errorEvent.error?.stack,
           timestamp: Date.now(),
         });
       });
 
-      globalContext.addEventListener('unhandledrejection', (event: any) => {
+      globalContext.addEventListener('unhandledrejection', (event: Event) => {
+        const rejectionEvent = event as PromiseRejectionEvent;
         this.trackError({
           type: 'unhandledrejection',
-          message: this.sanitizeMessage(String(event.reason)),
+          message: this.sanitizeMessage(String(rejectionEvent.reason)),
           timestamp: Date.now(),
         });
       });
@@ -557,10 +599,13 @@ export class ErrorTracker {
    * Get error count by type
    */
   getErrorSummary(): Record<string, number> {
-    return this.errors.reduce((acc, error) => {
-      acc[error.type] = (acc[error.type] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
+    return this.errors.reduce(
+      (acc, error) => {
+        acc[error.type] = (acc[error.type] || 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>
+    );
   }
 }
 

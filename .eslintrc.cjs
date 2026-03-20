@@ -141,15 +141,6 @@ module.exports = {
             }
         },
         {
-            files: ["**/*.e2e.test.ts", "**/e2e/**"],
-            plugins: ["playwright"],
-            extends: ["plugin:playwright/recommended"],
-            rules: {
-                "no-console": "off",
-                "@typescript-eslint/no-floating-promises": "off"
-            }
-        },
-        {
             files: ["scripts/**/*.js", "*.config.js", "*.config.ts"],
             rules: {
                 "@typescript-eslint/no-var-requires": "off",

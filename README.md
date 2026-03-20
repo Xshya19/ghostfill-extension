@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![GhostFill Banner](https://img.shields.io/badge/👻_GhostFill-Privacy_Suite_v1.1-7c5cfc?style=for-the-badge&labelColor=0f0f1a)
+![GhostFill Banner](https://img.shields.io/badge/👻_GhostFill-Privacy_Suite_v1.1.0-7c5cfc?style=for-the-badge&labelColor=0f0f1a)
 
 [![GitHub stars](https://img.shields.io/github/stars/Xshya19/ghostfill-extension?style=for-the-badge&logo=github&color=yellow)](https://github.com/Xshya19/ghostfill-extension/stargazers)
 [![License](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)](LICENSE)
@@ -26,6 +26,7 @@
 - Generate unlimited disposable email addresses instantly
 - **8 providers supported:** Mail.gw (default), Mail.tm, Maildrop, 1secmail, Guerrilla Mail, DropMail, TempMail.lol, Tmailor
 - Automatic provider health-checking — falls back to a working provider if one is down
+- **Provider Health Meter**: Real-time status monitoring right in the extension options
 - Real-time inbox polling every 10 seconds (configurable)
 - Persistent email across browser sessions
 
@@ -34,7 +35,7 @@
 - Configurable length (4–128 chars), character sets (upper, lower, numbers, symbols)
 - "Avoid ambiguous characters" mode (`I`, `l`, `1`, `O`, `0`)
 - Password strength meter with estimated crack time
-- Preset templates: Standard · Strong · PIN · Passphrase
+- Preset templates: Standard · Strong · PIN · BIP39 Passphrase
 
 ### 🔢 Automatic OTP Detection & Fill
 - **Local AI engine** — extracts verification codes from emails with no external API required
@@ -73,7 +74,7 @@
 ```bash
 # 1. Clone the repo
 git clone https://github.com/Xshya19/ghostfill-extension.git
-cd ghostfill-extension/GhostFill-extension
+cd ghostfill-extension
 
 # 2. Install dependencies
 npm install
@@ -131,7 +132,7 @@ Watches for file changes and rebuilds automatically. Reload the extension in `ch
 ## 🏗️ Architecture
 
 ```
-GhostFill-extension/
+Ghostfill-extension/
 ├── src/
 │   ├── background/          # Service worker (Chrome Extension background)
 │   │   ├── serviceWorker.ts   # Boot & lifecycle
@@ -150,6 +151,10 @@ GhostFill-extension/
 │   │   └── ui/
 │   │       └── GhostLabel.ts  # GhostLabel 3.0 — inline field icons
 │   │
+│   ├── offscreen/           # Offscreen document for DOM operations
+│   │   ├── offscreen.ts
+│   │   └── offscreen.html
+│   │
 │   ├── popup/               # React extension popup
 │   │   ├── App.tsx
 │   │   ├── components/
@@ -166,9 +171,9 @@ GhostFill-extension/
 │   │   ├── storageService.ts  # AES-256-GCM encrypted storage
 │   │   ├── smartDetectionService.ts  # Local AI OTP classifier
 │   │   ├── cryptoService.ts
-│   │   ├── identityService.ts
-│   │   ├── passwordService.ts
-│   │   └── linkService.ts     # Activation link handler
+│   │   ├── knowledgeBase.ts   # Structured OTP brand definitions
+│   │   ├── performanceService.ts # Performance monitoring & caching
+│   │   └── passwordService.ts
 │   │
 │   ├── options/             # Extension settings page
 │   ├── types/               # TypeScript type definitions
@@ -190,9 +195,10 @@ GhostFill-extension/
 | Storage encryption | AES-256-GCM with PBKDF2 key derivation |
 | API keys | Stored in `chrome.storage.session` only — never persisted to disk |
 | Shadow DOM | Floating button and GhostLabel isolated from page styles |
-| No tracking | Zero analytics, zero external telemetry |
+| No tracking | Zero analytics, zero external telemetry by default (explicit opt-in) |
+| Performance | CPU-friendly DOM traversal (layout thrashing & regex ReDoS prevented) |
 | Clipboard OTP | Clipboard NOT used for OTP fill — PhantomTyper types directly |
-| CSP | Strict `script-src 'self'` — no `eval`, no remote scripts |
+| CSP | Strict `script-src 'self'`; `require-trusted-types-for 'script'`; no `eval` |
 | Sensitive logging | All logs automatically redact emails, passwords, and OTPs |
 
 ---
@@ -238,7 +244,7 @@ Some websites actively block disposable email domains. This affects **all** disp
 | `npm run dev` | Development build with file watcher |
 | `npm run lint` | Run ESLint |
 | `npm run format` | Format code with Prettier |
-| `npm run build:zip` | Package `dist/` as a `.zip` for Chrome Web Store |
+| `npm run zip` | Package `dist/` as a `.zip` for Chrome Web Store |
 
 ---
 

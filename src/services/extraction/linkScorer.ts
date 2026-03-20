@@ -11,33 +11,33 @@ import type { ProviderKnowledge, EmailIntent, URLParamAnalysis } from './types';
 // ═══════════════════════════════════════════════════════════════════════
 
 const SCORING = {
-    // Base scores
-    baseScore: 40,
-    knowledgeBasePattern: 70,
-    urlKeywordActivation: 70,
-    urlKeywordReset: 70,
-    urlKeywordMagic: 68,
+  // Base scores
+  baseScore: 40,
+  knowledgeBasePattern: 70,
+  urlKeywordActivation: 70,
+  urlKeywordReset: 70,
+  urlKeywordMagic: 68,
 
-    // Bonuses
-    ctaButton: 20,
-    anchorKeyword: 15,
-    paramToken: 12,
-    paramCode: 8,
-    paramSignature: 8,
-    paramExpiry: 5,
-    longToken: 5,
-    contextBonusMax: 15,
-    domainTrustMax: 10,
-    intentAlignment: 15,
-    providerPattern: 20,
-    zoneCta: 15,
+  // Bonuses
+  ctaButton: 20,
+  anchorKeyword: 15,
+  paramToken: 12,
+  paramCode: 8,
+  paramSignature: 8,
+  paramExpiry: 5,
+  longToken: 5,
+  contextBonusMax: 15,
+  domainTrustMax: 10,
+  intentAlignment: 15,
+  providerPattern: 20,
+  zoneCta: 15,
 
-    // Penalties
-    zoneFooter: 18,
+  // Penalties
+  zoneFooter: 18,
 
-    // Zone weight multiplier
-    zoneWeightBase: 0.55,
-    zoneWeightFactor: 0.45,
+  // Zone weight multiplier
+  zoneWeightBase: 0.55,
+  zoneWeightFactor: 0.45,
 } as const;
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -50,30 +50,49 @@ const SCORING = {
  * @returns Detected intent and confidence
  */
 export function detectIntentFromUrl(url: string): {
-    intent: EmailIntent;
-    confidence: number;
-    patternName: string;
+  intent: EmailIntent;
+  confidence: number;
+  patternName: string;
 } {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const _lower = url.toLowerCase();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _lower = url.toLowerCase();
 
-    if (/verify|activate|confirm|registration|signup|auth|login|sso/i.test(url) && /token|code|key|ticket|sig|secret/i.test(url)) {
-        return { intent: 'activation', confidence: SCORING.urlKeywordActivation + 5, patternName: 'url-kw-activation-strong' };
-    }
+  if (
+    /verify|activate|confirm|registration|signup|auth|login|sso/i.test(url) &&
+    /token|code|key|ticket|sig|secret/i.test(url)
+  ) {
+    return {
+      intent: 'activation',
+      confidence: SCORING.urlKeywordActivation + 5,
+      patternName: 'url-kw-activation-strong',
+    };
+  }
 
-    if (/verify|activate|confirm|registration|signup/i.test(url)) {
-        return { intent: 'activation', confidence: SCORING.urlKeywordActivation, patternName: 'url-kw-activation' };
-    }
+  if (/verify|activate|confirm|registration|signup/i.test(url)) {
+    return {
+      intent: 'activation',
+      confidence: SCORING.urlKeywordActivation,
+      patternName: 'url-kw-activation',
+    };
+  }
 
-    if (/reset|recover|password|forgot/i.test(url)) {
-        return { intent: 'password-reset', confidence: SCORING.urlKeywordReset, patternName: 'url-kw-reset' };
-    }
+  if (/reset|recover|password|forgot/i.test(url)) {
+    return {
+      intent: 'password-reset',
+      confidence: SCORING.urlKeywordReset,
+      patternName: 'url-kw-reset',
+    };
+  }
 
-    if (/magic(?:-link)?|passwordless|signin[-_]?link/i.test(url)) {
-        return { intent: 'activation', confidence: SCORING.urlKeywordMagic, patternName: 'url-kw-magic' };
-    }
+  if (/magic(?:-link)?|passwordless|signin[-_]?link/i.test(url)) {
+    return {
+      intent: 'activation',
+      confidence: SCORING.urlKeywordMagic,
+      patternName: 'url-kw-magic',
+    };
+  }
 
-    return { intent: 'other', confidence: 0, patternName: '' };
+  return { intent: 'other', confidence: 0, patternName: '' };
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -86,31 +105,36 @@ export function detectIntentFromUrl(url: string): {
  * @param isCTA - Whether it's a CTA button
  * @returns Score bonus and detected intent
  */
-export function scoreAnchorText(anchorText: string, isCTA: boolean): {
-    bonus: number;
-    intent: EmailIntent | null;
+export function scoreAnchorText(
+  anchorText: string,
+  isCTA: boolean
+): {
+  bonus: number;
+  intent: EmailIntent | null;
 } {
-    if (!anchorText) { return { bonus: 0, intent: null }; }
+  if (!anchorText) {
+    return { bonus: 0, intent: null };
+  }
 
-    const lower = anchorText.toLowerCase();
-    let bonus = 0;
-    let intent: EmailIntent | null = null;
+  const lower = anchorText.toLowerCase();
+  let bonus = 0;
+  let intent: EmailIntent | null = null;
 
-    if (isCTA) {
-        bonus = SCORING.ctaButton;
-        if (/verify|confirm|activate|complete|get started|click here/i.test(lower)) {
-            bonus += SCORING.anchorKeyword;
-            intent = 'activation';
-        } else if (/reset|change|set.*password/i.test(lower)) {
-            bonus += SCORING.anchorKeyword;
-            intent = 'password-reset';
-        }
-    } else if (/verify|confirm|activate|click here|get started|complete/i.test(lower)) {
-        bonus = 10;
-        intent = 'activation';
+  if (isCTA) {
+    bonus = SCORING.ctaButton;
+    if (/verify|confirm|activate|complete|get started|click here/i.test(lower)) {
+      bonus += SCORING.anchorKeyword;
+      intent = 'activation';
+    } else if (/reset|change|set.*password/i.test(lower)) {
+      bonus += SCORING.anchorKeyword;
+      intent = 'password-reset';
     }
+  } else if (/verify|confirm|activate|click here|get started|complete/i.test(lower)) {
+    bonus = 10;
+    intent = 'activation';
+  }
 
-    return { bonus, intent };
+  return { bonus, intent };
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -123,15 +147,25 @@ export function scoreAnchorText(anchorText: string, isCTA: boolean): {
  * @returns Score bonus
  */
 export function scoreUrlParams(paramAnalysis: URLParamAnalysis): number {
-    let bonus = 0;
+  let bonus = 0;
 
-    if (paramAnalysis.hasToken) { bonus += SCORING.paramToken; }
-    if (paramAnalysis.hasCode) { bonus += SCORING.paramCode; }
-    if (paramAnalysis.hasSignature) { bonus += SCORING.paramSignature; }
-    if (paramAnalysis.hasExpiry) { bonus += SCORING.paramExpiry; }
-    if (paramAnalysis.tokenLength > 20) { bonus += SCORING.longToken; }
+  if (paramAnalysis.hasToken) {
+    bonus += SCORING.paramToken;
+  }
+  if (paramAnalysis.hasCode) {
+    bonus += SCORING.paramCode;
+  }
+  if (paramAnalysis.hasSignature) {
+    bonus += SCORING.paramSignature;
+  }
+  if (paramAnalysis.hasExpiry) {
+    bonus += SCORING.paramExpiry;
+  }
+  if (paramAnalysis.tokenLength > 20) {
+    bonus += SCORING.longToken;
+  }
 
-    return bonus;
+  return bonus;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -146,19 +180,19 @@ export function scoreUrlParams(paramAnalysis: URLParamAnalysis): number {
  * @returns Score bonus
  */
 export function scoreIntentAlignment(
-    detectedType: EmailIntent,
-    emailIntent: EmailIntent,
-    hasAuthToken: boolean
+  detectedType: EmailIntent,
+  emailIntent: EmailIntent,
+  hasAuthToken: boolean
 ): number {
-    if (detectedType === emailIntent) {
-        return SCORING.intentAlignment;
-    }
+  if (detectedType === emailIntent) {
+    return SCORING.intentAlignment;
+  }
 
-    if (detectedType === 'other' && emailIntent === 'activation' && hasAuthToken) {
-        return 10;
-    }
+  if (detectedType === 'other' && emailIntent === 'activation' && hasAuthToken) {
+    return 10;
+  }
 
-    return 0;
+  return 0;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -173,18 +207,18 @@ export function scoreIntentAlignment(
  * @returns Adjusted confidence
  */
 export function applyZoneScoring(zone: string, zoneWeight: number, baseConfidence: number): number {
-    let adjusted = baseConfidence;
+  let adjusted = baseConfidence;
 
-    if (zone === 'cta') {
-        adjusted += SCORING.zoneCta;
-    } else if (zone === 'footer') {
-        adjusted -= SCORING.zoneFooter;
-    }
+  if (zone === 'cta') {
+    adjusted += SCORING.zoneCta;
+  } else if (zone === 'footer') {
+    adjusted -= SCORING.zoneFooter;
+  }
 
-    // Apply zone weight multiplier
-    adjusted *= SCORING.zoneWeightBase + zoneWeight * SCORING.zoneWeightFactor;
+  // Apply zone weight multiplier
+  adjusted *= SCORING.zoneWeightBase + zoneWeight * SCORING.zoneWeightFactor;
 
-    return Math.min(Math.max(adjusted, 0), 100);
+  return Math.min(Math.max(adjusted, 0), 100);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -198,12 +232,14 @@ export function applyZoneScoring(zone: string, zoneWeight: number, baseConfidenc
  * @returns True if matched
  */
 export function matchesProviderPattern(url: string, provider: ProviderKnowledge | null): boolean {
-    if (!provider?.linkPatterns) { return false; }
+  if (!provider?.linkPatterns) {
+    return false;
+  }
 
-    return provider.linkPatterns.some((p) => {
-        p.lastIndex = 0;
-        return p.test(url);
-    });
+  return provider.linkPatterns.some((p) => {
+    p.lastIndex = 0;
+    return p.test(url);
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -214,17 +250,17 @@ export function matchesProviderPattern(url: string, provider: ProviderKnowledge 
  * Link scoring factors for detailed analysis
  */
 export interface LinkScoreFactors {
-    baseScore: number;
-    knowledgeBaseBonus: number;
-    urlKeywordBonus: number;
-    anchorBonus: number;
-    paramBonus: number;
-    intentBonus: number;
-    contextBonus: number;
-    domainTrustBonus: number;
-    providerBonus: number;
-    zoneAdjustment: number;
-    finalScore: number;
+  baseScore: number;
+  knowledgeBaseBonus: number;
+  urlKeywordBonus: number;
+  anchorBonus: number;
+  paramBonus: number;
+  intentBonus: number;
+  contextBonus: number;
+  domainTrustBonus: number;
+  providerBonus: number;
+  zoneAdjustment: number;
+  finalScore: number;
 }
 
 /**
@@ -233,77 +269,79 @@ export interface LinkScoreFactors {
  * @returns Detailed score factors
  */
 export function calculateLinkScoreBreakdown(options: {
-    baseConfidence: number;
-    hasKnowledgeBasePattern: boolean;
-    urlIntent: { intent: EmailIntent; confidence: number };
-    anchorBonus: number;
-    paramBonus: number;
-    intentBonus: number;
-    contextScore: number;
-    domainTrust: number;
-    hasProviderMatch: boolean;
-    zone: string;
-    zoneWeight: number;
+  baseConfidence: number;
+  hasKnowledgeBasePattern: boolean;
+  urlIntent: { intent: EmailIntent; confidence: number };
+  anchorBonus: number;
+  paramBonus: number;
+  intentBonus: number;
+  contextScore: number;
+  domainTrust: number;
+  hasProviderMatch: boolean;
+  zone: string;
+  zoneWeight: number;
 }): LinkScoreFactors {
-    const {
-        baseConfidence,
-        hasKnowledgeBasePattern,
-        urlIntent,
-        anchorBonus,
-        paramBonus,
-        intentBonus,
-        contextScore,
-        domainTrust,
-        hasProviderMatch,
-        zone,
-        zoneWeight,
-    } = options;
+  const {
+    baseConfidence,
+    hasKnowledgeBasePattern,
+    urlIntent,
+    anchorBonus,
+    paramBonus,
+    intentBonus,
+    contextScore,
+    domainTrust,
+    hasProviderMatch,
+    zone,
+    zoneWeight,
+  } = options;
 
-    // Start with base or knowledge base score
-    let score = hasKnowledgeBasePattern ? SCORING.knowledgeBasePattern : baseConfidence;
+  // Start with base or knowledge base score
+  let score = hasKnowledgeBasePattern ? SCORING.knowledgeBasePattern : baseConfidence;
 
-    // Add URL keyword bonus if no knowledge base pattern
-    if (!hasKnowledgeBasePattern && urlIntent.confidence > 0) {
-        score = urlIntent.confidence;
-    }
+  // Add URL keyword bonus if no knowledge base pattern
+  if (!hasKnowledgeBasePattern && urlIntent.confidence > 0) {
+    score = urlIntent.confidence;
+  }
 
-    const knowledgeBaseBonus = hasKnowledgeBasePattern ? SCORING.knowledgeBasePattern - baseConfidence : 0;
-    const urlKeywordBonus = !hasKnowledgeBasePattern ? urlIntent.confidence - baseConfidence : 0;
+  const knowledgeBaseBonus = hasKnowledgeBasePattern
+    ? SCORING.knowledgeBasePattern - baseConfidence
+    : 0;
+  const urlKeywordBonus = !hasKnowledgeBasePattern ? urlIntent.confidence - baseConfidence : 0;
 
-    // Add bonuses
-    score += anchorBonus;
-    score += paramBonus;
-    score += intentBonus;
+  // Add bonuses
+  score += anchorBonus;
+  score += paramBonus;
+  score += intentBonus;
 
-    // Context bonus (capped)
-    const contextBonus = Math.min(contextScore / 4, SCORING.contextBonusMax);
-    score += contextBonus;
+  // Context bonus (capped)
+  const contextBonus = Math.min(contextScore / 4, SCORING.contextBonusMax);
+  score += contextBonus;
 
-    // Domain trust bonus (capped)
-    const domainTrustBonus = Math.min(domainTrust / 5, SCORING.domainTrustMax);
-    score += domainTrustBonus;
+  // Domain trust bonus (capped)
+  const domainTrustBonus = Math.min(domainTrust / 5, SCORING.domainTrustMax);
+  score += domainTrustBonus;
 
-    // Provider pattern bonus
-    const providerBonus = hasProviderMatch ? SCORING.providerPattern : 0;
-    score += providerBonus;
+  // Provider pattern bonus
+  const providerBonus = hasProviderMatch ? SCORING.providerPattern : 0;
+  score += providerBonus;
 
-    // Pre-zone score
-    const preZoneScore = score;
+  // Pre-zone score
+  const preZoneScore = score;
 
-    // Apply zone adjustment
-    score = applyZoneScoring(zone, zoneWeight, score);
+  // Apply zone adjustment
+  score = applyZoneScoring(zone, zoneWeight, score);
 
-    return {
-        baseScore: baseConfidence,
-        knowledgeBaseBonus,
-        urlKeywordBonus,
-        anchorBonus,
-        paramBonus,
-        intentBonus,
-        contextBonus,
-        domainTrustBonus,
-        providerBonus,
-        zoneAdjustment: score - preZoneScore,
-        finalScore: score,
-    };
+  return {
+    baseScore: baseConfidence,
+    knowledgeBaseBonus,
+    urlKeywordBonus,
+    anchorBonus,
+    paramBonus,
+    intentBonus,
+    contextBonus,
+    domainTrustBonus,
+    providerBonus,
+    zoneAdjustment: score - preZoneScore,
+    finalScore: score,
+  };
 }

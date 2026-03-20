@@ -1,0 +1,12 @@
+[
+  "Email",
+  "Username",
+  "Password",
+  "Target_Password_Confirm",
+  "First_Name",
+  "Last_Name",
+  "Full_Name",
+  "Phone",
+  "OTP",
+  "Unknown"
+]

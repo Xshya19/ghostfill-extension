@@ -31,58 +31,58 @@ export * from './debounce';
 export * from './errorHandler';
 
 // Helper functions (deprecated - use direct imports)
-export { 
-    generateId, 
-    deepClone, 
-    deepMerge, 
-    isObject, 
-    sleep, 
-    retry, 
-    truncate, 
-    escapeHtml, 
-    stripHtml, 
-    copyToClipboard, 
-    getUniqueSelector, 
-    isElementVisible, 
-    getElementLabel 
+export {
+  generateId,
+  deepClone,
+  deepMerge,
+  isObject,
+  sleep,
+  retry,
+  truncate,
+  escapeHtml,
+  stripHtml,
+  copyToClipboard,
+  getUniqueSelector,
+  isElementVisible,
+  getElementLabel,
 } from './helpers';
 
 // Validators (deprecated - use direct imports)
-export { 
-    validateEmail, 
-    validatePasswordOptions, 
-    validateOTP, 
-    validateDomain, 
-    sanitizeString, 
-    sanitizeHtml 
+export {
+  validateEmail,
+  validatePasswordOptions,
+  validateOTP,
+  validateDomain,
+  sanitizeString,
+  sanitizeHtml,
 } from './validators';
 
 // Formatters (deprecated - use direct imports)
-export { 
-    formatFileSize, 
-    formatPasswordStrength, 
-    formatCrackTime, 
-    formatRelativeTime, 
-    formatOTP, 
-    formatDomain, 
-    maskPassword, 
-    formatEntropy, 
-    pluralize 
+export {
+  formatFileSize,
+  formatPasswordStrength,
+  formatCrackTime,
+  formatRelativeTime,
+  formatOTP,
+  formatDomain,
+  maskPassword,
+  formatEntropy,
+  pluralize,
 } from './formatters';
 
 // Error handling (deprecated - use direct imports)
-export { 
-    AppError, 
-    NetworkError, 
-    StorageError, 
-    ValidationError, 
-    PermissionError, 
-    handleError, 
-    withErrorHandling, 
-    tryCatch, 
-    safeJsonParse, 
-    assert, 
-    getErrorMessage, 
-    toErrorResponse, 
-    toSuccessResponse 
+export {
+  AppError,
+  NetworkError,
+  StorageError,
+  ValidationError,
+  PermissionError,
+  handleError,
+  withErrorHandling,
+  tryCatch,
+  safeJsonParse,
+  assert,
+  getErrorMessage,
+  toErrorResponse,
+  toSuccessResponse,
 } from './errorHandler';

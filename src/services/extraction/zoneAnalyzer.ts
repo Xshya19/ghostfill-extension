@@ -4,7 +4,7 @@
 //  Structural analysis of email HTML to identify content zones
 // ═══════════════════════════════════════════════════════════════════════
 
-import type { EmailZone, ZoneType, ZoneWeights } from './types';
+import type { EmailZone, ZoneType } from './types';
 import { decodeHtmlEntities } from './urlExtractor';
 
 // Re-export for use by other modules
@@ -19,15 +19,15 @@ export { decodeHtmlEntities };
  * Higher weights indicate zones more likely to contain primary content
  */
 export const ZONE_WEIGHTS: Record<ZoneType, number> = {
-    preheader: 0.3,
-    header: 0.2,
-    hero: 0.95,
-    'body-primary': 0.85,
-    'body-secondary': 0.6,
-    cta: 1.0,
-    footer: 0.15,
-    sidebar: 0.4,
-    unknown: 0.5,
+  preheader: 0.3,
+  header: 0.2,
+  hero: 0.95,
+  'body-primary': 0.85,
+  'body-secondary': 0.6,
+  cta: 1.0,
+  footer: 0.15,
+  sidebar: 0.4,
+  unknown: 0.5,
 } as const;
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -39,8 +39,8 @@ export const ZONE_WEIGHTS: Record<ZoneType, number> = {
  * Preheaders are often hidden preview text at the start of emails
  */
 const PREHEADER_PATTERNS = [
-    /(<[^>]*(?:display\s*:\s*none|visibility\s*:\s*hidden|font-size\s*:\s*0|max-height\s*:\s*0|overflow\s*:\s*hidden)[^>]*>)([\s\S]*?)(<\/[^>]+>)/gi,
-    /(<[^>]*class\s*=\s*["'][^"']*(?:preheader|preview)[^"']*["'][^>]*>)([\s\S]*?)(<\/[^>]+>)/gi,
+  /(<[^>]{0,300}(?:display\s*:\s*none|visibility\s*:\s*hidden|font-size\s*:\s*0|max-height\s*:\s*0|overflow\s*:\s*hidden)[^>]{0,300}>)([\s\S]{0,2000}?)(<\/[^>]{1,20}>)/gi,
+  /(<[^>]{0,300}class\s*=\s*["'][^"']{0,100}(?:preheader|preview)[^"']{0,100}["'][^>]{0,300}>)([\s\S]{0,2000}?)(<\/[^>]{1,20}>)/gi,
 ] as const;
 
 /**
@@ -48,12 +48,12 @@ const PREHEADER_PATTERNS = [
  * CTAs are typically styled links with background colors and padding
  */
 const CTA_PATTERNS = [
-    /<a[^>]*style\s*=\s*["'][^"']*(?:background(?:-color)?)\s*:[^"']*padding[^"']*["'][^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
-    /<a[^>]*href\s*=\s*["']([^"']+)["'][^>]*style\s*=\s*["'][^"']*(?:background(?:-color)?)\s*:[^"']*padding[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi,
-    /<a[^>]*class\s*=\s*["'][^"']*(?:btn|button|cta|action|primary)[^"']*["'][^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
-    /<td[^>]*(?:background(?:-color)?|bgcolor)\s*[=:][^>]*>\s*<a[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
-    /v:roundrect[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/v:roundrect>/gi,
-    /<a[^>]*style\s*=\s*["'][^"']*border-radius[^"']*padding[^"']*["'][^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
+  /<a[^>]{0,300}style\s*=\s*["'][^"']{0,200}(?:background(?:-color)?)\s*:[^"']{0,200}padding[^"']{0,200}["'][^>]{0,300}href\s*=\s*["']([^"']{1,500})["'][^>]{0,300}>([\s\S]{0,500}?)<\/a>/gi,
+  /<a[^>]{0,300}href\s*=\s*["']([^"']{1,500})["'][^>]{0,300}style\s*=\s*["'][^"']{0,200}(?:background(?:-color)?)\s*:[^"']{0,200}padding[^"']{0,200}["'][^>]{0,300}>([\s\S]{0,500}?)<\/a>/gi,
+  /<a[^>]{0,300}class\s*=\s*["'][^"']{0,100}(?:btn|button|cta|action|primary)[^"']{0,100}["'][^>]{0,300}href\s*=\s*["']([^"']{1,500})["'][^>]{0,300}>([\s\S]{0,500}?)<\/a>/gi,
+  /<td[^>]{0,300}(?:background(?:-color)?|bgcolor)\s*[=:][^>]{0,300}>\s*<a[^>]{0,300}href\s*=\s*["']([^"']{1,500})["'][^>]{0,300}>([\s\S]{0,500}?)<\/a>/gi,
+  /v:roundrect[^>]{0,300}href\s*=\s*["']([^"']{1,500})["'][^>]{0,300}>([\s\S]{0,500}?)<\/v:roundrect>/gi,
+  /<a[^>]{0,300}style\s*=\s*["'][^"']{0,200}border-radius[^"']{0,200}padding[^"']{0,200}["'][^>]{0,300}href\s*=\s*["']([^"']{1,500})["'][^>]{0,300}>([\s\S]{0,500}?)<\/a>/gi,
 ] as const;
 
 /**
@@ -61,20 +61,20 @@ const CTA_PATTERNS = [
  * Footers typically contain unsubscribe links and legal text
  */
 const FOOTER_SIGNALS = [
-    /unsubscribe/i,
-    /email preferences/i,
-    /privacy policy/i,
-    /©\s*\d{4}/i,
-    /all rights reserved/i,
-    /no longer wish to receive/i,
-    /manage.*(?:preferences|subscription)/i,
-    /this email was sent/i,
-    /you are receiving this/i,
-    /update your preferences/i,
-    /view in browser/i,
-    /view this email/i,
-    /<footer/i,
-    /class\s*=\s*["'][^"']*footer[^"']*["']/i,
+  /unsubscribe/i,
+  /email preferences/i,
+  /privacy policy/i,
+  /©\s*\d{4}/i,
+  /all rights reserved/i,
+  /no longer wish to receive/i,
+  /manage.*(?:preferences|subscription)/i,
+  /this email was sent/i,
+  /you are receiving this/i,
+  /update your preferences/i,
+  /view in browser/i,
+  /view this email/i,
+  /<footer/i,
+  /class\s*=\s*["'][^"']*footer[^"']*["']/i,
 ] as const;
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -87,25 +87,27 @@ const FOOTER_SIGNALS = [
  * @returns Plain text with newlines for structure
  */
 export function stripHtmlPreserveStructure(html: string): string {
-    if (!html) {return '';}
+  if (!html) {
+    return '';
+  }
 
-    return html
-        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-        .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, '')
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<\/p>/gi, '\n\n')
-        .replace(/<\/div>/gi, '\n')
-        .replace(/<\/tr>/gi, '\n')
-        .replace(/<\/td>/gi, '  ')
-        .replace(/<\/li>/gi, '\n')
-        .replace(/<\/h[1-6]>/gi, '\n\n')
-        .replace(/<hr[^>]*>/gi, '\n---\n')
-        .replace(/<[^>]*>/g, ' ')
-        .replace(/[ \t]+/g, ' ')
-        .replace(/\n /g, '\n')
-        .replace(/\n{3,}/g, '\n\n')
-        .trim();
+  return html
+    .replace(/<style[^>]*>[\s\S]{0,50000}?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]{0,50000}?<\/script>/gi, '')
+    .replace(/<head[^>]*>[\s\S]{0,50000}?<\/head>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<\/tr>/gi, '\n')
+    .replace(/<\/td>/gi, '  ')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<\/h[1-6]>/gi, '\n\n')
+    .replace(/<hr[^>]{0,50}>/gi, '\n---\n')
+    .replace(/<[^>]{1,500}>/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n /g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 /**
@@ -114,22 +116,24 @@ export function stripHtmlPreserveStructure(html: string): string {
  * @returns Compact plain text
  */
 export function stripHtml(html: string): string {
-    if (!html) {return '';}
+  if (!html) {
+    return '';
+  }
 
-    return html
-        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
-        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
-        .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, ' ')
-        .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, ' ')
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<\/p>/gi, '\n')
-        .replace(/<\/div>/gi, '\n')
-        .replace(/<\/tr>/gi, '\n')
-        .replace(/<\/li>/gi, '\n')
-        .replace(/<\/h[1-6]>/gi, '\n')
-        .replace(/<[^>]*>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
+  return html
+    .replace(/<style[^>]*>[\s\S]{0,50000}?<\/style>/gi, ' ')
+    .replace(/<script[^>]*>[\s\S]{0,50000}?<\/script>/gi, ' ')
+    .replace(/<head[^>]*>[\s\S]{0,50000}?<\/head>/gi, ' ')
+    .replace(/<noscript[^>]*>[\s\S]{0,50000}?<\/noscript>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<\/tr>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<\/h[1-6]>/gi, '\n')
+    .replace(/<[^>]{1,500}>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -143,116 +147,116 @@ export function stripHtml(html: string): string {
  * @returns Array of identified zones with content and weights
  */
 export function analyzeEmailZones(html: string, plainText: string): EmailZone[] {
-    const zones: EmailZone[] = [];
+  const zones: EmailZone[] = [];
 
-    if (!html || html.trim().length === 0) {
-        return [
-            {
-                zone: 'body-primary',
-                content: plainText,
-                htmlContent: plainText,
-                weight: ZONE_WEIGHTS['body-primary'],
-                startIndex: 0,
-                endIndex: plainText.length,
-            },
-        ];
-    }
+  if (!html || html.trim().length === 0) {
+    return [
+      {
+        zone: 'body-primary',
+        content: plainText,
+        htmlContent: plainText,
+        weight: ZONE_WEIGHTS['body-primary'],
+        startIndex: 0,
+        endIndex: plainText.length,
+      },
+    ];
+  }
 
-    const decoded = decodeHtmlEntities(html);
-    const lower = decoded.toLowerCase();
+  const decoded = decodeHtmlEntities(html);
+  const lower = decoded.toLowerCase();
 
-    // Extract preheaders
-    for (const regex of PREHEADER_PATTERNS) {
-        regex.lastIndex = 0;
-        let m;
-        while ((m = regex.exec(decoded)) !== null) {
-            const content = stripHtml(m[2]);
-            if (content.length > 5) {
-                zones.push({
-                    zone: 'preheader',
-                    content,
-                    htmlContent: m[0],
-                    weight: ZONE_WEIGHTS.preheader,
-                    startIndex: m.index,
-                    endIndex: m.index + m[0].length,
-                });
-            }
-        }
-    }
-
-    // Extract CTA buttons
-    for (const regex of CTA_PATTERNS) {
-        regex.lastIndex = 0;
-        let m;
-        while ((m = regex.exec(decoded)) !== null) {
-            const url = decodeHtmlEntities((m[1] || '').trim());
-            const text = stripHtml(m[2] || m[3] || '');
-            if (url && url.length > 10) {
-                zones.push({
-                    zone: 'cta',
-                    content: text,
-                    htmlContent: m[0],
-                    weight: ZONE_WEIGHTS.cta,
-                    startIndex: m.index,
-                    endIndex: m.index + m[0].length,
-                });
-            }
-        }
-    }
-
-    // Find footer start
-    const footerStart = findFooterStart(lower);
-    if (footerStart > 0) {
+  // Extract preheaders
+  for (const regex of PREHEADER_PATTERNS) {
+    regex.lastIndex = 0;
+    let m;
+    while ((m = regex.exec(decoded)) !== null) {
+      const content = stripHtml(m[2]);
+      if (content.length > 5) {
         zones.push({
-            zone: 'footer',
-            content: stripHtml(decoded.substring(footerStart)),
-            htmlContent: decoded.substring(footerStart),
-            weight: ZONE_WEIGHTS.footer,
-            startIndex: footerStart,
-            endIndex: decoded.length,
+          zone: 'preheader',
+          content,
+          htmlContent: m[0],
+          weight: ZONE_WEIGHTS.preheader,
+          startIndex: m.index,
+          endIndex: m.index + m[0].length,
         });
+      }
     }
+  }
 
-    // Find header end
-    const headerEnd = findHeaderEnd(lower);
-    if (headerEnd > 0) {
+  // Extract CTA buttons
+  for (const regex of CTA_PATTERNS) {
+    regex.lastIndex = 0;
+    let m;
+    while ((m = regex.exec(decoded)) !== null) {
+      const url = decodeHtmlEntities((m[1] || '').trim());
+      const text = stripHtml(m[2] || m[3] || '');
+      if (url && url.length > 10) {
         zones.push({
-            zone: 'header',
-            content: stripHtml(decoded.substring(0, headerEnd)),
-            htmlContent: decoded.substring(0, headerEnd),
-            weight: ZONE_WEIGHTS.header,
-            startIndex: 0,
-            endIndex: headerEnd,
+          zone: 'cta',
+          content: text,
+          htmlContent: m[0],
+          weight: ZONE_WEIGHTS.cta,
+          startIndex: m.index,
+          endIndex: m.index + m[0].length,
         });
+      }
     }
+  }
 
-    // Body primary zone
-    const bodyStart = headerEnd > 0 ? headerEnd : 0;
-    const bodyEnd = footerStart > 0 ? footerStart : decoded.length;
-    if (bodyEnd > bodyStart) {
-        zones.push({
-            zone: 'body-primary',
-            content: stripHtml(decoded.substring(bodyStart, bodyEnd)),
-            htmlContent: decoded.substring(bodyStart, bodyEnd),
-            weight: ZONE_WEIGHTS['body-primary'],
-            startIndex: bodyStart,
-            endIndex: bodyEnd,
-        });
-    }
+  // Find footer start
+  const footerStart = findFooterStart(lower);
+  if (footerStart > 0) {
+    zones.push({
+      zone: 'footer',
+      content: stripHtml(decoded.substring(footerStart)),
+      htmlContent: decoded.substring(footerStart),
+      weight: ZONE_WEIGHTS.footer,
+      startIndex: footerStart,
+      endIndex: decoded.length,
+    });
+  }
 
-    // Fallback if no zones found
-    if (zones.length === 0) {
-        zones.push({
-            zone: 'body-primary',
-            content: plainText || stripHtml(html),
-            htmlContent: html,
-            weight: ZONE_WEIGHTS['body-primary'],
-            startIndex: 0,
-            endIndex: html.length,
-        });
-    }
+  // Find header end
+  const headerEnd = findHeaderEnd(lower);
+  if (headerEnd > 0) {
+    zones.push({
+      zone: 'header',
+      content: stripHtml(decoded.substring(0, headerEnd)),
+      htmlContent: decoded.substring(0, headerEnd),
+      weight: ZONE_WEIGHTS.header,
+      startIndex: 0,
+      endIndex: headerEnd,
+    });
+  }
 
-    return zones;
+  // Body primary zone
+  const bodyStart = headerEnd > 0 ? headerEnd : 0;
+  const bodyEnd = footerStart > 0 ? footerStart : decoded.length;
+  if (bodyEnd > bodyStart) {
+    zones.push({
+      zone: 'body-primary',
+      content: stripHtml(decoded.substring(bodyStart, bodyEnd)),
+      htmlContent: decoded.substring(bodyStart, bodyEnd),
+      weight: ZONE_WEIGHTS['body-primary'],
+      startIndex: bodyStart,
+      endIndex: bodyEnd,
+    });
+  }
+
+  // Fallback if no zones found
+  if (zones.length === 0) {
+    zones.push({
+      zone: 'body-primary',
+      content: plainText || stripHtml(html),
+      htmlContent: html,
+      weight: ZONE_WEIGHTS['body-primary'],
+      startIndex: 0,
+      endIndex: html.length,
+    });
+  }
+
+  return zones;
 }
 
 /**
@@ -261,19 +265,19 @@ export function analyzeEmailZones(html: string, plainText: string): EmailZone[] 
  * @returns The index where footer starts, or -1 if not found
  */
 function findFooterStart(lower: string): number {
-    let earliest = -1;
+  let earliest = -1;
 
-    for (const signal of FOOTER_SIGNALS) {
-        const m = lower.match(signal);
-        if (m?.index !== undefined && m.index > lower.length * 0.6) {
-            const blockStart = findBlockStart(lower, m.index);
-            if (earliest === -1 || blockStart < earliest) {
-                earliest = blockStart;
-            }
-        }
+  for (const signal of FOOTER_SIGNALS) {
+    const m = lower.match(signal);
+    if (m?.index !== undefined && m.index > lower.length * 0.6) {
+      const blockStart = findBlockStart(lower, m.index);
+      if (earliest === -1 || blockStart < earliest) {
+        earliest = blockStart;
+      }
     }
+  }
 
-    return earliest;
+  return earliest;
 }
 
 /**
@@ -282,19 +286,16 @@ function findFooterStart(lower: string): number {
  * @returns The index where header ends, or -1 if not found
  */
 function findHeaderEnd(lower: string): number {
-    const signals = [
-        /<h[12][^>]*>/i,
-        /class\s*=\s*["'][^"']*(?:content|main|body)[^"']*["']/i,
-    ];
+  const signals = [/<h[12][^>]*>/i, /class\s*=\s*["'][^"']*(?:content|main|body)[^"']*["']/i];
 
-    for (const signal of signals) {
-        const m = lower.match(signal);
-        if (m?.index !== undefined && m.index < lower.length * 0.3) {
-            return m.index;
-        }
+  for (const signal of signals) {
+    const m = lower.match(signal);
+    if (m?.index !== undefined && m.index < lower.length * 0.3) {
+      return m.index;
     }
+  }
 
-    return -1;
+  return -1;
 }
 
 /**
@@ -304,18 +305,18 @@ function findHeaderEnd(lower: string): number {
  * @returns The index of the block start
  */
 function findBlockStart(html: string, idx: number): number {
-    const tags = ['<table', '<div', '<tr', '<section', '<footer'];
-    let best = idx;
-    const searchStart = Math.max(0, idx - 500);
+  const tags = ['<table', '<div', '<tr', '<section', '<footer'];
+  let best = idx;
+  const searchStart = Math.max(0, idx - 500);
 
-    for (const tag of tags) {
-        const pos = html.lastIndexOf(tag, idx);
-        if (pos >= searchStart && pos < best) {
-            best = pos;
-        }
+  for (const tag of tags) {
+    const pos = html.lastIndexOf(tag, idx);
+    if (pos >= searchStart && pos < best) {
+      best = pos;
     }
+  }
 
-    return best;
+  return best;
 }
 
 /**
@@ -325,20 +326,20 @@ function findBlockStart(html: string, idx: number): number {
  * @returns The containing zone or null
  */
 export function getZoneForPosition(zones: EmailZone[], pos: number): EmailZone | null {
-    let best: EmailZone | null = null;
-    let bestSize = Infinity;
+  let best: EmailZone | null = null;
+  let bestSize = Infinity;
 
-    for (const z of zones) {
-        if (pos >= z.startIndex && pos <= z.endIndex) {
-            const size = z.endIndex - z.startIndex;
-            if (size < bestSize) {
-                bestSize = size;
-                best = z;
-            }
-        }
+  for (const z of zones) {
+    if (pos >= z.startIndex && pos <= z.endIndex) {
+      const size = z.endIndex - z.startIndex;
+      if (size < bestSize) {
+        bestSize = size;
+        best = z;
+      }
     }
+  }
 
-    return best;
+  return best;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -353,12 +354,16 @@ export function getZoneForPosition(zones: EmailZone[], pos: number): EmailZone |
  * @returns Context string
  */
 export function getContextAround(text: string, term: string, radius: number = 150): string {
-    if (!text || !term) {return '';}
+  if (!text || !term) {
+    return '';
+  }
 
-    const idx = text.toLowerCase().indexOf(term.toLowerCase());
-    if (idx === -1) {return text.substring(0, radius * 2);}
+  const idx = text.toLowerCase().indexOf(term.toLowerCase());
+  if (idx === -1) {
+    return text.substring(0, radius * 2);
+  }
 
-    const start = Math.max(0, idx - radius);
-    const end = Math.min(text.length, idx + term.length + radius);
-    return text.substring(start, end);
+  const start = Math.max(0, idx - radius);
+  const end = Math.min(text.length, idx + term.length + radius);
+  return text.substring(start, end);
 }

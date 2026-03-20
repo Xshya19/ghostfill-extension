@@ -2,27 +2,30 @@
 // Solves the "disconnect" problem by showing extension status on the page itself
 
 import { createLogger } from '../utils/logger';
+import { setHTML } from '../utils/setHTML';
 
 const log = createLogger('PageStatus');
 
 class PageStatusInjector {
-    private container: HTMLDivElement | null = null;
-    private shadowRoot: ShadowRoot | null = null;
-    private statusText: HTMLSpanElement | null = null;
-    private isVisible: boolean = false;
+  private container: HTMLDivElement | null = null;
+  private shadowRoot: ShadowRoot | null = null;
+  private statusText: HTMLSpanElement | null = null;
+  private isVisible: boolean = false;
 
-    /**
-     * Initialize the status injector
-     */
-    init(): void {
-        if (this.container) { return; }
+  /**
+   * Initialize the status injector
+   */
+  init(): void {
+    if (this.container) {
+      return;
+    }
 
-        // Create container with Shadow DOM for style isolation
-        this.container = document.createElement('div');
-        this.container.id = 'ghostfill-status-container';
-        this.shadowRoot = this.container.attachShadow({ mode: 'closed' });
+    // Create container with Shadow DOM for style isolation
+    this.container = document.createElement('div');
+    this.container.id = 'ghostfill-status-container';
+    this.shadowRoot = this.container.attachShadow({ mode: 'closed' });
 
-        const STYLES = `
+    const STYLES = `
             :host {
                 all: initial;
                 font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif;
@@ -118,113 +121,127 @@ class PageStatusInjector {
             }
         `;
 
-        // Create banner HTML
-        const banner = document.createElement('div');
-        banner.className = 'status-banner';
-        banner.innerHTML = `
+    // Create banner HTML
+    const banner = document.createElement('div');
+    banner.className = 'status-banner';
+    setHTML(
+      banner,
+      `
             <span class="ghost-icon">👻</span>
             <div class="spinner"></div>
             <span class="status-text">GhostFill Active</span>
             <button class="close-btn">✕</button>
-        `;
+        `
+    );
 
-        if ('adoptedStyleSheets' in (document as any)) {
-            const sheet = new CSSStyleSheet();
-            sheet.replaceSync(STYLES);
-            this.shadowRoot.adoptedStyleSheets = [sheet];
-        } else {
-            const style = document.createElement('style');
-            style.textContent = STYLES;
-            this.shadowRoot.appendChild(style);
-        }
+    const supportsConstructedStyles =
+      typeof CSSStyleSheet !== 'undefined' && 'replaceSync' in CSSStyleSheet.prototype;
 
-        this.shadowRoot.appendChild(banner);
-        document.body.appendChild(this.container);
-
-        // Store references
-        this.statusText = this.shadowRoot.querySelector('.status-text');
-
-        // Close button handler
-        const closeBtn = this.shadowRoot.querySelector('.close-btn');
-        closeBtn?.addEventListener('click', () => this.hide());
-
-        log.debug('Page status injector initialized');
+    if (supportsConstructedStyles) {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(STYLES);
+      this.shadowRoot.adoptedStyleSheets = [sheet];
+    } else {
+      const style = document.createElement('style');
+      style.textContent = STYLES;
+      this.shadowRoot.appendChild(style);
     }
 
-    /**
-     * Show status with message
-     */
-    show(message: string, type: 'loading' | 'success' | 'error' = 'loading'): void {
-        this.init();
-        if (!this.shadowRoot) { return; }
+    this.shadowRoot.appendChild(banner);
+    document.body.appendChild(this.container);
 
-        const banner = this.shadowRoot.querySelector('.status-banner');
-        const spinner = this.shadowRoot.querySelector('.spinner') as HTMLElement;
+    // Store references
+    this.statusText = this.shadowRoot.querySelector('.status-text');
 
-        if (banner) {
-            banner.classList.remove('success', 'error');
-            if (type === 'success') { banner.classList.add('success'); }
-            if (type === 'error') { banner.classList.add('error'); }
-            banner.classList.add('visible');
-        }
+    // Close button handler
+    const closeBtn = this.shadowRoot.querySelector('.close-btn');
+    closeBtn?.addEventListener('click', () => this.hide());
 
-        if (spinner) {
-            spinner.style.display = type === 'loading' ? 'block' : 'none';
-        }
+    log.debug('Page status injector initialized');
+  }
 
-        if (this.statusText) {
-            this.statusText.textContent = message;
-        }
-
-        this.isVisible = true;
-        log.debug('Status shown', { message, type });
+  /**
+   * Show status with message
+   */
+  show(message: string, type: 'loading' | 'success' | 'error' = 'loading'): void {
+    this.init();
+    if (!this.shadowRoot) {
+      return;
     }
 
-    /**
-     * Update status text
-     */
-    update(message: string): void {
-        if (this.statusText) {
-            this.statusText.textContent = message;
-        }
+    const banner = this.shadowRoot.querySelector('.status-banner');
+    const spinner = this.shadowRoot.querySelector('.spinner') as HTMLElement;
+
+    if (banner) {
+      banner.classList.remove('success', 'error');
+      if (type === 'success') {
+        banner.classList.add('success');
+      }
+      if (type === 'error') {
+        banner.classList.add('error');
+      }
+      banner.classList.add('visible');
     }
 
-    /**
-     * Show success and auto-hide
-     */
-    success(message: string, autoHideMs: number = 3000): void {
-        this.show(message, 'success');
-        setTimeout(() => this.hide(), autoHideMs);
+    if (spinner) {
+      spinner.style.display = type === 'loading' ? 'block' : 'none';
     }
 
-    /**
-     * Show error
-     */
-    error(message: string, autoHideMs: number = 5000): void {
-        this.show(message, 'error');
-        setTimeout(() => this.hide(), autoHideMs);
+    if (this.statusText) {
+      this.statusText.textContent = message;
     }
 
-    /**
-     * Hide the status banner
-     */
-    hide(): void {
-        if (!this.shadowRoot) { return; }
+    this.isVisible = true;
+    log.debug('Status shown', { message, type });
+  }
 
-        const banner = this.shadowRoot.querySelector('.status-banner');
-        if (banner) {
-            banner.classList.remove('visible');
-        }
+  /**
+   * Update status text
+   */
+  update(message: string): void {
+    if (this.statusText) {
+      this.statusText.textContent = message;
+    }
+  }
 
-        this.isVisible = false;
+  /**
+   * Show success and auto-hide
+   */
+  success(message: string, autoHideMs: number = 3000): void {
+    this.show(message, 'success');
+    setTimeout(() => this.hide(), autoHideMs);
+  }
+
+  /**
+   * Show error
+   */
+  error(message: string, autoHideMs: number = 5000): void {
+    this.show(message, 'error');
+    setTimeout(() => this.hide(), autoHideMs);
+  }
+
+  /**
+   * Hide the status banner
+   */
+  hide(): void {
+    if (!this.shadowRoot) {
+      return;
     }
 
-    /**
-     * Check if visible
-     */
-    getIsVisible(): boolean {
-        return this.isVisible;
+    const banner = this.shadowRoot.querySelector('.status-banner');
+    if (banner) {
+      banner.classList.remove('visible');
     }
+
+    this.isVisible = false;
+  }
+
+  /**
+   * Check if visible
+   */
+  getIsVisible(): boolean {
+    return this.isVisible;
+  }
 }
 
 export const pageStatus = new PageStatusInjector();

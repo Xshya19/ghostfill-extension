@@ -9,72 +9,72 @@
 // ───────────────────────────────────────────────────────────────────────
 
 export type {
-    // Core extraction types
-    EmailIntent,
-    EmailSection,
-    ProviderKnowledge,
-    ExtractedOTP,
-    ExtractedLink,
-    ExtractionResult,
-    IntentSignal,
-    AntiPatternSeverity,
-    // Module-specific types
-    ZoneType,
-    EmailZone,
-    ZoneWeights,
-    URLParamAnalysis,
-    AntiPatternResult,
-    OTPCandidate,
-    RelationshipGraph,
-    ContextValidation,
-    LinkCandidate,
-    ProviderDetectionResult,
-    IntentResult,
-    CrossValidationResult,
-    ExtractionTimings,
-    // Configuration types
-    ExtractionConfig,
-    ScoringConfig,
-    ThresholdConfig,
-    LimitConfig,
-    ContextConfig,
-    PerformanceConfig,
+  // Core extraction types
+  EmailIntent,
+  EmailSection,
+  ProviderKnowledge,
+  ExtractedOTP,
+  ExtractedLink,
+  ExtractionResult,
+  IntentSignal,
+  AntiPatternSeverity,
+  // Module-specific types
+  ZoneType,
+  EmailZone,
+  ZoneWeights,
+  URLParamAnalysis,
+  AntiPatternResult,
+  OTPCandidate,
+  RelationshipGraph,
+  ContextValidation,
+  LinkCandidate,
+  ProviderDetectionResult,
+  IntentResult,
+  CrossValidationResult,
+  ExtractionTimings,
+  // Configuration types
+  ExtractionConfig,
+  ScoringConfig,
+  ThresholdConfig,
+  LimitConfig,
+  ContextConfig,
+  PerformanceConfig,
 } from './types';
 
 // Re-export from shared types for convenience
 export type {
-    CodeType,
-    CodeFormat,
-    ExtractionStrategy,
-    LinkType,
-    PatternStrength,
-    OTPFormat,
-    EmailCategory,
-    ProviderOTPMatch,
-    ProviderMatch,
-    ProviderCategory,
-    OTPSignal,
-    ScoringSignal,
-    OTPReasoningChain,
-    OTPReasoningStep,
-    ReasoningChain,
-    ReasoningStep,
-    OTPEmailAnalysis,
-    EmailAnalysis,
-    EmailAnatomy,
-    OTPExtractionResult,
-    LinkExtractionResult,
-    ActivationLink,
-    ExtractionMeta,
-    OTPExtractionMeta,
-    ClassificationResult,
-    DetectionResult,
-    FormAnalysisResult,
-    KnowledgeBaseStructure,
-    OtpPattern,
-    LinkPattern,
-    AntiPattern,
-    ContextKeyword,
+  CodeType,
+  CodeFormat,
+  ExtractionStrategy,
+  LinkType,
+  PatternStrength,
+  OTPFormat,
+  EmailCategory,
+  ProviderOTPMatch,
+  ProviderMatch,
+  ProviderCategory,
+  OTPSignal,
+  ScoringSignal,
+  OTPReasoningChain,
+  OTPReasoningStep,
+  ReasoningChain,
+  ReasoningStep,
+  OTPEmailAnalysis,
+  EmailAnalysis,
+  EmailAnatomy,
+  OTPExtractionResult,
+  LinkExtractionResult,
+  ActivationLink,
+  ExtractionMeta,
+  OTPExtractionMeta,
+  ClassificationResult,
+  DetectionResult,
+  FormAnalysisResult,
+  KnowledgeBaseStructure,
+  OtpPattern,
+  LinkPattern,
+  AntiPattern,
+  ContextKeyword,
 } from '../types';
 
 // ───────────────────────────────────────────────────────────────────────
@@ -82,13 +82,13 @@ export type {
 // ───────────────────────────────────────────────────────────────────────
 
 export {
-    extractUrls,
-    isValidUrl,
-    normalizeUrl,
-    unwrapTrackingUrl,
-    decodeHtmlEntities,
-    analyzeUrlParams,
-    calculateUrlComplexity,
+  extractUrls,
+  isValidUrl,
+  normalizeUrl,
+  unwrapTrackingUrl,
+  decodeHtmlEntities,
+  analyzeUrlParams,
+  calculateUrlComplexity,
 } from './urlExtractor';
 
 // ───────────────────────────────────────────────────────────────────────
@@ -96,12 +96,12 @@ export {
 // ───────────────────────────────────────────────────────────────────────
 
 export {
-    analyzeEmailZones,
-    getZoneForPosition,
-    getContextAround,
-    stripHtml,
-    stripHtmlPreserveStructure,
-    ZONE_WEIGHTS,
+  analyzeEmailZones,
+  getZoneForPosition,
+  getContextAround,
+  stripHtml,
+  stripHtmlPreserveStructure,
+  ZONE_WEIGHTS,
 } from './zoneAnalyzer';
 
 // ───────────────────────────────────────────────────────────────────────
@@ -115,10 +115,10 @@ export { detectProvider, providerMatches, getProviderOtpConfig } from './provide
 // ───────────────────────────────────────────────────────────────────────
 
 export {
-    extractOTP,
-    checkAntiPatterns,
-    validateContext,
-    calculateIsolationScore,
+  extractOTP,
+  checkAntiPatterns,
+  validateContext,
+  calculateIsolationScore,
 } from './otpExtractor';
 
 // ───────────────────────────────────────────────────────────────────────
@@ -132,13 +132,13 @@ export { extractLink, isCTAButton, getAnchorInfo, calculateDomainTrust } from '.
 // ───────────────────────────────────────────────────────────────────────
 
 export {
-    detectIntentFromUrl,
-    scoreAnchorText,
-    scoreUrlParams,
-    scoreIntentAlignment,
-    applyZoneScoring,
-    matchesProviderPattern,
-    calculateLinkScoreBreakdown,
+  detectIntentFromUrl,
+  scoreAnchorText,
+  scoreUrlParams,
+  scoreIntentAlignment,
+  applyZoneScoring,
+  matchesProviderPattern,
+  calculateLinkScoreBreakdown,
 } from './linkScorer';
 
 // ───────────────────────────────────────────────────────────────────────

@@ -1,388 +1,883 @@
-// Field Analyzer - Analyze input field types
-
+// ═══════════════════════════════════════════════════════════════════════════════
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  🧠  G H O S T F I L L   —   F I E L D   A N A L Y Z E R            ║
+// ║  Heuristic-first field classification with shadow DOM penetration     ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+//
+// Architecture:
+// ┌────────────────────────────────────────────────────────────────────────┐
+// │  VisibilityCheck  — Shared element visibility logic                   │
+// │  LabelResolver    — Multi-strategy label text discovery               │
+// │  OTPDetector      — Specialized OTP field scoring engine              │
+// │  FieldClassifier  — Main heuristic classification engine              │
+// │  DOMTraversal     — Shadow-DOM-piercing query engine                  │
+// │  FieldAnalyzer    — Public API: analyze, discover, classify           │
+// └────────────────────────────────────────────────────────────────────────┘
+// ═══════════════════════════════════════════════════════════════════════════════
 
 import { FieldType, DetectedField, FIELD_HEURISTICS } from '../types';
-import { getUniqueSelector, getElementLabel } from '../utils/helpers';
+import { getUniqueSelector, getElementLabel, deepQuerySelectorAll } from '../utils/helpers';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('FieldAnalyzer');
 
+// ═══════════════════════════════════════════════════════════════
+//  §0  C O N S T A N T S
+// ═══════════════════════════════════════════════════════════════
+
+/** Maximum characters for simplified DOM extraction */
+const DOM_EXTRACTION_CHAR_LIMIT = 2000;
+
+/** Maximum label text length to accept from proximity scan */
+const MAX_LABEL_TEXT_LENGTH = 120;
+
+/** OTP field length boundaries */
+const OTP_MIN_LENGTH = 4;
+const OTP_MAX_LENGTH = 8;
+
+/** Minimum confidence threshold for aggressive email fallback */
+const MIN_CONFIDENCE_THRESHOLD = 0.3;
+
+/** Maximum shadow DOM recursion depth to prevent infinite loops */
+const MAX_SHADOW_DEPTH = 10;
+
+/** Maximum elements to scan for shadow roots (performance guard) */
+const MAX_SHADOW_SCAN_ELEMENTS = 5000;
+
+/** Confidence scores for heuristic signals */
+const CONFIDENCE = {
+  TYPE_MATCH: 0.4,
+  AUTOCOMPLETE_MATCH: 0.3,
+  PATTERN_MATCH: 0.2,
+  KEYWORD_MATCH: 0.1,
+  EMAIL_TYPE_ATTR: 0.9,
+  EMAIL_PLACEHOLDER_AT: 0.7,
+  EMAIL_FIRST_INPUT: 0.4,
+  OTP_SINGLE_CHAR: 0.95,
+  OTP_NUMERIC_LENGTH: 0.2,
+  OTP_INPUTMODE_NUMERIC: 0.2,
+  OTP_AUTOCOMPLETE: 0.4,
+  OTP_TYPE_TEL_NUMBER: 0.1,
+  OTP_NAME_OTP: 0.4,
+  OTP_NAME_CODE: 0.3,
+  OTP_NAME_VERIFY: 0.3,
+  AI_OVERRIDE: 0.95,
+} as const;
+
+// ═══════════════════════════════════════════════════════════════
+//  §1  T Y P E S
+// ═══════════════════════════════════════════════════════════════
+
+type FormInputElement = HTMLInputElement | HTMLTextAreaElement;
+
+interface AIResponse {
+  success?: boolean;
+  email?: string;
+  password?: string;
+  submit?: string;
+}
+
+interface AISelectors {
+  email?: string;
+  password?: string;
+  submit?: string;
+}
+
+interface FieldAnalysisResult {
+  fields: DetectedField[];
+  aiSelectors?: AISelectors;
+}
+
+interface AICacheEntry {
+  response: AIResponse;
+  timestamp: number;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  §2  U T I L I T I E S
+// ═══════════════════════════════════════════════════════════════
+
+function escapeCSS(value: string): string {
+  try {
+    return CSS.escape(value);
+  } catch {
+    return value.replace(/([^\w-])/g, '\\$1');
+  }
+}
+
+function safeQuerySelector<T extends Element>(
+  root: ParentNode,
+  selector: string
+): T | null {
+  try {
+    return root.querySelector<T>(selector);
+  } catch {
+    return null;
+  }
+}
+
+function clampConfidence(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
+function combineTextSignals(...parts: (string | null | undefined)[]): string {
+  return parts.filter(Boolean).join(' ').toLowerCase();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  §3  V I S I B I L I T Y   C H E C K
+// ═══════════════════════════════════════════════════════════════
+
+class VisibilityCheck {
+  /**
+   * Returns true if the element has non-zero dimensions and is not
+   * hidden via CSS display/visibility. Does NOT check opacity
+   * (some frameworks animate opacity for transitions).
+   */
+  static isVisible(element: HTMLElement): boolean {
+    if (!element.isConnected) {return false;}
+
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {return false;}
+
+    const style = window.getComputedStyle(element);
+    return style.display !== 'none' && style.visibility !== 'hidden';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  §4  L A B E L   R E S O L V E R
+// ═══════════════════════════════════════════════════════════════
+
+class LabelResolver {
+  /**
+   * Multi-strategy label text discovery:
+   * 1. Explicit <label for="...">
+   * 2. Ancestor <label>
+   * 3. aria-labelledby
+   * 4. aria-label
+   * 5. Previous sibling text
+   * 6. Parent's previous sibling text
+   */
+  static resolve(element: HTMLElement): string {
+    // 1. Explicit label via `for` attribute
+    if (element.id) {
+      const label = safeQuerySelector<HTMLLabelElement>(
+        document,
+        `label[for="${escapeCSS(element.id)}"]`
+      );
+      if (label?.textContent) {
+        const text = label.textContent.trim();
+        if (text.length <= MAX_LABEL_TEXT_LENGTH) {return text;}
+      }
+    }
+
+    // 2. Ancestor <label>
+    const parentLabel = element.closest('label');
+    if (parentLabel?.textContent) {
+      const text = parentLabel.textContent.trim();
+      if (text.length <= MAX_LABEL_TEXT_LENGTH) {return text;}
+    }
+
+    // 3. aria-labelledby
+    const labelledBy = element.getAttribute('aria-labelledby');
+    if (labelledBy) {
+      // aria-labelledby can reference multiple IDs
+      const texts: string[] = [];
+      for (const id of labelledBy.split(/\s+/)) {
+        const labelEl = document.getElementById(id.trim());
+        if (labelEl?.textContent) {
+          texts.push(labelEl.textContent.trim());
+        }
+      }
+      if (texts.length > 0) {
+        const combined = texts.join(' ');
+        if (combined.length <= MAX_LABEL_TEXT_LENGTH) {return combined;}
+      }
+    }
+
+    // 4. aria-label
+    const ariaLabel = element.getAttribute('aria-label');
+    if (ariaLabel) {
+      const text = ariaLabel.trim();
+      if (text.length <= MAX_LABEL_TEXT_LENGTH) {return text;}
+    }
+
+    // 5. Previous sibling
+    try {
+      const prev = element.previousElementSibling;
+      if (
+        prev &&
+        prev.tagName !== 'INPUT' &&
+        prev.tagName !== 'TEXTAREA' &&
+        prev.textContent
+      ) {
+        const text = prev.textContent.trim();
+        if (text.length > 0 && text.length <= MAX_LABEL_TEXT_LENGTH) {return text;}
+      }
+
+      // 6. Parent's previous sibling
+      const parent = element.parentElement;
+      if (parent) {
+        const pPrev = parent.previousElementSibling;
+        if (
+          pPrev &&
+          pPrev.tagName !== 'INPUT' &&
+          pPrev.tagName !== 'TEXTAREA' &&
+          pPrev.textContent
+        ) {
+          const text = pPrev.textContent.trim();
+          if (text.length > 0 && text.length <= MAX_LABEL_TEXT_LENGTH) {return text;}
+        }
+      }
+    } catch {
+      /* cross-origin or detached element */
+    }
+
+    return '';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  §5  O T P   D E T E C T O R
+// ═══════════════════════════════════════════════════════════════
+
+class OTPDetector {
+  private static readonly OTP_TEXT_PATTERN = /otp|code|verify|token|pin|2fa|mfa/i;
+  private static readonly DIGIT_PATTERN_REGEX = /^\^?\\?d/;
+
+  /**
+   * Determines if a field is likely an OTP input.
+   * Returns true for high-probability OTP fields.
+   */
+  static isLikelyOTP(element: FormInputElement): boolean {
+    // Single digit field — almost always OTP in context
+    if (element.maxLength === 1) {return true;}
+
+    // Full OTP field with numeric inputmode
+    if (
+      element.maxLength >= OTP_MIN_LENGTH &&
+      element.maxLength <= OTP_MAX_LENGTH &&
+      element.getAttribute('inputmode') === 'numeric'
+    ) {
+      return true;
+    }
+
+    // Explicit autocomplete
+    if (element.autocomplete === 'one-time-code') {return true;}
+
+    // Pattern attribute for digits only (HTMLInputElement only)
+    if (
+      element instanceof HTMLInputElement &&
+      element.pattern &&
+      this.DIGIT_PATTERN_REGEX.test(element.pattern)
+    ) {
+      return true;
+    }
+
+    // Name/ID/placeholder/label text signals
+    const textToCheck = combineTextSignals(
+      element.name,
+      element.id,
+      element.placeholder,
+      getElementLabel(element),
+      element.getAttribute('aria-label')
+    );
+    return this.OTP_TEXT_PATTERN.test(textToCheck);
+  }
+
+  /**
+   * Calculate a confidence score for how likely this is an OTP field.
+   * Score components are additive and clamped to [0, 1].
+   */
+  static calculateConfidence(element: FormInputElement): number {
+    let confidence = 0;
+
+    // ── Structural signals ────────────────────────────────
+    if (element.maxLength === 1) {
+      confidence += CONFIDENCE.OTP_SINGLE_CHAR;
+    } else if (
+      element.maxLength >= OTP_MIN_LENGTH &&
+      element.maxLength <= OTP_MAX_LENGTH
+    ) {
+      confidence += CONFIDENCE.OTP_NUMERIC_LENGTH;
+    }
+
+    if (element.getAttribute('inputmode') === 'numeric') {
+      confidence += CONFIDENCE.OTP_INPUTMODE_NUMERIC;
+    }
+
+    if (element.autocomplete === 'one-time-code') {
+      confidence += CONFIDENCE.OTP_AUTOCOMPLETE;
+    }
+
+    const type = (element.type ?? '').toLowerCase();
+    if (type === 'tel' || type === 'number') {
+      confidence += CONFIDENCE.OTP_TYPE_TEL_NUMBER;
+    }
+
+    // ── Text signals ──────────────────────────────────────
+    const textToCheck = combineTextSignals(
+      element.name,
+      element.id,
+      element.placeholder,
+      getElementLabel(element),
+      element.getAttribute('aria-label')
+    );
+
+    if (/otp/i.test(textToCheck)) {confidence += CONFIDENCE.OTP_NAME_OTP;}
+    if (/code/i.test(textToCheck)) {confidence += CONFIDENCE.OTP_NAME_CODE;}
+    if (/verify/i.test(textToCheck)) {confidence += CONFIDENCE.OTP_NAME_VERIFY;}
+
+    return clampConfidence(confidence);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  §6  D O M   T R A V E R S A L  (Shadow DOM Piercing)
+// ═══════════════════════════════════════════════════════════════
+
+// (Removed duplicate DOMTraversal class)
+// ═══════════════════════════════════════════════════════════════
+
+class FieldClassifier {
+  /**
+   * Identity field types that should NOT match if the label
+   * mentions "code", "otp", or "#" (which indicate OTP/token fields).
+   */
+  private static readonly IDENTITY_FIELD_TYPES = new Set<string>([
+    'name', 'first-name', 'last-name', 'username',
+  ]);
+
+  private static readonly IDENTITY_NEGATION_PATTERN = /code|otp|#/i;
+
+  private static readonly CONFIRM_PASSWORD_PATTERN = /confirm|repeat|retype|verify|re[-_\s]?enter|again/i;
+
+  /**
+   * Classify a single field using the heuristic scoring engine.
+   * Returns the best-matching FieldType and confidence score.
+   */
+  static classify(
+    element: FormInputElement,
+    isFirstVisible: boolean
+  ): { fieldType: FieldType; confidence: number } {
+    const type = (element.type ?? 'text').toLowerCase();
+    const name = (element.name ?? '').toLowerCase();
+    const id = (element.id ?? '').toLowerCase();
+    const placeholder = (element.placeholder ?? '').toLowerCase();
+    const autocomplete = (element.autocomplete ?? '').toLowerCase();
+    const ariaLabel = (element.getAttribute('aria-label') ?? '').toLowerCase();
+    const ariaLabelledBy = (element.getAttribute('aria-labelledby') ?? '').toLowerCase();
+    const label = getElementLabel(element).toLowerCase();
+
+    const allText = combineTextSignals(name, id, placeholder, label, ariaLabel, ariaLabelledBy);
+
+    let bestType: FieldType = 'unknown';
+    let bestConfidence = 0;
+
+    // ── Phase 1: Heuristic scoring against FIELD_HEURISTICS ──
+    for (const [fType, heuristics] of Object.entries(FIELD_HEURISTICS)) {
+      if (fType === 'unknown') {continue;}
+
+      // Negation: identity fields should not match OTP-like labels
+      if (
+        this.IDENTITY_FIELD_TYPES.has(fType) &&
+        this.IDENTITY_NEGATION_PATTERN.test(allText)
+      ) {
+        continue;
+      }
+
+      let confidence = 0;
+      let matchCount = 0;
+
+      // Type attribute
+      if (heuristics.types.includes(type)) {
+        confidence += CONFIDENCE.TYPE_MATCH;
+        matchCount++;
+      }
+
+      // Autocomplete attribute
+      if (heuristics.autocomplete.includes(autocomplete)) {
+        confidence += CONFIDENCE.AUTOCOMPLETE_MATCH;
+        matchCount++;
+      }
+
+      // Regex patterns
+      if (heuristics.patterns.some((p: RegExp) => p.test(allText))) {
+        confidence += CONFIDENCE.PATTERN_MATCH;
+        matchCount++;
+      }
+
+      // Keywords
+      if (heuristics.keywords.some((k: string) => allText.includes(k))) {
+        confidence += CONFIDENCE.KEYWORD_MATCH;
+        matchCount++;
+      }
+
+      // Must have at least one match to be considered
+      if (matchCount >= 1 && confidence > bestConfidence) {
+        bestConfidence = confidence;
+        bestType = fType as FieldType;
+      }
+    }
+
+    // ── Phase 2: Aggressive email fallback ────────────────
+    if (bestType === 'unknown' || bestConfidence < MIN_CONFIDENCE_THRESHOLD) {
+      if (type === 'email') {
+        bestType = 'email';
+        bestConfidence = CONFIDENCE.EMAIL_TYPE_ATTR;
+      } else if (placeholder.includes('@') || placeholder.includes('example.com')) {
+        bestType = 'email';
+        bestConfidence = CONFIDENCE.EMAIL_PLACEHOLDER_AT;
+      } else if (type === 'text' && isFirstVisible) {
+        bestType = 'email';
+        bestConfidence = CONFIDENCE.EMAIL_FIRST_INPUT;
+      }
+    }
+
+    // ── Phase 3: OTP override ─────────────────────────────
+    const otpConfidence = OTPDetector.calculateConfidence(element);
+    if (OTPDetector.isLikelyOTP(element) && otpConfidence > bestConfidence) {
+      bestType = 'otp';
+      bestConfidence = otpConfidence;
+    }
+
+    // ── Phase 4: Confirm password detection ───────────────
+    if (bestType === 'password') {
+      const confirmText = combineTextSignals(name, id, placeholder, label);
+      if (this.CONFIRM_PASSWORD_PATTERN.test(confirmText)) {
+        bestType = 'confirm-password';
+      }
+    }
+
+    return {
+      fieldType: bestType,
+      confidence: clampConfidence(bestConfidence),
+    };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  §8  M A I N   F I E L D   A N A L Y Z E R   C L A S S
+// ═══════════════════════════════════════════════════════════════
+
 export class FieldAnalyzer {
-    // Static cache shared across all instances
-    private static aiCache = new Map<string, { response: { success?: boolean; email?: string; password?: string; submit?: string }; timestamp: number }>();
+  // ── Static AI response cache (bounded to prevent memory leak) ──
+  private static aiCache = new Map<string, AICacheEntry>();
+  private static readonly MAX_CACHE_SIZE = 50;
 
-    /**
-     * Analyze a single input field
-     */
-    analyzeField(element: HTMLInputElement | HTMLTextAreaElement): DetectedField {
-        const type = element.type?.toLowerCase() || 'text';
-        const name = element.name?.toLowerCase() || '';
-        const id = element.id?.toLowerCase() || '';
-        const placeholder = element.placeholder?.toLowerCase() || '';
-        const autocomplete = element.autocomplete?.toLowerCase() || '';
-        const ariaLabel = element.getAttribute('aria-label')?.toLowerCase() || '';
-        const ariaLabelledBy = element.getAttribute('aria-labelledby')?.toLowerCase() || '';
-        const label = getElementLabel(element).toLowerCase();
+  private static pruneCache(): void {
+    if (FieldAnalyzer.aiCache.size >= FieldAnalyzer.MAX_CACHE_SIZE) {
+      // Evict the oldest entry (Map preserves insertion order)
+      const firstKey = FieldAnalyzer.aiCache.keys().next().value;
+      if (firstKey !== undefined) {
+        FieldAnalyzer.aiCache.delete(firstKey);
+      }
+    }
+  }
 
-        let fieldType: FieldType = 'unknown';
-        let maxConfidence = 0;
+  // Dead code removed: the selector below produced invalid CSS (bare :not() without subject).
+  // The correct selector is FILLABLE_INPUT_SELECTOR below.
 
-        // Check each field type
-        for (const [fType, heuristics] of Object.entries(FIELD_HEURISTICS)) {
-            if (fType === 'unknown') {continue;}
+  private static readonly FILLABLE_INPUT_SELECTOR =
+    'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="image"]):not([type="range"]):not([type="color"]), textarea';
 
-            const isIdentityField = ['name', 'first-name', 'last-name', 'username'].includes(fType);
-            const textToCheckAll = [name, id, placeholder, label, ariaLabel, ariaLabelledBy].join(' ');
+  private static readonly OTP_INPUT_SELECTOR =
+    'input[type="text"], input[type="number"], input[type="tel"], input:not([type])';
 
-            // NEGATION RULE: If an identity field's label contains "code", "otp", or "#", it is NOT an identity field
-            if (isIdentityField && (/code/i.test(textToCheckAll) || /otp/i.test(textToCheckAll) || /#/i.test(textToCheckAll))) {
-                continue;
-            }
+  private static readonly EXCLUDED_INPUT_TYPES = new Set([
+    'hidden', 'submit', 'button', 'reset', 'checkbox', 'radio',
+  ]);
 
-            let confidence = 0;
-            let matches = 0;
-            // Check type attribute
-            if (heuristics.types.includes(type)) {
-                confidence += 0.4;
-                matches++;
-            }
+  // ═══════════════════════════════════════════════════════════
+  //  PUBLIC API
+  // ═══════════════════════════════════════════════════════════
 
-            // Check autocomplete attribute
-            if (heuristics.autocomplete.includes(autocomplete)) {
-                confidence += 0.3;
-                matches++;
-            }
+  /**
+   * Analyze a single input field and return its classification.
+   */
+  analyzeField(element: FormInputElement): DetectedField {
+    const isFirstVisible = this.isFirstVisibleInput(element);
+    const { fieldType, confidence } = FieldClassifier.classify(element, isFirstVisible);
 
-            // Check patterns against name, id, placeholder, label, and ARIA
-            const patternMatch = heuristics.patterns.some((p) => p.test(textToCheckAll));
-            if (patternMatch) {
-                confidence += 0.2;
-                matches++;
-            }
+    return {
+      element,
+      selector: getUniqueSelector(element),
+      fieldType,
+      confidence,
+      label: getElementLabel(element) || undefined,
+      placeholder: element.placeholder || undefined,
+      name: element.name || undefined,
+      id: element.id || undefined,
+      autocomplete: element.autocomplete || undefined,
+      rect: element.getBoundingClientRect(),
+    };
+  }
 
-            // Check keywords
-            const keywordMatch = heuristics.keywords.some((k) => textToCheckAll.includes(k));
-            if (keywordMatch) {
-                confidence += 0.1;
-                matches++;
-            }
+  /**
+   * Check if field is likely an OTP input.
+   * Delegates to OTPDetector for consistent logic.
+   */
+  isLikelyOTPField(element: FormInputElement): boolean {
+    return OTPDetector.isLikelyOTP(element);
+  }
 
-            // Update if this is the best match
-            if (confidence > maxConfidence && matches >= 1) {
-                maxConfidence = confidence;
-                fieldType = fType as FieldType;
-            }
-        }
+  /**
+   * Calculate OTP field confidence score.
+   * Delegates to OTPDetector for consistent logic.
+   */
+  calculateOTPConfidence(element: FormInputElement): number {
+    return OTPDetector.calculateConfidence(element);
+  }
 
-        // FALLBACK: If no type detected, try aggressive email detection
-        if (fieldType === 'unknown' || maxConfidence < 0.3) {
-            // Type email is ALWAYS an email field
-            if (type === 'email') {
-                fieldType = 'email';
-                maxConfidence = 0.9;
-            }
-            // Placeholder with @ symbol is likely email
-            else if (placeholder.includes('@') || placeholder.includes('example.com')) {
-                fieldType = 'email';
-                maxConfidence = 0.7;
-            }
-            // First visible text input in a form is often email/username
-            else if (type === 'text' && this.isFirstVisibleInput(element)) {
-                fieldType = 'email';
-                maxConfidence = 0.4;
-            }
-        }
+  /**
+   * Find all OTP-related fields on the page, sorted by confidence.
+   */
+  findOTPFields(): DetectedField[] {
+    const inputs = deepQuerySelectorAll<HTMLInputElement>(
+      FieldAnalyzer.OTP_INPUT_SELECTOR
+    );
 
-        // Special handling for OTP fields
-        const isOTP = this.isLikelyOTPField(element);
-        const otpConfidence = this.calculateOTPConfidence(element);
+    const otpFields: DetectedField[] = [];
 
-        // Debug log only if confidence is high or detected as OTP (to reduce noise)
-        if (maxConfidence > 0.8 || isOTP || fieldType !== 'unknown') {
-            // log.debug('Field analysis', { type: fieldType, confidence: maxConfidence, isOTP }); 
-        }
-
-        if (isOTP && otpConfidence > maxConfidence) {
-            fieldType = 'otp';
-            maxConfidence = otpConfidence;
-        }
-
-        // Special handling for confirm password
-        if (fieldType === 'password') {
-            const textToConfirm = [name, id, placeholder, label].join(' ');
-            if (/confirm|repeat|retype|verify/i.test(textToConfirm)) {
-                fieldType = 'confirm-password';
-            }
-        }
-
-        return {
-            element,
-            selector: getUniqueSelector(element),
-
-            fieldType,
-            confidence: Math.min(1, maxConfidence),
-            label: getElementLabel(element) || undefined,
-            placeholder: element.placeholder || undefined,
-            name: element.name || undefined,
-            id: element.id || undefined,
-            autocomplete: element.autocomplete || undefined,
-            rect: element.getBoundingClientRect(),
-        };
+    for (const input of inputs) {
+      if (!VisibilityCheck.isVisible(input)) {continue;}
+      if (OTPDetector.isLikelyOTP(input)) {
+        otpFields.push(this.analyzeField(input));
+      }
     }
 
-    /**
-     * Check if field is likely an OTP input
-     */
-    isLikelyOTPField(element: HTMLInputElement | HTMLTextAreaElement): boolean {
-        const maxLength = element.maxLength;
-        const inputMode = element.getAttribute('inputmode');
-        const autocomplete = element.autocomplete;
+    // Sort by confidence descending
+    otpFields.sort((a, b) => b.confidence - a.confidence);
 
-        // Single digit OTP field
-        if (maxLength === 1) {return true;}
+    return otpFields;
+  }
 
-        // Full OTP field (4-8 digits)
-        if (maxLength >= 4 && maxLength <= 8 && inputMode === 'numeric') {return true;}
+  /**
+   * Find a group of single-digit OTP inputs starting from a given element.
+   * Searches siblings in the parent container, sorted by visual position.
+   */
+  findOTPInputGroup(startElement: HTMLInputElement): HTMLInputElement[] {
+    const parent = startElement.parentElement;
+    if (!parent) {return [startElement];}
 
-        // One-time-code autocomplete
-        if (autocomplete === 'one-time-code') {return true;}
+    // Find all sibling single-char inputs that look like OTP digits
+    const siblings = Array.from(
+      parent.querySelectorAll<HTMLInputElement>('input')
+    ).filter(
+      (input) =>
+        input.maxLength === 1 &&
+        VisibilityCheck.isVisible(input) &&
+        OTPDetector.isLikelyOTP(input)
+    );
 
-        // Pattern for digits only (only HTMLInputElement has pattern)
-        if (element instanceof HTMLInputElement && element.pattern && /^\^?\\?d/.test(element.pattern)) {return true;}
-
-        // Check name/id/placeholder
-        const textToCheck = [
-            element.name,
-            element.id,
-            element.placeholder,
-        ].join(' ').toLowerCase();
-
-        return /otp|code|verify|token|pin|2fa|mfa/i.test(textToCheck);
+    // Ensure startElement is included
+    if (!siblings.includes(startElement)) {
+      siblings.push(startElement);
     }
 
-    /**
-     * Calculate OTP field confidence
-     */
-    calculateOTPConfidence(element: HTMLInputElement | HTMLTextAreaElement): number {
-        let confidence = 0;
+    // Sort by horizontal position (left-to-right)
+    siblings.sort((a, b) => {
+      const rectA = a.getBoundingClientRect();
+      const rectB = b.getBoundingClientRect();
+      // Row-first with 10px tolerance
+      if (Math.abs(rectA.top - rectB.top) > 10) {
+        return rectA.top - rectB.top;
+      }
+      return rectA.left - rectB.left;
+    });
 
-        // Single-character fields are ALMOST ALWAYS OTP (highest priority)
-        if (element.maxLength === 1) {confidence += 0.95;}
-        if (element.maxLength >= 4 && element.maxLength <= 8) {confidence += 0.2;}
-        if (element.getAttribute('inputmode') === 'numeric') {confidence += 0.2;}
-        if (element.autocomplete === 'one-time-code') {confidence += 0.4;}
-        if (element.type === 'tel' || element.type === 'number') {confidence += 0.1;}
+    return siblings;
+  }
 
-        const textToCheck = [element.name, element.id, element.placeholder].join(' ').toLowerCase();
-        if (/otp/i.test(textToCheck)) {confidence += 0.3;}
-        if (/code/i.test(textToCheck)) {confidence += 0.2;}
-        if (/verify/i.test(textToCheck)) {confidence += 0.1;}
+  /**
+   * Get all fillable fields on the page, classified by type.
+   * Pierces shadow DOM boundaries.
+   */
+  getAllFields(): DetectedField[] {
+    const elements = deepQuerySelectorAll<FormInputElement>(
+      FieldAnalyzer.FILLABLE_INPUT_SELECTOR
+    );
 
-        return Math.min(1, confidence);
+    const fields: DetectedField[] = [];
+
+    for (const element of elements) {
+      if (!VisibilityCheck.isVisible(element)) {continue;}
+      fields.push(this.analyzeField(element));
     }
 
-    /**
-     * Find all OTP-related fields on page
-     */
-    findOTPFields(): DetectedField[] {
-        const inputs = document.querySelectorAll<HTMLInputElement>(
-            'input[type="text"], input[type="number"], input[type="tel"], input:not([type])'
-        );
+    return fields;
+  }
 
-        const otpFields: DetectedField[] = [];
+  /**
+   * Get all fields with heuristics first, optionally augmented by ONNX ML predictions.
+   * The ML path sends a CLASSIFY_FIELD message to the background service worker which
+   * runs the local ONNX model. If ML returns a high-confidence result it overrides the
+   * heuristic classification for that field.
+   */
+  async getAllFieldsWithAI(): Promise<FieldAnalysisResult> {
+    const fields = this.getAllFields();
 
-        inputs.forEach((input) => {
-            if (this.isLikelyOTPField(input)) {
-                otpFields.push(this.analyzeField(input));
-            }
-        });
-
-        // Sort by confidence
-        otpFields.sort((a, b) => b.confidence - a.confidence);
-
-        return otpFields;
-    }
-
-    /**
-     * Find a group of single-digit OTP inputs
-     */
-    findOTPInputGroup(startElement: HTMLInputElement): HTMLInputElement[] {
-        const group: HTMLInputElement[] = [startElement];
-        const parent = startElement.parentElement;
-
-        if (!parent) {return group;}
-
-        // Find sibling inputs that look like OTP digits
-        const siblings = parent.querySelectorAll<HTMLInputElement>('input');
-
-        siblings.forEach((input) => {
-            if (
-                input !== startElement &&
-                input.maxLength === 1 &&
-                this.isLikelyOTPField(input)
-            ) {
-                group.push(input);
-            }
-        });
-
-        // Sort by position
-        group.sort((a, b) => {
-            const rectA = a.getBoundingClientRect();
-            const rectB = b.getBoundingClientRect();
-            return rectA.left - rectB.left;
-        });
-
-        return group;
-    }
-
-    /**
-     * Get all fillable fields on the page
-     */
-    getAllFields(): DetectedField[] {
-        const selector = 'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]), textarea';
-        const elements = document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(selector);
-
-        const fields: DetectedField[] = [];
-
-        elements.forEach((element) => {
-            // Skip invisible elements
-            const rect = element.getBoundingClientRect();
-            if (rect.width === 0 || rect.height === 0) {return;}
-
-            const style = window.getComputedStyle(element);
-            if (style.display === 'none' || style.visibility === 'hidden') {return;}
-
-            fields.push(this.analyzeField(element));
-        });
-
-        return fields;
-    }
-
-    /**
-     * Check if element is the first visible text input in its form
-     * First input is often email/username on signup/login forms
-     */
-    private isFirstVisibleInput(element: HTMLInputElement | HTMLTextAreaElement): boolean {
-        // Find parent form or body
-        const form = element.closest('form') || document.body;
-
-        // Get all visible text inputs
-        const inputs = Array.from(form.querySelectorAll<HTMLInputElement>(
-            'input[type="text"], input[type="email"], input:not([type])'
-        )).filter(input => {
-            const rect = input.getBoundingClientRect();
-            if (rect.width === 0 || rect.height === 0) {return false;}
-            const style = window.getComputedStyle(input);
-            return style.display !== 'none' && style.visibility !== 'hidden';
-        });
-
-        // Check if this element is the first one
-        return inputs.length > 0 && inputs[0] === element;
-    }
-
-    /**
-     * AI-AS-BACKUP: Get all fields with heuristics first, AI only when confidence < 70%
-     * Fast path: Heuristics are instant and work 95% of the time
-     * Slow path: AI only when heuristics can't confidently detect fields
-     */
-    async getAllFieldsWithAI(): Promise<{
-        fields: DetectedField[];
-        aiSelectors?: { email?: string; password?: string; submit?: string };
-    }> {
-        // STEP 1: Always try heuristics first (instant)
-        const fields = this.getAllFields();
-        return { fields };
-    }
-
-    /**
-     * Helper to process AI response and map to fields
-     */
-    private processAIResponse(fields: DetectedField[], response: { success?: boolean; email?: string; password?: string; submit?: string } | null | undefined): { fields: DetectedField[], aiSelectors?: { email?: string; password?: string; submit?: string } } {
-        if (response?.success && (response.email || response.password)) {
-
-            log.info('🤖 Local AI Agent successfully identified fields', response);
-
-            const aiSelectors = { email: response.email, password: response.password, submit: response.submit };
-
-            const processAISelector = (selector: string, type: FieldType) => {
-                try {
-                    const el = document.querySelector<HTMLInputElement>(selector);
-                    if (el) {
-                        const existing = fields.find(f => f.element === el);
-                        if (existing) {
-                            existing.fieldType = type;
-                            existing.confidence = 0.95;
-                        } else {
-                            const newField = this.analyzeField(el);
-                            newField.fieldType = type;
-                            newField.confidence = 0.95;
-                            fields.push(newField);
-                        }
-                    }
-                } catch (e) {
-                    log.warn(`AI suggested invalid CSS selector: ${selector}`);
-                }
-            };
-
-            if (aiSelectors.email) {processAISelector(aiSelectors.email, 'email');}
-            if (aiSelectors.password) {processAISelector(aiSelectors.password, 'password');}
-
-            return { fields, aiSelectors };
-        }
-        return { fields };
-    }
-
-    /**
-     * Tree-Shaker Algorithm: Extract extreme-compressed DOM for small capacity LLMs
-     * Strips all visual formatting and outputs a minimal dense map.
-     */
-    private extractSimplifiedDOM(): string {
+    // Attempt ML augmentation via background CLASSIFY_FIELD for each field
+    try {
+      const { extractFeatures } = await import('./extractor');
+      const mlPromises = fields.map(async (detectedField) => {
         try {
-            const root = document.querySelector('form') || document.body;
-            const elements = Array.from(root.querySelectorAll('input, button, label, [role="button"]'));
+          const el = detectedField.element as HTMLInputElement | HTMLTextAreaElement;
+          const features = extractFeatures(el);
 
-            let html = '';
+          // Serialize typed arrays for message passing (can't pass ArrayBuffer over postMessage directly)
+          const payload = {
+            textChannels: Array.from({ length: features.textChannels.length }, (_, i) =>
+              Array.from(features.textChannels[i])
+            ),
+            structural: Array.from(features.structural),
+            isVisible: features.isVisible,
+          };
 
-            elements.forEach(el => {
-                if (el instanceof HTMLInputElement) {
-                    if (['hidden', 'submit', 'button', 'reset', 'checkbox', 'radio'].includes(el.type)) {return;}
+          const response = await new Promise<{ success: boolean; prediction: { label: string; confidence: number } | null }>((resolve) => {
+            chrome.runtime.sendMessage(
+              { action: 'CLASSIFY_FIELD', payload },
+              (res) => resolve(res || { success: false, prediction: null })
+            );
+          });
 
-                    const id = el.id ? `id="${el.id}" ` : '';
-                    const name = el.name ? `name="${el.name}" ` : '';
-                    const type = el.type ? `type="${el.type}" ` : '';
-                    const placeholder = el.placeholder ? `ph="${el.placeholder}" ` : '';
-
-                    let labelText = '';
-                    if (el.id) {
-                        const label = document.querySelector(`label[for="${el.id}"]`);
-                        if (label) {labelText = `label="${label.textContent?.trim()}" `;}
-                    }
-                    if (!labelText) {
-                        const parentLabel = el.closest('label');
-                        if (parentLabel) {labelText = `label="${parentLabel.textContent?.trim()}" `;}
-                    }
-
-                    // For AI: provide a way to map CSS selector back.
-                    // Prioritize ID, then Name, then fallback to attribute matching
-                    const selector = el.id ? `#${el.id}` : el.name ? `input[name='${el.name}']` : `input[type='${el.type}']`;
-
-                    html += `[sel:${selector}] <input ${type}${id}${name}${placeholder}${labelText}/>\n`;
-                } else if (el instanceof HTMLLabelElement) {
-                    if (!el.querySelector('input')) {
-                        html += `<label for="${el.getAttribute('for') || ''}">${el.textContent?.trim()}</label>\n`;
-                    }
-                } else if (el instanceof HTMLButtonElement || el.getAttribute('role') === 'button') {
-                    const text = el.textContent?.trim() || el.getAttribute('aria-label') || 'submit';
-                    const selector = el.id ? `#${el.id}` : `button:contains('${text}')`;
-                    html += `[sel:${selector}] <button>${text}</button>\n`;
-                }
-            });
-
-            // Extreme strict token diet: limit to 2000 chars.
-            return html.substring(0, 2000);
-        } catch (e) {
-            log.error('DOM Tree-shaking failed', e);
-            return '';
+          if (response?.success && response.prediction && response.prediction.confidence >= 0.45) {
+            const mlLabel = response.prediction.label;
+            // Map ML class names to FieldType enum values
+            const mlLabelMap: Record<string, string> = {
+              'Email': 'email', 'Username': 'username', 'Password': 'password',
+              'Target_Password_Confirm': 'confirm-password', 'First_Name': 'first-name',
+              'Last_Name': 'last-name', 'Full_Name': 'full-name',
+              'Phone': 'phone', 'OTP': 'otp', 'Unknown': 'unknown',
+            };
+            const mappedType = mlLabelMap[mlLabel];
+            if (mappedType && mappedType !== 'unknown') {
+              // ML wins if it's more confident than heuristics
+              if (response.prediction.confidence > detectedField.confidence) {
+                detectedField.fieldType = mappedType as import('../types').FieldType;
+                detectedField.confidence = response.prediction.confidence;
+              }
+            }
+          }
+        } catch {
+          // Per-field ML failure is non-fatal; heuristics remain
         }
+      });
+
+      // Run all ML calls in parallel with a 2-second timeout guard
+      await Promise.race([
+        Promise.allSettled(mlPromises),
+        new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+      ]);
+    } catch {
+      // ML unavailable — heuristics-only is still excellent
     }
+
+    return { fields };
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  AI RESPONSE PROCESSING (used when AI path is enabled)
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * Process AI response and merge with heuristic fields.
+   * AI-identified fields get boosted confidence.
+   */
+  processAIResponse(
+    fields: DetectedField[],
+    response: AIResponse | null | undefined
+  ): FieldAnalysisResult {
+    if (!response?.success || (!response.email && !response.password)) {
+      return { fields };
+    }
+
+    log.info('🤖 Local AI Agent identified fields', {
+      hasEmail: !!response.email,
+      hasPassword: !!response.password,
+      hasSubmit: !!response.submit,
+    });
+
+    const aiSelectors: AISelectors = {
+      email: response.email,
+      password: response.password,
+      submit: response.submit,
+    };
+
+    // Apply AI overrides
+    if (aiSelectors.email) {
+      this.applyAIOverride(fields, aiSelectors.email, 'email');
+    }
+    if (aiSelectors.password) {
+      this.applyAIOverride(fields, aiSelectors.password, 'password');
+    }
+
+    return { fields, aiSelectors };
+  }
+
+  /**
+   * Apply an AI-suggested selector override to the field list.
+   * If the element exists, either updates its type/confidence or adds it.
+   */
+  private applyAIOverride(
+    fields: DetectedField[],
+    selector: string,
+    fieldType: FieldType
+  ): void {
+    const el = safeQuerySelector<HTMLInputElement>(document, selector);
+    if (!el) {
+      log.warn(`AI suggested selector not found: ${selector}`);
+      return;
+    }
+
+    const existing = fields.find((f) => f.element === el);
+    if (existing) {
+      existing.fieldType = fieldType;
+      existing.confidence = CONFIDENCE.AI_OVERRIDE;
+    } else {
+      const newField = this.analyzeField(el);
+      newField.fieldType = fieldType;
+      newField.confidence = CONFIDENCE.AI_OVERRIDE;
+      fields.push(newField);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  SIMPLIFIED DOM EXTRACTION (for AI/LLM consumption)
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * Tree-Shaker Algorithm: Extract compressed DOM representation
+   * for small-capacity LLMs. Strips all visual formatting and
+   * outputs a minimal dense map with CSS selector annotations.
+   *
+   * Security: All user-controlled text is escaped before output.
+   */
+  extractSimplifiedDOM(): string {
+    try {
+      const forms = deepQuerySelectorAll<HTMLFormElement>('form');
+      const root: Document | Element = forms.length > 0 ? forms[0] : document.body;
+
+      const elements = deepQuerySelectorAll<HTMLElement>(
+        'input, button, label, [role="button"]',
+        root
+      );
+
+      const parts: string[] = [];
+
+      for (const el of elements) {
+        const line = this.extractElementLine(el);
+        if (line) {parts.push(line);}
+      }
+
+      const result = parts.join('\n');
+      return result.length > DOM_EXTRACTION_CHAR_LIMIT
+        ? result.substring(0, DOM_EXTRACTION_CHAR_LIMIT)
+        : result;
+    } catch (e) {
+      log.error('DOM tree-shaking failed', e);
+      return '';
+    }
+  }
+
+  /**
+   * Extract a single line representation of an element for the simplified DOM.
+   * Returns null if the element should be skipped.
+   */
+  private extractElementLine(el: HTMLElement): string | null {
+    if (el instanceof HTMLInputElement) {
+      return this.extractInputLine(el);
+    }
+
+    if (el instanceof HTMLLabelElement) {
+      return this.extractLabelLine(el);
+    }
+
+    if (el instanceof HTMLButtonElement || el.getAttribute('role') === 'button') {
+      return this.extractButtonLine(el);
+    }
+
+    return null;
+  }
+
+  private extractInputLine(el: HTMLInputElement): string | null {
+    if (FieldAnalyzer.EXCLUDED_INPUT_TYPES.has(el.type)) {return null;}
+
+    const attrs: string[] = [];
+    if (el.type) {attrs.push(`type="${this.sanitizeAttr(el.type)}"`);}
+    if (el.id) {attrs.push(`id="${this.sanitizeAttr(el.id)}"`);}
+    if (el.name) {attrs.push(`name="${this.sanitizeAttr(el.name)}"`);}
+    if (el.placeholder) {attrs.push(`ph="${this.sanitizeAttr(el.placeholder)}"`);}
+
+    // Resolve label text
+    const labelText = LabelResolver.resolve(el);
+    if (labelText) {
+      attrs.push(`label="${this.sanitizeAttr(labelText)}"`);
+    }
+
+    // Build selector for AI mapping
+    const selector = el.id
+      ? `#${escapeCSS(el.id)}`
+      : el.name
+        ? `input[name="${escapeCSS(el.name)}"]`
+        : `input[type="${escapeCSS(el.type || 'text')}"]`;
+
+    return `[sel:${selector}] <input ${attrs.join(' ')}/>`;
+  }
+
+  private extractLabelLine(el: HTMLLabelElement): string | null {
+    // Skip labels that wrap inputs (they'll be picked up by input extraction)
+    if (el.querySelector('input')) {return null;}
+
+    const forAttr = el.getAttribute('for') ?? '';
+    const text = (el.textContent ?? '').trim();
+    if (!text) {return null;}
+
+    return `<label for="${this.sanitizeAttr(forAttr)}">${this.sanitizeAttr(text)}</label>`;
+  }
+
+  private extractButtonLine(el: HTMLElement): string | null {
+    const text = (el.textContent?.trim() || el.getAttribute('aria-label') || 'submit');
+    const sanitizedText = this.sanitizeAttr(text);
+
+    const selector = el.id
+      ? `#${escapeCSS(el.id)}`
+      : `button`; // Note: `:contains()` is not standard CSS
+
+    return `[sel:${selector}] <button>${sanitizedText}</button>`;
+  }
+
+  /**
+   * Sanitize attribute values to prevent injection in the
+   * simplified DOM output. Strips quotes and angle brackets.
+   */
+  private sanitizeAttr(value: string): string {
+    return value
+      .replace(/"/g, "'")
+      .replace(/</g, '')
+      .replace(/>/g, '')
+      .replace(/\n/g, ' ')
+      .trim();
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  PRIVATE HELPERS
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * Check if element is the first visible text/email input in its form.
+   * First input is typically email/username on login/signup forms.
+   */
+  private isFirstVisibleInput(element: FormInputElement): boolean {
+    const form = element.closest('form') ?? document.body;
+
+    const inputs = Array.from(
+      form.querySelectorAll<HTMLInputElement>(
+        'input[type="text"], input[type="email"], input:not([type])'
+      )
+    ).filter((input) => VisibilityCheck.isVisible(input));
+
+    return inputs.length > 0 && inputs[0] === element;
+  }
 }
