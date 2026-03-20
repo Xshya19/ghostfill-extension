@@ -148,6 +148,7 @@ export const CONTEXT_MENU_IDS = {
   SEPARATOR_2: 'sep-2',
   HISTORY: 'history',
   SETTINGS: 'settings',
+  REPORT_MISCLASS: 'report-misclass',
 } as const;
 
 // Keyboard shortcuts

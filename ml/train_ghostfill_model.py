@@ -611,9 +611,8 @@ class RealLabeledFormDataset(Dataset):
     """
     Generates realistic (text_channels, structural, label) samples for each
     field class by randomly selecting from per-class keyword pools.
-
-    This replaces the old SyntheticFormDataset that used random uniform text —
-    which produced a model with ~10% accuracy (no better than chance).
+    Also injects real data from `ghostfill_user_data.json` and `scraped_data.json`
+    to enable continuous learning.
     """
 
     def __init__(self, samples_per_class: int = 500, seed: int = 42) -> None:
@@ -621,6 +620,51 @@ class RealLabeledFormDataset(Dataset):
         self.text_list: list[torch.Tensor] = []
         self.struct_list: list[torch.Tensor] = []
         self.label_list: list[int] = []
+
+        import json
+        import os
+        
+        def parse_js_array(d):
+            if isinstance(d, list): return d
+            if isinstance(d, dict):
+                arr = [0] * (max((int(k) for k in d.keys()), default=-1) + 1)
+                for k, v in d.items(): arr[int(k)] = v
+                return arr
+            return []
+
+        # Load Real World Data (Continuous Learning)
+        for data_file in ["ghostfill_user_data.json", "ml/scraped_data.json"]:
+            if os.path.exists(data_file):
+                try:
+                    with open(data_file, "r", encoding="utf-8") as f:
+                        user_data = json.load(f)
+                    for item in user_data:
+                        features = item.get("features", {})
+                        label_str = item.get("label", "")
+                        
+                        # Fix label case mismatch (e.g., 'email' -> 'Email')
+                        matched_cls = next((c for c in CLASS_NAMES if c.lower() == label_str.lower()), None)
+                        
+                        if matched_cls and "textChannels" in features and "structural" in features:
+                            cls_idx = CLASS_NAMES.index(matched_cls)
+                            
+                            # Parse JSON-stringified TypedArrays
+                            channels = [parse_js_array(ch) for ch in features["textChannels"]]
+                            struct = parse_js_array(features["structural"])
+                            
+                            # Ensure exact dimensions
+                            for ch in channels:
+                                while len(ch) < MAX_TEXT_LEN: ch.append(0)
+                                ch[:] = ch[:MAX_TEXT_LEN]
+                            while len(struct) < NUM_STRUCTURAL: struct.append(0.0)
+                            struct = struct[:NUM_STRUCTURAL]
+                            
+                            self.text_list.append(torch.tensor(channels, dtype=torch.long))
+                            self.struct_list.append(torch.tensor(struct, dtype=torch.float32))
+                            self.label_list.append(cls_idx)
+                    print(f"Loaded {len(user_data)} real samples from {data_file}")
+                except Exception as e:
+                    print(f"Failed to load {data_file}: {e}")
 
         for cls_idx, cls_name in enumerate(CLASS_NAMES):
             seeds_cfg = _CLASS_SEEDS.get(cls_name, {})

@@ -61,7 +61,8 @@ export type MessageAction =
     | 'MARK_OTP_USED'
     | 'PING'
     // ML Inference actions
-    | 'CLASSIFY_FIELD';
+    | 'CLASSIFY_FIELD'
+    | 'REPORT_MISCLASSIFICATION';
 
 // Base message interface
 export interface BaseMessage {
@@ -439,6 +440,13 @@ export interface ClassifyFieldResponse {
     error?: string;
 }
 
+export interface ReportMisclassificationMessage extends BaseMessage {
+    action: 'REPORT_MISCLASSIFICATION';
+    payload: {
+        correctType: string;
+    };
+}
+
 // Union type for all messages
 export type ExtensionMessage =
     | GenerateEmailMessage
@@ -482,7 +490,8 @@ export type ExtensionMessage =
     | CheckOTPNowMessage
     | MarkOTPUsedMessage
     | ClassifyFieldMessage
-    | PingMessage;
+    | PingMessage
+    | ReportMisclassificationMessage;
 
 // Response union type
 export type ExtensionResponse =

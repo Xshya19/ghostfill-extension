@@ -196,6 +196,21 @@ function buildMenuTree(): MenuItemSpec[] {
       contexts: ['all'],
       action: 'open-settings',
     },
+
+    // ── Continuous Learning ──
+    {
+      id: CONTEXT_MENU_IDS.REPORT_MISCLASS,
+      parentId: CONTEXT_MENU_IDS.PARENT,
+      title: '🧠 Report Misclassification',
+      contexts: ['editable'],
+    },
+    ...['email', 'password', 'new-password', 'otp', 'name', 'phone', 'address', 'card-number', 'card-expiry', 'unknown'].map((cls): MenuItemSpec => ({
+      id: `report-${cls}`,
+      parentId: CONTEXT_MENU_IDS.REPORT_MISCLASS,
+      title: `Correct type: ${cls}`,
+      contexts: ['editable'] as chrome.contextMenus.ContextType[],
+      action: `report-${cls}`,
+    })),
   ];
 }
 
@@ -359,6 +374,24 @@ function registerDefaultActions(): void {
       log.debug('Could not open popup', extractMsg(error));
     }
     return {};
+  });
+
+  // ── Continuous Learning ──
+  ['email', 'password', 'new-password', 'otp', 'name', 'phone', 'address', 'card-number', 'card-expiry', 'unknown'].forEach((cls) => {
+    register(`report-${cls}`, async (ctx) => {
+      if (!ctx.tabId) {
+        return { notifyType: 'error', notifyTitle: 'Error', notifyMessage: 'No active tab' };
+      }
+      await safeSendTabMessage(ctx.tabId, {
+        action: 'REPORT_MISCLASSIFICATION',
+        payload: { correctType: cls },
+      });
+      return {
+        notifyType: 'success',
+        notifyTitle: 'GhostFill: Learning',
+        notifyMessage: `Thanks! Saved field as '${cls}'.`,
+      };
+    });
   });
 }
 

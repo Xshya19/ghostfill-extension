@@ -5,6 +5,7 @@ import { errorTracker, performanceMonitor } from '../utils/monitoring';
 import { AutoFiller } from './autoFiller';
 import { DOMObserver } from './domObserver';
 import { FieldAnalyzer } from './fieldAnalyzer';
+import { extractFeatures } from './extractor';
 import { FloatingButton } from './floatingButton';
 import { FormDetector } from './formDetector';
 import { OTPPageDetector } from './otpPageDetector';
@@ -60,6 +61,7 @@ let autoFiller: AutoFiller;
 let floatingButton: FloatingButton;
 let domObserver: DOMObserver;
 let otpPageDetector: OTPPageDetector;
+let lastRightClickedElement: HTMLElement | null = null;
 
 /**
  * Initialize content script
@@ -166,6 +168,11 @@ function init(): void {
       void otpPageDetector?.destroy?.();
     });
 
+    // Track the last right-clicked element for Continuous Learning
+    document.addEventListener('contextmenu', (e) => {
+      lastRightClickedElement = e.target as HTMLElement;
+    }, true);
+
     log.debug('Content script initialized');
   } catch (error) {
     log.error('Failed to initialize content script', error);
@@ -180,6 +187,31 @@ async function handleMessage(message: {
   payload?: Record<string, unknown>;
 }): Promise<{ success: boolean; error?: string; [key: string]: unknown }> {
   switch (message.action) {
+    case 'REPORT_MISCLASSIFICATION': {
+      if (message.payload && lastRightClickedElement) {
+        const { correctType } = message.payload as { correctType: string };
+        // Extract raw UI features of the field the user right-clicked
+        const isInput = lastRightClickedElement.tagName === 'INPUT' || lastRightClickedElement.tagName === 'TEXTAREA';
+        if (isInput) {
+          const rawFeatures = extractFeatures(lastRightClickedElement as HTMLInputElement | HTMLTextAreaElement);
+          if (rawFeatures) {
+            chrome.storage.local.get(['ghostfill_training_data'], (res) => {
+              const data = Array.isArray(res.ghostfill_training_data) ? res.ghostfill_training_data : [];
+              // We omit the DOM element itself and keep the text/structural numbers
+              const { element, ...savableFeatures } = rawFeatures;
+              data.push({ features: savableFeatures, label: correctType, timestamp: Date.now() });
+              chrome.storage.local.set({ ghostfill_training_data: data }, () => {
+                log.info(`[Continuous Learning] Saved ${correctType} field to local training pool. Total items: ${data.length}`);
+              });
+            });
+          }
+        } else {
+          log.warn('[Continuous Learning] Right-clicked element is not an input or textarea. Cannot extract features.');
+        }
+      }
+      return { success: true };
+    }
+
     case 'PING': {
       return { success: true, alive: true, verdict: otpPageDetector.getStatus().verdict };
     }

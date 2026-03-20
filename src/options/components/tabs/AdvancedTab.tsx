@@ -42,6 +42,30 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
     }
   };
 
+  const handleExportMLData = () => {
+    chrome.storage.local.get(['ghostfill_training_data'], (res) => {
+      const data = res.ghostfill_training_data || [];
+      if (data.length === 0) {
+        // eslint-disable-next-line no-alert
+        alert('No training data collected yet. Right-click editable fields on any website and report misclassifications to collect data.');
+        return;
+      }
+      try {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ghostfill_user_data.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        log.error('Export ML Data failed:', err);
+      }
+    });
+  };
+
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) {
@@ -122,6 +146,18 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
               className="sr-only"
             />
           </label>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection id="ml-data" title="Continuous Learning" icon="🧠">
+        <div className="setting-item">
+          <div className="setting-info">
+            <label>Export Training Data</label>
+            <p>Download your reported misclassifications to train the ML model</p>
+          </div>
+          <button className="btn btn-primary" type="button" onClick={handleExportMLData}>
+            Download Data
+          </button>
         </div>
       </SettingsSection>
 
