@@ -313,8 +313,14 @@ const OptionsApp: React.FC = () => {
   //  §5.3  S A V E
   // ═══════════════════════════════════════════════════════════
 
+  const settingsRef = useRef(settings);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
   const saveSettings = useCallback(async (): Promise<boolean> => {
-    const errors = validateSettings(settings);
+    const currentSettings = settingsRef.current;
+    const errors = validateSettings(currentSettings);
     setFormErrors(errors);
     setTouchedFields(ALL_VALIDATED_FIELDS);
 
@@ -324,29 +330,46 @@ const OptionsApp: React.FC = () => {
     }
 
     try {
-      await chrome.runtime.sendMessage({
+      const response = await chrome.runtime.sendMessage({
         action: 'UPDATE_SETTINGS',
-        payload: settings,
+        payload: currentSettings,
       });
+
+      if (!response || !response.success) {
+        log.error('Failed to save settings: backend rejected');
+        return false;
+      }
 
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
-      previousSettingsRef.current = { ...settings };
+      previousSettingsRef.current = { ...currentSettings };
       return true;
     } catch (error) {
       log.error('Failed to save settings', error);
       return false;
     }
-  }, [settings]);
+  }, []);
 
   // Auto-save when settings change (skip first load)
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
     if (isFirstLoad.current) {
       isFirstLoad.current = false;
       return;
     }
     if (!loading) {
-      void saveSettings();
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+      autoSaveTimerRef.current = setTimeout(() => {
+        void saveSettings();
+      }, 500);
+      return () => {
+        if (autoSaveTimerRef.current) {
+          clearTimeout(autoSaveTimerRef.current);
+        }
+      };
     }
   }, [settings, loading, saveSettings]);
 
@@ -448,11 +471,7 @@ const OptionsApp: React.FC = () => {
       type: 'danger',
       action: () => {
         void (async () => {
-          await chrome.storage.local.clear();
-          if (chrome.storage.session) {
-            await chrome.storage.session.clear();
-          }
-          await storageService.clearSessionSecrets();
+          await storageService.clear();
           window.location.reload();
         })();
       },
@@ -516,6 +535,15 @@ const OptionsApp: React.FC = () => {
             onReset={handleReset}
             onClearData={handleClearData}
             onSettingsImport={handleSettingsImport}
+            onError={(msg) => {
+              setConfirmModal({
+                open: true,
+                title: 'Error',
+                message: msg,
+                type: 'warning',
+                action: () => {},
+              });
+            }}
           />
         );
 
@@ -549,18 +577,18 @@ const OptionsApp: React.FC = () => {
   }
 
   return (
-    <div className="options-app" role="application" aria-label="GhostFill Settings">
+    <div className="options-app" aria-label="GhostFill Settings">
       <AmbientBackground />
 
       {/* ── Header ── */}
       <header className="options-header" role="banner">
         <div className="header-content">
-          <div className="logo-box">
+          <div className="ghost-card logo-box" style={{ padding: 0 }}>
             <GhostLogo size={56} />
           </div>
-          <div>
-            <h1>GhostFill Settings</h1>
-            <p>Premium privacy experience</p>
+          <div className="header-text-group">
+            <h1 className="spectral-title">GhostFill Settings</h1>
+            <p className="spectral-subtitle">The Ethereal Security Experience</p>
           </div>
         </div>
       </header>

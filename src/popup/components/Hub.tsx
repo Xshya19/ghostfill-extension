@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Mail,
   Lock,
@@ -50,6 +50,19 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
   const [showPassword, setShowPassword] = useState(false);
   const [isGeneratingPassword, setIsGeneratingPassword] = useState(false);
   const [isGeneratingEmail, setIsGeneratingEmail] = useState(false);
+  const [showConfirmEmail, setShowConfirmEmail] = useState(false);
+  const cancelBtnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showConfirmEmail) {setShowConfirmEmail(false);}
+    };
+    if (showConfirmEmail) {
+      window.addEventListener('keydown', handleKey);
+      setTimeout(() => cancelBtnRef.current?.focus(), 50);
+    }
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [showConfirmEmail]);
 
   // Switch to Push-State UI instead of polling
   const rawInbox = useStorageSubscription('inbox', []);
@@ -57,16 +70,18 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
 
   // Generate strong 16-char password with rate limiting
   const generatePassword = useCallback(async () => {
-    const { lastGeneratePasswordTime } = await chrome.storage.local.get('lastGeneratePasswordTime');
-    const lastTime = parseInt(lastGeneratePasswordTime || '0', 10);
-    const now = Date.now();
-    if (now - lastTime < RATE_LIMIT_MS.GENERATE_PASSWORD) {
-      return; // Rate limited
-    }
-    await chrome.storage.local.set({ lastGeneratePasswordTime: now.toString() });
-
     setIsGeneratingPassword(true);
     try {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        const { lastGeneratePasswordTime } = await chrome.storage.local.get('lastGeneratePasswordTime');
+        const lastTime = parseInt(lastGeneratePasswordTime || '0', 10);
+        const now = Date.now();
+        if (now - lastTime < RATE_LIMIT_MS.GENERATE_PASSWORD) {
+          return; // Rate limited
+        }
+        await chrome.storage.local.set({ lastGeneratePasswordTime: now.toString() });
+      }
+
       const response = await safeSendMessage({
         action: 'GENERATE_PASSWORD',
         payload: { length: 16, uppercase: true, lowercase: true, numbers: true, symbols: true },
@@ -87,29 +102,32 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       return;
     }
 
-    const { lastCheckInboxTime } = await chrome.storage.local.get('lastCheckInboxTime');
-    const lastTime = parseInt(lastCheckInboxTime || '0', 10);
-    const now = Date.now();
-    if (now - lastTime < RATE_LIMIT_MS.CHECK_INBOX) {
-      return; // Rate limited
-    }
-    await chrome.storage.local.set({ lastCheckInboxTime: now.toString() });
-
     try {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        const { lastCheckInboxTime } = await chrome.storage.local.get('lastCheckInboxTime');
+        const lastTime = parseInt(lastCheckInboxTime || '0', 10);
+        const now = Date.now();
+        if (now - lastTime < RATE_LIMIT_MS.CHECK_INBOX) {
+          return; // Rate limited
+        }
+        await chrome.storage.local.set({ lastCheckInboxTime: now.toString() });
+      }
+
       await safeSendMessage({ action: 'CHECK_INBOX' });
     } catch (e) {
-      // Silent fail for inbox check
+      onToast('Failed to sync inbox');
     }
-  }, [emailAccount]);
+  }, [emailAccount, onToast]);
 
   useEffect(() => {
     if (!password) {
       void generatePassword();
     }
+  }, [generatePassword, password]);
+
+  useEffect(() => {
     void checkInbox();
-    // setInterval polling removed entirely in favor of Push-State reactive architecture!
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [generatePassword, checkInbox, password]);
+  }, [checkInbox]);
 
   // Refs for timeout clearing
   const emailTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -192,23 +210,34 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
   }, [copyPassword]);
 
   const handleGenerateEmail = useCallback(() => {
+    setShowConfirmEmail(true);
+  }, []);
+
+  const executeGenerateEmail = useCallback(() => {
+    setShowConfirmEmail(false);
     void (async () => {
-      const now = Date.now();
-      const { lastGenerateEmailTime } = await chrome.storage.local.get('lastGenerateEmailTime');
-      const lastTime = parseInt(lastGenerateEmailTime || '0', 10);
-      if (now - lastTime < RATE_LIMIT_MS.GENERATE_EMAIL) {
-        onToast('Please wait before generating a new email');
-        return;
-      }
+      try {
+        const now = Date.now();
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+          const { lastGenerateEmailTime } = await chrome.storage.local.get('lastGenerateEmailTime');
+          const lastTime = parseInt(lastGenerateEmailTime || '0', 10);
+          if (now - lastTime < RATE_LIMIT_MS.GENERATE_EMAIL) {
+            onToast('Please wait before generating a new email');
+            return;
+          }
+          await chrome.storage.local.set({ lastGenerateEmailTime: now.toString() });
+        }
+        
+        setIsGeneratingEmail(true);
+        onGenerate();
 
-      await chrome.storage.local.set({ lastGenerateEmailTime: now.toString() });
-      setIsGeneratingEmail(true);
-      onGenerate();
-
-      if (generatingEmailTimeoutRef.current) {
-        clearTimeout(generatingEmailTimeoutRef.current);
+        if (generatingEmailTimeoutRef.current) {
+          clearTimeout(generatingEmailTimeoutRef.current);
+        }
+        generatingEmailTimeoutRef.current = setTimeout(() => setIsGeneratingEmail(false), 2000);
+      } catch (err) {
+        // silent catch
       }
-      generatingEmailTimeoutRef.current = setTimeout(() => setIsGeneratingEmail(false), 2000);
     })();
   }, [onGenerate, onToast]);
 
@@ -251,6 +280,13 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     },
   };
 
+  const displayedEmails = React.useMemo(() => {
+    return inboxEmails.slice(0, 5).map((email: Email) => ({
+      ...email,
+      otpCode: extractOTP(email.subject + ' ' + email.body),
+    }));
+  }, [inboxEmails]);
+
   return (
     <motion.div
       className="ghost-dashboard"
@@ -261,7 +297,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       {/* ═══════════════════════════════════════════════════════════
                  🎴 IDENTITY CARD - Combined Email & Password
                ═══════════════════════════════════════════════════════════ */}
-      <motion.div className="identity-card" variants={itemVariants}>
+      <motion.div className="ghost-card identity-card" variants={itemVariants}>
         {/* Email Row */}
         <div className="identity-row">
           <div className="identity-icon">
@@ -392,33 +428,34 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
             </div>
           ) : (
             <div className="hub-inbox-scroll">
-              {inboxEmails.slice(0, 5).map((email: Email, index: number) => {
-                const otpCode = extractOTP(email.subject + ' ' + email.body);
+              {displayedEmails.map((emailItem, index: number) => {
                 return (
                   <motion.div
-                    key={email.id}
+                    key={emailItem.id}
                     className="inbox-item"
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.3 + index * 0.1 }}
                     whileHover={{ x: 4, background: 'var(--list-item-hover)' }}
                   >
-                    <div className="inbox-item-avatar">{email.from.charAt(0).toUpperCase()}</div>
+                    <div className="inbox-item-avatar">{emailItem.from.charAt(0).toUpperCase()}</div>
                     <div className="inbox-item-content">
                       <div className="inbox-item-header">
-                        <span className="inbox-item-from">{email.from}</span>
+                        <span className="inbox-item-from">{emailItem.from}</span>
                         <span className="inbox-item-date">
                           <Clock size={10} />
-                          {formatRelativeTime(new Date(email.date).getTime())}
+                          {formatRelativeTime(new Date(emailItem.date).getTime())}
                         </span>
                       </div>
-                      <div className="inbox-item-subject">{email.subject}</div>
-                      {otpCode && (
+                      <div className="inbox-item-subject">{emailItem.subject}</div>
+                      {emailItem.otpCode && (
                         <motion.button
                           className="otp-badge"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleCopyOTP(otpCode);
+                            if (emailItem.otpCode) {
+                                handleCopyOTP(emailItem.otpCode);
+                            }
                           }}
                           whileHover={{
                             scale: 1.05,
@@ -426,7 +463,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
                           }}
                           whileTap={{ scale: 0.95 }}
                         >
-                          <span className="otp-badge-code">{otpCode}</span>
+                          <span className="otp-badge-code">{emailItem.otpCode}</span>
                           <Copy size={10} />
                         </motion.button>
                       )}
@@ -438,6 +475,54 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
           )}
         </div>
       </motion.div>
+
+      {/* Confirmation Modal overlay (Replaces window.confirm H4) */}
+      <AnimatePresence>
+        {showConfirmEmail && (
+          <motion.div 
+            className="modal-overlay" 
+            onClick={() => setShowConfirmEmail(false)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{ zIndex: 9999, padding: '0 20px', display: 'flex' }}
+          >
+            <motion.div
+              className="glass-card confirmation-modal"
+              onClick={(e) => e.stopPropagation()}
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              style={{ margin: 'auto', background: 'var(--bg-primary)', width: '100%', maxWidth: '320px', padding: '24px' }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="hub-modal-title"
+            >
+              <h3 id="hub-modal-title" style={{ marginTop: 0, marginBottom: '8px', fontSize: '18px', color: 'var(--text-primary)' }}>Generate New Email?</h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '14px', lineHeight: 1.5, margin: 0 }}>
+                Your current temporary email and its inbox will be permanently lost.
+              </p>
+              <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+                <button 
+                  ref={cancelBtnRef}
+                  className="ios-button button-secondary" 
+                  style={{ flex: 1 }} 
+                  onClick={() => setShowConfirmEmail(false)}
+                >
+                  Cancel
+                </button>
+                <button 
+                  className="ios-button button-primary" 
+                  style={{ flex: 1, background: 'var(--error)' }}
+                  onClick={executeGenerateEmail}
+                >
+                  Generate
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };

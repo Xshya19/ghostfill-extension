@@ -62,78 +62,99 @@ export async function safeSendMessage(
 ): Promise<ExtensionResponse | null> {
   const { timeout = MESSAGE_TIMEOUT_MS, retries = MAX_RETRY_ATTEMPTS } = options;
 
-  // HIGH FIX: Runtime validation with Zod
-  const validation = validateMessage(message);
-  if (!validation.valid) {
-    log.error('Message validation failed', {
-      action: message.action,
-      error: JSON.stringify(validation.error),
-    });
-    throw new Error(JSON.stringify(validation.error));
-  }
-
-  // Early exit if extension context is invalid
-  if (!isExtensionContextValid()) {
-    log.debug('Extension context invalid, skipping message', { action: message.action });
-    return null;
-  }
-
-  let lastError: Error | null = null;
-
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    // HIGH FIX: Runtime validation with Zod — return null instead of throwing
     try {
-      const timeoutPromise = new Promise<never>((_resolve, reject) => {
-        timeoutId = setTimeout(
-          () => reject(new Error(`Message timeout after ${timeout}ms`)),
-          timeout
-        );
-      });
-
-      // Send message with timeout race
-      const response = (await Promise.race([
-        chrome.runtime.sendMessage(message),
-        timeoutPromise,
-      ])) as ExtensionResponse | null;
-
-      return response;
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      lastError = error instanceof Error ? error : new Error(errorMsg);
-
-      // Check if error is recoverable
-      if (isRecoverableError(errorMsg)) {
-        log.debug(`Message attempt ${attempt + 1}/${retries + 1} failed (recoverable)`, {
-          action: message.action,
-          error: errorMsg,
-        });
-
-        // Don't retry on last attempt
-        if (attempt < retries) {
-          await sleep(RETRY_DELAY_MS * (attempt + 1)); // Exponential backoff
-          continue;
-        }
-      } else {
-        // Non-recoverable error - throw immediately
-        log.error('Message failed (non-recoverable)', {
-          action: message.action,
-          error: errorMsg,
-        });
-        throw error;
+      const validation = validateMessage(message);
+      if (!validation.valid) {
+        const errorMsg =
+          typeof validation.error === 'string'
+            ? validation.error
+            : JSON.stringify(validation.error);
+        log.error(`Message validation failed for ${message.action}: ${errorMsg}`);
+        return null;
       }
-    } finally {
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId);
+    } catch {
+      // validateMessage threw unexpectedly — treat as non-fatal
+      return null;
+    }
+
+    // Early exit if extension context is invalid
+    if (!isExtensionContextValid()) {
+      log.debug('Extension context invalid, skipping message', { action: message.action });
+      return null;
+    }
+
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const timeoutPromise = new Promise<never>((_resolve, reject) => {
+          timeoutId = setTimeout(
+            () => reject(new Error(`Message timeout after ${timeout}ms`)),
+            timeout
+          );
+        });
+
+        // Send message with timeout race
+        // SYNCHRONOUS ERROR GUARD: chrome.runtime.sendMessage can throw immediately if invalidated
+        let sendPromise;
+        try {
+          sendPromise = chrome.runtime.sendMessage(message);
+        } catch (err) {
+          throw new Error(err instanceof Error ? err.message : String(err));
+        }
+
+        const response = (await Promise.race([
+          sendPromise,
+          timeoutPromise,
+        ])) as ExtensionResponse | null;
+
+        return response;
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        lastError = error instanceof Error ? error : new Error(errorMsg);
+
+        // Check if error is recoverable
+        if (isRecoverableError(errorMsg)) {
+          log.debug(`Message attempt ${attempt + 1}/${retries + 1} failed (recoverable)`, {
+            action: message.action,
+            error: errorMsg,
+          });
+
+          // Don't retry on last attempt
+          if (attempt < retries) {
+            await sleep(RETRY_DELAY_MS * (attempt + 1)); // Exponential backoff
+            continue;
+          }
+        } else {
+          // Non-recoverable error — return null instead of throwing
+          // This ensures callers NEVER receive a thrown error
+          log.warn('Message failed (non-recoverable), returning null', {
+            action: message.action,
+            error: errorMsg,
+          });
+          return null;
+        }
+      } finally {
+        if (timeoutId !== undefined) {
+          clearTimeout(timeoutId);
+        }
       }
     }
-  }
 
-  // All retries exhausted - log and return null
-  log.warn('Message failed after all retries', {
-    action: message.action,
-    error: lastError?.message,
-  });
-  return null;
+    // All retries exhausted - log and return null
+    log.warn('Message failed after all retries', {
+      action: message.action,
+      error: lastError?.message,
+    });
+    return null;
+  } catch {
+    // DEFENSIVE: Outer safety net — this function must NEVER throw.
+    // If we reach here, something unexpected happened. Return null safely.
+    return null;
+  }
 }
 
 /**
@@ -151,95 +172,116 @@ export async function safeSendTabMessage(
 ): Promise<ExtensionResponse | null> {
   const { timeout = MESSAGE_TIMEOUT_MS, retries = MAX_RETRY_ATTEMPTS } = options;
 
-  const validation = validateMessage(message);
-  if (!validation.valid) {
-    log.error('Tab message validation failed', {
-      action: message.action,
-      error: JSON.stringify(validation.error),
-    });
-    throw new Error(JSON.stringify(validation.error));
-  }
-
-  // Early exit if extension context is invalid
-  if (!isExtensionContextValid()) {
-    log.debug('Extension context invalid, skipping tab message', { action: message.action });
-    return null;
-  }
-
-  let lastError: Error | null = null;
-
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    // HIGH FIX: Runtime validation with Zod — return null instead of throwing
     try {
-      const timeoutPromise = new Promise<never>((_resolve, reject) => {
-        timeoutId = setTimeout(
-          () => reject(new Error(`Tab message timeout after ${timeout}ms`)),
-          timeout
-        );
-      });
+      const validation = validateMessage(message);
+      if (!validation.valid) {
+        const errorMsg =
+          typeof validation.error === 'string'
+            ? validation.error
+            : JSON.stringify(validation.error);
 
-      // Send message with timeout race
-      const response = (await Promise.race([
-        chrome.tabs.sendMessage(tabId, message),
-        timeoutPromise,
-      ])) as ExtensionResponse | null;
-
-      return response;
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      lastError = error instanceof Error ? error : new Error(errorMsg);
-
-      // Check if error is expected (content script not available)
-      if (
-        errorMsg.includes('Receiving end does not exist') ||
-        errorMsg.includes('Could not establish connection') ||
-        errorMsg.includes('Internal error: collectSample') ||
-        errorMsg.includes('The message port closed before a response was received')
-      ) {
-        // Only log debug for expected cases on restricted pages
-        log.debug(`Content script not available on tab ${tabId}`, {
-          action: message.action,
-          attempt: attempt + 1,
-        });
-
-        // Don't retry for content script unavailable errors
+        log.error(`Tab message validation failed for ${message.action}: ${errorMsg}`);
         return null;
       }
+    } catch {
+      // validateMessage threw unexpectedly — treat as non-fatal
+      return null;
+    }
 
-      // Check if error is recoverable
-      if (isRecoverableError(errorMsg)) {
-        log.debug(`Tab message attempt ${attempt + 1}/${retries + 1} failed (recoverable)`, {
-          tabId,
-          action: message.action,
-          error: errorMsg,
+    // Early exit if extension context is invalid
+    if (!isExtensionContextValid()) {
+      log.debug('Extension context invalid, skipping tab message', { action: message.action });
+      return null;
+    }
+
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const timeoutPromise = new Promise<never>((_resolve, reject) => {
+          timeoutId = setTimeout(
+            () => reject(new Error(`Tab message timeout after ${timeout}ms`)),
+            timeout
+          );
         });
 
-        // Don't retry on last attempt
-        if (attempt < retries) {
-          await sleep(RETRY_DELAY_MS * (attempt + 1));
-          continue;
+        // Send message with timeout race
+        // SYNCHRONOUS ERROR GUARD: chrome.tabs.sendMessage can throw immediately if invalidated
+        let sendPromise;
+        try {
+          sendPromise = chrome.tabs.sendMessage(tabId, message);
+        } catch (err) {
+          throw new Error(err instanceof Error ? err.message : String(err));
         }
-      } else {
-        // Non-recoverable error - throw immediately
-        log.error('Tab message failed (non-recoverable)', {
-          tabId,
-          action: message.action,
-          error: errorMsg,
-        });
-        throw error;
-      }
-    } finally {
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId);
+
+        const response = (await Promise.race([
+          sendPromise,
+          timeoutPromise,
+        ])) as ExtensionResponse | null;
+
+        return response;
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        lastError = error instanceof Error ? error : new Error(errorMsg);
+
+        // Check if error is expected (content script not available)
+        if (
+          errorMsg.includes('Receiving end does not exist') ||
+          errorMsg.includes('Could not establish connection') ||
+          errorMsg.includes('Internal error: collectSample') ||
+          errorMsg.includes('The message port closed before a response was received')
+        ) {
+          // Only log debug for expected cases on restricted pages
+          log.debug(`Content script not available on tab ${tabId}`, {
+            action: message.action,
+            attempt: attempt + 1,
+          });
+
+          // Don't retry for content script unavailable errors
+          return null;
+        }
+
+        // Check if error is recoverable
+        if (isRecoverableError(errorMsg)) {
+          log.debug(`Tab message attempt ${attempt + 1}/${retries + 1} failed (recoverable)`, {
+            tabId,
+            action: message.action,
+            error: errorMsg,
+          });
+
+          // Don't retry on last attempt
+          if (attempt < retries) {
+            await sleep(RETRY_DELAY_MS * (attempt + 1));
+            continue;
+          }
+        } else {
+          // Non-recoverable error — return null instead of throwing
+          log.warn('Tab message failed (non-recoverable), returning null', {
+            tabId,
+            action: message.action,
+            error: errorMsg,
+          });
+          return null;
+        }
+      } finally {
+        if (timeoutId !== undefined) {
+          clearTimeout(timeoutId);
+        }
       }
     }
-  }
 
-  // All retries exhausted - log and return null
-  log.warn('Tab message failed after all retries', {
-    tabId,
-    action: message.action,
-    error: lastError?.message,
-  });
-  return null;
+    // All retries exhausted - log and return null
+    log.warn('Tab message failed after all retries', {
+      tabId,
+      action: message.action,
+      error: lastError?.message,
+    });
+    return null;
+  } catch {
+    // DEFENSIVE: Outer safety net — this function must NEVER throw.
+    return null;
+  }
 }

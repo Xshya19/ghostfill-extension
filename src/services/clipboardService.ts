@@ -1,5 +1,6 @@
 // Clipboard Service
 
+import { ensureOffscreenDocument } from '../background/offscreenManager';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('ClipboardService');
@@ -54,8 +55,12 @@ class ClipboardService {
 
       if (clearTime > 0) {
         this.clearTimer = setTimeout(() => {
-          void this.clearClipboard().then(() => {
-            log.info('Clipboard auto-cleared for security', { type });
+          void this.clearClipboard().then((success) => {
+            if (success) {
+              log.info('Clipboard auto-cleared for security', { type });
+            } else {
+              log.warn('Clipboard auto-clear failed', { type });
+            }
           });
         }, clearTime);
       }
@@ -74,8 +79,14 @@ class ClipboardService {
   async clearClipboard(): Promise<boolean> {
     try {
       if (typeof document === 'undefined') {
-        // Can't clear from service worker without offscreen doc
-        return false;
+        // P1.7: Clear from service worker using offscreen doc
+        await this.setupOffscreenDocument();
+        const response = await chrome.runtime.sendMessage({
+          target: 'offscreen-doc',
+          type: 'COPY_TO_CLIPBOARD',
+          data: '',
+        });
+        return !!response?.success;
       }
       await navigator.clipboard.writeText('');
       log.debug('Clipboard cleared');
@@ -93,16 +104,20 @@ class ClipboardService {
     try {
       await this.setupOffscreenDocument();
 
-      // Send message to offscreen document
-      await chrome.runtime.sendMessage({
+      // P1.6: Inspect response from offscreen document
+      const response = await chrome.runtime.sendMessage({
         target: 'offscreen-doc',
         type: 'COPY_TO_CLIPBOARD',
         data: text,
       });
 
-      log.debug('Copied to clipboard (offscreen)');
-
-      return true;
+      if (response?.success) {
+        log.debug('Copied to clipboard (offscreen)');
+        return true;
+      } else {
+        log.error('Offscreen copy failed reported by doc', response?.error);
+        return false;
+      }
     } catch (error) {
       log.error('Offscreen copy failed', error);
       return false;
@@ -110,30 +125,11 @@ class ClipboardService {
   }
 
   /**
-   * Setup offscreen document
+   * Ensures the offscreen document is ready for clipboard operations.
+   * Uses the centralized OffscreenManager.
    */
   private async setupOffscreenDocument(): Promise<void> {
-    try {
-      // Check if offscreen API is available
-      if (!chrome.offscreen) {
-        log.error('Offscreen API not available');
-        return;
-      }
-
-      // Create offscreen document
-      // If it already exists, this will throw an error which we can ignore
-      await chrome.offscreen.createDocument({
-        url: 'offscreen.html',
-        reasons: [chrome.offscreen.Reason.CLIPBOARD],
-        justification: 'To copy text to clipboard from background script',
-      });
-    } catch (error) {
-      // Ignore error if document already exists
-      const msg = (error as Error).message;
-      if (!msg.includes('Only a single offscreen') && !msg.includes('already exists')) {
-        log.warn('Failed to create offscreen document (might already exist)', error);
-      }
-    }
+    await ensureOffscreenDocument();
   }
 
   /**

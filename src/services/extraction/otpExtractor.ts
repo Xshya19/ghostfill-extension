@@ -16,7 +16,7 @@ import type {
   RelationshipGraph,
   ExtractedOTP,
   IntentResult,
-} from './types';
+} from '../types/extraction.types';
 import {
   decodeHtmlEntities,
   getZoneForPosition,

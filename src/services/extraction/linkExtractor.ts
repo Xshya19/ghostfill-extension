@@ -14,7 +14,7 @@ import type {
   EmailIntent,
   IntentResult,
   ExtractedLink,
-} from './types';
+} from '../types/extraction.types';
 import { normalizeUrl, analyzeUrlParams, calculateUrlComplexity } from './urlExtractor';
 import {
   decodeHtmlEntities,
@@ -179,7 +179,7 @@ export function calculateDomainTrust(url: string, provider: ProviderKnowledge | 
     const h = u.hostname.toLowerCase();
     let trust = 30;
 
-    if (provider?.domains.some((d) => h.includes(d))) {
+    if (provider?.domains.some((d: string) => h.includes(d))) {
       trust += 40;
     }
     if (u.protocol === 'https:') {
@@ -244,7 +244,7 @@ export function extractLink(
 
   for (const url of urls) {
     // Filter out non-target URLs
-    if (NON_TARGET_URL_PATTERNS.some((p) => p.test(url))) {
+    if (NON_TARGET_URL_PATTERNS.some((p: RegExp) => p.test(url))) {
       continue;
     }
 
@@ -403,7 +403,7 @@ export function extractLink(
 
     // Strategy 8: Provider link pattern match
     if (
-      provider?.linkPatterns?.some((p) => {
+      provider?.linkPatterns?.some((p: RegExp) => {
         p.lastIndex = 0;
         return p.test(url);
       })

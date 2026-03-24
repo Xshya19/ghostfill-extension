@@ -1,6 +1,8 @@
 // src/services/intelligentExtractor.ts
 // GHOSTFILL INTELLIGENT EXTRACTOR - ORCHESTRATOR
 // Coordinates extraction pipeline across specialized modules
+// Version 2.0: Three-Layer Hybrid Intelligence
+
 
 import { createLogger } from '../utils/logger';
 import {
@@ -26,7 +28,9 @@ import {
   type CrossValidationResult,
   type ExtractedOTP,
   type ExtractedLink,
+  type IntentSignal,
 } from './extraction';
+import { IntentClassifier } from './extraction/intentClassifier';
 
 const log = createLogger('IntelligentExtractor');
 
@@ -146,11 +150,92 @@ function calculateAdaptiveThresholds(
   };
 }
 
+/**
+ * Layer 3: Security Guard — Calculates trust score based on phishing markers
+ */
+function calculateSecurityScore(allUrls: string[], body: string): { score: number; risk: 'low' | 'medium' | 'high' } {
+    let riskPoints = 0;
+    
+    // URL Density (Insight from 100k Dataset)
+    if (allUrls.length > 5) {riskPoints += 20;}
+    if (allUrls.length > 15) {riskPoints += 40;}
+    
+    // Tracking tokens (Insight from 100k Dataset)
+    if (body.includes('click.email') || body.includes('tracking') || body.includes('utm_source')) {
+        riskPoints += 15;
+    }
+
+    // High URL-to-Text ratio (Phishing commonality)
+    const urlTextLength = allUrls.join('').length;
+    if (urlTextLength > body.length * 0.5) {riskPoints += 30;}
+
+    const score = Math.max(0, 100 - riskPoints);
+    let risk: 'low' | 'medium' | 'high' = 'low';
+    if (score < 40) {risk = 'high';}
+    else if (score < 75) {risk = 'medium';}
+
+    return { score, risk };
+}
+
+function refineIntent(
+  subject: string,
+  body: string,
+  currentIntent: EmailIntent
+): IntentResult {
+  // Tier 1: Fast Path (High-confidence regex rules)
+  if (
+    /verify.*email/i.test(subject) || 
+    /activate.*account/i.test(subject) ||
+    /confirm.*registration/i.test(subject) ||
+    /welcome.*verify/i.test(subject)
+  ) {
+    return { 
+      intent: 'activation', 
+      confidence: 0.95, 
+      signals: [{ type: 'regex', source: 'subject', detail: 'high-confidence-activation', weight: 0.95 }], 
+      scores: { 'activation': 0.95 },
+      secondaryIntent: null
+    };
+  }
+
+  if (
+    /security.*code/i.test(subject) || 
+    /verification.*code/i.test(subject) ||
+    /one-time.*password/i.test(subject) ||
+    /your.*otp/i.test(subject)
+  ) {
+    return { 
+      intent: 'verification', 
+      confidence: 0.95, 
+      signals: [{ type: 'regex', source: 'subject', detail: 'high-confidence-verification', weight: 0.95 }], 
+      scores: { 'verification': 0.95 },
+      secondaryIntent: null
+    };
+  }
+
+  // Tier 2: Smart Path (Naive Bayes ML Model)
+  const mlResult = IntentClassifier.classify(subject, body);
+  
+  if (mlResult.confidence > 0.6) {
+      log.info(`ML Intent match: ${mlResult.intent} (conf=${mlResult.confidence.toFixed(2)})`);
+      return {
+          intent: mlResult.intent as EmailIntent,
+          confidence: mlResult.confidence,
+          signals: [{ type: 'ml', source: 'naive-bayes', detail: `predicted-${mlResult.intent}`, weight: mlResult.confidence }],
+          scores: { [mlResult.intent]: mlResult.confidence },
+          secondaryIntent: null
+      };
+  }
+
+  return { intent: currentIntent, confidence: 0.5, signals: [], scores: {}, secondaryIntent: null };
+}
+
 export function extractAll(
   subject: string,
   body: string,
   htmlBody: string = '',
-  senderEmail: string = ''
+  senderEmail: string = '',
+  expectedDomains: string[] = []
 ): ExtractionResult {
   const startTime = performance.now();
   const timings: Record<string, number> = {};
@@ -177,19 +262,18 @@ export function extractAll(
     sanitizedSenderEmail,
     sanitizedSubject,
     sanitizedBody,
-    allUrls
+    allUrls,
+    expectedDomains
   );
   timings.provider = performance.now() - t;
 
   t = performance.now();
-  const intentResult: IntentResult = {
-    intent: provider?.emailIntent || 'other',
-    confidence: providerConfidence / 100,
-    signals: [],
-    scores: {},
-    secondaryIntent: null,
-  };
-  timings.intent = performance.now() - t;
+  const security = calculateSecurityScore(allUrls, sanitizedBody);
+  const intentResult = refineIntent(sanitizedSubject, sanitizedBody, provider?.emailIntent || 'other');
+  
+  // Link intent result into result object
+  intentResult.secondaryIntent = null; 
+  timings.security = performance.now() - t;
 
   t = performance.now();
   let otp = extractOTP(plainText, sanitizedHtmlBody, provider, zones, intentResult);
@@ -270,7 +354,7 @@ export function extractAll(
     link,
     debugInfo: {
       provider: provider?.name || null,
-      intentSignals: intentResult.signals.map((s) => `${s.type}:${s.source}(w=${s.weight})`),
+      intentSignals: intentResult.signals.map((s: IntentSignal) => `${s.type}:${s.source}(w=${s.weight})`),
       contextValidated: otp !== null || link !== null,
       crossValidation: crossResult.reason,
       zones: zones.map((z) => z.zone),
@@ -280,6 +364,8 @@ export function extractAll(
       providerConfidence,
       intentScores: intentResult.scores,
       secondaryIntent: intentResult.secondaryIntent,
+      securityScore: security.score,
+      securityRisk: security.risk,
     },
   };
 }

@@ -2,8 +2,8 @@ import { createLogger } from '../utils/logger';
 
 import { extractActivationLinks } from './activationLinkExtractor';
 // Import shared types from extraction module to prevent circular dependencies
-import type { EmailCategory, ClassificationResult } from './extraction/types';
 import { extractOTP } from './otpExtractor';
+import type { EmailCategory, ClassificationResult } from './types/extraction.types';
 
 const log = createLogger('GhostCore');
 

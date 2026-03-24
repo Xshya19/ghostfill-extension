@@ -13,8 +13,7 @@
 // Core utilities
 
 import { setupContextMenu as contextMenuSetup } from '../background/contextMenu';
-// NOTE: messageHandler.ts is a pre-existing corrupted binary — import is intentionally removed.
-// Message routing is handled by registerMLMessageHandler() in background/index.ts.
+import { setupMessageHandler } from './messageHandler';
 import { initNotifications as notificationsInit } from '../background/notifications';
 import { setupPollingManager as pollingManagerSetup } from '../background/pollingManager';
 import { emailService } from '../services/emailServices/index';
@@ -119,7 +118,17 @@ let reinitAttemptCount = 0; // Track re-init attempts for exponential backoff
 let keepAliveListenerInstalled = false;
 
 const serviceRegistry = new Map<string, ServiceRecord>();
+const MAX_BOOT_ERRORS = 50;
 const bootErrors: ErrorRecord[] = [];
+
+function recordBootError(error: ErrorRecord) {
+  if (bootErrors.length >= MAX_BOOT_ERRORS) {
+    bootErrors.shift(); // Prevent array from growing infinitely
+  }
+  bootErrors.push(error);
+}
+// Track timers for deferred phases
+const deferredPhaseTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 const metrics: BootMetrics = {
   state: 'cold',
@@ -347,8 +356,8 @@ async function initContextMenu(): Promise<void> {
 async function initMessageRouter(): Promise<void> {
   try {
     log.debug('📡 Initializing message router...');
-    // Message handler setup function is already statically imported
-    log.debug('📡 Message router: handled by mlMessageHandler in index.ts');
+    // Register the message handler (idempotent call)
+    setupMessageHandler();
     log.info('✅ Message router ready - extension can now receive messages');
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
@@ -384,14 +393,7 @@ async function installKeepAlive(): Promise<void> {
   });
 
   // Listen for the keep-alive alarm (idempotent)
-  if (!keepAliveListenerInstalled) {
-    chrome.alarms.onAlarm.addListener((alarm) => {
-      if (alarm.name === CONFIG.KEEPALIVE_ALARM_NAME) {
-        onKeepAliveTick();
-      }
-    });
-    keepAliveListenerInstalled = true;
-  }
+  keepAliveListenerInstalled = true;
 
   log.debug('✅ Keep-alive alarm registered', {
     intervalMin: CONFIG.KEEPALIVE_INTERVAL_MIN,
@@ -434,6 +436,12 @@ async function logStorageDiagnostics(): Promise<void> {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  KEEP-ALIVE TICK
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+export function onServiceWorkerAlarm(alarm: chrome.alarms.Alarm): void {
+  if (alarm.name === CONFIG.KEEPALIVE_ALARM_NAME) {
+    onKeepAliveTick();
+  }
+}
 
 function onKeepAliveTick(): void {
   // Light-touch heartbeat: verify state, maybe re-init if we crashed
@@ -490,6 +498,7 @@ export async function initServiceWorker(): Promise<void> {
     }
   }
 
+  bootState = 'initializing'; // Set synchronously to prevent race condition
   bootPromise = executeBootSequence();
   return bootPromise;
 }
@@ -545,7 +554,7 @@ async function executeBootSequence(): Promise<void> {
         log.error(`⏱️ Phase "${phase.name}" timed out after ${CONFIG.BOOT_TIMEOUT_MS}ms`);
         if (phase.critical) {
           criticalFailure = true;
-          bootErrors.push({
+          recordBootError({
             service: `phase:${phase.name}`,
             phase: index,
             error: `Phase timed out after ${CONFIG.BOOT_TIMEOUT_MS}ms`,
@@ -562,7 +571,7 @@ async function executeBootSequence(): Promise<void> {
     const errorDetails = serializeError(error);
     log.error('💥 Boot sequence threw', errorDetails);
     criticalFailure = true;
-    bootErrors.push({
+    recordBootError({
       service: 'boot-sequence',
       phase: -1,
       error: errorDetails instanceof Error ? errorDetails.message : String(error),
@@ -683,13 +692,15 @@ async function executeTask(task: TaskDefinition, phase: number): Promise<void> {
 
     try {
       // Race against per-task timeout
+      const timeout = rejectAfter(
+        CONFIG.TASK_TIMEOUT_MS,
+        `Task "${task.name}" timed out after ${CONFIG.TASK_TIMEOUT_MS}ms`
+      );
       await Promise.race([
         task.fn(),
-        rejectAfter(
-          CONFIG.TASK_TIMEOUT_MS,
-          `Task "${task.name}" timed out after ${CONFIG.TASK_TIMEOUT_MS}ms`
-        ),
+        timeout.promise,
       ]);
+      timeout.cancel();
 
       record.health = 'up';
       record.initDurationMs = Math.round(performance.now() - t0);
@@ -708,7 +719,7 @@ async function executeTask(task: TaskDefinition, phase: number): Promise<void> {
         record.health = 'down';
         record.initDurationMs = Math.round(performance.now() - t0);
 
-        bootErrors.push({
+        recordBootError({
           service: task.name,
           phase,
           error: errMsg,
@@ -749,12 +760,20 @@ function scheduleDeferredPhase(phase: PhaseDefinition): void {
     });
   }
 
+  // Cancel existing timer if re-scheduled
+  if (deferredPhaseTimers.has(phase.name)) {
+    clearTimeout(deferredPhaseTimers.get(phase.name));
+  }
+
   // Schedule after a brief delay to let the critical path finish
-  setTimeout(() => {
+  const timerId = setTimeout(() => {
+    deferredPhaseTimers.delete(phase.name);
     executeDeferredPhase(phase).catch((e) =>
       log.warn(`Deferred phase "${phase.name}" error`, serializeError(e))
     );
   }, CONFIG.IDLE_DELAY_MS);
+  
+  deferredPhaseTimers.set(phase.name, timerId);
 }
 
 async function executeDeferredPhase(phase: PhaseDefinition): Promise<void> {
@@ -931,7 +950,7 @@ self.addEventListener('error', (event: ErrorEvent) => {
 
   log.error('🔥 Unhandled error', errorInfo);
 
-  bootErrors.push({
+  recordBootError({
     service: 'global',
     phase: -1,
     error: event.message,
@@ -969,7 +988,7 @@ self.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
     errorFrequency: errorCount,
   });
 
-  bootErrors.push({
+  recordBootError({
     service: 'global',
     phase: -1,
     error:
@@ -995,10 +1014,12 @@ self.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
 
 // function sleep removed in favor of import
 
-function rejectAfter(ms: number, message: string): Promise<never> {
-  return new Promise((_, reject) => {
-    setTimeout(() => reject(new Error(message)), ms);
+function rejectAfter(ms: number, message: string): { promise: Promise<never>; cancel: () => void } {
+  let timer: ReturnType<typeof setTimeout>;
+  const promise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
   });
+  return { promise, cancel: () => clearTimeout(timer) };
 }
 
 interface CancellableTimeout {
@@ -1021,7 +1042,9 @@ function createTimeout(ms: number): CancellableTimeout {
 
 function generateBootId(): string {
   const ts = Date.now().toString(36);
-  const rnd = Math.random().toString(36).slice(2, 6);
+  const bytes = new Uint8Array(4);
+  crypto.getRandomValues(bytes);
+  const rnd = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
   return `${ts}-${rnd}`;
 }
 

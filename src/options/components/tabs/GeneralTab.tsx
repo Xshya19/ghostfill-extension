@@ -102,7 +102,7 @@ const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChange }) =>
             <p>Replay the welcome onboarding tutorial to learn about GhostFill's features</p>
           </div>
           <button
-            className="ios-button button-secondary"
+            className="premium-btn premium-btn-secondary"
             onClick={async () => {
               await chrome.storage.local.set({ hasSeenOnboarding: false });
               alert('Onboarding reset! Please open the GhostFill popup to view the tutorial.');

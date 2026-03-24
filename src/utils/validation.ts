@@ -7,7 +7,7 @@
 import { z } from 'zod';
 
 // Configuration
-const MAX_MESSAGE_SIZE = 1024 * 1024;
+const MAX_MESSAGE_SIZE = 2 * 1024 * 1024; // Increased to 2MB for large DOM snapshots
 const MAX_STRING_LENGTH = 10000;
 const MAX_ARRAY_LENGTH = 100;
 
@@ -120,7 +120,7 @@ export const extractOTPPayloadSchema = z.object({
 });
 
 export const fillOTPPayloadSchema = z.object({
-  otp: safeString.regex(/^[A-Za-z0-9]{4,10}$/, 'OTP must be 4-10 alphanumeric characters'),
+  otp: safeString.min(4).max(12), // Lenient for typical OTPs
   fieldSelectors: z.array(safeString).max(MAX_ARRAY_LENGTH),
 });
 
@@ -129,7 +129,7 @@ export const otpPageDetectedPayloadSchema = z.object({
   fieldCount: safeNumber.min(0).max(100),
   fieldSelectors: z.array(safeString).max(MAX_ARRAY_LENGTH).optional(),
   confidence: safeNumber.min(0).max(1).optional(),
-  verdict: safeString.optional(),
+  verdict: z.enum(['otp-page', 'possible-otp', 'not-otp', 'maybe-otp']).optional(),
 });
 
 export const autoFillOTPPayloadSchema = z.object({
@@ -181,7 +181,17 @@ export const contextMenuClickPayloadSchema = z.object({
 });
 
 export const analyzeDOMPayloadSchema = z.object({
-  simplifiedDOM: z.string().max(200000),
+  simplifiedDOM: z.string().max(MAX_MESSAGE_SIZE),
+});
+
+export const classifyFieldPayloadSchema = z.object({
+  textChannels: z.array(z.array(z.number().int())),
+  structural: z.array(z.number()),
+  isVisible: safeBoolean,
+});
+
+export const reportMisclassificationPayloadSchema = z.object({
+  correctType: safeString,
 });
 
 export const captureSiteContextPayloadSchema = z.object({
@@ -244,6 +254,10 @@ export const messagePayloadSchemas: Record<string, z.ZodSchema> = {
   CAPTURE_SITE_CONTEXT: captureSiteContextPayloadSchema,
   CHECK_OTP_NOW: z.undefined().optional(),
   PING: z.undefined().optional(),
+  PREWARM_ML: z.undefined().optional(),
+  CLASSIFY_FIELD: classifyFieldPayloadSchema,
+  REPORT_MISCLASSIFICATION: reportMisclassificationPayloadSchema,
+  LINK_ACTIVATED: z.undefined().optional(),
 };
 
 // Validation function
@@ -259,15 +273,18 @@ export function validateMessage<T extends { action: string; payload?: unknown }>
       };
     }
 
-    baseMessageSchema.parse(message);
-    const payloadSchema = messagePayloadSchemas[message.action];
+    const action = message.action.trim();
+    const payloadSchema = messagePayloadSchemas[action];
 
     if (!payloadSchema) {
+      const available = Object.keys(messagePayloadSchemas).sort();
+      console.error(`[GhostFill] [Messaging] ERROR: Unknown action "${action}". Available:`, available);
       // Reject unknown message actions - security critical
       return {
+        success: false,
         valid: false,
-        error: `Unknown message action: ${message.action}`,
-      };
+        error: `Unknown message action: ${action}`,
+      } as any;
     }
 
     payloadSchema.parse(message.payload);

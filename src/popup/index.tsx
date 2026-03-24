@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
 import './styles/popup.css';
+import { initRemoteLogger } from '../utils/remoteLogger';
+
+initRemoteLogger('Popup');
 
 const container = document.getElementById('root');
 if (container) {

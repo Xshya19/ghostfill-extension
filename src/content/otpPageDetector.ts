@@ -99,6 +99,7 @@ interface AutoFillPayload {
   readonly otp: string;
   readonly source: string;
   readonly confidence: number;
+  readonly isBackgroundTab?: boolean;
 }
 
 interface AIAnalysisResponse {
@@ -301,7 +302,7 @@ class VisibilityEngine {
       if (
         style.display === 'none' ||
         style.visibility === 'hidden' ||
-        style.opacity === '0'
+        parseFloat(style.opacity || '1') < 0.05
       ) {
         return false;
       }
@@ -510,8 +511,12 @@ class SelectorGenerator {
   }
 
   private static verify(selector: string, expected: HTMLInputElement): boolean {
-    const found = safeQuerySelector<HTMLInputElement>(document, selector);
-    return found === expected;
+    try {
+      const all = document.querySelectorAll<HTMLInputElement>(selector);
+      return all.length === 1 && all[0] === expected;
+    } catch {
+      return false;
+    }
   }
 
   private static buildDomPath(el: HTMLElement): string {
@@ -904,6 +909,64 @@ class ToastFeedback {
     }, CONFIG.TOAST_DURATION_MS);
   }
 
+  /**
+   * Show a dynamic state toast (e.g. Studying Email, Link Found)
+   */
+  static showState(message: string, type: 'working' | 'success', durationMs: number = 3000): void {
+    document.getElementById(this.TOAST_ID)?.remove();
+
+    const container = document.createElement('div');
+    container.id = this.TOAST_ID;
+    container.setAttribute('role', 'status');
+    container.setAttribute('aria-live', 'polite');
+
+    const shadow = container.attachShadow({ mode: 'closed' });
+    const styles = this.getStyles();
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+
+    const icon = type === 'working'
+      ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="spin"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>`
+      : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>`;
+
+    setHTML(
+      toast,
+      `${icon}
+      <div>
+        <div class="title">GhostFill</div>
+        <div class="sub"></div>
+      </div>`
+    );
+
+    const subEl = toast.querySelector('.sub');
+    if (subEl) {
+      subEl.textContent = message;
+    }
+
+    if (typeof CSSStyleSheet !== 'undefined' && 'replaceSync' in CSSStyleSheet.prototype) {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(styles);
+      shadow.adoptedStyleSheets = [sheet];
+      shadow.appendChild(toast);
+    } else {
+      const styleEl = document.createElement('style');
+      styleEl.textContent = styles;
+      shadow.appendChild(styleEl);
+      shadow.appendChild(toast);
+    }
+
+    document.body.appendChild(container);
+
+    if (type !== 'working' || durationMs > 0) {
+      setTimeout(() => {
+        toast.classList.add('out');
+        setTimeout(() => {
+          if (container.isConnected) {container.remove();}
+        }, CONFIG.TOAST_ANIMATION_MS);
+      }, durationMs);
+    }
+  }
+
   static remove(): void {
     document.getElementById(this.TOAST_ID)?.remove();
   }
@@ -941,7 +1004,17 @@ class ToastFeedback {
       }
       @keyframes slideOut {
         from { transform: translateX(0); opacity: 1; }
-        to { transform: translateX(120%); opacity: 0; }
+        to {
+          transform: translateY(-10px) scale(0.95);
+          opacity: 0;
+        }
+      }
+      .spin {
+        animation: spin 3s linear infinite;
+        opacity: 0.8;
+      }
+      @keyframes spin {
+        100% { transform: rotate(360deg); }
       }
       @media (prefers-reduced-motion: reduce) {
         .toast, .toast.out {
@@ -1325,6 +1398,7 @@ export class OTPPageDetector {
   private mutationObserver: MutationObserver | null = null;
   private focusHandler: ((e: FocusEvent) => void) | null = null;
   private popstateHandler: (() => void) | null = null;
+  private unloadHandler: (() => void) | null = null;
 
   // ── History patch management ──
   private originalPushState: typeof history.pushState | null = null;
@@ -1406,6 +1480,11 @@ export class OTPPageDetector {
       this.popstateHandler = null;
     }
 
+    if (this.unloadHandler) {
+      window.removeEventListener('pagehide', this.unloadHandler);
+      this.unloadHandler = null;
+    }
+
     // Restore history patch
     this.restoreHistoryMethods();
 
@@ -1481,6 +1560,9 @@ export class OTPPageDetector {
 
     this.popstateHandler = () => this.onNavigate();
     window.addEventListener('popstate', this.popstateHandler);
+
+    this.unloadHandler = () => this.restoreHistoryMethods();
+    window.addEventListener('pagehide', this.unloadHandler);
   }
 
   private restoreHistoryMethods(): void {
@@ -1692,7 +1774,7 @@ export class OTPPageDetector {
     }
 
     const selectors = this.fields.map((f) => f.selector);
-    const success = await this.autoFiller.fillOTP(otp, selectors);
+    const success = await this.autoFiller.fillOTP(otp, selectors, payload.isBackgroundTab);
 
     if (this.destroyed) {return false;}
 
@@ -1705,6 +1787,22 @@ export class OTPPageDetector {
       this.metrics.otpsFillFailed++;
       log.warn('❌ OTP fill failed — no matching inputs');
       return false;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  STATE BROADCAST HANDLER
+  // ═══════════════════════════════════════════════════════════
+
+  handlePollingStateChange(state: 'ANALYZING_EMAIL' | 'LINK_ACTIVATION_STARTED'): void {
+    if (this.destroyed) {return;}
+    
+    if (state === 'ANALYZING_EMAIL') {
+      log.info('🔄 PollingManager is analyzing a new email...');
+      ToastFeedback.showState('Studying new email...', 'working', 4000);
+    } else if (state === 'LINK_ACTIVATION_STARTED') {
+      log.info('🔗 PollingManager activated a background link');
+      ToastFeedback.showState('Activation link handled in background', 'success', 5000);
     }
   }
 

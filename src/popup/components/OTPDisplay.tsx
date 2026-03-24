@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import { Hash, Copy, Zap, Info, ShieldCheck, Check, Inbox } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
 import { copyToClipboard } from '../../utils/helpers';
@@ -10,6 +10,7 @@ interface Props {
 }
 
 const OTPDisplay: React.FC<Props> = ({ onToast }) => {
+  const shouldReduceMotion = useReducedMotion();
   const lastOTP = useStorageSubscription('lastOTP', null);
   const [timePercentage, setTimePercentage] = useState<number>(100);
   const [timeText, setTimeText] = useState<string>('');
@@ -33,7 +34,7 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
       const updateTimer = () => {
         const elapsed = Date.now() - lastOTP.extractedAt;
         const hasExplicitExpiry = !!lastOTP.expiresAt;
-        const total = hasExplicitExpiry ? lastOTP.expiresAt! - lastOTP.extractedAt : 10 * 60 * 1000; // 10 mins fallback
+        const total = hasExplicitExpiry ? Math.max(1, lastOTP.expiresAt! - lastOTP.extractedAt) : 10 * 60 * 1000; // 10 mins fallback
         const remaining = total - elapsed;
 
         if (remaining <= 0) {
@@ -108,7 +109,7 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
 
   return (
     <div className="generator-flow">
-      <div className="glass-card" style={{ padding: 20, cursor: 'default' }}>
+      <div className="ghost-card otp-card">
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
           <div className="widget-label">
             <Hash size={14} className="sf-icon" />
@@ -122,16 +123,16 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
             <motion.div
               className="otp-box"
               onClick={handleCopyOTP}
-              whileHover={{ y: -2, background: 'var(--list-item-hover)' }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={shouldReduceMotion ? {} : { y: -2, background: 'var(--list-item-hover)' }}
+              whileTap={shouldReduceMotion ? {} : { scale: 0.98 }}
             >
               {lastOTP.code.split('').map((char: string, i: number) => (
                 <motion.span
                   key={i}
-                  initial={{ opacity: 0, scale: 0.8, y: 5 }}
+                  initial={{ opacity: 0, scale: shouldReduceMotion ? 1 : 0.8, y: shouldReduceMotion ? 0 : 5 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   transition={{
-                    delay: i * 0.04,
+                    delay: shouldReduceMotion ? 0 : i * 0.04,
                     type: 'spring',
                     stiffness: 300,
                     damping: 15,
@@ -144,10 +145,17 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
             </motion.div>
 
             <div className="otp-timer-container">
-              <div className="otp-timer-bg">
+              <div 
+                className="otp-timer-bg" 
+                role="progressbar" 
+                aria-valuenow={timePercentage} 
+                aria-valuemin={0} 
+                aria-valuemax={100} 
+                aria-label={`OTP timer urgency: ${timePercentage < 20 ? 'Critical' : 'Safe'}`}
+              >
                 <motion.div
                   animate={{ width: `${timePercentage}%` }}
-                  transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
+                  transition={{ duration: shouldReduceMotion ? 0 : 1, ease: [0.16, 1, 0.3, 1] }}
                   className="otp-timer-fill"
                   style={{
                     background:
@@ -158,7 +166,7 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
                   }}
                 />
               </div>
-              <div className="otp-timer-info">
+              <div className="otp-timer-info" aria-live="polite">
                 <span className="otp-timer-label">
                   {lastOTP.expiresAt ? 'Expiring in ' : 'Est. expiry in '}
                   <span
@@ -177,14 +185,14 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
 
             <div className="otp-actions">
               <button
-                className="ios-button button-primary otp-action-primary"
+                className="premium-btn otp-action-primary"
                 onClick={handleFillOTP}
               >
                 <Zap size={16} fill="white" />
                 Auto-Fill
               </button>
               <button
-                className="ios-button button-secondary otp-action-secondary"
+                className="premium-btn premium-btn-secondary otp-action-secondary"
                 onClick={handleCopyOTP}
               >
                 {copied ? <Check size={16} color="var(--success)" /> : <Copy size={16} />}
@@ -197,23 +205,27 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
             {/* Animated Loading Container */}
             <motion.div
               className="otp-loading-container"
-              animate={{
-                scale: [1, 1.05, 1],
-                boxShadow: [
-                  '0 0 20px rgba(99, 102, 241, 0.1)',
-                  '0 0 30px rgba(99, 102, 241, 0.25)',
-                  '0 0 20px rgba(99, 102, 241, 0.1)',
-                ],
-              }}
-              transition={{
-                duration: 2,
-                repeat: Infinity,
-                ease: 'easeInOut',
-              }}
+              animate={
+                shouldReduceMotion ? {} : {
+                  scale: [1, 1.05, 1],
+                  boxShadow: [
+                    '0 0 20px rgba(99, 102, 241, 0.1)',
+                    '0 0 30px rgba(99, 102, 241, 0.25)',
+                    '0 0 20px rgba(99, 102, 241, 0.1)',
+                  ],
+                }
+              }
+              transition={
+                shouldReduceMotion ? { duration: 0 } : {
+                  duration: 2,
+                  repeat: Infinity,
+                  ease: 'easeInOut',
+                }
+              }
             >
               <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                animate={shouldReduceMotion ? {} : { rotate: 360 }}
+                transition={shouldReduceMotion ? { duration: 0 } : { duration: 2, repeat: Infinity, ease: 'linear' }}
               >
                 <Inbox size={36} color="var(--brand-primary)" strokeWidth={1.5} />
               </motion.div>
@@ -227,7 +239,7 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
         )}
       </div>
 
-      <div className="glass-card efficiency-tip-card">
+      <div className="ghost-card efficiency-tip-card">
         <div className="widget-label">
           <Info size={14} className="sf-icon" />
           Efficiency Tip

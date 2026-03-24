@@ -14,9 +14,12 @@ export const ProviderHealthMeter: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let isMounted = true;
+    
     const fetchHealth = () => {
       if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
         chrome.runtime.sendMessage({ action: 'GET_PROVIDER_HEALTH' }, (res) => {
+          if (!isMounted) {return;}
           if (res && res.success && Array.isArray(res.health)) {
             setHealthData(res.health);
           }
@@ -27,8 +30,14 @@ export const ProviderHealthMeter: React.FC = () => {
 
     fetchHealth();
     // Refresh every 10 seconds while tab is open
-    const interval = setInterval(fetchHealth, 10000);
-    return () => clearInterval(interval);
+    const interval = setInterval(() => {
+      if (document.hidden) { return; }
+      fetchHealth();
+    }, 10000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   if (loading) {
@@ -40,60 +49,30 @@ export const ProviderHealthMeter: React.FC = () => {
   }
 
   return (
-    <div
-      className="provider-health-meter"
-      style={{
-        marginTop: '12px',
-        fontSize: '13px',
-        borderTop: '1px solid var(--border-color)',
-        paddingTop: '12px',
-      }}
-    >
-      <h4 style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: 600 }}>Provider Health</h4>
-      <div
-        style={{
-          display: 'grid',
-          gap: '8px',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-        }}
-      >
+    <div className="provider-health-meter">
+      <h4 className="health-title">Provider Health</h4>
+      <div className="health-grid">
         {healthData.map((h) => {
           const isWarning = h.successRate <= 0.7 && h.successRate > 0 && !h.circuitOpen;
           const isDead = h.circuitOpen || h.successRate === 0;
 
-          let statusColor = 'var(--success-color, #10b981)';
+          let statusClass = 'health-status-good';
           if (isWarning) {
-            statusColor = 'var(--warning-color, #f59e0b)';
+            statusClass = 'health-status-warning';
           }
           if (isDead) {
-            statusColor = 'var(--error-color, #ef4444)';
+            statusClass = 'health-status-dead';
           }
 
           return (
-            <div
-              key={h.name}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '6px',
-                background: 'var(--bg-secondary)',
-                borderRadius: '4px',
-              }}
-            >
-              <span style={{ fontWeight: 500 }}>{h.name}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+            <div key={h.name} className="health-pill-card">
+              <span className="health-provider-name">{h.name}</span>
+              <div className="health-status-group">
+                <span className="health-percent">
                   {Math.round(h.successRate * 100)}%
                 </span>
                 <div
-                  style={{
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%',
-                    backgroundColor: statusColor,
-                    boxShadow: `0 0 4px ${statusColor}80`,
-                  }}
+                  className={`health-dot ${statusClass}`}
                   title={`Response: ${Math.round(h.avgResponseTime)}ms | Failures: ${h.consecutiveFailures}`}
                 />
               </div>

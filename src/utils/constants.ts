@@ -6,7 +6,7 @@ export const APP_VERSION = '1.0.15';
 // API Endpoints
 export const API = {
   TEMP_MAIL: {
-    BASE_URL: 'https://www.1secmail.com/api/v1/',
+    BASE_URL: 'https://api.1secmail.com/api/v1/',
     ENDPOINTS: {
       GEN_RANDOM: 'genRandomMailbox',
       GET_MESSAGES: 'getMessages',

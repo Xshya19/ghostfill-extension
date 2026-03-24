@@ -1,17 +1,14 @@
+// src/services/extraction/types.ts
 // ═══════════════════════════════════════════════════════════════════════
-//  GHOSTFILL SHARED EXTRACTION TYPES
-//  Centralized type definitions to prevent circular dependencies
-//  Version: 2.0.0 - Consolidated & Optimized
+//  SHARED EXTRACTION TYPES - SINGLE SOURCE OF TRUTH
+//  Common interfaces and types for all extraction modules
+//  This file should ONLY contain type definitions (no runtime code)
 // ═══════════════════════════════════════════════════════════════════════
 //
-//  ARCHITECTURE NOTES:
-//  - This file should ONLY contain type definitions (no runtime code)
-//  - All extraction modules import types from here (never from each other)
+//  ARCHITECTURE RULE:
+//  - This file imports NOTHING from other service files
+//  - All extraction modules import types from here
 //  - This breaks potential circular dependencies
-//
-//  DEPENDENCY RULE:
-//  types/extraction.types.ts ← All other service files
-//  (Types file imports NOTHING from services/)
 //
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -86,9 +83,6 @@ export type LinkType =
 
 /** Pattern strength for matching algorithms */
 export type PatternStrength = 'strong' | 'medium' | 'weak';
-
-/** OTP format (legacy alias for CodeFormat) */
-export type OTPFormat = CodeFormat;
 
 /** Email category for classification results */
 export type EmailCategory = 'otp' | 'link' | 'both' | 'none';
@@ -184,10 +178,17 @@ export interface ExtractedOTP {
 /** Extracted link from email (simplified) */
 export interface ExtractedLink {
   url: string;
+  score: number;
   confidence: number;
-  type: EmailIntent | LinkType;
+  type: LinkType | EmailIntent;
+  hasEmbeddedCode: boolean;
+  embeddedCode: string | null;
+  embeddedCodeParam: string | null;
   anchorText: string;
   context: string;
+  domainTrust: number;
+  isShortened: boolean;
+  redirectChain: string[];
 }
 
 /** Activation link with full analysis */
@@ -232,6 +233,8 @@ export interface ExtractionResult {
     signalDensity?: number;
     extractionQuality?: 'high' | 'medium' | 'low';
     secondaryIntent?: EmailIntent | null;
+    securityScore?: number;
+    securityRisk?: string;
   };
 }
 
@@ -270,7 +273,7 @@ export interface ProviderKnowledge {
   subjectPatterns: RegExp[];
   emailIntent: EmailIntent;
   otpLength?: number;
-  otpFormat?: OTPFormat;
+  otpFormat?: CodeFormat;
   linkPatterns: RegExp[];
   commonPhrases: string[];
   brandColors?: string[];
@@ -513,8 +516,10 @@ export interface DetectionResult {
   code?: string;
   link?: string;
   confidence: number;
-  engine: 'ghost-core' | 'intelligent';
+  engine: 'ghost-core' | 'intelligent' | 'ensemble-consensus';
   debug?: string;
+  provider?: string;
+  providerConfidence?: number;
 }
 
 // ───────────────────────────────────────────────────────────────────────
@@ -628,6 +633,18 @@ export interface SemanticContext {
   sentiment: 'action-request' | 'informational' | 'warning' | 'neutral';
 }
 
+/** Context analysis for OTP extraction */
+export interface ContextAnalysis {
+  hasVerificationLanguage: boolean;
+  hasUrgencyIndicator: boolean;
+  hasSecurityWarning: boolean;
+  hasExpirationMention: boolean;
+  hasInstructionVerb: boolean;
+  codeLabelDetected: boolean;
+  semanticRelevance: number;
+  contextScore: number;
+}
+
 // ───────────────────────────────────────────────────────────────────────
 //  SERVICE CONFIGURATION INTERFACES
 // ───────────────────────────────────────────────────────────────────────
@@ -663,6 +680,110 @@ export interface KnowledgeBaseStructure {
 }
 
 // ───────────────────────────────────────────────────────────────────────
+//  EXTRACTION CONFIGURATION INTERFACES
+// ───────────────────────────────────────────────────────────────────────
+
+/** Scoring configuration */
+export interface ScoringConfig {
+  provider: {
+    domainMatch: number;
+    senderPattern: number;
+    subjectPattern: number;
+    phraseMatch: number;
+    urlDomainMatch: number;
+    brandNameMatch: number;
+    maxPhraseBonus: number;
+  };
+  intent: {
+    providerIntent: number;
+    subjectIntent: number;
+    bodyKeyword: number;
+    maxBodyKeywordBonus: number;
+    urlIntent: number;
+    ctaIntent: number;
+  };
+  otp: {
+    providerLengthMatch: number;
+    lengthMatch: number;
+    formatMatch: number;
+    contextBonusMax: number;
+    instructionVerb: number;
+    validityPeriod: number;
+    securityWarning: number;
+    semanticClose: number;
+    semanticMedium: number;
+    semanticFar: number;
+    isolationBonusMax: number;
+    footerPenalty: number;
+    verificationIntentBonus: number;
+    codeLabelBonus: number;
+  };
+  link: {
+    linkCtaBonus: number;
+    linkAnchorKeyword: number;
+    linkParamToken: number;
+    linkParamCode: number;
+    linkParamSignature: number;
+    linkParamExpiry: number;
+    linkLongToken: number;
+    linkContextBonusMax: number;
+    linkComplexityBonus: number;
+    linkDomainTrustMax: number;
+  };
+}
+
+/** Threshold configuration */
+export interface ThresholdConfig {
+  baseOtp: number;
+  baseLink: number;
+  minOtp: number;
+  minLink: number;
+  providerReduction: number;
+  highConfidenceReduction: number;
+  verificationOtpReduction: number;
+  activationLinkReduction: number;
+  highSignalReduction: number;
+}
+
+/** Context configuration */
+export interface ContextConfig {
+  nearRadius: number;
+  midRadius: number;
+  wideRadius: number;
+  nearWeight: number;
+  midWeight: number;
+  wideWeight: number;
+}
+
+/** Performance configuration */
+export interface PerformanceConfig {
+  targetMs: number;
+  slowThresholdMs: number;
+  criticalThresholdMs: number;
+}
+
+/** Complete extraction configuration */
+export interface ExtractionConfig {
+  scoring: ScoringConfig;
+  thresholds: ThresholdConfig;
+  limits: LimitConfig;
+  context: ContextConfig;
+  performance: PerformanceConfig;
+}
+
+/** Extraction timing breakdown */
+export interface ExtractionTimings {
+  zones: number;
+  urls: number;
+  provider: number;
+  intent: number;
+  otp: number;
+  link: number;
+  crossValidation: number;
+  total: number;
+}
+
+// ───────────────────────────────────────────────────────────────────────
 //  FUNCTION TYPE INTERFACES (for dependency injection)
 // ───────────────────────────────────────────────────────────────────────
 
@@ -690,4 +811,72 @@ export interface ClassifierFn {
     sender?: string,
     expectedDomains?: string[]
   ): ClassificationResult;
+}
+
+// ───────────────────────────────────────────────────────────────────────
+//  EXTRACTION MODULE INTERNAL TYPES
+// ───────────────────────────────────────────────────────────────────────
+
+/** Zone type for email structural analysis */
+export type ZoneType =
+  | 'preheader'
+  | 'header'
+  | 'hero'
+  | 'body-primary'
+  | 'body-secondary'
+  | 'cta'
+  | 'footer'
+  | 'sidebar'
+  | 'unknown';
+
+/** Zone weights configuration */
+export interface ZoneWeights {
+  preheader: number;
+  header: number;
+  hero: number;
+  'body-primary': number;
+  'body-secondary': number;
+  cta: number;
+  footer: number;
+  sidebar: number;
+  unknown: number;
+}
+
+/** Provider detection result */
+export interface ProviderDetectionResult {
+  provider: ProviderKnowledge | null;
+  confidence: number;
+  signals: string[];
+}
+
+/** URL extraction limit configuration */
+export interface LimitConfig {
+  minUrlLength: number;
+  maxRedirectDepth: number;
+  minBase64Length: number;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  ADDITIONAL SERVICE TYPES (for compatibility)
+// ═══════════════════════════════════════════════════════════════════════
+
+/** Detection result for smart detection service */
+export interface DetectionResult {
+  type: 'otp' | 'link' | 'both' | 'none';
+  code?: string;
+  link?: string;
+  confidence: number;
+  engine: 'ghost-core' | 'intelligent' | 'ensemble-consensus';
+  provider?: string;
+  providerConfidence?: number;
+  domain?: string;
+  debug?: string;
+}
+
+/** Encrypted cache entry structure */
+export interface EncryptedCacheEntry {
+  encryptedData: string;
+  iv: string;
+  timestamp: number;
+  ttl: number;
 }

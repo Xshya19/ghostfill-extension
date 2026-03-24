@@ -10,9 +10,12 @@ interface State {
 }
 
 class ErrorBoundary extends Component<Props, State> {
-  public state: State = {
-    hasError: false,
-  };
+  constructor(props: Props) {
+    super(props);
+    this.state = { hasError: false };
+    this.handleUnhandledRejection = this.handleUnhandledRejection.bind(this);
+    this.handleGlobalError = this.handleGlobalError.bind(this);
+  }
 
   public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
@@ -32,35 +35,35 @@ class ErrorBoundary extends Component<Props, State> {
     window.removeEventListener('error', this.handleGlobalError);
   }
 
-  private handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+  private handleUnhandledRejection(event: PromiseRejectionEvent) {
     console.error('Unhandled promise rejection:', event.reason);
     this.setState({
       hasError: true,
       error: event.reason instanceof Error ? event.reason : new Error(String(event.reason)),
     });
-  };
+  }
 
-  private handleGlobalError = (event: ErrorEvent) => {
+  private handleGlobalError(event: ErrorEvent) {
     console.error('Global error:', event.error);
     this.setState({
       hasError: true,
       error: event.error || new Error(event.message),
     });
-  };
+  }
 
   public render() {
     if (this.state.hasError) {
       return (
         <div style={{ padding: 20, textAlign: 'center', fontFamily: '-apple-system, system-ui' }}>
-          <h3 style={{ marginBottom: 10, color: 'var(--ios-error)' }}>Something went wrong</h3>
+          <h3 style={{ marginBottom: 10, color: 'var(--error)' }}>Something went wrong</h3>
           <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 20 }}>
             {this.state.error?.message || 'Unknown error'}
           </p>
           <button
-            onClick={() => window.location.reload()}
+            onClick={() => chrome.runtime.reload()}
             style={{
               padding: '8px 16px',
-              background: 'var(--ios-indigo)',
+              background: 'var(--primary)',
               color: 'white',
               border: 'none',
               borderRadius: 8,

@@ -74,10 +74,13 @@ class MailGwService {
   /**
    * Get available domains
    */
-  async getDomains(): Promise<string[]> {
+  async getDomains(signal?: AbortSignal): Promise<string[]> {
     const fallbackDomains = ['exdonuts.com'];
     try {
-      const response = await this.fetchWithRetry(`${this.baseUrl}${API.MAIL_GW.ENDPOINTS.DOMAINS}`);
+      const response = await this.fetchWithRetry(
+        `${this.baseUrl}${API.MAIL_GW.ENDPOINTS.DOMAINS}`,
+        { signal }
+      );
 
       if (!response.ok) {
         log.warn(`Failed to fetch domains (HTTP ${response.status}), using fallback`);
@@ -99,10 +102,10 @@ class MailGwService {
   /**
    * Create a new email account
    */
-  async createAccount(address?: string, password?: string): Promise<EmailAccount> {
+  async createAccount(address?: string, password?: string, signal?: AbortSignal): Promise<EmailAccount> {
     try {
       // Get available domains
-      const domains = await this.getDomains();
+      const domains = await this.getDomains(signal);
       if (domains.length === 0) {
         throw new Error('No domains available');
       }
@@ -132,6 +135,7 @@ class MailGwService {
             address: fullEmail,
             password: pwd,
           }),
+          signal,
         }
       );
 
@@ -143,7 +147,7 @@ class MailGwService {
       const account: MailTmAccount = await response.json();
 
       // Get auth token
-      await this.authenticate(fullEmail, pwd);
+      await this.authenticate(fullEmail, pwd, signal);
 
       const now = Date.now();
       return {
@@ -165,7 +169,7 @@ class MailGwService {
   /**
    * Authenticate and get JWT token
    */
-  async authenticate(address: string, password: string): Promise<string> {
+  async authenticate(address: string, password: string, signal?: AbortSignal): Promise<string> {
     try {
       const response = await this.fetchWithRetry(`${this.baseUrl}${API.MAIL_GW.ENDPOINTS.TOKEN}`, {
         method: 'POST',
@@ -173,6 +177,7 @@ class MailGwService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ address, password }),
+        signal,
       });
 
       if (!response.ok) {
@@ -212,7 +217,7 @@ class MailGwService {
   /**
    * Ensure we have a valid token, re-authenticating if necessary
    */
-  private async ensureAuthenticated(): Promise<void> {
+  private async ensureAuthenticated(signal?: AbortSignal): Promise<void> {
     if (this.isAuthenticated()) {
       return;
     }
@@ -224,7 +229,7 @@ class MailGwService {
 
       if (currentEmail && currentEmail.service === 'mailgw' && currentEmail.password) {
         log.info('Token expired, re-authenticating...');
-        await this.authenticate(currentEmail.fullEmail, currentEmail.password);
+        await this.authenticate(currentEmail.fullEmail, currentEmail.password, signal);
         return;
       }
     } catch (error) {
@@ -237,8 +242,8 @@ class MailGwService {
   /**
    * Get messages (inbox)
    */
-  async getMessages(): Promise<Email[]> {
-    await this.ensureAuthenticated();
+  async getMessages(signal?: AbortSignal): Promise<Email[]> {
+    await this.ensureAuthenticated(signal);
 
     try {
       const response = await this.fetchWithRetry(
@@ -247,14 +252,15 @@ class MailGwService {
           headers: {
             Authorization: `Bearer ${this.token}`,
           },
+          signal,
         }
       );
 
       if (response.status === 401) {
         // Token might be invalid despite expiry check, retry once
         this.token = null;
-        await this.ensureAuthenticated();
-        return this.getMessages();
+        await this.ensureAuthenticated(signal);
+        return this.getMessages(signal);
       }
 
       if (!response.ok) {
@@ -274,8 +280,8 @@ class MailGwService {
   /**
    * Get a specific message
    */
-  async getMessage(id: string): Promise<Email> {
-    await this.ensureAuthenticated();
+  async getMessage(id: string, signal?: AbortSignal): Promise<Email> {
+    await this.ensureAuthenticated(signal);
 
     try {
       const response = await this.fetchWithRetry(
@@ -284,13 +290,14 @@ class MailGwService {
           headers: {
             Authorization: `Bearer ${this.token}`,
           },
+          signal,
         }
       );
 
       if (response.status === 401) {
         this.token = null;
-        await this.ensureAuthenticated();
-        return this.getMessage(id);
+        await this.ensureAuthenticated(signal);
+        return this.getMessage(id, signal);
       }
 
       if (!response.ok) {

@@ -1036,11 +1036,8 @@ async function copyToClipboard(text: string): Promise<void> {
     await clipboardService.copyOTP(text);
   } catch (error) {
     log.warn('Clipboard copy failed', extractMessage(error));
-    // Fallback: try offscreen document or navigator.clipboard
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      log.error('All clipboard methods failed');
-    }
+    // Fallback: Clipboard API throws in MV3 Service Worker context
+    // We already tried clipboardService which uses offscreen document.
+    log.error('All clipboard methods failed - MV3 SW cannot access navigator.clipboard directly');
   }
 }

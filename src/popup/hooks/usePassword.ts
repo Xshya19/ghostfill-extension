@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { PasswordOptions, GeneratedPassword, DEFAULT_PASSWORD_OPTIONS } from '../../types';
 import type { GeneratePasswordResponse } from '../../types/message.types';
 import { safeSendMessage } from '../../utils/messaging';
@@ -8,31 +8,44 @@ export function usePassword() {
   const [options, setOptions] = useState<PasswordOptions>(DEFAULT_PASSWORD_OPTIONS);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const optionsRef = useRef(options);
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    optionsRef.current = options;
+  }, [options]);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
+  }, []);
 
   const generate = useCallback(
     async (customOptions?: Partial<PasswordOptions>) => {
-      setLoading(true);
-      setError(null);
+      if (isMounted.current) {
+        setLoading(true);
+        setError(null);
+      }
       try {
-        const opts = { ...options, ...customOptions };
+        const opts = { ...optionsRef.current, ...customOptions };
         const response = await safeSendMessage({
           action: 'GENERATE_PASSWORD',
           payload: opts,
         });
         const typedResponse = response as GeneratePasswordResponse;
         if (typedResponse && 'result' in typedResponse && typedResponse.result) {
-          setPassword(typedResponse.result);
+          if (isMounted.current) {setPassword(typedResponse.result);}
           return typedResponse.result;
         }
         throw new Error(typedResponse.error || 'Failed to generate password');
       } catch (err) {
-        setError((err as Error).message);
+        if (isMounted.current) {setError((err as Error).message);}
         return null;
       } finally {
-        setLoading(false);
+        if (isMounted.current) {setLoading(false);}
       }
     },
-    [options]
+    []
   );
 
   const updateOptions = useCallback((updates: Partial<PasswordOptions>) => {

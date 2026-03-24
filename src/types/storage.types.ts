@@ -3,9 +3,9 @@
 // SECURITY HARDENED: Session-based storage for sensitive data
 // ═══════════════════════════════════════════════════════════════════
 
-import { IdentityProfile } from '../services/identityService';
-
 import { EmailAccount, EmailHistoryItem, Email, EmailService } from './email.types';
+import { IdentityProfile } from './identity.types';
+
 import { PasswordOptions, PasswordHistoryItem } from './password.types';
 
 // ═══════════════════════════════════════════════════════════════════

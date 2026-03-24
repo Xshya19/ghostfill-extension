@@ -4,7 +4,7 @@
 //  Structural analysis of email HTML to identify content zones
 // ═══════════════════════════════════════════════════════════════════════
 
-import type { EmailZone, ZoneType } from './types';
+import type { EmailZone, ZoneType } from '../types/extraction.types';
 import { decodeHtmlEntities } from './urlExtractor';
 
 // Re-export for use by other modules
@@ -39,8 +39,8 @@ export const ZONE_WEIGHTS: Record<ZoneType, number> = {
  * Preheaders are often hidden preview text at the start of emails
  */
 const PREHEADER_PATTERNS = [
-  /(<[^>]{0,300}(?:display\s*:\s*none|visibility\s*:\s*hidden|font-size\s*:\s*0|max-height\s*:\s*0|overflow\s*:\s*hidden)[^>]{0,300}>)([\s\S]{0,2000}?)(<\/[^>]{1,20}>)/gi,
-  /(<[^>]{0,300}class\s*=\s*["'][^"']{0,100}(?:preheader|preview)[^"']{0,100}["'][^>]{0,300}>)([\s\S]{0,2000}?)(<\/[^>]{1,20}>)/gi,
+  /(<[^>]*?(?:display\s*:\s*none|visibility\s*:\s*hidden|font-size\s*:\s*0|max-height\s*:\s*0|overflow\s*:\s*hidden)[^>]*?>)([\s\S]{0,2000}?)(<\/[^>]+>)/gi,
+  /(<[^>]*?class\s*=\s*["'][^"']*?(?:preheader|preview)[^"']*?["'][^>]*?>)([\s\S]{0,2000}?)(<\/[^>]+>)/gi,
 ] as const;
 
 /**
@@ -48,12 +48,12 @@ const PREHEADER_PATTERNS = [
  * CTAs are typically styled links with background colors and padding
  */
 const CTA_PATTERNS = [
-  /<a[^>]{0,300}style\s*=\s*["'][^"']{0,200}(?:background(?:-color)?)\s*:[^"']{0,200}padding[^"']{0,200}["'][^>]{0,300}href\s*=\s*["']([^"']{1,500})["'][^>]{0,300}>([\s\S]{0,500}?)<\/a>/gi,
-  /<a[^>]{0,300}href\s*=\s*["']([^"']{1,500})["'][^>]{0,300}style\s*=\s*["'][^"']{0,200}(?:background(?:-color)?)\s*:[^"']{0,200}padding[^"']{0,200}["'][^>]{0,300}>([\s\S]{0,500}?)<\/a>/gi,
-  /<a[^>]{0,300}class\s*=\s*["'][^"']{0,100}(?:btn|button|cta|action|primary)[^"']{0,100}["'][^>]{0,300}href\s*=\s*["']([^"']{1,500})["'][^>]{0,300}>([\s\S]{0,500}?)<\/a>/gi,
-  /<td[^>]{0,300}(?:background(?:-color)?|bgcolor)\s*[=:][^>]{0,300}>\s*<a[^>]{0,300}href\s*=\s*["']([^"']{1,500})["'][^>]{0,300}>([\s\S]{0,500}?)<\/a>/gi,
-  /v:roundrect[^>]{0,300}href\s*=\s*["']([^"']{1,500})["'][^>]{0,300}>([\s\S]{0,500}?)<\/v:roundrect>/gi,
-  /<a[^>]{0,300}style\s*=\s*["'][^"']{0,200}border-radius[^"']{0,200}padding[^"']{0,200}["'][^>]{0,300}href\s*=\s*["']([^"']{1,500})["'][^>]{0,300}>([\s\S]{0,500}?)<\/a>/gi,
+  /<a[^>]*?style\s*=\s*["'][^"']*?(?:background(?:-color)?)\s*:[^"']*?padding[^"']*?["'][^>]*?href\s*=\s*["']([^"']+)["'][^>]*?>([\s\S]{0,500}?)<\/a>/gi,
+  /<a[^>]*?href\s*=\s*["']([^"']+)["'][^>]*?style\s*=\s*["'][^"']*?(?:background(?:-color)?)\s*:[^"']*?padding[^"']*?["'][^>]*?>([\s\S]{0,500}?)<\/a>/gi,
+  /<a[^>]*?class\s*=\s*["'][^"']*?(?:btn|button|cta|action|primary)[^"']*?["'][^>]*?href\s*=\s*["']([^"']+)["'][^>]*?>([\s\S]{0,500}?)<\/a>/gi,
+  /<td[^>]*?(?:background(?:-color)?|bgcolor)\s*[=:][^>]*?>\s*<a[^>]*?href\s*=\s*["']([^"']+)["'][^>]*?>([\s\S]{0,500}?)<\/a>/gi,
+  /v:roundrect[^>]*?href\s*=\s*["']([^"']+)["'][^>]*?>([\s\S]{0,500}?)<\/v:roundrect>/gi,
+  /<a[^>]*?style\s*=\s*["'][^"']*?border-radius[^"']*?padding[^"']*?["'][^>]*?href\s*=\s*["']([^"']+)["'][^>]*?>([\s\S]{0,500}?)<\/a>/gi,
 ] as const;
 
 /**

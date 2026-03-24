@@ -11,11 +11,16 @@ export function useStorageSubscription<K extends keyof StorageSchema>(
   useEffect(() => {
     let isMounted = true;
     const refreshValue = async (): Promise<void> => {
-      const data = await storageService.get(key);
-      if (!isMounted) {
-        return;
+      try {
+        const data = await storageService.get(key);
+        if (!isMounted) {
+          return;
+        }
+        setValue((data ?? null) as StorageSchema[K] | null);
+      } catch (error) {
+        console.error(`[useStorageSubscription] Failed for key ${String(key)}:`, error);
+        // Do not update state if we throw, leaving the hook with its previous value
       }
-      setValue((data ?? null) as StorageSchema[K] | null);
     };
 
     // Load initial value

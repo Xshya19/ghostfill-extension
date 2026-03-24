@@ -15,6 +15,7 @@ interface AdvancedTabProps {
   onReset: () => void;
   onClearData: () => void;
   onSettingsImport: (imported: UserSettings) => void;
+  onError?: (msg: string) => void;
 }
 
 const AdvancedTab: React.FC<AdvancedTabProps> = ({
@@ -23,6 +24,9 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
   onReset,
   onClearData,
   onSettingsImport,
+  onError,
+  sessionSecrets,
+  onSessionSecretChange,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -77,21 +81,28 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
       try {
         const parsed = JSON.parse(event.target?.result as string);
 
-        // Validate basic structure — merge with defaults to fill missing keys
-        const merged: UserSettings = {
-          ...DEFAULT_SETTINGS,
-          ...parsed,
-          passwordDefaults: {
-            ...DEFAULT_SETTINGS.passwordDefaults,
-            ...(parsed.passwordDefaults || {}),
-          },
-        };
+        // Validate incoming JSON strictly against DEFAULT_SETTINGS keys and types
+        const merged: UserSettings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+        for (const key of Object.keys(DEFAULT_SETTINGS)) {
+          const k = key as keyof UserSettings;
+          if (k in parsed && typeof parsed[k] === typeof DEFAULT_SETTINGS[k]) {
+            if (k === 'passwordDefaults' && typeof parsed[k] === 'object') {
+              merged[k] = { ...DEFAULT_SETTINGS.passwordDefaults, ...parsed[k] };
+            } else {
+              (merged as any)[k] = parsed[k];
+            }
+          }
+        }
 
         onSettingsImport(merged);
       } catch (err) {
         log.error('Import failed:', err);
-        // eslint-disable-next-line no-alert
-        alert('Invalid settings file. Please select a valid GhostFill settings JSON.');
+        if (onError) {
+          onError('Invalid settings file. Please select a valid GhostFill settings JSON.');
+        } else {
+          // eslint-disable-next-line no-alert
+          alert('Invalid settings file. Please select a valid GhostFill settings JSON.');
+        }
       }
     };
     reader.readAsText(file);
@@ -125,7 +136,7 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
             <label>Export Settings</label>
             <p>Download your current settings as a JSON file</p>
           </div>
-          <button className="btn btn-secondary" type="button" onClick={handleExport}>
+          <button className="premium-btn premium-btn-secondary" type="button" onClick={handleExport}>
             Export
           </button>
         </div>
@@ -135,7 +146,7 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
             <label htmlFor="import-settings">Import Settings</label>
             <p>Load settings from a previously exported JSON file</p>
           </div>
-          <label className="btn btn-secondary import-btn" tabIndex={0} role="button">
+          <label className="premium-btn premium-btn-secondary import-btn" tabIndex={0} role="button">
             Import
             <input
               ref={fileInputRef}
@@ -148,6 +159,26 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
           </label>
         </div>
       </SettingsSection>
+      
+      <SettingsSection id="ai-machine-learning" title="AI & Machine Learning" icon="🤖">
+        <div className="setting-item vertical-group">
+          <div className="setting-info" style={{ width: '100%' }}>
+            <label htmlFor="llm-api-key">OpenAI / Anthropic API Key (Optional)</label>
+            <p>Used for enhanced field detection and smart form filling.</p>
+          </div>
+          <input
+            id="llm-api-key"
+            type="password"
+            placeholder="sk-..."
+            value={sessionSecrets.llmApiKey}
+            onChange={(e) => onSessionSecretChange('llmApiKey', e.target.value)}
+            autoComplete="off"
+          />
+          <p className="security-note" style={{ color: 'var(--warning)', marginTop: '4px' }}>
+            🔒 Stored in memory only (cleared on extension reload)
+          </p>
+        </div>
+      </SettingsSection>
 
       <SettingsSection id="ml-data" title="Continuous Learning" icon="🧠">
         <div className="setting-item">
@@ -155,7 +186,7 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
             <label>Export Training Data</label>
             <p>Download your reported misclassifications to train the ML model</p>
           </div>
-          <button className="btn btn-primary" type="button" onClick={handleExportMLData}>
+          <button className="premium-btn" type="button" onClick={handleExportMLData}>
             Download Data
           </button>
         </div>
@@ -168,7 +199,7 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
             <p>Restore all settings to their defaults</p>
           </div>
           <button
-            className="btn btn-secondary"
+            className="premium-btn premium-btn-secondary"
             onClick={onReset}
             type="button"
             aria-label="Reset all settings to defaults"
@@ -183,7 +214,8 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
             <p>Delete all emails, passwords, and history</p>
           </div>
           <button
-            className="btn btn-danger"
+            className="premium-btn"
+            style={{ background: 'var(--error)' }}
             onClick={onClearData}
             type="button"
             aria-label="Clear all stored data"

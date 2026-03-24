@@ -15,9 +15,10 @@
 // └────────────────────────────────────────────────────────────────────────┘
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { FieldType, DetectedField, FIELD_HEURISTICS } from '../types';
+import { FieldType, DetectedField, FIELD_HEURISTICS, FormType, GhostContainer, FORM_INDICATORS, ClassifyFieldResponse } from '../types';
 import { getUniqueSelector, getElementLabel, deepQuerySelectorAll } from '../utils/helpers';
 import { createLogger } from '../utils/logger';
+import { safeSendMessage } from '../utils/messaging';
 
 const log = createLogger('FieldAnalyzer');
 
@@ -462,6 +463,20 @@ class FieldClassifier {
 // ═══════════════════════════════════════════════════════════════
 
 export class FieldAnalyzer {
+  private static instance: FieldAnalyzer;
+  
+  public static getInstance(): FieldAnalyzer {
+    if (!FieldAnalyzer.instance) {
+      FieldAnalyzer.instance = new FieldAnalyzer();
+    }
+    return FieldAnalyzer.instance;
+  }
+
+  // ── Context Check ───────────────────
+  private isContextValid(): boolean {
+    return typeof chrome !== 'undefined' && !!chrome.runtime?.id;
+  }
+
   // ── Static AI response cache (bounded to prevent memory leak) ──
   private static aiCache = new Map<string, AICacheEntry>();
   private static readonly MAX_CACHE_SIZE = 50;
@@ -496,8 +511,8 @@ export class FieldAnalyzer {
   /**
    * Analyze a single input field and return its classification.
    */
-  analyzeField(element: FormInputElement): DetectedField {
-    const isFirstVisible = this.isFirstVisibleInput(element);
+  analyzeField(element: FormInputElement, allInputs?: FormInputElement[]): DetectedField {
+    const isFirstVisible = this.isFirstVisibleInput(element, allInputs);
     const { fieldType, confidence } = FieldClassifier.classify(element, isFirstVisible);
 
     return {
@@ -603,10 +618,65 @@ export class FieldAnalyzer {
 
     for (const element of elements) {
       if (!VisibilityCheck.isVisible(element)) {continue;}
-      fields.push(this.analyzeField(element));
+      fields.push(this.analyzeField(element, elements));
     }
 
     return fields;
+  }
+
+  /**
+   * Proactive Shadow Scanner: Finds hidden containers (modals, drawers)
+   * that are likely to contain auth forms.
+   */
+  scanHiddenModals(): GhostContainer[] {
+    const ghostContainers: GhostContainer[] = [];
+    
+    // Heuristic selectors for common modal/auth containers
+    const potentialSelectors = [
+      '[id*="signup"]', '[id*="login"]', '[id*="auth"]', '[id*="register"]',
+      '[class*="signup"]', '[class*="login"]', '[class*="auth"]', '[class*="modal"]',
+      '[role="dialog"]', '[role="form"]', 'form[style*="display: none"]',
+      '[aria-label*="sign up"i]', '[aria-label*="log in"i]'
+    ];
+    
+    const root = document.body;
+    const elements = deepQuerySelectorAll<HTMLElement>(potentialSelectors.join(','), root);
+
+    for (const el of elements) {
+      // We only care about HIDDEN or VIRTUAL elements
+      const style = window.getComputedStyle(el);
+      const isActuallyHidden = style.display === 'none' || style.visibility === 'hidden' || el.offsetWidth === 0;
+      
+      if (isActuallyHidden) {
+        const text = (el.id + el.className + el.getAttribute('aria-label') + el.innerText).toLowerCase();
+        
+        let type: FormType = 'unknown';
+        let confidence = 0;
+        let reason = '';
+
+        if (/signup|register|create|join/i.test(text)) {
+          type = 'signup';
+          confidence = 0.8;
+          reason = 'ID/Class matches Signup pattern';
+        } else if (/login|signin|auth/i.test(text)) {
+          type = 'login';
+          confidence = 0.8;
+          reason = 'ID/Class matches Login pattern';
+        }
+
+        if (type !== 'unknown') {
+          ghostContainers.push({
+            element: el,
+            selector: getUniqueSelector(el),
+            predictedType: type,
+            confidence,
+            reason
+          });
+        }
+      }
+    }
+
+    return ghostContainers;
   }
 
   /**
@@ -616,6 +686,7 @@ export class FieldAnalyzer {
    * heuristic classification for that field.
    */
   async getAllFieldsWithAI(): Promise<FieldAnalysisResult> {
+    if (!this.isContextValid()) {return { fields: [] };}
     const fields = this.getAllFields();
 
     // Attempt ML augmentation via background CLASSIFY_FIELD for each field
@@ -635,12 +706,9 @@ export class FieldAnalyzer {
             isVisible: features.isVisible,
           };
 
-          const response = await new Promise<{ success: boolean; prediction: { label: string; confidence: number } | null }>((resolve) => {
-            chrome.runtime.sendMessage(
-              { action: 'CLASSIFY_FIELD', payload },
-              (res) => resolve(res || { success: false, prediction: null })
-            );
-          });
+          const response = (await safeSendMessage(
+            { action: 'CLASSIFY_FIELD', payload: payload as any }
+          )) as ClassifyFieldResponse | null;
 
           if (response?.success && response.prediction && response.prediction.confidence >= 0.45) {
             const mlLabel = response.prediction.label;
@@ -869,15 +937,21 @@ export class FieldAnalyzer {
    * Check if element is the first visible text/email input in its form.
    * First input is typically email/username on login/signup forms.
    */
-  private isFirstVisibleInput(element: FormInputElement): boolean {
+  private isFirstVisibleInput(element: FormInputElement, precomputedInputs?: FormInputElement[]): boolean {
     const form = element.closest('form') ?? document.body;
 
-    const inputs = Array.from(
-      form.querySelectorAll<HTMLInputElement>(
-        'input[type="text"], input[type="email"], input:not([type])'
-      )
-    ).filter((input) => VisibilityCheck.isVisible(input));
+    const inputs = precomputedInputs 
+      ? precomputedInputs.filter(i => (i.type === 'text' || i.type === 'email' || !i.type) && i.closest('form') === (element.closest('form') || document.body))
+      : Array.from(
+          form.querySelectorAll<HTMLInputElement>(
+            'input[type="text"], input[type="email"], input:not([type])'
+          )
+        );
 
-    return inputs.length > 0 && inputs[0] === element;
+    // If using precomputed, we still need to check visibility if we haven't yet
+    // but usually getAllFields already filtered visible ones.
+    const firstVisible = inputs.find((input) => VisibilityCheck.isVisible(input));
+
+    return firstVisible === element;
   }
 }

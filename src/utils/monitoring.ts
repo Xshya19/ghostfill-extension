@@ -217,7 +217,7 @@ class PerformanceMonitor {
         this.recordMetric('LongTask', metric);
 
         // Alert on very long tasks
-        if (entry.duration > 500) {
+        if (entry.duration > 500 && (typeof chrome === 'undefined' || !!chrome.runtime?.id)) {
           this.reportLongTask(entry as unknown as PerformanceEntry);
         }
       });
@@ -283,7 +283,7 @@ class PerformanceMonitor {
     }
 
     // Report to callback
-    if (this.reportCallback) {
+    if (this.reportCallback && (typeof chrome === 'undefined' || !!chrome.runtime?.id)) {
       this.reportCallback(metric);
     }
   }
@@ -307,23 +307,32 @@ class PerformanceMonitor {
    */
   private reportLongTask(entry: PerformanceEntry): void {
     // In production, send to monitoring service
-    console.warn('Long task detected:', {
-      name: entry.name,
-      duration: entry.duration,
-      startTime: entry.startTime,
-    });
+    // Serialize explicitly to avoid "[object Object]" in console output
+    console.warn(
+      'Long task detected:',
+      JSON.stringify({
+        name: entry.name,
+        duration: entry.duration,
+        startTime: entry.startTime,
+      })
+    );
   }
 
   /**
    * Report slow resource for investigation
    */
   private reportSlowResource(entry: PerformanceResourceTiming): void {
-    console.warn('Slow resource detected:', {
-      name: entry.name,
-      duration: entry.duration,
-      transferSize: entry.transferSize,
-      encodedBodySize: entry.encodedBodySize,
-    });
+    // Serialize explicitly to avoid "[object Object]" in console output
+    // Note: transferSize/encodedBodySize may be 0 for cross-origin resources without Timing-Allow-Headers
+    console.warn(
+      'Slow resource detected:',
+      JSON.stringify({
+        name: entry.name,
+        duration: entry.duration,
+        transferSize: entry.transferSize || 0,
+        encodedBodySize: entry.encodedBodySize || 0,
+      })
+    );
   }
 
   /**
@@ -434,11 +443,14 @@ export class MemoryMonitor {
     // If memory increased by more than 20% in last 10 snapshots
     const increase = (last - first) / first;
     if (increase > 0.2) {
-      console.warn('Potential memory leak detected:', {
-        increase: `${(increase * 100).toFixed(2)}%`,
-        from: first,
-        to: last,
-      });
+      console.warn(
+        'Potential memory leak detected:',
+        JSON.stringify({
+          increase: `${(increase * 100).toFixed(2)}%`,
+          from: first,
+          to: last,
+        })
+      );
     }
   }
 

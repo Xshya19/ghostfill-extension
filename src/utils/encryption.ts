@@ -29,11 +29,12 @@ const ITERATIONS = 100000; // PBKDF2 iterations (balanced security/performance)
  * @security Master password is NEVER stored - derived on-demand only
  */
 let sessionKey: CryptoKey | null = null;
+let masterKey: CryptoKey | null = null; // PERSISTENT key for storage.local
 let sessionKeySalt: Uint8Array | null = null;
 let sessionKeyExpiration: number | null = null;
-const KEY_ROTATION_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours (increased to prevent aggressive wiping of temp emails)
-// SECURITY FIX: KEY_MAX_LIFETIME adjusted back to 24 hours
-const KEY_MAX_LIFETIME = 24 * 60 * 60 * 1000; // 24 hours max lifetime
+
+const KEY_ROTATION_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
+const KEY_MAX_LIFETIME = 24 * 60 * 60 * 1000;
 
 const derivedKeyCache = new Map<string, CryptoKey>();
 const MAX_CACHE_SIZE = 20;
@@ -136,19 +137,18 @@ export function secureClearString(strRef: { value: string }): void {
  */
 export function secureClearKeys(): void {
   if (sessionKeySalt) {
-    // Overwrite salt with random data before clearing
     const randomSalt = crypto.getRandomValues(new Uint8Array(sessionKeySalt.length));
     sessionKeySalt.set(randomSalt);
     sessionKeySalt = null;
   }
-  // CryptoKey cannot be directly overwritten, but we can nullify the reference
-  // The underlying key material will be garbage collected
+  
+  sessionKey = null;
+  masterKey = null;
   sessionKeyExpiration = null;
 
-  // SECURITY FIX: Clear from chrome.storage.session
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session) {
     chrome.storage.session
-      .remove(['encryptionKeyMaterial', 'encryptionSalt', 'keyExpiration'])
+      .remove(['sessionKeySeed', 'encryptionSalt', 'keyExpiration'])
       .catch((e) => log.debug('Failed to clear keys from session storage', e));
   }
 
@@ -269,10 +269,7 @@ export async function encrypt(data: unknown, passwordOrKey: string | CryptoKey):
   try {
     const isString = typeof passwordOrKey === 'string';
     // Generate random salt and IV
-    const salt =
-      isString && passwordOrKey === 'session-key'
-        ? await getInternalSalt()
-        : crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
+    const salt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
     const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
 
     // Derive key from password or use provided key
@@ -358,7 +355,7 @@ export async function decrypt<T>(encryptedData: string, passwordOrKey: string | 
   }
 }
 
-function onRotationAlarm(alarm: chrome.alarms.Alarm) {
+export function onRotationAlarm(alarm: chrome.alarms.Alarm) {
   if (alarm.name === 'encryption-key-rotation') {
     rotateSessionKey().catch((err) => log.error('Auto key rotation failed', err));
   }
@@ -370,86 +367,107 @@ function onRotationAlarm(alarm: chrome.alarms.Alarm) {
  * @security Key is cleared when extension unloads
  * @security Key has expiration time for automatic rotation
  */
+/**
+ * Initializes encryption for the current session
+ * @security P0.1/P0.3 FIX: Uses separate persistent Master Key and transient Session Key
+ * @security Both keys are non-extractable (Key Insulation)
+ */
 export async function initializeSecureEncryption(): Promise<void> {
   try {
-    let sessionPassword = '';
-    let saltArray: Uint8Array | null = null;
+    const currentVersion = typeof chrome !== 'undefined' ? chrome.runtime.getManifest().version : 'unknown';
 
-    // Try to load from chrome.storage.session (persists across MV3 SW restarts)
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session) {
-      // Must support trusted contexts to work seamlessly in SW and UI (but restrict untrusted content scripts!)
+    // 1. Initialize PERSISTENT MASTER KEY (for storage.local)
+    if (!masterKey && typeof chrome !== 'undefined' && chrome.storage?.local) {
+      const localData = await chrome.storage.local.get(['masterKeySeed']);
+      let masterSeed: Uint8Array;
+
+      if (localData.masterKeySeed) {
+        masterSeed = Uint8Array.from(atob(localData.masterKeySeed), (c) => c.charCodeAt(0));
+      } else {
+        masterSeed = crypto.getRandomValues(new Uint8Array(32));
+        await chrome.storage.local.set({
+          masterKeySeed: btoa(String.fromCharCode(...masterSeed)),
+        });
+      }
+
+      masterKey = await crypto.subtle.importKey(
+        'raw',
+        masterSeed as any,
+        { name: 'AES-GCM', length: 256 },
+        false, // NON-EXTRACTABLE (P0.3)
+        ['encrypt', 'decrypt']
+      );
+      log.debug('Persistent Master Key initialized');
+    }
+
+    // 2. Initialize TRANSIENT SESSION KEY (for storage.session)
+    if ((!sessionKey || isKeyExpired()) && typeof chrome !== 'undefined' && chrome.storage?.session) {
       try {
-        await chrome.storage.session
-          .setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' })
-          .catch(() => {});
-        const data = await chrome.storage.session.get([
-          'encryptionKeyMaterial',
+        await chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' }).catch(() => {});
+        const sessionData = await chrome.storage.session.get([
+          'sessionKeySeed',
           'encryptionSalt',
           'keyExpiration',
           'appVersion',
         ]);
-        const currentVersion = chrome.runtime.getManifest().version;
 
         if (
-          data.encryptionKeyMaterial &&
-          data.encryptionSalt &&
-          data.keyExpiration > Date.now() &&
-          data.appVersion === currentVersion
+          sessionData.sessionKeySeed &&
+          sessionData.encryptionSalt &&
+          sessionData.keyExpiration > Date.now() &&
+          sessionData.appVersion === currentVersion
         ) {
-          const keyBuf = Uint8Array.from(atob(data.encryptionKeyMaterial), (c) => c.charCodeAt(0));
+          const seed = Uint8Array.from(atob(sessionData.sessionKeySeed), (c) => c.charCodeAt(0));
           sessionKey = await crypto.subtle.importKey(
-             'raw',
-             keyBuf,
-             { name: 'AES-GCM', length: 256 },
-             true, // allow export again next time
-             ['encrypt', 'decrypt']
+            'raw',
+            seed as any,
+            { name: 'AES-GCM', length: 256 },
+            false, // NON-EXTRACTABLE (P0.3)
+            ['encrypt', 'decrypt']
           );
-          saltArray = Uint8Array.from(atob(data.encryptionSalt), (c) => c.charCodeAt(0));
-          sessionKeySalt = saltArray;
-          sessionKeyExpiration = data.keyExpiration;
-          log.debug('Loaded existing session encryption key from chrome.storage.session');
-        } else if (data.appVersion !== currentVersion) {
-          log.info('Extension version changed, forcing session key rotation');
-        }
-      } catch (e) {
-        log.warn('Could not read from chrome.storage.session', e);
-      }
-    }
+          sessionKeySalt = Uint8Array.from(atob(sessionData.encryptionSalt), (c) => c.charCodeAt(0));
+          sessionKeyExpiration = sessionData.keyExpiration;
+          log.debug('Loaded existing Session Key from storage.session');
+        } else {
+          // Generate new Session Key
+          const seed = crypto.getRandomValues(new Uint8Array(32));
+          sessionKeySalt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
+          sessionKeyExpiration = Date.now() + KEY_MAX_LIFETIME;
 
-    // Generate new key if not found
-    if (!sessionKey || !saltArray) {
-      sessionPassword = generateSecurePassword(64);
-      saltArray = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
-      sessionKeySalt = saltArray;
-      sessionKeyExpiration = Date.now() + KEY_MAX_LIFETIME;
-      
-      // Generate a random extractable AES-256-GCM key directly.
-      // Using generateKey instead of deriveKey because deriveKey produces
-      // non-extractable keys (PBKDF2 → AES), which cannot be exported
-      // for persistence in chrome.storage.session.
-      sessionKey = await crypto.subtle.generateKey(
-        { name: 'AES-GCM', length: 256 },
-        true, // extractable — required for session persistence
-        ['encrypt', 'decrypt']
-      );
+          sessionKey = await crypto.subtle.importKey(
+            'raw',
+            seed,
+            { name: 'AES-GCM', length: 256 },
+            false, // NON-EXTRACTABLE (P0.3)
+            ['encrypt', 'decrypt']
+          );
 
-      // Persist securely to browser session ONLY as exported Key Material instead of plaintext password
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session) {
-        try {
-          const exportedBuf = await crypto.subtle.exportKey('raw', sessionKey);
-          const base64Key = btoa(String.fromCharCode(...new Uint8Array(exportedBuf)));
-          const currentVersion = chrome.runtime.getManifest().version;
           await chrome.storage.session.set({
-            encryptionKeyMaterial: base64Key,
-            encryptionSalt: btoa(String.fromCharCode(...saltArray)),
+            sessionKeySeed: btoa(String.fromCharCode(...seed)),
+            encryptionSalt: btoa(String.fromCharCode(...sessionKeySalt)),
             keyExpiration: sessionKeyExpiration,
             appVersion: currentVersion,
           });
-        } catch (e) {
-          log.warn('Could not write to chrome.storage.session', e);
+          log.debug('Generated new Session Key');
         }
+      } catch (e) {
+        log.warn('Session key initialization failed, using non-persistent key', e);
       }
-      log.debug('Secure encryption initialized (fresh session key)');
+    }
+
+    // Fallback only if in a non-extension context (tests)
+    if (!masterKey) {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        throw new Error('Critical: Failed to generate or load persistent master key from storage');
+      }
+      const seed = crypto.getRandomValues(new Uint8Array(32));
+      masterKey = await crypto.subtle.importKey('raw', seed as any, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+    }
+    if (!sessionKey) {
+      const seed = crypto.getRandomValues(new Uint8Array(32));
+      sessionKey = await crypto.subtle.importKey('raw', seed as any, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+      sessionKeySalt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
+      sessionKeyExpiration = Date.now() + KEY_MAX_LIFETIME;
     }
 
     // Schedule automatic key rotation using alarms since setTimeout won't survive SW suspension
@@ -457,9 +475,6 @@ export async function initializeSecureEncryption(): Promise<void> {
       void chrome.alarms.create('encryption-key-rotation', {
         delayInMinutes: KEY_ROTATION_INTERVAL / 60000,
       });
-      if (!chrome.alarms.onAlarm.hasListener(onRotationAlarm)) {
-        chrome.alarms.onAlarm.addListener(onRotationAlarm);
-      }
     }
 
     // Intentionally clear password from memory scope since it is cached in Derive algorithm and session storage
@@ -475,6 +490,14 @@ export async function initializeSecureEncryption(): Promise<void> {
  */
 export function getSessionKey(): CryptoKey | null {
   return sessionKey;
+}
+
+/**
+ * Gets the persistent master encryption key
+ * @security Used for local storage persistence (P0.1 fix)
+ */
+export function getMasterKey(): CryptoKey | null {
+  return masterKey;
 }
 
 /**

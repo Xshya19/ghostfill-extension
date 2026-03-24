@@ -11,6 +11,8 @@
 /**
  * Decode HTML entities to their character equivalents
  */
+import { truncate } from '../../utils/core';
+
 export function decodeHtmlEntities(html: string): string {
   if (!html) {
     return '';
@@ -46,12 +48,16 @@ export function decodeHtmlEntities(html: string): string {
   }
 
   // Hex entities
-  result = result.replace(/&#x([0-9a-fA-F]+);/gi, (_, hex) =>
-    String.fromCharCode(parseInt(hex, 16))
-  );
+  result = result.replace(/&#x([0-9a-fA-F]+);/gi, (_, hex) => {
+    const val = parseInt(hex, 16);
+    return (val >= 32 || val === 9 || val === 10 || val === 13) ? String.fromCharCode(val) : '';
+  });
 
   // Decimal entities
-  result = result.replace(/&#(\d+);/gi, (_, dec) => String.fromCharCode(parseInt(dec, 10)));
+  result = result.replace(/&#(\d+);/gi, (_, dec) => {
+    const val = parseInt(dec, 10);
+    return (val >= 32 || val === 9 || val === 10 || val === 13) ? String.fromCharCode(val) : '';
+  });
 
   // Strip zero-width characters
   return result.replace(/[\u00AD\u200B-\u200D\uFEFF]/g, '');
@@ -172,15 +178,8 @@ export function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/**
- * Truncate text to a maximum length with ellipsis
- */
-export function truncate(text: string, maxLength: number, suffix: string = '...'): string {
-  if (!text || text.length <= maxLength) {
-    return text;
-  }
-  return text.substring(0, maxLength - suffix.length) + suffix;
-}
+export { truncate };
+
 
 // ───────────────────────────────────────────────────────────────────────
 //  URL UTILITIES

@@ -18,21 +18,23 @@ Target artifact sizes: FP32 ~5–12 MB | INT8 ~2–5 MB
 
 from __future__ import annotations
 
+# pylint: disable=not-callable, no-member, invalid-name, missing-docstring
+
 import json
 import os
 import sys
 import warnings
 
-import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader, Dataset
+import torch # type: ignore [import]
+import torch.nn as nn # type: ignore [import]
+from torch.utils.data import DataLoader, Dataset # type: ignore [import]
 
-# Suppress non-critical deprecation noise from onnxruntime
+# ─── ONNX Export ─────────────────────────────────────────────────────────────
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 try:
-    import onnx
-    from onnxruntime.quantization import QuantType, quantize_dynamic
+    import onnx # type: ignore [import]
+    from onnxruntime.quantization import quantize_dynamic, QuantType # type: ignore [import]
 except ImportError as exc:  # pragma: no cover
     sys.exit(
         f"[ERROR] Missing dependency: {exc}.\n"
@@ -69,6 +71,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class CharCNNEncoder(nn.Module):
+    # type: ignore [misc]
     """
     Shared character-level CNN applied independently to each text channel.
 
@@ -115,6 +118,7 @@ class CharCNNEncoder(nn.Module):
 
 
 class CrossChannelAttention(nn.Module):
+    # type: ignore [misc]
     """
     Single Transformer encoder layer over the 8 text-channel embeddings.
     Uses a hand-written multi-head scaled dot-product attention so that the
@@ -182,6 +186,7 @@ class CrossChannelAttention(nn.Module):
 
 
 class StructuralEncoder(nn.Module):
+    # type: ignore [misc]
     """
     Two-layer MLP for the 64-dim structural/layout feature vector.
 
@@ -215,6 +220,7 @@ class StructuralEncoder(nn.Module):
 
 
 class GhostFillClassifier(nn.Module):
+    # type: ignore [misc]
     """
     Full GhostFill Form-Field Classifier.
 
@@ -267,17 +273,17 @@ class GhostFillClassifier(nn.Module):
         channel_embeds = []
         for i in range(NUM_TEXT_CHANNELS):
             ch_i = text_channels[:, i, :]           # (B, 80)
-            emb_i = self.char_cnn(ch_i)             # (B, 192)
+            emb_i = self.char_cnn(ch_i)             # type: ignore [misc]
             emb_i = self.channel_proj[i](emb_i)     # (B, 192)
             channel_embeds.append(emb_i)
 
         # Stack → Attend → Pool
         text_seq = torch.stack(channel_embeds, dim=1)   # (B, 8, 192)
-        text_seq = self.cross_attn(text_seq)            # (B, 8, 192)
+        text_seq = self.cross_attn(text_seq)            # type: ignore [misc]
         text_pooled = self.text_norm(text_seq.mean(dim=1))  # (B, 192)
 
         # Structural branch
-        struct_emb = self.structural_enc(structural)    # (B, 128)
+        struct_emb = self.structural_enc(structural)    # type: ignore [misc]
 
         # Fuse & classify
         fused = torch.cat([text_pooled, struct_emb], dim=1)  # (B, 320)
@@ -527,7 +533,8 @@ _CLASS_SEEDS: dict[str, dict[str, list[str | None]]] = {
 
 def _encode_text(text: str, max_len: int = MAX_TEXT_LEN) -> list[int]:
     """Encode a string into a list of ASCII char codes, padded/truncated to max_len."""
-    s = (text or "").lower().strip()[:int(max_len)]
+    s = str(text or "").lower().strip()
+    s = s[:max_len] # type: ignore [misc]
     encoded = [0] * max_len
     for i, ch in enumerate(s):
         code = ord(ch)
@@ -623,8 +630,9 @@ class RealLabeledFormDataset(Dataset):
 
         import json
         import os
+        from typing import Any
         
-        def parse_js_array(d):
+        def parse_js_array(d: Any) -> list[Any]:
             if isinstance(d, list): return d
             if isinstance(d, dict):
                 arr = [0] * (max((int(k) for k in d.keys()), default=-1) + 1)
@@ -649,18 +657,19 @@ class RealLabeledFormDataset(Dataset):
                             cls_idx = CLASS_NAMES.index(matched_cls)
                             
                             # Parse JSON-stringified TypedArrays
-                            channels = [parse_js_array(ch) for ch in features["textChannels"]]
-                            struct = parse_js_array(features["structural"])
+                            channels_raw: list[list[int]] = [parse_js_array(ch) for ch in features["textChannels"]] # type: ignore
+                            struct_raw: list[float] = parse_js_array(features["structural"]) # type: ignore
                             
                             # Ensure exact dimensions
-                            for ch in channels:
+                            for ch in channels_raw:
                                 while len(ch) < MAX_TEXT_LEN: ch.append(0)
-                                ch[:] = ch[:MAX_TEXT_LEN]
-                            while len(struct) < NUM_STRUCTURAL: struct.append(0.0)
-                            struct = struct[:NUM_STRUCTURAL]
+                                ch[:] = ch[:MAX_TEXT_LEN] # type: ignore [misc]
                             
-                            self.text_list.append(torch.tensor(channels, dtype=torch.long))
-                            self.struct_list.append(torch.tensor(struct, dtype=torch.float32))
+                            while len(struct_raw) < NUM_STRUCTURAL: struct_raw.append(0.0)
+                            struct_raw = struct_raw[:NUM_STRUCTURAL] # type: ignore [misc]
+                            
+                            self.text_list.append(torch.tensor(channels_raw, dtype=torch.long))
+                            self.struct_list.append(torch.tensor(struct_raw, dtype=torch.float32))
                             self.label_list.append(cls_idx)
                     print(f"Loaded {len(user_data)} real samples from {data_file}")
                 except Exception as e:
@@ -684,7 +693,8 @@ class RealLabeledFormDataset(Dataset):
                     chosen = rng.choice(pool)
                     # Add small random corruption for robustness
                     if chosen and rng.random() < 0.15:
-                        chosen = chosen[:int(rng.randint(1, len(chosen)))]
+                        limit_idx = int(rng.randint(1, len(chosen)))
+                        chosen = chosen[:limit_idx] # type: ignore [misc]
                     channels.append(_encode_text(chosen or ""))
 
                 text_tensor = torch.tensor(channels, dtype=torch.long)  # (8, 80)
@@ -745,14 +755,14 @@ def train_model(model: GhostFillClassifier, epochs: int = 20) -> None:
             structs = structs.to(DEVICE)   # (B, 64)   float32
             targets = targets.to(DEVICE)   # (B,)      int64
             opt.zero_grad()
-            logits = model(texts, structs) # (B, 10)   float32
+            logits = model(texts, structs) # type: ignore [misc]
             loss = criterion(logits, targets)
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             opt.step()
             total_loss += loss.item()
             preds = logits.argmax(dim=-1)
-            correct += (preds == targets).sum().item()
+            correct += int(torch.eq(preds, targets).sum().item())
             total += targets.size(0)
         scheduler.step()
         avg = total_loss / len(loader)
@@ -762,7 +772,7 @@ def train_model(model: GhostFillClassifier, epochs: int = 20) -> None:
 
     print(f"\nFinal training accuracy: {100.0 * correct / total:.1f}% ({correct}/{total})")
     print("NOTE: 90%+ training acc = model learned real field patterns correctly")
-    print("      To further improve: collect & annotate real form data from the web.")
+    print("      To further improve: collect & annotate real form data from the web.\n")
 
 
 def export_onnx(model: GhostFillClassifier, path: str) -> None:

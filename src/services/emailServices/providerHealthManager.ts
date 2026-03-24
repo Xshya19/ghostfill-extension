@@ -24,6 +24,7 @@ const DEFAULT_CONFIG: HealthConfig = {
   baseCooldown: 15 * 1000, // Start with 15 second cooldown
   successRateDecay: 0.9, // Weight factor for rolling average
   responseTimeDecay: 0.8, // Weight factor for response time avg
+  degradedThreshold: 0.6, // Success rate below this = degraded (H1)
 };
 
 /**
@@ -52,7 +53,14 @@ class ProviderHealthManager implements IProviderHealthManager {
 
   constructor() {
     this.initializeProviders();
-    void this.loadState();
+  }
+
+  /**
+   * P1.11: Explicit initialization to ensure state is loaded before use.
+   * Called by the aggregator during its own loadHealthState.
+   */
+  public async init(): Promise<void> {
+    await this.loadState();
   }
 
   // SECURITY/RELIABILITY FIX: Persist Provider Health across Service Worker wakes
@@ -325,6 +333,11 @@ class ProviderHealthManager implements IProviderHealthManager {
 
     // Failure penalty (exponential)
     score -= Math.pow(1.5, health.consecutiveFailures) * 5;
+
+    // Degraded penalty (H1)
+    if (health.successRate < (this.config as any).degradedThreshold) {
+      score -= 30; // Significant penalty for degraded providers
+    }
 
     return Math.max(-100, Math.min(100, score));
   }

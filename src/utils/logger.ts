@@ -23,11 +23,18 @@ interface LogEntry {
   source?: string;
 }
 
-// HIGH FIX: Check if we're in production mode
+type LoggerGlobal = typeof globalThis & {
+  __GHOSTFILL_LOG_HISTORY__?: LogEntry[];
+  dumpGhostFillLogs?: () => Promise<LogEntry[]>;
+};
+
+// Check if we're in production mode
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
-// HIGH FIX: Allowlist for production logging (only errors and critical warnings)
-const PRODUCTION_LOG_ALLOWLIST: LogLevel[] = ['error', 'warn', 'info', 'debug'];
+// Allowlist for production logging - show all logs for debugging
+// Sensitive data is still redacted regardless of log level
+const PRODUCTION_LOG_ALLOWLIST: LogLevel[] = ['debug', 'info', 'warn', 'error'];
+const PERSISTED_LOG_KEY = 'ghostfill_debug_logs';
 
 // Sensitive data patterns to redact
 // SECURITY FIX: Expanded patterns to cover all credential formats and edge cases
@@ -270,6 +277,11 @@ class Logger {
   private prefix: string = '[GhostFill]';
   private history: LogEntry[] = [];
   private maxHistory: number = 100;
+  private persistPromise: Promise<void> | null = null;
+
+  constructor() {
+    this.installGlobalDebugHelpers();
+  }
 
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
@@ -295,6 +307,8 @@ class Logger {
       if (this.history.length > this.maxHistory) {
         this.history.shift();
       }
+      this.syncGlobalHistory();
+      this.persistHistory();
       return;
     }
 
@@ -315,6 +329,8 @@ class Logger {
     if (this.history.length > this.maxHistory) {
       this.history.shift();
     }
+    this.syncGlobalHistory();
+    this.persistHistory();
 
     if (!this.enabled && level !== 'error') {
       return;
@@ -375,8 +391,92 @@ class Logger {
     return [...this.history];
   }
 
+  async getPersistedHistory(): Promise<LogEntry[]> {
+    if (typeof chrome === 'undefined') {
+      return this.getHistory();
+    }
+
+    try {
+      if (chrome.storage?.session) {
+        const sessionData = await chrome.storage.session.get(PERSISTED_LOG_KEY);
+        const sessionLogs = sessionData?.[PERSISTED_LOG_KEY];
+        if (Array.isArray(sessionLogs) && sessionLogs.length > 0) {
+          return sessionLogs as LogEntry[];
+        }
+      }
+
+      if (chrome.storage?.local) {
+        const localData = await chrome.storage.local.get(PERSISTED_LOG_KEY);
+        const localLogs = localData?.[PERSISTED_LOG_KEY];
+        if (Array.isArray(localLogs)) {
+          return localLogs as LogEntry[];
+        }
+      }
+    } catch {
+      // Best effort only; fall back to in-memory history below.
+    }
+
+    return this.getHistory();
+  }
+
   clearHistory(): void {
     this.history = [];
+    this.syncGlobalHistory();
+    if (typeof chrome !== 'undefined') {
+      try {
+        if (chrome.storage?.session) {
+          void chrome.storage.session.remove(PERSISTED_LOG_KEY);
+        }
+        if (chrome.storage?.local) {
+          void chrome.storage.local.remove(PERSISTED_LOG_KEY);
+        }
+      } catch {
+        // Ignore cleanup failures.
+      }
+    }
+  }
+
+  private syncGlobalHistory(): void {
+    const globalScope = globalThis as LoggerGlobal;
+    globalScope.__GHOSTFILL_LOG_HISTORY__ = this.getHistory();
+  }
+
+  private persistHistory(): void {
+    if (typeof chrome === 'undefined' || (!chrome.storage?.session && !chrome.storage?.local)) {
+      return;
+    }
+
+    const snapshot = this.getHistory();
+    this.persistPromise = (this.persistPromise || Promise.resolve())
+      .catch(() => undefined)
+      .then(async () => {
+        if (chrome.storage?.session) {
+          await chrome.storage.session
+            .set({ [PERSISTED_LOG_KEY]: snapshot })
+            .catch(() => undefined);
+        }
+        if (chrome.storage?.local) {
+          await chrome.storage.local.set({ [PERSISTED_LOG_KEY]: snapshot }).catch(() => undefined);
+        }
+      });
+  }
+
+  private installGlobalDebugHelpers(): void {
+    const globalScope = globalThis as LoggerGlobal;
+    this.syncGlobalHistory();
+
+    globalScope.dumpGhostFillLogs = async () => {
+      const logs = await this.getPersistedHistory();
+      console.table(
+        logs.map((entry) => ({
+          time: new Date(entry.timestamp).toISOString(),
+          level: entry.level,
+          source: entry.source || '',
+          message: entry.message,
+        }))
+      );
+      return logs;
+    };
   }
 
   // Create a child logger with a specific source

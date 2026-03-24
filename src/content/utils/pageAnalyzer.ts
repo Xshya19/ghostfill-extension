@@ -160,7 +160,7 @@ export class PageAnalyzer {
       name: 'react',
       detect: () => {
         const el = safeQuerySelector<HTMLElement>(document, 'input') ?? safeQuerySelector<HTMLElement>(document, 'div');
-        if (!el) return false;
+        if (!el) {return false;}
         return Object.keys(el).some(
           (k) => k.startsWith('__reactFiber$') || k.startsWith('__reactProps$') || k.startsWith('__reactInternalInstance$')
         );
@@ -169,9 +169,9 @@ export class PageAnalyzer {
     {
       name: 'vue',
       detect: () => {
-        if ((document as Document & { __vue_app__?: unknown }).__vue_app__) return true;
+        if ((document as Document & { __vue_app__?: unknown }).__vue_app__) {return true;}
         const allEls = document.body?.querySelectorAll('*');
-        if (!allEls) return false;
+        if (!allEls) {return false;}
         for (let i = 0, len = Math.min(allEls.length, 100); i < len; i++) {
           if (allEls[i].getAttributeNames().some((a) => /^data-v-[a-f0-9]+$/.test(a))) {
             return true;
@@ -274,7 +274,7 @@ export class PageAnalyzer {
 
     // Iterate remaining patterns in priority order
     for (const { type, pattern, signal } of this.PAGE_PATTERNS) {
-      if (type === 'verification' || type === '2fa') continue; // Already handled above
+      if (type === 'verification' || type === '2fa') {continue;} // Already handled above
       if (pattern.test(combined)) {
         signals.push(signal);
         return type;
@@ -303,7 +303,7 @@ export class PageAnalyzer {
   private static detectFramework(): string {
     for (const detector of this.FRAMEWORK_DETECTORS) {
       try {
-        if (detector.detect()) return detector.name;
+        if (detector.detect()) {return detector.name;}
       } catch {
         /* detection failed, continue */
       }

@@ -4,7 +4,7 @@
 //  Reusable scoring functions for link evaluation
 // ═══════════════════════════════════════════════════════════════════════
 
-import type { ProviderKnowledge, EmailIntent, URLParamAnalysis } from './types';
+import type { ProviderKnowledge, EmailIntent, URLParamAnalysis } from '../types/extraction.types';
 
 // ═══════════════════════════════════════════════════════════════════════
 //  SCORING CONFIGURATION
@@ -236,7 +236,7 @@ export function matchesProviderPattern(url: string, provider: ProviderKnowledge 
     return false;
   }
 
-  return provider.linkPatterns.some((p) => {
+  return provider.linkPatterns.some((p: RegExp) => {
     p.lastIndex = 0;
     return p.test(url);
   });

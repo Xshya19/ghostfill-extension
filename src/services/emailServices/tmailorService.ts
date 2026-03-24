@@ -34,7 +34,11 @@ class TMailorService {
   /**
    * Exponential backoff retry wrapper
    */
-  private async fetchWithRetry(url: string, options: RequestInit = {}, maxRetries = 3): Promise<Response> {
+  private async fetchWithRetry(
+    url: string,
+    options: RequestInit = {},
+    maxRetries = 3
+  ): Promise<Response> {
     let lastError: Error | unknown = null;
     let lastStatus = 0;
 
@@ -82,7 +86,7 @@ class TMailorService {
   /**
    * Generate a new email with rotating domain
    */
-  async createAccount(prefix?: string): Promise<EmailAccount> {
+  async createAccount(prefix?: string, signal?: AbortSignal): Promise<EmailAccount> {
     try {
       // Generate random prefix if not provided
       const emailPrefix = prefix || this.generatePrefix();
@@ -90,6 +94,7 @@ class TMailorService {
       // First, get available domains
       const domainsRes = await this.fetchWithRetry(`${TMAILOR_API}/domains`, {
         headers: TMAILOR_HEADERS,
+        signal,
       });
 
       if (!domainsRes.ok) {
@@ -116,6 +121,7 @@ class TMailorService {
         body: JSON.stringify({
           email: `${emailPrefix}@${domain}`,
         }),
+        signal,
       });
 
       if (!createRes.ok) {
@@ -147,11 +153,14 @@ class TMailorService {
   /**
    * Fetch emails from inbox
    */
-  async getEmails(account: EmailAccount): Promise<Email[]> {
+  async getEmails(account: EmailAccount, signal?: AbortSignal): Promise<Email[]> {
     try {
       const response = await this.fetchWithRetry(
-        `${TMAILOR_API}/emails?address=${encodeURIComponent(account.fullEmail)}&token=${account.token}`,
-        { headers: TMAILOR_HEADERS }
+        `${TMAILOR_API}/emails?address=${encodeURIComponent(account.fullEmail)}`,
+        {
+          headers: { ...TMAILOR_HEADERS, Authorization: `Bearer ${account.token}` },
+          signal,
+        }
       );
 
       if (!response.ok) {
@@ -180,11 +189,14 @@ class TMailorService {
   /**
    * Read full email content
    */
-  async readEmail(id: string, account: EmailAccount): Promise<Email> {
+  async readEmail(id: string, account: EmailAccount, signal?: AbortSignal): Promise<Email> {
     try {
       const response = await this.fetchWithRetry(
-        `${TMAILOR_API}/email/${id}?address=${encodeURIComponent(account.fullEmail)}&token=${account.token}`,
-        { headers: TMAILOR_HEADERS }
+        `${TMAILOR_API}/email/${id}?address=${encodeURIComponent(account.fullEmail)}`,
+        {
+          headers: { ...TMAILOR_HEADERS, Authorization: `Bearer ${account.token}` },
+          signal,
+        }
       );
 
       if (!response.ok) {

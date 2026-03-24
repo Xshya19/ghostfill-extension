@@ -1,5 +1,22 @@
 // Form Detection Types
 
+export type FormInputElement = HTMLInputElement | HTMLTextAreaElement;
+
+export type FrameworkType = 'react' | 'vue' | 'angular' | 'svelte' | 'solid' | 'vanilla' | 'unknown';
+
+export interface PageContext {
+  readonly isVerificationPage: boolean;
+  readonly isLoginPage: boolean;
+  readonly isSignupPage: boolean;
+  readonly isPasswordResetPage: boolean;
+  readonly is2FAPage: boolean;
+  readonly framework: FrameworkType;
+  readonly hasOTPLanguage: boolean;
+  readonly expectedOTPLength: number | null;
+  readonly provider: string | null;
+  readonly pageSignals: readonly string[];
+}
+
 export type FormType =
   | 'login'
   | 'signup'
@@ -21,6 +38,7 @@ export type FieldType =
   | 'first-name'
   | 'last-name'
   | 'middle-name'
+  | 'full-name'
   | 'phone'
   | 'address'
   | 'city'
@@ -44,6 +62,37 @@ export interface DetectedField {
   rect: DOMRect;
 }
 
+export interface FillDetail {
+  fieldType: string;
+  selector: string;
+  strategy: string;
+  success: boolean;
+  reason?: string;
+}
+
+export interface FillResult {
+  success: boolean;
+  filledCount: number;
+  message: string;
+  details: FillDetail[];
+  timingMs: number;
+}
+
+export interface OTPFillOutcome {
+  success: boolean;
+  filledCount: number;
+  strategy: string;
+}
+
+export interface IdentityWithCredentials {
+  fullName?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  username?: string;
+  password?: string;
+}
+
 export interface DetectedForm {
   element: HTMLElement;
   selector: string;
@@ -58,6 +107,14 @@ export interface FormAnalysis {
   forms: DetectedForm[];
   standaloneFields: DetectedField[];
   timestamp: number;
+}
+
+export interface GhostContainer {
+  element: HTMLElement;
+  selector: string;
+  predictedType: FormType;
+  confidence: number;
+  reason: string;
 }
 
 export interface FieldHeuristics {
@@ -296,6 +353,12 @@ export const FIELD_HEURISTICS: Record<FieldType, FieldHeuristics> = {
       'wholename',
       'name',
     ],
+    types: ['text'],
+    autocomplete: ['name'],
+  },
+  'full-name': {
+    patterns: [/full.?name/i, /your.?name/i, /complete.?name/i, /display.?name/i],
+    keywords: ['fullname', 'full_name', 'yourname', 'displayname'],
     types: ['text'],
     autocomplete: ['name'],
   },

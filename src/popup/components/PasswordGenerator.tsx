@@ -48,12 +48,21 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
     if (currentPassword) {
       setPassword({
         password: currentPassword,
-        strength: { score: 4, level: 'strong', crackTime: 'Secure', entropy: 0, suggestions: [] },
+        strength: { 
+          score: 3, 
+          level: 'good', 
+          crackTime: 'Secure', 
+          entropy: Math.floor(currentPassword.length * 6), 
+          suggestions: [] 
+        },
         options: DEFAULT_PASSWORD_OPTIONS,
         generatedAt: Date.now(),
       });
     } else {
-      void generatePassword();
+      const timeoutId = setTimeout(() => {
+        void generatePassword();
+      }, 300);
+      return () => clearTimeout(timeoutId);
     }
   }, [generatePassword, currentPassword]);
 
@@ -97,42 +106,26 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
     setOptions((prev) => ({ ...prev, [key]: value }));
   };
 
-  const getStrengthColor = (level: string) => {
-    switch (level) {
-      case 'weak':
+  const getStrengthColor = (score: number) => {
+    switch (score) {
+      case 0:
+      case 1:
         return 'var(--error)';
-      case 'fair':
+      case 2:
         return 'var(--warning)';
-      case 'good':
+      case 3:
         return 'var(--warning-light)';
-      case 'strong':
-      case 'very-strong':
+      case 4:
         return 'var(--success)';
       default:
         return 'var(--text-tertiary)';
     }
   };
 
-  const getStrengthPercent = (level: string) => {
-    switch (level) {
-      case 'weak':
-        return 25;
-      case 'fair':
-        return 50;
-      case 'good':
-        return 75;
-      case 'strong':
-      case 'very-strong':
-        return 100;
-      default:
-        return 0;
-    }
-  };
-
   return (
     <div className="generator-flow">
       {/* Main Display Card */}
-      <div className="glass-card glass-card-default">
+      <div className="ghost-card glass-card-default">
         <div className="generator-card-header">
           <div className="widget-label">
             <Lock size={14} className="sf-icon" />
@@ -158,25 +151,25 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
             {password
               ? showPassword
                 ? password.password
-                : '•'.repeat(password.password.length)
-              : '•'.repeat(options.length)}
+                : '•'.repeat(Math.min(password.password.length, 16))
+              : '•'.repeat(Math.min(options.length, 16))}
           </div>
         </motion.div>
 
         {password && (
-          <div className="strength-meter-container">
+          <div className="strength-meter-container" aria-live="polite">
             <div className="strength-meter-header">
               <span
                 className="strength-level-label"
-                style={{ color: getStrengthColor(password.strength.level) }}
+                style={{ color: getStrengthColor(password.strength.score) }}
               >
                 {password.strength.level}
               </span>
               <span
                 className="strength-level-percent"
-                style={{ color: getStrengthColor(password.strength.level) }}
+                style={{ color: getStrengthColor(password.strength.score) }}
               >
-                {getStrengthPercent(password.strength.level)}%
+                {Math.max(10, password.strength.score * 25)}%
               </span>
             </div>
             {/* Gradient Strength Bar */}
@@ -184,11 +177,10 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
               <div
                 className="strength-bar-fill"
                 style={{
-                  width: `${getStrengthPercent(password.strength.level)}%`,
-                  background: `linear-gradient(90deg, ${getStrengthColor(password.strength.level)} 0%, ${password.strength.level === 'strong' || password.strength.level === 'very-strong' ? 'var(--success-light)' : getStrengthColor(password.strength.level)} 100%)`,
+                  width: `${Math.max(10, password.strength.score * 25)}%`,
+                  background: `linear-gradient(90deg, ${getStrengthColor(password.strength.score)} 0%, ${password.strength.score >= 4 ? 'var(--success-light)' : getStrengthColor(password.strength.score)} 100%)`,
                   boxShadow:
-                    password.strength.level === 'strong' ||
-                    password.strength.level === 'very-strong'
+                    password.strength.score >= 4
                       ? '0 0 12px rgba(16, 185, 129, 0.5)'
                       : 'none',
                 }}
@@ -199,14 +191,14 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
 
         <div className="generator-actions">
           <button
-            className={`ios-button button-primary ${loading ? 'shimmer' : ''}`}
+            className={`premium-btn ${loading ? 'shimmer' : ''}`}
             onClick={handleGeneratePassword}
             disabled={loading}
           >
             {loading ? <span className="spinner-small" /> : <Zap size={16} fill="white" />}
-            {loading ? 'Securing...' : 'Regen'}
+            {loading ? 'Securing...' : 'Regenerate'}
           </button>
-          <button className="ios-button button-secondary" onClick={handleCopyPassword}>
+          <button className="premium-btn premium-btn-secondary" onClick={handleCopyPassword}>
             {copied ? <Check size={16} color="var(--success)" /> : <Copy size={16} />}
             {copied ? 'Copied' : 'Copy'}
           </button>
@@ -214,7 +206,7 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
       </div>
 
       {/* Configuration Card */}
-      <div className="glass-card glass-card-default glass-card-mt16">
+      <div className="ghost-card glass-card-default glass-card-mt16">
         <div className="widget-label config-label">
           <Shield size={14} className="sf-icon" />
           Complexity Settings

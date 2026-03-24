@@ -88,13 +88,13 @@ function computeHoneypotScore(el: HTMLElement): number {
   const cs = window.getComputedStyle(el);
   const rect = el.getBoundingClientRect();
   
-  if (parseFloat(cs.opacity) < 0.1) score += 0.3;
-  if (rect.width < 5 && rect.height < 5) score += 0.25;
-  if (cs.position === 'absolute' && (parseFloat(cs.left) < -100 || parseFloat(cs.top) < -100)) score += 0.35;
-  if (el.tabIndex === -1 && rect.width < 10) score += 0.15;
+  if (parseFloat(cs.opacity) < 0.1) {score += 0.3;}
+  if (rect.width < 5 && rect.height < 5) {score += 0.25;}
+  if (cs.position === 'absolute' && (parseFloat(cs.left) < -100 || parseFloat(cs.top) < -100)) {score += 0.35;}
+  if (el.tabIndex === -1 && rect.width < 10) {score += 0.15;}
   
   const nameOrId = (((el as HTMLInputElement).name || '') + (el.id || '')).toLowerCase();
-  if (/honey|pot|trap|gotcha|catch|bot/i.test(nameOrId)) score += 0.5;
+  if (/honey|pot|trap|gotcha|catch|bot/i.test(nameOrId)) {score += 0.5;}
   
   return Math.min(score, 1.0);
 }
@@ -103,7 +103,7 @@ function computeHoneypotScore(el: HTMLElement): number {
 
 function findFloatingLabel(el: HTMLElement): string {
   const rect = el.getBoundingClientRect();
-  if (rect.width === 0) return "";
+  if (rect.width === 0) {return "";}
 
   const searchRect = {
     top: rect.top - 30,
@@ -117,10 +117,10 @@ function findFloatingLabel(el: HTMLElement): string {
   const nearbyEls = root.querySelectorAll("label, span, div, p, legend, strong");
 
   for (const candidate of Array.from(nearbyEls)) {
-    if (candidate === el || candidate.contains(el) || candidate.querySelector('input, select, textarea')) continue;
+    if (candidate === el || candidate.contains(el) || candidate.querySelector('input, select, textarea')) {continue;}
     
     const cRect = candidate.getBoundingClientRect();
-    if (cRect.width === 0 || cRect.height === 0 || cRect.height > 80) continue;
+    if (cRect.width === 0 || cRect.height === 0 || cRect.height > 80) {continue;}
 
     const overlapsHoriz = cRect.left < searchRect.right && cRect.right > searchRect.left;
     const overlapsVert = cRect.top < searchRect.bottom && cRect.bottom > searchRect.top;
@@ -145,7 +145,7 @@ function findExplicitLabel(el: HTMLElement): string {
   if (el.id) {
     const root = el.getRootNode() as Document | ShadowRoot;
     const label = root.querySelector(`label[for="${CSS.escape(el.id)}"]`);
-    if (label) return (label.textContent || "").trim();
+    if (label) {return (label.textContent || "").trim();}
   }
 
   const wrappingLabel = el.closest("label");
@@ -178,7 +178,7 @@ function findNearbyText(el: HTMLElement): string {
   while (sib && sibCount < 3) {
     if (!sib.querySelector("input, select, textarea")) {
       const t = (sib.textContent || "").trim();
-      if (t.length > 0 && t.length < 150) fragments.push(t);
+      if (t.length > 0 && t.length < 150) {fragments.push(t);}
     }
     sib = sib.previousElementSibling;
     sibCount++;
@@ -191,7 +191,7 @@ function findNearbyText(el: HTMLElement): string {
     while (pSib && pCount < 2) {
       if (!pSib.querySelector("input")) {
         const t = (pSib.textContent || "").trim();
-        if (t.length > 0 && t.length < 150) fragments.push(t);
+        if (t.length > 0 && t.length < 150) {fragments.push(t);}
       }
       pSib = pSib.previousElementSibling;
       pCount++;
@@ -205,7 +205,7 @@ function findNearbyText(el: HTMLElement): string {
       const refEl = root.getElementById(refId);
       if (refEl) {
         const t = (refEl.textContent || "").trim();
-        if (t) fragments.push(t);
+        if (t) {fragments.push(t);}
       }
     });
   }
@@ -218,12 +218,12 @@ function findNearbyText(el: HTMLElement): string {
 function findFormHeading(el: HTMLElement): string {
   const form = el.closest("form, [role='form']");
   const container = form || el.closest("div, section");
-  if (!container) return "";
+  if (!container) {return "";}
 
   const headings = container.querySelectorAll("h1, h2, h3, h4, [role='heading'], legend");
   for (const h of Array.from(headings)) {
     const t = (h.textContent || "").trim();
-    if (t.length > 0 && t.length < 120) return t;
+    if (t.length > 0 && t.length < 120) {return t;}
   }
   return "";
 }
@@ -238,7 +238,7 @@ function analyzeSubmitButton(el: HTMLElement): { dist: number; actionText: strin
 
   buttons.forEach((btn) => {
     const btnRect = btn.getBoundingClientRect();
-    if (btnRect.width === 0) return;
+    if (btnRect.width === 0) {return;}
     const dist = Math.sqrt(Math.pow(elRect.left - btnRect.left, 2) + Math.pow(elRect.top - btnRect.top, 2));
     if (dist < closestDist) {
       closestDist = dist;
@@ -283,10 +283,10 @@ function analyzeSiblings(el: HTMLInputElement | HTMLTextAreaElement): SiblingInf
     const nameId = ((inp as HTMLInputElement).name || '') + (inp.id || '');
     if (type === 'password') {
       passwordFieldCount++;
-      if (idx < fieldIndex) lastPasswordIdx = idx;
+      if (idx < fieldIndex) {lastPasswordIdx = idx;}
     }
-    if (type === 'email' || /email/i.test(nameId) && inp !== el) hasEmailSibling = true;
-    if (/user/i.test(nameId) && inp !== el) hasUsernameSibling = true;
+    if (type === 'email' || /email/i.test(nameId) && inp !== el) {hasEmailSibling = true;}
+    if (/user/i.test(nameId) && inp !== el) {hasUsernameSibling = true;}
   });
 
   let distanceToPrevPassword = -1;
@@ -313,10 +313,10 @@ interface OTPGroupInfo {
 function detectSplitOTP(el: HTMLInputElement | HTMLTextAreaElement): OTPGroupInfo {
   const result: OTPGroupInfo = { isSplitOTP: false, groupSize: 0, positionInGroup: 0 };
   const maxLen = (el as HTMLInputElement).maxLength;
-  if (maxLen !== 1 && maxLen !== 2) return result;
+  if (maxLen !== 1 && maxLen !== 2) {return result;}
 
   const parent = el.parentElement;
-  if (!parent) return result;
+  if (!parent) {return result;}
 
   let container = parent;
   let containerInputs = Array.from(container.querySelectorAll('input'));
@@ -441,7 +441,7 @@ export function extractFeatures(el: HTMLInputElement | HTMLTextAreaElement): Raw
 
   const allText = textChannels.map(ch => {
     let s = "";
-    for (let i = 0; i < ch.length; i++) s += String.fromCharCode(ch[i]);
+    for (let i = 0; i < ch.length; i++) {s += String.fromCharCode(ch[i]);}
     return s;
   }).join(" ").toLowerCase();
   
@@ -495,11 +495,14 @@ export function collectAllFields(root: Document | ShadowRoot = document): RawFie
     results.push(extractFeatures(el));
   }
 
-  // Recurse into shadow roots found in this root
-  for (const el of Array.from(root.querySelectorAll('*'))) {
-    if (el.shadowRoot) {
-      results.push(...collectAllFields(el.shadowRoot));
+  // Recurse into shadow roots found in this root using TreeWalker (O(n) but no array allocation)
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null);
+  let node = walker.nextNode();
+  while (node) {
+    if ((node as Element).shadowRoot) {
+      results.push(...collectAllFields((node as Element).shadowRoot!));
     }
+    node = walker.nextNode();
   }
 
   return results;

@@ -12,7 +12,13 @@ module.exports = (env, argv) => {
 
     const commonConfig = {
         mode: isDev ? 'development' : 'production',
-        devtool: isDev ? 'cheap-module-source-map' : false,
+        devtool: isDev ? 'source-map' : false,
+        cache: {
+            type: 'filesystem',
+            buildDependencies: {
+                config: [__filename],
+            },
+        },
         resolve: {
             extensions: ['.ts', '.tsx', '.js', '.jsx'],
             alias: {
@@ -23,14 +29,19 @@ module.exports = (env, argv) => {
                 '@services': path.resolve(__dirname, 'src/services'),
                 '@utils': path.resolve(__dirname, 'src/utils'),
                 '@types': path.resolve(__dirname, 'src/types'),
-                'onnxruntime-web': path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort.min.js'),
+                'onnxruntime-web': path.resolve(__dirname, 'node_modules/onnxruntime-web/dist/ort.wasm.min.js'),
             },
         },
         module: {
             rules: [
                 {
                     test: /\.tsx?$/,
-                    use: 'ts-loader',
+                    use: {
+                        loader: 'ts-loader',
+                        options: {
+                            transpileOnly: true
+                        }
+                    },
                     exclude: /node_modules/,
                 },
                 {
@@ -65,7 +76,8 @@ module.exports = (env, argv) => {
             minimize: !isDev,
             splitChunks: false, // DISABLED - Chrome Extensions can't load chunks properly
             runtimeChunk: false,
-            // FIX: Add TerserPlugin for production builds to strip console.log/debug/warn
+            // Keep extension logs visible in production so runtime issues can be
+            // debugged from Chrome DevTools and the extensions error panel.
             minimizer: !isDev ? [
                 new TerserPlugin({
                     terserOptions: {
@@ -74,8 +86,6 @@ module.exports = (env, argv) => {
                         },
                         compress: {
                             drop_debugger: true, // Remove debugger statements
-                            // Custom transformer to strip console.log/debug/info/warn but keep console.error
-                            pure_funcs: ['console.log', 'console.info', 'console.debug', 'console.warn'],
                         },
                     },
                     extractComments: false,
@@ -100,7 +110,7 @@ module.exports = (env, argv) => {
         output: {
             path: path.resolve(__dirname, 'dist'),
             filename: '[name].js',
-            clean: true,
+            clean: false,
             // FIX: Explicitly disable chunk loading for service worker
             chunkLoading: false,
             chunkFormat: false,
@@ -116,6 +126,10 @@ module.exports = (env, argv) => {
             },
         },
         plugins: [
+            new webpack.DefinePlugin({
+                'global': 'globalThis',
+                'process.env.NODE_ENV': JSON.stringify(isDev ? 'development' : 'production'),
+            }),
             new MiniCssExtractPlugin({
                 filename: '[name].css',
             }),
@@ -143,6 +157,7 @@ module.exports = (env, argv) => {
             path: path.resolve(__dirname, 'dist'),
             filename: '[name].js',
             clean: false, // Avoid deleting background.js
+            publicPath: '', // HARDCODE publicPath to prevent dynamic GlobalRuntime injection!
             // FIX: Tell webpack the global object is already `globalThis`.
             // Without this, webpack's target:'web' runtime emits:
             //   var g = new Function('return this')();
@@ -170,6 +185,10 @@ module.exports = (env, argv) => {
             minimizer: commonConfig.optimization.minimizer,
         },
         plugins: [
+            new webpack.DefinePlugin({
+                'global': 'globalThis',
+                'process.env.NODE_ENV': JSON.stringify(isDev ? 'development' : 'production'),
+            }),
             new MiniCssExtractPlugin({
                 filename: '[name].css',
             }),
@@ -215,7 +234,7 @@ module.exports = (env, argv) => {
                     // Copy onnxruntime-web WASM binaries to dist/ root
                     // so chrome.runtime.getURL('') resolves ort-wasm*.wasm correctly
                     {
-                        from: 'node_modules/onnxruntime-web/dist/*.wasm',
+                        from: 'node_modules/onnxruntime-web/dist/*.{wasm,mjs}',
                         to: '[name][ext]',
                         noErrorOnMissing: true,
                     },

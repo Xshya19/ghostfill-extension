@@ -58,6 +58,11 @@ class EmailServiceAggregator {
     }
 
     try {
+      // P1.11: Ensure the underlying health manager is also initialized
+      if (this.healthManager.init) {
+        await this.healthManager.init();
+      }
+
       const healthState = await storageService.get('emailServiceHealth');
       if (
         healthState &&
@@ -137,6 +142,17 @@ class EmailServiceAggregator {
         // Try to get domains as a lightweight "ping"
         const domains = await this.getDomains(service);
         if (domains && domains.length > 0) {
+          if (
+            (service === 'tempmail' || service === '1secmail') &&
+            tempMailService.isUsingFallbackDomains()
+          ) {
+            log.warn(`Health check degraded for ${service}: using fallback domains`);
+            this.healthManager.recordFailure(
+              service,
+              new Error('Health check degraded: provider is serving fallback domains')
+            );
+            return null;
+          }
           return service;
         }
       } catch (e) {
@@ -157,7 +173,7 @@ class EmailServiceAggregator {
     this.healthCheckTimestamp = Date.now();
 
     // PERFORMANCE FIX: Persist health check results non-blocking
-    this.persistHealthState().catch(e => log.warn('Failed to persist health state', e));
+    this.persistHealthState().catch((e) => log.warn('Failed to persist health state', e));
 
     log.info('Health check complete', { available: this.availableServices });
   }
@@ -175,13 +191,14 @@ class EmailServiceAggregator {
       prefix?: string;
       domain?: string;
       originUrl?: string;
+      signal?: AbortSignal;
     } = {}
   ): Promise<EmailAccount> {
     const now = Date.now();
-    if (now - this.lastGenerationTime < this.GENERATION_COOLDOWN_MS) {
-      throw new Error(
-        `Rate limit: wait ${Math.ceil((this.GENERATION_COOLDOWN_MS - (now - this.lastGenerationTime)) / 1000)}s before retry.`
-      );
+    const diff = this.GENERATION_COOLDOWN_MS - (now - this.lastGenerationTime);
+    if (diff > 0) {
+      const waitSec = (diff / 1000).toFixed(1);
+      throw new Error(`Rate limit: wait ${waitSec}s before retry.`);
     }
     this.lastGenerationTime = now;
 
@@ -250,55 +267,49 @@ class EmailServiceAggregator {
    */
   private async createAccountWithService(
     service: EmailService,
-    options: { prefix?: string; domain?: string }
+    options: { prefix?: string; domain?: string; signal?: AbortSignal }
   ): Promise<EmailAccount> {
-    const TIMEOUT_MS = 8000;
-    
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(new Error(`Timeout: ${service} did not respond within ${TIMEOUT_MS}ms`));
-      }, TIMEOUT_MS);
+    const TIMEOUT_MS = 30000;
+    const internalAbortController = new AbortController();
+    const signal = options.signal || internalAbortController.signal;
 
-      const doCreate = async () => {
-        try {
-          switch (service) {
-            case 'custom':
-              return await customDomainService.createAccount();
-            case 'maildrop':
-              return await maildropService.createAccount(options.prefix);
-            case 'tmailor':
-              return await tmailorService.createAccount(options.prefix);
-            case 'templol':
-              return await tempMailLolService.createAccount();
-            case 'mailgw':
-              return await mailGwService.createAccount();
-            case 'mailtm':
-              return await mailTmService.createAccount(options.prefix);
-            case 'guerrilla':
-              return await guerrillaMailService.createAccount();
-            case 'dropmail':
-              return await dropMailService.createAccount();
-            case 'tempmail':
-            case '1secmail':
-              return await tempMailService.generateEmail(options.prefix, options.domain);
-            default:
-              log.warn(`Unknown service "${service}", defaulting to Mail.tm`);
-              return await mailTmService.createAccount(options.prefix);
-          }
-        } finally {
-          clearTimeout(timer);
-        }
-      };
+    const timeoutId = setTimeout(() => internalAbortController.abort(), TIMEOUT_MS);
 
-      doCreate().then(resolve).catch(reject);
-    });
+    try {
+      switch (service) {
+        case 'custom':
+          return await customDomainService.createAccount(signal);
+        case 'maildrop':
+          return await maildropService.createAccount(options.prefix, signal);
+        case 'tmailor':
+          return await tmailorService.createAccount(options.prefix, signal);
+        case 'templol':
+          return await tempMailLolService.createAccount(signal);
+        case 'mailgw':
+          return await mailGwService.createAccount(options.prefix, undefined, signal);
+        case 'mailtm':
+          return await mailTmService.createAccount(options.prefix, undefined, signal);
+        case 'guerrilla':
+          return await guerrillaMailService.createAccount(signal);
+        case 'dropmail':
+          return await dropMailService.createAccount(signal);
+        case 'tempmail':
+        case '1secmail':
+          return await tempMailService.generateEmail(options.prefix, options.domain, signal);
+        default:
+          log.warn(`Unknown service "${service}", defaulting to Mail.tm`);
+          return await mailTmService.createAccount(options.prefix, undefined, signal);
+      }
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   /**
    * Retry with fallback providers when primary fails
    */
   private async generateEmailWithFallback(
-    options: { prefix?: string; domain?: string; originUrl?: string },
+    options: { prefix?: string; domain?: string; originUrl?: string; signal?: AbortSignal },
     failedService: EmailService,
     startTime: number
   ): Promise<EmailAccount> {
@@ -332,7 +343,9 @@ class EmailServiceAggregator {
         }
         return this.finalizeEmailGeneration(account, account.service as EmailService, startTime);
       } catch (error) {
-        this.healthManager.recordFailure(nextProvider, error as Error);
+        if ((error as Error).name !== 'AbortError') {
+          this.healthManager.recordFailure(nextProvider, error as Error);
+        }
         log.warn(`Fallback to ${nextProvider} failed (attempt ${attempt + 1})`, error);
         // Continue to next provider
       }
@@ -418,14 +431,15 @@ class EmailServiceAggregator {
   /**
    * Check inbox for the specified account
    */
-  async checkInbox(account: EmailAccount): Promise<Email[]> {
+  async checkInbox(account: EmailAccount, signal?: AbortSignal): Promise<Email[]> {
     try {
+      const maskedEmail = account.fullEmail
+        ? account.fullEmail.replace(/^(.)(.*)(@.*)$/, (_, f, m, d) => `${f}${'*'.repeat(Math.min(m.length, 5))}${d}`)
+        : 'unknown';
+
       log.debug('Checking inbox for account:', {
         service: account.service,
-        fullEmail: account.fullEmail,
-        login: account.login,
-        username: account.username,
-        domain: account.domain,
+        fullEmail: maskedEmail,
       });
 
       // Validate account has required fields
@@ -444,62 +458,64 @@ class EmailServiceAggregator {
 
       switch (account.service) {
         case 'custom':
-          emails = await customDomainService.getMessages(account);
+          emails = await customDomainService.getMessages(account, signal);
           break;
         case 'maildrop':
           // Maildrop - GraphQL API, no auth required
-          emails = await maildropService.getMessages(account);
+          emails = await maildropService.getMessages(account, signal);
           break;
         case 'mailgw':
           if (account.token) {
             mailGwService.setToken(account.token);
           } else if (account.password) {
-            await mailGwService.authenticate(account.fullEmail, account.password);
+            await mailGwService.authenticate(account.fullEmail, account.password, signal);
           }
-          emails = await mailGwService.getMessages();
+          emails = await mailGwService.getMessages(signal);
           break;
         case 'mailtm':
           if (account.token) {
-            mailTmService.setToken(account.token);
+            await mailTmService.setToken(account.token);
           } else if (account.password) {
-            await mailTmService.authenticate(account.fullEmail, account.password);
+            await mailTmService.authenticate(account.fullEmail, account.password, signal);
           }
-          emails = await mailTmService.getMessages();
+          emails = await mailTmService.getMessages(signal);
           break;
         case 'dropmail':
           if (account.token) {
             dropMailService.setSession(account.token);
           }
-          emails = await dropMailService.getMessages(account.token);
+          emails = await dropMailService.getMessages(account.token || undefined, signal);
           break;
         case 'guerrilla':
           if (account.token) {
             guerrillaMailService.setSession(account.token, account.fullEmail);
           }
-          emails = await guerrillaMailService.getMessages(account.token);
+          emails = await guerrillaMailService.getMessages(account.token, signal);
           break;
         case 'templol':
           if (account.token) {
             tempMailLolService.setToken(account.token);
           }
-          emails = await tempMailLolService.getMessages(account.token);
+          emails = await tempMailLolService.getMessages(account.token, signal);
           break;
         case 'tmailor':
           // TMailor - 500+ rotating domains
-          emails = await tmailorService.getEmails(account);
+          emails = await tmailorService.getEmails(account, signal);
           break;
         case 'tempmail':
+        case '1secmail':
         default: {
           // Extract login and domain from fullEmail if not available
-          const loginName = account.login || account.username || account.fullEmail.split('@')[0];
-          const domainName = account.domain || account.fullEmail.split('@')[1];
+          const parts = account.fullEmail ? account.fullEmail.split('@') : [];
+          const loginName = account.login || account.username || parts[0];
+          const domainName = account.domain || (parts.length > 1 ? parts[1] : '');
 
           if (!loginName || !domainName) {
             log.error('Cannot extract login/domain from account', { account });
             throw new Error('Invalid account structure');
           }
 
-          emails = await tempMailService.checkInbox(loginName, domainName);
+          emails = await tempMailService.checkInbox(loginName, domainName, signal);
           break;
         }
       }
@@ -511,11 +527,23 @@ class EmailServiceAggregator {
         from: sanitizeEmailSubject(email.from || 'Unknown Sender'),
       }));
 
-      // Cache emails
-      await storageService.set('inbox', safeEmails);
+      // PERFORMANCE FIX: Only persist inbox if it actually changed.
+      // Skip storage write when inbox is identical to avoid unnecessary
+      // chrome.storage operations on every 10s poll cycle.
+      // PERFORMANCE FIX: Efficient comparison using ID concatenation
+      const cachedInbox = (await storageService.get('inbox')) || [];
+      const inboxHash = (list: Email[]) => list.map(e => `${e.id}:${e.read}`).join('|');
+      
+      if (inboxHash(safeEmails) !== inboxHash(cachedInbox)) {
+        await storageService.set('inbox', safeEmails);
+      }
 
       return safeEmails;
     } catch (error) {
+      if ((error as Error).name === 'AbortError') {
+        throw error;
+      }
+
       const errorMsg = (error as Error).message || String(error);
 
       // Detect rate limit errors (429 or "Max retries" or "rate limit")
@@ -535,8 +563,6 @@ class EmailServiceAggregator {
       if (isRateLimited) {
         log.warn(`Provider ${account.service} is rate-limited. Retrying later.`);
         this.healthManager.recordFailure(account.service, error as Error);
-        // Do NOT automatically generate a new email here, as it silently replaces the 
-        // user's address. Just throw the rate limit error so UI/app can handle it.
       }
 
       // Don't spam error logs for network glitches
@@ -560,20 +586,18 @@ class EmailServiceAggregator {
   /**
    * Read a specific email
    */
-  async readEmail(emailId: string | number, account: EmailAccount): Promise<Email> {
+  async readEmail(
+    emailId: string | number,
+    account: EmailAccount,
+    signal?: AbortSignal
+  ): Promise<Email> {
     try {
       let email: Email;
 
       switch (account.service) {
         case 'custom': {
-          // We can reuse getMessages for custom since logic is often simple,
-          // but if there's a specific "read" endpoint, customDomainService handles it.
-          // Actually customDomainService usually fetches full list.
-          // Let's implement readEmail in customDomainService if needed (it wasn't in interface),
-          // or just find it in inbox.
-          // For now, let's just re-fetch inbox and find it.
-          const msgs = await customDomainService.getMessages(account);
-          const found = msgs.find((m) => m.id === emailId || m.id === String(emailId));
+          const customMessages = await customDomainService.getMessages(account, signal);
+          const found = customMessages.find((m) => m.id === emailId || m.id === String(emailId));
           if (!found) {
             throw new Error('Email not found');
           }
@@ -582,39 +606,53 @@ class EmailServiceAggregator {
         }
         case 'maildrop':
           // Maildrop - GraphQL API for full message content
-          email = await maildropService.getMessage(emailId.toString(), account);
+          email = await maildropService.getMessage(emailId.toString(), account, signal);
           break;
         case 'mailgw':
           if (account.token) {
             mailGwService.setToken(account.token);
           }
-          email = await mailGwService.getMessage(emailId.toString());
+          email = await mailGwService.getMessage(emailId.toString(), signal);
           break;
         case 'mailtm':
           if (account.token) {
-            mailTmService.setToken(account.token);
+            await mailTmService.setToken(account.token);
           }
-          email = await mailTmService.getMessage(emailId.toString());
+          email = await mailTmService.getMessage(emailId.toString(), signal);
           break;
         case 'dropmail':
-          email = await dropMailService.getMessage(emailId.toString(), account.token);
+          email = await dropMailService.getMessage(
+            emailId.toString(),
+            account.token || undefined,
+            signal
+          );
           break;
         case 'guerrilla':
-          email = await guerrillaMailService.getMessage(emailId.toString(), account.token);
+          email = await guerrillaMailService.getMessage(
+            emailId.toString(),
+            account.token || undefined,
+            signal
+          );
           break;
         case 'templol':
-          email = await tempMailLolService.getMessage(emailId.toString(), account.token);
+          email = await tempMailLolService.getMessage(
+            emailId.toString(),
+            account.token || undefined,
+            signal
+          );
           break;
         case 'tmailor':
           // TMailor - 500+ rotating domains
-          email = await tmailorService.readEmail(emailId.toString(), account);
+          email = await tmailorService.readEmail(emailId.toString(), account, signal);
           break;
         case 'tempmail':
+        case '1secmail':
         default:
           email = await tempMailService.readEmail(
             Number(emailId),
             account.login || account.username || '',
-            account.domain
+            account.domain,
+            signal
           );
           break;
       }
@@ -625,13 +663,13 @@ class EmailServiceAggregator {
         from: sanitizeEmailSubject(email.from || 'Unknown Sender'),
       };
 
-      const inbox = (await storageService.get('inbox'));
+      const inbox = await storageService.get('inbox');
       if (!Array.isArray(inbox)) {
         log.warn('Corrupted inbox found during readEmail, resetting');
         await storageService.set('inbox', [safeEmail]);
         return safeEmail;
       }
-      
+
       const updatedInbox = inbox.map((e) => (e.id === emailId ? safeEmail : e));
       await storageService.set('inbox', updatedInbox);
 
@@ -653,19 +691,28 @@ class EmailServiceAggregator {
   /**
    * Get available domains for a service
    */
-  async getDomains(service: EmailService = 'tempmail'): Promise<string[]> {
+  async getDomains(service: EmailService = 'tempmail', signal?: AbortSignal): Promise<string[]> {
     try {
       switch (service) {
         case 'maildrop':
-          // Maildrop only uses maildrop.cc domain
           return ['maildrop.cc'];
+        case 'guerrilla':
+          return ['guerrillamail.com'];
         case 'mailgw':
-          return mailGwService.getDomains();
+          return mailGwService.getDomains(signal);
         case 'mailtm':
-          return mailTmService.getDomains();
+          return mailTmService.getDomains(signal);
         case 'tempmail':
+        case '1secmail':
+          return tempMailService.getDomains(signal);
+        case 'dropmail':
+          return ['dropmail.me'];
+        case 'templol':
+          return ['tempmail.lol'];
+        case 'tmailor':
+          return ['tmailor.com'];
         default:
-          return tempMailService.getDomains();
+          return ['unknown.com'];
       }
     } catch (error) {
       log.error('Failed to get domains', error);
@@ -678,6 +725,13 @@ class EmailServiceAggregator {
    */
   async getHistory() {
     return (await storageService.get('emailHistory')) || [];
+  }
+
+  /**
+   * Get health status for all providers
+   */
+  getProviderHealth() {
+    return this.healthManager.getHealthReport();
   }
 
   /**

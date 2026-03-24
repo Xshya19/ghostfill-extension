@@ -81,6 +81,7 @@ class PerformanceService {
   private trackingEnabled: boolean = false;
 
   // In-memory metrics storage
+  private readonly MAX_METRIC_ENTRIES = 500;
   private formMetrics: OperationMetric[] = [];
   private otpMetrics: OperationMetric[] = [];
   private linkMetrics: OperationMetric[] = [];
@@ -132,6 +133,11 @@ class PerformanceService {
       details: fieldsDetected ? JSON.stringify(fieldsDetected) : undefined,
     });
 
+    // Cap metrics array
+    if (this.formMetrics.length > this.MAX_METRIC_ENTRIES) {
+      this.formMetrics.shift();
+    }
+
     // Count field types
     if (fieldsDetected) {
       if (fieldsDetected.email) {
@@ -177,8 +183,15 @@ class PerformanceService {
       details: otp ? `OTP: ${otp.length} chars, pattern: ${pattern}` : undefined,
     });
 
+    if (this.otpMetrics.length > this.MAX_METRIC_ENTRIES) {
+      this.otpMetrics.shift();
+    }
+
     if (otp) {
       this.otpLengths.push(otp.length);
+      if (this.otpLengths.length > this.MAX_METRIC_ENTRIES) {
+        this.otpLengths.shift();
+      }
       // Classify pattern
       if (/^\d+$/.test(otp)) {
         this.otpPatterns.numeric++;
@@ -217,11 +230,19 @@ class PerformanceService {
       details: activated ? 'Link activated' : 'Link found but not activated',
     });
 
+    if (this.linkMetrics.length > this.MAX_METRIC_ENTRIES) {
+      this.linkMetrics.shift();
+    }
+
     this.linksFound++;
     if (activated) {
       this.linksActivated++;
     }
     this.linkConfidences.push(confidence);
+
+    if (this.linkConfidences.length > this.MAX_METRIC_ENTRIES) {
+      this.linkConfidences.shift();
+    }
 
     this.logMetric('ActivationLink', method, latencyMs, success, confidence);
   }
@@ -250,6 +271,10 @@ class PerformanceService {
       errorType: error,
       details: result ? `OTP: ${result.hasOtp}, Link: ${result.hasLink}` : undefined,
     });
+
+    if (this.emailMetrics.length > this.MAX_METRIC_ENTRIES) {
+      this.emailMetrics.shift();
+    }
 
     this.emailsProcessed++;
     if (result?.hasOtp) {

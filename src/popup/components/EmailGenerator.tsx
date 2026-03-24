@@ -61,6 +61,22 @@ const EmailGenerator: React.FC<Props> = ({
   const [timeLeft, setTimeLeft] = useState<string>('');
   const lastCheckedIdRef = useRef<string | null>(null);
 
+  // Focus trap sub-refs and escape key listener for modal accessibility (H7)
+  const confirmCancelBtnRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showConfirm) {
+        setShowConfirm(false);
+      }
+    };
+    if (showConfirm) {
+      window.addEventListener('keydown', handleKeyDown);
+      // Auto-focus the cancel button when modal opens
+      setTimeout(() => confirmCancelBtnRef.current?.focus(), 50);
+    }
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showConfirm]);
+
   // iOS Spring Transition Config
   const springTransition: Transition = {
     type: 'spring',
@@ -181,11 +197,22 @@ const EmailGenerator: React.FC<Props> = ({
       event.stopPropagation();
 
       try {
+        let safeUrl: string;
+        try {
+          safeUrl = new URL(activationLink).href;
+          if (!safeUrl.startsWith('http://') && !safeUrl.startsWith('https://')) {
+            throw new Error('Invalid URL protocol');
+          }
+        } catch {
+          onToast('Invalid activation link URL');
+          return;
+        }
+
         const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (activeTab?.id) {
-          await chrome.tabs.update(activeTab.id, { url: activationLink });
+          await chrome.tabs.update(activeTab.id, { url: safeUrl });
         } else {
-          await chrome.tabs.create({ url: activationLink });
+          await chrome.tabs.create({ url: safeUrl });
         }
         onToast('Opening activation link...');
       } catch {
@@ -615,13 +642,21 @@ const EmailGenerator: React.FC<Props> = ({
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               style={{ margin: 'auto', background: 'var(--bg-primary)', width: '100%', maxWidth: '320px', padding: '24px' }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="modal-title"
             >
-              <h3 style={{ marginTop: 0, marginBottom: '8px', fontSize: '18px', color: 'var(--text-primary)' }}>Generate New Email?</h3>
+              <h3 id="modal-title" style={{ marginTop: 0, marginBottom: '8px', fontSize: '18px', color: 'var(--text-primary)' }}>Generate New Email?</h3>
               <p style={{ color: 'var(--text-secondary)', fontSize: '14px', lineHeight: 1.5, margin: 0 }}>
                 Your current temporary email and its inbox will be permanently lost. Are you sure you want to generate a new one?
               </p>
               <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
-                <button className="ios-button button-secondary" style={{ flex: 1 }} onClick={() => setShowConfirm(false)}>
+                <button 
+                  ref={confirmCancelBtnRef}
+                  className="ios-button button-secondary" 
+                  style={{ flex: 1 }} 
+                  onClick={() => setShowConfirm(false)}
+                >
                   Cancel
                 </button>
                 <button 

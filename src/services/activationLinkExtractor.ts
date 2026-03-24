@@ -32,7 +32,7 @@ import type {
   LinkExtractionResult,
   EmailAnalysis,
   ExtractionMeta,
-} from './extraction/types';
+} from './types/extraction.types';
 
 // Re-export types for backward compatibility
 export type {

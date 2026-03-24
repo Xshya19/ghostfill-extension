@@ -36,12 +36,23 @@ interface GlobalWithTrustedTypes {
   if (typeof g.trustedTypes !== 'undefined') {
     try {
       g.trustedTypes.createPolicy('default', {
-        // Allow all HTML — DOMPurify already sanitises before it reaches sinks.
-        createHTML: (s: string): string => s,
-        // Allow all script URLs — extension pages only load from 'self'.
-        createScriptURL: (s: string): string => s,
-        // Allow all script strings — needed for @noble/* feature detection.
-        createScript: (s: string): string => s,
+        // Allow HTML with basic escaping (DOMPurify usually intercepts, this is a fallback)
+        createHTML: (s: string): string => s.replace(/</g, '&lt;').replace(/>/g, '&gt;'),
+        // Allow script URLs only from self origin
+        createScriptURL: (s: string): string => {
+          if (s.startsWith('chrome-extension://') || s.startsWith('/')) { return s; }
+          console.warn('Blocked uncontrolled script URL');
+          return '';
+        },
+        // Allow script strings. Restrict to common feature detection only to prevent injection.
+        createScript: (s: string): string => {
+          const safe = s.trim();
+          if (safe === '' || safe === 'return this') {
+            return s;
+          }
+          console.warn('Blocked uncontrolled script string via Trusted Types');
+          return '';
+        },
       });
     } catch (_) {
       // createPolicy('default') throws if a default policy already exists.

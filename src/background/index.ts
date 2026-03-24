@@ -1,3 +1,6 @@
+// 👻 GHOSTFILL_BOOT_LOUD_START
+console.log('👻 GhostFill [Background]: SCRIPT_LOAD_START');
+
 // ─────────────────────────────────────────────────────────────────────
 // Background Service Worker v2 — Orchestrated Entry Point
 //
@@ -43,30 +46,75 @@
 //  TOP-LEVEL ERROR BOUNDARY — CATCH ALL MODULE LOAD ERRORS
 // ═══════════════════════════════════════════════════════════════════
 
+// Synchronous error listener to catch load-time failures immediately
+self.addEventListener('error', (event: any) => {
+  const msg = event.error?.message || event.message || '';
+  // Suppress ONNX internal image.png error - it's harmless and expected for non-image models
+  if (msg.includes('image.png') && msg.includes('does not support image input')) {
+    console.warn('👻 GhostFill [Background]: ONNX model check (expected):', msg);
+    event.preventDefault();
+    return;
+  }
+  console.error('👻 GhostFill [Background]: GLOBAL_ERROR', event.error || event.message);
+  if (event.error?.stack) {
+    console.error('👻 GhostFill [Background]: STACK', event.error.stack);
+  }
+});
+
+self.addEventListener('unhandledrejection', (event: any) => {
+  const reason = event.reason?.message || String(event.reason) || '';
+  // Suppress ONNX internal image.png error
+  if (reason.includes('image.png') && reason.includes('does not support image input')) {
+    console.warn('👻 GhostFill [Background]: ONNX rejection (expected):', reason);
+    event.preventDefault();
+    return;
+  }
+  console.error('👻 GhostFill [Background]: UNHANDLED_REJECTION', event.reason);
+});
+
 import './polyfill'; // Keep this as the first import to polyfill setImmediate
 import { sleep } from '../utils/helpers';
 import { createLogger } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
 
 import { errorTracker, performanceMonitor } from '../utils/monitoring';
+import { initRemoteLogger } from '../utils/remoteLogger';
 import { dumpMenuStats } from './contextMenu';
-// NOTE: messageHandler.ts is a pre-existing corrupted binary — do not import from it.
-// dumpRouterStats is removed; the dev-tools block below guards against this gracefully.
+import { setupMessageHandler, dumpRouterStats } from './messageHandler';
 import { initNotifications, dumpNotificationStats } from './notifications';
 import { getPollingMetrics, startEmailPolling } from './pollingManager';
 import { initServiceWorker, getBootState, dumpBootReport } from './serviceWorker';
-import { registerMLMessageHandler } from './mlMessageHandler';
 
+initRemoteLogger('Background');
 const __BACKGROUND_LOAD_START__ = Date.now();
 const log = createLogger('Background');
+
+console.log('👻 GhostFill [Background]: MODULES_IMPORTED');
 
 // Initialize global observability early
 errorTracker.init();
 performanceMonitor.init();
 
+// ─── CRITICAL MV3 FIX ───────────────────────────────────────────────────────
+// In MV3, the service worker can wake from idle at ANY time (popup open, alarm,
+// incoming tab message, etc.) WITHOUT firing onInstalled or onStartup.
+// If setupMessageHandler() is only called inside initialize(), there is a window
+// where the service worker is active but has no message listener, causing every
+// message (CHECK_INBOX, GET_CURRENT_EMAIL, etc.) to hit Chrome's "no handler"
+// fallback and return an error to the popup.
+//
+// Solution: register the listener synchronously at module load (before any async
+// work). The `listenersInstalled` guard prevents double-registration during
+// the subsequent initialize() Phase 4 call.
+setupMessageHandler();
+let listenersInstalledByInit = false;
+
 // Log successful module load
 const loadDuration = Date.now() - __BACKGROUND_LOAD_START__;
-log.info(`✅ Background module loaded successfully in ${loadDuration}ms`);
+log.info(
+  `✅ Background module loaded successfully in ${loadDuration}ms (message router registered synchronously)`
+);
+console.log('👻 GhostFill [Background]: SETUP_DONE');
 
 // ━━━ Types ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -113,6 +161,8 @@ const CONFIG = {
 // ━━━ State ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 let initialized = false;
+// NOTE: listenersInstalled now tracks only the full listener suite from Phase 4.
+// The message handler itself is registered synchronously above at module load.
 let listenersInstalled = false;
 let healthFailures = 0;
 
@@ -239,11 +289,21 @@ async function initialize(trigger: InitTrigger): Promise<void> {
       safeCall(() => initNotifications());
 
       // Phase 2.5: ML Inference Engine warm-up (non-fatal, async)
-      log.debug('▶️ Phase 2.5: ML Inference Engine (lazy warm-up)');
+      log.debug('▶️ Phase 2.5: ML Inference Engine (offscreen warm-up)');
       safeCall(() => {
-        import('./inferenceEngine').then(({ initInferenceEngine }) => {
-          void initInferenceEngine();
-        }).catch(() => { /* non-fatal */ });
+        import('./offscreenManager')
+          .then(({ ensureOffscreenDocument }) => {
+            ensureOffscreenDocument()
+              .then(() =>
+                chrome.runtime.sendMessage({ target: 'offscreen-doc', type: 'WARM_UP_ML' })
+              )
+              .catch(() => {
+                /* non-fatal */
+              });
+          })
+          .catch(() => {
+            /* non-fatal */
+          });
       });
 
       // Phase 3: Install-specific flows
@@ -255,13 +315,17 @@ async function initialize(trigger: InitTrigger): Promise<void> {
       }
 
       // Phase 4: Event listeners (idempotent)
+      // NOTE: setupMessageHandler() was already called synchronously at module load.
+      // Here we only register the remaining listeners (commands, alarms, keepalive).
       log.debug('▶️ Phase 4: Event listeners');
       if (!listenersInstalled) {
         registerCommands();
         installListeners();
         installKeepAlive();
-        registerMLMessageHandler(); // Wire CLASSIFY_FIELD → inferenceEngine
+        // setupMessageHandler() is intentionally NOT called here — it was registered
+        // synchronously at module load to handle early wakeup messages.
         listenersInstalled = true;
+        listenersInstalledByInit = true;
       }
 
       // Phase 5: Health monitor
@@ -314,7 +378,8 @@ async function onFreshInstall(): Promise<void> {
   // Clear storage
   if (CONFIG.CLEAR_STORAGE_ON_INSTALL) {
     try {
-      await chrome.storage.local.clear();
+      const { storageService } = await import('../services/storageService');
+      await storageService.clear();
       log.info('🧹 Storage cleared');
     } catch (e) {
       log.error('Storage clear failed', extractMsg(e));
@@ -350,31 +415,29 @@ async function onFreshInstall(): Promise<void> {
 
   // Open welcome page
   if (CONFIG.OPEN_WELCOME_PAGE) {
-    try {
-      // Open popup instead of options page
-      await chrome.action.openPopup();
-    } catch (e) {
-      log.warn('Popup open failed', extractMsg(e));
-      // Popup may be blocked by browser - not critical
-    }
+    await chrome.tabs
+      .create({ url: chrome.runtime.getURL('options.html?onboarding=true') })
+      .catch((err) => {
+        log.error('Failed to open onboarding options page', extractMsg(err));
+      });
   }
 }
 
 // ISSUE #2 FIX: onUpdate() is now properly async and returns Promise<void>
 async function onUpdate(): Promise<void> {
   log.info('🔄 Extension updated');
-  
+
   try {
     const { storageService } = await import('../services/storageService');
-    const previousVersion = await storageService.get('extensionVersion') || '1.0.0';
+    const previousVersion = (await storageService.get('extensionVersion')) || 'unknown';
     const currentVersion = chrome.runtime.getManifest().version;
-    
+
     if (previousVersion !== currentVersion) {
       log.info(`Migrating storage from ${previousVersion} to ${currentVersion}`);
-      
+
       // Future: Add specific version migration branches here if state schemas change
-      // e.g. if (previousVersion === '1.0.0' && currentVersion === '1.1.0') { ... }
-      
+      // e.g. if (previousVersion === 'unknown' && currentVersion === '1.1.0') { ... }
+
       await storageService.set('extensionVersion', currentVersion);
       log.info('Migration complete');
     }
@@ -444,41 +507,66 @@ function installListeners(): void {
     void handleCommand(cmd);
   });
 
-  // Health alarm
+  // Centralized alarm router (SECURITY FIX C13)
   chrome.alarms.onAlarm.addListener((alarm) => {
+    // Health alarm
     if (alarm.name === CONFIG.HEALTH_ALARM) {
       void runHealthCheck().catch((e) => log.warn('Health check error', extractMsg(e)));
     }
+    // Key rotation
+    else if (alarm.name === 'encryption-key-rotation') {
+      import('../utils/encryption')
+        .then((m) => m.onRotationAlarm && m.onRotationAlarm(alarm))
+        .catch((e) => log.warn('Rotation alarm route failed', extractMsg(e)));
+    }
+    // Other system alarms
+    else {
+      import('./serviceWorker')
+        .then((m) => m.onServiceWorkerAlarm && m.onServiceWorkerAlarm(alarm))
+        .catch((e) => log.debug('ServiceWorker alarm unhandled:', extractMsg(e)));
+
+      import('./pollingManager')
+        .then((m) => m.onPollingAlarm && m.onPollingAlarm(alarm))
+        .catch((e) => log.debug('Polling alarm unhandled:', extractMsg(e)));
+    }
+  });
+
+  // Suspend cleanup (SECURITY FIX C12)
+  chrome.runtime.onSuspend.addListener(() => {
+    log.info('Extension suspending, cleaning up resources');
+    import('./offscreenManager')
+      .then(({ closeOffscreenDocument }) => closeOffscreenDocument())
+      .catch((e) => log.warn('Suspend cleanup failed', extractMsg(e)));
   });
 
   log.debug('Event listeners installed');
 }
 
 async function handleCommand(cmd: string): Promise<void> {
-    metrics.commandsExecuted++;
-    const stats = metrics.byCommand[cmd];
+  metrics.commandsExecuted++;
+  const stats = metrics.byCommand[cmd];
+  if (stats) {
+    stats.count++;
+  }
+
+  const def = commands.get(cmd);
+  if (!def) {
+    log.warn('Unknown command', { cmd });
+    return;
+  }
+
+  try {
+    await def.handler();
+  } catch (error) {
+    metrics.commandErrors++;
     if (stats) {
-      stats.count++;
+      stats.errors++;
     }
+    log.error('Command failed', { cmd, error: extractMsg(error) });
 
-    const def = commands.get(cmd);
-    if (!def) {
-      log.warn('Unknown command', { cmd });
-      return;
-    }
-
-    try {
-      await def.handler();
-    } catch (error) {
-      metrics.commandErrors++;
-      if (stats) {
-        stats.errors++;
-      }
-      log.error('Command failed', { cmd, error: extractMsg(error) });
-
-      const { notifyError } = await import('./notifications');
-      await notifyError('Error', 'Command failed');
-    }
+    const { notifyError } = await import('./notifications');
+    await notifyError('Error', 'Command failed');
+  }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

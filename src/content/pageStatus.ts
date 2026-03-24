@@ -119,6 +119,15 @@ class PageStatusInjector {
             .close-btn:hover {
                 background: rgba(255, 255, 255, 0.3);
             }
+
+            @media (prefers-reduced-motion: reduce) {
+                .ghost-icon, .spinner {
+                    animation: none !important;
+                }
+                .status-banner {
+                    transition: none !important;
+                }
+            }
         `;
 
     // Create banner HTML
@@ -209,6 +218,14 @@ class PageStatusInjector {
    */
   success(message: string, autoHideMs: number = 3000): void {
     this.show(message, 'success');
+    setTimeout(() => this.hide(), autoHideMs);
+  }
+
+  /**
+   * Show info message and auto-hide
+   */
+  info(message: string, autoHideMs: number = 4000): void {
+    this.show(message, 'loading'); // Use default purple gradient for info
     setTimeout(() => this.hide(), autoHideMs);
   }
 

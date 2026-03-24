@@ -38,8 +38,7 @@ export type {
   ThresholdConfig,
   LimitConfig,
   ContextConfig,
-  PerformanceConfig,
-} from './types';
+} from '../types/extraction.types';
 
 // Re-export from shared types for convenience
 export type {
@@ -48,7 +47,6 @@ export type {
   ExtractionStrategy,
   LinkType,
   PatternStrength,
-  OTPFormat,
   EmailCategory,
   ProviderOTPMatch,
   ProviderMatch,
@@ -144,5 +142,5 @@ export {
 // ───────────────────────────────────────────────────────────────────────
 //  ORCHESTRATOR EXPORT (Main Entry Point)
 // ───────────────────────────────────────────────────────────────────────
-
-export { extractAll, extractOTPStandalone, extractLinkStandalone } from '../intelligentExtractor';
+// Orchestrator and standalone functions have been moved to direct imports
+// to prevent circular dependencies between extraction sub-modules.

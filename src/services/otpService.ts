@@ -15,6 +15,13 @@ const RATE_LIMIT = {
   WINDOW_MS: 60 * 1000,
 };
 
+// ━━━ OTP Freshness Configuration ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const OTP_FRESHNESS = {
+  FRESH_WINDOW_MS: 30_000, // OTP is "fresh" for 30 seconds after arrival
+  MAX_WAIT_MS: 30_000, // Maximum time to wait for fresh OTP
+};
+
 class OTPService {
   private rateLimitMutex: Promise<void> = Promise.resolve();
   private rateLimitTimestamps: number[] = [];
@@ -24,21 +31,22 @@ class OTPService {
    * Check if rate limit is exceeded
    */
   private async isRateLimited(): Promise<boolean> {
+    await this.rateLimitMutex;
+
     const now = Date.now();
-    
+
     if (!this.hasInitializedRateLimits) {
       this.rateLimitTimestamps = (await storageService.get('otpRateLimitTimestamps')) || [];
       this.hasInitializedRateLimits = true;
     }
-    
+
     const filtered = this.rateLimitTimestamps.filter((ts) => now - ts < RATE_LIMIT.WINDOW_MS);
-    
-    // Only pay the write cost if the array actually changed (items dropped)
+
     if (filtered.length !== this.rateLimitTimestamps.length) {
       this.rateLimitTimestamps = filtered;
       await storageService.set('otpRateLimitTimestamps', this.rateLimitTimestamps);
     }
-    
+
     return this.rateLimitTimestamps.length >= RATE_LIMIT.MAX_SAVES_PER_MINUTE;
   }
 
@@ -46,12 +54,21 @@ class OTPService {
    * Record a save action for rate limiting
    */
   private async recordSave(): Promise<void> {
-    if (!this.hasInitializedRateLimits) {
-      this.rateLimitTimestamps = (await storageService.get('otpRateLimitTimestamps')) || [];
-      this.hasInitializedRateLimits = true;
-    }
-    this.rateLimitTimestamps.push(Date.now());
-    await storageService.set('otpRateLimitTimestamps', this.rateLimitTimestamps);
+    const previousMutex = this.rateLimitMutex;
+
+    this.rateLimitMutex = (async () => {
+      await previousMutex;
+
+      if (!this.hasInitializedRateLimits) {
+        this.rateLimitTimestamps = (await storageService.get('otpRateLimitTimestamps')) || [];
+        this.hasInitializedRateLimits = true;
+      }
+
+      this.rateLimitTimestamps.push(Date.now());
+      await storageService.set('otpRateLimitTimestamps', this.rateLimitTimestamps);
+    })();
+
+    await this.rateLimitMutex;
   }
 
   /**
@@ -137,7 +154,7 @@ class OTPService {
 
       await storageService.set('lastOTP', lastOTP);
       await this.recordSave();
-      log.info('Last OTP saved', { otp, source });
+      log.info('Last OTP saved', { source });
       return { saved: true };
     } finally {
       releaseMutex();
@@ -195,6 +212,52 @@ class OTPService {
     }
 
     return lastOTP || null;
+  }
+
+  /**
+   * Check if the current OTP is fresh (arrived recently)
+   */
+  async isOTPFresh(): Promise<boolean> {
+    const lastOTP = await storageService.get('lastOTP');
+    if (!lastOTP) {
+      return false;
+    }
+    const age = Date.now() - lastOTP.extractedAt;
+    return age < OTP_FRESHNESS.FRESH_WINDOW_MS && !lastOTP.usedAt;
+  }
+
+  /**
+   * Wait for a fresh OTP to arrive, with timeout
+   * Returns the fresh OTP if available within timeout, null otherwise
+   */
+  async waitForFreshOTP(maxWaitMs: number = OTP_FRESHNESS.MAX_WAIT_MS): Promise<LastOTP | null> {
+    const isFresh = await this.isOTPFresh();
+    if (isFresh) {
+      return this.getLastOTP();
+    }
+
+    return new Promise((resolve) => {
+      const startTime = Date.now();
+      
+      const listener = (changes: { [key: string]: chrome.storage.StorageChange }) => {
+        if (changes.lastOTP) {
+          const newOTP = changes.lastOTP.newValue as LastOTP;
+          if (newOTP && !newOTP.usedAt && (Date.now() - newOTP.extractedAt < OTP_FRESHNESS.FRESH_WINDOW_MS)) {
+            chrome.storage.onChanged.removeListener(listener);
+            clearTimeout(timeoutId);
+            resolve(newOTP);
+          }
+        }
+      };
+
+      const timeoutId = setTimeout(() => {
+        chrome.storage.onChanged.removeListener(listener);
+        log.debug('Timeout waiting for fresh OTP');
+        this.getLastOTP().then(resolve);
+      }, maxWaitMs);
+
+      chrome.storage.onChanged.addListener(listener);
+    });
   }
 
   /**

@@ -38,7 +38,7 @@ import type {
   OTPReasoningStep,
   ProviderOTPMatch,
   OTPExtractionResult,
-} from './extraction/types';
+} from './types/extraction.types';
 
 // Import shared utilities (NO dependencies on other services)
 // Note: getContextWindow and stripHtml are declared locally in this file

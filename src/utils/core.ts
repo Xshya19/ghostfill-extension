@@ -33,7 +33,10 @@ export function generateRandomString(length: number, charset: string): string {
  * Deep clone an object
  */
 export function deepClone<T>(obj: T): T {
-  return typeof structuredClone === 'function' ? structuredClone(obj) : JSON.parse(JSON.stringify(obj));
+  if (typeof structuredClone === 'function') {
+    return structuredClone(obj);
+  }
+  return JSON.parse(JSON.stringify(obj));
 }
 
 /**
@@ -113,17 +116,28 @@ export async function retry<T>(
 }
 
 /**
- * Format relative time
+ * Format relative time (e.g., "2 minutes ago")
  */
 export function formatRelativeTime(timestamp: number): string {
+  if (!timestamp || timestamp <= 0) {
+    return 'just now';
+  }
+
   const now = Date.now();
   const diff = now - timestamp;
+
+  if (diff < 0) {
+    return 'just now';
+  }
 
   const seconds = Math.floor(diff / 1000);
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
 
+  if (days > 7) {
+    return formatDate(timestamp);
+  }
   if (days > 0) {
     return `${days}d ago`;
   }
@@ -140,11 +154,59 @@ export function formatRelativeTime(timestamp: number): string {
 }
 
 /**
- * Format date/time
+ * Format date for display
  */
-export function formatDateTime(timestamp: number | string): string {
+export function formatDate(timestamp: number | string | Date): string {
   const date = new Date(timestamp);
-  return date.toLocaleString();
+  return date.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+/**
+ * Format time for display
+ */
+export function formatTime(timestamp: number | string | Date): string {
+  const date = new Date(timestamp);
+  return date.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/**
+ * Format date and time for display
+ */
+export function formatDateTime(timestamp: number | string | Date): string {
+  return `${formatDate(timestamp)} ${formatTime(timestamp)}`;
+}
+
+
+/**
+ * Format file size
+ */
+export function formatFileSize(bytes: number): string {
+  if (bytes === 0) {
+    return '0 B';
+  }
+
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+/**
+ * Pluralize a word
+ */
+export function pluralize(count: number, singular: string, plural?: string): string {
+  if (count === 1) {
+    return singular;
+  }
+  return plural || singular + 's';
 }
 
 /**
@@ -162,13 +224,16 @@ export async function fetchWithTimeout(
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
 
+  // M51: Abort listener leak fix
+  const onExternalAbort = () => controller.abort();
+
   // Compose signals for older browsers (since AbortSignal.any is modern only)
   if (options.signal) {
     if (options.signal.aborted) {
       clearTimeout(id);
       throw new Error('AbortError');
     }
-    options.signal.addEventListener('abort', () => controller.abort());
+    options.signal.addEventListener('abort', onExternalAbort);
   }
 
   try {
@@ -184,6 +249,9 @@ export async function fetchWithTimeout(
     throw error;
   } finally {
     clearTimeout(id);
+    if (options.signal) {
+      options.signal.removeEventListener('abort', onExternalAbort);
+    }
   }
 }
 
@@ -191,10 +259,29 @@ export async function fetchWithTimeout(
  * Truncate string with ellipsis
  */
 export function truncate(str: string, maxLength: number): string {
-  if (str.length <= maxLength) {
-    return str;
+  if (!str || str.length <= maxLength) {
+    return str || '';
   }
   return str.substring(0, maxLength - 3) + '...';
+}
+
+/**
+ * Escape HTML special characters
+ */
+export function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Strip HTML tags from string
+ */
+export function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>?/gm, '');
 }
 
 /**
@@ -227,3 +314,4 @@ export function getDomain(url: string): string {
     return '';
   }
 }
+

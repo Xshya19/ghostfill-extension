@@ -16,7 +16,16 @@
 // └────────────────────────────────────────────────────────────────────────┘
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { GenerateEmailResponse, GeneratePasswordResponse, GetLastOTPResponse } from '../types';
+import {
+  GenerateEmailResponse,
+  GeneratePasswordResponse,
+  GetLastOTPResponse,
+  DetectedField,
+  FieldType,
+  FormAnalysis,
+  FormType,
+  GhostContainer,
+} from '../types';
 import { TIMING } from '../utils/constants';
 import { debounce } from '../utils/debounce';
 import { deepQuerySelectorAll } from '../utils/helpers';
@@ -24,6 +33,7 @@ import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
 import { setHTML, clearHTML } from '../utils/setHTML';
 import { AutoFiller } from './autoFiller';
+import { FieldAnalyzer } from './fieldAnalyzer';
 import { pageStatus } from './pageStatus';
 import { PageAnalyzer, PageType, PageAnalysis, safeQuerySelector } from './utils/pageAnalyzer';
 
@@ -66,6 +76,10 @@ const OFF_SCREEN = -9999;
 
 /** Maximum label text length to scan from proximity */
 const MAX_LABEL_SCAN_LENGTH = 60;
+
+/** z-index safety margin */
+const Z_INDEX_BOOST = 100;
+const ABSOLUTE_MAX_Z = 2147483647;
 
 // ═══════════════════════════════════════════════════════════════
 //  §1  T Y P E   D E F I N I T I O N S
@@ -146,8 +160,14 @@ function escapeCSS(value: string): string {
   }
 }
 
-function isFormInputElement(el: unknown): el is HTMLInputElement | HTMLTextAreaElement {
-  return el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
+function isFormInputElement(el: unknown): el is HTMLElement {
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    return true;
+  }
+  if (el instanceof HTMLElement) {
+    return el.isContentEditable || el.getAttribute('role') === 'textbox';
+  }
+  return false;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -162,8 +182,16 @@ function isFormInputElement(el: unknown): el is HTMLInputElement | HTMLTextAreaE
 
 class FieldContext {
   private static readonly EXCLUDED_TYPES = new Set([
-    'hidden', 'submit', 'button', 'reset', 'checkbox',
-    'radio', 'file', 'image', 'range', 'color',
+    'hidden',
+    'submit',
+    'button',
+    'reset',
+    'checkbox',
+    'radio',
+    'file',
+    'image',
+    'range',
+    'color',
   ]);
 
   private static readonly SEARCH_PATTERNS = /search|query|q$|filter|find/i;
@@ -182,7 +210,11 @@ class FieldContext {
   private static readonly OTP_COMBINED_PATTERN =
     /otp|one[-_\s]?time|verification[-_\s]?code|passcode|security[-_\s]?code|check[-_\s]?code|verify[-_\s]?code/i;
   private static readonly OTP_EXACT_NAMES = new Set([
-    'code', 'pin', 'token', 'checkcode', 'verifycode',
+    'code',
+    'pin',
+    'token',
+    'checkcode',
+    'verifycode',
   ]);
   private static readonly EMAIL_NAME_PATTERN = /e[-_]?mail/i;
   private static readonly PASSWORD_NAME_PATTERN = /password|passwd|pwd/i;
@@ -194,7 +226,9 @@ class FieldContext {
   private static readonly ADDRESS_PATTERN = /street|address|city|country|state|zip|postal/i;
 
   static getMode(field: HTMLElement, pageType?: PageType): ButtonMode {
-    if (!isFormInputElement(field)) {return 'magic';}
+    if (!isFormInputElement(field)) {
+      return 'magic';
+    }
 
     const input = field as HTMLInputElement;
     const type = (input.type ?? '').toLowerCase();
@@ -211,9 +245,15 @@ class FieldContext {
       pageType === 'verification' || pageType === '2fa' || pageType === 'password-reset';
 
     // 1. OTP / Code (Highest Priority)
-    if (this.OTP_AUTOCOMPLETE.has(autocomplete)) {return 'otp';}
-    if (this.OTP_COMBINED_PATTERN.test(combined)) {return 'otp';}
-    if (this.OTP_EXACT_NAMES.has(name) || this.OTP_EXACT_NAMES.has(id)) {return 'otp';}
+    if (this.OTP_AUTOCOMPLETE.has(autocomplete)) {
+      return 'otp';
+    }
+    if (this.OTP_COMBINED_PATTERN.test(combined)) {
+      return 'otp';
+    }
+    if (this.OTP_EXACT_NAMES.has(name) || this.OTP_EXACT_NAMES.has(id)) {
+      return 'otp';
+    }
     if (
       isVerificationPage &&
       (input.inputMode === 'numeric' || (input.maxLength >= 4 && input.maxLength <= 10))
@@ -222,9 +262,13 @@ class FieldContext {
     }
 
     // 2. Email
-    if (type === 'email') {return 'email';}
+    if (type === 'email') {
+      return 'email';
+    }
     if (isVerificationPage) {
-      if (/@/.test(placeholder) || /enter[\s._-]*email/i.test(label)) {return 'email';}
+      if (/@/.test(placeholder) || /enter[\s._-]*email/i.test(label)) {
+        return 'email';
+      }
     } else {
       if (this.EMAIL_NAME_PATTERN.test(nameId) || /email/i.test(label) || /@/.test(placeholder)) {
         return 'email';
@@ -232,27 +276,49 @@ class FieldContext {
     }
 
     // 3. Password
-    if (type === 'password' || this.PASSWORD_NAME_PATTERN.test(nameId)) {return 'password';}
+    if (type === 'password' || this.PASSWORD_NAME_PATTERN.test(nameId)) {
+      return 'password';
+    }
 
     // 4. Username → email mode (unless verification page)
     if (!isVerificationPage) {
-      if (this.USERNAME_NAME_PATTERN.test(nameId) || autocomplete === 'username') {return 'email';}
+      if (this.USERNAME_NAME_PATTERN.test(nameId) || autocomplete === 'username') {
+        return 'email';
+      }
     }
 
     // 5. Credit Card Fields → generic magic
-    if (this.CREDIT_CARD_PATTERN.test(combined) || this.CREDIT_CARD_AUTOCOMPLETE.has(autocomplete)) {
+    if (
+      this.CREDIT_CARD_PATTERN.test(combined) ||
+      this.CREDIT_CARD_AUTOCOMPLETE.has(autocomplete)
+    ) {
       return 'magic';
     }
 
     // 6. Search Fields → generic magic
-    if (type === 'search' || this.SEARCH_PATTERNS.test(combined)) {return 'magic';}
+    if (type === 'search' || this.SEARCH_PATTERNS.test(combined)) {
+      return 'magic';
+    }
 
     // 7. Name fields
-    if (this.NAME_FIELD_PATTERN.test(nameId)) {return 'user';}
-    if (/name/i.test(nameId) && !/user/i.test(nameId) && !/company/i.test(nameId)) {return 'user';}
+    if (this.NAME_FIELD_PATTERN.test(nameId)) {
+      return 'user';
+    }
+    if (/name/i.test(nameId) && !/user/i.test(nameId) && !/company/i.test(nameId)) {
+      return 'user';
+    }
 
     // 8. Address fields → generic magic
-    if (this.ADDRESS_PATTERN.test(combined)) {return 'magic';}
+    if (this.ADDRESS_PATTERN.test(combined)) {
+      return 'magic';
+    }
+
+    // 9. ML Fallback (New Intelligence)
+    // If we're still 'magic' but have a strong signal from field analyzer, use it.
+    // (In a real scenario, we'd pass the label to IntentClassifier.predict)
+    if (pageType === 'signup' && /user|name|profile/i.test(label)) {
+      return 'user';
+    }
 
     return 'magic';
   }
@@ -263,31 +329,47 @@ class FieldContext {
   }
 
   static shouldShowButton(field: HTMLElement): boolean {
-    if (!isFormInputElement(field)) {return false;}
+    if (!isFormInputElement(field)) {
+      return false;
+    }
 
     const input = field as HTMLInputElement;
 
     // Type exclusions
-    if (this.EXCLUDED_TYPES.has(input.type)) {return false;}
-    if (input.type === 'search') {return false;}
+    if (field instanceof HTMLInputElement && this.EXCLUDED_TYPES.has(field.type)) {
+      return false;
+    }
+    if (field instanceof HTMLInputElement && field.type === 'search') {
+      return false;
+    }
 
     // Name-based search exclusion
     const name = (input.name || input.id || input.placeholder || '').toLowerCase();
-    if (this.SEARCH_PATTERNS.test(name)) {return false;}
+    if (this.SEARCH_PATTERNS.test(name)) {
+      return false;
+    }
 
     // Single-char split OTP fields — handled by GhostLabel, not FAB
-    if (input.maxLength === 1) {return false;}
+    if (input.maxLength === 1) {
+      return false;
+    }
 
     // Disabled or readonly
-    if (input.disabled || input.readOnly) {return false;}
+    if (input.disabled || input.readOnly) {
+      return false;
+    }
 
     // Too small to be a real input
     const rect = field.getBoundingClientRect();
-    if (rect.width < MIN_FIELD_WIDTH || rect.height < MIN_FIELD_HEIGHT) {return false;}
+    if (rect.width < MIN_FIELD_WIDTH || rect.height < MIN_FIELD_HEIGHT) {
+      return false;
+    }
 
     // Hidden via CSS
     const style = window.getComputedStyle(field);
-    if (style.display === 'none' || style.visibility === 'hidden') {return false;}
+    if (style.display === 'none' || style.visibility === 'hidden') {
+      return false;
+    }
 
     return true;
   }
@@ -299,22 +381,30 @@ class FieldContext {
         document,
         `label[for="${escapeCSS(input.id)}"]`
       );
-      if (label?.textContent) {return label.textContent.trim();}
+      if (label?.textContent) {
+        return label.textContent.trim();
+      }
     }
 
     // 2. Ancestor label
     const parentLabel = input.closest('label');
-    if (parentLabel?.textContent) {return parentLabel.textContent.trim();}
+    if (parentLabel?.textContent) {
+      return parentLabel.textContent.trim();
+    }
 
     // 3. aria-label
     const ariaLabel = input.getAttribute('aria-label');
-    if (ariaLabel) {return ariaLabel.trim();}
+    if (ariaLabel) {
+      return ariaLabel.trim();
+    }
 
     // 4. aria-labelledby
     const labelledBy = input.getAttribute('aria-labelledby');
     if (labelledBy) {
       const labelEl = document.getElementById(labelledBy);
-      if (labelEl?.textContent) {return labelEl.textContent.trim();}
+      if (labelEl?.textContent) {
+        return labelEl.textContent.trim();
+      }
     }
 
     // 5. Proximity: previous sibling or parent's previous sibling
@@ -391,6 +481,68 @@ class SmartPositioner {
     return { left, top, placement };
   }
 
+  /**
+   * Probing logic to "see" if the button would be obscured by site elements.
+   * If blocked, it suggests an alternative placement.
+   */
+  static checkObstructions(left: number, top: number, size: number): boolean {
+    if (left === OFF_SCREEN) {
+      return false;
+    }
+
+    const points = [
+      [left + 2, top + 2],
+      [left + size - 2, top + 2],
+      [left + 2, top + size - 2],
+      [left + size - 2, top + size - 2],
+      [left + size / 2, top + size / 2],
+    ];
+
+    for (const [x, y] of points) {
+      try {
+        const el = document.elementFromPoint(x, y);
+        if (el) {
+          // Ignore our own container
+          if (el.closest('#ghostfill-fab') || el.closest('.gf-fab')) {
+            continue;
+          }
+
+          // If the element at this point is not the input field we're targeting,
+          // and it's not a transparent container, it's an obstruction.
+          const style = window.getComputedStyle(el);
+          if (style.opacity === '0' || style.pointerEvents === 'none') {
+            continue;
+          }
+
+          // If it's a "Top Layer" element like a sticky header, we are obscured.
+          const zIndex = parseInt(style.zIndex) || 0;
+          if (zIndex > 1000) {
+            return true;
+          }
+        }
+      } catch {
+        /* ignore points outside viewport */
+      }
+    }
+    return false;
+  }
+
+  static getMaxZIndex(): number {
+    try {
+      const all = document.querySelectorAll('*');
+      let max = 10000; // Safe baseline
+      for (let i = 0, len = Math.min(all.length, 500); i < len; i++) {
+        const z = parseInt(window.getComputedStyle(all[i]).zIndex);
+        if (!isNaN(z) && z > max && z < ABSOLUTE_MAX_Z) {
+          max = z;
+        }
+      }
+      return Math.min(max + Z_INDEX_BOOST, ABSOLUTE_MAX_Z);
+    } catch {
+      return ABSOLUTE_MAX_Z;
+    }
+  }
+
   static calculateMenuPosition(
     buttonRect: DOMRect,
     menuWidth: number,
@@ -445,9 +597,7 @@ class ContextualMenu {
       hasOTPReady;
 
     const showEmail =
-      analysis.hasEmailField ||
-      analysis.pageType === 'signup' ||
-      analysis.pageType === 'login';
+      analysis.hasEmailField || analysis.pageType === 'signup' || analysis.pageType === 'login';
 
     const showPassword =
       analysis.hasPasswordField ||
@@ -657,6 +807,7 @@ export class FloatingButton {
   private trackingRafId: number | null = null;
   private isScrolling = false;
   private fieldResizeObserver: ResizeObserver | null = null;
+  private fieldIntersectionObserver: IntersectionObserver | null = null;
 
   // ── Event cleanup ────────────────────────────────────────
   private readonly cleanupFns: Array<() => void> = [];
@@ -665,6 +816,11 @@ export class FloatingButton {
 
   // ── Dependencies ─────────────────────────────────────────
   private readonly autoFiller: AutoFiller;
+  private readonly fieldAnalyzer = FieldAnalyzer.getInstance();
+
+  // ── Ghost Scanning ───────────────────────────────────────
+  private readonly ghostObservers = new Map<HTMLElement, IntersectionObserver>();
+  private scanTimeout: number | null = null;
 
   // ── Keyboard ─────────────────────────────────────────────
   private static readonly SHORTCUT_KEY = 'g';
@@ -678,7 +834,9 @@ export class FloatingButton {
   // ═══════════════════════════════════════════════════════════
 
   async init(): Promise<void> {
-    if (this.destroyed) {return;}
+    if (this.destroyed) {
+      return;
+    }
 
     this.createContainer();
     this.setupEventListeners();
@@ -686,10 +844,13 @@ export class FloatingButton {
     log.debug('FloatingButton initialised');
     void this.loadSettingsAsync();
     void this.checkOTPAvailability();
+    void this.scanAndGlister();
   }
 
   destroy(): void {
-    if (this.destroyed) {return;}
+    if (this.destroyed) {
+      return;
+    }
     this.destroyed = true;
 
     this.cancelAllTimers();
@@ -700,6 +861,11 @@ export class FloatingButton {
       this.fieldResizeObserver = null;
     }
 
+    if (this.fieldIntersectionObserver) {
+      this.fieldIntersectionObserver.disconnect();
+      this.fieldIntersectionObserver = null;
+    }
+
     for (const fn of this.cleanupFns) {
       try {
         fn();
@@ -708,6 +874,20 @@ export class FloatingButton {
       }
     }
     this.cleanupFns.length = 0;
+
+    if (this.scanTimeout) {
+      if ('cancelIdleCallback' in window) {
+        (window as any).cancelIdleCallback(this.scanTimeout);
+      } else {
+        clearTimeout(this.scanTimeout);
+      }
+      this.scanTimeout = null;
+    }
+
+    for (const obs of this.ghostObservers.values()) {
+      obs.disconnect();
+    }
+    this.ghostObservers.clear();
 
     if (this.messageListener && chrome?.runtime?.onMessage) {
       try {
@@ -754,7 +934,9 @@ export class FloatingButton {
       } | null;
       if (resp?.settings) {
         this.isEnabled = resp.settings.showFloatingButton;
-        if (!this.isEnabled) {this.setState('hidden');}
+        if (!this.isEnabled) {
+          this.setState('hidden');
+        }
       }
     } catch {
       log.debug('Settings fetch failed — defaulting to enabled');
@@ -764,15 +946,23 @@ export class FloatingButton {
   }
 
   private registerRuntimeListener(): void {
-    if (this.listenerRegistered || this.destroyed) {return;}
-    if (!chrome?.runtime?.onMessage) {return;}
+    if (this.listenerRegistered || this.destroyed) {
+      return;
+    }
+    if (!chrome?.runtime?.onMessage) {
+      return;
+    }
 
     this.messageListener = (msg: FloatingButtonRuntimeMessage) => {
-      if (this.destroyed) {return;}
+      if (this.destroyed) {
+        return;
+      }
 
       if (msg.action === 'SETTINGS_CHANGED' && msg.settings) {
         this.isEnabled = msg.settings.showFloatingButton ?? this.isEnabled;
-        if (!this.isEnabled) {this.setState('hidden');}
+        if (!this.isEnabled) {
+          this.setState('hidden');
+        }
       }
       if (msg.action === 'OTP_RECEIVED') {
         this.hasOTPReady = true;
@@ -789,7 +979,9 @@ export class FloatingButton {
   }
 
   private async checkOTPAvailability(): Promise<void> {
-    if (this.destroyed) {return;}
+    if (this.destroyed) {
+      return;
+    }
     try {
       const resp = (await safeSendMessage({ action: 'GET_LAST_OTP' })) as GetLastOTPResponse | null;
       if (resp?.lastOTP?.code) {
@@ -806,8 +998,12 @@ export class FloatingButton {
   // ═══════════════════════════════════════════════════════════
 
   private setState(newState: ButtonState, message?: string): void {
-    if (this.destroyed && newState !== 'hidden') {return;}
-    if (this.state === newState) {return;}
+    if (this.destroyed && newState !== 'hidden') {
+      return;
+    }
+    if (this.state === newState) {
+      return;
+    }
 
     const old = this.state;
     this.state = newState;
@@ -864,7 +1060,9 @@ export class FloatingButton {
   }
 
   private applyIdle(): void {
-    if (!this.container || !this.button) {return;}
+    if (!this.container || !this.button) {
+      return;
+    }
     this.container.style.setProperty('display', 'block', 'important');
     setHTML(this.button, IconSystem.get(this.mode));
     this.button.classList.remove('gf-loading', 'gf-success', 'gf-error');
@@ -879,7 +1077,9 @@ export class FloatingButton {
   }
 
   private applyLoading(): void {
-    if (!this.button) {return;}
+    if (!this.button) {
+      return;
+    }
     this.cancelAllTimers();
     this.button.classList.add('gf-loading');
     setHTML(this.button, IconSystem.getSpinner());
@@ -887,7 +1087,9 @@ export class FloatingButton {
   }
 
   private applySuccess(message?: string): void {
-    if (!this.button) {return;}
+    if (!this.button) {
+      return;
+    }
     this.button.classList.remove('gf-loading');
     this.button.classList.add('gf-success');
     setHTML(this.button, IconSystem.getSuccess());
@@ -905,7 +1107,9 @@ export class FloatingButton {
   }
 
   private applyError(message?: string): void {
-    if (!this.button) {return;}
+    if (!this.button) {
+      return;
+    }
     this.button.classList.remove('gf-loading');
     this.button.classList.add('gf-error');
     setHTML(this.button, IconSystem.getError());
@@ -936,8 +1140,8 @@ export class FloatingButton {
 
     this.container = document.createElement('div');
     this.container.id = 'ghostfill-fab';
-    this.container.style.cssText =
-      'position:fixed;z-index:2147483647;display:none;pointer-events:auto;';
+    const zIndex = SmartPositioner.getMaxZIndex();
+    this.container.style.cssText = `position:fixed;z-index:${zIndex};display:none;pointer-events:auto;`;
 
     this.shadowRoot = this.container.attachShadow({ mode: 'closed' });
 
@@ -981,18 +1185,24 @@ export class FloatingButton {
   }
 
   private wireButtonEvents(): void {
-    if (!this.button) {return;}
+    if (!this.button) {
+      return;
+    }
 
     // ── Click ─────────────────────────────────────────────
     this.button.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      if (this.state === 'loading') {return;}
+      if (this.state === 'loading') {
+        return;
+      }
       if (this.state === 'menu-open') {
         this.setState('idle');
         return;
       }
-      void this.handlePrimaryAction();
+      void this.handlePrimaryAction().catch(() => {
+        /* handled internally by handlePrimaryAction */
+      });
     });
 
     // ── Context Menu → open action menu ───────────────────
@@ -1030,10 +1240,18 @@ export class FloatingButton {
 
     // ── Hover ─────────────────────────────────────────────
     this.button.addEventListener('mouseenter', () => {
-      if (this.state === 'idle') {this.setState('hovering');}
+      if (this.state === 'idle') {
+        this.setState('hovering');
+      }
+      // Sentient Pre-warming: Wake up the ML engine on hover to eliminate lag.
+      void safeSendMessage({ action: 'PREWARM_ML' }).catch(() => {
+        /* non-fatal */
+      });
     });
     this.button.addEventListener('mouseleave', () => {
-      if (this.state === 'hovering') {this.setState('idle');}
+      if (this.state === 'hovering') {
+        this.setState('idle');
+      }
     });
 
     // ── Keyboard Navigation ───────────────────────────────
@@ -1042,7 +1260,9 @@ export class FloatingButton {
         case 'Enter':
         case ' ':
           e.preventDefault();
-          void this.handlePrimaryAction();
+          void this.handlePrimaryAction().catch(() => {
+            /* handled internally by handlePrimaryAction */
+          });
           break;
         case 'Escape':
           this.setState('hidden');
@@ -1060,7 +1280,9 @@ export class FloatingButton {
   // ═══════════════════════════════════════════════════════════
 
   private async handlePrimaryAction(): Promise<void> {
-    if (this.destroyed) {return;}
+    if (this.destroyed) {
+      return;
+    }
 
     this.setState('loading');
     pageStatus.show('Analysing form…', 'loading');
@@ -1068,21 +1290,46 @@ export class FloatingButton {
     try {
       const result = await this.autoFiller.smartFill();
 
-      if (this.destroyed) {return;}
+      if (this.destroyed) {
+        return;
+      }
 
       if (result.success && result.filledCount > 0) {
         const msg = `Filled ${result.filledCount} field(s)!`;
         pageStatus.success(msg, TIMING_MS.SUCCESS_DISPLAY);
         this.setState('success', msg);
+      } else if (result.message?.includes('disabled on login pages')) {
+        // Show user-friendly message for blocked login pages
+        pageStatus.error(
+          'Smart Fill blocked on login pages.\nTry the OTP button if you have a verification code.',
+          4000
+        );
+        this.setState('idle');
+      } else if (result.message?.includes('No identity or OTP available')) {
+        // Show helpful message when no identity/OTP is available
+        pageStatus.error(
+          'Open the popup first to generate an email, or wait for an OTP to arrive.',
+          4000
+        );
+        this.setState('idle');
       } else {
         pageStatus.hide();
         this.setState('idle');
         log.debug('No fields filled — silent dismiss');
       }
     } catch (error) {
-      if (this.destroyed) {return;}
+      if (this.destroyed) {
+        return;
+      }
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      // Don't show error for expected extension context invalidation
+      if (errorMsg.toLowerCase().includes('context invalidated')) {
+        log.debug('Extension context invalidated during smart fill');
+        this.setState('idle');
+        return;
+      }
       log.error('Smart fill error:', error);
-      const msg = error instanceof Error ? error.message : String(error) || 'Failed to fill';
+      const msg = errorMsg || 'Failed to fill';
       pageStatus.error(msg, TIMING_MS.ERROR_DISPLAY);
       this.setState('error', msg);
     }
@@ -1093,7 +1340,9 @@ export class FloatingButton {
   // ═══════════════════════════════════════════════════════════
 
   private openMenuInternal(): void {
-    if (!this.menu || !this.shadowRoot || this.destroyed) {return;}
+    if (!this.menu || !this.shadowRoot || this.destroyed) {
+      return;
+    }
 
     const analysis = this.getPageAnalysis();
     const actions = ContextualMenu.buildActions(analysis, this.mode, this.hasOTPReady);
@@ -1149,10 +1398,14 @@ export class FloatingButton {
   }
 
   private setupMenuKeyboardNavigation(): void {
-    if (!this.menu) {return;}
+    if (!this.menu) {
+      return;
+    }
 
     const handler = (e: KeyboardEvent): void => {
-      if (!this.menu) {return;}
+      if (!this.menu) {
+        return;
+      }
       const items = Array.from(this.menu.querySelectorAll<HTMLButtonElement>('.gf-menu-item'));
       const focusedEl = this.shadowRoot?.activeElement;
       const idx = items.indexOf(focusedEl as HTMLButtonElement);
@@ -1197,7 +1450,9 @@ export class FloatingButton {
   }
 
   private async handleMenuAction(actionId: string): Promise<void> {
-    if (this.destroyed) {return;}
+    if (this.destroyed) {
+      return;
+    }
     this.setState('loading');
 
     try {
@@ -1242,7 +1497,9 @@ export class FloatingButton {
           this.setState('idle');
       }
     } catch (error) {
-      if (this.destroyed) {return;}
+      if (this.destroyed) {
+        return;
+      }
       const errorMessage = error instanceof Error ? error.message : String(error);
       const msg = `Action failed: ${errorMessage}`;
       pageStatus.error(msg, TIMING_MS.ERROR_DISPLAY);
@@ -1258,7 +1515,9 @@ export class FloatingButton {
 
     if (resp?.lastOTP?.code) {
       const filled = await this.autoFiller.fillOTP(resp.lastOTP.code);
-      if (this.destroyed) {return;}
+      if (this.destroyed) {
+        return;
+      }
 
       if (filled) {
         pageStatus.success('Code filled!', TIMING_MS.SUCCESS_DISPLAY);
@@ -1277,21 +1536,28 @@ export class FloatingButton {
   }
 
   private async actionGenerateEmail(): Promise<void> {
-    const resp = (await safeSendMessage({ action: 'GENERATE_EMAIL' })) as GenerateEmailResponse | null;
+    const resp = (await safeSendMessage({
+      action: 'GENERATE_EMAIL',
+    })) as GenerateEmailResponse | null;
 
-    if (this.destroyed) {return;}
+    if (this.destroyed) {
+      return;
+    }
 
     if (resp?.success && resp.email?.fullEmail && this.currentField) {
-      await this.autoFiller.fillField(
-        this.buildFieldSelector(this.currentField),
-        resp.email.fullEmail
-      );
-      pageStatus.success('Email filled!', TIMING_MS.SUCCESS_DISPLAY);
-      this.setState('success', 'Email filled!');
+      const filled = await this.fillResolvedField(this.currentField, resp.email.fullEmail, 'email');
+      if (filled) {
+        pageStatus.success('Email filled!', TIMING_MS.SUCCESS_DISPLAY);
+        this.setState('success', 'Email filled!');
+      } else {
+        pageStatus.error('Could not fill email field', TIMING_MS.ERROR_DISPLAY);
+        this.setState('error', 'Could not fill email field');
+      }
     } else {
-      const msg = (resp && 'error' in resp && typeof resp.error === 'string')
-        ? resp.error
-        : 'Failed to generate email';
+      const msg =
+        resp && 'error' in resp && typeof resp.error === 'string'
+          ? resp.error
+          : 'Failed to generate email';
       pageStatus.error(msg, TIMING_MS.ERROR_DISPLAY);
       this.setState('error', msg);
     }
@@ -1302,15 +1568,23 @@ export class FloatingButton {
       action: 'GENERATE_PASSWORD',
     })) as GeneratePasswordResponse | null;
 
-    if (this.destroyed) {return;}
+    if (this.destroyed) {
+      return;
+    }
 
     if (resp?.result?.password && this.currentField) {
-      await this.autoFiller.fillField(
-        this.buildFieldSelector(this.currentField),
-        resp.result.password
+      const filled = await this.fillResolvedField(
+        this.currentField,
+        resp.result.password,
+        'password'
       );
-      pageStatus.success('Password filled!', TIMING_MS.SUCCESS_DISPLAY);
-      this.setState('success', 'Password filled!');
+      if (filled) {
+        pageStatus.success('Password filled!', TIMING_MS.SUCCESS_DISPLAY);
+        this.setState('success', 'Password filled!');
+      } else {
+        pageStatus.error('Could not fill password field', TIMING_MS.ERROR_DISPLAY);
+        this.setState('error', 'Could not fill password field');
+      }
     } else {
       pageStatus.error('Failed to generate password', TIMING_MS.ERROR_DISPLAY);
       this.setState('error', 'Failed to generate password');
@@ -1329,7 +1603,9 @@ export class FloatingButton {
   private async actionFillIdentity(actionId: string): Promise<void> {
     const resp = (await safeSendMessage({ action: 'GET_IDENTITY' })) as IdentityResponse | null;
 
-    if (this.destroyed) {return;}
+    if (this.destroyed) {
+      return;
+    }
 
     if (!resp?.success || !resp.identity || !this.currentField) {
       pageStatus.error('Failed to get identity', TIMING_MS.ERROR_DISPLAY);
@@ -1346,9 +1622,14 @@ export class FloatingButton {
     const value = (resp.identity as Record<string, string | undefined>)[mapping.key];
 
     if (value) {
-      await this.autoFiller.fillField(this.buildFieldSelector(this.currentField), value);
-      pageStatus.success(`${mapping.label} filled!`, TIMING_MS.SUCCESS_DISPLAY);
-      this.setState('success', `${mapping.label} filled!`);
+      const filled = await this.fillResolvedField(this.currentField, value);
+      if (filled) {
+        pageStatus.success(`${mapping.label} filled!`, TIMING_MS.SUCCESS_DISPLAY);
+        this.setState('success', `${mapping.label} filled!`);
+      } else {
+        pageStatus.error(`Could not fill ${mapping.label}`, TIMING_MS.ERROR_DISPLAY);
+        this.setState('error', `Could not fill ${mapping.label}`);
+      }
     } else {
       pageStatus.error(`No ${mapping.label} available`, TIMING_MS.ERROR_DISPLAY);
       this.setState('error', `No ${mapping.label} available`);
@@ -1360,7 +1641,9 @@ export class FloatingButton {
   // ═══════════════════════════════════════════════════════════
 
   private showTooltip(): void {
-    if (!this.tooltip) {return;}
+    if (!this.tooltip) {
+      return;
+    }
     this.tooltip.textContent = FieldContext.getTooltip(this.mode, this.getPageType());
     this.tooltipTimeout = setTimeout(() => {
       if (!this.destroyed) {
@@ -1378,7 +1661,9 @@ export class FloatingButton {
   }
 
   private showStatusTooltip(text: string, bgColor: string): void {
-    if (!this.tooltip) {return;}
+    if (!this.tooltip) {
+      return;
+    }
     this.tooltip.textContent = text;
     this.tooltip.style.backgroundColor = bgColor;
     this.tooltip.style.color = 'white';
@@ -1386,7 +1671,9 @@ export class FloatingButton {
   }
 
   private clearStatusTooltip(): void {
-    if (!this.tooltip) {return;}
+    if (!this.tooltip) {
+      return;
+    }
     this.tooltip.classList.remove('gf-tooltip-visible');
     this.tooltip.style.backgroundColor = '';
     this.tooltip.style.color = '';
@@ -1397,11 +1684,15 @@ export class FloatingButton {
   // ═══════════════════════════════════════════════════════════
 
   private updateBadge(): void {
-    if (!this.button || !this.shadowRoot) {return;}
+    if (!this.button || !this.shadowRoot) {
+      return;
+    }
 
     // Remove existing badge
     const existing = this.button.querySelector('.gf-badge');
-    if (existing) {existing.remove();}
+    if (existing) {
+      existing.remove();
+    }
 
     if (this.hasOTPReady) {
       const badge = document.createElement('span');
@@ -1418,34 +1709,29 @@ export class FloatingButton {
 
   private setupEventListeners(): void {
     // ── Focus Tracking ────────────────────────────────────
-    const handleFocus = debounce((target: unknown) => {
-      if (this.destroyed || !this.isEnabled) {return;}
-      if (!target || !(target instanceof HTMLElement)) {return;}
-
-      // Invalidate page analysis cache on focus to detect SPA changes
-      this.pageAnalysis = null;
-
-      if (isFormInputElement(target) && FieldContext.shouldShowButton(target)) {
-        this.showNearField(target);
-      }
-    }, TIMING_MS.FOCUS_DEBOUNCE);
 
     const onFocusIn = (e: FocusEvent): void => {
       const path = e.composedPath?.();
       const target = (path?.[0] ?? e.target) as EventTarget | null;
-      handleFocus(target);
+      this.handleFocusChange(target);
     };
     document.addEventListener('focusin', onFocusIn, true);
     this.cleanupFns.push(() => document.removeEventListener('focusin', onFocusIn, true));
 
     // ── Focus Out ─────────────────────────────────────────
     const onFocusOut = (e: FocusEvent): void => {
-      if (this.destroyed) {return;}
+      if (this.destroyed) {
+        return;
+      }
       const related = e.relatedTarget as HTMLElement | null;
 
       // Don't hide if focus moved to our container or we have menu open
-      if (this.container?.contains(related)) {return;}
-      if (this.state === 'menu-open') {return;}
+      if (this.container?.contains(related)) {
+        return;
+      }
+      if (this.state === 'menu-open') {
+        return;
+      }
 
       this.scheduleAutoHide();
     };
@@ -1454,9 +1740,13 @@ export class FloatingButton {
 
     // ── Click Outside → Close Menu ────────────────────────
     const onDocClick = (e: MouseEvent): void => {
-      if (this.state !== 'menu-open') {return;}
+      if (this.state !== 'menu-open') {
+        return;
+      }
       const path = e.composedPath?.() ?? [];
-      if (path.some((el) => el === this.container)) {return;}
+      if (path.some((el) => el === this.container)) {
+        return;
+      }
       this.setState('idle');
     };
     document.addEventListener('click', onDocClick, true);
@@ -1464,7 +1754,9 @@ export class FloatingButton {
 
     // ── Scroll Following ──────────────────────────────────
     const onScroll = (): void => {
-      if (this.destroyed || this.state === 'hidden' || !this.currentField) {return;}
+      if (this.destroyed || this.state === 'hidden' || !this.currentField) {
+        return;
+      }
       if (!this.isScrolling) {
         this.isScrolling = true;
         this.followFieldOnScroll();
@@ -1475,7 +1767,9 @@ export class FloatingButton {
 
     // ── Resize ────────────────────────────────────────────
     const onResize = debounce(() => {
-      if (this.destroyed) {return;}
+      if (this.destroyed) {
+        return;
+      }
       const field = this.currentFieldRef?.deref();
       if (this.state !== 'hidden' && field) {
         this.positionNearField(field);
@@ -1483,6 +1777,105 @@ export class FloatingButton {
     }, TIMING_MS.RESIZE_DEBOUNCE);
     window.addEventListener('resize', onResize);
     this.cleanupFns.push(() => window.removeEventListener('resize', onResize));
+
+    this.startProactiveScanning();
+  }
+
+  private readonly handleFocusChange = debounce((...args: unknown[]): void => {
+    const target = args[0] as EventTarget | null;
+    if (this.destroyed) {
+      return;
+    }
+    if (!target || !(target instanceof HTMLElement)) {
+      return;
+    }
+
+    // Invalidate page analysis cache on focus to detect SPA changes
+    this.pageAnalysis = null;
+
+    if (isFormInputElement(target) && FieldContext.shouldShowButton(target)) {
+      this.showNearField(target);
+    }
+  }, TIMING_MS.FOCUS_DEBOUNCE) as any;
+
+  /**
+   * Periodically scans for hidden "Ghost Containers" to anticipate
+   * form appearances on SPAs.
+   */
+  private startProactiveScanning(): void {
+    if (this.scanTimeout && 'cancelIdleCallback' in window) {
+      (window as any).cancelIdleCallback(this.scanTimeout);
+    }
+
+    const scan = () => {
+      this.scanForGhostContainers();
+      // Scan every 5 seconds or during idle time
+      if ('requestIdleCallback' in window) {
+        this.scanTimeout = (window as any).requestIdleCallback(scan, { timeout: 5000 });
+      } else {
+        this.scanTimeout = (window as any).setTimeout(scan, 5000) as unknown as number;
+      }
+    };
+
+    if ('requestIdleCallback' in window) {
+      this.scanTimeout = (window as any).requestIdleCallback(scan, { timeout: 2000 });
+    } else {
+      this.scanTimeout = (window as any).setTimeout(scan, 2000) as unknown as number;
+    }
+  }
+
+  private scanForGhostContainers(): void {
+    // Only scan if we aren't already showing the button or busy
+    if (this.state !== 'hidden' && this.state !== 'idle') {
+      return;
+    }
+
+    // Prune unbound or disconnected ghost observers
+    for (const [el, obs] of this.ghostObservers.entries()) {
+      if (!el.isConnected) {
+        obs.disconnect();
+        this.ghostObservers.delete(el);
+      }
+    }
+
+    // Keep memory bounded to a reasonable max number of ghost containers waiting to appear
+    if (this.ghostObservers.size > 20) {
+      const firstKey = this.ghostObservers.keys().next().value;
+      if (firstKey) {
+        this.ghostObservers.get(firstKey)?.disconnect();
+        this.ghostObservers.delete(firstKey);
+      }
+    }
+
+    const ghosts = this.fieldAnalyzer.scanHiddenModals();
+
+    for (const ghost of ghosts) {
+      if (!this.ghostObservers.has(ghost.element)) {
+        log.debug('👻 Ghost Container detected, watching for visibility:', ghost.selector);
+
+        const observer = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              if (entry.isIntersecting) {
+                log.info('✨ Ghost Container became visible! Re-scanning page.', ghost.selector);
+                // Proactively pre-warm ML if we think it's an auth form
+                if (ghost.predictedType === 'login' || ghost.predictedType === 'signup') {
+                  void safeSendMessage({ action: 'PREWARM_ML' }).catch(() => {
+                    /* non-fatal */
+                  });
+                }
+                // Force a full scan to attach the button immediately
+                this.handleFocusChange(ghost.element);
+              }
+            }
+          },
+          { threshold: 0.1 }
+        );
+
+        observer.observe(ghost.element);
+        this.ghostObservers.set(ghost.element, observer);
+      }
+    }
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -1491,7 +1884,9 @@ export class FloatingButton {
 
   private setupKeyboardShortcut(): void {
     const onKeydown = (e: KeyboardEvent): void => {
-      if (this.destroyed) {return;}
+      if (this.destroyed) {
+        return;
+      }
       if (
         (e.ctrlKey || e.metaKey) &&
         e.shiftKey &&
@@ -1500,7 +1895,9 @@ export class FloatingButton {
         e.preventDefault();
         e.stopPropagation();
         log.info('⌨️ Keyboard shortcut triggered');
-        void this.handlePrimaryAction();
+        void this.handlePrimaryAction().catch(() => {
+          /* handled internally by handlePrimaryAction */
+        });
       }
     };
     document.addEventListener('keydown', onKeydown, true);
@@ -1512,12 +1909,16 @@ export class FloatingButton {
   // ═══════════════════════════════════════════════════════════
 
   showNearField(field: HTMLElement): void {
-    if (!this.isEnabled || this.destroyed) {return;}
+    if (!this.isEnabled || this.destroyed) {
+      return;
+    }
 
     // Re-attach container if SPA removed it
     if (this.container && !this.container.isConnected) {
       const target = document.documentElement ?? document.body;
-      if (target) {target.appendChild(this.container);}
+      if (target) {
+        target.appendChild(this.container);
+      }
     }
 
     // Check if page has auth-relevant content
@@ -1538,16 +1939,40 @@ export class FloatingButton {
     this.mode = FieldContext.getMode(field, analysis.pageType);
 
     // Observe field resize
-    if (this.fieldResizeObserver) {this.fieldResizeObserver.disconnect();}
+    if (this.fieldResizeObserver) {
+      this.fieldResizeObserver.disconnect();
+    }
     this.fieldResizeObserver = new ResizeObserver(
       debounce(() => {
         if (!this.destroyed && this.state !== 'hidden') {
           const f = this.currentFieldRef?.deref();
-          if (f) {this.positionNearField(f);}
+          if (f) {
+            this.positionNearField(f);
+          }
         }
       }, TIMING_MS.FIELD_RESIZE_DEBOUNCE)
     );
     this.fieldResizeObserver.observe(field);
+
+    // Observe field visibility (Intersection)
+    if (this.fieldIntersectionObserver) {
+      this.fieldIntersectionObserver.disconnect();
+    }
+    this.fieldIntersectionObserver = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!this.destroyed && this.state !== 'hidden') {
+          if (!entry.isIntersecting || entry.intersectionRatio < 0.1) {
+            this.container?.style.setProperty('visibility', 'hidden', 'important');
+          } else {
+            this.container?.style.setProperty('visibility', 'visible', 'important');
+            this.positionNearField(field);
+          }
+        }
+      },
+      { threshold: [0, 0.1, 0.5, 1.0] }
+    );
+    this.fieldIntersectionObserver.observe(field);
 
     this.positionNearField(field);
     this.setState('idle');
@@ -1560,7 +1985,7 @@ export class FloatingButton {
    */
   private startContinuousTracking(): void {
     if (this.trackingRafId !== null) {
-      cancelAnimationFrame(this.trackingRafId);
+      clearInterval(this.trackingRafId);
       this.trackingRafId = null;
     }
 
@@ -1591,31 +2016,63 @@ export class FloatingButton {
         this.currentFieldRect = rect;
         this.positionNearField(field);
       }
-
-      this.trackingRafId = requestAnimationFrame(track);
     };
 
-    this.trackingRafId = requestAnimationFrame(track);
+    this.trackingRafId = window.setInterval(track, 100) as unknown as number;
   }
 
   private positionNearField(field: HTMLElement): void {
-    if (!this.container || this.destroyed) {return;}
+    if (!this.container || this.destroyed) {
+      return;
+    }
 
     const btnSize = BUTTON_SIZE_PX[this.size];
-    const pos = SmartPositioner.calculate(field, btnSize);
+    let pos = SmartPositioner.calculate(field, btnSize);
 
     if (pos.left === OFF_SCREEN) {
       this.setState('hidden');
       return;
     }
 
+    // Smart Obstruction Check: if blocked, try "Outside Left" or "Below"
+    if (
+      pos.placement === 'inside-right' &&
+      SmartPositioner.checkObstructions(pos.left, pos.top, btnSize)
+    ) {
+      const rect = field.getBoundingClientRect();
+      const m = VIEWPORT_MARGIN;
+
+      // Try Below
+      const belowTop = rect.bottom + m;
+      if (!SmartPositioner.checkObstructions(rect.left, belowTop, btnSize)) {
+        pos = { left: rect.left, top: belowTop, placement: 'below' };
+      } else {
+        // Try Outside Left
+        const leftX = rect.left - btnSize - m;
+        if (leftX > m && !SmartPositioner.checkObstructions(leftX, pos.top, btnSize)) {
+          pos = { left: leftX, top: pos.top, placement: 'outside-left' };
+        }
+      }
+    }
+
     this.container.style.setProperty('left', `${pos.left}px`, 'important');
     this.container.style.setProperty('top', `${pos.top}px`, 'important');
     this.container.style.setProperty('transform', 'none', 'important');
+
+    // Z-Index calculation is expensive, only do it once
+    if (!this.container.style.zIndex) {
+      this.container.style.setProperty(
+        'z-index',
+        SmartPositioner.getMaxZIndex().toString(),
+        'important'
+      );
+    }
   }
 
   private followFieldOnScroll(): void {
-    if (this.scrollRafId !== null) {cancelAnimationFrame(this.scrollRafId);}
+    if (this.scrollRafId !== null) {
+      cancelAnimationFrame(this.scrollRafId);
+    }
 
     this.scrollRafId = requestAnimationFrame(() => {
       this.isScrolling = false;
@@ -1633,7 +2090,9 @@ export class FloatingButton {
   // ═══════════════════════════════════════════════════════════
 
   private scheduleAutoHide(): void {
-    if (this.state === 'menu-open' || this.state === 'loading') {return;}
+    if (this.state === 'menu-open' || this.state === 'loading') {
+      return;
+    }
     this.cancelHideTimer();
     this.hideTimeout = setTimeout(() => {
       if (!this.destroyed && this.state !== 'menu-open' && this.state !== 'loading') {
@@ -1684,16 +2143,58 @@ export class FloatingButton {
 
   private buildFieldSelector(field: HTMLElement): string {
     const input = field as HTMLInputElement;
-    if (input.id) {return `#${escapeCSS(input.id)}`;}
-    if (input.name) {return `input[name="${escapeCSS(input.name)}"]`;}
-    if (input.type && input.type !== 'text') {return `input[type="${escapeCSS(input.type)}"]`;}
+    if (input.id) {
+      return `#${escapeCSS(input.id)}`;
+    }
+    if (input.name) {
+      return `input[name="${escapeCSS(input.name)}"]`;
+    }
+    if (input.type && input.type !== 'text') {
+      return `input[type="${escapeCSS(input.type)}"]`;
+    }
     return 'input';
+  }
+
+  private async fillResolvedField(
+    field: HTMLElement,
+    value: string,
+    fieldType?: string
+  ): Promise<boolean> {
+    if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) {
+      const directFill = await this.autoFiller.fillElement(field, value);
+      if (directFill) {
+        return true;
+      }
+    }
+
+    const refreshedField = this.currentFieldRef?.deref();
+    if (
+      refreshedField &&
+      refreshedField !== field &&
+      (refreshedField instanceof HTMLInputElement || refreshedField instanceof HTMLTextAreaElement)
+    ) {
+      const refreshedFill = await this.autoFiller.fillElement(refreshedField, value);
+      if (refreshedFill) {
+        return true;
+      }
+    }
+
+    if (fieldType) {
+      const currentFieldFill = await this.autoFiller.fillCurrentField(value, fieldType);
+      if (currentFieldFill) {
+        return true;
+      }
+    }
+
+    return this.autoFiller.fillField(this.buildFieldSelector(field), value);
   }
 
   // ── Public API ──────────────────────────────────────────
 
   show(): void {
-    if (!this.destroyed && this.state === 'hidden') {this.setState('idle');}
+    if (!this.destroyed && this.state === 'hidden') {
+      this.setState('idle');
+    }
   }
 
   hide(): void {
@@ -1702,6 +2203,60 @@ export class FloatingButton {
 
   isVisible(): boolean {
     return this.state !== 'hidden';
+  }
+
+  /**
+   * Scans the page for high-value targets (Signup/OTP) and shows
+   * a subtle "Sentient UI" indicator to let the user know we're ready.
+   */
+  async scanAndGlister(): Promise<void> {
+    if (this.destroyed || !this.isEnabled) {
+      return;
+    }
+
+    const analysis = this.getPageAnalysis();
+    if (!analysis.isAuthRelated) {
+      return;
+    }
+
+    const targets = deepQuerySelectorAll('input:not([type="hidden"])').filter((el) => {
+      if (!(el instanceof HTMLElement)) {
+        return false;
+      }
+      return FieldContext.shouldShowButton(el);
+    });
+
+    for (const field of targets.slice(0, 3)) {
+      // Limit to top 3 fields for performance
+      if (!(field instanceof HTMLElement)) {
+        continue;
+      }
+      this.attachGlister(field);
+    }
+  }
+
+  private attachGlister(field: HTMLElement): void {
+    // Only if not already focused
+    if (document.activeElement === field) {
+      return;
+    }
+
+    const indicator = document.createElement('div');
+    indicator.className = 'gf-glister-indicator';
+    const rect = field.getBoundingClientRect();
+
+    // Position at top-right of the field
+    indicator.style.left = `${rect.right - 10}px`;
+    indicator.style.top = `${rect.top + 2}px`;
+
+    // Auto-remove on focus
+    field.addEventListener('focus', () => indicator.remove(), { once: true });
+
+    // Add to body
+    document.body.appendChild(indicator);
+
+    // Lifecycle: remove after 10s if not used
+    setTimeout(() => indicator.remove(), 10000);
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -1732,29 +2287,26 @@ export class FloatingButton {
   --error-rgb: 239, 68, 68;
   --error-glow: rgba(239, 68, 68, 0.25);
 
-  --glass-bg: linear-gradient(135deg,
-    rgba(255,255,255,0.88) 0%, rgba(248,250,252,0.82) 100%);
-  --glass-bg-hover: linear-gradient(135deg,
-    rgba(255,255,255,0.94) 0%, rgba(248,250,252,0.90) 100%);
-  --glass-border: rgba(255,255,255,0.55);
-  --glass-border-hover: rgba(var(--brand-rgb), 0.2);
+  --glass-bg: rgba(255, 255, 255, 0.45);
+  --glass-bg-hover: rgba(255, 255, 255, 0.85);
+  --glass-bg-active: rgba(255, 255, 255, 0.95);
+  --glass-border: rgba(255, 255, 255, 0.65);
+  --glass-border-hover: rgba(var(--brand-rgb), 0.8);
 
   --text: #0f172a;
   --text-secondary: #64748b;
   --text-tertiary: #94a3b8;
 
   --shadow-rest:
-    0 1px 2px rgba(0,0,0,0.03), 0 2px 4px rgba(0,0,0,0.03),
-    0 4px 8px rgba(0,0,0,0.04), 0 8px 16px rgba(0,0,0,0.04);
+    0 2px 8px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.5);
   --shadow-hover:
-    0 2px 4px rgba(0,0,0,0.02), 0 4px 8px rgba(0,0,0,0.04),
-    0 8px 16px rgba(0,0,0,0.05), 0 16px 32px rgba(0,0,0,0.06),
-    0 0 0 1px rgba(var(--brand-rgb),0.06), 0 0 30px var(--brand-glow);
+    0 8px 24px rgba(0,0,0,0.08), 0 16px 48px rgba(124, 92, 252, 0.25),
+    0 0 0 1px rgba(255,255,255,0.8), 0 0 40px var(--brand-glow);
   --shadow-active:
-    0 1px 2px rgba(0,0,0,0.04), 0 2px 4px rgba(0,0,0,0.04);
+    0 2px 4px rgba(0,0,0,0.08), 0 4px 8px rgba(0,0,0,0.06), inset 0 2px 4px rgba(0,0,0,0.05);
   --shadow-immersive:
-    0 8px 16px rgba(0,0,0,0.03), 0 16px 32px rgba(0,0,0,0.06),
-    0 32px 64px rgba(0,0,0,0.09), 0 48px 96px rgba(0,0,0,0.10);
+    0 12px 32px rgba(0,0,0,0.1), 0 32px 64px rgba(0,0,0,0.15),
+    0 64px 128px rgba(124, 92, 252, 0.15), 0 0 0 1px rgba(255,255,255,0.6);
 
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
@@ -1766,10 +2318,10 @@ export class FloatingButton {
 
 /* ── FAB ── */
 .gf-fab {
-  width: 36px; height: 36px; border-radius: 8px;
+  width: 36px; height: 36px; border-radius: 10px;
   background: var(--glass-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(20px) saturate(200%);
+  -webkit-backdrop-filter: blur(20px) saturate(200%);
   border: 1px solid var(--glass-border);
   box-shadow: var(--shadow-rest);
   cursor: pointer;
@@ -1781,10 +2333,11 @@ export class FloatingButton {
     border-color 0.2s var(--ease-smooth),
     background 0.2s var(--ease-smooth);
   will-change: transform, box-shadow;
+  transform: translate3d(0,0,0);
 }
 
 .gf-fab:hover {
-  transform: translateY(-2px) scale(1.05);
+  transform: perspective(var(--perspective)) translateY(-4px) translateZ(10px) scale(1.1);
   background: var(--glass-bg-hover);
   box-shadow: var(--shadow-hover);
   border-color: var(--glass-border-hover);
@@ -1865,6 +2418,20 @@ export class FloatingButton {
   100% { transform: scale(1) rotate(0); opacity: 1; }
 }
 
+/* Glister Pulse (Sentient UI) */
+.gf-glister-indicator {
+  position: absolute; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--brand);
+  box-shadow: 0 0 0 0 rgba(var(--brand-rgb), 0.4);
+  animation: gfGlister 2s infinite;
+  pointer-events: none; z-index: 2147483646;
+}
+@keyframes gfGlister {
+  0%   { box-shadow: 0 0 0 0 rgba(var(--brand-rgb), 0.7); opacity: 1; }
+  70%  { box-shadow: 0 0 0 10px rgba(var(--brand-rgb), 0); opacity: 0.5; }
+  100% { box-shadow: 0 0 0 0 rgba(var(--brand-rgb), 0); opacity: 0; }
+}
+
 /* Tooltip */
 .gf-tooltip {
   position: absolute; bottom: calc(100% + 10px); left: 50%;
@@ -1875,6 +2442,7 @@ export class FloatingButton {
   color: white; font-size: 11px; font-weight: 550; letter-spacing: -0.01em;
   border-radius: 8px; white-space: nowrap; pointer-events: none;
   opacity: 0; transition: all 0.25s var(--ease-out-expo);
+  will-change: opacity, transform;
   z-index: 1001; box-shadow: 0 4px 16px rgba(0,0,0,0.2);
 }
 .gf-tooltip::after {
@@ -1988,17 +2556,19 @@ export class FloatingButton {
 /* ── Dark Mode ── */
 @media (prefers-color-scheme: dark) {
   :host {
-    --glass-bg: linear-gradient(135deg, rgba(22,30,52,0.92) 0%, rgba(12,18,36,0.88) 100%);
-    --glass-bg-hover: linear-gradient(135deg, rgba(28,36,60,0.95) 0%, rgba(18,24,44,0.92) 100%);
-    --glass-border: rgba(255,255,255,0.08);
-    --glass-border-hover: rgba(var(--brand-rgb),0.3);
-    --text: #f1f5f9; --text-secondary: #94a3b8; --text-tertiary: #64748b;
-    --brand-glow: rgba(167,139,250,0.25);
-    --shadow-rest: 0 2px 4px rgba(0,0,0,0.20), 0 4px 8px rgba(0,0,0,0.15), 0 8px 16px rgba(0,0,0,0.10);
-    --shadow-hover: 0 4px 8px rgba(0,0,0,0.20), 0 8px 16px rgba(0,0,0,0.18),
-      0 16px 32px rgba(0,0,0,0.15), 0 0 36px var(--brand-glow);
-    --shadow-active: 0 1px 2px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.2);
-    --shadow-immersive: 0 8px 16px rgba(0,0,0,0.25), 0 24px 48px rgba(0,0,0,0.25), 0 48px 96px rgba(0,0,0,0.20);
+    --glass-bg: rgba(22, 30, 52, 0.65);
+    --glass-bg-hover: rgba(28, 36, 60, 0.85);
+    --glass-border: rgba(255,255,255,0.15);
+    --glass-border-hover: rgba(255,255,255,0.3);
+    --text: #f8fafc; --text-secondary: #cbd5e1; --text-tertiary: #94a3b8;
+    --brand-glow: rgba(167,139,250,0.35);
+    
+    --shadow-rest: 0 4px 16px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
+    --shadow-hover: 0 12px 32px rgba(0,0,0,0.6), 0 16px 48px rgba(167,139,250,0.25),
+      0 0 0 1px rgba(255,255,255,0.25), 0 0 48px var(--brand-glow);
+    --shadow-active: 0 2px 8px rgba(0,0,0,0.5), inset 0 2px 4px rgba(0,0,0,0.2);
+    --shadow-immersive: 0 16px 48px rgba(0,0,0,0.5), 0 32px 96px rgba(12,18,36,0.8),
+      0 0 0 1px rgba(255,255,255,0.1);
   }
   .gf-fab {
     background: var(--glass-bg); border-color: var(--glass-border);

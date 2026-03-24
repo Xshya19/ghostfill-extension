@@ -30,11 +30,51 @@ class TempMailLolService {
   private token: string | null = null;
 
   /**
+   * Fetch with retry logic
+   */
+  private async fetchWithRetry(
+    url: string,
+    options: RequestInit = {},
+    retries = 3
+  ): Promise<Response> {
+    let lastError: Error | unknown = null;
+
+    for (let i = 0; i < retries; i++) {
+      try {
+        const response = await fetch(url, options);
+
+        if (response.status === 429 || response.status >= 500) {
+          // If rate limited or server error, retry unless it's the last attempt
+          if (i < retries - 1) {
+            const waitTime = 1000 * (i + 1);
+            log.warn(`TempMailLol attempt ${i + 1} failed (${response.status}), retrying in ${waitTime}ms...`);
+            await new Promise((resolve) => setTimeout(resolve, waitTime));
+            continue;
+          }
+        }
+
+        return response;
+      } catch (error) {
+        lastError = error;
+        if (options.signal?.aborted) {
+          throw error;
+        }
+        if (i < retries - 1) {
+          const waitTime = 1000 * (i + 1);
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
+          continue;
+        }
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  }
+
+  /**
    * Get available domains
    */
-  async getDomains(): Promise<string[]> {
+  async getDomains(signal?: AbortSignal): Promise<string[]> {
     try {
-      const response = await fetch(`${this.baseUrl}/domains`);
+      const response = await this.fetchWithRetry(`${this.baseUrl}/domains`, { signal });
 
       if (!response.ok) {
         log.warn('Failed to get domains');
@@ -52,13 +92,14 @@ class TempMailLolService {
   /**
    * Create a new email account
    */
-  async createAccount(): Promise<EmailAccount> {
+  async createAccount(signal?: AbortSignal): Promise<EmailAccount> {
     try {
-      const response = await fetch(`${this.baseUrl}/generate`, {
+      const response = await this.fetchWithRetry(`${this.baseUrl}/generate`, {
         headers: {
           'User-Agent': 'GhostFill-Extension/1.0',
           Accept: 'application/json',
         },
+        signal,
       });
 
       if (!response.ok) {
@@ -96,18 +137,19 @@ class TempMailLolService {
   /**
    * Get messages (inbox)
    */
-  async getMessages(token?: string): Promise<Email[]> {
+  async getMessages(token?: string, signal?: AbortSignal): Promise<Email[]> {
     const authToken = token || this.token;
     if (!authToken) {
       throw new Error('No token available');
     }
 
     try {
-      const response = await fetch(`${this.baseUrl}/auth/${authToken}`, {
+      const response = await this.fetchWithRetry(`${this.baseUrl}/auth/${authToken}`, {
         headers: {
           'User-Agent': 'GhostFill-Extension/1.0',
           Accept: 'application/json',
         },
+        signal,
       });
 
       if (!response.ok) {
@@ -131,8 +173,8 @@ class TempMailLolService {
   /**
    * Get a specific message
    */
-  async getMessage(id: string, token?: string): Promise<Email> {
-    const messages = await this.getMessages(token);
+  async getMessage(id: string, token?: string, signal?: AbortSignal): Promise<Email> {
+    const messages = await this.getMessages(token, signal);
     const message = messages.find((m) => m.id === id);
 
     if (!message) {

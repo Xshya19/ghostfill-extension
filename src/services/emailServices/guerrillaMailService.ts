@@ -51,12 +51,12 @@ class GuerrillaMailService {
   /**
    * Execute Guerrilla Mail API request with robust rate limiting
    */
-  private async executeRequest<T>(params: Record<string, string>): Promise<T> {
+  private async executeRequest<T>(params: Record<string, string>, signal?: AbortSignal): Promise<T> {
     // Queue the request to prevent concurrent API calls
     return new Promise((resolve, reject) => {
       this.requestQueue = this.requestQueue.then(async () => {
         try {
-          const result = await this.doRequest<T>(params);
+          const result = await this.doRequest<T>(params, signal);
           resolve(result);
         } catch (error) {
           reject(error);
@@ -65,7 +65,7 @@ class GuerrillaMailService {
     });
   }
 
-  private async doRequest<T>(params: Record<string, string>): Promise<T> {
+  private async doRequest<T>(params: Record<string, string>, signal?: AbortSignal): Promise<T> {
     // Check if we're in cooldown
     const now = Date.now();
     if (now < this.cooldownUntil) {
@@ -88,7 +88,7 @@ class GuerrillaMailService {
         url.searchParams.append(key, value);
       });
 
-      const response = await fetch(url.toString());
+      const response = await fetch(url.toString(), { signal });
 
       if (response.status === 429) {
         // Exponential backoff
@@ -122,13 +122,16 @@ class GuerrillaMailService {
   /**
    * Create a new email session
    */
-  async createAccount(): Promise<EmailAccount> {
+  async createAccount(signal?: AbortSignal): Promise<EmailAccount> {
     try {
-      const data = await this.executeRequest<GuerrillaSession>({
-        f: 'get_email_address',
-        ip: '1',
-        agent: 'GhostFill',
-      });
+      const data = await this.executeRequest<GuerrillaSession>(
+        {
+          f: 'get_email_address',
+          ip: '1',
+          agent: 'GhostFill',
+        },
+        signal
+      );
 
       this.sessionId = data.sid_token;
       this.emailAddress = data.email_addr;
@@ -162,18 +165,21 @@ class GuerrillaMailService {
   /**
    * Get messages (inbox)
    */
-  async getMessages(sessionId?: string): Promise<Email[]> {
+  async getMessages(sessionId?: string, signal?: AbortSignal): Promise<Email[]> {
     const sid = sessionId || this.sessionId;
     if (!sid) {
       throw new Error('No session ID available');
     }
 
     try {
-      const data = (await this.executeRequest<{ list: GuerrillaEmail[] }>({
-        f: 'get_email_list',
-        sid_token: sid,
-        offset: '0',
-      })) as { list: GuerrillaEmail[] };
+      const data = (await this.executeRequest<{ list: GuerrillaEmail[] }>(
+        {
+          f: 'get_email_list',
+          sid_token: sid,
+          offset: '0',
+        },
+        signal
+      )) as { list: GuerrillaEmail[] };
 
       const messages: GuerrillaEmail[] = data.list || [];
       return messages.map((msg) => this.convertMessage(msg));
@@ -186,18 +192,21 @@ class GuerrillaMailService {
   /**
    * Get a specific message
    */
-  async getMessage(id: string, sessionId?: string): Promise<Email> {
+  async getMessage(id: string, sessionId?: string, signal?: AbortSignal): Promise<Email> {
     const sid = sessionId || this.sessionId;
     if (!sid) {
       throw new Error('No session ID available');
     }
 
     try {
-      const data = await this.executeRequest<GuerrillaEmail>({
-        f: 'fetch_email',
-        sid_token: sid,
-        email_id: id,
-      });
+      const data = await this.executeRequest<GuerrillaEmail>(
+        {
+          f: 'fetch_email',
+          sid_token: sid,
+          email_id: id,
+        },
+        signal
+      );
 
       return this.convertMessage(data, true);
     } catch (error) {

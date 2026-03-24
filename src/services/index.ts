@@ -34,7 +34,6 @@ export { linkService } from './linkService';
 export { identityService } from './identityService';
 export { smartDetectionService } from './smartDetectionService';
 export { performanceService } from './performanceService';
-export { classifyWithGhostCore } from './ghostCore';
 
 // Re-export extraction module for external consumers (deprecated)
 export { extractAll, extractOTPStandalone, extractLinkStandalone } from './intelligentExtractor';

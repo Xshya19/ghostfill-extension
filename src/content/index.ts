@@ -2,10 +2,11 @@
 
 import { createLogger } from '../utils/logger';
 import { errorTracker, performanceMonitor } from '../utils/monitoring';
+import { initRemoteLogger } from '../utils/remoteLogger';
 import { AutoFiller } from './autoFiller';
 import { DOMObserver } from './domObserver';
-import { FieldAnalyzer } from './fieldAnalyzer';
 import { extractFeatures } from './extractor';
+import { FieldAnalyzer } from './fieldAnalyzer';
 import { FloatingButton } from './floatingButton';
 import { FormDetector } from './formDetector';
 import { OTPPageDetector } from './otpPageDetector';
@@ -14,6 +15,66 @@ import './styles/content.css';
 import './ui/GhostLabel'; // Register web component
 
 const log = createLogger('ContentScript');
+initRemoteLogger('Content');
+
+// Handle context invalidation globally
+function isContextValid(): boolean {
+  return typeof chrome !== 'undefined' && !!chrome.runtime?.id;
+}
+
+// Global error boundary for content script
+window.addEventListener('error', (event) => {
+  const msg = event.message?.toLowerCase() ?? '';
+
+  // Ignore context invalidation - expected on extension reload
+  if (msg.includes('extension context invalidated') || msg.includes('context invalidated')) {
+    log.debug('GhostFill: Content script context invalidated (expected on reload)');
+    event.preventDefault();
+    return;
+  }
+
+  // Ignore connection errors from Chrome API
+  if (
+    msg.includes('could not establish connection') ||
+    msg.includes('receiving end does not exist')
+  ) {
+    log.debug('GhostFill: Connection error (expected if extension unloaded)');
+    event.preventDefault();
+    return;
+  }
+
+  log.error('Unhandled content script error:', event.error);
+  event.preventDefault();
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event.reason;
+  const reasonStr = reason instanceof Error ? reason.message : String(reason);
+  const reasonStrLower = reasonStr.toLowerCase();
+
+  // Ignore context invalidation - this is expected on extension reload
+  if (
+    reasonStrLower.includes('extension context invalidated') ||
+    reasonStrLower.includes('context invalidated')
+  ) {
+    log.debug('GhostFill: Extension context invalidated (expected on reload)');
+    event.preventDefault(); // Prevent default browser handling
+    return;
+  }
+
+  // Ignore connection errors
+  if (
+    reasonStrLower.includes('could not establish connection') ||
+    reasonStrLower.includes('receiving end does not exist')
+  ) {
+    log.debug('GhostFill: Connection error (expected if extension unloaded)');
+    event.preventDefault();
+    return;
+  }
+
+  log.error('Unhandled content script promise rejection:', event.reason);
+  event.preventDefault(); // Prevent default browser error
+});
 
 log.info('GhostFill content script loaded');
 
@@ -21,7 +82,9 @@ log.info('GhostFill content script loaded');
 function createSafeComponent<T extends object>(methods: Partial<T>, componentName: string): T {
   return new Proxy({} as T, {
     get(_, prop: string | symbol) {
-      if (typeof prop !== 'string') {return undefined;}
+      if (typeof prop !== 'string') {
+        return undefined;
+      }
 
       return (...args: unknown[]) => {
         log.error(
@@ -33,24 +96,15 @@ function createSafeComponent<T extends object>(methods: Partial<T>, componentNam
           timestamp: Date.now(),
         });
 
-        if (document.body) {
-          const errorBanner = document.createElement('div');
-          errorBanner.style.cssText =
-            'position:fixed;top:10px;right:10px;background:#e53e3e;color:white;padding:10px;z-index:999999;border-radius:4px;font-family:sans-serif;font-size:14px;box-shadow:0 4px 6px rgba(0,0,0,0.1);';
-          errorBanner.textContent = `GhostFill Error: Action failed. Extension component ${componentName} failed to initialize.`;
-          document.body.appendChild(errorBanner);
-          setTimeout(() => errorBanner.remove(), 5000);
-        }
-
         const fallbackFn = (methods as any)[prop];
         if (typeof fallbackFn === 'function') {
           return fallbackFn(...args);
         }
-        
+
         // Return a generic resolved promise by default as many methods are async
         return Promise.resolve(null);
       };
-    }
+    },
   });
 }
 
@@ -86,7 +140,7 @@ function init(): void {
 
     // Initialize DOM-dependent components
     try {
-      fieldAnalyzer = new FieldAnalyzer();
+      fieldAnalyzer = FieldAnalyzer.getInstance();
       formDetector = new FormDetector(fieldAnalyzer);
       autoFiller = new AutoFiller();
       floatingButton = new FloatingButton(autoFiller); // Inject autoFiller
@@ -95,7 +149,11 @@ function init(): void {
     } catch (e) {
       log.error('Failed to initialize content script components', e);
       // Create safe no-op objects to prevent further crashes
-      const dummyFieldAnalyzer = { analyze: () => ({}), getFields: () => [], detectForms: () => ({}) };
+      const dummyFieldAnalyzer = {
+        analyze: () => ({}),
+        getFields: () => [],
+        detectForms: () => ({}),
+      };
       const dummyFormDetector = { detectForms: () => ({}), highlightFields: () => {} };
       const dummyAutoFiller = {
         fillOTP: () => Promise.resolve(false),
@@ -109,12 +167,24 @@ function init(): void {
       const dummyDomObserver = { start: () => {}, stop: () => {} };
       const dummyOtpPageDetector = { init: () => {}, detect: () => false };
 
-      fieldAnalyzer = createSafeComponent(dummyFieldAnalyzer, 'FieldAnalyzer') as unknown as FieldAnalyzer;
-      formDetector = createSafeComponent(dummyFormDetector, 'FormDetector') as unknown as FormDetector;
+      fieldAnalyzer = createSafeComponent(
+        dummyFieldAnalyzer,
+        'FieldAnalyzer'
+      ) as unknown as FieldAnalyzer;
+      formDetector = createSafeComponent(
+        dummyFormDetector,
+        'FormDetector'
+      ) as unknown as FormDetector;
       autoFiller = createSafeComponent(dummyAutoFiller, 'AutoFiller') as unknown as AutoFiller;
-      floatingButton = createSafeComponent(dummyFloatingButton, 'FloatingButton') as unknown as FloatingButton;
+      floatingButton = createSafeComponent(
+        dummyFloatingButton,
+        'FloatingButton'
+      ) as unknown as FloatingButton;
       domObserver = createSafeComponent(dummyDomObserver, 'DOMObserver') as unknown as DOMObserver;
-      otpPageDetector = createSafeComponent(dummyOtpPageDetector, 'OTPPageDetector') as unknown as OTPPageDetector;
+      otpPageDetector = createSafeComponent(
+        dummyOtpPageDetector,
+        'OTPPageDetector'
+      ) as unknown as OTPPageDetector;
     }
 
     // Detect forms on page load
@@ -169,9 +239,13 @@ function init(): void {
     });
 
     // Track the last right-clicked element for Continuous Learning
-    document.addEventListener('contextmenu', (e) => {
-      lastRightClickedElement = e.target as HTMLElement;
-    }, true);
+    document.addEventListener(
+      'contextmenu',
+      (e) => {
+        lastRightClickedElement = e.target as HTMLElement;
+      },
+      true
+    );
 
     log.debug('Content script initialized');
   } catch (error) {
@@ -186,27 +260,55 @@ async function handleMessage(message: {
   action: string;
   payload?: Record<string, unknown>;
 }): Promise<{ success: boolean; error?: string; [key: string]: unknown }> {
+  if (!isContextValid()) {
+    log.debug('Context invalidated, ignoring message', { action: message.action });
+    return { success: false, error: 'Extension context invalidated' };
+  }
+
   switch (message.action) {
     case 'REPORT_MISCLASSIFICATION': {
       if (message.payload && lastRightClickedElement) {
         const { correctType } = message.payload as { correctType: string };
         // Extract raw UI features of the field the user right-clicked
-        const isInput = lastRightClickedElement.tagName === 'INPUT' || lastRightClickedElement.tagName === 'TEXTAREA';
+        const isInput =
+          lastRightClickedElement.tagName === 'INPUT' ||
+          lastRightClickedElement.tagName === 'TEXTAREA';
         if (isInput) {
-          const rawFeatures = extractFeatures(lastRightClickedElement as HTMLInputElement | HTMLTextAreaElement);
+          const rawFeatures = extractFeatures(
+            lastRightClickedElement as HTMLInputElement | HTMLTextAreaElement
+          );
           if (rawFeatures) {
+            if (!isContextValid()) {
+              log.debug('[Continuous Learning] Context invalidated, cannot save training data');
+              return { success: false, error: 'Context invalidated' };
+            }
+
             chrome.storage.local.get(['ghostfill_training_data'], (res) => {
-              const data = Array.isArray(res.ghostfill_training_data) ? res.ghostfill_training_data : [];
+              // Re-check inside callback because storage calls are async
+              if (!isContextValid()) {
+                return;
+              }
+
+              const data = Array.isArray(res.ghostfill_training_data)
+                ? res.ghostfill_training_data
+                : [];
               // We omit the DOM element itself and keep the text/structural numbers
               const { element, ...savableFeatures } = rawFeatures;
               data.push({ features: savableFeatures, label: correctType, timestamp: Date.now() });
+
               chrome.storage.local.set({ ghostfill_training_data: data }, () => {
-                log.info(`[Continuous Learning] Saved ${correctType} field to local training pool. Total items: ${data.length}`);
+                if (isContextValid()) {
+                  log.info(
+                    `[Continuous Learning] Saved ${correctType} field to local training pool. Total items: ${data.length}`
+                  );
+                }
               });
             });
           }
         } else {
-          log.warn('[Continuous Learning] Right-clicked element is not an input or textarea. Cannot extract features.');
+          log.warn(
+            '[Continuous Learning] Right-clicked element is not an input or textarea. Cannot extract features.'
+          );
         }
       }
       return { success: true };
@@ -266,11 +368,20 @@ async function handleMessage(message: {
           otp,
           source = 'unknown',
           confidence = 1,
-        } = message.payload as { otp: string; source?: string; confidence?: number };
-        const filled = await otpPageDetector.handleAutoFill({ otp, source, confidence });
+          isBackgroundTab = false,
+        } = message.payload as { otp: string; source?: string; confidence?: number; isBackgroundTab?: boolean };
+        const filled = await otpPageDetector.handleAutoFill({ otp, source, confidence, isBackgroundTab });
         return { success: filled, filled };
       }
       return { success: false, error: 'No OTP provided' };
+    }
+
+    case 'POLLING_STATE_CHANGE': {
+      if (message.payload && message.payload.state) {
+        otpPageDetector.handlePollingStateChange(message.payload.state as 'ANALYZING_EMAIL' | 'LINK_ACTIVATION_STARTED');
+        return { success: true };
+      }
+      return { success: false, error: 'No state provided' };
     }
 
     case 'SMART_AUTOFILL':

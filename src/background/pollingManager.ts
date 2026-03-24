@@ -13,15 +13,23 @@
 // └────────────────────────────────────────────────────────────────┘
 // ─────────────────────────────────────────────────────────────────────
 
+import { dedupService } from '../services/dedupService';
 import { emailService } from '../services/emailServices';
 import { linkService } from '../services/linkService';
 import { otpService } from '../services/otpService';
 import { smartDetectionService } from '../services/smartDetectionService';
 import { storageService } from '../services/storageService';
-import { EmailAccount } from '../types';
+import { Email, EmailAccount } from '../types';
 import { createLogger } from '../utils/logger';
 
 import { updateOTPMenuItem } from './contextMenu';
+import {
+  notifyNewEmail,
+  notifyLinkActivated,
+  notifySuccess,
+  notifyError,
+  notifySystem,
+} from './notifications';
 
 const log = createLogger('PollingEngine');
 
@@ -53,12 +61,12 @@ const TIMING = {
 
   // Lifecycle
   STALE_TAB_MS: 300_000,
-  DEDUP_TTL_MS: 600_000,
+  DEDUP_TTL_MS: 24 * 60 * 60 * 1000, // 24 hours
   HEALTH_TICK_MS: 30_000,
   METRICS_TICK_MS: 60_000,
 
   // Email age filter
-  MAX_EMAIL_AGE_MS: 3_600_000, // 1 hour
+  MAX_EMAIL_AGE_MS: 24 * 60 * 60 * 1000, // 24 hours
 
   // Parallel processing cap
   EMAIL_BATCH_SIZE: 3,
@@ -160,61 +168,6 @@ interface SessionState {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  §2  NOTIFICATION MANAGER
-// ═══════════════════════════════════════════════════════════════
-
-class NotificationManager {
-  private lastNotificationTime = 0;
-
-  /** Restore state from session storage */
-  restoreState(savedTime: number): void {
-    this.lastNotificationTime = savedTime;
-  }
-
-  /** Get current state for persistence */
-  getLastTime(): number {
-    return this.lastNotificationTime;
-  }
-
-  /**
-   * Show badge notification with rate limiting.
-   * Always shows badge; skips popup notification if rate-limited.
-   */
-  async show(title: string, detail: string): Promise<void> {
-    const now = Date.now();
-
-    if (now - this.lastNotificationTime >= NOTIFICATION_RATE_LIMIT_MS) {
-      this.lastNotificationTime = now;
-      log.debug('Notification shown', { title, detail });
-    } else {
-      log.debug('Notification rate limited, badge only', { title });
-    }
-
-    this.showBadge();
-  }
-
-  private showBadge(): void {
-    try {
-      if (!chrome?.action) {return;}
-      void chrome.action.setBadgeText({ text: '!' });
-      void chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
-
-      setTimeout(() => {
-        try {
-          if (chrome?.action) {
-            void chrome.action.setBadgeText({ text: '' });
-          }
-        } catch {
-          /* extension context may be invalidated */
-        }
-      }, NOTIFICATION_BADGE_CLEAR_MS);
-    } catch {
-      /* extension context may be invalidated */
-    }
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
 //  §3  CIRCUIT BREAKER
 // ═══════════════════════════════════════════════════════════════
 
@@ -246,7 +199,9 @@ class CircuitBreaker {
   }
 
   allowsRequest(): boolean {
-    if (this.state.state === 'closed') {return true;}
+    if (this.state.state === 'closed') {
+      return true;
+    }
 
     if (this.state.state === 'open') {
       if (Date.now() >= this.state.nextRetryTime) {
@@ -351,141 +306,7 @@ class SlidingRateLimiter {
 //  §5  DEDUPLICATION CACHE WITH TTL
 // ═══════════════════════════════════════════════════════════════
 
-class DedupCache {
-  private readonly records = new Map<string, ProcessedEmailRecord>();
-  private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
-
-  get size(): number {
-    return this.records.size;
-  }
-
-  /**
-   * Restore persisted records from storage.
-   * Does NOT restore timers — those are recreated on next access.
-   */
-  restoreState(saved: Record<string, ProcessedEmailRecord>): void {
-    const now = Date.now();
-    for (const [id, record] of Object.entries(saved)) {
-      // Only restore records that haven't expired
-      if (record.ttlExpiresAt > now) {
-        this.records.set(id, record);
-        this.scheduleEviction(id, record.ttlExpiresAt - now);
-      }
-    }
-  }
-
-  isProcessed(emailId: string | number, accountId: string): boolean {
-    const key = this.makeKey(emailId, accountId);
-    const record = this.records.get(key);
-
-    if (!record) {return false;}
-
-    if (Date.now() >= record.ttlExpiresAt) {
-      this.evict(key);
-      return false;
-    }
-
-    return true;
-  }
-
-  markProcessed(
-    emailId: string | number,
-    accountId: string,
-    hadOTP: boolean,
-    hadLink: boolean
-  ): void {
-    const key = this.makeKey(emailId, accountId);
-
-    // Clear existing timer
-    this.clearTimer(key);
-
-    const record: ProcessedEmailRecord = {
-      id: key,
-      processedAt: Date.now(),
-      hadOTP,
-      hadLink,
-      ttlExpiresAt: Date.now() + TIMING.DEDUP_TTL_MS,
-    };
-
-    this.records.set(key, record);
-    this.scheduleEviction(key, TIMING.DEDUP_TTL_MS);
-    this.persist();
-  }
-
-  /** Remove expired entries */
-  prune(): number {
-    const now = Date.now();
-    let pruned = 0;
-
-    for (const [key, record] of this.records) {
-      if (now >= record.ttlExpiresAt) {
-        this.evict(key);
-        pruned++;
-      }
-    }
-
-    // Clean orphaned timers
-    for (const [key] of this.timers) {
-      if (!this.records.has(key)) {
-        this.clearTimer(key);
-      }
-    }
-
-    if (pruned > 0) {
-      log.debug('🧹 Pruned dedup cache', { pruned, remaining: this.records.size });
-    }
-
-    return pruned;
-  }
-
-  /** Clear all entries and timers */
-  clear(): void {
-    for (const [key] of this.timers) {
-      this.clearTimer(key);
-    }
-    this.records.clear();
-    this.timers.clear();
-  }
-
-  private makeKey(emailId: string | number, accountId: string): string {
-    return `${accountId}:${emailId}`;
-  }
-
-  private evict(key: string): void {
-    this.records.delete(key);
-    this.clearTimer(key);
-    this.persist();
-  }
-
-  private clearTimer(key: string): void {
-    const timer = this.timers.get(key);
-    if (timer !== undefined && timer !== null) {
-      clearTimeout(timer);
-      this.timers.delete(key);
-    }
-  }
-
-  private scheduleEviction(key: string, delayMs: number): void {
-    const timer = setTimeout(() => {
-      this.records.delete(key);
-      this.timers.delete(key);
-      this.persist();
-      log.debug('Email dedup TTL expired', { key });
-    }, delayMs);
-    this.timers.set(key, timer);
-  }
-
-  private persistTimer: ReturnType<typeof setTimeout> | null = null;
-  private persist(): void {
-    if (this.persistTimer) { clearTimeout(this.persistTimer); }
-    this.persistTimer = setTimeout(() => {
-        const serializable = Object.fromEntries(this.records);
-        storageService
-          .set(STORAGE_KEY_PROCESSED, serializable)
-          .catch((e) => log.warn('Failed to persist dedup cache', e));
-    }, 2000);
-  }
-}
+// DedupCache class removed in favor of src/services/dedupService.ts (P2.2)
 
 // ═══════════════════════════════════════════════════════════════
 //  §6  ADAPTIVE INTERVAL CALCULATOR
@@ -502,10 +323,10 @@ class AdaptiveScheduler {
     return this.calculateGeneralInterval(waitingTabs);
   }
 
-  private static calculateFastInterval(
-    waitingTabs: ReadonlyMap<number, TabRegistration>
-  ): number {
-    if (waitingTabs.size === 0) {return TIMING.FAST_CEILING_MS;}
+  private static calculateFastInterval(waitingTabs: ReadonlyMap<number, TabRegistration>): number {
+    if (waitingTabs.size === 0) {
+      return TIMING.FAST_CEILING_MS;
+    }
 
     const now = Date.now();
     let oldestRegistration = now;
@@ -517,18 +338,22 @@ class AdaptiveScheduler {
 
     const waited = now - oldestRegistration;
 
-    if (waited < TIMING.FAST_AGGRESSIVE_UNTIL_MS) {return TIMING.FAST_AGGRESSIVE_MS;}
-    if (waited < TIMING.FAST_NORMAL_UNTIL_MS) {return TIMING.FAST_NORMAL_MS;}
-    if (waited < TIMING.FAST_RELAXED_UNTIL_MS) {return TIMING.FAST_RELAXED_MS;}
+    if (waited < TIMING.FAST_AGGRESSIVE_UNTIL_MS) {
+      return TIMING.FAST_AGGRESSIVE_MS;
+    }
+    if (waited < TIMING.FAST_NORMAL_UNTIL_MS) {
+      return TIMING.FAST_NORMAL_MS;
+    }
+    if (waited < TIMING.FAST_RELAXED_UNTIL_MS) {
+      return TIMING.FAST_RELAXED_MS;
+    }
     return TIMING.FAST_CEILING_MS;
   }
 
   private static calculateGeneralInterval(
     waitingTabs: ReadonlyMap<number, TabRegistration>
   ): number {
-    return waitingTabs.size > 0
-      ? TIMING.GENERAL_ACTIVE_MS
-      : TIMING.GENERAL_DEFAULT_MS;
+    return waitingTabs.size > 0 ? TIMING.GENERAL_ACTIVE_MS : TIMING.GENERAL_DEFAULT_MS;
   }
 }
 
@@ -561,7 +386,9 @@ class DomainMatcher {
     try {
       const tabHostname = new URL(tabUrl).hostname.toLowerCase();
       const senderDomain = (senderEmail.split('@')[1] ?? '').toLowerCase();
-      if (!senderDomain) {return false;}
+      if (!senderDomain) {
+        return false;
+      }
 
       const tabRoot = this.getRootDomain(tabHostname);
       const senderRoot = this.getRootDomain(senderDomain);
@@ -615,7 +442,17 @@ class DomainMatcher {
 
   private static getRootDomain(hostname: string): string {
     const parts = hostname.split('.');
-    return parts.length <= 2 ? hostname : parts.slice(-2).join('.');
+    if (parts.length <= 2) {
+      return hostname;
+    }
+
+    const secondLevel = parts[parts.length - 2]?.toLowerCase();
+
+    if (secondLevel && /^(co|com|org|net|edu|gov|ac|ne)$/.test(secondLevel)) {
+      return parts.slice(-3).join('.');
+    }
+
+    return parts.slice(-2).join('.');
   }
 }
 
@@ -628,17 +465,17 @@ class OTPDeliveryEngine {
    * Deliver OTP to a specific tab with retry.
    * Returns true if delivery succeeded.
    */
-  static async deliverToTab(
-    tabId: number,
-    code: string,
-    confidence: number
-  ): Promise<boolean> {
+  static async deliverToTab(tabId: number, code: string, confidence: number): Promise<boolean> {
     for (let attempt = 0; attempt < OTP_DELIVERY_DELAYS_MS.length; attempt++) {
       const delayMs = OTP_DELIVERY_DELAYS_MS[attempt]!;
 
       if (delayMs > 0) {
-        await new Promise<void>((r) => { setTimeout(r, delayMs); });
-        log.info(`🔄 Retry OTP delivery to tab ${tabId} (${attempt + 1}/${OTP_DELIVERY_DELAYS_MS.length})`);
+        await new Promise<void>((r) => {
+          setTimeout(r, delayMs);
+        });
+        log.info(
+          `🔄 Retry OTP delivery to tab ${tabId} (${attempt + 1}/${OTP_DELIVERY_DELAYS_MS.length})`
+        );
       }
 
       try {
@@ -673,11 +510,15 @@ class OTPDeliveryEngine {
 
 class OTPCodeExtractor {
   private static readonly EMERGENCY_PATTERNS: readonly RegExp[] = [
-    /(?:use|enter|type|input)\s+(\d{4,8})\b/i,
-    /(?:code|pin|otp|password|token|passcode)\s*(?:is|:|=)\s*(\d{4,8})\b/i,
-    /(?:confirmation|verification|security|login)\s+code\s*:?\s*(\d{4,8})\b/i,
-    /your\s+(?:\w+\s+)?code\s*(?:is|:)\s*(\d{4,8})\b/i,
-    /\b(\d{4,8})\s+is\s+your\s+(?:\w+\s+)?(?:code|pin|otp)/i,
+    // Specific labeled patterns (high confidence)
+    /(?:use|enter|type|input)\s+(?:this\s+)?(?:code|otp|pin|passcode|verification\s+code)\s*(?:is|:|=)?\s*\b([A-Z0-9]{4,10})\b/i,
+    /(?:code|pin|otp|password|token|passcode)\s*(?:is|:|=)\s*\b([A-Z0-9]{4,10})\b/i,
+    /(?:confirmation|verification|security|login|access)\s+code\s*:?\s*\b([A-Z0-9]{4,10})\b/i,
+    /your\s+(?:\w+\s+)?(?:code|pin|otp)\s*(?:is|:)\s*\b([A-Z0-9]{4,10})\b/i,
+    /\b([A-Z0-9]{4,10})\s+is\s+your\s+(?:\w+\s+)?(?:code|pin|otp)/i,
+    // Hyphenated or spaced codes (e.g., 123-456 or 123 456)
+    /\b(\d{3}[\s-]\d{3})\b/,
+    /\b(\d{4}[\s-]\d{4})\b/,
   ];
 
   /**
@@ -729,11 +570,13 @@ class OTPCodeExtractor {
     }
 
     // Source 5: Short email standalone number
-    if (emailText.length < 200) {
-      const shortMatch = emailText.match(/\b(\d{4,8})\b/);
-      if (shortMatch?.[1]) {
+    if (emailText.length < 300) {
+      // Exclude common years (2020-2029) and require 6-8 digits for standalone sequences
+      // to avoid matching 4-digit years or 5-digit zip codes maliciously
+      const standaloneMatch = emailText.match(/\b(?!(?:20[0-9]{2}))(\d{6,8})\b/);
+      if (standaloneMatch?.[1]) {
         log.info('🚨 OTP from short email');
-        return shortMatch[1];
+        return standaloneMatch[1];
       }
     }
 
@@ -749,8 +592,8 @@ class OTPCodeExtractor {
 const otpWaitingTabs = new Map<number, TabRegistration>();
 const circuitBreaker = new CircuitBreaker();
 const rateLimiter = new SlidingRateLimiter();
-const dedupCache = new DedupCache();
-const notifications = new NotificationManager();
+const dedupCache = dedupService;
+const activationTabs = new Set<number>(); // Tabs opened for link activation - exclude from OTP delivery
 
 const metrics: PollingMetrics = {
   startedAt: 0,
@@ -772,19 +615,20 @@ let generalTimer: ReturnType<typeof setTimeout> | null = null;
 let lastGlobalCheckTime = 0;
 let initialized = false;
 let alarmListenerInstalled = false;
-let runtimeListenerInstalled = false;
 let priorityCounter = 0;
 let checkInProgress = false;
 
 // ── Alarm handler (must be stable reference for removeListener) ──
-const onPollingAlarm = (alarm: chrome.alarms.Alarm): void => {
+export const onPollingAlarm = (alarm: chrome.alarms.Alarm): void => {
   switch (alarm.name) {
     case ALARM_NAMES.EMAIL_SYNC:
       if (pollingActive) {
         log.debug('⏰ Alarm sync triggered');
         void performCheck('general').then(() => {
           // Restart aggressive polling loop in case SW was completely suspended
-          scheduleGeneralPoll();
+          if (generalTimer) clearTimeout(generalTimer);
+          // @ts-ignore - scheduleGeneralPoll exists further down in file
+          if (typeof scheduleGeneralPoll === 'function') scheduleGeneralPoll();
         });
       }
       break;
@@ -797,19 +641,8 @@ const onPollingAlarm = (alarm: chrome.alarms.Alarm): void => {
   }
 };
 
-// ── Runtime message handler for link activation ──
-const onPollingRuntimeMessage = (
-  message: { action?: string; payload?: { timestamp?: number; source?: string } },
-  _sender: chrome.runtime.MessageSender,
-  sendResponse: (response?: unknown) => void
-): boolean => {
-  if (message?.action === 'LINK_ACTIVATED') {
-    log.info('🔗 Link activated — cooling down polling');
-    stopEmailPolling();
-    sendResponse({ ok: true });
-  }
-  return false; // Don't keep channel open for unrelated messages
-};
+// ── Runtime message handler for link activation (Moved to messageHandler.ts) ──
+// onPollingRuntimeMessage removed to prevent multiple listener conflicts
 
 // ── Health sweep ──
 function runHealthSweep(): void {
@@ -823,7 +656,7 @@ function runHealthSweep(): void {
   }
 
   dedupCache.prune();
-  rateLimiter; // Rate limiter self-prunes on access
+  rateLimiter.windowSize; // Rate limiter self-prunes on access
 }
 
 function logMetricsSnapshot(): void {
@@ -858,21 +691,25 @@ function checkPermitted(mode: CheckMode): boolean {
   }
   if (mode === 'fast') {
     const gap = Date.now() - lastGlobalCheckTime;
-    if (gap < TIMING.FAST_FLOOR_MS) {return false;}
+    if (gap < TIMING.FAST_FLOOR_MS) {
+      return false;
+    }
   }
   return true;
 }
 
 // ── Session state persistence ──
 function persistSessionState(): void {
-  if (typeof chrome === 'undefined' || !chrome.storage?.session) {return;}
+  if (typeof chrome === 'undefined' || !chrome.storage?.session) {
+    return;
+  }
 
   chrome.storage.session
     .set({
       pm_breaker: circuitBreaker.getState(),
       // Array.from converts readonly number[] → mutable number[] to satisfy SessionState
       pm_requestLog: Array.from(rateLimiter.getTimestamps()),
-      pm_lastNotificationTime: notifications.getLastTime(),
+      pm_lastNotificationTime: 0, // Placeholder
     } satisfies SessionState)
     .catch((e) => log.debug('Session state sync failed', e));
 }
@@ -888,7 +725,9 @@ async function performCheck(mode: CheckMode): Promise<void> {
     return;
   }
 
-  if (!checkPermitted(mode)) {return;}
+  if (!checkPermitted(mode)) {
+    return;
+  }
 
   checkInProgress = true;
   const t0 = Date.now();
@@ -908,25 +747,33 @@ async function performCheck(mode: CheckMode): Promise<void> {
     const cachedIds = new Set(cachedInbox.map((e) => e.id));
     const cutoff = Date.now() - TIMING.MAX_EMAIL_AGE_MS;
 
-    const newEmails = freshInbox.filter((e) => {
-      if (cachedIds.has(e.id)) {return false;}
-      if (dedupCache.isProcessed(String(e.id), currentEmail.fullEmail)) {return false;}
+    const newEmails: Email[] = [];
+    for (const e of freshInbox) {
+      if (cachedIds.has(e.id)) {
+        continue;
+      }
+      if (await dedupCache.isProcessed(String(e.id), currentEmail.fullEmail)) {
+        continue;
+      }
       if ((e.date ?? 0) < cutoff) {
         log.debug('Skipping old email', { id: e.id });
-        return false;
+        continue;
       }
-      return true;
-    });
+      newEmails.push(e);
+    }
 
     if (newEmails.length > 0) {
       log.info(`📬 ${newEmails.length} new email(s)`, { mode });
+      
+      // Broadcast to UI that we are actively analyzing a new email
+      for (const tabId of otpWaitingTabs.keys()) {
+        chrome.tabs.sendMessage(tabId, { action: 'POLLING_STATE_CHANGE', payload: { state: 'ANALYZING_EMAIL' } }).catch(() => {});
+      }
 
       const batches = chunk(newEmails, TIMING.EMAIL_BATCH_SIZE);
       for (const batch of batches) {
         await Promise.allSettled(
-          batch.map((email) =>
-            processEmail(String(email.id), currentEmail)
-          )
+          batch.map((email) => processEmail(String(email.id), currentEmail))
         );
       }
     }
@@ -963,11 +810,10 @@ async function performCheck(mode: CheckMode): Promise<void> {
 //  §12  CORE: EMAIL PROCESSING PIPELINE
 // ═══════════════════════════════════════════════════════════════
 
-async function processEmail(
-  emailId: string,
-  currentEmail: EmailAccount
-): Promise<void> {
-  if (dedupCache.isProcessed(emailId, currentEmail.fullEmail)) {return;}
+async function processEmail(emailId: string, currentEmail: EmailAccount): Promise<void> {
+  if (await dedupCache.isProcessed(emailId, currentEmail.fullEmail)) {
+    return;
+  }
 
   const fullEmail = await emailService.readEmail(emailId, currentEmail);
   metrics.emailsProcessed++;
@@ -999,7 +845,7 @@ async function processEmail(
       const otpCode = OTPCodeExtractor.extract(detection, fullEmail);
 
       if (otpCode) {
-        dedupCache.markProcessed(emailId, currentEmail.fullEmail, true, false);
+        await dedupCache.markProcessed(emailId, currentEmail.fullEmail, true, false);
 
         await deliverOTP(otpCode, detection.confidence ?? 0.9, {
           from: fullEmail.from,
@@ -1008,7 +854,7 @@ async function processEmail(
           linkUrl: detection.link,
         });
 
-        void notifications.show(`OTP: ${otpCode}`, `From: ${fullEmail.from}`);
+        void notifyNewEmail(fullEmail.from, fullEmail.subject, otpCode, detection.link);
         return;
       }
 
@@ -1018,31 +864,54 @@ async function processEmail(
 
   // ── PRIORITY 2: Standard processing ──
   const hasOTP = (detection.type === 'otp' || detection.type === 'both') && Boolean(detection.code);
-  const hasLink = (detection.type === 'link' || detection.type === 'both') && Boolean(detection.link);
+  const hasLink =
+    (detection.type === 'link' || detection.type === 'both') && Boolean(detection.link);
 
-  // Mark before side effects
-  dedupCache.markProcessed(emailId, currentEmail.fullEmail, hasOTP, hasLink);
+  // Track if OTP was successfully delivered to prevent duplicate fills
+  let otpDelivered = false;
 
-  if (hasLink && detection.link) {
-    log.info('🔗 Link detected, deferring to linkService');
-    metrics.linksProcessed++;
-    await linkService.handleNewEmail(fullEmail).catch((e) => log.warn('linkService error', e));
-    void notifications.show('Verification Link Found', `From: ${fullEmail.from}`);
+  // Mark OTP-only emails as processed immediately (no async handling needed)
+  // Don't mark link emails here - let linkService handle the dedup marking after activation
+  if (hasOTP && !hasLink) {
+    await dedupCache.markProcessed(emailId, currentEmail.fullEmail, hasOTP, false);
   }
 
+  // For "both" emails, deliver OTP FIRST before opening activation link
+  // This ensures the user's tab gets the OTP before any link activation
   if (hasOTP && detection.code) {
-    log.info('🔢 OTP detected');
-    await deliverOTP(detection.code, detection.confidence, {
+    log.info('🔢 OTP detected — delivering to waiting tabs');
+    otpDelivered = await deliverOTP(detection.code, detection.confidence, {
       from: fullEmail.from,
       subject: fullEmail.subject,
       provider: detection.provider,
       linkUrl: detection.link,
     });
-    void notifications.show(`OTP: ${detection.code}`, `From: ${fullEmail.from}`);
+    void notifyNewEmail(fullEmail.from, fullEmail.subject, detection.code, detection.link);
+  }
+
+  // Only open activation link if:
+  // 1. Email has a link
+  // 2. OTP was NOT already delivered (to prevent duplicate fills)
+  // For "both" emails where OTP was delivered, skip link activation
+  // to avoid confusion - the user already has the OTP filled
+  if (hasLink && detection.link && !otpDelivered) {
+    log.info('🔗 Link detected, deferring to linkService');
+    metrics.linksProcessed++;
+    
+    // Broadcast to UI that a link was found and is being handled in the background
+    for (const tabId of otpWaitingTabs.keys()) {
+      chrome.tabs.sendMessage(tabId, { action: 'POLLING_STATE_CHANGE', payload: { state: 'LINK_ACTIVATION_STARTED' } }).catch(() => {});
+    }
+
+    // linkService will handle dedup marking after successful activation
+    await linkService
+      .handleNewEmail(fullEmail, currentEmail.fullEmail)
+      .catch((e) => log.warn('linkService error', e));
+    void notifyNewEmail(fullEmail.from, fullEmail.subject, undefined, detection.link);
   }
 
   if (!hasOTP && !hasLink) {
-    void notifications.show('New Email', `From: ${fullEmail.from}`);
+    void notifyNewEmail(fullEmail.from, fullEmail.subject);
   }
 }
 
@@ -1057,6 +926,13 @@ function findMatchingTab(
   );
 
   for (const [tabId, reg] of sorted) {
+    // Skip activation tabs - these are opened by linkService for verification links,
+    // not for receiving OTP codes. Filling OTP in activation tabs would be wrong.
+    if (activationTabs.has(tabId)) {
+      log.debug(`Skipping activation tab ${tabId} for OTP delivery`);
+      continue;
+    }
+
     if (DomainMatcher.matches(senderEmail, reg.url, provider, linkUrl)) {
       return tabId;
     }
@@ -1069,25 +945,25 @@ function findMatchingTab(
 //  §13  OTP DELIVERY ORCHESTRATOR
 // ═══════════════════════════════════════════════════════════════
 
-async function deliverOTP(
-  code: string,
-  confidence: number,
-  email: EmailContext
-): Promise<void> {
+/**
+ * Deliver OTP code to matching waiting tabs.
+ * @returns true if OTP was successfully delivered to at least one tab
+ */
+async function deliverOTP(code: string, confidence: number, email: EmailContext): Promise<boolean> {
   metrics.otpsFound++;
 
   await otpService.saveLastOTP(code, 'email', email.from, email.subject, confidence);
   await updateOTPMenuItem();
 
-  const masked = code.length > 2
-    ? code.substring(0, 2) + '•'.repeat(code.length - 2)
-    : '•'.repeat(code.length);
+  const masked =
+    code.length > 2 ? code.substring(0, 2) + '•'.repeat(code.length - 2) : '•'.repeat(code.length);
 
   log.info('🎯 OTP detected', {
     code: masked,
     confidence: `${Math.round(confidence * 100)}%`,
     from: email.from,
     waitingTabs: otpWaitingTabs.size,
+    activationTabs: activationTabs.size,
   });
 
   // Priority-sorted delivery
@@ -1095,27 +971,49 @@ async function deliverOTP(
     ([, a], [, b]) => a.priority - b.priority
   );
 
-  const delivered: number[] = [];
+  let firstDeliverySucceeded = false;
 
-  for (const [tabId, reg] of sorted) {
-    if (!DomainMatcher.matches(email.from, reg.url, email.provider, email.linkUrl)) {
-      log.info(`⛔ Domain mismatch: tab ${reg.hostname} ≠ ${email.from}`);
-      continue;
-    }
+  // ───────────────────────────────────────────────────────────────────
+  // M3: Parallelize OTPDeliveryEngine retries to prevent blocking
+  // Deliver to all matching tabs concurrently instead of sequentially
+  // ───────────────────────────────────────────────────────────────────
+  const deliveryPromises = sorted
+    .filter(([tabId, reg]: [number, TabRegistration]) => {
+      if (activationTabs.has(tabId)) {
+        log.info(`⛔ Skipping activation tab ${tabId} for OTP delivery`);
+        return false;
+      }
+      if (!DomainMatcher.matches(email.from, reg.url, email.provider, email.linkUrl)) {
+        log.info(`⛔ Domain mismatch: tab ${reg.hostname} ≠ ${email.from}`);
+        return false;
+      }
+      return true;
+    })
+    .map(async ([tabId, reg]: [number, TabRegistration]) => {
+      // Mark OTP as used once before any delivery starts
+      if (!firstDeliverySucceeded) {
+        await otpService.markAsUsed();
+        firstDeliverySucceeded = true;
+      }
 
-    const ok = await OTPDeliveryEngine.deliverToTab(tabId, code, confidence);
-    if (ok) {
-      reg.deliveryAttempts++;
-      metrics.otpsDelivered++;
-      delivered.push(tabId);
-      await otpService.markAsUsed();
-    }
-  }
+      const ok = await OTPDeliveryEngine.deliverToTab(tabId, code, confidence);
+      if (ok) {
+        reg.deliveryAttempts++;
+        metrics.otpsDelivered++;
+        return tabId;
+      }
+      return null;
+    });
+
+  const results = await Promise.all(deliveryPromises);
+  const delivered = results.filter((id): id is number => id !== null);
 
   // Unregister delivered tabs
   for (const tabId of delivered) {
     stopFastOTPPolling(tabId);
   }
+
+  return delivered.length > 0;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1130,49 +1028,41 @@ export function setupPollingManager(): void {
   initialized = true;
   metrics.startedAt = Date.now();
 
-  // Restore persisted dedup cache
-  storageService
-    .get(STORAGE_KEY_PROCESSED)
-    .then((saved: unknown) => {
-      if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
-        dedupCache.restoreState(saved as Record<string, ProcessedEmailRecord>);
-      }
-    })
-    .catch((e) => log.warn('Failed to restore dedup cache', e));
+  // Initialize unified dedup service
+  void dedupService.initialize().catch((e) => log.warn('Failed to initialize dedup service', e));
 
   // Restore session state
   if (typeof chrome !== 'undefined' && chrome.storage?.session) {
     chrome.storage.session
       .get(['pm_breaker', 'pm_requestLog', 'pm_lastNotificationTime'])
       .then((data: SessionState) => {
-        if (data.pm_breaker) {circuitBreaker.restoreState(data.pm_breaker);}
-        if (data.pm_requestLog) {rateLimiter.restoreState(data.pm_requestLog);}
-        // Adaptive baseline
-        if (data.pm_lastNotificationTime !== undefined) { // Changed from typeof data.pm_lastNotificationTime === 'number'
-          notifications.restoreState(data.pm_lastNotificationTime);
+        if (data.pm_breaker) {
+          circuitBreaker.restoreState(data.pm_breaker);
+        }
+        if (data.pm_requestLog) {
+          rateLimiter.restoreState(data.pm_requestLog);
         }
       })
       .catch((e) => log.warn('Failed to restore session state', e));
   }
 
   // Chrome alarms for MV3 background
-  void chrome.alarms.create(ALARM_NAMES.EMAIL_SYNC, { periodInMinutes: 1 });
-  void chrome.alarms.create(ALARM_NAMES.HEALTH_SWEEP, {
-    periodInMinutes: getAlarmPeriodMinutes(TIMING.HEALTH_TICK_MS),
-  });
-  void chrome.alarms.create(ALARM_NAMES.METRICS_REPORT, {
-    periodInMinutes: getAlarmPeriodMinutes(TIMING.METRICS_TICK_MS),
-  });
+  Promise.resolve(chrome.alarms.create(ALARM_NAMES.EMAIL_SYNC, { periodInMinutes: 1 })).catch((e) =>
+    log.debug('Alarm creation failed', e)
+  );
+  Promise.resolve(
+    chrome.alarms.create(ALARM_NAMES.HEALTH_SWEEP, {
+      periodInMinutes: getAlarmPeriodMinutes(TIMING.HEALTH_TICK_MS),
+    })
+  ).catch((e) => log.debug('Alarm creation failed', e));
+  Promise.resolve(
+    chrome.alarms.create(ALARM_NAMES.METRICS_REPORT, {
+      periodInMinutes: getAlarmPeriodMinutes(TIMING.METRICS_TICK_MS),
+    })
+  ).catch((e) => log.debug('Alarm creation failed', e));
 
   if (!alarmListenerInstalled) {
-    chrome.alarms.onAlarm.addListener(onPollingAlarm);
     alarmListenerInstalled = true;
-  }
-
-  // Link activation listener
-  if (!runtimeListenerInstalled) {
-    chrome.runtime.onMessage.addListener(onPollingRuntimeMessage);
-    runtimeListenerInstalled = true;
   }
 
   // Auto-start if email exists
@@ -1184,7 +1074,9 @@ export function setupPollingManager(): void {
         startEmailPolling();
       }
     })
-    .catch(() => { /* no email configured */ });
+    .catch(() => {
+      /* no email configured */
+    });
 
   runHealthSweep();
   logMetricsSnapshot();
@@ -1192,14 +1084,18 @@ export function setupPollingManager(): void {
 }
 
 export function startEmailPolling(): void {
-  if (pollingActive) {return;}
+  if (pollingActive) {
+    return;
+  }
   pollingActive = true;
   log.info('📧 General polling STARTED');
-  scheduleGeneralPoll();
+  void scheduleGeneralPoll();
 }
 
 export function stopEmailPolling(): void {
-  if (!pollingActive) {return;}
+  if (!pollingActive) {
+    return;
+  }
   pollingActive = false;
 
   if (generalTimer !== undefined && generalTimer !== null) {
@@ -1211,15 +1107,36 @@ export function stopEmailPolling(): void {
   log.info('📧 General polling STOPPED');
 }
 
-function scheduleGeneralPoll(): void {
-  if (!pollingActive) {return;}
+async function scheduleGeneralPoll(): Promise<void> {
+  if (!pollingActive) {
+    return;
+  }
 
-  if (generalTimer !== undefined && generalTimer !== null) {clearTimeout(generalTimer);}
+  if (generalTimer !== undefined && generalTimer !== null) {
+    clearTimeout(generalTimer);
+  }
 
-  const interval = AdaptiveScheduler.calculateInterval('general', otpWaitingTabs);
+  let interval = AdaptiveScheduler.calculateInterval('general', otpWaitingTabs);
+
+  try {
+    const settings = await storageService.getSettings();
+    if (!settings.autoCheckInbox) {
+      log.info('📧 General polling disabled by autoCheckInbox setting');
+      pollingActive = false;
+      return;
+    }
+    if (otpWaitingTabs.size === 0) {
+      interval = settings.checkIntervalSeconds * 1000;
+    }
+  } catch (e) {
+    // Fall back to AdaptiveScheduler if settings fail
+    log.warn('Failed to fetch user settings for polling interval', e);
+  }
 
   generalTimer = setTimeout(() => {
-    if (!pollingActive) {return;}
+    if (!pollingActive) {
+      return;
+    }
     void performCheck('general')
       .then(() => scheduleGeneralPoll())
       .catch((error) => {
@@ -1229,11 +1146,7 @@ function scheduleGeneralPoll(): void {
   }, interval);
 }
 
-export function startFastOTPPolling(
-  tabId: number,
-  url: string,
-  fieldSelectors: string[]
-): void {
+export function startFastOTPPolling(tabId: number, url: string, fieldSelectors: string[]): void {
   let hostname = '';
   try {
     hostname = new URL(url).hostname;
@@ -1262,25 +1175,70 @@ export function startFastOTPPolling(
     performCheck('fast').catch((e) => log.warn('Initial fast check error', e));
   }
 
-  if (!pollingActive) {startEmailPolling();}
+  if (!pollingActive) {
+    startEmailPolling();
+  }
 }
 
 export function stopFastOTPPolling(tabId: number): void {
-  if (!otpWaitingTabs.delete(tabId)) {return;}
+  if (!otpWaitingTabs.delete(tabId)) {
+    return;
+  }
   log.info('🛑 Fast OTP unregistered', { tabId, remaining: otpWaitingTabs.size });
+}
+
+/**
+ * Register a tab as an activation tab (opened by linkService for verification links).
+ * Activation tabs are excluded from OTP delivery to prevent wrong fills.
+ */
+export function registerActivationTab(tabId: number): void {
+  activationTabs.add(tabId);
+  log.info('🔗 Activation tab registered', { tabId, totalActivationTabs: activationTabs.size });
+}
+
+/**
+ * Unregister an activation tab. Call when the activation tab is closed.
+ */
+export function unregisterActivationTab(tabId: number): void {
+  if (activationTabs.delete(tabId)) {
+    log.info('🔗 Activation tab unregistered', {
+      tabId,
+      remainingActivationTabs: activationTabs.size,
+    });
+  }
+}
+
+/**
+ * Check if a tab is an activation tab.
+ */
+export function isActivationTab(tabId: number): boolean {
+  return activationTabs.has(tabId);
+}
+
+// ───────────────────────────────────────────────────────────────────
+// H6: Cleanup activationTabs on tab close
+// ───────────────────────────────────────────────────────────────────
+if (typeof chrome !== 'undefined' && chrome.tabs?.onRemoved) {
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    if (activationTabs.delete(tabId)) {
+      log.debug('Cleaned up closed activation tab', { tabId, remaining: activationTabs.size });
+    }
+  });
 }
 
 export function getOTPWaitingTabs(): ReadonlyMap<number, TabRegistration> {
   return otpWaitingTabs;
 }
 
-export function getPollingMetrics(): Readonly<PollingMetrics & {
-  uptimeMs: number;
-  waitingTabs: number;
-  circuitState: CircuitState;
-  currentInterval: number;
-  processedCached: number;
-}> {
+export function getPollingMetrics(): Readonly<
+  PollingMetrics & {
+    uptimeMs: number;
+    waitingTabs: number;
+    circuitState: CircuitState;
+    currentInterval: number;
+    processedCached: number;
+  }
+> {
   return {
     ...metrics,
     uptimeMs: Date.now() - metrics.startedAt,
@@ -1295,17 +1253,15 @@ export function destroyPollingManager(): void {
   stopEmailPolling();
 
   void chrome.alarms.clear(ALARM_NAMES.EMAIL_SYNC).catch((e) => log.debug('Alarm clear failed', e));
-  void chrome.alarms.clear(ALARM_NAMES.HEALTH_SWEEP).catch((e) => log.debug('Alarm clear failed', e));
-  void chrome.alarms.clear(ALARM_NAMES.METRICS_REPORT).catch((e) => log.debug('Alarm clear failed', e));
+  void chrome.alarms
+    .clear(ALARM_NAMES.HEALTH_SWEEP)
+    .catch((e) => log.debug('Alarm clear failed', e));
+  void chrome.alarms
+    .clear(ALARM_NAMES.METRICS_REPORT)
+    .catch((e) => log.debug('Alarm clear failed', e));
 
   if (alarmListenerInstalled) {
-    chrome.alarms.onAlarm.removeListener(onPollingAlarm);
     alarmListenerInstalled = false;
-  }
-
-  if (runtimeListenerInstalled) {
-    chrome.runtime.onMessage.removeListener(onPollingRuntimeMessage);
-    runtimeListenerInstalled = false;
   }
 
   otpWaitingTabs.clear();
@@ -1315,7 +1271,17 @@ export function destroyPollingManager(): void {
   priorityCounter = 0;
   checkInProgress = false;
 
-  log.info('💀 Polling engine destroyed');
+  log.info('💣 Polling engine destroyed');
+}
+
+/**
+ * Full session reset triggered by email change.
+ * Clears processed-email dedup cache so new emails on the fresh address
+ * are processed immediately. Does NOT stop polling or unregister tabs.
+ */
+export function resetEmailSession(): void {
+  dedupCache.clear();
+  log.info('🔄 Email session reset — dedup cache and metrics cleared');
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1325,7 +1291,9 @@ export function destroyPollingManager(): void {
 function collectExpectedDomains(): string[] {
   const seen = new Set<string>();
   for (const reg of otpWaitingTabs.values()) {
-    if (reg.hostname) {seen.add(reg.hostname);}
+    if (reg.hostname) {
+      seen.add(reg.hostname);
+    }
   }
   return Array.from(seen);
 }

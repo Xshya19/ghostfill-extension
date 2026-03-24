@@ -1,122 +1,125 @@
 {
-    "extensionName": {
-        "message": "GhostFill",
-        "description": "The name of the extension"
-    },
-    "extensionDescription": {
-        "message": "Privacy-focused email and password generator with OTP auto-fill",
-        "description": "Description of the extension"
-    },
-    "extensionVersion": {
-        "message": "1.0.19",
-        "description": "Version number"
-    },
-    "emailLabel": {
-        "message": "EMAIL"
-    },
-    "syncingIdentity": {
-        "message": "Syncing identity..."
-    },
-    "passwordLabel": {
-        "message": "PASSWORD"
-    },
-    "generatingPassword": {
-        "message": "Generating..."
-    },
-    "emailCopied": {
-        "message": "Email copied to clipboard"
-    },
-    "passwordCopied": {
-        "message": "Password copied to clipboard"
-    },
-    "codeCopied": {
-        "message": "Code copied to clipboard"
-    },
-    "recentMessages": {
-        "message": "Inbox"
-    },
-    "fullInbox": {
-        "message": "View All"
-    },
-    "scanning": {
-        "message": "Scanning..."
-    },
-    "listening": {
-        "message": "Listening for codes..."
-    },
-    "activeIdentity": {
-        "message": "Active Identity"
-    },
-    "secureInbox": {
-        "message": "Secure Inbox"
-    },
-    "identityRequired": {
-        "message": "Identity Required"
-    },
-    "generateIdentityMessage": {
-        "message": "Generate a secure ghost identity to access your encrypted inbox."
-    },
-    "generateIdentity": {
-        "message": "Generate Identity"
-    },
-    "newIdentityGenerated": {
-        "message": "New identity generated!"
-    },
-    "generatedEmailInvalid": {
-        "message": "Generated email is invalid"
-    },
-    "generationFailed": {
-        "message": "Generation failed. Please try again."
-    },
-    "helpTitle": {
-        "message": "How GhostFill Works"
-    },
-    "helpDescription": {
-        "message": "GhostFill creates temporary disposable emails and strong secure passwords to protect your privacy online. Generate a new identity to get started."
-    },
-    "dismiss": {
-        "message": "Got it!"
-    },
-    "vaultSettings": {
-        "message": "Password Vault"
-    },
-    "passcodeSync": {
-        "message": "Passcode Sync"
-    },
-    "onboardingTitle": {
-        "message": "Welcome to GhostFill"
-    },
-    "onboardingSubtitle": {
-        "message": "Your privacy shield for the web."
-    },
-    "onboardingFeature1": {
-        "message": "Disposable Emails"
-    },
-    "onboardingFeature1Sub": {
-        "message": "Instantly create temporary email addresses"
-    },
-    "onboardingFeature2": {
-        "message": "Strong Passwords"
-    },
-    "onboardingFeature2Sub": {
-        "message": "Generate cryptographically secure passwords"
-    },
-    "onboardingFeature3": {
-        "message": "OTP Auto-fill"
-    },
-    "onboardingFeature3Sub": {
-        "message": "Automatically detect and fill verification codes"
-    },
-    "onboardingButton": {
-        "message": "Get Started"
-    },
-    "onboardingFooter": {
-        "message": "100% private, works offline"
-    },
-    "appName": {
-        "message": "GhostFill"
-    },
-    "appDescription": {
-        "message": "Privacy-focused email and password generator with OTP auto-fill."
-    }
+  "extensionName": {
+    "message": "GhostFill",
+    "description": "The name of the extension"
+  },
+  "extensionDescription": {
+    "message": "Disposable emails, secure passwords, and automatic OTP detection & fill. Local AI — no API key required.",
+    "description": "Description of the extension"
+  },
+  "extensionVersion": {
+    "message": "1.1.0",
+    "description": "Version number"
+  },
+  "emailLabel": {
+    "message": "EMAIL"
+  },
+  "syncingIdentity": {
+    "message": "Syncing identity..."
+  },
+  "passwordLabel": {
+    "message": "PASSWORD"
+  },
+  "generatingPassword": {
+    "message": "Generating..."
+  },
+  "emailCopied": {
+    "message": "Email copied to clipboard"
+  },
+  "passwordCopied": {
+    "message": "Password copied to clipboard"
+  },
+  "codeCopied": {
+    "message": "Code copied to clipboard"
+  },
+  "recentMessages": {
+    "message": "Inbox"
+  },
+  "fullInbox": {
+    "message": "View All"
+  },
+  "scanning": {
+    "message": "Scanning..."
+  },
+  "listening": {
+    "message": "Listening for codes..."
+  },
+  "activeIdentity": {
+    "message": "Active Identity"
+  },
+  "secureInbox": {
+    "message": "Secure Inbox"
+  },
+  "identityRequired": {
+    "message": "Identity Required"
+  },
+  "generateIdentityMessage": {
+    "message": "Generate a secure ghost identity to access your encrypted inbox."
+  },
+  "generateIdentity": {
+    "message": "Generate Identity"
+  },
+  "newIdentityGenerated": {
+    "message": "New identity generated!"
+  },
+  "generatedEmailInvalid": {
+    "message": "Generated email is invalid"
+  },
+  "generationFailed": {
+    "message": "Generation failed. Please try again."
+  },
+  "helpTitle": {
+    "message": "How GhostFill Works"
+  },
+  "helpDescription": {
+    "message": "GhostFill creates temporary disposable emails and strong secure passwords to protect your privacy online. Generate a new identity to get started."
+  },
+  "dismiss": {
+    "message": "Got it!"
+  },
+  "vaultSettings": {
+    "message": "Password Vault"
+  },
+  "passcodeSync": {
+    "message": "Passcode Sync"
+  },
+  "onboardingTitle": {
+    "message": "Welcome to GhostFill"
+  },
+  "onboardingSubtitle": {
+    "message": "Your privacy shield for the web."
+  },
+  "onboardingFeature1": {
+    "message": "Disposable Emails"
+  },
+  "onboardingFeature1Sub": {
+    "message": "Instantly create temporary email addresses"
+  },
+  "onboardingFeature2": {
+    "message": "Strong Passwords"
+  },
+  "onboardingFeature2Sub": {
+    "message": "Generate cryptographically secure passwords"
+  },
+  "onboardingFeature3": {
+    "message": "OTP Auto-fill"
+  },
+  "onboardingFeature3Sub": {
+    "message": "Automatically detect and fill verification codes"
+  },
+  "onboardingButton": {
+    "message": "Get Started"
+  },
+  "onboardingFooter": {
+    "message": "100% local · No API key · Open source"
+  },
+  "appName": {
+    "message": "GhostFill"
+  },
+  "appDescription": {
+    "message": "Disposable emails, secure passwords, and automatic OTP detection & fill — powered by a local AI engine."
+  },
+  "confirmNewIdentity": {
+    "message": "Are you sure you want to generate a new identity? Your current email and details will be replaced."
+  }
 }

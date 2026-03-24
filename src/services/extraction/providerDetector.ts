@@ -7,7 +7,7 @@
 import { createLogger } from '../../utils/logger';
 import { KnowledgeBase } from '../knowledgeBase';
 
-import type { ProviderKnowledge, ProviderDetectionResult } from './types';
+import type { ProviderKnowledge, ProviderDetectionResult } from '../types/extraction.types';
 
 const log = createLogger('ProviderDetector');
 
@@ -33,64 +33,52 @@ const SCORING = {
 /**
  * Detects the email provider using multi-signal fuzzy scoring
  *
- * Analyzes multiple signals to identify the sender:
- * - Domain matching against known provider domains
- * - Sender email pattern matching
- * - Subject line patterns
- * - Common phrases in email body
- * - URL domain matching
- * - Brand name mentions
- *
  * @param senderEmail - The sender's email address
  * @param subject - The email subject line
  * @param body - The email body content
  * @param urls - Array of URLs found in the email
+ * @param expectedDomains - Optional list of domains from the current tab context
  * @returns Provider detection result with confidence score
- *
- * @example
- * ```typescript
- * const result = detectProvider(
- *   'noreply@google.com',
- *   'Your verification code',
- *   'Your Google verification code is 123456',
- *   ['https://accounts.google.com/...']
- * );
- * // Returns: { provider: {...}, confidence: 95, signals: ['domain', 'sender'] }
- * ```
  */
 export function detectProvider(
   senderEmail: string,
   subject: string,
   body: string,
-  urls: string[]
+  urls: string[],
+  expectedDomains: string[] = []
 ): ProviderDetectionResult {
   const fullText = `${senderEmail} ${subject} ${body}`.toLowerCase();
+  const lowerSender = senderEmail.toLowerCase();
   const scores: Array<{ provider: ProviderKnowledge; score: number; signals: string[] }> = [];
+
+  // ── State A: Tab-Context Boosting (from GhostCore) ──
+  // If the provider matches one of the domains currently open in the user's tabs,
+  // we apply a massive confidence boost because we are likely expecting this email.
 
   for (const provider of KnowledgeBase.providers) {
     let score = 0;
     const signals: string[] = [];
 
     // Domain match - check if sender email contains provider domain
-    if (provider.domains.some((d) => senderEmail.toLowerCase().includes(d))) {
+    if (provider.domains.some((d: string) => senderEmail.toLowerCase().includes(d))) {
       score += SCORING.domainMatch;
       signals.push('domain');
     }
 
     // Sender pattern - match against known sender patterns
-    if (provider.senderPatterns.some((p) => p.test(senderEmail))) {
+    if (provider.senderPatterns.some((p: RegExp) => p.test(senderEmail))) {
       score += SCORING.senderPattern;
       signals.push('sender');
     }
 
     // Subject pattern - match against known subject patterns
-    if (provider.subjectPatterns.some((p) => p.test(subject))) {
+    if (provider.subjectPatterns.some((p: RegExp) => p.test(subject))) {
       score += SCORING.subjectPattern;
       signals.push('subject');
     }
 
     // Common phrases - count phrase matches in full text
-    const phraseHits = provider.commonPhrases.filter((p) =>
+    const phraseHits = provider.commonPhrases.filter((p: string) =>
       fullText.includes(p.toLowerCase())
     ).length;
     if (phraseHits > 0) {
@@ -102,7 +90,7 @@ export function detectProvider(
     for (const url of urls) {
       try {
         const u = new URL(url);
-        if (provider.domains.some((d) => u.hostname.includes(d))) {
+        if (provider.domains.some((d: string) => u.hostname.includes(d))) {
           score += SCORING.urlDomainMatch;
           signals.push('url');
           break;
@@ -116,6 +104,35 @@ export function detectProvider(
     if (fullText.includes(provider.name.toLowerCase())) {
       score += SCORING.brandNameMatch;
       signals.push('brand');
+    }
+
+    // ── Tab-Context Boost (State A) ──
+    if (expectedDomains.length > 0) {
+      let domainMatched = false;
+      for (const expectedDomain of expectedDomains) {
+        const cleanExpected = expectedDomain
+          .replace(/^(www\.|app\.|auth\.|login\.|secure\.|id\.|sso\.|my\.|portal\.|dashboard\.|accounts\.)/, '')
+          .toLowerCase();
+        
+        const cleanSender = lowerSender
+          .split('@')
+          .pop()
+          ?.replace(/^(mail\.|notify\.|info\.|secure\.|auth\.|reply\.|accounts\.|accounts-|noreply\.|noreply-|no-reply\.|do-not-reply\.|team\.|security\.|support\.|hello\.|help\.|email\.|e\.|notifications?\.|alerts?\.|verify\.|verification\.|confirmation\.|mailer\.)/, '')
+          .toLowerCase() || lowerSender;
+
+        const rootExpected = getRootDomain(cleanExpected);
+        const rootSender = getRootDomain(cleanSender);
+
+        if (rootExpected === rootSender || cleanSender.includes(rootExpected) || cleanExpected.includes(rootSender)) {
+          domainMatched = true;
+          break;
+        }
+      }
+
+      if (domainMatched) {
+        score += 45; // Applying GhostCore's State A boost
+        signals.push('context-boost');
+      }
     }
 
     if (score > 0) {
@@ -151,12 +168,12 @@ export function providerMatches(
   urls: string[]
 ): boolean {
   // Check domain match
-  if (provider.domains.some((d) => senderEmail.toLowerCase().includes(d))) {
+  if (provider.domains.some((d: string) => senderEmail.toLowerCase().includes(d))) {
     return true;
   }
 
   // Check sender pattern
-  if (provider.senderPatterns.some((p) => p.test(senderEmail))) {
+  if (provider.senderPatterns.some((p: RegExp) => p.test(senderEmail))) {
     return true;
   }
 
@@ -164,7 +181,7 @@ export function providerMatches(
   for (const url of urls) {
     try {
       const u = new URL(url);
-      if (provider.domains.some((d) => u.hostname.includes(d))) {
+      if (provider.domains.some((d: string) => u.hostname.includes(d))) {
         return true;
       }
     } catch {
@@ -192,4 +209,17 @@ export function getProviderOtpConfig(provider: ProviderKnowledge | null): {
     length: provider.otpLength,
     format: provider.otpFormat as 'numeric' | 'alphanumeric' | undefined,
   };
+}
+
+// ─── Helpers ───
+
+/**
+ * Extracts root domain (e.g. mail.google.com -> google.com)
+ */
+function getRootDomain(hostname: string): string {
+  const parts = hostname.split('.');
+  if (parts.length <= 2) {
+    return hostname;
+  }
+  return parts.slice(-2).join('.');
 }

@@ -458,7 +458,7 @@ export class FormDetector {
    * Group standalone fields into virtual forms if they belong together logically (e.g. SPAs without <form> tags).
    */
   private detectVirtualForms(standaloneFields: DetectedField[]): DetectedForm[] {
-    if (standaloneFields.length === 0) return [];
+    if (standaloneFields.length === 0) {return [];}
     
     const virtualForms: DetectedForm[] = [];
     
@@ -474,7 +474,7 @@ export class FormDetector {
     
     for (const field of standaloneFields) {
       let current = field.element.parentElement;
-      let container: HTMLElement | null = null;
+      const container: HTMLElement | null = null;
       let depth = 0;
       
       while (current && current !== document.body && depth < maxDepth) {

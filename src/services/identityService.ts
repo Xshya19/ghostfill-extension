@@ -1,7 +1,7 @@
 // Identity Service - Generates consistent, realistic identities for auto-fill
 // FIX: Externalized name pools to separate data module for better maintainability
 
-import { STORAGE_KEYS } from '../types';
+import { STORAGE_KEYS, IdentityProfile } from '../types';
 import { getRandomInt } from '../utils/encryption';
 import { createLogger } from '../utils/logger';
 
@@ -11,16 +11,7 @@ import { storageService } from './storageService';
 
 const log = createLogger('IdentityService');
 
-export interface IdentityProfile {
-  firstName: string;
-  lastName: string;
-  fullName: string;
-  username: string;
-  emailPrefix: string;
-  email?: string; // Full email with domain
-  password?: string; // Generated password
-  cachedPassword?: string; // Persistence for the generated password
-}
+
 
 // Note: Name pools and email domains are now externalized in ./data/identityData.ts
 // This allows for easier customization and extension without modifying service logic

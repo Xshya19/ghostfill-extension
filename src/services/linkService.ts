@@ -16,14 +16,48 @@
 // ─────────────────────────────────────────────────────────────────────
 
 import { Email } from '../types';
+import { DEFAULT_SETTINGS } from '../types/storage.types';
 import { sleep } from '../utils/helpers';
 import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
 
+import { dedupService } from './dedupService';
 import { smartDetectionService } from './smartDetectionService';
 import { storageService } from './storageService';
 
 const log = createLogger('LinkEngine');
+
+// Lazy import to avoid circular dependency at module load time
+// Use Promise-based caching for ESM dynamic imports
+let pollingManagerExportsPromise: Promise<{
+  registerActivationTab: (tabId: number) => void;
+  unregisterActivationTab: (tabId: number) => void;
+  isActivationTab: (tabId: number) => boolean;
+}> | null = null;
+
+function getPollingManagerExports(): Promise<{
+  registerActivationTab: (tabId: number) => void;
+  unregisterActivationTab: (tabId: number) => void;
+  isActivationTab: (tabId: number) => boolean;
+}> {
+  if (!pollingManagerExportsPromise) {
+    pollingManagerExportsPromise = import('../background/pollingManager')
+      .then((exports) => {
+        log.debug('Successfully loaded pollingManager exports');
+        return exports;
+      })
+      .catch((err) => {
+        log.warn('Failed to load pollingManager exports', err);
+        pollingManagerExportsPromise = null;
+        return {
+          registerActivationTab: () => {},
+          unregisterActivationTab: () => {},
+          isActivationTab: () => false,
+        };
+      });
+  }
+  return pollingManagerExportsPromise;
+}
 
 // ━━━ Types ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -153,11 +187,12 @@ const PUNYCODE_PREFIX = 'xn--';
 
 class LinkService {
   // ── State ──
-  private readonly processedEmails = new Map<string, ProcessedEmailEntry>();
+  // private readonly processedEmails = new Map<string, ProcessedEmailEntry>(); // Removed for P2.2 consolidation
   private activationHistory: ActivationRecord[] = [];
   private readonly activationQueue: ActivationRecord[] = [];
   private draining = false;
   private lastActivationTime = 0;
+  private readonly scanningEmails = new Set<string>();
 
   private readonly metrics: LinkMetrics = {
     emailsScanned: 0,
@@ -176,19 +211,22 @@ class LinkService {
   //  PUBLIC — entry point (called from polling manager)
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  async handleNewEmail(email: Email): Promise<void> {
+  async handleNewEmail(email: Email, accountId?: string): Promise<void> {
     const emailId = String(email.id);
+    const accId = accountId || email.to || 'unknown';
 
-    if (this.isProcessed(emailId)) {
+    if (await this.isProcessed(emailId, accId)) {
       log.debug('Email already processed', { emailId });
       return;
     }
 
-    // Mark early — prevents re-entry even if detection is slow
-    this.markProcessed(emailId, false);
+    if (this.isScanning(emailId)) {
+      return;
+    }
+    this.markScanning(emailId);
     this.metrics.emailsScanned++;
 
-    log.info('📧 Scanning for activation links', {
+    log.info('Scanning for activation links', {
       emailId,
       from: email.from,
       subject: truncate(email.subject, 60),
@@ -205,8 +243,7 @@ class LinkService {
       const hasLink =
         (detection.type === 'link' || detection.type === 'both') && Boolean(detection.link);
 
-      // Update dedup with link status
-      this.updateProcessed(emailId, hasLink);
+      await this.updateProcessed(emailId, accId, hasLink);
 
       if (!hasLink || !detection.link) {
         log.debug('No activation link found', { emailId });
@@ -233,8 +270,15 @@ class LinkService {
       });
 
       // ── Auto-confirm: Check user setting before opening link ──
-      const settings = await storageService.get('settings');
-      const autoConfirm = settings?.autoConfirmLinks ?? true;
+      const rawSettings = await storageService.get('settings');
+      // SAFE MERGE: Always fall back to DEFAULT_SETTINGS so a stale or uninitialized
+      // settings object does not silently block link activation for existing users.
+      const autoConfirm = rawSettings?.autoConfirmLinks ?? DEFAULT_SETTINGS.autoConfirmLinks;
+
+      log.info('🔘 autoConfirmLinks resolved', {
+        raw: rawSettings?.autoConfirmLinks,
+        effective: autoConfirm,
+      });
 
       if (!autoConfirm) {
         log.info('⏭️ Skipping auto-confirm (user disabled)', {
@@ -287,6 +331,8 @@ class LinkService {
         emailId,
         error: errorMessage(error),
       });
+    } finally {
+      this.unmarkScanning(emailId);
     }
   }
 
@@ -306,8 +352,21 @@ class LinkService {
 
   clearHistory(): void {
     this.activationHistory = [];
-    this.processedEmails.clear();
+    dedupService.clear();
+    this.scanningEmails.clear();
     log.info('🧹 History & dedup cache cleared');
+  }
+
+  private isScanning(emailId: string): boolean {
+    return this.scanningEmails.has(emailId);
+  }
+
+  private markScanning(emailId: string): void {
+    this.scanningEmails.add(emailId);
+  }
+
+  private unmarkScanning(emailId: string): void {
+    this.scanningEmails.delete(emailId);
   }
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -398,18 +457,30 @@ class LinkService {
       record.tabId = tab.id;
       log.info('🪟 Tab opened', { tabId: tab.id });
 
+      // Register as activation tab to prevent OTP delivery to this tab
+      const pmExports = await getPollingManagerExports();
+      pmExports.registerActivationTab(tab.id);
+
+      // Cleanup when tab is closed
+      const tabId = tab.id;
+      const cleanupOnClose = (closedTabId: number) => {
+        if (closedTabId === tabId) {
+          chrome.tabs.onRemoved.removeListener(cleanupOnClose);
+          void getPollingManagerExports().then((exports) => {
+            exports.unregisterActivationTab(tabId);
+          });
+        }
+      };
+      chrome.tabs.onRemoved.addListener(cleanupOnClose);
+
       // ── Wait for page to fully load ──
       const loaded = await this.waitForTabLoad(tab.id);
 
       if (!loaded) {
-        log.warn('⏱️ Tab load timeout — closing', { tabId: tab.id });
-        await chrome.tabs.remove(tab.id).catch(() => {
-          /* already gone */
-        });
-        throw new Error('Tab load timeout');
+        log.warn('⏱️ Tab load timeout — proceeding with delivery attempt anyway', { tabId: tab.id });
+      } else {
+        log.info('✅ Page loaded', { tabId: tab.id });
       }
-
-      log.info('✅ Page loaded', { tabId: tab.id });
 
       // ── Deliver code to the loaded page (if we extracted one) ──
       if (record.extractedCode) {
@@ -425,6 +496,10 @@ class LinkService {
       // ── Give the content script a moment to process the code, but KEEP THE TAB OPEN ──
       await sleep(1_000);
       log.info('✨ Tab is ready and waiting for user', { tabId: tab.id });
+
+      // Proactively clean up listener to prevent memory leak
+      chrome.tabs.onRemoved.removeListener(cleanupOnClose);
+      pmExports.unregisterActivationTab(tab.id);
 
       this.metrics.linksActivated++;
       this.metrics.lastActivationAt = Date.now();
@@ -556,10 +631,15 @@ class LinkService {
    * as the content script is ready (or give up after the timeout).
    */
   private async deliverCode(tabId: number, code: string): Promise<boolean> {
+    // NOTE: Do NOT check isActivationTab here.
+    // This function IS the code delivery for activation tabs.
+    // The isActivationTab flag is only for preventing the *general polling engine*
+    // from accidentally treating verification tabs as normal OTP targets.
+
     const ready = await this.probeContentScript(tabId);
 
     if (!ready) {
-      log.debug('Content script never responded — skipping delivery', { tabId });
+      log.warn('Content script never responded — delivery skipped', { tabId });
       return false;
     }
 
@@ -570,12 +650,13 @@ class LinkService {
           otp: code,
           source: 'url-extracted',
           confidence: 1.0,
+          isBackgroundTab: true,
         },
       });
       log.info('📲 Code delivered', { tabId, code: maskCode(code) });
       return true;
     } catch (error) {
-      log.debug('Delivery send failed', { tabId, error: errorMessage(error) });
+      log.warn('Delivery send failed — page may not have an OTP field to accept the code', { tabId, error: errorMessage(error) });
       return false;
     }
   }
@@ -653,15 +734,13 @@ class LinkService {
     // ── Punycode / IDN homoglyph domains ──
     const labels = host.split('.');
     if (labels.some((l) => l.startsWith(PUNYCODE_PREFIX))) {
-      return { safe: false, reason: 'Punycode / IDN domain (possible homoglyph)' };
+      log.info('Allowing Punycode / IDN domain', { host });
     }
 
     // ── Excessively deep subdomain nesting (common phishing pattern) ──
-    // Allow up to 7 levels to support legitimate services like:
-    //   auth.signin.us-east-1.amazonaws.com (5 levels)
-    //   mail.google.com (3 levels)
-    //   sub1.sub2.sub3.sub4.sub5.example.com (7 levels - max allowed)
-    if (labels.length > 7) {
+    // Allow up to 10 levels to support legitimate enterprise services like:
+    //   auth.dev.internal.region.corp.client.com (7 levels)
+    if (labels.length > 10) {
       return { safe: false, reason: `Excessive subdomains (${labels.length} levels)` };
     }
 
@@ -788,61 +867,23 @@ class LinkService {
   //  DEDUPLICATION CACHE
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  private isProcessed(emailId: string): boolean {
-    const entry = this.processedEmails.get(emailId);
-    if (!entry) {
-      return false;
-    }
-
-    // Expired entries don't count
-    if (Date.now() - entry.processedAt > CONFIG.DEDUP_TTL_MS) {
-      this.processedEmails.delete(emailId);
-      return false;
-    }
-
-    return true;
+  private async isProcessed(emailId: string, accountId: string): Promise<boolean> {
+    return dedupService.isProcessed(emailId, accountId);
   }
 
-  private markProcessed(emailId: string, hadLink: boolean): void {
-    this.processedEmails.set(emailId, {
-      processedAt: Date.now(),
-      hadLink,
-    });
-    this.pruneDedup();
+  private async markProcessed(emailId: string, accountId: string, hadLink: boolean): Promise<void> {
+    await dedupService.markProcessed(emailId, accountId, false, hadLink);
   }
 
-  private updateProcessed(emailId: string, hadLink: boolean): void {
-    const existing = this.processedEmails.get(emailId);
-    if (existing) {
-      existing.hadLink = hadLink;
-    }
+  private async updateProcessed(
+    emailId: string,
+    accountId: string,
+    hadLink: boolean
+  ): Promise<void> {
+    await dedupService.updateRecord(emailId, accountId, { hadLink });
   }
 
-  private pruneDedup(): void {
-    if (this.processedEmails.size <= CONFIG.MAX_DEDUP_ENTRIES) {
-      return;
-    }
-
-    // Phase 1: remove expired
-    const cutoff = Date.now() - CONFIG.DEDUP_TTL_MS;
-    for (const [id, entry] of this.processedEmails) {
-      if (entry.processedAt < cutoff) {
-        this.processedEmails.delete(id);
-      }
-    }
-
-    // Phase 2: if still over capacity, evict oldest
-    if (this.processedEmails.size > CONFIG.MAX_DEDUP_ENTRIES) {
-      const sorted = [...this.processedEmails.entries()].sort(
-        ([, a], [, b]) => a.processedAt - b.processedAt
-      );
-
-      const excess = sorted.length - CONFIG.MAX_DEDUP_ENTRIES;
-      for (let i = 0; i < excess; i++) {
-        this.processedEmails.delete(sorted[i]![0]);
-      }
-    }
-  }
+  // pruneDedup removed - handled by DedupService
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   //  HISTORY

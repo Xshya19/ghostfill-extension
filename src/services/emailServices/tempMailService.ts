@@ -13,9 +13,16 @@ const RATE_LIMIT = {
   RETRY_AFTER_MS: 2000,
 };
 
+const DOMAINS_CACHE_TTL_MS = 5 * 60 * 1000;
+
 class TempMailService {
   private baseUrl = API.TEMP_MAIL.BASE_URL;
   private requestTimestamps: number[] = [];
+  private cachedDomains: string[] | null = null;
+  private cachedDomainsExpiresAt = 0;
+  private cachedDomainsSource: 'api' | 'fallback' | null = null;
+  private lastDomainFetchError: string | null = null;
+  private hasNotifiedFallbackUsage = false;
 
   /**
    * Check if rate limit is exceeded
@@ -47,7 +54,11 @@ class TempMailService {
    * Falls back to hardcoded domains if API fails
    * BUG FIX: Now properly logs and notifies when using fallback domains
    */
-  async getDomains(): Promise<string[]> {
+  async getDomains(signal?: AbortSignal): Promise<string[]> {
+    if (this.cachedDomains && Date.now() < this.cachedDomainsExpiresAt) {
+      return this.cachedDomains;
+    }
+
     await this.checkRateLimit();
     this.recordRequest();
 
@@ -58,9 +69,17 @@ class TempMailService {
         `${this.baseUrl}?action=${API.TEMP_MAIL.ENDPOINTS.GET_DOMAINS}`,
         {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            Accept: 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Sec-Ch-Ua': '"Google Chrome";v="123", "Not:A-Brand";v="8", "Chromium";v="123"',
+            'Sec-Ch-Ua-Mobile': '?0',
+            'Sec-Ch-Ua-Platform': '"Windows"',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'cross-site',
           },
+          signal,
         }
       );
 
@@ -72,22 +91,42 @@ class TempMailService {
       if (!Array.isArray(domains) || typeof domains[0] !== 'string') {
         throw new Error('Invalid domains API response structure');
       }
+      this.cachedDomains = domains as string[];
+      this.cachedDomainsExpiresAt = Date.now() + DOMAINS_CACHE_TTL_MS;
+      this.cachedDomainsSource = 'api';
+      this.lastDomainFetchError = null;
+      this.hasNotifiedFallbackUsage = false;
       log.debug('TempMail domains fetched successfully', { count: domains.length });
-      return domains as string[];
+      return this.cachedDomains;
     } catch (error) {
       // Capture error for logging
       apiError = error instanceof Error ? error.message : String(error);
-      log.warn('TempMail domain fetch failed, using fallback domains', { error: apiError });
+      if (apiError !== this.lastDomainFetchError) {
+        log.warn('TempMail domain fetch failed, using fallback domains', { error: apiError });
+        this.lastDomainFetchError = apiError;
+      } else {
+        log.debug('TempMail domain fetch still failing; reusing fallback domains', { error: apiError });
+      }
     }
 
     // Notify user when using fallback (best effort - don't block on this)
-    try {
-      await this.notifyFallbackUsage(apiError);
-    } catch (notifyError) {
-      log.debug('Could not send fallback notification', notifyError);
+    if (!this.hasNotifiedFallbackUsage) {
+      try {
+        await this.notifyFallbackUsage(apiError);
+        this.hasNotifiedFallbackUsage = true;
+      } catch (notifyError) {
+        log.debug('Could not send fallback notification', notifyError);
+      }
     }
 
-    return TEMP_MAIL_DOMAINS;
+    this.cachedDomains = TEMP_MAIL_DOMAINS;
+    this.cachedDomainsExpiresAt = Date.now() + DOMAINS_CACHE_TTL_MS;
+    this.cachedDomainsSource = 'fallback';
+    return this.cachedDomains;
+  }
+
+  isUsingFallbackDomains(): boolean {
+    return this.cachedDomainsSource === 'fallback';
   }
 
   /**
@@ -115,7 +154,7 @@ class TempMailService {
   /**
    * Generate a random email address
    */
-  async generateEmail(prefix?: string, domain?: string): Promise<EmailAccount> {
+  async generateEmail(prefix?: string, domain?: string, signal?: AbortSignal): Promise<EmailAccount> {
     await this.checkRateLimit();
     this.recordRequest();
 
@@ -132,9 +171,13 @@ class TempMailService {
           `${this.baseUrl}?action=${API.TEMP_MAIL.ENDPOINTS.GEN_RANDOM}&count=1`,
           {
             headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-              Accept: 'application/json',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+              'Accept': 'application/json',
+              'Sec-Ch-Ua': '"Google Chrome";v="123", "Not:A-Brand";v="8", "Chromium";v="123"',
+              'Sec-Ch-Ua-Mobile': '?0',
+              'Sec-Ch-Ua-Platform': '"Windows"',
             },
+            signal,
           }
         );
 
@@ -156,7 +199,7 @@ class TempMailService {
       if (domain) {
         emailDomain = domain;
       } else if (!emailDomain) {
-        const domains = await this.getDomains();
+        const domains = await this.getDomains(signal);
         emailDomain = domains[Math.floor(Math.random() * domains.length)];
       }
 
@@ -183,13 +226,19 @@ class TempMailService {
   /**
    * Check inbox for messages with rate limiting
    */
-  async checkInbox(login: string, domain: string): Promise<Email[]> {
+  async checkInbox(login: string, domain: string, signal?: AbortSignal): Promise<Email[]> {
     await this.checkRateLimit();
     this.recordRequest();
 
     try {
       const response = await fetch(
-        `${this.baseUrl}?action=${API.TEMP_MAIL.ENDPOINTS.GET_MESSAGES}&login=${login}&domain=${domain}`
+        `${this.baseUrl}?action=${API.TEMP_MAIL.ENDPOINTS.GET_MESSAGES}&login=${login}&domain=${domain}`,
+        {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+          },
+          signal
+        }
       );
 
       if (!response.ok) {
@@ -223,13 +272,19 @@ class TempMailService {
   /**
    * Read a specific email with rate limiting
    */
-  async readEmail(id: number, login: string, domain: string): Promise<Email> {
+  async readEmail(id: number, login: string, domain: string, signal?: AbortSignal): Promise<Email> {
     await this.checkRateLimit();
     this.recordRequest();
 
     try {
       const response = await fetch(
-        `${this.baseUrl}?action=${API.TEMP_MAIL.ENDPOINTS.READ_MESSAGE}&login=${login}&domain=${domain}&id=${id}`
+        `${this.baseUrl}?action=${API.TEMP_MAIL.ENDPOINTS.READ_MESSAGE}&login=${login}&domain=${domain}&id=${id}`,
+        {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+          },
+          signal
+        }
       );
 
       if (!response.ok) {

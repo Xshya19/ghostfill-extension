@@ -35,13 +35,12 @@ export class DOMObserver {
       return;
     }
 
-    // Debounced payload to avoid excessive recalculations during rapid DOM changes
-    // Decreased latency to 500ms for better UX while still protecting CPU
     const debouncedUpdate = debounce(() => {
+        if (typeof chrome === 'undefined' || !chrome.runtime?.id) { this.stop(); return; }
         log.debug('DOM changed, re-detecting forms and icons');
         this.formDetector.detectForms();
-        void this.autoFiller.injectIcons(); // Re-inject icons on mutation
-    }, 500);
+        void this.autoFiller.injectIcons();
+    }, 1500);
     
     this.debouncedHandler = debouncedUpdate as unknown as DebouncedMutationHandler;
 
@@ -68,16 +67,11 @@ export class DOMObserver {
               }
             }
           }
-        } else if (mutation.type === 'attributes' && mutation.target instanceof HTMLInputElement) {
-          if (!mutation.attributeName?.startsWith('data-ghost')) {
-            shouldRedetect = true;
-          }
         }
-
         if (shouldRedetect) {break;}
       }
 
-      if (shouldRedetect) {
+      if (shouldRedetect && (typeof chrome !== 'undefined' && chrome.runtime?.id)) {
         debouncedUpdate();
       }
     });
@@ -95,6 +89,12 @@ export class DOMObserver {
 
     // Polling for pushState/replaceState
     this.urlCheckInterval = window.setInterval(() => {
+      // CONTEXT INVADED GUARD: If extension reloaded, stop the observer to avoid errors
+      if (typeof chrome === 'undefined' || !chrome.runtime?.id) {
+        this.stop();
+        return;
+      }
+
       if (location.href !== this.lastUrl) {
         this.handleSpaNavigation();
       }

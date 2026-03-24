@@ -4,13 +4,13 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { EmailAccount } from '../types';
 import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
+import AppSkeleton from './components/AppSkeleton';
 import EmailGenerator from './components/EmailGenerator';
 import ErrorBoundary from './components/ErrorBoundary';
 import Header from './components/Header';
 import Hub from './components/Hub';
 import OTPDisplay from './components/OTPDisplay';
 import PasswordGenerator from './components/PasswordGenerator';
-import AppSkeleton from './components/AppSkeleton';
 import { useStorageSubscription } from './hooks/useStorageSubscription';
 import { useAppStore } from './store/useAppStore';
 
@@ -21,7 +21,7 @@ const getExtensionVersion = (): string => {
   try {
     return chrome.runtime.getManifest().version;
   } catch {
-    return '1.0.0';
+    return 'unknown';
   }
 };
 
@@ -35,11 +35,19 @@ const t = (key: string): string => {
 };
 
 const App: React.FC = () => {
-  const { view, setView, loading, setLoading, toast, setToast, isFirstTime, setIsFirstTime } = useAppStore();
+  const view = useAppStore((s) => s.view);
+  const setView = useAppStore((s) => s.setView);
+  const loading = useAppStore((s) => s.loading);
+  const setLoading = useAppStore((s) => s.setLoading);
+  const toast = useAppStore((s) => s.toast);
+  const setToast = useAppStore((s) => s.setToast);
+  const isFirstTime = useAppStore((s) => s.isFirstTime);
+  const setIsFirstTime = useAppStore((s) => s.setIsFirstTime);
 
-  // Reactive push-state architecture replacing manual sync loops
-  const storedEmail = useStorageSubscription('currentEmail', null) as EmailAccount | null;
-  const emailAccount = loading ? null : storedEmail;
+  // Fetch currentEmail from background instead of decrypting local storage inside
+  // the popup. Background logs prove generation succeeds; this keeps the popup
+  // in sync even when popup-side storage reads are flaky.
+  const [emailAccount, setEmailAccount] = useState<EmailAccount | null>(null);
 
   const [isInitialized, setIsInitialized] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -53,15 +61,49 @@ const App: React.FC = () => {
       clearTimeout(toastTimeoutRef.current);
     }
     setToast(message);
-    toastTimeoutRef.current = setTimeout(() => setToast(null), 2500);
-  }, []);
+    toastTimeoutRef.current = setTimeout(() => setToast(null), 3000);
+  }, [setToast]);
 
   useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showHelp) {
+        setShowHelp(false);
+      }
+    };
+
+    if (showHelp) {
+      document.addEventListener('keydown', handleKeyDown);
+    }
+
     return () => {
       if (toastTimeoutRef.current) {
         clearTimeout(toastTimeoutRef.current);
       }
+      document.removeEventListener('keydown', handleKeyDown);
     };
+  }, [showHelp]);
+
+  const refreshCurrentEmail = useCallback(async () => {
+    try {
+      const res = await safeSendMessage({ action: 'GET_CURRENT_EMAIL' });
+      if (
+        res &&
+        'email' in res &&
+        res.email &&
+        typeof res.email === 'object' &&
+        'fullEmail' in res.email
+      ) {
+        const email = res.email as EmailAccount;
+        setEmailAccount(email);
+        return email;
+      }
+
+      setEmailAccount(null);
+      return null;
+    } catch (e) {
+      log.warn('Failed to refresh current email from background', e);
+      return null;
+    }
   }, []);
 
   const generateIdentity = useCallback(async () => {
@@ -102,6 +144,7 @@ const App: React.FC = () => {
           typeof email.expiresAt === 'number'
         ) {
           showToast(t('newIdentityGenerated'));
+          setEmailAccount(email);
         } else {
           log.error('Generated email is invalid:', email);
           showToast(t('generatedEmailInvalid'));
@@ -137,9 +180,8 @@ const App: React.FC = () => {
           isFirst = false;
         }
 
-        const { storageService } = await import('../services/storageService');
-        const currentEmail = await storageService.get('currentEmail');
-        
+        const currentEmail = await refreshCurrentEmail();
+
         if (!currentEmail && !isFirst) {
           log.debug('No current email found on load. Auto-generating one...');
           void generateIdentity();
@@ -161,7 +203,28 @@ const App: React.FC = () => {
     return () => {
       mounted = false;
     };
-  }, [generateIdentity, setIsFirstTime]);
+  }, [generateIdentity, refreshCurrentEmail, setIsFirstTime]);
+
+  useEffect(() => {
+    const listener = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      areaName: string
+    ) => {
+      if (areaName === 'local' && changes.currentEmail) {
+        void refreshCurrentEmail();
+      }
+    };
+
+    if (chrome?.storage?.onChanged) {
+      chrome.storage.onChanged.addListener(listener);
+    }
+
+    return () => {
+      if (chrome?.storage?.onChanged) {
+        chrome.storage.onChanged.removeListener(listener);
+      }
+    };
+  }, [refreshCurrentEmail]);
 
   const handleDismissOnboarding = async () => {
     try {
@@ -196,9 +259,9 @@ const App: React.FC = () => {
   // iOS Spring Transition Config
   const springTransition: Transition = {
     type: 'spring',
-    stiffness: 260,
-    damping: 26,
-    mass: 1,
+    stiffness: 300,
+    damping: 30,
+    mass: 0.8,
   };
 
   return (
@@ -215,25 +278,19 @@ const App: React.FC = () => {
         <AnimatePresence>
           {toast && (
             <motion.div
+              layout
               className="ios-toast"
               role="status"
               aria-live="polite"
               aria-atomic="true"
-              initial={{ opacity: 0, scale: 0.8, y: 50 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
+              initial="hidden"
+              animate="visible"
               exit={{ opacity: 0, scale: 0.9, y: -20 }}
-              transition={springTransition}
-              style={{
-                background: 'var(--glass-bg)',
-                backdropFilter: 'blur(20px)',
-                WebkitBackdropFilter: 'blur(20px)',
-                border: '1px solid var(--border-color)',
-                color: 'var(--text-primary)',
-                fontWeight: 600,
-                padding: '12px 24px',
-                borderRadius: '100px',
-                boxShadow: 'var(--shadow-lg)',
+              variants={{
+                hidden: { opacity: 0, scale: 0.95, y: -20, x: '-50%' },
+                visible: { opacity: 1, scale: 1, y: 0, x: '-50%' },
               }}
+              transition={springTransition}
             >
               {toast}
             </motion.div>

@@ -3,9 +3,9 @@ import { createLogger } from '../utils/logger';
 import { sanitizeText } from '../utils/sanitization.core';
 
 // Import shared types from extraction module to prevent circular dependencies
-import type { DetectionResult, EncryptedCacheEntry } from './extraction/types';
-import { classifyWithGhostCore } from './ghostCore';
 import { extractAll } from './intelligentExtractor';
+import type { DetectionResult, EncryptedCacheEntry } from './types/extraction.types';
+// Removed GhostCore dependency for P2.1 architectural consolidation
 
 const log = createLogger('SmartDetection');
 
@@ -120,7 +120,7 @@ class SmartDetectionService {
     this.maybeCleanupExpiredCache();
 
     // Cache check - MV3 safe
-    const hashStr = await this.hash(`${sender}|${subject}|${body.substring(0, 300)}`);
+    const hashStr = await this.hash(`${sender}|${subject}|${body.substring(0, 5000)}`);
     const cacheKey = `det_${hashStr}`;
     const cachedResult = await this.getCachedResult(cacheKey);
     if (cachedResult) {
@@ -128,22 +128,9 @@ class SmartDetectionService {
       return cachedResult;
     }
 
-    // SECURITY FIX: Use safe sanitizeText for HTML sanitization instead of raw regex
-    const cleanBody = this.cleanHTML(body || htmlBody);
-
-    log.info(`🧠 [SmartDetection] Executing 5-Layer Intelligent Pipeline...`);
-
-    // Phase 1: GhostCore Classification (legacy support)
-    const ghostResult = classifyWithGhostCore(
-      subject,
-      cleanBody,
-      htmlBody,
-      sender,
-      expectedDomains
-    );
-
-    // Phase 2: 5-Layer Intelligent Extraction (PRIMARY)
-    const intelligentResult = extractAll(subject, body, htmlBody, sender);
+    // 🧠 [SmartDetection] Executing 5-Layer Intelligent Pipeline...
+    // GhostCore legacy classification removed in favor of consolidated IntelligentExtractor (P2.1)
+    const intelligentResult = extractAll(subject, body, htmlBody, sender, expectedDomains);
 
     log.info(`📊 [SmartDetection] Intent: ${intelligentResult.intent}`);
     log.info(
@@ -153,8 +140,8 @@ class SmartDetectionService {
       `📊 [SmartDetection] Link: ${intelligentResult.link ? `${intelligentResult.link.type} (${intelligentResult.link.confidence}%)` : 'none'}`
     );
 
-    // Merge results - intelligent extractor is primary
-    let mergedResult: DetectionResult = {
+    // Build modern result
+    const mergedResult: DetectionResult = {
       type: 'none',
       confidence: 0,
       engine: 'intelligent',
@@ -162,7 +149,6 @@ class SmartDetectionService {
       providerConfidence: intelligentResult.debugInfo.providerConfidence || 0,
     };
 
-    // Set type based on intelligent extraction
     if (intelligentResult.otp && intelligentResult.link) {
       mergedResult.type = 'both';
     } else if (intelligentResult.otp) {
@@ -171,10 +157,9 @@ class SmartDetectionService {
       mergedResult.type = 'link';
     }
 
-    // Set code and link with baseline confidences
     if (intelligentResult.otp) {
       mergedResult.code = intelligentResult.otp.code;
-      mergedResult.confidence = Math.max(mergedResult.confidence, intelligentResult.otp.confidence); // Confidence is already 0-1
+      mergedResult.confidence = Math.max(mergedResult.confidence, intelligentResult.otp.confidence);
     }
     if (intelligentResult.link) {
       mergedResult.link = intelligentResult.link.url;
@@ -182,22 +167,6 @@ class SmartDetectionService {
         mergedResult.confidence,
         intelligentResult.link.confidence
       );
-    }
-
-    // Ensemble Consensus Engine: If both independent classification engines found the exact same OTP,
-    // the mathematical probability of a false positive drops to near zero. Massive confidence boost.
-    if (mergedResult.code && ghostResult.code && mergedResult.code === ghostResult.code) {
-      log.info(
-        `[Ensemble Consensus] Both engines verified OTP ${mergedResult.code}. Boosting confidence.`
-      );
-      mergedResult.confidence = Math.min(1.0, mergedResult.confidence + 0.15);
-      mergedResult.engine = 'ensemble-consensus';
-    }
-
-    // Fallback to ghost core if intelligent found nothing
-    if (mergedResult.type === 'none' && ghostResult.type !== 'none') {
-      log.debug('[SmartDetection] Intelligent found nothing, using GhostCore fallback');
-      mergedResult = { ...ghostResult, engine: 'ghost-core' };
     }
 
     log.info(

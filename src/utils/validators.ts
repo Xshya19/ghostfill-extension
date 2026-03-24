@@ -117,13 +117,9 @@ export function sanitizeString(input: string, maxLength: number = 1000): string 
  * Sanitize HTML content
  */
 export function sanitizeHtml(html: string): string {
-  return html
-    .replace(/<script[^>]*>([\s\S]*?)<\/script>/gi, '')
-    .replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, '')
-    .replace(/<iframe[^>]*>([\s\S]*?)<\/iframe>/gi, '')
-    .replace(/<!--([\s\S]*?)-->/g, '')
-    .replace(/\bon[a-z]+\s*=\s*(['"])(?:(?!\1).)*?\1/gi, '')
-    .replace(/href\s*=\s*(['"])javascript:(?:(?!\1).)*?\1/gi, 'href=$1#$1');
+  // Delegate to the fortified regex in sanitization.core.ts 
+  // (which is safe for service workers but still strict)
+  return require('./sanitization.core').sanitizeHtml(html);
 }
 
 /**

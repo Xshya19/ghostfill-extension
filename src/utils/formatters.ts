@@ -1,19 +1,22 @@
 // Data Formatters
+import {
+  formatFileSize,
+  formatDate,
+  formatTime,
+  formatDateTime,
+  formatRelativeTime,
+  pluralize,
+} from './core';
 
-/**
- * Format file size
- */
-export function formatFileSize(bytes: number): string {
-  if (bytes === 0) {
-    return '0 B';
-  }
+export {
+  formatFileSize,
+  formatDate,
+  formatTime,
+  formatDateTime,
+  formatRelativeTime,
+  pluralize,
+};
 
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
 
 /**
  * Format password strength as text
@@ -86,75 +89,6 @@ export function formatEmailDisplay(email: string, maxLength: number = 30): strin
   return local.substring(0, availableForLocal) + '...@' + domain;
 }
 
-/**
- * Format date for display
- */
-export function formatDate(timestamp: number | string | Date): string {
-  const date = new Date(timestamp);
-  return date.toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-}
-
-/**
- * Format time for display
- */
-export function formatTime(timestamp: number | string | Date): string {
-  const date = new Date(timestamp);
-  return date.toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-/**
- * Format date and time for display
- */
-export function formatDateTime(timestamp: number | string | Date): string {
-  return `${formatDate(timestamp)} ${formatTime(timestamp)}`;
-}
-
-/**
- * Format relative time (e.g., "2 minutes ago")
- */
-export function formatRelativeTime(timestamp: number): string {
-  // Check for invalid, zero, or future formatting issues
-  if (!timestamp || timestamp <= 0) {
-    return 'just now';
-  }
-
-  const now = Date.now();
-  const diff = now - timestamp;
-
-  // Handle future dates or clock skew
-  if (diff < 0) {
-    return 'just now';
-  }
-
-  const seconds = Math.floor(diff / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-
-  if (days > 7) {
-    return formatDate(timestamp);
-  }
-  if (days > 0) {
-    return `${days}d ago`;
-  }
-  if (hours > 0) {
-    return `${hours}h ago`;
-  }
-  if (minutes > 0) {
-    return `${minutes}m ago`;
-  }
-  if (seconds > 10) {
-    return `${seconds}s ago`;
-  }
-  return 'just now';
-}
 
 /**
  * Format OTP for display (add spaces for readability)
@@ -204,15 +138,6 @@ export function formatEntropy(entropy: number): string {
   return `${Math.round(entropy)} bits`;
 }
 
-/**
- * Pluralize a word
- */
-export function pluralize(count: number, singular: string, plural?: string): string {
-  if (count === 1) {
-    return singular;
-  }
-  return plural || singular + 's';
-}
 
 /**
  * Extract OTP/verification code from text

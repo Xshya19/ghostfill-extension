@@ -13,7 +13,7 @@
  * @security Double sanitization for defense in depth
  */
 
-import DOMPurify from 'isomorphic-dompurify';
+import DOMPurify from 'dompurify';
 import { sanitizeText } from './sanitization.core';
 
 // Re-export all service-worker-safe (regex-only) sanitizers so that existing

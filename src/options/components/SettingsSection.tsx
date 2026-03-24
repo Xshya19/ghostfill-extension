@@ -17,7 +17,7 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({
 }) => {
   return (
     <section
-      className={`settings-section${variant === 'danger' ? ' danger' : ''}`}
+      className={`ghost-card settings-section${variant === 'danger' ? ' danger' : ''}`}
       aria-labelledby={`${id}-title`}
     >
       <h2 id={`${id}-title`}>

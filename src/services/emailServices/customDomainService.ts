@@ -1,6 +1,7 @@
 import { IEmailProvider, Email, EmailAccount } from '../../types';
 import { createLogger } from '../../utils/logger';
 import { storageService } from '../storageService';
+import { providerHealth } from './providerHealthManager';
 
 const log = createLogger('CustomDomainService');
 
@@ -34,7 +35,7 @@ export class CustomDomainService implements IEmailProvider {
     };
   }
 
-  async createAccount(): Promise<EmailAccount> {
+  async createAccount(signal?: AbortSignal): Promise<EmailAccount> {
     const config = await this.getApiConfig();
     if (!config) {
       throw new Error('Custom domain not configured');
@@ -50,8 +51,31 @@ export class CustomDomainService implements IEmailProvider {
 
     // If the user provided an endpoint for generation, use it
     // Otherwise, simply assume catch-all routing
-
     const fullEmail = `${prefix}@${config.domain}`;
+
+    // SECURITY FIX: Notify custom backend to register the generated alias
+    try {
+      if (config.updateUrl) {
+        const generationUrl = new URL(config.updateUrl);
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (config.apiKey) {
+          headers['Authorization'] = `Bearer ${config.apiKey}`;
+        }
+        
+        const response = await fetch(generationUrl.toString(), {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ action: 'create', prefix, domain: config.domain, fullEmail }),
+          signal,
+        });
+        
+        if (!response.ok) {
+          log.warn(`Failed to register prefix with custom domain API (${response.status}). Proceeding anyway (assuming catch-all fallback).`);
+        }
+      }
+    } catch (error) {
+      log.warn('Error during custom domain API registration call, falling back to local creation:', error);
+    }
 
     return {
       fullEmail,
@@ -78,7 +102,7 @@ export class CustomDomainService implements IEmailProvider {
     this.requestTimestamps.push(now);
   }
 
-  async getMessages(account: EmailAccount): Promise<Email[]> {
+  async getMessages(account: EmailAccount, signal?: AbortSignal): Promise<Email[]> {
     const config = await this.getApiConfig();
     if (!config) {
       return [];
@@ -97,20 +121,27 @@ export class CustomDomainService implements IEmailProvider {
 
       const url = new URL(config.updateUrl);
       url.searchParams.set('email', account.fullEmail);
+      
+      const headers: Record<string, string> = { Accept: 'application/json' };
       if (account.token) {
-        url.searchParams.set('key', account.token);
+        headers['Authorization'] = `Bearer ${account.token}`;
       }
 
+      const t0 = performance.now();
       const response = await fetch(url.toString(), {
         method: 'GET',
-        headers: { Accept: 'application/json' },
+        headers,
+        signal,
       });
 
       if (!response.ok) {
-        throw new Error(`Custom API returned ${response.status}`);
+        const error = new Error(`Custom API returned ${response.status}`);
+        providerHealth.recordFailure('custom', error);
+        throw error;
       }
 
       const data = await response.json();
+      providerHealth.recordSuccess('custom', performance.now() - t0);
 
       // Expected format: { messages: [ { id, from, subject, body, htmlBody, date } ] }
       if (data && Array.isArray(data.messages)) {
@@ -138,6 +169,9 @@ export class CustomDomainService implements IEmailProvider {
       return [];
     } catch (error) {
       log.warn('Failed to fetch from custom domain', error);
+      if (error instanceof Error) {
+        providerHealth.recordFailure('custom', error);
+      }
       return [];
     }
   }

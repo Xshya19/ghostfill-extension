@@ -98,19 +98,19 @@ const AboutTab: React.FC = () => {
 
       <SettingsSection id="tech-stack" title="Built With" icon="🏗️">
         <div className="tech-pill-container" role="list" aria-label="Technologies used">
-          <span className="tech-pill indigo" role="listitem">
+          <span className="tech-pill tech-pill-primary" role="listitem">
             React
           </span>
-          <span className="tech-pill purple" role="listitem">
+          <span className="tech-pill tech-pill-secondary" role="listitem">
             TypeScript
           </span>
-          <span className="tech-pill blue" role="listitem">
+          <span className="tech-pill tech-pill-accent" role="listitem">
             Webpack
           </span>
-          <span className="tech-pill indigo" role="listitem">
+          <span className="tech-pill tech-pill-primary" role="listitem">
             Chrome MV3
           </span>
-          <span className="tech-pill purple" role="listitem">
+          <span className="tech-pill tech-pill-secondary" role="listitem">
             Framer Motion
           </span>
         </div>

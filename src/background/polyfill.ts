@@ -19,8 +19,12 @@
   if (typeof g.trustedTypes !== 'undefined') {
     try {
       g.trustedTypes.createPolicy('default', {
-        createHTML: (s: string) => s,
-        createScriptURL: (s: string) => s,
+        createHTML: (s: string) => s.replace(/</g, '&lt;').replace(/>/g, '&gt;'),
+        createScriptURL: (s: string) => {
+          if (s.startsWith('chrome-extension://') || s.startsWith('/')) { return s; }
+          console.warn('Blocked uncontrolled script URL');
+          return '';
+        },
         createScript: (s: string) => s,
       });
     } catch (_) {

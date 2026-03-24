@@ -435,7 +435,11 @@ export async function setupContextMenu(): Promise<void> {
 }
 
 export async function teardownContextMenu(): Promise<void> {
-  await chrome.contextMenus.removeAll();
+  await new Promise<void>((resolve) => {
+    chrome.contextMenus.removeAll(() => {
+      resolve();
+    });
+  });
   menuItems.length = 0;
   initialized = false;
   log.debug('Context menu torn down');
@@ -446,7 +450,11 @@ export async function teardownContextMenu(): Promise<void> {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async function reconcile(items: MenuItemSpec[]): Promise<void> {
-  await chrome.contextMenus.removeAll();
+  await new Promise<void>((resolve) => {
+    chrome.contextMenus.removeAll(() => {
+      resolve();
+    });
+  });
 
   for (const item of items) {
     try {

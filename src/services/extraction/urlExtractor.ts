@@ -6,7 +6,7 @@
 
 import { createLogger } from '../../utils/logger';
 
-import type { LimitConfig } from './types';
+import type { LimitConfig } from '../types/extraction.types';
 
 const log = createLogger('URLExtractor');
 
@@ -60,23 +60,6 @@ const REDIRECT_PARAMS = [
   'redirect_url',
   'target',
   'dest',
-  'destination',
-  'goto',
-  'link',
-  'r',
-  'u',
-  'q',
-  'href',
-  'continue',
-  'return_to',
-  'return',
-  'next',
-  'forward',
-  'out',
-  'click_url',
-  'clickurl',
-  'targeturl',
-  'target_url',
 ] as const;
 
 /** Static resource extensions to exclude */
@@ -173,7 +156,7 @@ export function isValidUrl(url: string): boolean {
 
   try {
     const parsed = new URL(url);
-    if (!parsed.hostname.includes('.') && parsed.hostname !== 'localhost') {
+    if (parsed.hostname !== 'localhost' && (!parsed.hostname.includes('.') || parsed.hostname.split('.').pop()!.length < 2)) {
       return false;
     }
     if (STATIC_RESOURCE_PATTERN.test(parsed.pathname)) {
@@ -262,7 +245,7 @@ export function unwrapTrackingUrl(url: string, depth: number = 0): string | null
     }
 
     // Check for base64-encoded URLs
-    for (const [, value] of u.searchParams) {
+    for (const value of Array.from(u.searchParams.values())) {
       if (/^[A-Za-z0-9+/=]{20,}$/.test(value)) {
         try {
           const decoded = atob(value);
@@ -317,7 +300,7 @@ export function extractUrls(html: string): string[] {
   }
 
   // Layer 3: JSON-escaped URLs
-  const escapedRegex = /https?:\\\/\\\/[^\s"'\\]+(?:\\\/[^\s"'\\]*)*/gi;
+  const escapedRegex = /https?:\\\/\\\/(?:[^\s"'\\]|\\\/)+/gi;
   while ((match = escapedRegex.exec(decoded)) !== null) {
     processUrl(match[0].replace(/\\\//g, '/').trim(), urls);
   }

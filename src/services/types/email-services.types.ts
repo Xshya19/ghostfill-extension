@@ -33,6 +33,7 @@ export interface ProviderHealthConfig {
   baseCooldown: number; // Initial cooldown duration (ms)
   successRateDecay: number; // How fast success rate decays (0-1)
   responseTimeDecay: number; // How fast avg response time decays (0-1)
+  degradedThreshold: number; // Success rate below this = degraded
 }
 
 /**
@@ -108,4 +109,7 @@ export interface IProviderHealthManager {
 
   /** Subscribe to health events */
   subscribe(listener: ProviderHealthEventListener): () => void;
+
+  /** Initialize the manager (load state) */
+  init?(): Promise<void>;
 }

@@ -34,7 +34,8 @@ class DropMailService {
    */
   private async executeGraphQL<T>(
     query: string,
-    variables: Record<string, unknown> = {}
+    variables: Record<string, unknown> = {},
+    signal?: AbortSignal
   ): Promise<T> {
     try {
       const response = await fetch(this.baseUrl, {
@@ -45,6 +46,7 @@ class DropMailService {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         },
         body: JSON.stringify({ query, variables }),
+        signal,
       });
 
       if (!response.ok) {
@@ -66,7 +68,7 @@ class DropMailService {
   /**
    * Create a new email session
    */
-  async createAccount(): Promise<EmailAccount> {
+  async createAccount(signal?: AbortSignal): Promise<EmailAccount> {
     try {
       const query = `
                 mutation {
@@ -80,13 +82,16 @@ class DropMailService {
                 }
             `;
 
-      const data = await this.executeGraphQL<{ introduceSession: DropMailSession }>(query);
+      const data = await this.executeGraphQL<{ introduceSession: DropMailSession }>(query, {}, signal);
       const session: DropMailSession = data.introduceSession;
 
       this.sessionId = session.id;
       this.sessionToken = session.id;
 
-      const fullEmail = session.addresses[0];
+      const fullEmail = session.addresses?.[0];
+      if (!fullEmail) {
+        throw new Error('DropMail returned no addresses');
+      }
       const [login, domain] = fullEmail.split('@');
 
       const now = Date.now();
@@ -118,7 +123,7 @@ class DropMailService {
   /**
    * Get messages (inbox)
    */
-  async getMessages(sessionId?: string): Promise<Email[]> {
+  async getMessages(sessionId?: string, signal?: AbortSignal): Promise<Email[]> {
     const sid = sessionId || this.sessionId;
     if (!sid) {
       throw new Error('No session ID available');
@@ -143,7 +148,7 @@ class DropMailService {
 
       const data = await this.executeGraphQL<{ session: { mails: DropMailMessage[] } }>(query, {
         id: sid,
-      });
+      }, signal);
       const messages: DropMailMessage[] = data.session?.mails || [];
 
       return messages.map((msg) => this.convertMessage(msg));
@@ -156,8 +161,8 @@ class DropMailService {
   /**
    * Get a specific message
    */
-  async getMessage(id: string, sessionId?: string): Promise<Email> {
-    const messages = await this.getMessages(sessionId);
+  async getMessage(id: string, sessionId?: string, signal?: AbortSignal): Promise<Email> {
+    const messages = await this.getMessages(sessionId, signal);
     const message = messages.find((m) => m.id === id);
 
     if (!message) {

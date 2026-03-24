@@ -125,8 +125,9 @@ class PasswordService {
     let charsetLength = charset.length;
 
     if (charsetLength === 0) {
-      // Fallback charset
-      charset.push(...(CHARACTER_SETS.lowercase + CHARACTER_SETS.numbers).split(''));
+      // Fallback charset: alphanumeric + symbols for security (H14 fixed)
+      const fallback = CHARACTER_SETS.lowercase + CHARACTER_SETS.uppercase + CHARACTER_SETS.numbers + CHARACTER_SETS.symbols;
+      charset.push(...fallback.split(''));
       charsetLength = charset.length;
     }
 

@@ -12,16 +12,20 @@ export class MailTmService {
   private baseUrl = API.MAIL_TM.BASE_URL;
   private token: string | null = null;
   private tokenExpiry: number = 0;
+  private tokenMutex: Promise<void> = Promise.resolve();
   private lastErrorTime: number = 0;
   private consecutiveErrors: number = 0;
 
   /**
    * Get available domains
    */
-  async getDomains(): Promise<string[]> {
+  async getDomains(signal?: AbortSignal): Promise<string[]> {
     const fallbackDomains = ['bugfoo.com', 'karenkey.com'];
     try {
-      const response = await this.fetchWithRetry(`${this.baseUrl}${API.MAIL_TM.ENDPOINTS.DOMAINS}`);
+      const response = await this.fetchWithRetry(
+        `${this.baseUrl}${API.MAIL_TM.ENDPOINTS.DOMAINS}`,
+        { signal }
+      );
 
       if (!response.ok) {
         // If domains endpoint fails, use fallback
@@ -71,7 +75,9 @@ export class MailTmService {
       } catch (error) {
         lastError = error;
         if (i === retries - 1) {
-          throw typeof error === 'object' && error instanceof Error ? error : new Error(String(error));
+          throw typeof error === 'object' && error instanceof Error
+            ? error
+            : new Error(String(error));
         }
         await new Promise((resolve) => {
           setTimeout(resolve, 1000 * (i + 1));
@@ -88,10 +94,14 @@ export class MailTmService {
   /**
    * Create a new email account
    */
-  async createAccount(address?: string, password?: string): Promise<EmailAccount> {
+  async createAccount(
+    address?: string,
+    password?: string,
+    signal?: AbortSignal
+  ): Promise<EmailAccount> {
     try {
       // Get available domains
-      const domains = await this.getDomains();
+      const domains = await this.getDomains(signal);
       if (domains.length === 0) {
         throw new Error('No domains available');
       }
@@ -99,15 +109,11 @@ export class MailTmService {
       // Generate random address if not provided
       // Pick a random domain to increase chance of bypassing blacklists
       const domain = domains[Math.floor(Math.random() * domains.length)];
-      const login =
-        address || getRandomString(10, 'abcdefghijklmnopqrstuvwxyz0123456789');
+      const login = address || getRandomString(10, 'abcdefghijklmnopqrstuvwxyz0123456789');
       const fullEmail = `${login}@${domain}`;
       const pwd =
         password ||
-        getRandomString(
-          16,
-          'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-        );
+        getRandomString(16, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789');
 
       // Create account
       const response = await this.fetchWithRetry(
@@ -121,6 +127,7 @@ export class MailTmService {
             address: fullEmail,
             password: pwd,
           }),
+          signal,
         }
       );
 
@@ -132,7 +139,7 @@ export class MailTmService {
       const account: MailTmAccount = await response.json();
 
       // Get auth token
-      await this.authenticate(fullEmail, pwd);
+      await this.authenticate(fullEmail, pwd, signal);
 
       const now = Date.now();
       return {
@@ -154,41 +161,65 @@ export class MailTmService {
   /**
    * Authenticate and get JWT token
    */
-  async authenticate(address: string, password: string): Promise<string> {
-    try {
-      const response = await this.fetchWithRetry(`${this.baseUrl}${API.MAIL_TM.ENDPOINTS.TOKEN}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ address, password }),
-      });
+  async authenticate(address: string, password: string, signal?: AbortSignal): Promise<string> {
+    await this.tokenMutex;
 
-      if (!response.ok) {
-        throw new Error(`Authentication failed: ${response.status}`);
+    const previousMutex = this.tokenMutex;
+    this.tokenMutex = (async () => {
+      await previousMutex;
+
+      try {
+        const response = await this.fetchWithRetry(
+          `${this.baseUrl}${API.MAIL_TM.ENDPOINTS.TOKEN}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ address, password }),
+            signal,
+          }
+        );
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            this.token = null;
+          }
+          throw new Error(`Authentication failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+        this.token = data.token;
+        this.tokenExpiry = Date.now() + 8 * 60 * 1000;
+
+        log.debug('Mail.tm authenticated');
+        if (!this.token) {
+          throw new Error('No token received from authentication');
+        }
+      } catch (error) {
+        log.error('Mail.tm authentication failed', error);
+        throw error;
       }
+    })();
 
-      const data = await response.json();
-      this.token = data.token;
-      this.tokenExpiry = Date.now() + 8 * 60 * 1000; // 8 minutes (Mail.tm tokens expire in 10 mins)
-
-      log.debug('Mail.tm authenticated');
-      if (!this.token) {
-        throw new Error('No token received from authentication');
-      }
-      return this.token;
-    } catch (error) {
-      log.error('Mail.tm authentication failed', error);
-      throw error;
-    }
+    await this.tokenMutex;
+    return this.token!;
   }
 
   /**
    * Set token from stored account
    */
-  setToken(token: string): void {
-    this.token = token;
-    this.tokenExpiry = Date.now() + 8 * 60 * 1000;
+  async setToken(token: string): Promise<void> {
+    await this.tokenMutex;
+
+    const previousMutex = this.tokenMutex;
+    this.tokenMutex = (async () => {
+      await previousMutex;
+      this.token = token;
+      this.tokenExpiry = Date.now() + 8 * 60 * 1000;
+    })();
+
+    await this.tokenMutex;
   }
 
   /**
@@ -201,7 +232,7 @@ export class MailTmService {
   /**
    * Ensure we have a valid token, re-authenticating if necessary
    */
-  private async ensureAuthenticated(): Promise<void> {
+  private async ensureAuthenticated(signal?: AbortSignal): Promise<void> {
     if (this.isAuthenticated()) {
       return;
     }
@@ -213,7 +244,7 @@ export class MailTmService {
 
       if (currentEmail && currentEmail.service === 'mailtm' && currentEmail.password) {
         log.info('Token expired, re-authenticating...');
-        await this.authenticate(currentEmail.fullEmail, currentEmail.password);
+        await this.authenticate(currentEmail.fullEmail, currentEmail.password, signal);
         return;
       }
     } catch (error) {
@@ -226,24 +257,75 @@ export class MailTmService {
   /**
    * Get messages (inbox)
    */
-  async getMessages(): Promise<Email[]> {
+  async getMessages(signal?: AbortSignal): Promise<Email[]> {
+    await this.tokenMutex;
+
+    const previousMutex = this.tokenMutex;
+    let tokenCopy: string | null = null;
+
+    this.tokenMutex = (async () => {
+      await previousMutex;
+      tokenCopy = this.token;
+    })();
+
+    await this.tokenMutex;
+
     try {
-      await this.ensureAuthenticated();
+      await this.ensureAuthenticated(signal);
+
+      this.tokenMutex = (async () => {
+        await this.tokenMutex;
+        tokenCopy = this.token;
+      })();
+      await this.tokenMutex;
 
       const response = await this.fetchWithRetry(
         `${this.baseUrl}${API.MAIL_TM.ENDPOINTS.MESSAGES}`,
         {
           headers: {
-            Authorization: `Bearer ${this.token}`,
+            Authorization: `Bearer ${tokenCopy}`,
           },
+          signal,
         }
       );
 
       if (response.status === 401) {
-        // Token might be invalid despite expiry check, retry once
-        this.token = null;
-        await this.ensureAuthenticated();
-        return this.getMessages();
+        log.info('Token invalid, re-authenticating...');
+
+        const previousMutex = this.tokenMutex;
+        this.tokenMutex = (async () => {
+          await previousMutex;
+          this.token = null;
+        })();
+        await this.tokenMutex;
+
+        await this.ensureAuthenticated(signal);
+
+        this.tokenMutex = (async () => {
+          await this.tokenMutex;
+          tokenCopy = this.token;
+        })();
+        await this.tokenMutex;
+
+        const retryResponse = await this.fetchWithRetry(
+          `${this.baseUrl}${API.MAIL_TM.ENDPOINTS.MESSAGES}`,
+          {
+            headers: {
+              Authorization: `Bearer ${tokenCopy}`,
+            },
+            signal,
+          }
+        );
+
+        if (!retryResponse.ok) {
+          throw new Error(`HTTP error: ${retryResponse.status}`);
+        }
+
+        const data = await retryResponse.json();
+        const messages: MailTmMessage[] = data['hydra:member'] || [];
+
+        this.consecutiveErrors = 0;
+        return messages.map((msg) => this.convertMessage(msg));
       }
 
       if (!response.ok) {
@@ -253,19 +335,15 @@ export class MailTmService {
       const data = await response.json();
       const messages: MailTmMessage[] = data['hydra:member'] || [];
 
-      // Reset error counter on success
       this.consecutiveErrors = 0;
       return messages.map((msg) => this.convertMessage(msg));
     } catch (error) {
-      // Throttle error logging to prevent spam
       this.consecutiveErrors++;
       const now = Date.now();
       if (now - this.lastErrorTime > 5000) {
-        // Log at most once per 5 seconds
         log.error('Failed to get Mail.tm messages', error);
         this.lastErrorTime = now;
       }
-      // Return empty array instead of throwing to prevent UI breakage
       return [];
     }
   }
@@ -273,23 +351,70 @@ export class MailTmService {
   /**
    * Get a specific message
    */
-  async getMessage(id: string): Promise<Email> {
-    await this.ensureAuthenticated();
+  async getMessage(id: string, signal?: AbortSignal): Promise<Email> {
+    await this.tokenMutex;
+
+    let tokenCopy: string | null = null;
+    const previousMutex = this.tokenMutex;
+    this.tokenMutex = (async () => {
+      await previousMutex;
+      tokenCopy = this.token;
+    })();
+    await this.tokenMutex;
+
+    await this.ensureAuthenticated(signal);
+
+    const authMutex = this.tokenMutex;
+    this.tokenMutex = (async () => {
+      await authMutex;
+      tokenCopy = this.token;
+    })();
+    await this.tokenMutex;
 
     try {
       const response = await this.fetchWithRetry(
         `${this.baseUrl}${API.MAIL_TM.ENDPOINTS.MESSAGES}/${id}`,
         {
           headers: {
-            Authorization: `Bearer ${this.token}`,
+            Authorization: `Bearer ${tokenCopy}`,
           },
+          signal,
         }
       );
 
       if (response.status === 401) {
-        this.token = null;
-        await this.ensureAuthenticated();
-        return this.getMessage(id);
+        const clearMutex = this.tokenMutex;
+        this.tokenMutex = (async () => {
+          await clearMutex;
+          this.token = null;
+        })();
+        await this.tokenMutex;
+
+        await this.ensureAuthenticated(signal);
+
+        const retryMutex = this.tokenMutex;
+        this.tokenMutex = (async () => {
+          await retryMutex;
+          tokenCopy = this.token;
+        })();
+        await this.tokenMutex;
+
+        const retryResponse = await this.fetchWithRetry(
+          `${this.baseUrl}${API.MAIL_TM.ENDPOINTS.MESSAGES}/${id}`,
+          {
+            headers: {
+              Authorization: `Bearer ${tokenCopy}`,
+            },
+            signal,
+          }
+        );
+
+        if (!retryResponse.ok) {
+          throw new Error(`HTTP error: ${retryResponse.status}`);
+        }
+
+        const msg: MailTmMessage = await retryResponse.json();
+        return this.convertMessage(msg, true);
       }
 
       if (!response.ok) {
@@ -308,7 +433,24 @@ export class MailTmService {
    * Delete a message
    */
   async deleteMessage(id: string): Promise<void> {
+    await this.tokenMutex;
+
+    let tokenCopy: string | null = null;
+    const previousMutex = this.tokenMutex;
+    this.tokenMutex = (async () => {
+      await previousMutex;
+      tokenCopy = this.token;
+    })();
+    await this.tokenMutex;
+
     await this.ensureAuthenticated();
+
+    const authMutex = this.tokenMutex;
+    this.tokenMutex = (async () => {
+      await authMutex;
+      tokenCopy = this.token;
+    })();
+    await this.tokenMutex;
 
     try {
       const response = await this.fetchWithRetry(
@@ -316,7 +458,7 @@ export class MailTmService {
         {
           method: 'DELETE',
           headers: {
-            Authorization: `Bearer ${this.token}`,
+            Authorization: `Bearer ${tokenCopy}`,
           },
         }
       );

@@ -4,18 +4,18 @@ import { vi } from 'vitest';
 global.chrome = {
   storage: {
     local: {
-      get: vi.fn(),
-      set: vi.fn(),
-      remove: vi.fn(),
-      clear: vi.fn(),
-      getBytesInUse: vi.fn(),
+      get: vi.fn().mockResolvedValue({}),
+      set: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined),
+      getBytesInUse: vi.fn().mockResolvedValue(0),
     },
     session: {
-      get: vi.fn(),
-      set: vi.fn(),
-      remove: vi.fn(),
-      clear: vi.fn(),
-      getBytesInUse: vi.fn(),
+      get: vi.fn().mockResolvedValue({}),
+      set: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined),
+      getBytesInUse: vi.fn().mockResolvedValue(0),
     },
     sync: {
       get: vi.fn(),

@@ -101,6 +101,8 @@ class FeatureFlagManager {
   private listeners: Set<() => void> = new Set();
   private initialized = false;
 
+  private userHash: number | null = null;
+
   /**
    * Initialize feature flags from storage and URL params
    */
@@ -123,12 +125,21 @@ class FeatureFlagManager {
 
     // Load from storage (for A/B testing persistence)
     try {
-      const stored = await chrome.storage.local.get('featureFlags');
+      const stored = await chrome.storage.local.get(['featureFlags', 'abUserHash']);
+      
+      if (stored.abUserHash !== undefined) {
+        this.userHash = stored.abUserHash;
+      } else {
+        this.userHash = Math.abs(Math.floor(Math.random() * 1000));
+        await chrome.storage.local.set({ abUserHash: this.userHash });
+      }
+
       if (stored.featureFlags) {
         this.flags = { ...this.flags, ...stored.featureFlags };
         log.info('Loaded feature flags from storage');
       }
     } catch (error) {
+      this.userHash = Math.abs(Math.floor(Math.random() * 1000));
       log.warn('Failed to load feature flags from storage', error);
     }
 
@@ -275,14 +286,8 @@ class FeatureFlagManager {
   }
 
   private getUserHash(): number {
-    // Generate a consistent hash for A/B testing
-    const id = chrome.runtime?.id || 'default';
-    let hash = 0;
-    for (let i = 0; i < id.length; i++) {
-      hash = (hash << 5) - hash + id.charCodeAt(i);
-      hash |= 0;
-    }
-    return Math.abs(hash) % 1000;
+    // SECURITY FIX: Uses generated stable random integer instead of universal extension ID
+    return this.userHash !== null ? this.userHash : 500;
   }
 }
 
@@ -293,15 +298,15 @@ export const featureFlags = new FeatureFlagManager();
  * React Hook for using feature flags
  */
 export function useFeatureFlag(flag: keyof FeatureFlags): boolean {
-  const [enabled, setEnabled] = React.useState(featureFlags.isEnabled(flag));
-
-  React.useEffect(() => {
-    return featureFlags.subscribe(() => {
-      setEnabled(featureFlags.isEnabled(flag));
-    });
-  }, [flag]);
-
-  return enabled;
+  const subscribe = React.useCallback(
+    (callback: () => void) => featureFlags.subscribe(callback),
+    []
+  );
+  const getSnapshot = React.useCallback(
+    () => featureFlags.isEnabled(flag),
+    [flag]
+  );
+  return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
 /**

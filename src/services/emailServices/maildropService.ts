@@ -75,45 +75,77 @@ class MaildropService {
   }
 
   /**
-   * Execute GraphQL query
+   * Execute GraphQL query with retry logic
    */
   private async executeGraphQL<T>(
     query: string,
-    variables: Record<string, unknown> = {}
+    variables: Record<string, unknown> = {},
+    signal?: AbortSignal,
+    retries = 3
   ): Promise<T> {
-    try {
-      const response = await fetch(MAILDROP_API, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'User-Agent': 'GhostFill-Extension/1.0',
-          'x-apollo-operation-name': 'GhostFillQuery',
-          'apollo-require-preflight': 'true',
-        },
-        body: JSON.stringify({ query, variables }),
-      });
+    let lastError: Error | unknown = null;
 
-      if (!response.ok) {
-        throw new Error(`HTTP error: ${response.status}`);
+    for (let i = 0; i < retries; i++) {
+      try {
+        const response = await fetch(MAILDROP_API, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'User-Agent': 'GhostFill-Extension/1.0',
+            'x-apollo-operation-name': 'GhostFillQuery',
+            'apollo-require-preflight': 'true',
+          },
+          body: JSON.stringify({ query, variables }),
+          signal,
+        });
+
+        if (!response.ok) {
+          // If 429 or 5xx, retry
+          if (response.status === 429 || response.status >= 500) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          // Otherwise fail immediately for client errors
+          throw new Error(`HTTP error: ${response.status}`);
+        }
+
+        const result: GraphQLResponse<T> = await response.json();
+
+        if (result.errors && result.errors.length > 0) {
+          // Check if it's a transient GraphQL error
+          const msg = result.errors[0].message;
+          if (msg.toLowerCase().includes('timeout') || msg.toLowerCase().includes('rate limit')) {
+            throw new Error(msg);
+          }
+          throw new Error(msg);
+        }
+
+        if (!result.data) {
+          throw new Error('No data in response');
+        }
+
+        return result.data;
+      } catch (error) {
+        lastError = error;
+        
+        // Don't retry if aborted
+        if (signal?.aborted) {
+          throw error;
+        }
+
+        // Don't retry on certain errors (like 400 Bad Request) unless it's the last attempt
+        if (i < retries - 1) {
+          const waitTime = 1000 * (i + 1);
+          log.warn(`Maildrop GraphQL attempt ${i + 1} failed, retrying in ${waitTime}ms...`, error);
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
+          continue;
+        }
       }
-
-      const result: GraphQLResponse<T> = await response.json();
-
-      if (result.errors && result.errors.length > 0) {
-        throw new Error(result.errors[0].message);
-      }
-
-      if (!result.data) {
-        throw new Error('No data in response');
-      }
-
-      return result.data;
-    } catch (error) {
-      this.lastError = (error as Error).message;
-      log.error('GraphQL query failed', error);
-      throw error;
     }
+
+    this.lastError = lastError instanceof Error ? lastError.message : String(lastError);
+    log.error('GraphQL query failed after maximum retries', lastError);
+    throw lastError;
   }
 
   /**
@@ -131,7 +163,7 @@ class MaildropService {
   /**
    * Create a new email account (generate mailbox name)
    */
-  async createAccount(prefix?: string): Promise<EmailAccount> {
+  async createAccount(prefix?: string, signal?: AbortSignal): Promise<EmailAccount> {
     try {
       const mailbox = prefix || this.generateMailboxName();
       const domain = 'maildrop.cc';
@@ -140,7 +172,8 @@ class MaildropService {
 
       // Maildrop doesn't require account creation - just use any mailbox name
       // But we'll ping to verify the service is up
-      const isUp = await this.ping();
+      const data = await this.executeGraphQL<{ ping: string }>(PING_QUERY, {}, signal);
+      const isUp = data?.ping === 'pong';
       if (!isUp) {
         throw new Error('Maildrop API is not responding');
       }
@@ -171,7 +204,7 @@ class MaildropService {
    * Get messages from inbox with full content
    * Note: Maildrop's inbox query only returns metadata, so we fetch full content for each
    */
-  async getMessages(account: EmailAccount): Promise<Email[]> {
+  async getMessages(account: EmailAccount, signal?: AbortSignal): Promise<Email[]> {
     try {
       const mailbox = account.token || account.username || account.login;
       if (!mailbox) {
@@ -179,9 +212,11 @@ class MaildropService {
       }
 
       // First, get inbox list (metadata only)
-      const data = await this.executeGraphQL<{ inbox: MaildropInboxMessage[] }>(INBOX_QUERY, {
-        mailbox,
-      });
+      const data = await this.executeGraphQL<{ inbox: MaildropInboxMessage[] }>(
+        INBOX_QUERY,
+        { mailbox },
+        signal
+      );
 
       const messages = data.inbox || [];
 
@@ -189,10 +224,12 @@ class MaildropService {
       // Limit to first 10 to avoid excessive API calls
       const fullMessages: Email[] = [];
       for (const msg of messages.slice(0, 10)) {
+        if (signal?.aborted) {break;}
         try {
           const fullData = await this.executeGraphQL<{ message: MaildropFullMessage }>(
             MESSAGE_QUERY,
-            { mailbox, id: msg.id }
+            { mailbox, id: msg.id },
+            signal
           );
           if (fullData.message) {
             fullMessages.push(this.convertFullMessage(fullData.message, account.fullEmail));
@@ -214,17 +251,18 @@ class MaildropService {
   /**
    * Get a specific message with full content
    */
-  async getMessage(emailId: string, account: EmailAccount): Promise<Email> {
+  async getMessage(emailId: string, account: EmailAccount, signal?: AbortSignal): Promise<Email> {
     try {
       const mailbox = account.token || account.username || account.login;
       if (!mailbox) {
         throw new Error('No mailbox identifier available');
       }
 
-      const data = await this.executeGraphQL<{ message: MaildropFullMessage }>(MESSAGE_QUERY, {
-        mailbox,
-        id: emailId,
-      });
+      const data = await this.executeGraphQL<{ message: MaildropFullMessage }>(
+        MESSAGE_QUERY,
+        { mailbox, id: emailId },
+        signal
+      );
 
       if (!data.message) {
         throw new Error(`Message ${emailId} not found`);
