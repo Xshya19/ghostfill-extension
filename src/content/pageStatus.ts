@@ -23,7 +23,7 @@ class PageStatusInjector {
         typeof chrome.runtime !== 'undefined' &&
         !!chrome.runtime.id &&
         typeof document !== 'undefined' &&
-        document.body != null;
+        document.body !== null;
     } catch {
       return false;
     }

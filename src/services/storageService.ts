@@ -46,7 +46,7 @@ const log = createLogger('StorageService');
  */
 let sessionSecrets: SessionSecrets = {};
 let sessionSecretsInitialized = false;
-let sessionSecretsRestoring: Promise<void> | null = null;
+const sessionSecretsRestoring: Promise<void> | null = null;
 
 // Keys that contain sensitive data and should be encrypted
 // SECURITY FIX: Comprehensive list of all sensitive keys in StorageSchema
