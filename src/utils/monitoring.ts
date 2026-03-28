@@ -5,6 +5,10 @@
  * No PII collected, all data anonymized
  */
 
+import { createLogger } from './logger';
+
+const log = createLogger('Monitoring');
+
 // Local Metric type to avoid web-vitals type issues
 interface LocalMetric {
   name: string;
@@ -106,7 +110,7 @@ class PerformanceMonitor {
       observer.observe({ type: 'largest-contentful-paint', buffered: true });
       this.observers.push(observer);
     } catch {
-      console.warn('LCP observer not supported');
+      log.warn('LCP observer not supported');
     }
   }
 
@@ -136,7 +140,7 @@ class PerformanceMonitor {
       observer.observe({ type: 'first-input', buffered: true });
       this.observers.push(observer);
     } catch {
-      console.warn('FID observer not supported');
+      log.warn('FID observer not supported');
     }
   }
 
@@ -169,7 +173,7 @@ class PerformanceMonitor {
       observer.observe({ type: 'layout-shift', buffered: true });
       this.observers.push(observer);
     } catch {
-      console.warn('CLS observer not supported');
+      log.warn('CLS observer not supported');
     }
   }
 
@@ -203,7 +207,7 @@ class PerformanceMonitor {
       observer.observe({ type: 'event', buffered: true });
       this.observers.push(observer);
     } catch {
-      console.warn('INP observer not supported');
+      log.warn('INP observer not supported');
     }
   }
 
@@ -236,7 +240,7 @@ class PerformanceMonitor {
       observer.observe({ type: 'longtask', buffered: true });
       this.observers.push(observer);
     } catch {
-      console.warn('LongTask observer not supported');
+      log.warn('LongTask observer not supported');
     }
   }
 
@@ -272,7 +276,7 @@ class PerformanceMonitor {
       observer.observe({ type: 'resource', buffered: true });
       this.observers.push(observer);
     } catch {
-      console.warn('Resource observer not supported');
+      log.warn('Resource observer not supported');
     }
   }
 
@@ -315,33 +319,23 @@ class PerformanceMonitor {
    * Report long task for investigation
    */
   private reportLongTask(entry: PerformanceEntry): void {
-    // In production, send to monitoring service
-    // Serialize explicitly to avoid "[object Object]" in console output
-    console.warn(
-      'Long task detected:',
-      JSON.stringify({
-        name: entry.name,
-        duration: entry.duration,
-        startTime: entry.startTime,
-      })
-    );
+    log.warn('Long task detected', JSON.stringify({
+      name: entry.name,
+      duration: entry.duration,
+      startTime: entry.startTime,
+    }));
   }
 
   /**
    * Report slow resource for investigation
    */
   private reportSlowResource(entry: PerformanceResourceTiming): void {
-    // Serialize explicitly to avoid "[object Object]" in console output
-    // Note: transferSize/encodedBodySize may be 0 for cross-origin resources without Timing-Allow-Headers
-    console.warn(
-      'Slow resource detected:',
-      JSON.stringify({
-        name: entry.name,
-        duration: entry.duration,
-        transferSize: entry.transferSize || 0,
-        encodedBodySize: entry.encodedBodySize || 0,
-      })
-    );
+    log.warn('Slow resource detected', JSON.stringify({
+      name: entry.name,
+      duration: entry.duration,
+      transferSize: entry.transferSize || 0,
+      encodedBodySize: entry.encodedBodySize || 0,
+    }));
   }
 
   /**
@@ -452,14 +446,11 @@ export class MemoryMonitor {
     // If memory increased by more than 20% in last 10 snapshots
     const increase = (last - first) / first;
     if (increase > 0.2) {
-      console.warn(
-        'Potential memory leak detected:',
-        JSON.stringify({
-          increase: `${(increase * 100).toFixed(2)}%`,
-          from: first,
-          to: last,
-        })
-      );
+      log.warn('Potential memory leak detected', JSON.stringify({
+        increase: `${(increase * 100).toFixed(2)}%`,
+        from: first,
+        to: last,
+      }));
     }
   }
 
@@ -606,7 +597,7 @@ export class ErrorTracker {
    */
   private reportCriticalError(error: TrackedError): void {
     // In production, send to error tracking service
-    console.error('Critical error:', error);
+    log.error('Critical error tracked', error);
   }
 
   /**

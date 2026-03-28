@@ -14,7 +14,10 @@
  */
 
 import DOMPurify from 'dompurify';
+import { createLogger } from './logger';
 import { sanitizeText } from './sanitization.core';
+
+const log = createLogger('Sanitization');
 
 // Re-export all service-worker-safe (regex-only) sanitizers so that existing
 // consumers in DOM contexts can keep importing from this module.
@@ -83,17 +86,17 @@ function initTrustedTypes(): void {
         },
         createScriptURL: (input: string): string => {
           // SECURITY: Block all script URLs
-          console.warn('[TrustedTypes] Blocked script URL:', input);
+          log.warn('TrustedTypes blocked script URL (redacted)');
           return 'about:blank';
         },
         createScript: (): null => {
           // SECURITY: Block all inline scripts
-          console.warn('[TrustedTypes] Blocked inline script');
+          log.warn('TrustedTypes blocked inline script');
           return null;
         },
       });
     } catch (error) {
-      console.warn('[TrustedTypes] Failed to create policy:', error);
+      log.warn('TrustedTypes: Failed to create policy', error);
     }
   }
 }
@@ -258,7 +261,7 @@ export function sanitizeHtml(dirty: string, options?: SanitizerConfig): string {
 
     return basicClean;
   } catch (error) {
-    console.error('[Sanitization] Failed to sanitize HTML:', error);
+    log.error('Failed to sanitize HTML', error);
     return ''; // Return empty string on failure (safe fallback)
   }
 }
@@ -292,7 +295,7 @@ function secondaryValidation(html: string): string {
   let sanitized = html;
   for (const pattern of dangerousPatterns) {
     if (pattern.test(sanitized)) {
-      console.warn('[SecondaryValidation] Blocked dangerous pattern:', pattern);
+      log.warn('SecondaryValidation blocked dangerous pattern');
       // Remove the dangerous content entirely
       sanitized = sanitized.replace(pattern, '');
     }
@@ -335,7 +338,7 @@ function secondaryValidation(html: string): string {
 
   // If decoding reveals dangerous content, strip it entirely
   if (/<script/i.test(decoded) || /javascript:/i.test(decoded) || /on\w+\s*=/i.test(decoded)) {
-    console.warn('[SecondaryValidation] Blocked encoded dangerous content');
+    log.warn('SecondaryValidation blocked encoded dangerous content');
     return '';
   }
 

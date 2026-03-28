@@ -12,6 +12,10 @@
  *           still run DOMPurify before rendering untrusted HTML.
  */
 
+import { createLogger } from './logger';
+
+const log = createLogger('Sanitization');
+
 // ═══════════════════════════════════════════════════════════════════
 // Plain-text / regex sanitizers (zero DOM dependency)
 // ═══════════════════════════════════════════════════════════════════
@@ -53,7 +57,7 @@ export function sanitizeEmail(email: string): string {
   const sanitized = sanitizeText(email.trim());
 
   if (!emailRegex.test(sanitized)) {
-    console.warn('[Sanitization] Invalid email format:', email);
+    log.warn('Invalid email format (redacted for security)');
     return '';
   }
 
@@ -84,13 +88,13 @@ export function sanitizeUrl(url: string): string {
 
     const allowedProtocols = ['http:', 'https:', 'mailto:'];
     if (!allowedProtocols.includes(parsedUrl.protocol)) {
-      console.warn('[Sanitization] Blocked unsafe protocol:', parsedUrl.protocol);
+      log.warn('Blocked unsafe protocol', parsedUrl.protocol);
       return '';
     }
 
     return parsedUrl.href;
   } catch {
-    console.warn('[Sanitization] Invalid URL:', url);
+    log.warn('Invalid URL (redacted for security)');
     return '';
   }
 }
@@ -110,7 +114,7 @@ export function sanitizeActivationLink(link: string): string {
   const lowerLink = sanitized.toLowerCase();
   for (const pattern of dangerousPatterns) {
     if (lowerLink.includes(pattern)) {
-      console.warn('[Sanitization] Blocked dangerous pattern:', pattern);
+      log.warn('Blocked dangerous link pattern', pattern);
       return '';
     }
   }

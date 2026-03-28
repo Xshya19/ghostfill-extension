@@ -1,6 +1,10 @@
 // Core Utilities (Environment Agnostic)
 // Safe for use in Service Workers, Node.js, and Browser
 
+import { createLogger } from './logger';
+
+const log = createLogger('Core');
+
 /**
  * Generate a cryptographically secure random number between 0 (inclusive) and 1 (exclusive)
  */
@@ -54,7 +58,7 @@ export function deepMerge<T extends object>(target: T, source: Partial<T>): T {
     if (Object.prototype.hasOwnProperty.call(source, key)) {
       // 🛡️ SECURITY: Block prototype pollution attempts
       if (dangerousKeys.includes(key)) {
-        console.warn('[deepMerge] Blocked prototype pollution attempt:', key);
+        log.warn('Blocked prototype pollution attempt', key);
         continue;
       }
 

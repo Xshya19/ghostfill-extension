@@ -7,7 +7,7 @@
  * @security All sensitive data should be encrypted before storage
  * @security Master password is NEVER stored - derived on-demand only
  * @security Keys are cleared on extension unload
- * @security KEY_MAX_LIFETIME reduced to 15 minutes for enhanced security
+ * @security KEY_MAX_LIFETIME set to 24 hours (aligned with KEY_ROTATION_INTERVAL)
  * @security Session keys persist in chrome.storage.session across SW restarts
  * @see https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API
  */
@@ -36,8 +36,11 @@ let sessionKeyExpiration: number | null = null;
 const KEY_ROTATION_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
 const KEY_MAX_LIFETIME = 24 * 60 * 60 * 1000;
 
-const derivedKeyCache = new Map<string, CryptoKey>();
+interface DerivedKeyCacheEntry { key: CryptoKey; ts: number; }
+const derivedKeyCache = new Map<string, DerivedKeyCacheEntry>();
 const MAX_CACHE_SIZE = 20;
+// L6: TTL for derived key cache entries (1 hour)
+const DERIVED_KEY_TTL_MS = 60 * 60 * 1000;
 
 /**
  * Derives a cryptographic key from a password using PBKDF2
@@ -57,14 +60,30 @@ export async function deriveKey(password: string, salt: Uint8Array): Promise<Cry
   const passHash = Array.from(new Uint8Array(passBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
   const cacheKey = `${passHash}:${saltBase64}`;
 
+  // L6: Evict expired entries and check cache
+  const now = Date.now();
   if (derivedKeyCache.has(cacheKey)) {
-    return derivedKeyCache.get(cacheKey)!;
+    const entry = derivedKeyCache.get(cacheKey)!;
+    if (now - entry.ts < DERIVED_KEY_TTL_MS) {
+      return entry.key;
+    }
+    derivedKeyCache.delete(cacheKey); // expired
   }
 
-  // LRU cleanup to prevent memory leaks
+  // LRU + TTL cleanup to prevent memory leaks
   if (derivedKeyCache.size >= MAX_CACHE_SIZE) {
-    const firstKey = derivedKeyCache.keys().next().value;
-    if (firstKey) {derivedKeyCache.delete(firstKey);}
+    // Remove oldest OR expired entry
+    for (const [k, v] of derivedKeyCache) {
+      if (now - v.ts > DERIVED_KEY_TTL_MS) {
+        derivedKeyCache.delete(k);
+        break;
+      }
+    }
+    // If still full, evict the oldest entry (Map preserves insertion order)
+    if (derivedKeyCache.size >= MAX_CACHE_SIZE) {
+      const firstKey = derivedKeyCache.keys().next().value;
+      if (firstKey) { derivedKeyCache.delete(firstKey); }
+    }
   }
 
   // Import password as key material
@@ -90,7 +109,7 @@ export async function deriveKey(password: string, salt: Uint8Array): Promise<Cry
     ['encrypt', 'decrypt']
   );
 
-  derivedKeyCache.set(cacheKey, key);
+  derivedKeyCache.set(cacheKey, { key, ts: Date.now() });
   return key;
 }
 
@@ -102,25 +121,32 @@ export function generateSecurePassword(length = 32): string {
   const chars =
     'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-=[]{}|;:,.<>?';
   const charsLength = chars.length;
-  // Calculate max valid value for uniform distribution to prevent modulo bias
+  // L7: Batch generates 2x the needed bytes to account for rejection sampling (reduces CSPRNG calls)
   const maxValid = 256 - (256 % charsLength);
-  const randomValues = new Uint8Array(1);
   let result = '';
-
+  // Batch generate — request enough bytes to fill the password in most cases
   while (result.length < length) {
+    const needed = Math.max(length - result.length, 1);
+    // Over-sample by 1.5x since rejection sampling discards some bytes
+    const batchSize = Math.ceil(needed * 1.5);
+    const randomValues = new Uint8Array(batchSize);
     crypto.getRandomValues(randomValues);
-    if (randomValues[0]! < maxValid) {
-      result += chars[randomValues[0]! % charsLength];
+    for (let i = 0; i < batchSize && result.length < length; i++) {
+      if (randomValues[i]! < maxValid) {
+        result += chars[randomValues[i]! % charsLength];
+      }
     }
   }
-
   return result;
 }
 
 /**
  * Securely clears a string from memory by overwriting the referenced object
- * Note: primitives are immutable in JS, so this only clears the wrapper object.
- * @security Use for clearing passwords/sensitive strings from state
+ * Note: JS strings are immutable primitives — this clears the wrapper object
+ * value property to null out the reference, but the original string may remain
+ * in heap memory until the GC collects it. For truly sensitive data, use
+ * Uint8Array / ArrayBuffer and fill with zeros instead.
+ * @security Use for clearing passwords/sensitive strings from state objects
  */
 export function secureClearString(strRef: { value: string }): void {
   if (strRef && strRef.value) {
@@ -205,7 +231,12 @@ export function validatePasswordStrength(password: string): { score: number; fee
     score++;
   }
 
-  if (score <= 2) {
+  // M18: Score normalised to max 4.
+  // Raw max = 6 (3 length + 1 case + 1 digit + 1 special);
+  // Map 0-2 → 0, 3 → 1, 4 → 2, 5 → 3, 6 → 4 for a full [0..4] range.
+  const normalised = score <= 2 ? 0 : score - 2;
+
+  if (normalised <= 1) {
     feedback.push('Password is too weak');
   }
   if (password.length < 12) {
@@ -222,7 +253,7 @@ export function validatePasswordStrength(password: string): { score: number; fee
     feedback.push('Add special characters');
   }
 
-  return { score: Math.min(score, 4), feedback };
+  return { score: Math.min(normalised, 4), feedback };
 }
 
 // Dynamic Internal Salt: Fetched securely
@@ -291,8 +322,13 @@ export async function encrypt(data: unknown, passwordOrKey: string | CryptoKey):
     packed.set(iv, 1 + SALT_LENGTH);
     packed.set(new Uint8Array(ciphertext), 1 + SALT_LENGTH + IV_LENGTH);
 
-    // Convert to base64 for storage
-    return btoa(String.fromCharCode(...packed));
+    // M9: Convert to base64 for storage without spread (avoids V8 call-stack overflow for large payloads)
+    let binary = '';
+    const chunkSize = 8192;
+    for (let i = 0; i < packed.length; i += chunkSize) {
+      binary += String.fromCharCode(...packed.subarray(i, i + chunkSize));
+    }
+    return btoa(binary);
   } catch (error) {
     log.error('Encryption failed', error);
     throw new Error('Failed to encrypt data');

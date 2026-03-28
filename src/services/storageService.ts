@@ -46,7 +46,7 @@ const log = createLogger('StorageService');
  */
 let sessionSecrets: SessionSecrets = {};
 let sessionSecretsInitialized = false;
-const sessionSecretsRestoring: Promise<void> | null = null;
+let sessionSecretsRestoring: Promise<void> | null = null;
 
 // Keys that contain sensitive data and should be encrypted
 // SECURITY FIX: Comprehensive list of all sensitive keys in StorageSchema
@@ -143,18 +143,21 @@ class StorageService {
       CACHE_CONFIG.MAX_SIZE,
       CACHE_CONFIG.TTL_MS
     );
-    this.initCacheCleanup();
+    // Lazy cleanup is now triggered per-access via maybecleanupCache()
   }
 
   /**
-   * Initialize cache cleanup interval
+   * Trigger cache cleanup lazily — called on each cache access.
+   * Using setInterval in a service worker is unreliable (it's destroyed on suspension).
+   * Instead we clean up stale entries opportunistically on access.
    */
-  private initCacheCleanup(): void {
-    if (typeof setInterval !== 'undefined') {
-      setInterval(() => {
-        const removed = this.cache.cleanup();
-        if (removed > 0) {log.debug(`Cleaned up ${removed} expired cache entries`);}
-      }, CACHE_CONFIG.TTL_MS);
+  private lastCleanupTs = 0;
+  private maybecleanupCache(): void {
+    const now = Date.now();
+    if (now - this.lastCleanupTs > CACHE_CONFIG.TTL_MS) {
+      this.lastCleanupTs = now;
+      const removed = this.cache.cleanup();
+      if (removed > 0) { log.debug(`Cleaned up ${removed} expired cache entries`); }
     }
   }
 

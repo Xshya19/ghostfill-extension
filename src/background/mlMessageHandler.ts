@@ -27,7 +27,7 @@ export function registerMLMessageHandler(): void {
           await ensureOffscreenDocument();
 
           // 2. Forward the classification request to the offscreen document
-          void chrome.runtime.sendMessage({
+          const response: any = await chrome.runtime.sendMessage({
             target: 'offscreen-doc',
             type: 'CLASSIFY_FIELD',
             payload: { features, context }
@@ -51,6 +51,3 @@ export function registerMLMessageHandler(): void {
 
   log.debug('ML message handler registered (Proxy to Offscreen)');
 }
-
-
-

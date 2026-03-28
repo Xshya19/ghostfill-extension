@@ -451,7 +451,10 @@ class DomainMatcher {
 
     const secondLevel = parts[parts.length - 2]?.toLowerCase();
 
-    if (secondLevel && /^(co|com|org|net|edu|gov|ac|ne)$/.test(secondLevel)) {
+    // M6: Expanded ccTLD list — covers co.uk, com.au, co.jp, net.au, org.uk, etc.
+    // Source: https://publicsuffix.org/list/public_suffix_list.dat (common patterns)
+    const compoundSuffixes = /^(co|com|org|net|edu|gov|ac|ne|or|gen|ltd|plc|me|firm|info|mod|sch|police|nhs|id|my|on|in|biz|tv|web|name|pro|health|go|mil|asn|conf|oz|act|nsw|qld|sa|tas|vic|wa)$/;
+    if (secondLevel && compoundSuffixes.test(secondLevel)) {
       return parts.slice(-3).join('.');
     }
 
@@ -608,9 +611,13 @@ class OTPCodeExtractor {
 
     // Source 5: Short email standalone number
     if (emailText.length < 300) {
-      // Exclude common years (2020-2029) and require 6-8 digits for standalone sequences
-      // to avoid matching 4-digit years or 5-digit zip codes maliciously
-      const standaloneMatch = emailText.match(/\b(?!(?:20[0-9]{2}))(\d{6,8})\b/);
+      // M7: Tightened regex to reduce false positives:
+      // - Excludes years 2000-2099
+      // - Excludes 9+ digit sequences (phone numbers, account IDs, ZIP+4)
+      // - Requires exactly 6-8 digit sequences bounded by word boundaries
+      const standaloneMatch = emailText.match(
+        /\b(?!(?:20[0-9]{2})\b)(?!\d{9,})(\d{6,8})(?!\d)\b/
+      );
       if (standaloneMatch?.[1]) {
         log.info('🚨 OTP from short email');
         return standaloneMatch[1];

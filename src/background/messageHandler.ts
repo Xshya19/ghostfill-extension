@@ -128,16 +128,15 @@ async function handleMessage(
     }
 
     case 'READ_EMAIL': {
-      if (message.action === 'READ_EMAIL') {
-        const { emailId, login, domain, service } = message.payload || ({} as any);
-        const email = await emailService.readEmail(emailId, {
-          login,
-          domain,
-          service,
-        } as unknown as import('../types').EmailAccount);
-        return { success: true, email };
-      }
-      return { success: false, error: 'Invalid message action' };
+      const { emailId, login, domain, service } = (message.payload || {}) as {
+        emailId: string; login: string; domain: string; service: string;
+      };
+      const email = await emailService.readEmail(emailId, {
+        login,
+        domain,
+        service,
+      } as unknown as import('../types').EmailAccount);
+      return { success: true, email };
     }
 
     case 'GET_EMAIL_HISTORY': {
@@ -243,12 +242,9 @@ async function handleMessage(
     }
 
     case 'SAVE_PASSWORD': {
-      if (message.action === 'SAVE_PASSWORD') {
-        const { password, website } = message.payload || ({} as any);
-        await passwordService.saveToHistory(password, website);
-        return { success: true };
-      }
-      return { success: false, error: 'Invalid message action' };
+      const { password, website } = (message.payload || {}) as { password: string; website: string };
+      await passwordService.saveToHistory(password, website);
+      return { success: true };
     }
 
     case 'DELETE_PASSWORD': {
@@ -322,20 +318,17 @@ async function handleMessage(
 
     // ── NOTIFICATION ACTIONS ──────────────────────────────────────
     case 'SHOW_NOTIFICATION': {
-      if (message.action === 'SHOW_NOTIFICATION') {
-        const payload = (message.payload || {}) as any;
-        const title = typeof payload.title === 'string' ? payload.title : 'GhostFill';
-        const text = typeof payload.message === 'string' ? payload.message : '';
-        const type = payload.type;
+      const payload = (message.payload || {}) as { title?: string; message?: string; type?: string };
+      const title = typeof payload.title === 'string' ? payload.title : 'GhostFill';
+      const text = typeof payload.message === 'string' ? payload.message : '';
+      const type = payload.type;
 
-        if (type === 'error') {
-          await notifyError(title, text);
-        } else {
-          await notifySuccess(title, text);
-        }
-        return { success: true };
+      if (type === 'error') {
+        await notifyError(title, text);
+      } else {
+        await notifySuccess(title, text);
       }
-      return { success: false, error: 'Invalid message action' };
+      return { success: true };
     }
 
     // ── STORAGE/SETTINGS ──────────────────────────────────────────
@@ -345,11 +338,11 @@ async function handleMessage(
     }
 
     case 'UPDATE_SETTINGS': {
-      if (message.action === 'UPDATE_SETTINGS') {
-        const updated = await storageService.updateSettings(message.payload);
-        return { success: true, settings: updated };
-      }
-      return { success: false, error: 'Invalid message action' };
+      // Inside this case, message.action is always 'UPDATE_SETTINGS'
+      const updated = await storageService.updateSettings(
+        (message.payload as import('../utils/validation').UserSettings | undefined) ?? {}
+      );
+      return { success: true, settings: updated };
     }
 
     case 'CLEAR_DATA': {
@@ -390,15 +383,13 @@ async function handleMessage(
 
     // ── SERVICE HEALTH NOTIFICATIONS ─────────────────────────────
     case 'FALLBACK_DOMAINS_USED': {
-      if (message.action === 'FALLBACK_DOMAINS_USED') {
-        const { service, reason } = (message.payload || {}) as { service?: string; reason?: string };
-        log.warn(`Provider ${service} is using fallback domains (${reason ?? 'API_UNAVAILABLE'})`);
-        // Surface a non-blocking warning notification to the user
-        await notifyError(
-          'Email Provider Degraded',
-          `${service ?? 'TempMail'} is using fallback domains — some features may be limited.`
-        ).catch(() => {}); // best-effort
-      }
+      const { service, reason } = (message.payload || {}) as { service?: string; reason?: string };
+      log.warn(`Provider ${service} is using fallback domains (${reason ?? 'API_UNAVAILABLE'})`);
+      // Surface a non-blocking warning notification to the user
+      await notifyError(
+        'Email Provider Degraded',
+        `${service ?? 'TempMail'} is using fallback domains — some features may be limited.`
+      ).catch(() => {}); // best-effort
       return { success: true };
     }
 

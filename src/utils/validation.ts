@@ -5,6 +5,9 @@
  */
 
 import { z } from 'zod';
+import { createLogger } from './logger';
+
+const log = createLogger('Validation');
 
 // Configuration
 const MAX_MESSAGE_SIZE = 2 * 1024 * 1024; // Increased to 2MB for large DOM snapshots
@@ -279,11 +282,9 @@ export function validateMessage<T extends { action: string; payload?: unknown }>
     const payloadSchema = messagePayloadSchemas[action];
 
     if (!payloadSchema) {
-      const available = Object.keys(messagePayloadSchemas).sort();
-      console.error(`[GhostFill] [Messaging] ERROR: Unknown action "${action}". Available:`, available);
+      log.warn('Unknown message action rejected', { action });
       // Reject unknown message actions - security critical
       return {
-
         valid: false,
         error: `Unknown message action: ${action}`,
       };

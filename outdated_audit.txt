@@ -1,0 +1,26 @@
+﻿Package                            Current    Wanted   Latest  Location                                       Depended by
+@types/chrome                      0.0.254   0.0.254   0.1.38  node_modules/@types/chrome                     ghostfill-extension-main
+@types/node                       20.19.37  20.19.37   25.5.0  node_modules/@types/node                       ghostfill-extension-main
+@types/react                       18.3.27   18.3.28  19.2.14  node_modules/@types/react                      ghostfill-extension-main
+@types/react-dom                    18.3.7    18.3.7   19.2.3  node_modules/@types/react-dom                  ghostfill-extension-main
+@typescript-eslint/eslint-plugin    6.21.0    6.21.0   8.57.2  node_modules/@typescript-eslint/eslint-plugin  ghostfill-extension-main
+@typescript-eslint/parser           6.21.0    6.21.0   8.57.2  node_modules/@typescript-eslint/parser         ghostfill-extension-main
+@vitest/ui                           4.1.0     4.1.2    4.1.2  node_modules/@vitest/ui                        ghostfill-extension-main
+copy-webpack-plugin                 11.0.0    11.0.0   14.0.0  node_modules/copy-webpack-plugin               ghostfill-extension-main
+css-loader                          6.11.0    6.11.0    7.1.4  node_modules/css-loader                        ghostfill-extension-main
+eslint                              8.57.1    8.57.1   10.1.0  node_modules/eslint                            ghostfill-extension-main
+eslint-plugin-react-hooks            4.6.2     4.6.2    7.0.1  node_modules/eslint-plugin-react-hooks         ghostfill-extension-main
+framer-motion                     12.23.26   12.38.0  12.38.0  node_modules/framer-motion                     ghostfill-extension-main
+jsdom                               29.0.0    29.0.1   29.0.1  node_modules/jsdom                             ghostfill-extension-main
+lucide-react                       0.562.0   0.562.0    1.7.0  node_modules/lucide-react                      ghostfill-extension-main
+mini-css-extract-plugin              2.9.4    2.10.2   2.10.2  node_modules/mini-css-extract-plugin           ghostfill-extension-main
+prettier                             3.7.4     3.8.1    3.8.1  node_modules/prettier                          ghostfill-extension-main
+react                               18.3.1    18.3.1   19.2.4  node_modules/react                             ghostfill-extension-main
+react-dom                           18.3.1    18.3.1   19.2.4  node_modules/react-dom                         ghostfill-extension-main
+rimraf                              5.0.10    5.0.10    6.1.3  node_modules/rimraf                            ghostfill-extension-main
+style-loader                         3.3.4     3.3.4    4.0.0  node_modules/style-loader                      ghostfill-extension-main
+typescript                           5.9.3     5.9.3    6.0.2  node_modules/typescript                        ghostfill-extension-main
+vitest                               4.1.0     4.1.2    4.1.2  node_modules/vitest                            ghostfill-extension-main
+webpack                            5.105.3   5.105.4  5.105.4  node_modules/webpack                           ghostfill-extension-main
+webpack-cli                          5.1.4     5.1.4    7.0.2  node_modules/webpack-cli                       ghostfill-extension-main
+zustand                             5.0.11    5.0.12   5.0.12  node_modules/zustand                           ghostfill-extension-main
