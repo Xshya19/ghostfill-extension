@@ -2,7 +2,12 @@
  * Intercepts console logs and optionally forwards them to a developer-provided
  * endpoint. The extension should stay silent by default so MV3 CSP rules are
  * never tripped by localhost logging attempts.
+ *
+ * NOTE: This file intentionally uses console.* directly — it IS the console
+ * interceptor and must reference the originals before patching them.
  */
+/* eslint-disable no-console */
+
 type RemoteLoggerConfig = {
     enabled?: boolean;
     url?: string;
@@ -76,7 +81,7 @@ export function initRemoteLogger(sourceName: string) {
                     message
                 })
             }).catch(() => {});
-        } catch (e) {
+        } catch {
             // Silently fail to avoid infinite logging loops
         }
     };

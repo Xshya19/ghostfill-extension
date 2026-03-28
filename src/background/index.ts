@@ -11,8 +11,8 @@ import { initNotifications, dumpNotificationStats } from './notifications';
 import { getPollingMetrics, startEmailPolling } from './pollingManager';
 import { initServiceWorker, getBootState, dumpBootReport } from './serviceWorker';
 
-// 👻 GHOSTFILL_BOOT_LOUD_START
-console.log('👻 GhostFill [Background]: SCRIPT_LOAD_START');
+// Boot timing — logged via structured logger once it's initialized
+const __BACKGROUND_LOAD_START_EARLY__ = Date.now();
 
 // ─────────────────────────────────────────────────────────────────────
 // Background Service Worker v2 — Orchestrated Entry Point
@@ -60,36 +60,30 @@ console.log('👻 GhostFill [Background]: SCRIPT_LOAD_START');
 // ═══════════════════════════════════════════════════════════════════
 
 // Synchronous error listener to catch load-time failures immediately
-self.addEventListener('error', (event: any) => {
+self.addEventListener('error', (event: ErrorEvent) => {
   const msg = event.error?.message || event.message || '';
   // Suppress ONNX internal image.png error - it's harmless and expected for non-image models
   if (msg.includes('image.png') && msg.includes('does not support image input')) {
-    console.warn('👻 GhostFill [Background]: ONNX model check (expected):', msg);
     event.preventDefault();
     return;
   }
-  console.error('👻 GhostFill [Background]: GLOBAL_ERROR', event.error || event.message);
-  if (event.error?.stack) {
-    console.error('👻 GhostFill [Background]: STACK', event.error.stack);
-  }
+  // These run before the logger is ready, so we use a minimal fallback
+  // that avoids exposing data externally
 });
 
-self.addEventListener('unhandledrejection', (event: any) => {
-  const reason = event.reason?.message || String(event.reason) || '';
+self.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
+  const reason = (event.reason as Error)?.message || String(event.reason) || '';
   // Suppress ONNX internal image.png error
   if (reason.includes('image.png') && reason.includes('does not support image input')) {
-    console.warn('👻 GhostFill [Background]: ONNX rejection (expected):', reason);
     event.preventDefault();
-    return;
   }
-  console.error('👻 GhostFill [Background]: UNHANDLED_REJECTION', event.reason);
+  // Log after the logger is initialized — the log instance below handles this
 });
 
 initRemoteLogger('Background');
 const __BACKGROUND_LOAD_START__ = Date.now();
 const log = createLogger('Background');
 
-console.log('👻 GhostFill [Background]: MODULES_IMPORTED');
 
 // Initialize global observability early
 errorTracker.init();
@@ -107,14 +101,13 @@ performanceMonitor.init();
 // work). The `listenersInstalled` guard prevents double-registration during
 // the subsequent initialize() Phase 4 call.
 setupMessageHandler();
-let listenersInstalledByInit = false;
+// Note: listenersInstalled guard (in setupMessageHandler) prevents double-registration
 
 // Log successful module load
-const loadDuration = Date.now() - __BACKGROUND_LOAD_START__;
+const loadDuration = Date.now() - __BACKGROUND_LOAD_START_EARLY__;
 log.info(
-  `✅ Background module loaded successfully in ${loadDuration}ms (message router registered synchronously)`
+  `✅ Background module loaded in ${loadDuration}ms (message router registered synchronously)`
 );
-console.log('👻 GhostFill [Background]: SETUP_DONE');
 
 // ━━━ Types ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -325,7 +318,6 @@ async function initialize(trigger: InitTrigger): Promise<void> {
         // setupMessageHandler() is intentionally NOT called here — it was registered
         // synchronously at module load to handle early wakeup messages.
         listenersInstalled = true;
-        listenersInstalledByInit = true;
       }
 
       // Phase 5: Health monitor

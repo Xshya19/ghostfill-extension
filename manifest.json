@@ -88,8 +88,8 @@
                 "content.css"
             ],
             "run_at": "document_idle",
-            "all_frames": true,
-            "match_about_blank": true
+            "all_frames": false,
+            "match_about_blank": false
         }
     ],
     "action": {
