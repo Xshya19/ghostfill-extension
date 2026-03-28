@@ -13,10 +13,31 @@ class PageStatusInjector {
   private isVisible: boolean = false;
 
   /**
+   * Check if the extension context is still valid (not invalidated by navigation)
+   * M8: Guard all DOM operations against a torn-down context
+   */
+  private isContextValid(): boolean {
+    try {
+      // chrome.runtime.id is undefined when the context has been invalidated
+      return typeof chrome !== 'undefined' &&
+        typeof chrome.runtime !== 'undefined' &&
+        !!chrome.runtime.id &&
+        typeof document !== 'undefined' &&
+        document.body != null;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Initialize the status injector
    */
   init(): void {
     if (this.container) {
+      return;
+    }
+    // M8: Skip if context is invalid (e.g. page is being torn down)
+    if (!this.isContextValid()) {
       return;
     }
 
@@ -173,6 +194,10 @@ class PageStatusInjector {
    * Show status with message
    */
   show(message: string, type: 'loading' | 'success' | 'error' = 'loading'): void {
+    // M8: Guard against showing in an invalidated context
+    if (!this.isContextValid()) {
+      return;
+    }
     this.init();
     if (!this.shadowRoot) {
       return;

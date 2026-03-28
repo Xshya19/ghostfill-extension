@@ -532,20 +532,37 @@ class SmartPositioner {
     return false;
   }
 
+  /** H10: Cached z-index to avoid 500-element scan on every position update */
+  private static _cachedMaxZ = 0;
+  private static _cachedMaxZTs = 0;
+  private static readonly Z_CACHE_TTL_MS = 5000;
+
   static getMaxZIndex(): number {
+    const now = Date.now();
+    if (this._cachedMaxZ > 0 && now - this._cachedMaxZTs < this.Z_CACHE_TTL_MS) {
+      return this._cachedMaxZ;
+    }
     try {
       const all = document.querySelectorAll('*');
       let max = 10000; // Safe baseline
       for (let i = 0, len = Math.min(all.length, 500); i < len; i++) {
-        const z = parseInt(window.getComputedStyle(all[i]).zIndex, 10);
+        const z = parseInt(window.getComputedStyle(all[i]!).zIndex, 10);
         if (!isNaN(z) && z > max && z < ABSOLUTE_MAX_Z) {
           max = z;
         }
       }
-      return Math.min(max + Z_INDEX_BOOST, ABSOLUTE_MAX_Z);
+      const result = Math.min(max + Z_INDEX_BOOST, ABSOLUTE_MAX_Z);
+      this._cachedMaxZ = result;
+      this._cachedMaxZTs = now;
+      return result;
     } catch {
       return ABSOLUTE_MAX_Z;
     }
+  }
+
+  /** Invalidate the z-index cache (call on DOM mutation or new field focus) */
+  static invalidateZCache(): void {
+    this._cachedMaxZTs = 0;
   }
 
   static calculateMenuPosition(

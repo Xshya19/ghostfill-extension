@@ -83,26 +83,29 @@ log.info('GhostFill content script loaded');
 function createSafeComponent<T extends object>(methods: Partial<T>, componentName: string): T {
   return new Proxy({} as T, {
     get(_, prop: string | symbol) {
+      // M11: Symbol access (e.g. Symbol.toPrimitive, Symbol.iterator) must return undefined
+      // to avoid breaking Promise detection and other internals.
       if (typeof prop !== 'string') {
         return undefined;
       }
 
+      // If the method exists in the fallback, return it directly (no error log)
+      const fallbackFn = (methods as Record<string, unknown>)[prop];
+      if (typeof fallbackFn === 'function') {
+        return fallbackFn;
+      }
+
+      // Only log + track when a MISSING method is actually called
       return (...args: unknown[]) => {
-        log.error(
-          `GhostFill Error: Method ${prop} called on uninitialized component ${componentName}`
+        log.warn(
+          `GhostFill: Method '${prop}' called on degraded component '${componentName}' — using no-op fallback`
         );
         errorTracker.trackError({
           type: 'initialization_error',
           message: `Method ${prop} called on uninitialized component ${componentName}`,
           timestamp: Date.now(),
         });
-
-        const fallbackFn = (methods as any)[prop];
-        if (typeof fallbackFn === 'function') {
-          return fallbackFn(...args);
-        }
-
-        // Return a generic resolved promise by default as many methods are async
+        // Return a generic resolved promise as many methods are async
         return Promise.resolve(null);
       };
     },

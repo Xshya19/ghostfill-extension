@@ -52,7 +52,7 @@
     "@typescript-eslint/parser": "^6.15.0",
     "@vitest/ui": "^4.1.0",
     "archiver": "^7.0.1",
-    "copy-webpack-plugin": "^11.0.0",
+    "copy-webpack-plugin": "^14.0.0",
     "css-loader": "^6.8.1",
     "csv-parse": "^6.2.1",
     "eslint": "^8.56.0",
