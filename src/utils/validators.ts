@@ -1,6 +1,7 @@
 // Input Validators
 
 import { PasswordOptions } from '../types';
+import { sanitizeHtml as sanitizeHtmlCore } from './sanitization.core';
 
 /**
  * Validate email format
@@ -119,7 +120,7 @@ export function sanitizeString(input: string, maxLength: number = 1000): string 
 export function sanitizeHtml(html: string): string {
   // Delegate to the fortified regex in sanitization.core.ts 
   // (which is safe for service workers but still strict)
-  return require('./sanitization.core').sanitizeHtml(html);
+  return sanitizeHtmlCore(html);
 }
 
 /**

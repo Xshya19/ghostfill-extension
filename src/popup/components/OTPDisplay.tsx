@@ -85,9 +85,9 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
       if (tab?.id) {
         const res = await safeSendTabMessage(tab.id, {
           action: 'FILL_OTP',
-          payload: { otp: lastOTP.code, fieldSelectors: [] },
+          payload: { otp: lastOTP.code },
         });
-        if (res) {
+        if (res?.success) {
           onToast('OTP filled successfully!');
           // Don't close popup - let user verify
         } else {

@@ -43,53 +43,110 @@ export class FieldClassifier {
 
     const all = `${type}|${name}|${id}|${placeholder}|${autocomplete}|${ariaLabel}|${label}`;
 
-    if (this.AUTOCOMPLETE_MAP.get(autocomplete) === 'otp') return 'otp';
-    if (/otp|one[-_]?time|verification[-\s_]?code|passcode|security[-_]?code/i.test(all)) return 'otp';
-    if (this.OTP_EXACT_NAMES.has(name) || this.OTP_EXACT_NAMES.has(id)) return 'otp';
+    if (this.AUTOCOMPLETE_MAP.get(autocomplete) === 'otp') {
+      return 'otp';
+    }
+    if (/otp|one[-_]?time|verification[-\s_]?code|passcode|security[-_]?code/i.test(all)) {
+      return 'otp';
+    }
+    if (this.OTP_EXACT_NAMES.has(name) || this.OTP_EXACT_NAMES.has(id)) {
+      return 'otp';
+    }
 
-    if (type === 'email') return 'email';
+    if (type === 'email') {
+      return 'email';
+    }
     if (type === 'password') {
       return /confirm|repeat|retype|re-enter|again|match/i.test(all) ? 'confirm-password' : 'password';
     }
 
     const autoType = this.AUTOCOMPLETE_MAP.get(autocomplete);
-    if (autoType) return autoType;
+    if (autoType) {
+      return autoType;
+    }
 
-    if (/e[-_]?mail|email/i.test(name + id) || /email/i.test(label)) return 'email';
+    if (/e[-_]?mail|email/i.test(name + id) || /email/i.test(label)) {
+      return 'email';
+    }
     if (/password|passwd|pwd|pass[-_]?word/i.test(name + id)) {
       return /confirm|repeat|retype|re-enter|again/i.test(all) ? 'confirm-password' : 'password';
     }
-    if (/first[-_]?name|given[-_]?name|fname/i.test(name + id) || /first\s*name/i.test(label)) return 'first-name';
-    if (/last[-_]?name|family[-_]?name|surname|lname/i.test(name + id) || /last\s*name|surname/i.test(label)) return 'last-name';
-    if (/full[-_]?name|your[-_]?name|display[-_]?name/i.test(name + id) || /full\s*name|your\s*name/i.test(label)) return 'full-name';
-    if (/user[-_]?name|login[-_]?name|login[-_]?id|user[-_]?id/i.test(name + id) || /username/i.test(label)) return 'username';
-    if (/phone|mobile|tel(?:ephone)?|cell/i.test(name + id) || /phone/i.test(label)) return 'phone';
-    if (/@/.test(placeholder) || /email|e-mail/i.test(placeholder)) return 'email';
-    if (/password/i.test(placeholder)) return 'password';
-    if (/username/i.test(placeholder)) return 'username';
-    if (/code|otp|pin|digit/i.test(placeholder)) return 'otp';
+    if (/first[-_]?name|given[-_]?name|fname/i.test(name + id) || /first\s*name/i.test(label)) {
+      return 'first-name';
+    }
+    if (/last[-_]?name|family[-_]?name|surname|lname/i.test(name + id) || /last\s*name|surname/i.test(label)) {
+      return 'last-name';
+    }
+    if (/full[-_]?name|your[-_]?name|display[-_]?name/i.test(name + id) || /full\s*name|your\s*name/i.test(label)) {
+      return 'full-name';
+    }
+    if (/user[-_]?name|login[-_]?name|login[-_]?id|user[-_]?id/i.test(name + id) || /username/i.test(label)) {
+      return 'username';
+    }
+    if (/phone|mobile|tel(?:ephone)?|cell/i.test(name + id) || /phone/i.test(label)) {
+      return 'phone';
+    }
+    if (/@/.test(placeholder) || /email|e-mail/i.test(placeholder)) {
+      return 'email';
+    }
+    if (/password/i.test(placeholder)) {
+      return 'password';
+    }
+    if (/username/i.test(placeholder)) {
+      return 'username';
+    }
+    if (/code|otp|pin|digit/i.test(placeholder)) {
+      return 'otp';
+    }
 
     return 'unknown';
   }
 
   private static findLabelText(input: HTMLElement): string {
+    // 1. Explicit labels via 'for' attribute
     if (input.id) {
       const label = document.querySelector(`label[for="${CSS.escape(input.id)}"]`);
-      if (label?.textContent) return label.textContent.trim();
+      if (label?.textContent) {return label.textContent.trim();}
     }
+
+    // 2. Wrapping label
     const parentLabel = input.closest('label');
-    if (parentLabel?.textContent) return parentLabel.textContent.trim();
+    if (parentLabel?.textContent) {return parentLabel.textContent.trim();}
+
+    // 3. ARIA labels
     const labelledBy = input.getAttribute('aria-labelledby');
     if (labelledBy) {
-      const labelEl = document.getElementById(labelledBy);
-      if (labelEl?.textContent) return labelEl.textContent.trim();
+      const parts = labelledBy.split(/\s+/).map(id => document.getElementById(id)?.textContent?.trim() || '').filter(Boolean);
+      if (parts.length > 0) {return parts.join(' ');}
     }
     const ariaLabel = input.getAttribute('aria-label');
-    if (ariaLabel) return ariaLabel;
+    if (ariaLabel) {return ariaLabel;}
+
+    // 4. ARIA describedby (common in Material/Radix for hints)
+    const describedBy = input.getAttribute('aria-describedby');
+    if (describedBy) {
+      const descEl = document.getElementById(describedBy);
+      if (descEl?.textContent) {return descEl.textContent.trim();}
+    }
+
+    // 5. Floating Labels (Nearby text check)
+    // Sites often put labels in a sibling span or div for animation.
+    const parent = input.parentElement;
+    if (parent) {
+      const siblingText = Array.from(parent.children)
+        .filter(c => c !== input && !['INPUT', 'SELECT', 'TEXTAREA'].includes(c.tagName))
+        .map(c => c.textContent?.trim())
+        .find(t => t && t.length > 2 && t.length < 50);
+      if (siblingText) {return siblingText;}
+    }
+
+    // 6. Previous sibling fallback
     const prevSibling = input.previousElementSibling;
     if (prevSibling && prevSibling.tagName !== 'INPUT' && prevSibling.textContent) {
-      return prevSibling.textContent.trim();
+      const t = prevSibling.textContent.trim();
+      if (t.length > 2) {return t;}
     }
+    
     return '';
   }
 }

@@ -46,7 +46,7 @@ const log = createLogger('StorageService');
  */
 let sessionSecrets: SessionSecrets = {};
 let sessionSecretsInitialized = false;
-let sessionSecretsRestoring: Promise<void> | null = null;
+const sessionSecretsRestoring: Promise<void> | null = null;
 
 // Keys that contain sensitive data and should be encrypted
 // SECURITY FIX: Comprehensive list of all sensitive keys in StorageSchema
@@ -679,6 +679,11 @@ class StorageService {
           if (valueSize > this.QUOTA_MAX_SIZE) {
             log.warn(`Large write detected for key ${key}`, { size: valueSize });
             await this.pruneOldData();
+            // Prune updates pendingWrites, we need to ingest those updates into our current batch
+            for (const [pKey, pVal] of this.pendingWrites.entries()) {
+              writes.set(pKey, pVal);
+            }
+            this.pendingWrites.clear();
           }
 
           // Encrypt sensitive data
@@ -778,6 +783,13 @@ class StorageService {
 
     // Optimistic update
     this.cache.delete(key);
+
+    // FIX §7.6: Cancel any pending buffered write for this key so a debounced
+    // batch-flush cannot re-write the value we are about to delete.
+    if (this.pendingWrites.has(key)) {
+      this.pendingWrites.delete(key);
+      log.debug(`Cancelled pending write for removed key: ${String(key)}`);
+    }
 
     try {
       await chrome.storage.local.remove(key);
@@ -954,32 +966,29 @@ class StorageService {
     await this.set(key, updated as StorageSchema[K]);
   }
 
-  /**
-   * Prune old data when storage is getting full
-   */
   private async pruneOldData(): Promise<void> {
     try {
       const emailHistory = await this.get('emailHistory');
       if (emailHistory && Array.isArray(emailHistory) && emailHistory.length > 20) {
-        await this.setImmediate(
-          'emailHistory',
-          emailHistory.slice(0, 20) as StorageSchema['emailHistory']
-        );
+        const pruned = emailHistory.slice(0, 20) as StorageSchema['emailHistory'];
+        this.pendingWrites.set('emailHistory', pruned);
+        this.cache.set('emailHistory', pruned);
         log.info('Pruned email history to 20 items');
       }
 
       const passwordHistory = await this.get('passwordHistory');
       if (passwordHistory && Array.isArray(passwordHistory) && passwordHistory.length > 20) {
-        await this.setImmediate(
-          'passwordHistory',
-          passwordHistory.slice(0, 20) as StorageSchema['passwordHistory']
-        );
+        const pruned = passwordHistory.slice(0, 20) as StorageSchema['passwordHistory'];
+        this.pendingWrites.set('passwordHistory', pruned);
+        this.cache.set('passwordHistory', pruned);
         log.info('Pruned password history to 20 items');
       }
 
       const inbox = await this.get('inbox');
       if (inbox && Array.isArray(inbox) && inbox.length > 10) {
-        await this.setImmediate('inbox', inbox.slice(0, 10) as StorageSchema['inbox']);
+        const pruned = inbox.slice(0, 10) as StorageSchema['inbox'];
+        this.pendingWrites.set('inbox', pruned);
+        this.cache.set('inbox', pruned);
         log.info('Pruned inbox cache to 10 items');
       }
     } catch (e) {

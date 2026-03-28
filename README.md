@@ -82,36 +82,36 @@ Results are cached in `chrome.storage.session` encrypted with **AES-256-GCM** so
 │                        CHROME EXTENSION (MV3)                        │
 │                                                                      │
 │  ┌──────────────┐  ┌──────────────────────────────────────────────┐  │
-│  │   Popup UI   │  │            Background Service Worker          │  │
+│  │   Popup UI   │  │            Background Service Worker         │  │
 │  │  (React 18)  │  │                                              │  │
-│  │  • Identity  │  │  ┌─────────────────┐  ┌──────────────────┐  │  │
-│  │  • Email     │  │  │ PollingManager  │  │  MessageHandler  │  │  │
-│  │  • Inbox     │  │  │  Fast / Slow    │  │   (main router)  │  │  │
-│  │  • Password  │  │  │  AlarmScheduler │  └──────────────────┘  │  │
+│  │  • Identity  │  │  ┌─────────────────┐  ┌──────────────────┐   │  │
+│  │  • Email     │  │  │ PollingManager  │  │  MessageHandler  │   │  │
+│  │  • Inbox     │  │  │  Fast / Slow    │  │   (main router)  │   │  │
+│  │  • Password  │  │  │  AlarmScheduler │  └──────────────────┘   │  │
 │  └──────────────┘  │  └────────┬────────┘                         │  │
-│                    │           │                                   │  │
-│  ┌──────────────┐  │  ┌────────▼────────┐  ┌──────────────────┐  │  │
-│  │  Options UI  │  │  │ SmartDetection  │  │   LinkService    │  │  │
-│  │  (React 18)  │  │  │  5-Layer Engine │  │  (background tab │  │  │
-│  └──────────────┘  │  │  AES-256 cache  │  │   activation)    │  │  │
-│                    │  └─────────────────┘  └──────────────────┘  │  │
+│                    │           │                                  │  │
+│  ┌──────────────┐  │  ┌────────▼────────┐  ┌──────────────────┐   │  │
+│  │  Options UI  │  │  │ SmartDetection  │  │   LinkService    │   │  │
+│  │  (React 18)  │  │  │  5-Layer Engine │  │  (background tab │   │  │
+│  └──────────────┘  │  │  AES-256 cache  │  │   activation)    │   │  │
+│                    │  └─────────────────┘  └──────────────────┘   │  │
 │                    │                                              │  │
-│                    │  ┌─────────────────┐  ┌──────────────────┐  │  │
-│                    │  │  EmailService   │  │  StorageService  │  │  │
-│                    │  │  10 providers   │  │  AES-256 encrypt │  │  │
-│                    │  │  health scoring │  │  session / local │  │  │
-│                    │  └─────────────────┘  └──────────────────┘  │  │
+│                    │  ┌─────────────────┐  ┌──────────────────┐   │  │
+│                    │  │  EmailService   │  │  StorageService  │   │  │
+│                    │  │  10 providers   │  │  AES-256 encrypt │   │  │
+│                    │  │  health scoring │  │  session / local │   │  │
+│                    │  └─────────────────┘  └──────────────────┘   │  │
 │                    └──────────────────────────────────────────────┘  │
 │                                                                      │
-│  ┌───────────────────────────────────────────────────────────────┐   │
-│  │                   Content Script (every page)                  │   │
-│  │   OTPPageDetector · FloatingButton · AutoFiller · FormDetector │   │
-│  │   ToastFeedback (Shadow DOM) · DOMObserver · FieldWatcher      │   │
-│  └───────────────────────────────────────────────────────────────┘   │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │                   Content Script (every page)                  │  │
+│  │   OTPPageDetector · FloatingButton · AutoFiller · FormDetector │  │
+│  │   ToastFeedback (Shadow DOM) · DOMObserver · FieldWatcher      │  │
+│  └────────────────────────────────────────────────────────────────┘  │
 │                                                                      │
 │  ┌──────────────┐                                                    │
 │  │   Offscreen  │  ONNX Runtime Web — Local ML inference             │
-│  │   Document   │  (no external API calls ever)                     │
+│  │   Document   │  (no external API calls ever)                      │
 │  └──────────────┘                                                    │
 └──────────────────────────────────────────────────────────────────────┘
 ```

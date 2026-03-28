@@ -1,14 +1,6 @@
-// Suppress ONNX internal image.png error - harmless and expected for non-image models
-const _originalError = console.error.bind(console);
-console.error = function (...args: unknown[]) {
-  const msg = String(args[0] || '');
-  if (msg.includes('image.png') && msg.includes('does not support image input')) {
-    console.warn('[GhostFill Offscreen]: ONNX model type check (expected):', msg);
-    return;
-  }
-  _originalError(...args);
-};
+// Removed console.error override previously used for ONNX warnings
 
+import { PageContext } from '../types/form.types';
 import { classifyField, initInferenceEngine } from './inferenceEngine';
 
 // Listen for messages from the background script
@@ -36,9 +28,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     // ---- ML Classification ----
     if (message.target === 'offscreen-doc' && message.type === 'CLASSIFY_FIELD') {
-      classifyField(message.payload)
+      const { features, context } = message.payload;
+      classifyField(features, context)
         .then((prediction) => sendResponse({ success: true, prediction }))
-        .catch((error) => sendResponse({ success: false, error: String(error) }));
+        .catch((error: Error) => sendResponse({ success: false, error: String(error) }));
       return true;
     }
 
@@ -46,7 +39,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.target === 'offscreen-doc' && message.type === 'WARM_UP_ML') {
       initInferenceEngine()
         .then(() => sendResponse({ success: true }))
-        .catch((error) => sendResponse({ success: false, error: String(error) }));
+        .catch((error: Error) => sendResponse({ success: false, error: String(error) }));
       return true;
     }
 
@@ -66,15 +59,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function handleClipboardCopy(text: string): Promise<void> {
-  const textElement = document.createElement('textarea');
-  textElement.value = text;
-  document.body.appendChild(textElement);
-  textElement.select();
-
-  const success = document.execCommand('copy');
-  document.body.removeChild(textElement);
-
-  if (!success) {
-    throw new Error('execCommand(copy) failed');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (e) {
+      throw new Error(`Clipboard copy failed: ${e}`);
+    }
+  } else {
+    throw new Error('Clipboard API not available');
   }
 }

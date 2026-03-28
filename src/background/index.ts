@@ -1,3 +1,16 @@
+import './polyfill'; // Keep this as the first import to polyfill setImmediate
+import { sleep } from '../utils/helpers';
+import { createLogger } from '../utils/logger';
+import { safeSendTabMessage } from '../utils/messaging';
+
+import { errorTracker, performanceMonitor } from '../utils/monitoring';
+import { initRemoteLogger } from '../utils/remoteLogger';
+import { dumpMenuStats } from './contextMenu';
+import { setupMessageHandler, dumpRouterStats } from './messageHandler';
+import { initNotifications, dumpNotificationStats } from './notifications';
+import { getPollingMetrics, startEmailPolling } from './pollingManager';
+import { initServiceWorker, getBootState, dumpBootReport } from './serviceWorker';
+
 // 👻 GHOSTFILL_BOOT_LOUD_START
 console.log('👻 GhostFill [Background]: SCRIPT_LOAD_START');
 
@@ -71,19 +84,6 @@ self.addEventListener('unhandledrejection', (event: any) => {
   }
   console.error('👻 GhostFill [Background]: UNHANDLED_REJECTION', event.reason);
 });
-
-import './polyfill'; // Keep this as the first import to polyfill setImmediate
-import { sleep } from '../utils/helpers';
-import { createLogger } from '../utils/logger';
-import { safeSendTabMessage } from '../utils/messaging';
-
-import { errorTracker, performanceMonitor } from '../utils/monitoring';
-import { initRemoteLogger } from '../utils/remoteLogger';
-import { dumpMenuStats } from './contextMenu';
-import { setupMessageHandler, dumpRouterStats } from './messageHandler';
-import { initNotifications, dumpNotificationStats } from './notifications';
-import { getPollingMetrics, startEmailPolling } from './pollingManager';
-import { initServiceWorker, getBootState, dumpBootReport } from './serviceWorker';
 
 initRemoteLogger('Background');
 const __BACKGROUND_LOAD_START__ = Date.now();

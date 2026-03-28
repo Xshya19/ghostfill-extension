@@ -29,16 +29,19 @@ class TempMailService {
    * @security Prevents API abuse and 429 errors
    */
   private async checkRateLimit(): Promise<void> {
-    const now = Date.now();
-    this.requestTimestamps = this.requestTimestamps.filter((ts) => now - ts < RATE_LIMIT.WINDOW_MS);
+    // Use iterative loop instead of recursion to prevent potential call stack overflow
+    while (this.requestTimestamps.length >= RATE_LIMIT.MAX_REQUESTS_PER_MINUTE) {
+      const now = Date.now();
+      this.requestTimestamps = this.requestTimestamps.filter((ts) => now - ts < RATE_LIMIT.WINDOW_MS);
 
-    if (this.requestTimestamps.length >= RATE_LIMIT.MAX_REQUESTS_PER_MINUTE) {
-      const waitTime = RATE_LIMIT.RETRY_AFTER_MS;
-      log.warn('Rate limit exceeded, waiting', { waitTime });
+      if (this.requestTimestamps.length < RATE_LIMIT.MAX_REQUESTS_PER_MINUTE) {
+        break;
+      }
+
+      log.warn('Rate limit exceeded, waiting', { waitTime: RATE_LIMIT.RETRY_AFTER_MS });
       await new Promise((resolve) => {
-        setTimeout(resolve, waitTime);
+        setTimeout(resolve, RATE_LIMIT.RETRY_AFTER_MS);
       });
-      return this.checkRateLimit();
     }
   }
 

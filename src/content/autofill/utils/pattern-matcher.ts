@@ -12,14 +12,22 @@ export class NegativePatternMatcher {
   ];
 
   static isLikelyNotOTP(input: HTMLInputElement): boolean {
-    const combined = `${input.name} ${input.id} ${input.placeholder} ${input.autocomplete}`.toLowerCase();
+    const nameId = `${input.name} ${input.id}`.toLowerCase();
+    const combined = `${nameId} ${input.placeholder} ${input.autocomplete}`.toLowerCase();
     const type = input.type.toLowerCase();
     
-    if (['email', 'search', 'url', 'date', 'month'].includes(type)) return true;
-    if (/phone|tel|mobile/.test(combined) && input.maxLength !== 1) return true;
+    if (['email', 'search', 'url', 'date', 'month'].includes(type)) {return true;}
+    
+    // Fix phone guard: exclude phone only if it's a standard-length field.
+    // Legitimate split-digit OTPs often use type="tel" but with maxLength=1.
+    if ((/phone|tel|mobile/i.test(nameId) || type === 'tel') && (input.maxLength > 4 || input.maxLength === -1)) {return true;}
 
     for (const pattern of this.NON_OTP_PATTERNS) {
-      if (pattern.test(combined)) return true;
+      if (pattern.test(combined)) {
+        // Double check: if it matches a negative pattern but is also explicitly called "otp", allow it.
+        if (/otp|code/i.test(nameId) && !/card|cvv|promo/i.test(nameId)) {continue;}
+        return true;
+      }
     }
     return false;
   }

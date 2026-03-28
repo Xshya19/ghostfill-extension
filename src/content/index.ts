@@ -1,11 +1,12 @@
 // Content Script Entry Point
 
+import { SentinelBrain } from '../intelligence/SentinelBrain';
 import { createLogger } from '../utils/logger';
 import { errorTracker, performanceMonitor } from '../utils/monitoring';
 import { initRemoteLogger } from '../utils/remoteLogger';
 import { AutoFiller } from './autoFiller';
 import { DOMObserver } from './domObserver';
-import { extractFeatures } from './extractor';
+import { extractFeatures, extractContextualFeatures } from './extractor';
 import { FieldAnalyzer } from './fieldAnalyzer';
 import { FloatingButton } from './floatingButton';
 import { FormDetector } from './formDetector';
@@ -165,7 +166,12 @@ function init(): void {
       };
       const dummyFloatingButton = { init: () => {}, show: () => {}, hide: () => {} };
       const dummyDomObserver = { start: () => {}, stop: () => {} };
-      const dummyOtpPageDetector = { init: () => {}, detect: () => false };
+      const dummyOtpPageDetector = {
+        init: () => {},
+        detect: () => false,
+        handleAutoFill: () => Promise.resolve(false),
+        getStatus: () => ({ verdict: 'not-otp' }),
+      };
 
       fieldAnalyzer = createSafeComponent(
         dummyFieldAnalyzer,
@@ -199,7 +205,7 @@ function init(): void {
 
     // Initialize OTP page detection for auto-fill
     void otpPageDetector.init();
-
+    
     // Listen for messages from background
     if (chrome?.runtime?.onMessage) {
       chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -228,7 +234,7 @@ function init(): void {
         return true;
       });
     } else {
-      log.warn('chrome.runtime.onMessage not available, content script limited');
+      log.debug('chrome.runtime.onMessage not available in this frame; messaging features limited');
     }
 
     // Cleanup on page unload to prevent memory leaks
@@ -274,7 +280,7 @@ async function handleMessage(message: {
           lastRightClickedElement.tagName === 'INPUT' ||
           lastRightClickedElement.tagName === 'TEXTAREA';
         if (isInput) {
-          const rawFeatures = extractFeatures(
+          const rawFeatures = extractContextualFeatures(
             lastRightClickedElement as HTMLInputElement | HTMLTextAreaElement
           );
           if (rawFeatures) {
@@ -332,12 +338,11 @@ async function handleMessage(message: {
         };
 
         if (selector) {
-          await autoFiller.fillField(selector, value);
-        } else {
-          await autoFiller.fillCurrentField(value, fieldType);
+          return { success: await autoFiller.fillField(selector, value) };
         }
+        return { success: await autoFiller.fillCurrentField(value, fieldType) };
       }
-      return { success: true };
+      return { success: false, error: 'No field payload provided' };
     }
 
     case 'FILL_FORM': {
@@ -346,9 +351,9 @@ async function handleMessage(message: {
           formSelector?: string;
           data?: Record<string, string>;
         };
-        await autoFiller.fillForm(formSelector, data);
+        return { success: await autoFiller.fillForm(formSelector, data) };
       }
-      return { success: true };
+      return { success: false, error: 'No form payload provided' };
     }
 
     case 'FILL_OTP': {
@@ -357,21 +362,23 @@ async function handleMessage(message: {
           otp: string;
           fieldSelectors?: string[];
         };
-        await autoFiller.fillOTP(otp, fieldSelectors);
+        return {
+          success: await otpPageDetector.handleAutoFill({
+            otp,
+            source: 'manual',
+            confidence: 1,
+            fieldSelectors,
+          } as any),
+        };
       }
-      return { success: true };
+      return { success: false, error: 'No OTP provided' };
     }
 
     case 'AUTO_FILL_OTP': {
-      if (message.payload) {
-        const {
-          otp,
-          source = 'unknown',
-          confidence = 1,
-          isBackgroundTab = false,
-        } = message.payload as { otp: string; source?: string; confidence?: number; isBackgroundTab?: boolean };
-        const filled = await otpPageDetector.handleAutoFill({ otp, source, confidence, isBackgroundTab });
-        return { success: filled, filled };
+      if (message.payload && (message.payload as any).otp) {
+        return {
+          success: await otpPageDetector.handleAutoFill(message.payload as any),
+        };
       }
       return { success: false, error: 'No OTP provided' };
     }
@@ -465,4 +472,4 @@ if (document.readyState === 'complete') {
 }
 
 // Export for testing
-export { formDetector, fieldAnalyzer, autoFiller, floatingButton, domObserver, otpPageDetector };
+export { formDetector, fieldAnalyzer, autoFiller, floatingButton, domObserver, otpPageDetector, SentinelBrain };

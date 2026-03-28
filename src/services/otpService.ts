@@ -27,48 +27,40 @@ class OTPService {
   private rateLimitTimestamps: number[] = [];
   private hasInitializedRateLimits = false;
 
-  /**
-   * Check if rate limit is exceeded
-   */
-  private async isRateLimited(): Promise<boolean> {
-    await this.rateLimitMutex;
-
-    const now = Date.now();
-
+  private async ensureRateLimitStateLoaded(): Promise<void> {
     if (!this.hasInitializedRateLimits) {
       this.rateLimitTimestamps = (await storageService.get('otpRateLimitTimestamps')) || [];
       this.hasInitializedRateLimits = true;
     }
+  }
+
+  private async pruneRateLimitWindow(now: number): Promise<void> {
+    await this.ensureRateLimitStateLoaded();
 
     const filtered = this.rateLimitTimestamps.filter((ts) => now - ts < RATE_LIMIT.WINDOW_MS);
-
     if (filtered.length !== this.rateLimitTimestamps.length) {
       this.rateLimitTimestamps = filtered;
       await storageService.set('otpRateLimitTimestamps', this.rateLimitTimestamps);
     }
+  }
 
+  /**
+   * Check if rate limit is exceeded.
+   * Caller must already be inside the save mutex.
+   */
+  private async isRateLimitedLocked(now: number): Promise<boolean> {
+    await this.pruneRateLimitWindow(now);
     return this.rateLimitTimestamps.length >= RATE_LIMIT.MAX_SAVES_PER_MINUTE;
   }
 
   /**
-   * Record a save action for rate limiting
+   * Record a save action for rate limiting.
+   * Caller must already be inside the save mutex.
    */
-  private async recordSave(): Promise<void> {
-    const previousMutex = this.rateLimitMutex;
-
-    this.rateLimitMutex = (async () => {
-      await previousMutex;
-
-      if (!this.hasInitializedRateLimits) {
-        this.rateLimitTimestamps = (await storageService.get('otpRateLimitTimestamps')) || [];
-        this.hasInitializedRateLimits = true;
-      }
-
-      this.rateLimitTimestamps.push(Date.now());
-      await storageService.set('otpRateLimitTimestamps', this.rateLimitTimestamps);
-    })();
-
-    await this.rateLimitMutex;
+  private async recordSaveLocked(now: number): Promise<void> {
+    await this.ensureRateLimitStateLoaded();
+    this.rateLimitTimestamps.push(now);
+    await storageService.set('otpRateLimitTimestamps', this.rateLimitTimestamps);
   }
 
   /**
@@ -130,8 +122,10 @@ class OTPService {
     await previousMutex;
 
     try {
+      const now = Date.now();
+
       // Rate limit check
-      if (await this.isRateLimited()) {
+      if (await this.isRateLimitedLocked(now)) {
         const msg = `OTP save rate limited - maximum ${RATE_LIMIT.MAX_SAVES_PER_MINUTE} requests per minute allowed`;
         const retryAfterMs = RATE_LIMIT.WINDOW_MS;
 
@@ -148,12 +142,12 @@ class OTPService {
         source,
         emailFrom,
         emailSubject,
-        extractedAt: Date.now(),
+        extractedAt: now,
         confidence,
       };
 
       await storageService.set('lastOTP', lastOTP);
-      await this.recordSave();
+      await this.recordSaveLocked(now);
       log.info('Last OTP saved', { source });
       return { saved: true };
     } finally {

@@ -44,8 +44,6 @@ export function useOTP() {
   useEffect(() => {
     if (!lastOTP) {return;}
 
-    let interval: ReturnType<typeof setInterval>;
-    
     const updateTimer = () => {
       const elapsed = Date.now() - lastOTP.extractedAt;
       const remaining = 5 * 60 * 1000 - elapsed; // 5 minutes
@@ -57,9 +55,9 @@ export function useOTP() {
     };
 
     updateTimer();
-    interval = setInterval(updateTimer, 1000);
+    const interval: ReturnType<typeof setInterval> = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
-  }, [lastOTP?.extractedAt]);
+  }, [lastOTP]);
 
   const loadLastOTP = useCallback(async () => {
     try {
@@ -100,11 +98,11 @@ export function useOTP() {
       if (isMounted.current) { setError(null); }
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tab?.id) {
-        await safeSendTabMessage(tab.id, {
+        const response = await safeSendTabMessage(tab.id, {
           action: 'FILL_OTP',
-          payload: { otp: lastOTP.code, fieldSelectors: [] },
+          payload: { otp: lastOTP.code },
         });
-        return true;
+        return !!response?.success;
       }
       return false;
     } catch {

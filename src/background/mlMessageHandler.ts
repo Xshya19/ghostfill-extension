@@ -1,6 +1,6 @@
+import type { RawFieldFeatures } from '../content/extractor';
 import { createLogger } from '../utils/logger';
 import { ensureOffscreenDocument } from './offscreenManager';
-import type { RawFieldFeatures } from '../content/extractor';
 
 const log = createLogger('MLMessageHandler');
 
@@ -19,18 +19,18 @@ export function registerMLMessageHandler(): void {
         return;
       }
 
-      const features = message.payload;
+      const { features, context } = message.payload;
 
-      (async () => {
+      void (async () => {
         try {
           // 1. Ensure offscreen document exists and is ready
           await ensureOffscreenDocument();
 
           // 2. Forward the classification request to the offscreen document
-          const response = await chrome.runtime.sendMessage({
+          void chrome.runtime.sendMessage({
             target: 'offscreen-doc',
             type: 'CLASSIFY_FIELD',
-            payload: features
+            payload: { features, context }
           });
 
           if (response?.success) {

@@ -21,6 +21,7 @@ import { smartDetectionService } from '../services/smartDetectionService';
 import { storageService } from '../services/storageService';
 import { Email, EmailAccount } from '../types';
 import { createLogger } from '../utils/logger';
+import { safeSendTabMessage } from '../utils/messaging';
 
 import { updateOTPMenuItem } from './contextMenu';
 import {
@@ -89,6 +90,7 @@ const RATE = {
 
 /** OTP delivery retry schedule (geometric backoff) */
 const OTP_DELIVERY_DELAYS_MS: readonly number[] = [0, 500, 1000, 2000];
+const OTP_DELIVERY_MESSAGE_TIMEOUT_MS = 5_000;
 
 /** Chrome alarm names */
 const ALARM_NAMES = {
@@ -114,6 +116,7 @@ interface TabRegistration {
   readonly url: string;
   readonly hostname: string;
   readonly fieldSelectors: readonly string[];
+  readonly frameId?: number;
   readonly registeredAt: number;
   readonly priority: number;
   deliveryAttempts: number;
@@ -465,7 +468,21 @@ class OTPDeliveryEngine {
    * Deliver OTP to a specific tab with retry.
    * Returns true if delivery succeeded.
    */
-  static async deliverToTab(tabId: number, code: string, confidence: number): Promise<boolean> {
+  static async deliverToTab(
+    tabId: number,
+    code: string,
+    confidence: number,
+    fieldSelectors: readonly string[] = [],
+    frameId?: number
+  ): Promise<boolean> {
+    let isBackgroundTab = false;
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      isBackgroundTab = !tab.active;
+    } catch (error) {
+      log.debug('Failed to inspect tab state for OTP delivery', { tabId, error });
+    }
+
     for (let attempt = 0; attempt < OTP_DELIVERY_DELAYS_MS.length; attempt++) {
       const delayMs = OTP_DELIVERY_DELAYS_MS[attempt]!;
 
@@ -479,15 +496,35 @@ class OTPDeliveryEngine {
       }
 
       try {
-        const result = await chrome.tabs.sendMessage(tabId, {
-          action: 'AUTO_FILL_OTP',
-          payload: { otp: code, source: 'email', confidence },
-        });
+        const result = await safeSendTabMessage(
+          tabId,
+          {
+            action: 'AUTO_FILL_OTP',
+            payload: {
+              otp: code,
+              source: 'email',
+              confidence,
+              fieldSelectors: Array.from(fieldSelectors),
+              isBackgroundTab,
+            },
+          },
+          {
+            timeout: OTP_DELIVERY_MESSAGE_TIMEOUT_MS,
+            retries: 0,
+            frameId,
+          }
+        );
 
         if (result?.success) {
           log.info('📲 OTP delivered', { tabId, attempt: attempt + 1 });
           return true;
         }
+        log.debug('OTP delivery returned no success', {
+          tabId,
+          attempt: attempt + 1,
+          isBackgroundTab,
+          result,
+        });
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
         log.debug(`Delivery attempt ${attempt + 1} failed: ${msg}`);
@@ -626,9 +663,10 @@ export const onPollingAlarm = (alarm: chrome.alarms.Alarm): void => {
         log.debug('⏰ Alarm sync triggered');
         void performCheck('general').then(() => {
           // Restart aggressive polling loop in case SW was completely suspended
-          if (generalTimer) clearTimeout(generalTimer);
-          // @ts-ignore - scheduleGeneralPoll exists further down in file
-          if (typeof scheduleGeneralPoll === 'function') scheduleGeneralPoll();
+          if (generalTimer) {
+            clearTimeout(generalTimer);
+          }
+          void scheduleGeneralPoll();
         });
       }
       break;
@@ -655,7 +693,7 @@ function runHealthSweep(): void {
     }
   }
 
-  dedupCache.prune();
+  void dedupCache.prune();
   rateLimiter.windowSize; // Rate limiter self-prunes on access
 }
 
@@ -828,6 +866,8 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
     expectedDomains.length > 0 ? expectedDomains : undefined
   );
 
+  const extractedOTPCode = OTPCodeExtractor.extract(detection, fullEmail);
+
   log.info('📊 Detection', {
     type: detection.type,
     hasCode: Boolean(detection.code),
@@ -842,20 +882,19 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
     if (matchingTabId !== null) {
       log.info('🎯 Matching tab found — inline OTP delivery');
 
-      const otpCode = OTPCodeExtractor.extract(detection, fullEmail);
-
-      if (otpCode) {
-        await dedupCache.markProcessed(emailId, currentEmail.fullEmail, true, false);
-
-        await deliverOTP(otpCode, detection.confidence ?? 0.9, {
+      if (extractedOTPCode) {
+        const delivered = await deliverOTP(extractedOTPCode, detection.confidence ?? 0.9, {
           from: fullEmail.from,
           subject: fullEmail.subject,
           provider: detection.provider,
           linkUrl: detection.link,
         });
 
-        void notifyNewEmail(fullEmail.from, fullEmail.subject, otpCode, detection.link);
-        return;
+        if (delivered) {
+          await dedupCache.markProcessed(emailId, currentEmail.fullEmail, true, false);
+          void notifyNewEmail(fullEmail.from, fullEmail.subject, extractedOTPCode, detection.link);
+          return;
+        }
       }
 
       log.warn('⚠️ Matching tab but no OTP extractable — falling through');
@@ -863,7 +902,7 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
   }
 
   // ── PRIORITY 2: Standard processing ──
-  const hasOTP = (detection.type === 'otp' || detection.type === 'both') && Boolean(detection.code);
+  const hasOTP = Boolean(extractedOTPCode);
   const hasLink =
     (detection.type === 'link' || detection.type === 'both') && Boolean(detection.link);
 
@@ -878,15 +917,15 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
 
   // For "both" emails, deliver OTP FIRST before opening activation link
   // This ensures the user's tab gets the OTP before any link activation
-  if (hasOTP && detection.code) {
+  if (hasOTP && extractedOTPCode) {
     log.info('🔢 OTP detected — delivering to waiting tabs');
-    otpDelivered = await deliverOTP(detection.code, detection.confidence, {
+    otpDelivered = await deliverOTP(extractedOTPCode, detection.confidence, {
       from: fullEmail.from,
       subject: fullEmail.subject,
       provider: detection.provider,
       linkUrl: detection.link,
     });
-    void notifyNewEmail(fullEmail.from, fullEmail.subject, detection.code, detection.link);
+    void notifyNewEmail(fullEmail.from, fullEmail.subject, extractedOTPCode, detection.link);
   }
 
   // Only open activation link if:
@@ -926,13 +965,6 @@ function findMatchingTab(
   );
 
   for (const [tabId, reg] of sorted) {
-    // Skip activation tabs - these are opened by linkService for verification links,
-    // not for receiving OTP codes. Filling OTP in activation tabs would be wrong.
-    if (activationTabs.has(tabId)) {
-      log.debug(`Skipping activation tab ${tabId} for OTP delivery`);
-      continue;
-    }
-
     if (DomainMatcher.matches(senderEmail, reg.url, provider, linkUrl)) {
       return tabId;
     }
@@ -979,10 +1011,6 @@ async function deliverOTP(code: string, confidence: number, email: EmailContext)
   // ───────────────────────────────────────────────────────────────────
   const deliveryPromises = sorted
     .filter(([tabId, reg]: [number, TabRegistration]) => {
-      if (activationTabs.has(tabId)) {
-        log.info(`⛔ Skipping activation tab ${tabId} for OTP delivery`);
-        return false;
-      }
       if (!DomainMatcher.matches(email.from, reg.url, email.provider, email.linkUrl)) {
         log.info(`⛔ Domain mismatch: tab ${reg.hostname} ≠ ${email.from}`);
         return false;
@@ -990,13 +1018,13 @@ async function deliverOTP(code: string, confidence: number, email: EmailContext)
       return true;
     })
     .map(async ([tabId, reg]: [number, TabRegistration]) => {
-      // Mark OTP as used once before any delivery starts
-      if (!firstDeliverySucceeded) {
-        await otpService.markAsUsed();
-        firstDeliverySucceeded = true;
-      }
-
-      const ok = await OTPDeliveryEngine.deliverToTab(tabId, code, confidence);
+      const ok = await OTPDeliveryEngine.deliverToTab(
+        tabId,
+        code,
+        confidence,
+        reg.fieldSelectors,
+        reg.frameId
+      );
       if (ok) {
         reg.deliveryAttempts++;
         metrics.otpsDelivered++;
@@ -1007,6 +1035,10 @@ async function deliverOTP(code: string, confidence: number, email: EmailContext)
 
   const results = await Promise.all(deliveryPromises);
   const delivered = results.filter((id): id is number => id !== null);
+  if (!firstDeliverySucceeded && delivered.length > 0) {
+    await otpService.markAsUsed();
+    firstDeliverySucceeded = true;
+  }
 
   // Unregister delivered tabs
   for (const tabId of delivered) {
@@ -1141,12 +1173,17 @@ async function scheduleGeneralPoll(): Promise<void> {
       .then(() => scheduleGeneralPoll())
       .catch((error) => {
         log.warn('General poll failed', error);
-        scheduleGeneralPoll();
+        void scheduleGeneralPoll();
       });
   }, interval);
 }
 
-export function startFastOTPPolling(tabId: number, url: string, fieldSelectors: string[]): void {
+export function startFastOTPPolling(
+  tabId: number,
+  url: string,
+  fieldSelectors: string[],
+  frameId?: number
+): void {
   let hostname = '';
   try {
     hostname = new URL(url).hostname;
@@ -1158,6 +1195,7 @@ export function startFastOTPPolling(tabId: number, url: string, fieldSelectors: 
     url,
     hostname,
     fieldSelectors,
+    frameId,
     registeredAt: Date.now(),
     priority: priorityCounter++,
     deliveryAttempts: 0,

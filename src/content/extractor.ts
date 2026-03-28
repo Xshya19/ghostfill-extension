@@ -10,16 +10,16 @@
 export const CHAR_VOCAB_SIZE = 256;
 export const MAX_TEXT_LEN = 80;
 export const NUM_TEXT_CHANNELS = 8;
-export const NUM_STRUCTURAL_FEATURES = 64;
+export const NUM_STRUCTURAL_FEATURES = 128;
 
 export const FIELD_CLASSES = [
-  "Email", "Username", "Password", "Target_Password_Confirm",
-  "First_Name", "Last_Name", "Full_Name", "Phone", "OTP", "Unknown"
+  "username", "email", "password", "confirm_password",
+  "otp", "phone", "submit_button", "honeypot", "unknown"
 ];
 
 export interface RawFieldFeatures {
   textChannels: Int32Array[];     // 8 channels, each length 80
-  structural: Float32Array;       // length 64
+  structural: Float32Array;       // length 128
   element: HTMLInputElement | HTMLTextAreaElement;
   isVisible: boolean;
 }
@@ -57,8 +57,8 @@ function analyzeVisibility(el: HTMLElement): VisibilityInfo {
     rect.right < 0 || rect.bottom < 0 || 
     rect.left > window.innerWidth + 50 || 
     rect.top > window.innerHeight + 50 ||
-    parseInt(cs.left || "0") < -900 || 
-    parseInt(cs.top || "0") < -900;
+    parseInt(cs.left || "0", 10) < -900 || 
+    parseInt(cs.top || "0", 10) < -900;
     
   const isClipped = 
     cs.clipPath === "inset(100%)" || 
@@ -315,36 +315,33 @@ function detectSplitOTP(el: HTMLInputElement | HTMLTextAreaElement): OTPGroupInf
   const maxLen = (el as HTMLInputElement).maxLength;
   if (maxLen !== 1 && maxLen !== 2) {return result;}
 
-  const parent = el.parentElement;
-  if (!parent) {return result;}
+  const rect = el.getBoundingClientRect();
+  if (rect.width === 0) {return result;}
 
-  let container = parent;
-  let containerInputs = Array.from(container.querySelectorAll('input'));
-  if (containerInputs.length < 3 && container.parentElement) {
-    container = container.parentElement;
-    containerInputs = Array.from(container.querySelectorAll('input'));
-  }
-
-  const sameMaxLen = containerInputs.filter(inp => {
-    const ml = inp.maxLength;
-    return (ml === 1 || ml === 2) && (inp.offsetWidth || inp.offsetHeight || inp.getClientRects().length);
+  // Intelligence 2.0: Vision-like Global Alignment Scan
+  // Instead of just siblings, we look for any input on the same horizontal plane.
+  const root = el.closest('form') || el.closest('[role="form"]') || document.body;
+  const potentialSiblings = Array.from(root.querySelectorAll<HTMLInputElement>('input')).filter(inp => {
+    if (inp.maxLength !== maxLen) {return false;}
+    
+    const r = inp.getBoundingClientRect();
+    if (r.width === 0) {return false;}
+    
+    // Geometry check: same horizontal band (+/- 15px) and similar height
+    const isSameRow = Math.abs(r.top - rect.top) < 15;
+    const isSimilarHeight = Math.abs(r.height - rect.height) < (rect.height * 0.25);
+    const isRelativelyClose = Math.abs(r.left - rect.left) < 500; // Guard against distant fields
+    
+    return isSameRow && isSimilarHeight && isRelativelyClose;
   });
 
-  if (sameMaxLen.length >= 4 && sameMaxLen.length <= 8) {
-    const rects = sameMaxLen.map(inp => inp.getBoundingClientRect());
-    const heights = rects.map(r => r.height);
-    const avgHeight = heights.reduce((a, b) => a + b, 0) / heights.length;
-    const heightConsistent = heights.every(h => Math.abs(h - avgHeight) < avgHeight * 0.3);
-
-    const tops = rects.map(r => r.top);
-    const avgTop = tops.reduce((a, b) => a + b, 0) / tops.length;
-    const topConsistent = tops.every(t => Math.abs(t - avgTop) < 20);
-
-    if (heightConsistent && topConsistent) {
-      result.isSplitOTP = true;
-      result.groupSize = sameMaxLen.length;
-      result.positionInGroup = sameMaxLen.indexOf(el as HTMLInputElement);
-    }
+  if (potentialSiblings.length >= 3 && potentialSiblings.length <= 10) {
+    // Sort by visual X position (left-to-right)
+    potentialSiblings.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+    
+    result.isSplitOTP = true;
+    result.groupSize = potentialSiblings.length;
+    result.positionInGroup = potentialSiblings.indexOf(el as HTMLInputElement);
   }
 
   return result;
@@ -431,8 +428,8 @@ export function extractFeatures(el: HTMLInputElement | HTMLTextAreaElement): Raw
 
   // Submit Context [20-24]
   vec[20] = submitInfo.dist;
-  vec[21] = /\b(log[\-_]?in|sign[\-_]?in|authenticate|connexion|iniciar[\-_]?sesión)\b/i.test(submitInfo.actionText) ? 1 : 0;
-  vec[22] = /\b(sign[\-_]?up|register|create[\-_]?account|join|inscription|registrarse)\b/i.test(submitInfo.actionText) ? 1 : 0;
+  vec[21] = /\b(log[_-]?in|sign[_-]?in|authenticate|connexion|iniciar[_-]?sesión)\b/i.test(submitInfo.actionText) ? 1 : 0;
+  vec[22] = /\b(sign[_-]?up|register|create[_-]?account|join|inscription|registrarse)\b/i.test(submitInfo.actionText) ? 1 : 0;
   vec[23] = /\b(submit|continue|next|verify|confirm|send|go|enter|proceed)\b/i.test(submitInfo.actionText) ? 1 : 0;
   vec[24] = /log|sign/i.test(submitInfo.formAction) ? 1 : 0;
 
@@ -470,9 +467,105 @@ export function extractFeatures(el: HTMLInputElement | HTMLTextAreaElement): Raw
   vec[43] = sibInfo.distanceToPrevPassword >= 0 ? Math.min(sibInfo.distanceToPrevPassword, 5) / 5.0 : 0;
   vec[44] = el.closest('form') ? 1 : 0; // isInForm
 
-  // Elements 45-63 remain 0.0 for future extensions
+  // ── Extended Features [45-49] (Upgrade 5) ─────────────
+  
+  // 45: tabIndex normalised (0-10)
+  const tabIdx = el.tabIndex;
+  vec[45] = tabIdx >= 0 ? Math.min(tabIdx, 10) / 10.0 : 0.5; // 0.5 for default -1
+
+  // 46: ARIA roles
+  const role = el.getAttribute('role')?.toLowerCase();
+  vec[46] = (role === 'textbox' || role === 'spinbutton' || role === 'searchbox') ? 1 : 0;
+
+  // 47: Sibling OTP score from heuristics
+  vec[47] = Math.min((el.id.includes('otp') || el.name.includes('otp') ? 0.5 : 0) + 
+            (sibInfo.formFieldCount < 3 ? 0.3 : 0), 1.0);
+
+  // 48: Dataset key count
+  vec[48] = Math.min(Object.keys(el.dataset).length, 5) / 5.0;
+
+  // 49: Is inside a fieldset or div with "verification" class
+  const context = el.closest('fieldset, [class*="verif" i], [class*="otp" i]');
+  vec[49] = context ? 1 : 0;
+
+  // ── Elite Features [50-55] (Intelligence 2.0) ───────────
+  
+  // 50: Action Proximity (Distance to closest submit/verify button)
+  vec[50] = submitInfo.dist; // Already normalized 0-1
+  
+  // 51: Horizontal Centering (Is it in the middle of the screen?)
+  const centerX = (vis.width / 2) + el.getBoundingClientRect().left;
+  vec[51] = Math.abs(window.innerWidth / 2 - centerX) / (window.innerWidth / 2);
+  vec[51] = 1.0 - Math.min(vec[51], 1.0); // 1.0 = perfectly centered
+
+  // 52: Vertical Position (Is it in the top/middle of the viewport?)
+  const centerY = (vis.height / 2) + el.getBoundingClientRect().top;
+  vec[52] = Math.min(Math.max(centerY / window.innerHeight, 0), 1.0);
+
+  // 53: Semantic Page Context (OTP/Auth keywords in document)
+  const docText = (document.title + " " + (document.querySelector('h1')?.textContent || "")).toLowerCase();
+  vec[53] = /otp|verif|code|auth|sign[-_\s]?in|login/i.test(docText) ? 1.0 : 0.0;
+
+  // 54: Container Sibling Density (How many inputs in the same immediate parent?)
+  const parentInputs = el.parentElement?.querySelectorAll('input')?.length || 1;
+  vec[54] = Math.min(parentInputs, 10) / 10.0;
+
+  // 55: Topology Score (Aspect ratio + consistency)
+  const aspect = vis.height > 0 ? vis.width / vis.height : 0;
+  // OTP fields are often square (aspect ~1) or very wide (aspect > 5)
+  vec[55] = (aspect > 0.8 && aspect < 1.2) || (aspect > 4) ? 1.0 : 0.5;
+
+  // Elements 56-63 remain 0.0 for future extensions
 
   return { textChannels, structural: vec, element: el, isVisible: vis.isVisible };
+}
+
+export interface NeighborInfo {
+  name: string;
+  id: string;
+  type: string;
+}
+
+export interface ContextualFieldFeatures extends RawFieldFeatures {
+  topology: {
+    domain: string;
+    formAction: string;
+    prevNeighbor: NeighborInfo | null;
+    nextNeighbor: NeighborInfo | null;
+    isInsideShadow: boolean;
+    url: string;
+  };
+}
+
+/**
+ * Enhanced extractor for Continuous Learning.
+ * Returns the field features PLUS contextual "topology" data (neighbors, form info).
+ */
+export function extractContextualFeatures(el: HTMLInputElement | HTMLTextAreaElement): ContextualFieldFeatures {
+  const base = extractFeatures(el);
+  const form = el.closest('form, [role="form"]');
+  const allInputs = Array.from(document.querySelectorAll('input, textarea'));
+  const idx = allInputs.indexOf(el);
+
+  return {
+    ...base,
+    topology: {
+      domain: window.location.hostname,
+      formAction: (form as HTMLFormElement)?.action || '',
+      prevNeighbor: idx > 0 ? {
+        name: (allInputs[idx-1] as any).name || '',
+        id: allInputs[idx-1].id || '',
+        type: (allInputs[idx-1] as any).type || ''
+      } : null,
+      nextNeighbor: idx < allInputs.length - 1 ? {
+        name: (allInputs[idx+1] as any).name || '',
+        id: allInputs[idx+1].id || '',
+        type: (allInputs[idx+1] as any).type || ''
+      } : null,
+      isInsideShadow: el.getRootNode() instanceof ShadowRoot,
+      url: window.location.href
+    }
+  };
 }
 
 // ─── Batch Collection ──────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { emailService } from '../services/emailServices';
 import { identityService } from '../services/identityService';
+import { linkService } from '../services/linkService';
 import { otpService } from '../services/otpService';
 import { passwordService } from '../services/passwordService';
 import { storageService } from '../services/storageService';
@@ -26,7 +27,6 @@ import {
   getOTPWaitingTabs,
   resetEmailSession,
 } from './pollingManager';
-import { linkService } from '../services/linkService';
 
 const log = createLogger('MessageHandler');
 
@@ -57,7 +57,7 @@ export function setupMessageHandler(): void {
       }
 
       // Use IIFE for async handling in listener
-      (async () => {
+      void (async () => {
         try {
           const response = await handleMessage(message, sender);
           sendResponse(response);
@@ -216,7 +216,7 @@ async function handleMessage(
             });
             return { success: true };
           }
-          startFastOTPPolling(sender.tab.id, url, fieldSelectors);
+          startFastOTPPolling(sender.tab.id, url, fieldSelectors, sender.frameId);
         }
       }
       return { success: true };
@@ -271,9 +271,20 @@ async function handleMessage(
     }
 
     // ── ML INFERENCE (Proxy to Offscreen) ────────────────────────
+    case 'ANALYZE_DOM': {
+      const simplifiedDOM =
+        message.action === 'ANALYZE_DOM' ? message.payload?.simplifiedDOM ?? '' : '';
+      return {
+        success: true,
+        result: {
+          confidence: estimateOTPPageConfidence(simplifiedDOM),
+        },
+      };
+    }
+
     case 'CLASSIFY_FIELD': {
-      if (message.action !== 'CLASSIFY_FIELD') {
-        return { success: false, error: 'Invalid message action' };
+      if (message.action !== 'CLASSIFY_FIELD' || !message.payload) {
+        return { success: false, error: 'Invalid message action or missing payload' };
       }
       try {
         await ensureOffscreenDocument();
@@ -312,7 +323,11 @@ async function handleMessage(
     // ── NOTIFICATION ACTIONS ──────────────────────────────────────
     case 'SHOW_NOTIFICATION': {
       if (message.action === 'SHOW_NOTIFICATION') {
-        const { title, message: text, type } = message.payload || ({} as any);
+        const payload = (message.payload || {}) as any;
+        const title = typeof payload.title === 'string' ? payload.title : 'GhostFill';
+        const text = typeof payload.message === 'string' ? payload.message : '';
+        const type = payload.type;
+
         if (type === 'error') {
           await notifyError(title, text);
         } else {
@@ -372,6 +387,21 @@ async function handleMessage(
       return { success: true };
     }
 
+
+    // ── SERVICE HEALTH NOTIFICATIONS ─────────────────────────────
+    case 'FALLBACK_DOMAINS_USED': {
+      if (message.action === 'FALLBACK_DOMAINS_USED') {
+        const { service, reason } = (message.payload || {}) as { service?: string; reason?: string };
+        log.warn(`Provider ${service} is using fallback domains (${reason ?? 'API_UNAVAILABLE'})`);
+        // Surface a non-blocking warning notification to the user
+        await notifyError(
+          'Email Provider Degraded',
+          `${service ?? 'TempMail'} is using fallback domains — some features may be limited.`
+        ).catch(() => {}); // best-effort
+      }
+      return { success: true };
+    }
+
     default:
       log.warn('Unhandled message action', {
         action: (message as unknown as Record<string, unknown>).action,
@@ -388,4 +418,40 @@ async function handleMessage(
  */
 export function dumpRouterStats(): void {
   log.info('Router Stats: Functioning normally');
+}
+
+function estimateOTPPageConfidence(simplifiedDOM: string): number {
+  const lower = simplifiedDOM.toLowerCase();
+  if (!lower.trim()) {
+    return 0;
+  }
+
+  let score = 0;
+
+  if (lower.includes('autocomplete="one-time-code"')) {
+    score += 0.5;
+  }
+
+  const keywordHits = [
+    /verification\s*code/g,
+    /one[-\s]?time/g,
+    /\botp\b/g,
+    /\bpasscode\b/g,
+    /\b2fa\b/g,
+    /\bmfa\b/g,
+    /\bpin\b/g,
+  ].reduce((count, pattern) => count + (lower.match(pattern)?.length ?? 0), 0);
+  score += Math.min(0.3, keywordHits * 0.06);
+
+  const splitDigitCount = lower.match(/maxlength=["']?1["']?/g)?.length ?? 0;
+  if (splitDigitCount >= 4) {
+    score += splitDigitCount >= 6 ? 0.3 : 0.2;
+  }
+
+  const inputCount = lower.match(/<input\b/g)?.length ?? 0;
+  if (inputCount > 0) {
+    score += Math.min(0.1, inputCount * 0.01);
+  }
+
+  return Math.max(0, Math.min(1, Number(score.toFixed(2))));
 }

@@ -124,6 +124,7 @@ interface MenuPositionConfig {
 
 interface FloatingButtonRuntimeMessage {
   action?: string;
+  otp?: string;
   settings?: {
     showFloatingButton?: boolean;
   };
@@ -436,11 +437,15 @@ class FieldContext {
 class SmartPositioner {
   static calculate(field: HTMLElement, buttonSize: number): PositionConfig {
     const rect = field.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
+    
+    // Use visualViewport for more accurate dimensions on zoomed/mobile pages
+    const vv = window.visualViewport;
+    const vw = vv ? vv.width : window.innerWidth;
+    const vh = vv ? vv.height : window.innerHeight;
     const m = VIEWPORT_MARGIN;
 
     // Off-screen: field scrolled out of view
+    // Note: rect is relative to the viewport
     if (rect.bottom < 0 || rect.top > vh || rect.right < 0 || rect.left > vw) {
       return { left: OFF_SCREEN, top: OFF_SCREEN, placement: 'inside-right' };
     }
@@ -515,7 +520,7 @@ class SmartPositioner {
           }
 
           // If it's a "Top Layer" element like a sticky header, we are obscured.
-          const zIndex = parseInt(style.zIndex) || 0;
+          const zIndex = parseInt(style.zIndex, 10) || 0;
           if (zIndex > 1000) {
             return true;
           }
@@ -532,7 +537,7 @@ class SmartPositioner {
       const all = document.querySelectorAll('*');
       let max = 10000; // Safe baseline
       for (let i = 0, len = Math.min(all.length, 500); i < len; i++) {
-        const z = parseInt(window.getComputedStyle(all[i]).zIndex);
+        const z = parseInt(window.getComputedStyle(all[i]).zIndex, 10);
         if (!isNaN(z) && z > max && z < ABSOLUTE_MAX_Z) {
           max = z;
         }
@@ -964,10 +969,15 @@ export class FloatingButton {
           this.setState('hidden');
         }
       }
-      if (msg.action === 'OTP_RECEIVED') {
+      if (msg.action === 'OTP_RECEIVED' && msg.otp) {
         this.hasOTPReady = true;
         this.updateBadge();
+        if (this.isEnabled) {
+          log.info('🚀 OTP received, triggering Auto-Fill Sentinel');
+          void this.startAutoFillOTPSequence(msg.otp);
+        }
       }
+
     };
 
     try {
@@ -1196,6 +1206,11 @@ export class FloatingButton {
       if (this.state === 'loading') {
         return;
       }
+      
+      // Intelligence 2.0: Trigger Intelligence Pulse on click
+      const rect = this.button!.getBoundingClientRect();
+      this.fieldAnalyzer.setAttentiveRegion(rect.left + rect.width / 2, rect.top + rect.height / 2);
+
       if (this.state === 'menu-open') {
         this.setState('idle');
         return;
@@ -1243,6 +1258,10 @@ export class FloatingButton {
       if (this.state === 'idle') {
         this.setState('hovering');
       }
+      // Intelligence 2.0: Intelligence Pulse on hover
+      const rect = this.button!.getBoundingClientRect();
+      this.fieldAnalyzer.setAttentiveRegion(rect.left + rect.width / 2, rect.top + rect.height / 2);
+
       // Sentient Pre-warming: Wake up the ML engine on hover to eliminate lag.
       void safeSendMessage({ action: 'PREWARM_ML' }).catch(() => {
         /* non-fatal */
@@ -1333,6 +1352,99 @@ export class FloatingButton {
       pageStatus.error(msg, TIMING_MS.ERROR_DISPLAY);
       this.setState('error', msg);
     }
+  }
+
+  // ── Auto-Fill Sentinel Sequence ───────────────────────
+
+  public async startAutoFillOTPSequence(otp: string): Promise<void> {
+    if (this.destroyed || !this.isEnabled) {
+      return;
+    }
+
+    const analysis = this.getPageAnalysis();
+    const useFullScreen =
+      analysis.pageType === 'verification' ||
+      analysis.pageType === '2fa' ||
+      analysis.hasOTPField;
+
+    // 1. Show Premium Sentinel Overlay
+    this.showAutoFillSentinel(useFullScreen);
+    
+    // 2. Perform the fill with the full recovery pipeline.
+    try {
+      const result = await this.autoFiller.fillOTP(otp); // Use full OTP for discover, it handles cleaning
+
+      if (this.destroyed) {
+        return;
+      }
+
+      if (result) {
+        this.setSentinelMessage('Code secured successfully!');
+        this.setState('success');
+        setTimeout(() => this.hideAutoFillSentinel(), 2000);
+      } else {
+         this.setSentinelMessage('Something went wrong. Tap to try manually.');
+         this.setState('idle');
+         setTimeout(() => this.hideAutoFillSentinel(), 3000);
+      }
+    } catch (err) {
+      log.error('Sentinel fill failed', err);
+      this.hideAutoFillSentinel();
+    }
+  }
+
+  private sentinelOverlay: HTMLDivElement | null = null;
+
+  private showAutoFillSentinel(fullScreen: boolean): void {
+    if (!this.shadowRoot || this.destroyed) {
+      return;
+    }
+    
+    // Create overlay if not exists
+    if (!this.sentinelOverlay) {
+      this.sentinelOverlay = document.createElement('div');
+      this.sentinelOverlay.className = 'gf-sentinel-overlay';
+      this.shadowRoot.appendChild(this.sentinelOverlay);
+    }
+
+    this.sentinelOverlay.innerHTML = `
+      <div class="gf-sentinel-content ${fullScreen ? 'gf-sentinel-full' : 'gf-sentinel-anchored'}">
+        <div class="gf-sentinel-spirit">
+          ${IconSystem.get('otp')}
+          <div class="gf-sentinel-pulse"></div>
+        </div>
+        <div class="gf-sentinel-text">
+          <div class="gf-sentinel-title">GhostFill is entering your code...</div>
+          <div class="gf-sentinel-subtitle">Wait while we secure your session</div>
+        </div>
+      </div>
+    `;
+
+    requestAnimationFrame(() => {
+      this.sentinelOverlay?.classList.add('gf-sentinel-visible');
+    });
+  }
+
+  private setSentinelMessage(msg: string): void {
+    const title = this.sentinelOverlay?.querySelector('.gf-sentinel-title');
+    if (title) {
+      title.textContent = msg;
+    }
+    const subtitle = this.sentinelOverlay?.querySelector('.gf-sentinel-subtitle');
+    if (subtitle) {
+      (subtitle as HTMLElement).style.opacity = '0';
+    }
+  }
+
+  private hideAutoFillSentinel(): void {
+    if (!this.sentinelOverlay) {
+      return;
+    }
+    this.sentinelOverlay.classList.remove('gf-sentinel-visible');
+    setTimeout(() => {
+      this.sentinelOverlay?.remove();
+      this.sentinelOverlay = null;
+    }, 500);
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -2617,20 +2729,97 @@ export class FloatingButton {
   }
 }
 
-/* ── Reduced Motion ── */
-@media (prefers-reduced-motion: reduce) {
-  .gf-fab, .gf-fab::before, .gf-fab::after, .gf-fab svg,
-  .gf-menu, .gf-menu-item, .gf-tooltip, .gf-badge, .gf-spinner, .gf-success-check {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-  .gf-fab:hover, .gf-fab:active { transform: none !important; }
-  .gf-menu-open { transform: none !important; }
-  .gf-menu-open .gf-menu-item {
-    animation: none !important; opacity: 1 !important; transform: none !important;
-  }
-}
+    /* ── Sentinel Overlay ─────────────────────────────── */
+    .gf-sentinel-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.4);
+      backdrop-filter: blur(12px) saturate(180%);
+      -webkit-backdrop-filter: blur(12px) saturate(180%);
+      z-index: 2147483647;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .gf-sentinel-visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .gf-sentinel-content {
+      background: rgba(var(--brand-rgb), 0.1);
+      backdrop-filter: blur(20px) saturate(200%);
+      -webkit-backdrop-filter: blur(20px) saturate(200%);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 24px;
+      padding: 32px 48px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      box-shadow: 0 32px 64px -12px rgba(0, 0, 0, 0.3), 0 0 60px rgba(var(--brand-rgb), 0.15);
+      transform: translateY(20px) scale(0.95);
+      transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .gf-sentinel-visible .gf-sentinel-content {
+      transform: translateY(0) scale(1);
+    }
+
+    .gf-sentinel-spirit {
+      position: relative;
+      width: 64px;
+      height: 64px;
+    }
+
+    .gf-sentinel-spirit svg {
+      width: 100%;
+      height: 100%;
+      filter: drop-shadow(0 0 16px var(--brand));
+      animation: gf-spirit-float 3s ease-in-out infinite;
+    }
+
+    .gf-sentinel-pulse {
+      position: absolute;
+      inset: -20px;
+      border: 2px solid var(--brand);
+      border-radius: 50%;
+      opacity: 0;
+      animation: gf-sentinel-wave 2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+    }
+
+    .gf-sentinel-text {
+      text-align: center;
+      color: white;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .gf-sentinel-title {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 4px;
+    }
+
+    .gf-sentinel-subtitle {
+      font-size: 14px;
+      opacity: 0.6;
+      transition: opacity 0.5s ease;
+    }
+
+    @keyframes gf-spirit-float {
+      0%, 100% { transform: translateY(0) rotate(0); }
+      50% { transform: translateY(-10px) rotate(5deg); }
+    }
+
+    @keyframes gf-sentinel-wave {
+      0% { transform: scale(0.5); opacity: 0.8; }
+      100% { transform: scale(1.5); opacity: 0; }
+    }
     `;
   }
 }

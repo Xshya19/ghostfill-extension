@@ -76,7 +76,9 @@ export function initRemoteLogger(sourceName: string) {
                     message
                 })
             }).catch(() => {});
-        } catch {}
+        } catch (e) {
+            // Silently fail to avoid infinite logging loops
+        }
     };
 
     console.log = (...args: any[]) => {

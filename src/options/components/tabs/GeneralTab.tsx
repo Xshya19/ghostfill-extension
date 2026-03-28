@@ -105,6 +105,7 @@ const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChange }) =>
             className="premium-btn premium-btn-secondary"
             onClick={async () => {
               await chrome.storage.local.set({ hasSeenOnboarding: false });
+              // eslint-disable-next-line no-alert
               alert('Onboarding reset! Please open the GhostFill popup to view the tutorial.');
             }}
           >

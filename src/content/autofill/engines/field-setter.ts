@@ -1,7 +1,7 @@
-import { createLogger } from '../../../utils/logger';
 import { FormInputElement, FrameworkType } from '../../../types/form.types';
-import { PhantomTyper } from './phantom-typer';
+import { createLogger } from '../../../utils/logger';
 import { VisibilityEngine } from '../utils/dom-utils';
+import { PhantomTyper } from './phantom-typer';
 
 const log = createLogger('FieldSetter');
 
@@ -20,13 +20,17 @@ export class FieldSetter {
     _framework: FrameworkType = 'unknown',
     isBackgroundTab: boolean = false
   ): Promise<boolean> {
-    if (!element.isConnected) return false;
+    if (!element.isConnected) {
+      return false;
+    }
 
     const strategies = [
       {
         name: 'PhantomTyper',
         fn: async () => {
-          if (isBackgroundTab) return false; // PhantomTyper fails in background tabs due to strict focus rules
+          if (isBackgroundTab) {
+            return false; // PhantomTyper fails in background tabs due to strict focus rules
+          }
           await PhantomTyper.typeSimulatedString(element, value);
           return element.value === value;
         },
@@ -76,7 +80,9 @@ export class FieldSetter {
   }
 
   static async setCharDirect(element: HTMLInputElement, char: string, isBackgroundTab: boolean = false): Promise<boolean> {
-    if (!element.isConnected) return false;
+    if (!element.isConnected) {
+      return false;
+    }
 
     if (isBackgroundTab) {
       return this.setViaNativeSetter(element, char);
@@ -96,7 +102,9 @@ export class FieldSetter {
       element.dispatchEvent(new KeyboardEvent('keypress', { key: char, code, keyCode, charCode: keyCode, bubbles: true }));
 
       const beforeInput = new InputEvent('beforeinput', { data: char, inputType: 'insertText', bubbles: true, cancelable: true });
-      if (!element.dispatchEvent(beforeInput)) return false;
+      if (!element.dispatchEvent(beforeInput)) {
+        return false;
+      }
 
       writeValue(char);
       element.dispatchEvent(new InputEvent('input', { data: char, inputType: 'insertText', bubbles: true }));
@@ -154,13 +162,43 @@ export class FieldSetter {
   }
 
   private static async setViaClipboardPaste(element: FormInputElement, value: string): Promise<boolean> {
-    // Ported from autoFiller.ts (setViaClipboardPaste section)
-    // Simplified for now, full port includes clipboard restoration
     try {
-      if (!navigator.clipboard) return false;
+      if (!navigator.clipboard) {
+        return false;
+      }
+      
+      // 1. Save original clipboard content if possible (optional, but polite)
+      let original: string | null = null;
+      try { original = await navigator.clipboard.readText(); } catch { /* ignore */ }
+
+      // 2. Write new value
       await navigator.clipboard.writeText(value);
       element.focus();
-      return true; // Simplified success detection
-    } catch { return false; }
+
+      // 3. Dispatch paste event (This is what triggers React/Vue listeners)
+      const dataTransfer = new DataTransfer();
+      dataTransfer.setData('text/plain', value);
+      const pasteEvent = new ClipboardEvent('paste', {
+        clipboardData: dataTransfer,
+        bubbles: true,
+        cancelable: true
+      });
+      element.dispatchEvent(pasteEvent);
+
+      // 4. Fallback for older sites or strict CSP
+      if (element.value !== value) {
+        document.execCommand('paste');
+      }
+
+      // 5. Restore original clipboard
+      if (original !== null) {
+        setTimeout(() => navigator.clipboard.writeText(original!), 100);
+      }
+
+      return element.value === value || (element.value.length > 0 && element.type === 'password');
+    } catch (err) {
+      log.debug('ClipboardPaste failed', err);
+      return false;
+    }
   }
 }

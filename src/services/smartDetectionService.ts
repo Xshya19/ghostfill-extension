@@ -130,7 +130,8 @@ class SmartDetectionService {
 
     // 🧠 [SmartDetection] Executing 5-Layer Intelligent Pipeline...
     // GhostCore legacy classification removed in favor of consolidated IntelligentExtractor (P2.1)
-    const intelligentResult = extractAll(subject, body, htmlBody, sender, expectedDomains);
+    const cleanedHtml = htmlBody ? this.cleanHTML(htmlBody) : '';
+    const intelligentResult = extractAll(subject, body, cleanedHtml, sender, expectedDomains);
 
     log.info(`📊 [SmartDetection] Intent: ${intelligentResult.intent}`);
     log.info(
@@ -312,9 +313,12 @@ class SmartDetectionService {
     otp?: string;
     submit?: string;
   }> {
-    void simplifiedDOM;
-    // Form analysis is handled by the heuristic FormDetector in the content script
-    return Promise.resolve({ success: false });
+    // Basic analysis bridge. Advanced form field matching is handled by client-side FormDetector.
+    if (!simplifiedDOM) {
+      return { success: false };
+    }
+    const cleaned = this.cleanHTML(simplifiedDOM);
+    return { success: cleaned.length > 10 };
   }
 }
 

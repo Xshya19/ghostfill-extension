@@ -15,10 +15,12 @@
 // └────────────────────────────────────────────────────────────────────────┘
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { FieldType, DetectedField, FIELD_HEURISTICS, FormType, GhostContainer, FORM_INDICATORS, ClassifyFieldResponse } from '../types';
+import { SentinelBrain } from '../intelligence/SentinelBrain';
+import { FieldType, DetectedField, FIELD_HEURISTICS, FormType, GhostContainer, FORM_INDICATORS, ClassifyFieldResponse, FormInputElement } from '../types';
 import { getUniqueSelector, getElementLabel, deepQuerySelectorAll } from '../utils/helpers';
 import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
+import { HistoryManager } from './utils/intelligenceCore';
 
 const log = createLogger('FieldAnalyzer');
 
@@ -69,28 +71,12 @@ const CONFIDENCE = {
 //  §1  T Y P E S
 // ═══════════════════════════════════════════════════════════════
 
-type FormInputElement = HTMLInputElement | HTMLTextAreaElement;
-
-interface AIResponse {
-  success?: boolean;
-  email?: string;
-  password?: string;
-  submit?: string;
-}
-
-interface AISelectors {
-  email?: string;
-  password?: string;
-  submit?: string;
-}
-
 interface FieldAnalysisResult {
   fields: DetectedField[];
-  aiSelectors?: AISelectors;
 }
 
 interface AICacheEntry {
-  response: AIResponse;
+  prediction: { label: string; confidence: number };
   timestamp: number;
 }
 
@@ -125,9 +111,7 @@ function combineTextSignals(...parts: (string | null | undefined)[]): string {
   return parts.filter(Boolean).join(' ').toLowerCase();
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  §3  V I S I B I L I T Y   C H E C K
-// ═══════════════════════════════════════════════════════════════
+// ─── Visibility Check ──────────────────────────────────────────────────────
 
 class VisibilityCheck {
   /**
@@ -252,8 +236,26 @@ class OTPDetector {
    * Returns true for high-probability OTP fields.
    */
   static isLikelyOTP(element: FormInputElement): boolean {
-    // Single digit field — almost always OTP in context
-    if (element.maxLength === 1) {return true;}
+    const textToCheck = combineTextSignals(
+      element.name,
+      element.id,
+      element.placeholder,
+      getElementLabel(element),
+      element.getAttribute('aria-label')
+    );
+
+    const hasExplicitSignal = this.OTP_TEXT_PATTERN.test(textToCheck);
+
+    // Single digit fields are only high-probability OTPs when they appear
+    // as part of a clustered verification widget or carry explicit OTP hints.
+    if (element.maxLength === 1) {
+      return (
+        this.hasSplitCluster(element) ||
+        hasExplicitSignal ||
+        element.autocomplete === 'one-time-code' ||
+        element.getAttribute('inputmode') === 'numeric'
+      );
+    }
 
     // Full OTP field with numeric inputmode
     if (
@@ -277,13 +279,6 @@ class OTPDetector {
     }
 
     // Name/ID/placeholder/label text signals
-    const textToCheck = combineTextSignals(
-      element.name,
-      element.id,
-      element.placeholder,
-      getElementLabel(element),
-      element.getAttribute('aria-label')
-    );
     return this.OTP_TEXT_PATTERN.test(textToCheck);
   }
 
@@ -296,7 +291,9 @@ class OTPDetector {
 
     // ── Structural signals ────────────────────────────────
     if (element.maxLength === 1) {
-      confidence += CONFIDENCE.OTP_SINGLE_CHAR;
+      confidence += this.hasSplitCluster(element)
+        ? CONFIDENCE.OTP_SINGLE_CHAR
+        : CONFIDENCE.OTP_SINGLE_CHAR * 0.25;
     } else if (
       element.maxLength >= OTP_MIN_LENGTH &&
       element.maxLength <= OTP_MAX_LENGTH
@@ -331,6 +328,20 @@ class OTPDetector {
     if (/verify/i.test(textToCheck)) {confidence += CONFIDENCE.OTP_NAME_VERIFY;}
 
     return clampConfidence(confidence);
+  }
+
+  private static hasSplitCluster(element: FormInputElement): boolean {
+    const parent = element.parentElement;
+    if (!parent) {return false;}
+
+    const siblings = Array.from(parent.querySelectorAll<HTMLInputElement>('input')).filter(
+      (input) =>
+        input !== element &&
+        input.maxLength === 1 &&
+        VisibilityCheck.isVisible(input)
+    );
+
+    return siblings.length >= 3;
   }
 }
 
@@ -430,9 +441,6 @@ class FieldClassifier {
       } else if (placeholder.includes('@') || placeholder.includes('example.com')) {
         bestType = 'email';
         bestConfidence = CONFIDENCE.EMAIL_PLACEHOLDER_AT;
-      } else if (type === 'text' && isFirstVisible) {
-        bestType = 'email';
-        bestConfidence = CONFIDENCE.EMAIL_FIRST_INPUT;
       }
     }
 
@@ -481,6 +489,19 @@ export class FieldAnalyzer {
   private static aiCache = new Map<string, AICacheEntry>();
   private static readonly MAX_CACHE_SIZE = 50;
 
+  // Intelligence 2.0: Attentive ML (Spatial Focus)
+  private attentiveRegion: { x: number; y: number; radius: number } | null = null;
+  
+  public setAttentiveRegion(x: number, y: number, radius: number = 300): void {
+    this.attentiveRegion = { x, y, radius };
+    // Auto-clear after 10 seconds to save performance
+    setTimeout(() => {
+      if (this.attentiveRegion?.x === x && this.attentiveRegion?.y === y) {
+        this.attentiveRegion = null;
+      }
+    }, 10000);
+  }
+  
   private static pruneCache(): void {
     if (FieldAnalyzer.aiCache.size >= FieldAnalyzer.MAX_CACHE_SIZE) {
       // Evict the oldest entry (Map preserves insertion order)
@@ -510,16 +531,35 @@ export class FieldAnalyzer {
 
   /**
    * Analyze a single input field and return its classification.
+   * Now incorporates Ensemble Scoring and Structural Signals.
    */
   analyzeField(element: FormInputElement, allInputs?: FormInputElement[]): DetectedField {
     const isFirstVisible = this.isFirstVisibleInput(element, allInputs);
-    const { fieldType, confidence } = FieldClassifier.classify(element, isFirstVisible);
+    const { fieldType, confidence: heuristicConf } = FieldClassifier.classify(element, isFirstVisible);
+    
+    // Intelligence 2.0: Extract Spatial/Topology signals from Features
+    let spatialConfidence = 0;
+    try {
+      // We can't easily import from extractor here without async, so we use heuristic spatial clues
+      const rect = element.getBoundingClientRect();
+      const isSquare = Math.abs(rect.width - rect.height) < 10;
+      const isCentered = Math.abs(window.innerWidth / 2 - (rect.left + rect.width / 2)) < 200;
+      
+      if (fieldType === 'otp') {
+        if (isSquare) {
+          spatialConfidence += 0.3;
+        }
+        if (isCentered) {
+          spatialConfidence += 0.2;
+        }
+      }
+    } catch { /* ignore */ }
 
     return {
       element,
       selector: getUniqueSelector(element),
       fieldType,
-      confidence,
+      confidence: clampConfidence(heuristicConf + spatialConfidence),
       label: getElementLabel(element) || undefined,
       placeholder: element.placeholder || undefined,
       name: element.name || undefined,
@@ -566,6 +606,46 @@ export class FieldAnalyzer {
     otpFields.sort((a, b) => b.confidence - a.confidence);
 
     return otpFields;
+  }
+
+  /**
+   * Get all fields with heuristics first, augmented by Sentinel Brain (Grandmaster).
+   * Combines ensemble ML, Spatial Topology, and Multilingual Heuristics.
+   */
+  async getAllFieldsWithAI(): Promise<FieldAnalysisResult> {
+    if (!this.isContextValid()) {return { fields: [] };}
+    
+    // 1. Get all fillable fields
+    const elements = deepQuerySelectorAll<FormInputElement>(
+      FieldAnalyzer.FILLABLE_INPUT_SELECTOR
+    ).filter(el => VisibilityCheck.isVisible(el));
+
+    if (elements.length === 0) {
+      return { fields: [] };
+    }
+
+    // 2. Delegate to Sentinel Brain for Grandmaster Analysis
+    try {
+      const detections = await SentinelBrain.analyze(elements);
+      
+      const fields: DetectedField[] = detections.map(d => ({
+        element: d.element as FormInputElement,
+        selector: getUniqueSelector(d.element as HTMLElement),
+        fieldType: d.type as FieldType,
+        confidence: d.confidence,
+        label: getElementLabel(d.element as FormInputElement) || undefined,
+        placeholder: (d.element as HTMLInputElement).placeholder || undefined,
+        name: (d.element as HTMLInputElement).name || undefined,
+        id: d.element.id || undefined,
+        autocomplete: (d.element as HTMLInputElement).autocomplete || undefined,
+        rect: d.element.getBoundingClientRect(),
+      }));
+
+      return { fields };
+    } catch (e) {
+      log.debug('Sentinel Brain unavailable, falling back to heuristics', e);
+      return { fields: this.getAllFields() };
+    }
   }
 
   /**
@@ -677,111 +757,6 @@ export class FieldAnalyzer {
     }
 
     return ghostContainers;
-  }
-
-  /**
-   * Get all fields with heuristics first, optionally augmented by ONNX ML predictions.
-   * The ML path sends a CLASSIFY_FIELD message to the background service worker which
-   * runs the local ONNX model. If ML returns a high-confidence result it overrides the
-   * heuristic classification for that field.
-   */
-  async getAllFieldsWithAI(): Promise<FieldAnalysisResult> {
-    if (!this.isContextValid()) {return { fields: [] };}
-    const fields = this.getAllFields();
-
-    // Attempt ML augmentation via background CLASSIFY_FIELD for each field
-    try {
-      const { extractFeatures } = await import('./extractor');
-      const mlPromises = fields.map(async (detectedField) => {
-        try {
-          const el = detectedField.element as HTMLInputElement | HTMLTextAreaElement;
-          const features = extractFeatures(el);
-
-          // Serialize typed arrays for message passing (can't pass ArrayBuffer over postMessage directly)
-          const payload = {
-            textChannels: Array.from({ length: features.textChannels.length }, (_, i) =>
-              Array.from(features.textChannels[i])
-            ),
-            structural: Array.from(features.structural),
-            isVisible: features.isVisible,
-          };
-
-          const response = (await safeSendMessage(
-            { action: 'CLASSIFY_FIELD', payload: payload as any }
-          )) as ClassifyFieldResponse | null;
-
-          if (response?.success && response.prediction && response.prediction.confidence >= 0.45) {
-            const mlLabel = response.prediction.label;
-            // Map ML class names to FieldType enum values
-            const mlLabelMap: Record<string, string> = {
-              'Email': 'email', 'Username': 'username', 'Password': 'password',
-              'Target_Password_Confirm': 'confirm-password', 'First_Name': 'first-name',
-              'Last_Name': 'last-name', 'Full_Name': 'full-name',
-              'Phone': 'phone', 'OTP': 'otp', 'Unknown': 'unknown',
-            };
-            const mappedType = mlLabelMap[mlLabel];
-            if (mappedType && mappedType !== 'unknown') {
-              // ML wins if it's more confident than heuristics
-              if (response.prediction.confidence > detectedField.confidence) {
-                detectedField.fieldType = mappedType as import('../types').FieldType;
-                detectedField.confidence = response.prediction.confidence;
-              }
-            }
-          }
-        } catch {
-          // Per-field ML failure is non-fatal; heuristics remain
-        }
-      });
-
-      // Run all ML calls in parallel with a 2-second timeout guard
-      await Promise.race([
-        Promise.allSettled(mlPromises),
-        new Promise<void>((resolve) => setTimeout(resolve, 2000)),
-      ]);
-    } catch {
-      // ML unavailable — heuristics-only is still excellent
-    }
-
-    return { fields };
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  //  AI RESPONSE PROCESSING (used when AI path is enabled)
-  // ═══════════════════════════════════════════════════════════
-
-  /**
-   * Process AI response and merge with heuristic fields.
-   * AI-identified fields get boosted confidence.
-   */
-  processAIResponse(
-    fields: DetectedField[],
-    response: AIResponse | null | undefined
-  ): FieldAnalysisResult {
-    if (!response?.success || (!response.email && !response.password)) {
-      return { fields };
-    }
-
-    log.info('🤖 Local AI Agent identified fields', {
-      hasEmail: !!response.email,
-      hasPassword: !!response.password,
-      hasSubmit: !!response.submit,
-    });
-
-    const aiSelectors: AISelectors = {
-      email: response.email,
-      password: response.password,
-      submit: response.submit,
-    };
-
-    // Apply AI overrides
-    if (aiSelectors.email) {
-      this.applyAIOverride(fields, aiSelectors.email, 'email');
-    }
-    if (aiSelectors.password) {
-      this.applyAIOverride(fields, aiSelectors.password, 'password');
-    }
-
-    return { fields, aiSelectors };
   }
 
   /**
@@ -955,3 +930,4 @@ export class FieldAnalyzer {
     return firstVisible === element;
   }
 }
+

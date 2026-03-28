@@ -66,7 +66,8 @@ export type MessageAction =
   | 'REPORT_MISCLASSIFICATION'
   | 'LINK_ACTIVATED'
   | 'CHECK_OTP_FRESHNESS'
-  | 'WAIT_FOR_FRESH_OTP';
+  | 'WAIT_FOR_FRESH_OTP'
+  | 'FALLBACK_DOMAINS_USED';
 
 // Base message interface
 export interface BaseMessage {
@@ -235,7 +236,7 @@ export interface FillOTPMessage extends BaseMessage {
   action: 'FILL_OTP';
   payload: {
     otp: string;
-    fieldSelectors: string[];
+    fieldSelectors?: string[];
   };
 }
 
@@ -259,8 +260,10 @@ export interface AutoFillOTPMessage extends BaseMessage {
   action: 'AUTO_FILL_OTP';
   payload: {
     otp: string;
-    source: 'email' | 'sms' | 'manual';
+    source: 'email' | 'sms' | 'manual' | 'url-extracted';
     confidence: number;
+    fieldSelectors?: string[];
+    isBackgroundTab?: boolean;
   };
 }
 
@@ -437,6 +440,7 @@ export interface ClassifyFieldMessage extends BaseMessage {
   action: 'CLASSIFY_FIELD';
   payload: {
     features: import('../content/extractor').RawFieldFeatures;
+    context?: import('./form.types').PageContext;
   };
 }
 
@@ -447,6 +451,14 @@ export interface PrewarmMLMessage extends BaseMessage {
 export interface ClassifyFieldResponse {
   success: boolean;
   prediction?: import('../offscreen/inferenceEngine').MLPrediction | null;
+  error?: string;
+}
+
+export interface AnalyzeDOMResponse {
+  success: boolean;
+  result?: {
+    confidence?: number;
+  };
   error?: string;
 }
 
@@ -469,6 +481,16 @@ export interface WaitForFreshOTPMessage extends BaseMessage {
   action: 'WAIT_FOR_FRESH_OTP';
   payload: {
     maxWaitMs: number;
+  };
+}
+
+export interface FallbackDomainsUsedMessage extends BaseMessage {
+  action: 'FALLBACK_DOMAINS_USED';
+  payload?: {
+    service?: string;
+    reason?: string;
+    timestamp?: number;
+    error?: string;
   };
 }
 
@@ -520,7 +542,8 @@ export type ExtensionMessage =
   | ReportMisclassificationMessage
   | LinkActivatedMessage
   | CheckOTPFreshnessMessage
-  | WaitForFreshOTPMessage;
+  | WaitForFreshOTPMessage
+  | FallbackDomainsUsedMessage;
 
 // Response union type
 export type ExtensionResponse =
@@ -538,6 +561,7 @@ export type ExtensionResponse =
   | DetectFormsResponse
   | GetSettingsResponse
   | ClassifyFieldResponse
+  | AnalyzeDOMResponse
   | { success: boolean; health?: unknown[]; error?: string }
   | { success: boolean; isFresh?: boolean; error?: string }
   | { success: boolean; error?: string };

@@ -121,7 +121,7 @@ export const extractOTPPayloadSchema = z.object({
 
 export const fillOTPPayloadSchema = z.object({
   otp: safeString.min(4).max(12), // Lenient for typical OTPs
-  fieldSelectors: z.array(safeString).max(MAX_ARRAY_LENGTH),
+  fieldSelectors: z.array(safeString).max(MAX_ARRAY_LENGTH).optional(),
 });
 
 export const otpPageDetectedPayloadSchema = z.object({
@@ -134,8 +134,10 @@ export const otpPageDetectedPayloadSchema = z.object({
 
 export const autoFillOTPPayloadSchema = z.object({
   otp: safeString.regex(/^[A-Za-z0-9]{4,10}$/, 'OTP must be 4-10 alphanumeric characters'),
-  source: z.enum(['email', 'sms', 'manual']),
+  source: z.enum(['email', 'sms', 'manual', 'url-extracted']),
   confidence: safeNumber.min(0).max(1),
+  fieldSelectors: z.array(safeString).max(MAX_ARRAY_LENGTH).optional(),
+  isBackgroundTab: z.boolean().optional(),
 });
 
 export const fillFieldPayloadSchema = z.object({
@@ -281,10 +283,10 @@ export function validateMessage<T extends { action: string; payload?: unknown }>
       console.error(`[GhostFill] [Messaging] ERROR: Unknown action "${action}". Available:`, available);
       // Reject unknown message actions - security critical
       return {
-        success: false,
+
         valid: false,
         error: `Unknown message action: ${action}`,
-      } as any;
+      };
     }
 
     payloadSchema.parse(message.payload);

@@ -64,15 +64,24 @@ class PerformanceMonitor {
     // with these types in a SW throws a "does not exist or isn't supported"
     // error. Guard on window + document before setting them up.
     const isPage = typeof window !== 'undefined' && typeof document !== 'undefined';
-    if (isPage) {
+    const isExtensionPage =
+      isPage &&
+      typeof location !== 'undefined' &&
+      location.protocol === 'chrome-extension:';
+
+    if (isExtensionPage) {
       this.observeLCP();
       this.observeFID();
       this.observeCLS();
       this.observeINP();
       this.observeLongTasks();
+      this.observeResourceTiming();
     }
-    // Resource timing is supported in both pages and service workers.
-    this.observeResourceTiming();
+    // Resource timing in content scripts mostly reports host-page assets, which
+    // creates noisy false positives. Keep it for extension pages and workers only.
+    if (!isPage) {
+      this.observeResourceTiming();
+    }
   }
 
   /**

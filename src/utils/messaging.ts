@@ -168,9 +168,9 @@ export async function safeSendMessage(
 export async function safeSendTabMessage(
   tabId: number,
   message: ExtensionMessage,
-  options: { timeout?: number; retries?: number } = {}
+  options: { timeout?: number; retries?: number; frameId?: number } = {}
 ): Promise<ExtensionResponse | null> {
-  const { timeout = MESSAGE_TIMEOUT_MS, retries = MAX_RETRY_ATTEMPTS } = options;
+  const { timeout = MESSAGE_TIMEOUT_MS, retries = MAX_RETRY_ATTEMPTS, frameId } = options;
 
   try {
     // HIGH FIX: Runtime validation with Zod — return null instead of throwing
@@ -212,7 +212,10 @@ export async function safeSendTabMessage(
         // SYNCHRONOUS ERROR GUARD: chrome.tabs.sendMessage can throw immediately if invalidated
         let sendPromise;
         try {
-          sendPromise = chrome.tabs.sendMessage(tabId, message);
+          sendPromise =
+            typeof frameId === 'number'
+              ? chrome.tabs.sendMessage(tabId, message, { frameId })
+              : chrome.tabs.sendMessage(tabId, message);
         } catch (err) {
           throw new Error(err instanceof Error ? err.message : String(err));
         }

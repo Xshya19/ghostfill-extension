@@ -11,7 +11,6 @@ import Header from './components/Header';
 import Hub from './components/Hub';
 import OTPDisplay from './components/OTPDisplay';
 import PasswordGenerator from './components/PasswordGenerator';
-import { useStorageSubscription } from './hooks/useStorageSubscription';
 import { useAppStore } from './store/useAppStore';
 
 const log = createLogger('App');
@@ -44,11 +43,7 @@ const App: React.FC = () => {
   const isFirstTime = useAppStore((s) => s.isFirstTime);
   const setIsFirstTime = useAppStore((s) => s.setIsFirstTime);
 
-  // Fetch currentEmail from background instead of decrypting local storage inside
-  // the popup. Background logs prove generation succeeds; this keeps the popup
-  // in sync even when popup-side storage reads are flaky.
   const [emailAccount, setEmailAccount] = useState<EmailAccount | null>(null);
-
   const [isInitialized, setIsInitialized] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
 
@@ -56,7 +51,6 @@ const App: React.FC = () => {
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = useCallback((message: string) => {
-    // Clear any existing timeout to prevent race conditions
     if (toastTimeoutRef.current) {
       clearTimeout(toastTimeoutRef.current);
     }
@@ -76,9 +70,6 @@ const App: React.FC = () => {
     }
 
     return () => {
-      if (toastTimeoutRef.current) {
-        clearTimeout(toastTimeoutRef.current);
-      }
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [showHelp]);
@@ -86,14 +77,9 @@ const App: React.FC = () => {
   const refreshCurrentEmail = useCallback(async () => {
     try {
       const res = await safeSendMessage({ action: 'GET_CURRENT_EMAIL' });
-      if (
-        res &&
-        'email' in res &&
-        res.email &&
-        typeof res.email === 'object' &&
-        'fullEmail' in res.email
-      ) {
-        const email = res.email as EmailAccount;
+      const emailObj = res && 'email' in res ? res.email : null;
+      if (emailObj && typeof emailObj === 'object' && 'fullEmail' in emailObj) {
+        const email = emailObj as EmailAccount;
         setEmailAccount(email);
         return email;
       }
@@ -104,7 +90,7 @@ const App: React.FC = () => {
       log.warn('Failed to refresh current email from background', e);
       return null;
     }
-  }, []);
+  }, [setEmailAccount]);
 
   const generateIdentity = useCallback(async () => {
     if (!navigator.onLine) {
@@ -117,43 +103,13 @@ const App: React.FC = () => {
     try {
       log.info('Generating new identity...');
       const res = await safeSendMessage({ action: 'GENERATE_EMAIL' });
-      log.info('Generate email response:', res);
-
-      if (!res) {
-        log.error('safeSendMessage returned null. Extension context may be invalid or request timed out.');
-        showToast(t('generationFailed'));
-        return;
-      }
-
-      if (
-        'email' in res &&
-        res.email &&
-        typeof res.email === 'object' &&
-        'fullEmail' in res.email
-      ) {
+      if (res && 'email' in res && res.email && typeof res.email === 'object' && 'fullEmail' in res.email) {
         const email = res.email as EmailAccount;
-        log.info('Email generated successfully:', email.fullEmail);
-        // Validate the email object has required fields
-        if (
-          email &&
-          typeof email.fullEmail === 'string' &&
-          email.fullEmail.includes('@') &&
-          typeof email.domain === 'string' &&
-          typeof email.service === 'string' &&
-          typeof email.createdAt === 'number' &&
-          typeof email.expiresAt === 'number'
-        ) {
-          showToast(t('newIdentityGenerated'));
-          setEmailAccount(email);
-        } else {
-          log.error('Generated email is invalid:', email);
-          showToast(t('generatedEmailInvalid'));
-        }
-      } else if ('error' in res) {
-        log.error('Generation error:', res.error);
-        showToast(String(res.error) || t('generationFailed'));
+        setEmailAccount(email);
+        showToast(t('newIdentityGenerated'));
+      } else if (res && 'error' in res) {
+        showToast(String(res.error));
       } else {
-        log.error('Unexpected response format:', res);
         showToast(t('generationFailed'));
       }
     } catch (e) {
@@ -162,7 +118,7 @@ const App: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [showToast]);
+  }, [showToast, setLoading, setEmailAccount]);
 
   useEffect(() => {
     let mounted = true;
@@ -183,17 +139,19 @@ const App: React.FC = () => {
         const currentEmail = await refreshCurrentEmail();
 
         if (!currentEmail && !isFirst) {
-          log.debug('No current email found on load. Auto-generating one...');
-          void generateIdentity();
+          const recheck = await refreshCurrentEmail();
+          if (!recheck) {
+            log.debug('No current email after re-check. Auto-generating...');
+            void generateIdentity();
+          }
         }
       } catch (e) {
         log.error('Failed to initialize app', e);
       } finally {
         if (mounted) {
-          // Delay briefly to allow initial visual paint and avoid rapid flashes
           setTimeout(() => {
             if (mounted) {setIsInitialized(true);}
-          }, 300);
+          }, 100);
         }
       }
     };
@@ -206,10 +164,7 @@ const App: React.FC = () => {
   }, [generateIdentity, refreshCurrentEmail, setIsFirstTime]);
 
   useEffect(() => {
-    const listener = (
-      changes: { [key: string]: chrome.storage.StorageChange },
-      areaName: string
-    ) => {
+    const listener = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
       if (areaName === 'local' && changes.currentEmail) {
         void refreshCurrentEmail();
       }
@@ -230,9 +185,11 @@ const App: React.FC = () => {
     try {
       await chrome.storage.local.set({ hasSeenOnboarding: true });
       setIsFirstTime(false);
+      void refreshCurrentEmail();
     } catch (e) {
       log.warn('Failed to dismiss onboarding', e);
       setIsFirstTime(false);
+      void refreshCurrentEmail();
     }
   };
 
@@ -254,9 +211,8 @@ const App: React.FC = () => {
 
   const dismissOnboarding = useCallback(() => {
     void handleDismissOnboarding();
-  }, []);
+  }, [handleDismissOnboarding]);
 
-  // iOS Spring Transition Config
   const springTransition: Transition = {
     type: 'spring',
     stiffness: 300,
@@ -270,11 +226,9 @@ const App: React.FC = () => {
         Skip to main content
       </a>
       <main className="main-content-area" id="main-content" role="main">
-        {/* World-Class Background System */}
         <div className="aurora-background" />
         <div className="noise-overlay" />
 
-        {/* Premium Toasts */}
         <AnimatePresence>
           {toast && (
             <motion.div
@@ -309,7 +263,6 @@ const App: React.FC = () => {
               transition={{ duration: 0.4 }}
               className="onboarding-overlay"
             >
-              {/* Animated Logo */}
               <motion.div
                 initial={{ scale: 0.5, opacity: 0, rotate: -20 }}
                 animate={{ scale: 1, opacity: 1, rotate: 0 }}
@@ -319,7 +272,6 @@ const App: React.FC = () => {
                 <Sparkles size={32} color="white" strokeWidth={2.5} />
               </motion.div>
 
-              {/* Title */}
               <motion.h1
                 initial={{ y: 20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
@@ -329,7 +281,6 @@ const App: React.FC = () => {
                 {t('onboardingTitle')}
               </motion.h1>
 
-              {/* Subtitle */}
               <motion.p
                 initial={{ y: 20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
@@ -339,7 +290,6 @@ const App: React.FC = () => {
                 {t('onboardingSubtitle')}
               </motion.p>
 
-              {/* Feature Steps */}
               <motion.div
                 initial={{ y: 20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
@@ -361,7 +311,6 @@ const App: React.FC = () => {
                 ))}
               </motion.div>
 
-              {/* Get Started Button */}
               <motion.button
                 initial={{ y: 20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
@@ -373,8 +322,6 @@ const App: React.FC = () => {
               >
                 {t('onboardingButton')}
               </motion.button>
-
-              {/* New Footer */}
               <motion.p
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -472,11 +419,14 @@ const App: React.FC = () => {
           <div className="modal-overlay help-modal-overlay" onClick={() => setShowHelp(false)}>
             <motion.div
               className="glass-card help-card"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="help-modal-title"
               onClick={(e) => e.stopPropagation()}
               initial={{ opacity: 0, y: 100 }}
               animate={{ opacity: 1, y: 0 }}
             >
-              <h2 className="help-title">{t('helpTitle')}</h2>
+              <h2 id="help-modal-title" className="help-title">{t('helpTitle')}</h2>
               <p className="help-desc">{t('helpDescription')}</p>
               <button
                 className="ios-button button-primary help-btn"
@@ -492,8 +442,6 @@ const App: React.FC = () => {
   );
 };
 
-// FIX #6: Export App wrapped in ErrorBoundary to catch async errors
-// This ensures any uncaught errors in the component tree are handled gracefully
 const AppWithErrorBoundary: React.FC = () => (
   <ErrorBoundary>
     <App />

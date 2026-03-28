@@ -1,5 +1,5 @@
-import { createLogger } from '../../../utils/logger';
 import { PageContext } from '../../../types/form.types';
+import { createLogger } from '../../../utils/logger';
 import { OTPFieldDiscovery } from './otp-discovery';
 import { OTPFiller } from './otp-filler';
 
@@ -10,11 +10,14 @@ const FIELD_WATCHER_POLL_INTERVAL_MS = 1000;
 
 export class FieldWatcher {
   private observer: MutationObserver | null = null;
+  private shadowObservers: MutationObserver[] = [];
   private pendingOTP: string | null = null;
   private pendingContext: PageContext | null = null;
+  private pendingResolve: ((result: boolean) => void) | null = null;
   private debounceTimeout: ReturnType<typeof setTimeout> | null = null;
   private pollingInterval: ReturnType<typeof setInterval> | null = null;
   private safetyTimeout: ReturnType<typeof setTimeout> | null = null;
+  private knownShadowRoots = new Set<ShadowRoot>();
   private isActive = false;
 
   /**
@@ -38,17 +41,25 @@ export class FieldWatcher {
       let resolved = false;
 
       const resolveOnce = (result: boolean): void => {
-        if (resolved) return;
+        if (resolved) {
+          return;
+        }
         resolved = true;
+        this.pendingResolve = null;
         this.stop();
         resolve(result);
       };
+      this.pendingResolve = resolveOnce;
 
       const checkFields = async (): Promise<void> => {
-        if (!this.pendingOTP || !this.pendingContext || resolved) return;
+        if (!this.pendingOTP || !this.pendingContext || resolved) {
+          return;
+        }
 
         const group = OTPFieldDiscovery.discover(this.pendingContext);
-        if (!group) return;
+        if (!group) {
+          return;
+        }
 
         const otpToFill = this.pendingOTP;
         const framework = this.pendingContext.framework;
@@ -61,10 +72,7 @@ export class FieldWatcher {
 
       // MutationObserver for DOM changes
       this.observer = new MutationObserver(() => {
-        if (this.debounceTimeout) clearTimeout(this.debounceTimeout);
-        this.debounceTimeout = setTimeout(() => {
-          void checkFields();
-        }, FIELD_WATCHER_DEBOUNCE_MS);
+        this.onMutation();
       });
 
       if (document.body) {
@@ -76,9 +84,21 @@ export class FieldWatcher {
         });
       }
 
-      // Polling fallback
+      // Special observer for shadow root attachments if supported by browser/site
+      if (document.body) {
+        this.scanAndObserveShadowRoots(document.body);
+      }
+
+      // Run one immediate check so already-rendered late DOM does not wait for the
+      // first poll or mutation tick.
+      void checkFields();
+
+      // Polling fallback (scans both Light and Shadow DOM)
       this.pollingInterval = setInterval(() => {
         void checkFields();
+        if (document.body) {
+          this.scanAndObserveShadowRoots(document.body);
+        }
       }, FIELD_WATCHER_POLL_INTERVAL_MS);
 
       // Safety timeout
@@ -88,6 +108,54 @@ export class FieldWatcher {
     });
   }
 
+  private onMutation(): void {
+    if (this.debounceTimeout) {
+      clearTimeout(this.debounceTimeout);
+    }
+    this.debounceTimeout = setTimeout(() => {
+      void this.handleMutationTick();
+    }, FIELD_WATCHER_DEBOUNCE_MS);
+  }
+
+  private async handleMutationTick(): Promise<void> {
+    if (!this.pendingContext || !this.pendingOTP) {
+      return;
+    }
+
+    if (document.body) {
+      // Re-scan for new shadow roots on mutation
+      this.scanAndObserveShadowRoots(document.body);
+    }
+
+    const group = OTPFieldDiscovery.discover(this.pendingContext);
+    if (group && this.pendingOTP) {
+      const result = await OTPFiller.fill(this.pendingOTP, group, this.pendingContext.framework);
+      if (result.success) {
+        this.pendingResolve?.(true);
+      }
+    }
+  }
+
+  private scanAndObserveShadowRoots(root: ParentNode): void {
+    const walker = document.createTreeWalker(root as Node, NodeFilter.SHOW_ELEMENT, null);
+    let node = walker.nextNode();
+    while (node) {
+      const shadow = (node as Element).shadowRoot;
+      if (shadow && !this.knownShadowRoots.has(shadow)) {
+        this.knownShadowRoots.add(shadow);
+        
+        // Attach observer to the new shadow root
+        const obs = new MutationObserver(() => this.onMutation());
+        obs.observe(shadow, { childList: true, subtree: true, attributes: true });
+        this.shadowObservers.push(obs);
+        
+        // We don't store individual observers in a map to keep it simple, 
+        // they'll be cleaned up when the shadow root is detached or we stop()
+      }
+      node = walker.nextNode();
+    }
+  }
+
   stop(): void {
     this.isActive = false;
 
@@ -95,6 +163,10 @@ export class FieldWatcher {
       this.observer.disconnect();
       this.observer = null;
     }
+    this.shadowObservers.forEach((observer) => observer.disconnect());
+    this.shadowObservers = [];
+    this.knownShadowRoots.clear();
+    
     if (this.debounceTimeout) {
       clearTimeout(this.debounceTimeout);
       this.debounceTimeout = null;
@@ -110,6 +182,7 @@ export class FieldWatcher {
 
     this.pendingOTP = null;
     this.pendingContext = null;
+    this.pendingResolve = null;
     log.debug('FieldWatcher stopped');
   }
 }

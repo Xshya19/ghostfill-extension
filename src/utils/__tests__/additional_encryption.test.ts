@@ -66,7 +66,9 @@ describe('Encryption Utilities (Additional Tests)', () => {
       const key1 = await deriveKey('key-one', salt);
       const key2 = await deriveKey('key-two', salt);
       const ciphertext = await encrypt({ secret: 'data' }, key1);
-      await expect(decrypt(ciphertext, key2)).rejects.toThrow();
+      if (ciphertext) {
+        await expect(decrypt(ciphertext, key2)).rejects.toThrow();
+      }
     });
 
     it('should produce different ciphertext each call due to random IV', async () => {

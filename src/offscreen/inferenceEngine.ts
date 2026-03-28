@@ -6,6 +6,7 @@ import {
   NUM_STRUCTURAL_FEATURES,
   RawFieldFeatures,
 } from '../content/extractor';
+import { PageContext } from '../types/form.types';
 
 // Tell ONNX where to find the WebAssembly binaries.
 // In the offscreen document, these are served relative to the root of the extension.
@@ -43,7 +44,7 @@ export async function initInferenceEngine(): Promise<void> {
   }
   initializing = true;
   try {
-    const modelUrl = chrome.runtime.getURL('models/ghostfill_v1_int8.onnx');
+    const modelUrl = chrome.runtime.getURL('models/sentinel_brain_v2.onnx');
 
     console.log('[GhostFill ML] Initializing engine in offscreen document...');
     console.log('[GhostFill ML] Model URL:', modelUrl);
@@ -79,7 +80,8 @@ export async function initInferenceEngine(): Promise<void> {
  * Returns null if the engine is not ready or confidence is too low.
  */
 export async function classifyField(
-  features: Omit<RawFieldFeatures, 'element'>
+  features: Omit<RawFieldFeatures, 'element'>,
+  context?: PageContext
 ): Promise<MLPrediction | null> {
   if (!session) {
     await initInferenceEngine();
@@ -93,28 +95,34 @@ export async function classifyField(
     // 1. Prepare Text Channels Tensor — shape [1, 8, 80]
     // The ONNX model expects int64 (BigInt64Array) for token IDs.
     const flatText = new BigInt64Array(NUM_TEXT_CHANNELS * MAX_TEXT_LEN);
-    for (let i = 0; i < NUM_TEXT_CHANNELS; i++) {
-      const channel = features.textChannels[i];
-      for (let j = 0; j < MAX_TEXT_LEN; j++) {
-        flatText[i * MAX_TEXT_LEN + j] = BigInt(channel[j] ?? 0);
-      }
-    }
-    const textTensor = new ort.Tensor('int64', flatText, [1, NUM_TEXT_CHANNELS, MAX_TEXT_LEN]);
+    // This model does not use text channels, but the features object still contains them.
+    // const flatText = new BigInt64Array(NUM_TEXT_CHANNELS * MAX_TEXT_LEN);
+    // for (let i = 0; i < NUM_TEXT_CHANNELS; i++) {
+    //   const channel = features.textChannels[i];
+    //   for (let j = 0; j < MAX_TEXT_LEN; j++) {
+    //     flatText[i * MAX_TEXT_LEN + j] = BigInt(channel[j] ?? 0);
+    //   }
+    // }
+    // const textTensor = new ort.Tensor('int64', flatText, [1, NUM_TEXT_CHANNELS, MAX_TEXT_LEN]);
 
-    // 2. Prepare Structural Features Tensor — shape [1, 64]
-    const flatStruct = new Float32Array(NUM_STRUCTURAL_FEATURES);
-    for (let i = 0; i < NUM_STRUCTURAL_FEATURES; i++) {
+    // 2. Prepare Structural Features Tensor — shape [1, 128]
+    const flatStruct = new Float32Array(128);
+    for (let i = 0; i < 128; i++) {
       flatStruct[i] = features.structural[i] ?? 0;
     }
-    const structuralTensor = new ort.Tensor('float32', flatStruct, [1, NUM_STRUCTURAL_FEATURES]);
+    const structuralTensor = new ort.Tensor('float32', flatStruct, [1, 128]);
 
-    // 3. Run Inference
+    // 3. Run Inference - Grandmaster expects 'input' name
     const results = await session.run({
-      text_channels: textTensor,
-      structural: structuralTensor,
+      input: structuralTensor,
     });
 
-    const logits = results['logits'].data as Float32Array;
+    // Fix: Dynamic tensor discovery for both 'logits' and 'output' naming schemes
+    const outputTensor = results.logits || results.output || Object.values(results)[0];
+    if (!outputTensor) {
+      throw new Error('No valid output tensor in session results');
+    }
+    const logits = outputTensor.data as Float32Array;
 
     // 4. Softmax
     let maxLogit = -Infinity;
@@ -144,7 +152,23 @@ export async function classifyField(
       }
     }
 
-    if (bestConf < MIN_ML_CONFIDENCE) {
+    // Cleanup input tensors to prevent memory leaks in offscreen document
+    structuralTensor.dispose();
+    // note: 'results' own data will be cleaned up by JS GC, 
+    // but the underlying ONNX buffers are best managed via dispose if the API supports it.
+    // In current onnxruntime-web, input disposal is most critical.
+
+    // ── Dynamic Threshold Logic ─────────────────────
+    let threshold = MIN_ML_CONFIDENCE;
+    if (context) {
+      if (context.isVerificationPage || context.is2FAPage) {
+        threshold = 0.35; // Lower bar for high-confidence pages
+      } else if (!context.isLoginPage && !context.isSignupPage) {
+        threshold = 0.50; // More conservative on random pages
+      }
+    }
+
+    if (bestConf < threshold) {
       return null;
     }
 

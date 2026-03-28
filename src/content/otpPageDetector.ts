@@ -22,14 +22,13 @@
 // │               Notify background → start fast OTP polling        │
 // │               Listen for AUTO_FILL_OTP → fill → feedback        │
 // └──────────────────────────────────────────────────────────────────┘
-// ─────────────────────────────────────────────────────────────────────
-
 import { ExtensionMessage } from '../types';
 import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
 import { setHTML } from '../utils/setHTML';
 import { AutoFiller } from './autoFiller';
 import { FormDetector } from './formDetector';
+import { pageStatus } from './pageStatus';
 
 const log = createLogger('OTPDetector');
 
@@ -99,6 +98,7 @@ interface AutoFillPayload {
   readonly otp: string;
   readonly source: string;
   readonly confidence: number;
+  readonly fieldSelectors?: string[];
   readonly isBackgroundTab?: boolean;
 }
 
@@ -119,6 +119,8 @@ interface AIContainerResult {
   readonly groupIndex: number;
   readonly groupSize: number;
 }
+
+const AUTO_FILL_TIMEOUT_MS = 8_000;
 
 // ═══════════════════════════════════════════════════════════════
 //  §1  C O N S T A N T S
@@ -1753,7 +1755,7 @@ export class OTPPageDetector {
   async handleAutoFill(payload: AutoFillPayload): Promise<boolean> {
     if (this.destroyed) {return false;}
 
-    const { otp, source, confidence } = payload;
+    const { otp, source, confidence, fieldSelectors } = payload;
 
     log.info('📥 AUTO_FILL_OTP received', {
       source,
@@ -1761,20 +1763,53 @@ export class OTPPageDetector {
       hasFields: this.fields.length > 0,
     });
 
-    // Run detection if no fields known yet
-    if (this.fields.length === 0) {
-      this.runDetection('auto-fill-trigger');
-      
-      // Retry if DOM takes a moment to settle
+    let selectors = fieldSelectors?.filter(Boolean) ?? [];
+
+    // Run detection with progressive retries if we were not given explicit selectors.
+    if (selectors.length === 0 && this.fields.length === 0) {
+      const delays = [0, 700, 2000];
+      for (let i = 0; i < delays.length; i++) {
+        const delay = delays[i];
+        if (delay > 0) {
+          log.info(`⏳ No fields found, waiting ${delay}ms for DOM to settle (attempt ${i + 1}/${delays.length})...`);
+          await new Promise(r => { setTimeout(r, delay); });
+        }
+        
+        this.runDetection(delay === 0 ? 'auto-fill-trigger' : 'auto-fill-trigger-retry');
+        
+        if (this.fields.length > 0) {
+          break;
+        }
+      }
+
       if (this.fields.length === 0) {
-        log.info('⏳ No fields found initially, waiting 500ms for DOM to settle...');
-        await new Promise(r => setTimeout(r, 500));
-        this.runDetection('auto-fill-trigger-retry');
+        log.warn('❌ OTP fill failed — no fields found after all retries');
+        pageStatus.error('OTP fill failed — no field found', 3000);
+        return false;
       }
     }
 
-    const selectors = this.fields.map((f) => f.selector);
-    const success = await this.autoFiller.fillOTP(otp, selectors, payload.isBackgroundTab);
+    if (selectors.length === 0) {
+      selectors = this.fields.map((f) => f.selector);
+    }
+
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const success = await Promise.race<boolean>([
+      this.autoFiller.fillOTP(otp, selectors, payload.isBackgroundTab),
+      new Promise<boolean>((resolve) => {
+        timeoutId = setTimeout(() => {
+          log.warn('AUTO_FILL_OTP timed out before completion', {
+            source,
+            selectorCount: selectors.length,
+          });
+          resolve(false);
+        }, AUTO_FILL_TIMEOUT_MS);
+      }),
+    ]);
+
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
 
     if (this.destroyed) {return false;}
 

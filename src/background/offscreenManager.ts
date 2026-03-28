@@ -19,6 +19,8 @@ export async function ensureOffscreenDocument(): Promise<void> {
       // Check if it already exists by trying to find it in contexts
       const exists = await hasOffscreenDocument();
       if (exists) {
+        // Fix: Even if it exists, we must ensure it's actually responsive before returning
+        await verifyOffscreenReady();
         return;
       }
 
@@ -61,15 +63,13 @@ export async function ensureOffscreenDocument(): Promise<void> {
  */
 async function hasOffscreenDocument(): Promise<boolean> {
   if (typeof chrome.offscreen?.hasDocument === 'function') {
-    return await chrome.offscreen.hasDocument();
+    return chrome.offscreen.hasDocument();
   }
   
   // Fallback: search for it in clients
-  // @ts-ignore - Newer MV3 API
-  const contexts = await chrome.runtime.getContexts({
-    // @ts-ignore - Newer MV3 API
-    contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
-  } as unknown as Record<string, unknown>);
+  const contexts = await (chrome.runtime as any).getContexts({
+    contextTypes: [(chrome.runtime as any).ContextType.OFFSCREEN_DOCUMENT],
+  });
   return contexts.length > 0;
 }
 
@@ -89,7 +89,7 @@ async function verifyOffscreenReady(retries = 5): Promise<void> {
     } catch (e) {
       // Ignore and retry
     }
-    await new Promise(r => setTimeout(r, 100 * (i + 1)));
+    await new Promise(r => { setTimeout(r, 100 * (i + 1)); });
   }
   throw new Error('Offscreen document created but not responding to pings');
 }

@@ -13,7 +13,6 @@
 // Core utilities
 
 import { setupContextMenu as contextMenuSetup } from '../background/contextMenu';
-import { setupMessageHandler } from './messageHandler';
 import { initNotifications as notificationsInit } from '../background/notifications';
 import { setupPollingManager as pollingManagerSetup } from '../background/pollingManager';
 import { emailService } from '../services/emailServices/index';
@@ -21,6 +20,8 @@ import { otpService } from '../services/otpService';
 import { storageService } from '../services/storageService';
 import { sleep } from '../utils/helpers';
 import { createLogger } from '../utils/logger';
+import { setupMessageHandler } from './messageHandler';
+import { registerMLMessageHandler } from './mlMessageHandler';
 
 const log = createLogger('ServiceWorker');
 
@@ -356,8 +357,9 @@ async function initContextMenu(): Promise<void> {
 async function initMessageRouter(): Promise<void> {
   try {
     log.debug('📡 Initializing message router...');
-    // Register the message handler (idempotent call)
+    // Register the message handlers (idempotent calls)
     setupMessageHandler();
+    registerMLMessageHandler();
     log.info('✅ Message router ready - extension can now receive messages');
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);

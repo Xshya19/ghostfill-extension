@@ -61,8 +61,10 @@ class IdentityService {
       return this.currentIdentity;
     }
 
-    // Generate new if none exists
-    return this.generateIdentity();
+    // Generate new if none exists and persist it for session consistency
+    const newIdentity = this.generateIdentity();
+    await this.saveIdentity(newIdentity);
+    return newIdentity;
   }
 
   /**

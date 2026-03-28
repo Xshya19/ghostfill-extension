@@ -35,10 +35,10 @@ const log = createLogger('FormDetector');
 const FORM_TEXT_SCAN_LIMIT = 500;
 
 /** Minimum field confidence to include in form analysis */
-const MIN_FIELD_CONFIDENCE = 0;
+const MIN_FIELD_CONFIDENCE = 0.3;
 
 /** Minimum standalone field confidence to include */
-const MIN_STANDALONE_CONFIDENCE = 0.3;
+const MIN_STANDALONE_CONFIDENCE = 0.55;
 
 /** Highlight duration in milliseconds */
 const HIGHLIGHT_DURATION_MS = 2000;
@@ -92,6 +92,8 @@ function clampConfidence(value: number): number {
 class FormClassifier {
   private static readonly SUBMIT_TEXT_PATTERN =
     /submit|login|log\s*in|sign\s*in|sign\s*up|register|continue|next|verify|confirm|create|send|go|done/i;
+  private static readonly SECONDARY_ACTION_PATTERN =
+    /resend|back|cancel|close|skip|later|forgot|show|hide|copy|edit|change|google|github|apple|facebook/i;
 
   static classify(
     form: HTMLElement,
@@ -145,8 +147,9 @@ class FormClassifier {
     if (textContent) {
       if (form === document.body) {
         parts.push(document.title);
-        // Virtual form bodies are huge, capture more context to find the 'Sign up' headers
-        parts.push(textContent.substring(0, 5000));
+        // Virtual form bodies are huge; keep the scan tighter so nearby marketing copy
+        // does not overpower the auth form we are trying to classify.
+        parts.push(textContent.substring(0, 1500));
       } else {
         parts.push(textContent.substring(0, FORM_TEXT_SCAN_LIMIT));
       }
@@ -197,25 +200,53 @@ class FormClassifier {
     }
 
     // 2. Generic buttons that look like submit buttons by text
-    const buttons = form.querySelectorAll<HTMLButtonElement>('button');
-    for (const button of buttons) {
-      const text = (button.textContent ?? '').trim();
-      if (text.length > 0 && this.SUBMIT_TEXT_PATTERN.test(text)) {
-        return button;
+    const candidates: SubmitElement[] = [];
+
+    for (const button of form.querySelectorAll<HTMLButtonElement>('button')) {
+      if (VisibilityCheck.isVisible(button) && !button.disabled) {
+        candidates.push(button);
       }
     }
 
-    const roleButtons = form.querySelectorAll<HTMLElement>('[role="button"]');
-    for (const el of roleButtons) {
-      if (el instanceof HTMLButtonElement || el instanceof HTMLInputElement) {
-        const text = (el.textContent ?? '').trim();
-        if (text.length > 0 && this.SUBMIT_TEXT_PATTERN.test(text)) {
-          return el;
-        }
+    for (const input of form.querySelectorAll<HTMLInputElement>('input[type="submit"], input[type="button"]')) {
+      if (VisibilityCheck.isVisible(input) && !input.disabled) {
+        candidates.push(input);
       }
     }
 
-    return form.querySelector<HTMLButtonElement>('button') ?? null;
+    for (const el of form.querySelectorAll<HTMLElement>('[role="button"]')) {
+      if (
+        (el instanceof HTMLButtonElement || el instanceof HTMLInputElement) &&
+        VisibilityCheck.isVisible(el) &&
+        !el.disabled
+      ) {
+        candidates.push(el);
+      }
+    }
+
+    let best: SubmitElement | null = null;
+    let bestScore = -Infinity;
+
+    for (const candidate of candidates) {
+      const text = (
+        candidate instanceof HTMLInputElement
+          ? candidate.value
+          : candidate.textContent
+      )?.trim().toLowerCase() ?? '';
+
+      let score = 0;
+      if (candidate instanceof HTMLButtonElement && candidate.type === 'submit') {score += 5;}
+      if (candidate instanceof HTMLInputElement && candidate.type === 'submit') {score += 5;}
+      if (this.SUBMIT_TEXT_PATTERN.test(text)) {score += 4;}
+      if (this.SECONDARY_ACTION_PATTERN.test(text)) {score -= 6;}
+
+      if (score > bestScore) {
+        bestScore = score;
+        best = candidate;
+      }
+    }
+
+    return bestScore > 0 ? best : null;
   }
 }
 

@@ -136,7 +136,7 @@ class KeyMapper {
     }
     
     // Fallback for international / untested characters
-    if (/[^\x00-\x7F]/.test(char)) {
+    if (char.charCodeAt(0) > 127) {
       return 'Unidentified';
     }
     return `Key${char.toUpperCase()}`;
