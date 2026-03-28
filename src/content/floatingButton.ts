@@ -995,6 +995,20 @@ export class FloatingButton {
         }
       }
 
+      // Reset all session state when the user generates a new email address.
+      // Clears OTP badge, closes menu, and returns button to clean idle state.
+      if (msg.action === 'RESET_STATE') {
+        this.hasOTPReady = false;
+        this.updateBadge();
+        if (this.state === 'menu-open') {
+          this.closeMenuSilent();
+        }
+        if (this.state !== 'hidden') {
+          this.setState('idle');
+        }
+        log.debug('🔄 FAB state reset on email change');
+      }
+
     };
 
     try {

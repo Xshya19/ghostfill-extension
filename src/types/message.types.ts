@@ -67,7 +67,8 @@ export type MessageAction =
   | 'LINK_ACTIVATED'
   | 'CHECK_OTP_FRESHNESS'
   | 'WAIT_FOR_FRESH_OTP'
-  | 'FALLBACK_DOMAINS_USED';
+  | 'FALLBACK_DOMAINS_USED'
+  | 'RESET_STATE';
 
 // Base message interface
 export interface BaseMessage {
@@ -494,6 +495,15 @@ export interface FallbackDomainsUsedMessage extends BaseMessage {
   };
 }
 
+/**
+ * Broadcast from background to all content scripts on GENERATE_EMAIL.
+ * Signals content scripts to reset their local OTP badge, menus, and
+ * polling registrations for a clean new-session state.
+ */
+export interface ResetStateMessage extends BaseMessage {
+  action: 'RESET_STATE';
+}
+
 // Union type for all messages
 export type ExtensionMessage =
   | GenerateEmailMessage
@@ -543,7 +553,8 @@ export type ExtensionMessage =
   | LinkActivatedMessage
   | CheckOTPFreshnessMessage
   | WaitForFreshOTPMessage
-  | FallbackDomainsUsedMessage;
+  | FallbackDomainsUsedMessage
+  | ResetStateMessage;
 
 // Response union type
 export type ExtensionResponse =

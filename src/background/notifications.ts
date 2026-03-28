@@ -283,6 +283,26 @@ export function destroyNotifications(): void {
   log.info('🔔 Notification engine destroyed');
 }
 
+/**
+ * Reset session-scoped notification state on email change.
+ *
+ * Clears the dedup cache so notifications for the new email inbox are
+ * never incorrectly suppressed by stale entries from the previous session.
+ * Does NOT stop the notification engine or remove listeners.
+ */
+export function resetNotificationSession(): void {
+  const prevSize = dedupCache.size;
+  dedupCache.clear();
+  sendQueue.length = 0;
+
+  // Clear persisted dedup from session storage (best-effort)
+  if (sessionStorageAvailable) {
+    void chrome.storage.session.remove('notif_dedup').catch(() => {});
+  }
+
+  log.info('🔔 Notification session reset', { clearedDedupEntries: prevSize });
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  EVENT LISTENERS
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

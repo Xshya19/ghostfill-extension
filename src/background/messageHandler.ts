@@ -17,7 +17,7 @@ import {
 } from '../types';
 import { createLogger } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
-import { notifySuccess, notifyError } from './notifications';
+import { notifySuccess, notifyError, resetNotificationSession } from './notifications';
 import { ensureOffscreenDocument } from './offscreenManager';
 import {
   stopEmailPolling,
@@ -104,12 +104,27 @@ async function handleMessage(
       await otpService.clearLastOTP();
 
       // 2. Clear processed-email dedup cache so new inbox is scanned fresh
+      //    Also clears otpWaitingTabs + circuit breaker (see resetEmailSession)
       resetEmailSession();
 
-      // 3. Clear linkService activation history/queue so old links don't replay
+      // 3. Clear notification dedup cache (separate module-level map)
+      resetNotificationSession();
+
+      // 4. Clear linkService activation history/queue so old links don't replay
       linkService.clearHistory();
 
-      // 4. Finally generate the new email address
+      // 5. Broadcast RESET_STATE to all content scripts so FAB badges clear
+      chrome.tabs.query({}, (tabs) => {
+        for (const tab of tabs) {
+          if (tab.id) {
+            chrome.tabs.sendMessage(tab.id, { action: 'RESET_STATE' }).catch(() => {
+              // Ignore — tab may not have content script (about:, chrome:, etc.)
+            });
+          }
+        }
+      });
+
+      // 6. Finally generate the new email address
       const email = await emailService.generateEmail(
         message.action === 'GENERATE_EMAIL' ? message.payload : undefined
       );

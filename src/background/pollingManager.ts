@@ -256,6 +256,16 @@ class CircuitBreaker {
       });
     }
   }
+
+  /** Reset to closed state — used on email session change */
+  reset(): void {
+    this.state.state = 'closed';
+    this.state.consecutiveFailures = 0;
+    this.state.consecutiveSuccesses = 0;
+    this.state.lastFailureTime = 0;
+    this.state.nextRetryTime = 0;
+    log.debug('🟢 Circuit breaker reset to closed');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1325,8 +1335,18 @@ export function destroyPollingManager(): void {
  * are processed immediately. Does NOT stop polling or unregister tabs.
  */
 export function resetEmailSession(): void {
+  // 1. Clear processed-email dedup so new inbox is scanned fresh
   dedupCache.clear();
-  log.info('🔄 Email session reset — dedup cache and metrics cleared');
+
+  // 2. Clear tab OTP-wait registrations — tabs registered for the old email
+  //    must not receive OTPs from the new email's inbox.
+  otpWaitingTabs.clear();
+
+  // 3. Reset circuit breaker so any previous failure streak doesn't block
+  //    new-session polling from starting cleanly.
+  circuitBreaker.reset();
+
+  log.info('🔄 Email session reset — dedup cache, OTP waiting tabs, and circuit breaker cleared');
 }
 
 // ═══════════════════════════════════════════════════════════════
