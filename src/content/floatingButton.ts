@@ -59,9 +59,9 @@ const TIMING_MS = {
 
 /** Size presets in pixels */
 const BUTTON_SIZE_PX: Readonly<Record<ButtonSize, number>> = {
-  mini: 28,
-  normal: 36,
-  expanded: 48,
+  mini: 24,
+  normal: 32,
+  expanded: 44,
 };
 
 /** Viewport margin to prevent edge clipping */
@@ -741,7 +741,7 @@ class IconSystem {
 
   private static readonly ICONS: Readonly<Record<ButtonMode, string>> = {
     magic: `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <defs><linearGradient id="gfGG" x1="0%" y1="0%" x2="100%" y2="100%">
+      <defs><linearGradient id="gfGG-fab" x1="0%" y1="0%" x2="100%" y2="100%">
         <stop offset="0%" stop-color="#7c5cfc"/><stop offset="100%" stop-color="#a78bfa"/>
       </linearGradient></defs>
       <path d="M12 2C8.13 2 5 5.13 5 9v11l2-2 2 2 2-2 2 2 2-2 2 2V9c0-3.87-3.13-7-7-7z" fill="url(#gfGG)"/>
@@ -2419,7 +2419,7 @@ export class FloatingButton {
     "SF Pro Display", "Segoe UI", Roboto, sans-serif;
 
   --brand: #7c5cfc;
-  --brand-light: #a78bfa;
+  --brand-dark: #6449d0;
   --brand-rgb: 124, 92, 252;
   --brand-glow: rgba(124, 92, 252, 0.25);
 
@@ -2441,15 +2441,14 @@ export class FloatingButton {
   --text-tertiary: #94a3b8;
 
   --shadow-rest:
-    0 2px 8px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.5);
-  --shadow-hover:
-    0 8px 24px rgba(0,0,0,0.08), 0 16px 48px rgba(124, 92, 252, 0.25),
-    0 0 0 1px rgba(255,255,255,0.8), 0 0 40px var(--brand-glow);
+    0 1px 4px rgba(0,0,0,0.06), 0 2px 8px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.6);
+  --shadow-hover: 
+    0 6px 16px rgba(0,0,0,0.08), 0 12px 32px rgba(124, 92, 252, 0.2),
+    0 0 0 1px rgba(255,255,255,0.9), 0 0 24px var(--brand-glow);
   --shadow-active:
-    0 2px 4px rgba(0,0,0,0.08), 0 4px 8px rgba(0,0,0,0.06), inset 0 2px 4px rgba(0,0,0,0.05);
-  --shadow-immersive:
-    0 12px 32px rgba(0,0,0,0.1), 0 32px 64px rgba(0,0,0,0.15),
-    0 64px 128px rgba(124, 92, 252, 0.15), 0 0 0 1px rgba(255,255,255,0.6);
+    0 2px 4px rgba(0,0,0,0.05), inset 0 2px 4px rgba(0,0,0,0.08);
+  --panel-shadow: 
+    0 48px 96px rgba(124, 92, 252, 0.12), 0 0 0 1px rgba(255,255,255,0.5);
 
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
@@ -2461,50 +2460,53 @@ export class FloatingButton {
 
 /* ── FAB ── */
 .gf-fab {
-  width: 36px; height: 36px; border-radius: 10px;
+  width: 32px; height: 32px; border-radius: 8px;
   background: var(--glass-bg);
-  backdrop-filter: blur(20px) saturate(200%);
-  -webkit-backdrop-filter: blur(20px) saturate(200%);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
   border: 1px solid var(--glass-border);
   box-shadow: var(--shadow-rest);
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   outline: none; position: relative; overflow: visible;
+  opacity: 0.8; /* Less intrusive idle state */
   transition:
-    transform 0.2s var(--ease-out-expo),
-    box-shadow 0.2s var(--ease-out-expo),
-    border-color 0.2s var(--ease-smooth),
-    background 0.2s var(--ease-smooth);
-  will-change: transform, box-shadow;
+    transform 0.25s var(--ease-out-expo),
+    box-shadow 0.25s var(--ease-out-expo),
+    border-color 0.25s var(--ease-smooth),
+    background 0.25s var(--ease-smooth),
+    opacity 0.25s var(--ease-smooth);
+  will-change: transform, box-shadow, opacity;
   transform: translate3d(0,0,0);
 }
 
 .gf-fab:hover {
-  transform: perspective(var(--perspective)) translateY(-4px) translateZ(10px) scale(1.1);
+  transform: perspective(var(--perspective)) translateY(-2px) translateZ(8px) scale(1.08);
   background: var(--glass-bg-hover);
   box-shadow: var(--shadow-hover);
   border-color: var(--glass-border-hover);
+  opacity: 1; /* Snap to full contrast */
 }
 
 .gf-fab:active {
-  transform: translateY(1px) scale(0.95);
+  transform: translateY(1px) scale(0.96);
   box-shadow: var(--shadow-active);
   transition-duration: 0.1s;
 }
 
-.gf-fab:focus-visible { outline: 2.5px solid var(--brand); outline-offset: 3px; }
+.gf-fab:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 
 /* Icon */
 .gf-fab svg {
-  width: 22px; height: 22px; position: relative; z-index: 3;
-  filter: drop-shadow(0 1px 3px rgba(var(--brand-rgb),0.18));
+  width: 18px; height: 18px; position: relative; z-index: 3;
+  filter: drop-shadow(0 1px 2px rgba(var(--brand-rgb),0.15));
   transition: transform 0.35s var(--ease-spring), filter 0.3s ease;
 }
 .gf-fab:hover svg {
-  transform: scale(1.1) rotate(-2deg);
-  filter: drop-shadow(0 2px 6px rgba(var(--brand-rgb),0.25));
+  transform: scale(1.08) rotate(-1.5deg);
+  filter: drop-shadow(0 2px 4px rgba(var(--brand-rgb),0.20));
 }
-.gf-fab:active svg { transform: scale(0.92); transition-duration: 0.08s; }
+.gf-fab:active svg { transform: scale(0.94); transition-duration: 0.08s; }
 
 /* Loading */
 .gf-fab.gf-loading { cursor: wait; animation: none; border-color: rgba(var(--brand-rgb),0.15); }
@@ -2699,27 +2701,29 @@ export class FloatingButton {
 /* ── Dark Mode ── */
 @media (prefers-color-scheme: dark) {
   :host {
-    --glass-bg: rgba(22, 30, 52, 0.65);
+    --glass-bg: rgba(22, 30, 52, 0.45);
     --glass-bg-hover: rgba(28, 36, 60, 0.85);
-    --glass-border: rgba(255,255,255,0.15);
-    --glass-border-hover: rgba(255,255,255,0.3);
+    --glass-border: rgba(255,255,255,0.1);
+    --glass-border-hover: rgba(255,255,255,0.18);
     --text: #f8fafc; --text-secondary: #cbd5e1; --text-tertiary: #94a3b8;
-    --brand-glow: rgba(167,139,250,0.35);
+    --brand-glow: rgba(167,139,250,0.25);
     
-    --shadow-rest: 0 4px 16px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
-    --shadow-hover: 0 12px 32px rgba(0,0,0,0.6), 0 16px 48px rgba(167,139,250,0.25),
-      0 0 0 1px rgba(255,255,255,0.25), 0 0 48px var(--brand-glow);
-    --shadow-active: 0 2px 8px rgba(0,0,0,0.5), inset 0 2px 4px rgba(0,0,0,0.2);
-    --shadow-immersive: 0 16px 48px rgba(0,0,0,0.5), 0 32px 96px rgba(12,18,36,0.8),
-      0 0 0 1px rgba(255,255,255,0.1);
+    --shadow-rest: 0 2px 10px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08);
+    --shadow-hover: 0 8px 24px rgba(0,0,0,0.6), 0 12px 36px rgba(167,139,250,0.15),
+      0 0 0 1px rgba(255,255,255,0.15), 0 0 32px var(--brand-glow);
+    --shadow-active: 0 2px 6px rgba(0,0,0,0.6), inset 0 2px 4px rgba(0,0,0,0.3);
+    --shadow-immersive: 0 12px 32px rgba(0,0,0,0.6), 0 24px 64px rgba(12,18,36,0.9),
+      0 0 0 1px rgba(255,255,255,0.08);
   }
   .gf-fab {
     background: var(--glass-bg); border-color: var(--glass-border);
     box-shadow: var(--shadow-rest);
+    opacity: 0.65; /* Dark mode should blend into dark UI elements */
   }
   .gf-fab:hover {
     background: var(--glass-bg-hover); border-color: var(--glass-border-hover);
     box-shadow: var(--shadow-hover);
+    opacity: 1; /* Snap back to full attention context */
   }
   .gf-fab:active { box-shadow: var(--shadow-active); }
   .gf-fab.gf-success {

@@ -22,10 +22,10 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 #ghostfill-fab {
-  /* ── Brand ── */
+  /* ── Spatial Variables ── */
   --gf-brand: #7c5cfc;
   --gf-brand-rgb: 124, 92, 252;
-  --gf-brand-light: #a78bfa;
+  --gf-brand-dark: #6449d0;
   --gf-brand-glow: rgba(124, 92, 252, 0.28);
 
   /* ── Semantic ── */
@@ -39,13 +39,13 @@
   --gf-error-rgb: 239, 68, 68;
 
   /* ── Highlight ring metrics ── */
-  --gf-ring-width: 2px;
-  --gf-ring-offset: 2px;
+  --gf-ring-width: 1.5px;
+  --gf-ring-offset: 1px;
   --gf-ring-radius: 8px;
   /* softens field corners */
-  --gf-aura-spread: 6px;
+  --gf-aura-spread: 4px;
   /* outer glow size */
-  --gf-transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  --gf-transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -56,14 +56,14 @@
 
 .ghostfill-highlight {
   /* Multi-layer ring: hairline brand border + soft aura */
-  outline: var(--gf-ring-width, 2px) solid #7c5cfc !important;
-  outline-offset: var(--gf-ring-offset, 2px) !important;
+  outline: var(--gf-ring-width, 1.5px) solid #7c5cfc !important;
+  outline-offset: var(--gf-ring-offset, 1px) !important;
 
   box-shadow:
     /* Inner halo — tight glow hugging the field */
-    0 0 0 var(--gf-aura-spread, 6px) rgba(124, 92, 252, 0.12),
-    /* Mid-range depth ring */ 0 0 16px rgba(124, 92, 252, 0.18),
-    /* Far ambient bloom */ 0 0 32px rgba(124, 92, 252, 0.08) !important;
+    0 0 0 var(--gf-aura-spread, 4px) rgba(124, 92, 252, 0.08),
+    /* Mid-range depth ring */ 0 0 12px rgba(124, 92, 252, 0.12),
+    /* Far ambient bloom */ 0 0 24px rgba(124, 92, 252, 0.04) !important;
 
   /* Softly round sharp field corners without touching border-radius override */
   border-radius: var(--gf-ring-radius, 8px) !important;
@@ -78,13 +78,13 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 .ghostfill-success {
-  outline: var(--gf-ring-width, 2px) solid #22c55e !important;
-  outline-offset: var(--gf-ring-offset, 2px) !important;
+  outline: var(--gf-ring-width, 1.5px) solid #22c55e !important;
+  outline-offset: var(--gf-ring-offset, 1px) !important;
 
   box-shadow:
-    0 0 0 var(--gf-aura-spread, 6px) rgba(34, 197, 94, 0.14),
-    0 0 20px rgba(34, 197, 94, 0.22),
-    0 0 40px rgba(34, 197, 94, 0.08) !important;
+    0 0 0 var(--gf-aura-spread, 4px) rgba(34, 197, 94, 0.10),
+    0 0 16px rgba(34, 197, 94, 0.16),
+    0 0 32px rgba(34, 197, 94, 0.06) !important;
 
   border-radius: var(--gf-ring-radius, 8px) !important;
   transition: var(--gf-transition) !important;
@@ -129,13 +129,13 @@
 
 .ghostfill-otp-ready {
   /* Thicker border signals urgency / time-sensitive code */
-  outline: calc(var(--gf-ring-width, 2px) + 1px) solid #a855f7 !important;
-  outline-offset: var(--gf-ring-offset, 2px) !important;
+  outline: calc(var(--gf-ring-width, 1.5px) + 0.5px) solid #a855f7 !important;
+  outline-offset: var(--gf-ring-offset, 1px) !important;
 
   box-shadow:
-    0 0 0 var(--gf-aura-spread, 6px) rgba(168, 85, 247, 0.15),
-    0 0 20px rgba(168, 85, 247, 0.25),
-    0 0 48px rgba(168, 85, 247, 0.1) !important;
+    0 0 0 var(--gf-aura-spread, 4px) rgba(168, 85, 247, 0.12),
+    0 0 16px rgba(168, 85, 247, 0.20),
+    0 0 36px rgba(168, 85, 247, 0.08) !important;
 
   border-radius: var(--gf-ring-radius, 8px) !important;
   transition: var(--gf-transition) !important;

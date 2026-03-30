@@ -35,10 +35,6 @@ export const API = {
       MESSAGES: '/messages',
     },
   },
-  DROPMAIL: {
-    BASE_URL: 'https://dropmail.me',
-    GRAPHQL_ENDPOINT: '/graphql',
-  },
 } as const;
 
 // Available email domains

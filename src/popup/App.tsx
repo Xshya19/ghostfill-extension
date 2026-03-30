@@ -213,8 +213,8 @@ const App: React.FC = () => {
 
   const springTransition: Transition = {
     type: 'spring',
-    stiffness: 300,
-    damping: 30,
+    stiffness: 260,
+    damping: 25,
     mass: 0.8,
   };
 
@@ -255,16 +255,16 @@ const App: React.FC = () => {
           ) : isFirstTime ? (
             <motion.div
               key="onboarding"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.4 }}
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 1.02 }}
+              transition={springTransition}
               className="onboarding-overlay"
             >
               <motion.div
                 initial={{ scale: 0.5, opacity: 0, rotate: -20 }}
                 animate={{ scale: 1, opacity: 1, rotate: 0 }}
-                transition={{ type: 'spring', damping: 15 }}
+                transition={{ type: 'spring', stiffness: 200, damping: 20, delay: 0.05 }}
                 className="onboarding-logo"
               >
                 <Sparkles size={32} color="white" strokeWidth={2.5} />
@@ -337,10 +337,10 @@ const App: React.FC = () => {
             <motion.div
               key="hub-view"
               layout
-              initial={{ opacity: 0, scale: 0.98, x: -10 }}
+              initial={{ opacity: 0, scale: 0.98, x: -16 }}
               animate={{ opacity: 1, scale: 1, x: 0 }}
-              exit={{ opacity: 0, scale: 1.02, x: 10 }}
-              transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
+              exit={{ opacity: 0, scale: 1.02, x: 16 }}
+              transition={springTransition}
               className="app-view-container"
             >
               <Header onOpenSettings={handleOpenSettings} onOpenHelp={() => setShowHelp(true)} />
@@ -356,10 +356,10 @@ const App: React.FC = () => {
             <motion.div
               key="email-view"
               layout
-              initial={{ opacity: 0, scale: 0.98, x: 10 }}
+              initial={{ opacity: 0, scale: 0.98, x: 16 }}
               animate={{ opacity: 1, scale: 1, x: 0 }}
-              exit={{ opacity: 0, scale: 1.02, x: -10 }}
-              transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
+              exit={{ opacity: 0, scale: 1.02, x: -16 }}
+              transition={springTransition}
               className="app-view-container"
             >
               <Header onOpenSettings={handleOpenSettings} onOpenHelp={() => setShowHelp(true)} />
@@ -380,10 +380,10 @@ const App: React.FC = () => {
               key="detail-view"
               layout
               className="detail-view app-view-container"
-              initial={{ opacity: 0, scale: 1.02, x: 10 }}
+              initial={{ opacity: 0, scale: 1.02, x: 16 }}
               animate={{ opacity: 1, scale: 1, x: 0 }}
-              exit={{ opacity: 0, scale: 0.98, x: -10 }}
-              transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
+              exit={{ opacity: 0, scale: 0.98, x: -16 }}
+              transition={springTransition}
             >
               <div className="header detail-view-header">
                 <div className="header-left detail-view-header-left">
@@ -429,6 +429,10 @@ const App: React.FC = () => {
               <button
                 className="ios-button button-primary help-btn"
                 onClick={() => setShowHelp(false)}
+                style={{ transition: 'transform 0.1s ease', cursor: 'pointer' }}
+                onPointerDown={(e) => (e.currentTarget.style.transform = 'scale(0.96)')}
+                onPointerUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                onPointerOut={(e) => (e.currentTarget.style.transform = 'scale(1)')}
               >
                 {t('dismiss')}
               </button>

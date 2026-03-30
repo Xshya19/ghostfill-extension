@@ -48,11 +48,8 @@ export interface UserSettings {
     | '1secmail'
     | 'mailgw'
     | 'mailtm'
-    | 'dropmail'
     | 'guerrilla'
     | 'tempmail'
-    | 'templol'
-    | 'tmailor'
     | 'maildrop'
     | 'custom';
   autoCheckInbox: boolean;

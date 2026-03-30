@@ -45,12 +45,9 @@ const EmailTab: React.FC<EmailTabProps> = ({
             }
           >
             <option value="mailtm">Mail.tm (Fastest & Most Reliable) ⭐</option>
-            <option value="tmailor">TMailor (500+ Rotating Domains)</option>
             <option value="maildrop">Maildrop</option>
             <option value="mailgw">Mail.gw</option>
-            <option value="dropmail">DropMail</option>
             <option value="guerrilla">Guerrilla Mail</option>
-            <option value="templol">TempMail.lol</option>
             <option value="tempmail">1secmail.com</option>
             <option value="custom">Custom Infrastructure (Private)</option>
           </select>

@@ -38,7 +38,7 @@ const GhostLogo: React.FC<GhostLogoProps> = React.memo(({ size = 24, className =
         }
       }
       whileHover={shouldReduceMotion ? {} : { scale: 1.05 }}
-      whileTap={shouldReduceMotion ? {} : { scale: 0.9 }}
+      whileTap={shouldReduceMotion ? {} : { scale: 0.96 }}
     >
       <motion.img
         src={iconLogo}

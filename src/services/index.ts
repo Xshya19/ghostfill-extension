@@ -44,7 +44,6 @@ export {
   tempMailService,
   mailTmService,
   mailGwService,
-  dropMailService,
   guerrillaMailService,
   maildropService,
   customDomainService,

@@ -21,11 +21,8 @@ const safeBoolean = z.boolean();
 
 // Email Service enum - includes all providers used at runtime
 const emailServiceSchema = z.enum([
-  'tmailor',
   'mailgw',
   'mailtm',
-  'templol',
-  'dropmail',
   '1secmail',
   'guerrilla',
   'maildrop',
@@ -74,7 +71,7 @@ export const generatedPasswordSchema = z.object({
 
 // User Settings schema
 export const userSettingsSchema = z.object({
-  preferredEmailService: emailServiceSchema.default('tmailor'),
+  preferredEmailService: emailServiceSchema.default('mailtm'),
   autoCheckInbox: safeBoolean.default(true),
   checkIntervalSeconds: safeNumber.min(3).max(60).default(10),
   autoFillOTP: safeBoolean.default(true),

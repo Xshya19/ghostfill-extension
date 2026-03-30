@@ -21,10 +21,7 @@ export type EmailService =
   | 'tempmail'
   | 'mailtm'
   | 'mailgw'
-  | 'dropmail'
   | 'guerrilla'
-  | 'templol'
-  | 'tmailor'
   | 'maildrop'
   | 'custom';
 

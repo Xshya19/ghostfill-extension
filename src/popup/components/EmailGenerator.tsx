@@ -81,8 +81,8 @@ const EmailGenerator: React.FC<Props> = ({
   const springTransition: Transition = {
     type: 'spring',
     stiffness: 260,
-    damping: 26,
-    mass: 1,
+    damping: 25,
+    mass: 0.8,
   };
 
   const checkInbox = useCallback(
@@ -303,18 +303,22 @@ const EmailGenerator: React.FC<Props> = ({
               </div>
               {/* Action Buttons */}
               <div className="identity-actions-row">
-                <button
+                <motion.button
                   className="ios-button button-secondary identity-action-btn"
                   onClick={() => setShowConfirm(true)}
                   disabled={syncing}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.96 }}
                 >
                   <RefreshCw size={16} className={syncing ? 'spin' : ''} />
                   New Email
-                </button>
-                <button
+                </motion.button>
+                <motion.button
                   className="ios-button button-primary identity-action-btn"
                   onClick={() => void checkInbox()}
                   disabled={checking || timeLeft === 'Expired'}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.96 }}
                 >
                   {timeLeft === 'Expired' ? (
                     <>
@@ -326,7 +330,7 @@ const EmailGenerator: React.FC<Props> = ({
                       {checking ? 'Syncing...' : 'Sync Inbox'}
                     </>
                   )}
-                </button>
+                </motion.button>
               </div>
             </motion.div>
           )}
@@ -412,9 +416,15 @@ const EmailGenerator: React.FC<Props> = ({
                         <motion.div
                           key={item.id}
                           className="inbox-item"
-                          initial={{ opacity: 0, y: 10 }}
+                          initial={{ opacity: 0, y: 16 }}
                           animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: i * 0.05 }}
+                          transition={{
+                            delay: i * 0.05,
+                            type: 'spring',
+                            stiffness: 260,
+                            damping: 25,
+                            mass: 0.8,
+                          }}
                         >
                           <div className="inbox-item-avatar" style={{ position: 'relative' }}>
                             {item.from.charAt(0).toUpperCase()}
@@ -498,9 +508,15 @@ const EmailGenerator: React.FC<Props> = ({
                       return (
                         <motion.div
                           key={item.id}
-                          initial={{ opacity: 0, y: 10 }}
+                          initial={{ opacity: 0, y: 16 }}
                           animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: i * 0.05, duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                          transition={{
+                            delay: i * 0.05,
+                            type: 'spring',
+                            stiffness: 260,
+                            damping: 25,
+                            mass: 0.8,
+                          }}
                           className="glass-card inbox-item-default"
                         >
                           {/* Avatar */}
@@ -612,15 +628,17 @@ const EmailGenerator: React.FC<Props> = ({
           >
             {t('generateIdentityMessage')}
           </p>
-          <button
+          <motion.button
             className="ios-button button-primary"
             onClick={onGenerate}
             disabled={syncing}
             style={{ width: '100%', justifyContent: 'center' }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.96 }}
           >
             {syncing ? <span className="spinner-small" /> : <Zap size={16} fill="white" />}
             {syncing ? t('syncingIdentity') : t('generateIdentity')}
-          </button>
+          </motion.button>
         </div>
       )}
 
@@ -651,24 +669,28 @@ const EmailGenerator: React.FC<Props> = ({
                 Your current temporary email and its inbox will be permanently lost. Are you sure you want to generate a new one?
               </p>
               <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
-                <button 
+                <motion.button 
                   ref={confirmCancelBtnRef}
                   className="ios-button button-secondary" 
                   style={{ flex: 1 }} 
                   onClick={() => setShowConfirm(false)}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.96 }}
                 >
                   Cancel
-                </button>
-                <button 
+                </motion.button>
+                <motion.button 
                   className="ios-button button-primary" 
                   style={{ flex: 1, background: 'var(--error)' }}
                   onClick={() => {
                     setShowConfirm(false);
                     onGenerate();
                   }}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.96 }}
                 >
                   Generate
-                </button>
+                </motion.button>
               </div>
             </motion.div>
           </motion.div>

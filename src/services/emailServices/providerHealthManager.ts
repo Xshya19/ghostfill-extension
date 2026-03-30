@@ -41,13 +41,10 @@ class ProviderHealthManager implements IProviderHealthManager {
   // Priority order for providers (best first)
   private readonly providerPriority: EmailService[] = [
     'mailtm', // Real API, excellent anti-block reliability
-    'tmailor', // 500+ domains, very reliable fallback
     'maildrop', // Free GraphQL, reliable
     'guerrilla', // Long-standing service
     'tempmail', // 1secmail.com
     '1secmail', // Legacy tempmail
-    'dropmail', // Dropmail service
-    'templol', // TempMail.lol
     'custom', // Custom domain
   ];
 

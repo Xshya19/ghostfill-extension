@@ -281,8 +281,9 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       scale: 1,
       transition: {
         type: 'spring' as const,
-        damping: 20,
-        stiffness: 100,
+        stiffness: 260,
+        damping: 25,
+        mass: 0.8,
       },
     },
   };
@@ -322,8 +323,8 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
             <motion.button
               className={`action-icon ${emailCopied ? 'success' : ''}`}
               onClick={handleCopyEmail}
-              whileTap={{ scale: 0.85 }}
-              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.94 }}
+              whileHover={{ scale: 1.08 }}
               title="Copy email"
               aria-label="Copy email to clipboard"
             >
@@ -332,8 +333,8 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
             <motion.button
               className={`action-icon ${isGeneratingEmail ? 'action-loading' : ''} ${emailCooldown ? 'opacity-50' : ''}`}
               onClick={handleGenerateEmail}
-              whileTap={{ scale: 0.85 }}
-              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.94 }}
+              whileHover={{ scale: 1.08 }}
               title="New identity"
               aria-label="Generate new identity"
               disabled={isGeneratingEmail || emailCooldown}
@@ -364,8 +365,8 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
             <motion.button
               className={`action-icon ${passwordCopied ? 'success' : ''}`}
               onClick={handleCopyPassword}
-              whileTap={{ scale: 0.85 }}
-              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.94 }}
+              whileHover={{ scale: 1.08 }}
               title="Copy password"
               aria-label="Copy password to clipboard"
             >
@@ -374,8 +375,8 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
             <motion.button
               className="action-icon"
               onClick={() => setShowPassword(!showPassword)}
-              whileTap={{ scale: 0.85 }}
-              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.94 }}
+              whileHover={{ scale: 1.08 }}
               title={showPassword ? 'Hide' : 'Show'}
               aria-label={showPassword ? 'Hide password' : 'Show password'}
             >
@@ -385,8 +386,8 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
             <motion.button
               className={`action-icon action-danger ${passwordCooldown ? 'opacity-50' : ''}`}
               onClick={handleGeneratePassword}
-              whileTap={{ scale: 0.85 }}
-              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.94 }}
+              whileHover={{ scale: 1.08 }}
               title="Reset secure password"
               disabled={isGeneratingPassword || passwordCooldown}
             >
@@ -440,9 +441,15 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
                   <motion.div
                     key={emailItem.id}
                     className="inbox-item"
-                    initial={{ opacity: 0, x: -10 }}
+                    initial={{ opacity: 0, x: -16 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.3 + index * 0.1 }}
+                    transition={{
+                      delay: 0.15 + index * 0.05,
+                      type: 'spring',
+                      stiffness: 260,
+                      damping: 25,
+                      mass: 0.8,
+                    }}
                     whileHover={{ x: 4, background: 'var(--list-item-hover)' }}
                   >
                     <div className="inbox-item-avatar">{emailItem.from.charAt(0).toUpperCase()}</div>
@@ -510,21 +517,25 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
                 Your current temporary email and its inbox will be permanently lost.
               </p>
               <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
-                <button 
+                <motion.button 
                   ref={cancelBtnRef}
                   className="ios-button button-secondary" 
                   style={{ flex: 1 }} 
                   onClick={() => setShowConfirmEmail(false)}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.96 }}
                 >
                   Cancel
-                </button>
-                <button 
+                </motion.button>
+                <motion.button 
                   className="ios-button button-primary" 
                   style={{ flex: 1, background: 'var(--error)' }}
                   onClick={executeGenerateEmail}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.96 }}
                 >
                   Generate
-                </button>
+                </motion.button>
               </div>
             </motion.div>
           </motion.div>

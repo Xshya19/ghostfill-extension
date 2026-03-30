@@ -8,7 +8,7 @@ import type { ButtonMode } from './fab-types';
 
 const ICONS: Readonly<Record<ButtonMode, string>> = {
   magic: `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <defs><linearGradient id="gfGG" x1="0%" y1="0%" x2="100%" y2="100%">
+    <defs><linearGradient id="gf-brand-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#7c5cfc"/><stop offset="100%" stop-color="#a78bfa"/>
     </linearGradient></defs>
     <path d="M12 2C8.13 2 5 5.13 5 9v11l2-2 2 2 2-2 2 2 2-2 2 2V9c0-3.87-3.13-7-7-7z" fill="url(#gfGG)"/>

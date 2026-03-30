@@ -8,30 +8,24 @@ import { storageService } from '../storageService';
 import { IProviderHealthManager } from '../types/email-services.types';
 
 import { CustomDomainService } from './customDomainService';
-import { dropMailService } from './dropMailService';
 import { guerrillaMailService } from './guerrillaMailService';
 import { maildropService } from './maildropService';
 import { mailGwService } from './mailGwService';
 import { mailTmService } from './mailTmService';
 import { providerHealth } from './providerHealthManager';
-import { tempMailLolService } from './tempMailLolService';
 import { tempMailService } from './tempMailService';
-import { tmailorService } from './tmailorService';
 
 const log = createLogger('EmailServiceAggregator');
 const customDomainService = new CustomDomainService();
 
 class EmailServiceAggregator {
   private availableServices: EmailService[] = [
-    'tmailor',
     'mailtm',
     'mailgw',
     'maildrop',
     'guerrilla',
     'tempmail',
     '1secmail',
-    'dropmail',
-    'templol',
     'custom',
   ];
   private healthCheckTimestamp: number = 0;
@@ -166,7 +160,7 @@ class EmailServiceAggregator {
 
     // Always ensure we have at least one fallback
     if (this.availableServices.length === 0) {
-      this.availableServices = ['tmailor', 'mailtm', 'maildrop', 'guerrilla'];
+      this.availableServices = ['mailtm', 'mailgw', 'maildrop', 'guerrilla'];
       log.warn('All health checks failed, resetting to defaults');
     }
 
@@ -281,18 +275,12 @@ class EmailServiceAggregator {
           return await customDomainService.createAccount(signal);
         case 'maildrop':
           return await maildropService.createAccount(options.prefix, signal);
-        case 'tmailor':
-          return await tmailorService.createAccount(options.prefix, signal);
-        case 'templol':
-          return await tempMailLolService.createAccount(signal);
         case 'mailgw':
           return await mailGwService.createAccount(options.prefix, undefined, signal);
         case 'mailtm':
           return await mailTmService.createAccount(options.prefix, undefined, signal);
         case 'guerrilla':
           return await guerrillaMailService.createAccount(signal);
-        case 'dropmail':
-          return await dropMailService.createAccount(signal);
         case 'tempmail':
         case '1secmail':
           return await tempMailService.generateEmail(options.prefix, options.domain, signal);
@@ -480,27 +468,11 @@ class EmailServiceAggregator {
           }
           emails = await mailTmService.getMessages(signal);
           break;
-        case 'dropmail':
-          if (account.token) {
-            dropMailService.setSession(account.token);
-          }
-          emails = await dropMailService.getMessages(account.token || undefined, signal);
-          break;
         case 'guerrilla':
           if (account.token) {
             guerrillaMailService.setSession(account.token, account.fullEmail);
           }
           emails = await guerrillaMailService.getMessages(account.token, signal);
-          break;
-        case 'templol':
-          if (account.token) {
-            tempMailLolService.setToken(account.token);
-          }
-          emails = await tempMailLolService.getMessages(account.token, signal);
-          break;
-        case 'tmailor':
-          // TMailor - 500+ rotating domains
-          emails = await tmailorService.getEmails(account, signal);
           break;
         case 'tempmail':
         case '1secmail':
@@ -620,30 +592,12 @@ class EmailServiceAggregator {
           }
           email = await mailTmService.getMessage(emailId.toString(), signal);
           break;
-        case 'dropmail':
-          email = await dropMailService.getMessage(
-            emailId.toString(),
-            account.token || undefined,
-            signal
-          );
-          break;
         case 'guerrilla':
           email = await guerrillaMailService.getMessage(
             emailId.toString(),
             account.token || undefined,
             signal
           );
-          break;
-        case 'templol':
-          email = await tempMailLolService.getMessage(
-            emailId.toString(),
-            account.token || undefined,
-            signal
-          );
-          break;
-        case 'tmailor':
-          // TMailor - 500+ rotating domains
-          email = await tmailorService.readEmail(emailId.toString(), account, signal);
           break;
         case 'tempmail':
         case '1secmail':
@@ -705,12 +659,6 @@ class EmailServiceAggregator {
         case 'tempmail':
         case '1secmail':
           return tempMailService.getDomains(signal);
-        case 'dropmail':
-          return ['dropmail.me'];
-        case 'templol':
-          return ['tempmail.lol'];
-        case 'tmailor':
-          return ['tmailor.com'];
         default:
           return ['unknown.com'];
       }
@@ -754,7 +702,6 @@ export { EmailServiceAggregator };
 export { tempMailService } from './tempMailService';
 export { mailTmService } from './mailTmService';
 export { mailGwService } from './mailGwService';
-export { dropMailService } from './dropMailService';
 export { guerrillaMailService } from './guerrillaMailService';
 export { maildropService } from './maildropService';
 export { customDomainService };
