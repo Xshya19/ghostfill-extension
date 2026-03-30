@@ -35,6 +35,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
 
+    // ---- Check ML Engine Health ----
+    if (message.target === 'offscreen-doc' && message.type === 'CHECK_ML') {
+      import('./inferenceEngine')
+        .then(({ getEngineStatus }) => getEngineStatus())
+        .then((status) => sendResponse({ success: true, status }))
+        .catch((error: Error) => sendResponse({ success: false, error: String(error) }));
+      return true;
+    }
+
     // ---- Warm-up Inference Engine ----
     if (message.target === 'offscreen-doc' && message.type === 'WARM_UP_ML') {
       initInferenceEngine()

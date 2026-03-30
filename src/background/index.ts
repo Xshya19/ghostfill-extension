@@ -6,7 +6,7 @@ import { safeSendTabMessage } from '../utils/messaging';
 import { errorTracker, performanceMonitor } from '../utils/monitoring';
 import { initRemoteLogger } from '../utils/remoteLogger';
 import { dumpMenuStats } from './contextMenu';
-import { setupMessageHandler, dumpRouterStats } from './messageHandler';
+import { setupMessageHandler } from './messageHandler';
 import { initNotifications, dumpNotificationStats } from './notifications';
 import { getPollingMetrics, startEmailPolling } from './pollingManager';
 import { initServiceWorker, getBootState, dumpBootReport } from './serviceWorker';
@@ -81,7 +81,7 @@ self.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
 });
 
 initRemoteLogger('Background');
-const __BACKGROUND_LOAD_START__ = Date.now();
+const _BACKGROUND_LOAD_START__ = Date.now();
 const log = createLogger('Background');
 
 
@@ -634,8 +634,25 @@ function installDevTools(): void {
 
   g.getBackgroundMetrics = getMetrics;
   g.restartBackground = restart;
+  g.checkML = async () => {
+    log.info('🔍 Checking ML status...');
+    try {
+      const response: any = await chrome.runtime.sendMessage({ action: 'CHECK_ML' });
+      if (response?.success) {
+        console.table(response.status);
+        log.info('✅ ML Engine is responsive');
+        return response.status;
+      } else {
+        log.error('❌ ML Check failed', response?.error);
+        return { error: response?.error };
+      }
+    } catch (e) {
+      log.error('❌ ML Check communication error', e);
+      return { error: String(e) };
+    }
+  };
 
-  log.info('🛠️ Dev tools: dumpAllStats(), getBackgroundMetrics(), restartBackground()');
+  log.info('🛠️ Dev tools: dumpAllStats(), getBackgroundMetrics(), restartBackground(), checkML()');
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

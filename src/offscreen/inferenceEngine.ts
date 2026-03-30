@@ -3,10 +3,12 @@ import {
   FIELD_CLASSES,
   NUM_TEXT_CHANNELS,
   MAX_TEXT_LEN,
-  NUM_STRUCTURAL_FEATURES,
   RawFieldFeatures,
 } from '../content/extractor';
 import { PageContext } from '../types/form.types';
+
+// eslint-disable-next-line no-console
+const mlLog = { info: (...a: unknown[]) => console.info('[GhostFill ML]', ...a), error: (...a: unknown[]) => console.error('[GhostFill ML]', ...a) };
 
 // Tell ONNX where to find the WebAssembly binaries.
 // In the offscreen document, these are served relative to the root of the extension.
@@ -45,29 +47,47 @@ export async function initInferenceEngine(): Promise<void> {
   initializing = true;
   try {
     const modelUrl = chrome.runtime.getURL('models/sentinel_brain_v2.onnx');
+    const dataUrl = chrome.runtime.getURL('models/sentinel_brain_v2.onnx.data');
 
-    console.log('[GhostFill ML] Initializing engine in offscreen document...');
-    console.log('[GhostFill ML] Model URL:', modelUrl);
+    mlLog.info('Initializing engine in offscreen document...');
+    mlLog.info('Model URL:', modelUrl);
 
-    // Fetch model as array buffer to ensure proper loading
-    const response = await fetch(modelUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch model: ${response.status} ${response.statusText}`);
+    // Fetch model and external data in parallel to ensure complete initialization
+    const [modelResp, dataResp] = await Promise.all([
+      fetch(modelUrl),
+      fetch(dataUrl)
+    ]);
+
+    if (!modelResp.ok || !dataResp.ok) {
+      throw new Error(`Failed to fetch model files: Model=${modelResp.status}, Data=${dataResp.status}`);
     }
-    const modelBuffer = await response.arrayBuffer();
-    console.log('[GhostFill ML] Model fetched, size:', modelBuffer.byteLength, 'bytes');
 
+    const [modelBuffer, dataBuffer] = await Promise.all([
+      modelResp.arrayBuffer(),
+      dataResp.arrayBuffer()
+    ]);
+
+    mlLog.info('Model files fetched. Model:', modelBuffer.byteLength, 'bytes, Data:', dataBuffer.byteLength, 'bytes');
+
+    // Create session while explicitly providing the external data weights
     session = await ort.InferenceSession.create(modelBuffer, {
       executionProviders: ['wasm'],
       graphOptimizationLevel: 'all',
+      // Explicitly provide external data to ensure ORT can find weights in extension environment
+      externalData: [
+        {
+          path: 'sentinel_brain_v2.onnx.data',
+          data: new Uint8Array(dataBuffer)
+        }
+      ]
     });
 
-    console.log('[GhostFill ML] Engine initialized successfully.');
+    mlLog.info('Engine initialized successfully.');
   } catch (error) {
     const err = error as Error;
-    console.error('[GhostFill ML] Failed to initialize inference engine:', err.message);
+    mlLog.error('Failed to initialize inference engine:', err.message);
     if (err.stack) {
-      console.error('[GhostFill ML] Stack:', err.stack);
+      mlLog.error('Stack:', err.stack);
     }
     session = null;
   } finally {
@@ -76,8 +96,24 @@ export async function initInferenceEngine(): Promise<void> {
 }
 
 /**
+ * Returns the current status of the inference engine for diagnostics.
+ */
+export async function getEngineStatus(): Promise<{
+  initialized: boolean;
+  initializing: boolean;
+  hasSession: boolean;
+  modelUrl: string;
+}> {
+  return {
+    initialized: !!session,
+    initializing,
+    hasSession: !!session,
+    modelUrl: chrome.runtime.getURL('models/sentinel_brain_v2.onnx'),
+  };
+}
+
+/**
  * Classifies a set of field features extracted by extractor.ts.
- * Returns null if the engine is not ready or confidence is too low.
  */
 export async function classifyField(
   features: Omit<RawFieldFeatures, 'element'>,
@@ -94,7 +130,7 @@ export async function classifyField(
   try {
     // 1. Prepare Text Channels Tensor — shape [1, 8, 80]
     // The ONNX model expects int64 (BigInt64Array) for token IDs.
-    const flatText = new BigInt64Array(NUM_TEXT_CHANNELS * MAX_TEXT_LEN);
+    new BigInt64Array(NUM_TEXT_CHANNELS * MAX_TEXT_LEN); // shape placeholder, unused by model
     // This model does not use text channels, but the features object still contains them.
     // const flatText = new BigInt64Array(NUM_TEXT_CHANNELS * MAX_TEXT_LEN);
     // for (let i = 0; i < NUM_TEXT_CHANNELS; i++) {
@@ -178,7 +214,7 @@ export async function classifyField(
       probabilities,
     };
   } catch (err) {
-    console.error('[GhostFill ML] Inference failed in offscreen doc:', err);
+    mlLog.error('Inference failed in offscreen doc:', err);
     return null;
   }
 }

@@ -446,66 +446,6 @@ class PerformanceService {
   }
 
   /**
-   * Log report to console (for developer viewing in service worker)
-   */
-  /* eslint-disable no-console */
-  printReport(): void {
-    const report = this.generateReport();
-
-    console.log('\n========================================');
-    console.log('📊 GHOSTFILL PERFORMANCE REPORT');
-    console.log('========================================');
-    console.log(`Generated: ${report.generatedAt}`);
-    console.log(`Session: ${(report.totalRuntime / 1000 / 60).toFixed(1)} minutes`);
-    console.log('----------------------------------------');
-
-    console.log('\n📝 FORM DETECTION:');
-    console.log(`   Total: ${report.formDetection.totalOperations}`);
-    console.log(
-      `   Heuristics: ${report.formDetection.heuristicsSuccess}/${report.formDetection.heuristicsCount} (${report.formDetection.heuristicsAvgLatency.toFixed(0)}ms avg)`
-    );
-    console.log(
-      `   AI Backup: ${report.formDetection.aiBackupSuccess}/${report.formDetection.aiBackupCount}`
-    );
-    console.log(
-      `   Fields: E:${report.formDetection.fieldTypes.email} P:${report.formDetection.fieldTypes.password} N:${report.formDetection.fieldTypes.name}`
-    );
-
-    console.log('\n🔢 OTP EXTRACTION:');
-    console.log(`   Total: ${report.otpExtraction.totalOperations}`);
-    console.log(
-      `   Regex: ${report.otpExtraction.heuristicsSuccess}/${report.otpExtraction.heuristicsCount} (${report.otpExtraction.heuristicsAvgLatency.toFixed(0)}ms avg)`
-    );
-    console.log(
-      `   AI Backup: ${report.otpExtraction.aiBackupSuccess}/${report.otpExtraction.aiBackupCount}`
-    );
-    console.log(
-      `   Patterns: Numeric:${report.otpExtraction.patterns.numeric} Alpha:${report.otpExtraction.patterns.alphanumeric}`
-    );
-
-    console.log('\n🔗 ACTIVATION LINKS:');
-    console.log(`   Found: ${report.activationLinks.linksFound}`);
-    console.log(`   Activated: ${report.activationLinks.linksActivated}`);
-    console.log(`   Avg Confidence: ${(report.activationLinks.avgConfidence * 100).toFixed(0)}%`);
-
-    console.log('\n📧 EMAIL PARSING:');
-    console.log(`   Processed: ${report.emailParsing.emailsProcessed}`);
-    console.log(`   OTP Found: ${report.emailParsing.otpFound}`);
-    console.log(`   Links Found: ${report.emailParsing.linksFound}`);
-
-    console.log('\n📈 SUMMARY:');
-    console.log(`   Heuristics Win Rate: ${report.summary.heuristicsWinRate.toFixed(1)}%`);
-    console.log(`   AI Backup Rate: ${report.summary.aiBackupRate.toFixed(1)}%`);
-    console.log(`   Avg Latency (no AI): ${report.summary.avgLatencyWithoutAI.toFixed(0)}ms`);
-    console.log(`   Avg Latency (with AI): ${report.summary.avgLatencyWithAI.toFixed(0)}ms`);
-    console.log(`   Overall Success: ${report.summary.overallSuccessRate.toFixed(1)}%`);
-    console.log(`\n   ${report.summary.recommendation}`);
-
-    console.log('\n========================================\n');
-  }
-  /* eslint-enable no-console */
-
-  /**
    * Save report to storage for later retrieval
    */
   async saveReport(): Promise<void> {

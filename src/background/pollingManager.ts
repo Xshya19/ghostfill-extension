@@ -24,23 +24,13 @@ import { createLogger } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
 
 import { updateOTPMenuItem } from './contextMenu';
-import {
-  notifyNewEmail,
-  notifyLinkActivated,
-  notifySuccess,
-  notifyError,
-  notifySystem,
-} from './notifications';
+import { notifyNewEmail } from './notifications';
 
 const log = createLogger('PollingEngine');
 
 // ═══════════════════════════════════════════════════════════════
 //  §0  CONSTANTS
 // ═══════════════════════════════════════════════════════════════
-
-/** Notification rate limiting */
-const NOTIFICATION_RATE_LIMIT_MS = 30_000;
-const NOTIFICATION_BADGE_CLEAR_MS = 5_000;
 
 /** Adaptive polling intervals */
 const TIMING = {
@@ -68,9 +58,6 @@ const TIMING = {
 
   // Email age filter
   MAX_EMAIL_AGE_MS: 24 * 60 * 60 * 1000, // 24 hours
-
-  // Parallel processing cap
-  EMAIL_BATCH_SIZE: 3,
 } as const;
 
 /** Circuit breaker thresholds */
@@ -825,7 +812,7 @@ async function performCheck(mode: CheckMode): Promise<void> {
         chrome.tabs.sendMessage(tabId, { action: 'POLLING_STATE_CHANGE', payload: { state: 'ANALYZING_EMAIL' } }).catch(() => {});
       }
 
-      const batches = chunk(newEmails, TIMING.EMAIL_BATCH_SIZE);
+      const batches = chunk(newEmails, 3);
       for (const batch of batches) {
         await Promise.allSettled(
           batch.map((email) => processEmail(String(email.id), currentEmail))
@@ -892,6 +879,8 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
     waitingTabs: otpWaitingTabs.size,
   });
 
+  let otpDelivered = false;
+
   // ── PRIORITY 1: Inline OTP delivery to waiting tabs ──
   if (otpWaitingTabs.size > 0) {
     const matchingTabId = findMatchingTab(fullEmail.from, detection.provider, detection.link);
@@ -900,21 +889,20 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
       log.info('🎯 Matching tab found — inline OTP delivery');
 
       if (extractedOTPCode) {
-        const delivered = await deliverOTP(extractedOTPCode, detection.confidence ?? 0.9, {
+        otpDelivered = await deliverOTP(extractedOTPCode, detection.confidence ?? 0.9, {
           from: fullEmail.from,
           subject: fullEmail.subject,
           provider: detection.provider,
           linkUrl: detection.link,
         });
 
-        if (delivered) {
+        if (otpDelivered) {
           await dedupCache.markProcessed(emailId, currentEmail.fullEmail, true, false);
-          void notifyNewEmail(fullEmail.from, fullEmail.subject, extractedOTPCode, detection.link);
-          return;
+          // Wait to notify at the end
         }
+      } else {
+        log.warn('⚠️ Matching tab but no OTP extractable — falling through');
       }
-
-      log.warn('⚠️ Matching tab but no OTP extractable — falling through');
     }
   }
 
@@ -923,18 +911,13 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
   const hasLink =
     (detection.type === 'link' || detection.type === 'both') && Boolean(detection.link);
 
-  // Track if OTP was successfully delivered to prevent duplicate fills
-  let otpDelivered = false;
-
-  // Mark OTP-only emails as processed immediately (no async handling needed)
-  // Don't mark link emails here - let linkService handle the dedup marking after activation
-  if (hasOTP && !hasLink) {
+  // Mark OTP-only emails as processed immediately
+  if (hasOTP && !hasLink && !otpDelivered) {
     await dedupCache.markProcessed(emailId, currentEmail.fullEmail, hasOTP, false);
   }
 
-  // For "both" emails, deliver OTP FIRST before opening activation link
-  // This ensures the user's tab gets the OTP before any link activation
-  if (hasOTP && extractedOTPCode) {
+  // For "both" emails, deliver OTP FIRST if not already done
+  if (hasOTP && extractedOTPCode && !otpDelivered) {
     log.info('🔢 OTP detected — delivering to waiting tabs');
     otpDelivered = await deliverOTP(extractedOTPCode, detection.confidence, {
       from: fullEmail.from,
@@ -942,33 +925,31 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
       provider: detection.provider,
       linkUrl: detection.link,
     });
-    void notifyNewEmail(fullEmail.from, fullEmail.subject, extractedOTPCode, detection.link);
   }
 
-  // Only open activation link if:
-  // 1. Email has a link
-  // 2. OTP was NOT already delivered (to prevent duplicate fills)
-  // For "both" emails where OTP was delivered, skip link activation
-  // to avoid confusion - the user already has the OTP filled
+  // Handle Link Activation
   if (hasLink && detection.link && !otpDelivered) {
     log.info('🔗 Link detected, deferring to linkService');
     metrics.linksProcessed++;
     
-    // Broadcast to UI that a link was found and is being handled in the background
+    // Broadcast to UI
     for (const tabId of otpWaitingTabs.keys()) {
       chrome.tabs.sendMessage(tabId, { action: 'POLLING_STATE_CHANGE', payload: { state: 'LINK_ACTIVATION_STARTED' } }).catch(() => {});
     }
 
-    // linkService will handle dedup marking after successful activation
     await linkService
       .handleNewEmail(fullEmail, currentEmail.fullEmail)
       .catch((e) => log.warn('linkService error', e));
-    void notifyNewEmail(fullEmail.from, fullEmail.subject, undefined, detection.link);
   }
 
-  if (!hasOTP && !hasLink) {
-    void notifyNewEmail(fullEmail.from, fullEmail.subject);
-  }
+  // ── FINAL STEP: SINGLE NOTIFICATION ──
+  // Consolidate findings and notify exactly once
+  void notifyNewEmail(
+    fullEmail.from, 
+    fullEmail.subject, 
+    extractedOTPCode || undefined, 
+    hasLink ? detection.link : undefined
+  );
 }
 
 // ── Find the highest-priority waiting tab that matches this email ──

@@ -486,6 +486,24 @@ export async function notifyNewEmail(
   otp?: string,
   link?: string
 ): Promise<string> {
+  // Case 1: Both OTP and Link found in same email (Consolidated UX)
+  if (otp && link) {
+    return notify({
+      category: 'otp', // Treat as OTP category for high priority
+      title: 'Verification Link & OTP Found',
+      message: `From: ${from}\n${truncate(subject, 60)}`,
+      priority: 2,
+      requireInteraction: true,
+      buttons: [
+        { title: '📋 Copy OTP', action: 'copy-otp' },
+        { title: '🔗 Open Link', action: 'open-link' },
+        { title: 'Dismiss', action: 'dismiss' },
+      ],
+      data: { otp, link, from, subject },
+    });
+  }
+
+  // Case 2: OTP only
   if (otp) {
     return notify({
       category: 'otp',
@@ -501,7 +519,7 @@ export async function notifyNewEmail(
     });
   }
 
-  // Link-only notification
+  // Case 3: Link only
   if (link) {
     return notify({
       category: 'link',
@@ -517,6 +535,7 @@ export async function notifyNewEmail(
     });
   }
 
+  // Case 4: Standard email (no extraction findings)
   return notify({
     category: 'email',
     title: 'New Email',

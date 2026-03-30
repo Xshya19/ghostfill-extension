@@ -53,7 +53,7 @@ export class SmartPositioner {
   }
 
   static checkObstructions(left: number, top: number, size: number): boolean {
-    if (left === OFF_SCREEN) return false;
+    if (left === OFF_SCREEN) {return false;}
 
     const points = [
       [left + 2, top + 2],
@@ -67,11 +67,11 @@ export class SmartPositioner {
       try {
         const el = document.elementFromPoint(x!, y!);
         if (el) {
-          if (el.closest('#ghostfill-fab') || el.closest('.gf-fab')) continue;
+          if (el.closest('#ghostfill-fab') || el.closest('.gf-fab')) {continue;}
           const elStyle = window.getComputedStyle(el);
-          if (elStyle.opacity === '0' || elStyle.pointerEvents === 'none') continue;
+          if (elStyle.opacity === '0' || elStyle.pointerEvents === 'none') {continue;}
           const zIndex = parseInt(elStyle.zIndex, 10) || 0;
-          if (zIndex > 1000) return true;
+          if (zIndex > 1000) {return true;}
         }
       } catch { /* ignore points outside viewport */ }
     }
@@ -93,7 +93,7 @@ export class SmartPositioner {
       let max = 10000;
       for (let i = 0, len = Math.min(all.length, 500); i < len; i++) {
         const z = parseInt(window.getComputedStyle(all[i]!).zIndex, 10);
-        if (!isNaN(z) && z > max && z < ABSOLUTE_MAX_Z) max = z;
+        if (!isNaN(z) && z > max && z < ABSOLUTE_MAX_Z) {max = z;}
       }
       const result = Math.min(max + Z_INDEX_BOOST, ABSOLUTE_MAX_Z);
       this._cachedMaxZ = result;

@@ -15,11 +15,11 @@ export function registerMLMessageHandler(): void {
       _sender,
       sendResponse: (response: unknown) => void
     ): boolean | undefined => {
-      if (message.action !== 'CLASSIFY_FIELD') {
+      if (message.action !== 'CLASSIFY_FIELD' && message.action !== 'CHECK_ML') {
         return;
       }
 
-      const { features, context } = message.payload;
+      const { features, context } = message.payload || {};
 
       void (async () => {
         try {
@@ -27,17 +27,18 @@ export function registerMLMessageHandler(): void {
           await ensureOffscreenDocument();
 
           // 2. Forward the classification request to the offscreen document
+          const msgType = message.action === 'CHECK_ML' ? 'CHECK_ML' : 'CLASSIFY_FIELD';
           const response: any = await chrome.runtime.sendMessage({
             target: 'offscreen-doc',
-            type: 'CLASSIFY_FIELD',
+            type: msgType,
             payload: { features, context }
           });
 
           if (response?.success) {
-            sendResponse({ success: true, prediction: response.prediction });
+            sendResponse({ success: true, prediction: response.prediction, status: response.status });
           } else {
-            log.error('ML offscreen classify returned failure', response?.error);
-            sendResponse({ success: false, prediction: null });
+            log.error(`ML offscreen ${msgType} returned failure`, response?.error);
+            sendResponse({ success: false, prediction: null, error: response?.error });
           }
         } catch (err) {
           log.error('ML proxy classify failed', err);

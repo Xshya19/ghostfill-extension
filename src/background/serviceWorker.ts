@@ -116,6 +116,7 @@ let bootState: BootState = 'cold';
 let bootPromise: Promise<void> | null = null;
 let lastInitTime = 0;
 let reinitAttemptCount = 0; // Track re-init attempts for exponential backoff
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 let keepAliveListenerInstalled = false;
 
 const serviceRegistry = new Map<string, ServiceRecord>();
@@ -394,7 +395,7 @@ async function installKeepAlive(): Promise<void> {
     periodInMinutes: CONFIG.KEEPALIVE_INTERVAL_MIN,
   });
 
-  // Listen for the keep-alive alarm (idempotent)
+  // Mark as installed for idempotency guard
   keepAliveListenerInstalled = true;
 
   log.debug('✅ Keep-alive alarm registered', {
@@ -477,11 +478,19 @@ export async function initServiceWorker(): Promise<void> {
   if (bootState !== 'cold') {
     // Circuit Breaker to prevent infinite looping
     if (reinitAttemptCount >= 5) {
-      log.error(
-        '💥 Circuit breaker tripped: Maximum boot retry limit (5) reached. Halting resets until explicitly re-triggered by user.'
-      );
-      bootState = 'failed';
-      return;
+      const timeSinceLastAttempt = Date.now() - lastInitTime;
+      const FALLBACK_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+
+      if (timeSinceLastAttempt > FALLBACK_TIMEOUT_MS) {
+        log.info('🔌 Circuit breaker auto-resetting after 15 minutes of cooling down.');
+        reinitAttemptCount = 0;
+      } else {
+        log.error(
+          `💥 Circuit breaker active. Halting resets. Auto-recovery in ${Math.ceil((FALLBACK_TIMEOUT_MS - timeSinceLastAttempt) / 60000)}m.`
+        );
+        bootState = 'failed';
+        return;
+      }
     }
 
     const gap = Date.now() - lastInitTime;

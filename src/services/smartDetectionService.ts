@@ -130,8 +130,10 @@ class SmartDetectionService {
 
     // 🧠 [SmartDetection] Executing 5-Layer Intelligent Pipeline...
     // GhostCore legacy classification removed in favor of consolidated IntelligentExtractor (P2.1)
-    const cleanedHtml = htmlBody ? this.cleanHTML(htmlBody) : '';
-    const intelligentResult = extractAll(subject, body, cleanedHtml, sender, expectedDomains);
+    
+    // FIX: Pass raw htmlBody to extractAll so URLExtractor can find tags (a, href, etc.).
+    // Internal sanitization for text-matching is handled inside the extractor.
+    const intelligentResult = extractAll(subject, body, htmlBody, sender, expectedDomains);
 
     log.info(`📊 [SmartDetection] Intent: ${intelligentResult.intent}`);
     log.info(

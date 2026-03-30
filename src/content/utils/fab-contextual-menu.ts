@@ -5,8 +5,8 @@
  * menu entries based on the current page analysis and button mode.
  */
 import type { ButtonMode, MenuAction } from './fab-types';
-import type { PageAnalysis } from './pageAnalyzer';
 import { escapeHTML } from './fab-utils';
+import type { PageAnalysis } from './pageAnalyzer';
 
 export class ContextualMenu {
   static buildActions(

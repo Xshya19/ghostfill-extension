@@ -1783,8 +1783,17 @@ export class OTPPageDetector {
       }
 
       if (this.fields.length === 0) {
-        log.warn('❌ OTP fill failed — no fields found after all retries');
-        pageStatus.error('OTP fill failed — no field found', 3000);
+        // Suppress error toast for automated deliveries (isBackgroundTab) 
+        // or if we're on a likely landing/app page after activation.
+        const isAppPage = /chat|app|dashboard|home|workspace/i.test(document.title + location.href);
+        const shouldSuppressError = payload.isBackgroundTab || isAppPage || /success|activated|verified|confirmed/i.test(document.title + location.href);
+
+        if (shouldSuppressError) {
+          log.info('ℹ️ OTP fill skipped — no fields found (likely landing or app page)');
+        } else {
+          log.warn('❌ OTP fill failed — no fields found after all retries');
+          pageStatus.error('OTP fill failed — no field found', 3000);
+        }
         return false;
       }
     }

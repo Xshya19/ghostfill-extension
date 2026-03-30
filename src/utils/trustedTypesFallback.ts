@@ -31,6 +31,9 @@ interface GlobalWithTrustedTypes {
   };
 }
 
+import { createLogger } from './logger';
+const log = createLogger('TrustedTypes');
+
 {
   const g = globalThis as typeof globalThis & GlobalWithTrustedTypes;
   if (typeof g.trustedTypes !== 'undefined') {
@@ -41,7 +44,7 @@ interface GlobalWithTrustedTypes {
         // Allow script URLs only from self origin
         createScriptURL: (s: string): string => {
           if (s.startsWith('chrome-extension://') || s.startsWith('/')) { return s; }
-          console.warn('Blocked uncontrolled script URL');
+          log.warn('Blocked uncontrolled script URL');
           return '';
         },
         // Allow script strings. Restrict to common feature detection only to prevent injection.
@@ -50,7 +53,7 @@ interface GlobalWithTrustedTypes {
           if (safe === '' || safe === 'return this') {
             return s;
           }
-          console.warn('Blocked uncontrolled script string via Trusted Types');
+          log.warn('Blocked uncontrolled script string via Trusted Types');
           return '';
         },
       });

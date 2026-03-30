@@ -170,25 +170,35 @@ const STYLES = `
   transition-duration: 0.08s;
 }
 
-/* ── Idle breathing pulse ── */
-@keyframes gl-breathe {
-  0%, 100% {
-    box-shadow:
-      inset 0 0.5px 0 rgba(255, 255, 255, 0.6),
-      0 1px 3px rgba(0, 0, 0, 0.04),
-      0 2px 6px rgba(0, 0, 0, 0.04);
-  }
-  50% {
-    box-shadow:
-      inset 0 0.5px 0 rgba(255, 255, 255, 0.6),
-      0 1px 3px rgba(0, 0, 0, 0.04),
-      0 2px 6px rgba(0, 0, 0, 0.04),
-      0 0 14px rgba(var(--brand-rgb), 0.08);
-  }
+/* ── GPU-Accelerated Glow Layers ── */
+:host::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 12px;
+  background: radial-gradient(circle, rgba(var(--brand-rgb), 0.4) 0%, transparent 60%);
+  opacity: 0;
+  z-index: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+  will-change: opacity, transform;
+}
+
+@keyframes gl-breathe-glow {
+  0%, 100% { opacity: 0; transform: scale(0.9); }
+  50% { opacity: 0.15; transform: scale(1.1); }
 }
 
 .ghost-icon-container:not(:hover):not(:active):not(.gl-loading):not(.gl-success):not(.gl-error) {
-  animation: gl-breathe 4s ease-in-out infinite;
+  /* Keep shadow static to prevent paints */
+  box-shadow: 
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.6),
+    0 1px 3px rgba(0, 0, 0, 0.04),
+    0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+:host(:not(:hover):not(:active):not(.gl-entering))::before {
+  animation: gl-breathe-glow 4s ease-in-out infinite;
 }
 
 /* ── State: Loading ── */
@@ -253,21 +263,19 @@ const STYLES = `
 .ghost-icon-container.gl-otp-ready {
   border-color: rgba(168, 85, 247, 0.3);
   opacity: 0.85;
-  animation: gl-otp-pulse 2.5s ease-in-out infinite;
+  box-shadow:
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.6),
+    0 0 8px rgba(168, 85, 247, 0.1);
 }
 
-@keyframes gl-otp-pulse {
-  0%, 100% {
-    box-shadow:
-      inset 0 0.5px 0 rgba(255, 255, 255, 0.6),
-      0 0 8px rgba(168, 85, 247, 0.1);
-  }
-  50% {
-    box-shadow:
-      inset 0 0.5px 0 rgba(255, 255, 255, 0.6),
-      0 0 18px rgba(168, 85, 247, 0.2),
-      0 0 32px rgba(168, 85, 247, 0.06);
-  }
+@keyframes gl-otp-glow {
+  0%, 100% { opacity: 0.2; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.2); }
+}
+
+:host(.has-otp-ready)::before {
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.5) 0%, transparent 60%);
+  animation: gl-otp-glow 2.5s ease-in-out infinite;
 }
 
 /* ── Entry animation ── */
@@ -792,6 +800,7 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
   private positionRafId: number | null = null;
   private stateResetTimer: ReturnType<typeof setTimeout> | null = null;
   private _scrollTimeout: ReturnType<typeof setTimeout> | null = null;
+  private _inputChangeTimeout: ReturnType<typeof setTimeout> | null = null;
 
   // ── Bound methods ────────────────────────────────────────
   private _onScroll: () => void;
@@ -901,7 +910,7 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
 
     // Mutation observer on the input — detect type/disabled/style changes
     this.inputObserver = new MutationObserver(() => {
-      if (!FieldIntelligence.shouldDecorate(input)) {
+      if (!input.isConnected || !FieldIntelligence.shouldDecorate(input)) {
         this.animateExit();
       } else {
         const newType = FieldIntelligence.classify(input);
@@ -1073,6 +1082,11 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
       return;
     }
 
+    if (!this.inputElement.isConnected) {
+      this.animateExit();
+      return;
+    }
+
     const pos = PositionEngine.calculate(this.inputElement);
 
     if (!pos.visible) {
@@ -1094,11 +1108,17 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
   }
 
   private handleInputValueChange(): void {
-    if (!this.inputElement || !this.container || this.currentState !== 'idle') {
-      return;
+    if (this._inputChangeTimeout) {
+      clearTimeout(this._inputChangeTimeout);
     }
-    const overlapping = PositionEngine.isTextOverlapping(this.inputElement);
-    this.container.style.opacity = overlapping ? '0.25' : '';
+    this._inputChangeTimeout = setTimeout(() => {
+      this._inputChangeTimeout = null;
+      if (!this.inputElement || !this.container || this.currentState !== 'idle') {
+        return;
+      }
+      const overlapping = PositionEngine.isTextOverlapping(this.inputElement);
+      this.container.style.opacity = overlapping ? '0.25' : '';
+    }, 150);
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -1129,6 +1149,11 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
     if (this.stateResetTimer) {
       clearTimeout(this.stateResetTimer);
       this.stateResetTimer = null;
+    }
+
+    if (this._inputChangeTimeout) {
+      clearTimeout(this._inputChangeTimeout);
+      this._inputChangeTimeout = null;
     }
 
     if (this.inputElement) {

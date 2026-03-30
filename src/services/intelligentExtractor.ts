@@ -139,6 +139,11 @@ function calculateAdaptiveThresholds(
   if (intent.intent === 'activation' || intent.intent === 'password-reset') {
     link -= CONFIG.thresholds.activationLinkReduction;
   }
+  // NEW: Ultra-high intent reduction to ensure 4-digit OTPs and links are captured in verified contexts
+  if (intent.confidence > 0.9) {
+    otp -= 20; // Lower floor to ~40-50% for high-intent activation
+    link -= 20;
+  }
   if (signalDensity > 5) {
     otp -= CONFIG.thresholds.highSignalReduction;
     link -= CONFIG.thresholds.highSignalReduction;
@@ -191,9 +196,9 @@ function refineIntent(
   ) {
     return { 
       intent: 'activation', 
-      confidence: 0.95, 
-      signals: [{ type: 'regex', source: 'subject', detail: 'high-confidence-activation', weight: 0.95 }], 
-      scores: { 'activation': 0.95 },
+      confidence: 1.0, 
+      signals: [{ type: 'regex', source: 'subject', detail: 'high-confidence-activation', weight: 1.0 }], 
+      scores: { 'activation': 1.0 },
       secondaryIntent: null
     };
   }
@@ -206,9 +211,9 @@ function refineIntent(
   ) {
     return { 
       intent: 'verification', 
-      confidence: 0.95, 
-      signals: [{ type: 'regex', source: 'subject', detail: 'high-confidence-verification', weight: 0.95 }], 
-      scores: { 'verification': 0.95 },
+      confidence: 1.0, 
+      signals: [{ type: 'regex', source: 'subject', detail: 'high-confidence-verification', weight: 1.0 }], 
+      scores: { 'verification': 1.0 },
       secondaryIntent: null
     };
   }
@@ -244,7 +249,8 @@ export function extractAll(
   const sanitizedBody = sanitizeEmailBody(htmlBody, body);
   const sanitizedHtmlBody = sanitizeEmailBody(htmlBody, body);
   const sanitizedSenderEmail = sanitizeEmail(senderEmail);
-  const sourceHtml = htmlBody || body; // Use RAW html to extract URLs since Service Worker fallback sanitization strips ALL tags including <a href>!
+  const sourceHtml = htmlBody || body; // Use RAW html to extract URLs
+  
   const plainText = `${sanitizedSubject}\n\n${stripHtmlPreserveStructure(sanitizedHtmlBody || sanitizedBody)}`;
 
   log.info('═══ GhostFill Intelligent Extractor ═══');

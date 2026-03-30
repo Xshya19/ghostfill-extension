@@ -230,7 +230,7 @@ module.exports = (env, argv) => {
                     { from: 'src/assets', to: 'assets' },
                     { from: 'public/_locales', to: '_locales' },
                     // Copy ML model + class metadata to dist/models/
-                    { from: 'public/models', to: 'models', noErrorOnMissing: true },
+                    { from: 'models', to: 'models', noErrorOnMissing: true },
                     // Copy onnxruntime-web WASM binaries to dist/ root
                     // so chrome.runtime.getURL('') resolves ort-wasm*.wasm correctly
                     {

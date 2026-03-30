@@ -50,6 +50,8 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
   const [showPassword, setShowPassword] = useState(false);
   const [isGeneratingPassword, setIsGeneratingPassword] = useState(false);
   const [isGeneratingEmail, setIsGeneratingEmail] = useState(false);
+  const [emailCooldown, setEmailCooldown] = useState(false);
+  const [passwordCooldown, setPasswordCooldown] = useState(false);
   const [showConfirmEmail, setShowConfirmEmail] = useState(false);
   const cancelBtnRef = useRef<HTMLButtonElement>(null);
 
@@ -77,6 +79,9 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
         const lastTime = parseInt(lastGeneratePasswordTime || '0', 10);
         const now = Date.now();
         if (now - lastTime < RATE_LIMIT_MS.GENERATE_PASSWORD) {
+          setPasswordCooldown(true);
+          setTimeout(() => setPasswordCooldown(false), RATE_LIMIT_MS.GENERATE_PASSWORD - (now - lastTime));
+          onToast('Rate limit hit. Please wait a moment.');
           return; // Rate limited
         }
         await chrome.storage.local.set({ lastGeneratePasswordTime: now.toString() });
@@ -222,6 +227,8 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
           const { lastGenerateEmailTime } = await chrome.storage.local.get('lastGenerateEmailTime');
           const lastTime = parseInt(lastGenerateEmailTime || '0', 10);
           if (now - lastTime < RATE_LIMIT_MS.GENERATE_EMAIL) {
+            setEmailCooldown(true);
+            setTimeout(() => setEmailCooldown(false), RATE_LIMIT_MS.GENERATE_EMAIL - (now - lastTime));
             onToast('Please wait before generating a new email');
             return;
           }
@@ -323,13 +330,13 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
               {emailCopied ? <Check size={16} /> : <Copy size={16} />}
             </motion.button>
             <motion.button
-              className={`action-icon ${isGeneratingEmail ? 'action-loading' : ''}`}
+              className={`action-icon ${isGeneratingEmail ? 'action-loading' : ''} ${emailCooldown ? 'opacity-50' : ''}`}
               onClick={handleGenerateEmail}
               whileTap={{ scale: 0.85 }}
               whileHover={{ scale: 1.1 }}
               title="New identity"
               aria-label="Generate new identity"
-              disabled={isGeneratingEmail}
+              disabled={isGeneratingEmail || emailCooldown}
             >
               <RefreshCw size={16} className={isGeneratingEmail ? 'spin' : ''} />
             </motion.button>
@@ -376,12 +383,12 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
             </motion.button>
             <div className="action-separator" />
             <motion.button
-              className="action-icon action-danger"
+              className={`action-icon action-danger ${passwordCooldown ? 'opacity-50' : ''}`}
               onClick={handleGeneratePassword}
               whileTap={{ scale: 0.85 }}
               whileHover={{ scale: 1.1 }}
               title="Reset secure password"
-              disabled={isGeneratingPassword}
+              disabled={isGeneratingPassword || passwordCooldown}
             >
               <RefreshCw size={16} className={isGeneratingPassword ? 'spin' : ''} />
             </motion.button>

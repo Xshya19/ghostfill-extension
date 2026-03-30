@@ -9,11 +9,84 @@ interface Props {
   onToast: (message: string) => void;
 }
 
+const OTPTimerBar: React.FC<{ lastOTP: any; shouldReduceMotion: boolean | null | undefined }> = ({ lastOTP, shouldReduceMotion }) => {
+  const [timePercentage, setTimePercentage] = useState<number>(100);
+  const [timeText, setTimeText] = useState<string>('');
+
+  useEffect(() => {
+    if (!lastOTP) {
+      setTimePercentage(100);
+      setTimeText('');
+      return;
+    }
+
+    const updateTimer = () => {
+      const elapsed = Date.now() - lastOTP.extractedAt;
+      const hasExplicitExpiry = !!lastOTP.expiresAt;
+      const total = hasExplicitExpiry ? Math.max(1, lastOTP.expiresAt! - lastOTP.extractedAt) : 10 * 60 * 1000;
+      const remaining = total - elapsed;
+
+      if (remaining <= 0) {
+        setTimePercentage(0);
+        setTimeText(hasExplicitExpiry ? 'Expired' : 'Likely expired');
+      } else {
+        setTimePercentage((remaining / total) * 100);
+        const minutes = Math.floor(remaining / 60000);
+        const seconds = Math.floor((remaining % 60000) / 1000);
+        setTimeText(minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`);
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [lastOTP]);
+
+  return (
+    <div className="otp-timer-container">
+      <div 
+        className="otp-timer-bg" 
+        role="progressbar" 
+        aria-valuenow={timePercentage} 
+        aria-valuemin={0} 
+        aria-valuemax={100} 
+        aria-label={`OTP timer urgency: ${timePercentage < 20 ? 'Critical' : 'Safe'}`}
+      >
+        <motion.div
+          animate={{ width: `${timePercentage}%` }}
+          transition={{ duration: shouldReduceMotion ? 0 : 1, ease: [0.16, 1, 0.3, 1] }}
+          className="otp-timer-fill"
+          style={{
+            background:
+              timePercentage < 20
+                ? 'var(--error)'
+                : 'linear-gradient(90deg, var(--brand-primary) 0%, var(--brand-secondary) 100%)',
+            boxShadow: timePercentage < 20 ? 'none' : '0 0 10px rgba(99, 102, 241, 0.3)',
+          }}
+        />
+      </div>
+      <div className="otp-timer-info" aria-live="polite">
+        <span className="otp-timer-label">
+          {lastOTP?.expiresAt ? 'Expiring in ' : 'Est. expiry in '}
+          <span
+            style={{
+              color: timePercentage < 20 ? 'var(--error)' : 'var(--text-secondary)',
+            }}
+          >
+            {timeText}
+          </span>
+        </span>
+        <span className="otp-source-label">
+          {lastOTP?.source === 'email' ? 'Real-time Sync' : 'Direct'}
+        </span>
+      </div>
+    </div>
+  );
+};
+
 const OTPDisplay: React.FC<Props> = ({ onToast }) => {
   const shouldReduceMotion = useReducedMotion();
   const lastOTP = useStorageSubscription('lastOTP', null);
-  const [timePercentage, setTimePercentage] = useState<number>(100);
-  const [timeText, setTimeText] = useState<string>('');
   const [copied, setCopied] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -28,35 +101,6 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
       }
     };
   }, []);
-
-  useEffect(() => {
-    if (lastOTP) {
-      const updateTimer = () => {
-        const elapsed = Date.now() - lastOTP.extractedAt;
-        const hasExplicitExpiry = !!lastOTP.expiresAt;
-        const total = hasExplicitExpiry ? Math.max(1, lastOTP.expiresAt! - lastOTP.extractedAt) : 10 * 60 * 1000; // 10 mins fallback
-        const remaining = total - elapsed;
-
-        if (remaining <= 0) {
-          setTimePercentage(0);
-          setTimeText(hasExplicitExpiry ? 'Expired' : 'Likely expired');
-        } else {
-          setTimePercentage((remaining / total) * 100);
-          const minutes = Math.floor(remaining / 60000);
-          const seconds = Math.floor((remaining % 60000) / 1000);
-          // Format as "4m 30s" for clarity
-          setTimeText(minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`);
-        }
-      };
-
-      updateTimer();
-      const interval = setInterval(updateTimer, 1000);
-      return () => clearInterval(interval);
-    }
-
-    setTimePercentage(100);
-    setTimeText('');
-  }, [lastOTP]);
 
   const copyOTP = async () => {
     if (!lastOTP) {
@@ -144,44 +188,7 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
               ))}
             </motion.div>
 
-            <div className="otp-timer-container">
-              <div 
-                className="otp-timer-bg" 
-                role="progressbar" 
-                aria-valuenow={timePercentage} 
-                aria-valuemin={0} 
-                aria-valuemax={100} 
-                aria-label={`OTP timer urgency: ${timePercentage < 20 ? 'Critical' : 'Safe'}`}
-              >
-                <motion.div
-                  animate={{ width: `${timePercentage}%` }}
-                  transition={{ duration: shouldReduceMotion ? 0 : 1, ease: [0.16, 1, 0.3, 1] }}
-                  className="otp-timer-fill"
-                  style={{
-                    background:
-                      timePercentage < 20
-                        ? 'var(--error)'
-                        : 'linear-gradient(90deg, var(--brand-primary) 0%, var(--brand-secondary) 100%)',
-                    boxShadow: timePercentage < 20 ? 'none' : '0 0 10px rgba(99, 102, 241, 0.3)',
-                  }}
-                />
-              </div>
-              <div className="otp-timer-info" aria-live="polite">
-                <span className="otp-timer-label">
-                  {lastOTP.expiresAt ? 'Expiring in ' : 'Est. expiry in '}
-                  <span
-                    style={{
-                      color: timePercentage < 20 ? 'var(--error)' : 'var(--text-secondary)',
-                    }}
-                  >
-                    {timeText}
-                  </span>
-                </span>
-                <span className="otp-source-label">
-                  {lastOTP.source === 'email' ? 'Real-time Sync' : 'Direct'}
-                </span>
-              </div>
-            </div>
+            <OTPTimerBar lastOTP={lastOTP} shouldReduceMotion={shouldReduceMotion} />
 
             <div className="otp-actions">
               <button
@@ -208,11 +215,7 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
               animate={
                 shouldReduceMotion ? {} : {
                   scale: [1, 1.05, 1],
-                  boxShadow: [
-                    '0 0 20px rgba(99, 102, 241, 0.1)',
-                    '0 0 30px rgba(99, 102, 241, 0.25)',
-                    '0 0 20px rgba(99, 102, 241, 0.1)',
-                  ],
+                  opacity: [0.75, 1, 0.75],
                 }
               }
               transition={

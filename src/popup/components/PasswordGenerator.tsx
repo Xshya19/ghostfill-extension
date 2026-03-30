@@ -21,6 +21,7 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [localLength, setLocalLength] = useState(options.length);
 
   const generatePassword = useCallback(async () => {
     setLoading(true);
@@ -45,24 +46,43 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
   }, [options, onToast]);
 
   useEffect(() => {
+    if (!currentPassword) {
+      const timeoutId = setTimeout(() => {
+        setOptions((prev) => ({ ...prev, length: localLength }));
+      }, 300);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [localLength, currentPassword]);
+
+  useEffect(() => {
     if (currentPassword) {
+      let pool = 0;
+      if (/[a-z]/.test(currentPassword)) {pool += 26;}
+      if (/[A-Z]/.test(currentPassword)) {pool += 26;}
+      if (/\d/.test(currentPassword)) {pool += 10;}
+      if (/[^a-zA-Z0-9]/.test(currentPassword)) {pool += 32;}
+      
+      const entropy = pool === 0 ? 0 : Math.floor(currentPassword.length * Math.log2(pool));
+      let score = 0;
+      if (entropy >= 28) {score = 1;}
+      if (entropy >= 36) {score = 2;}
+      if (entropy >= 60) {score = 3;}
+      if (entropy >= 100) {score = 4;}
+
       setPassword({
         password: currentPassword,
         strength: { 
-          score: 3, 
-          level: 'good', 
-          crackTime: 'Secure', 
-          entropy: Math.floor(currentPassword.length * 6), 
+          score,
+          level: score >= 3 ? 'good' : 'weak',
+          crackTime: score >= 3 ? 'Secure' : 'Vulnerable',
+          entropy, 
           suggestions: [] 
         },
         options: DEFAULT_PASSWORD_OPTIONS,
         generatedAt: Date.now(),
       });
     } else {
-      const timeoutId = setTimeout(() => {
-        void generatePassword();
-      }, 300);
-      return () => clearTimeout(timeoutId);
+      void generatePassword();
     }
   }, [generatePassword, currentPassword]);
 
@@ -223,8 +243,8 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
             style={{ width: '100%' }}
             min="8"
             max="64"
-            value={options.length}
-            onChange={(e) => handleOptionChange('length', Number(e.target.value))}
+            value={localLength}
+            onChange={(e) => setLocalLength(Number(e.target.value))}
             aria-label="Password length"
           />
         </div>

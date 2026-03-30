@@ -387,7 +387,7 @@ export function extractUrls(html: string): string[] {
   }
 
   if (urls.size === 0) {
-    console.warn(
+    log.warn(
       'Extracted 0 unique URLs. RAW HTML START:\n' + html.substring(0, 1500) + '\nRAW HTML END'
     );
   } else {

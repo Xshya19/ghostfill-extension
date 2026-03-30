@@ -149,9 +149,7 @@ const App: React.FC = () => {
         log.error('Failed to initialize app', e);
       } finally {
         if (mounted) {
-          setTimeout(() => {
-            if (mounted) {setIsInitialized(true);}
-          }, 100);
+          setIsInitialized(true);
         }
       }
     };

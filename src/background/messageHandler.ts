@@ -7,20 +7,13 @@ import { storageService } from '../services/storageService';
 import {
   ExtensionMessage,
   ExtensionResponse,
-  Email,
-  EmailAccount,
-  EmailService,
-  GeneratedPassword,
   PasswordHistoryItem,
-  PasswordOptions,
-  DEFAULT_SETTINGS,
 } from '../types';
 import { createLogger } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
 import { notifySuccess, notifyError, resetNotificationSession } from './notifications';
 import { ensureOffscreenDocument } from './offscreenManager';
 import {
-  stopEmailPolling,
   startFastOTPPolling,
   stopFastOTPPolling,
   isActivationTab,
@@ -113,7 +106,10 @@ async function handleMessage(
       // 4. Clear linkService activation history/queue so old links don't replay
       linkService.clearHistory();
 
-      // 5. Broadcast RESET_STATE to all content scripts so FAB badges clear
+      // 5. Clear inbox in storage so popup shows empty state immediately
+      await storageService.set('inbox', []);
+
+      // 6. Broadcast RESET_STATE to all content scripts so FAB badges clear
       chrome.tabs.query({}, (tabs) => {
         for (const tab of tabs) {
           if (tab.id) {

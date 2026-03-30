@@ -1,3 +1,0 @@
-﻿src/background/mlMessageHandler.ts(36,15): error TS2552: Cannot find name 'response'. Did you mean 'Response'?
-src/background/mlMessageHandler.ts(37,55): error TS2552: Cannot find name 'response'. Did you mean 'Response'?
-src/background/mlMessageHandler.ts(39,65): error TS2552: Cannot find name 'response'. Did you mean 'Response'?

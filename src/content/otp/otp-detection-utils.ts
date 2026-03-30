@@ -114,9 +114,9 @@ export function generateGroupId(prefix: string, hint?: string): string {
  */
 export class VisibilityEngine {
   static isVisible(el: HTMLElement): boolean {
-    if (!el.isConnected) return false;
+    if (!el.isConnected) {return false;}
     const rect = el.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return false;
+    if (rect.width <= 0 || rect.height <= 0) {return false;}
 
     let current: HTMLElement | null = el;
     let depth = 0;
@@ -155,7 +155,7 @@ export class KeywordMatcher {
   }
 
   static isSearchInput(input: HTMLInputElement): boolean {
-    if (input.type === 'search') return true;
+    if (input.type === 'search') {return true;}
     const combined = [
       input.name ?? '',
       input.id ?? '',
@@ -179,14 +179,14 @@ export class LabelResolver {
       const label = safeQuerySelector<HTMLLabelElement>(document, `label[for="${escapeCSS(input.id)}"]`);
       if (label?.textContent) {
         const text = label.textContent.trim();
-        if (text.length <= OTP_DETECTION_CONFIG.MAX_LABEL_TEXT_LENGTH) return text.toLowerCase();
+        if (text.length <= OTP_DETECTION_CONFIG.MAX_LABEL_TEXT_LENGTH) {return text.toLowerCase();}
       }
     }
 
     const wrapping = input.closest('label');
     if (wrapping?.textContent) {
       const text = wrapping.textContent.trim();
-      if (text.length <= OTP_DETECTION_CONFIG.MAX_LABEL_TEXT_LENGTH) return text.toLowerCase();
+      if (text.length <= OTP_DETECTION_CONFIG.MAX_LABEL_TEXT_LENGTH) {return text.toLowerCase();}
     }
 
     const labelledBy = input.getAttribute('aria-labelledby');
@@ -194,11 +194,11 @@ export class LabelResolver {
       const texts: string[] = [];
       for (const id of labelledBy.split(/\s+/)) {
         const el = document.getElementById(id.trim());
-        if (el?.textContent) texts.push(el.textContent.trim());
+        if (el?.textContent) {texts.push(el.textContent.trim());}
       }
       if (texts.length > 0) {
         const combined = texts.join(' ');
-        if (combined.length <= OTP_DETECTION_CONFIG.MAX_LABEL_TEXT_LENGTH) return combined.toLowerCase();
+        if (combined.length <= OTP_DETECTION_CONFIG.MAX_LABEL_TEXT_LENGTH) {return combined.toLowerCase();}
       }
     }
 
@@ -216,17 +216,17 @@ export class SelectorGenerator {
   static generate(el: HTMLInputElement): string {
     const strategies: Array<() => string | null> = [
       () => {
-        if (!el.id) return null;
+        if (!el.id) {return null;}
         const sel = `#${escapeCSS(el.id)}`;
         return this.verify(sel, el) ? sel : null;
       },
       () => {
-        if (!el.name) return null;
+        if (!el.name) {return null;}
         const sel = `input[name="${escapeCSS(el.name)}"]`;
         return this.verify(sel, el) ? sel : null;
       },
       () => {
-        if (el.autocomplete !== 'one-time-code') return null;
+        if (el.autocomplete !== 'one-time-code') {return null;}
         const sel = 'input[autocomplete="one-time-code"]';
         return this.verify(sel, el) ? sel : null;
       },
@@ -234,33 +234,33 @@ export class SelectorGenerator {
         for (const attr of el.attributes) {
           if (attr.name.startsWith('data-') && attr.value) {
             const sel = `input[${attr.name}="${escapeCSS(attr.value)}"]`;
-            if (this.verify(sel, el)) return sel;
+            if (this.verify(sel, el)) {return sel;}
           }
         }
         return null;
       },
       () => {
-        if (!el.className || typeof el.className !== 'string') return null;
+        if (!el.className || typeof el.className !== 'string') {return null;}
         const valid = el.className
           .split(/\s+/)
           .filter((c) => c.length > 1 && /^[a-zA-Z_-][\w-]*$/.test(c))
           .slice(0, OTP_DETECTION_CONFIG.MAX_CLASS_SELECTOR_COUNT);
-        if (valid.length === 0) return null;
+        if (valid.length === 0) {return null;}
         const sel = `input.${valid.map(escapeCSS).join('.')}`;
         return this.verify(sel, el) ? sel : null;
       },
       () => {
         const parent = el.parentElement;
-        if (!parent) return null;
+        if (!parent) {return null;}
         const siblings = Array.from(parent.querySelectorAll(':scope > input'));
         const idx = siblings.indexOf(el);
-        if (idx < 0) return null;
+        if (idx < 0) {return null;}
         let parentSel = '';
         if (parent.id) {
           parentSel = `#${escapeCSS(parent.id)}`;
         } else if (parent.className && typeof parent.className === 'string') {
           const cls = parent.className.split(/\s+/).filter((c) => /^[a-zA-Z_-][\w-]*$/.test(c)).slice(0, 1);
-          if (cls.length > 0 && cls[0]) parentSel = `.${escapeCSS(cls[0])}`;
+          if (cls.length > 0 && cls[0]) {parentSel = `.${escapeCSS(cls[0])}`;}
         }
         const sel = parentSel ? `${parentSel} > input:nth-of-type(${idx + 1})` : `input:nth-of-type(${idx + 1})`;
         return this.verify(sel, el) ? sel : null;
@@ -271,7 +271,7 @@ export class SelectorGenerator {
     for (const strategy of strategies) {
       try {
         const sel = strategy();
-        if (sel) return sel;
+        if (sel) {return sel;}
       } catch { /* next strategy */ }
     }
 
@@ -292,7 +292,7 @@ export class SelectorGenerator {
     let current: HTMLElement | null = el;
     while (current && current !== document.body && current !== document.documentElement) {
       const parentElement: HTMLElement | null = current.parentElement;
-      if (!parentElement) break;
+      if (!parentElement) {break;}
       const tag = current.tagName.toLowerCase();
       const siblings = Array.from(parentElement.children);
       const index = siblings.indexOf(current) + 1;
@@ -376,7 +376,7 @@ export class FieldRegistry {
   getMaxScore(): number {
     let max = 0;
     for (const field of this.map.values()) {
-      if (field.score > max) max = field.score;
+      if (field.score > max) {max = field.score;}
     }
     return max;
   }

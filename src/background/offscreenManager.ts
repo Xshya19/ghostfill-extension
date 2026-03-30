@@ -67,8 +67,14 @@ async function hasOffscreenDocument(): Promise<boolean> {
   }
   
   // Fallback: search for it in clients
-  const contexts = await (chrome.runtime as any).getContexts({
-    contextTypes: [(chrome.runtime as any).ContextType.OFFSCREEN_DOCUMENT],
+  interface RuntimeContext { contextType: string }
+  interface RuntimeWithContexts {
+    getContexts(opts: { contextTypes: string[] }): Promise<RuntimeContext[]>;
+    ContextType: { OFFSCREEN_DOCUMENT: string };
+  }
+  const rt = chrome.runtime as unknown as RuntimeWithContexts;
+  const contexts = await rt.getContexts({
+    contextTypes: [rt.ContextType.OFFSCREEN_DOCUMENT],
   });
   return contexts.length > 0;
 }
@@ -86,7 +92,7 @@ async function verifyOffscreenReady(retries = 5): Promise<void> {
       if (response?.status === 'pong') {
         return;
       }
-    } catch (e) {
+    } catch {
       // Ignore and retry
     }
     await new Promise(r => { setTimeout(r, 100 * (i + 1)); });
