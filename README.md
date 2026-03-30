@@ -61,7 +61,7 @@ GhostFill isn't just a basic email generator. It's an intelligent AI-backed loca
 <td width="50%">
 
 ### 📬 Resilient Email Engine
-Powered by 10 independent providers running in parallel. GhostFill features **intelligent health scoring**, automatic fallback mechanisms with exponential backoff, and AES-encrypted session-aware cache resets. Never lose an inbox.
+Powered by 7 independent, highly-vetted providers running in parallel. GhostFill features **intelligent health scoring**, automatic fallback mechanisms with exponential backoff, and AES-encrypted session-aware cache resets. Never lose an inbox.
 
 ### 🔐 Unhackable Passwords
 Generate cryptographically impregnable passwords tailored to standard requirements. One-click copy, history logs, and instant auto-injection into detected application password fields.
@@ -74,6 +74,9 @@ Say goodbye to "Click here to verify". Detected link activations are dynamically
 
 ### 👻 The Floating Ghost
 Your ever-present companion. Sits safely isolated within a **Shadow DOM** on every webpage. Watches for OTP requirements using aggressive multi-strategy heuristics and a Proactive Shadow Scanner custom-built for modern SPAs.
+
+### 💎 Premium Fluid UI
+The entire frontend is powered by a custom **mass-spring-damper physics engine (Framer Motion)**. Enjoy liquid-smooth spatial routing, hardware-accelerated glassmorphism, and satisfying micro-interactions that feel natively integrated into your OS.
 
 ### 📋 Smart Form Autofill
 A framework-aware form scanner designed to handle React, Vue, Angular, and Vanilla JS forms cleanly. Automatically injects standard fields, usernames, and dynamic OTP boxes.
@@ -132,7 +135,7 @@ GhostFill’s complex workflow is highly modular, split between background servi
 │                    │                                              │  │
 │                    │  ┌─────────────────┐  ┌──────────────────┐   │  │
 │                    │  │  EmailService   │  │  StorageService  │   │  │
-│                    │  │  10 providers   │  │  AES-256 encrypt │   │  │
+│                    │  │  7 providers    │  │  AES-256 encrypt │   │  │
 │                    │  │  health scoring │  │  session / local │   │  │
 │                    │  └─────────────────┘  └──────────────────┘   │  │
 │                    └──────────────────────────────────────────────┘  │
@@ -160,7 +163,7 @@ GhostFill’s complex workflow is highly modular, split between background servi
 | `src/background/pollingManager.ts` | Handles multi-speed polling modes, smart dedup caching, and alarm scheduling. |
 | `src/services/smartDetectionService.ts` | The brains of the 5-layer pipeline; utilizes AES-encrypted local cache logic. |
 | `src/services/linkService.ts` | Securely manages hidden background tabs for silent, seamless email activation. |
-| `src/services/emailServices/index.ts` | Aggregates and maintains our heavy 10-provider email strategy. |
+| `src/services/emailServices/index.ts` | Aggregates and maintains our heavy 7-provider email strategy. |
 | `src/content/otpPageDetector.ts` | Listens for inputs needing OTP codes. |
 | `src/offscreen/inferenceEngine.ts` | Local execution environment for ONNX AI models to find forms & OTP intents! |
 
