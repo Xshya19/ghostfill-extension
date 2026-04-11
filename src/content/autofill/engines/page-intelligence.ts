@@ -1,5 +1,5 @@
 import { FrameworkType, PageContext } from '../../../types/form.types';
-import { OTPDetectionCore, OTP_PATTERNS, OTP_CONSTANTS } from '../../../utils/otp-detection-core';
+import { OTP_PATTERNS, OTP_CONSTANTS } from '../../../utils/otp-detection-core';
 import { safeQuerySelector, safeQuerySelectorAll } from '../utils/dom-utils';
 
 /**
@@ -16,9 +16,7 @@ export class PageIntelligence {
   static analyze(): PageContext {
     const url = window.location.href.toLowerCase();
     const title = document.title.toLowerCase();
-    const bodyText = (document.body?.textContent ?? '')
-      .slice(0, this.SCAN_LIMIT)
-      .toLowerCase();
+    const bodyText = (document.body?.textContent ?? '').slice(0, this.SCAN_LIMIT).toLowerCase();
     const metaContent = safeQuerySelectorAll<HTMLMetaElement>(document, 'meta')
       .map((m) => (m.getAttribute('content') ?? '').toLowerCase())
       .join(' ');
@@ -53,7 +51,7 @@ export class PageIntelligence {
     // ── Expected OTP Length Detection ──────────────────────
     let expectedOTPLength: number | null = null;
     const lengthMatch = bodyText.match(/(\d)[- ]?digit\s*(code|otp|pin|number)/i);
-    if (lengthMatch) {
+    if (lengthMatch?.[1]) {
       const parsed = parseInt(lengthMatch[1], 10);
       if (parsed >= OTP_CONSTANTS.MIN_OTP_LENGTH && parsed <= OTP_CONSTANTS.MAX_OTP_LENGTH) {
         expectedOTPLength = parsed;
@@ -90,7 +88,12 @@ export class PageIntelligence {
         return 'react';
       }
       const rootEl = document.getElementById('root');
-      if (rootEl && Object.keys(rootEl).some(k => k.startsWith('__reactFiber') || k.startsWith('__reactInternals'))) {
+      if (
+        rootEl &&
+        Object.keys(rootEl).some(
+          (k) => k.startsWith('__reactFiber') || k.startsWith('__reactInternals')
+        )
+      ) {
         return 'react';
       }
       // Next.js Pages Router
@@ -102,21 +105,32 @@ export class PageIntelligence {
         return 'react';
       }
       // Fallback: common React root ids
-      if (document.getElementById('root') || document.getElementById('__next') ||
-          document.getElementById('app')) {
+      if (
+        document.getElementById('root') ||
+        document.getElementById('__next') ||
+        document.getElementById('app')
+      ) {
         // Confirm it actually has a React internal key before committing
-        const root = document.getElementById('root') ??
-                     document.getElementById('__next') ??
-                     document.getElementById('app');
-        if (root && Object.keys(root).some(k => k.startsWith('__reactFiber') || k.startsWith('__reactInternalInstance'))) {
+        const root =
+          document.getElementById('root') ??
+          document.getElementById('__next') ??
+          document.getElementById('app');
+        if (
+          root &&
+          Object.keys(root).some(
+            (k) => k.startsWith('__reactFiber') || k.startsWith('__reactInternalInstance')
+          )
+        ) {
           return 'react';
         }
       }
 
       // ── Vue ───────────────────────────────────────────────────────────────
       // Vue 3: __vue_app__ is set on the mount element
-      if (safeQuerySelector(document, '[__vue_app__]') ||
-          safeQuerySelector(document, '[data-v-app]')) {
+      if (
+        safeQuerySelector(document, '[__vue_app__]') ||
+        safeQuerySelector(document, '[data-v-app]')
+      ) {
         return 'vue';
       }
       // Vue 2: __vue__ is set on elements managed by Vue
@@ -126,19 +140,22 @@ export class PageIntelligence {
       }
 
       // ── Angular ──────────────────────────────────────────────────────────
-      if (safeQuerySelector(document, '[ng-version]') ||
-          safeQuerySelector(document, '[_nghost-ng-c]') ||
-          safeQuerySelector(document, '[ng-app]') ||
-          safeQuerySelector(document, 'app-root, [_nghost]')) {
+      if (
+        safeQuerySelector(document, '[ng-version]') ||
+        safeQuerySelector(document, '[_nghost-ng-c]') ||
+        safeQuerySelector(document, '[ng-app]') ||
+        safeQuerySelector(document, 'app-root, [_nghost]')
+      ) {
         return 'angular';
       }
 
       // ── Svelte ────────────────────────────────────────────────────────────
-      if (safeQuerySelector(document, '[data-svelte-h]') ||
-          ('__svelte' in window)) {
+      if (safeQuerySelector(document, '[data-svelte-h]') || '__svelte' in window) {
         return 'vue'; // treat Svelte like Vue for event purposes
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     return 'unknown';
   }
 

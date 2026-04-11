@@ -9,7 +9,7 @@ import * as ort from 'onnxruntime-web';
 import { FIELD_CLASSES } from '../../content/extractor';
 import { createLogger } from '../../utils/logger';
 import { safeSendMessage } from '../../utils/messaging';
-import { FeatureExtractorV2, FormContext } from './FeatureExtractorV2';
+import { FeatureExtractorV2 } from './FeatureExtractorV2';
 
 const log = createLogger('MLService');
 
@@ -52,13 +52,37 @@ export class MLService {
         ort.env.wasm.wasmPaths = chrome.runtime.getURL('');
         ort.env.wasm.numThreads = 1;
 
-        // The Sentinel Brain V2 model currently relies on external ONNX data files that
-        // are not reliably supported in every content-script environment. Fall back
-        // cleanly instead of throwing repeated runtime errors.
-        this.unavailable = true;
+        const modelUrl = chrome.runtime.getURL('models/sentinel_brain_v2.onnx');
+        const dataUrl = chrome.runtime.getURL('models/sentinel_brain_v2.onnx.data');
+
+        const [modelResp, dataResp] = await Promise.all([fetch(modelUrl), fetch(dataUrl)]);
+
+        if (!modelResp.ok || !dataResp.ok) {
+          throw new Error(
+            `Failed to fetch model files: Model=${modelResp.status}, Data=${dataResp.status}`
+          );
+        }
+
+        const [modelBuffer, dataBuffer] = await Promise.all([
+          modelResp.arrayBuffer(),
+          dataResp.arrayBuffer(),
+        ]);
+
+        this.session = await ort.InferenceSession.create(modelBuffer, {
+          executionProviders: ['wasm'],
+          graphOptimizationLevel: 'all',
+          externalData: [
+            {
+              path: 'sentinel_brain_v2.onnx.data',
+              data: new Uint8Array(dataBuffer),
+            },
+          ],
+        });
+
+        log.info('ML Service initialized successfully with ONNX model');
       } catch (e) {
         this.unavailable = true;
-        console.debug('GhostFill: Grandmaster ML V2 unavailable, falling back to heuristics.', e);
+        console.debug('GhostFill: ML V2 unavailable, falling back to heuristics.', e);
       } finally {
         this.initPromise = null;
       }
@@ -76,25 +100,27 @@ export class MLService {
       try {
         const tensor = new ort.Tensor('float32', features, [1, 128]);
         const results = await this.session.run({ input: tensor });
-        
+
         // Fix: Detect tensor name dynamically to match different model versions
         const outputTensor = results.output || results.logits || Object.values(results)[0];
         if (!outputTensor) {
           throw new Error('No output tensor found in results');
         }
-        
+
         const output = outputTensor.data as Float32Array;
         const probabilities = this.softmax(output);
-        
+
         let maxIdx = 0;
         for (let i = 1; i < probabilities.length; i++) {
-          if (probabilities[i] > probabilities[maxIdx]) {maxIdx = i;}
+          if (probabilities[i]! > probabilities[maxIdx]!) {
+            maxIdx = i;
+          }
         }
 
         // Dispose of the input tensor
         tensor.dispose();
 
-        return { type: FIELD_CLASSES[maxIdx], confidence: probabilities[maxIdx] };
+        return { type: FIELD_CLASSES[maxIdx]!, confidence: probabilities[maxIdx]! };
       } catch (e) {
         console.error('GhostFill: Local inference failed', e);
       }
@@ -105,7 +131,7 @@ export class MLService {
       try {
         const response: any = await safeSendMessage({
           action: 'CLASSIFY_FIELD',
-          payload: { 
+          payload: {
             features: { structural: Array.from(features) } as any,
             context: {
               isVerificationPage: false,
@@ -117,15 +143,15 @@ export class MLService {
               hasOTPLanguage: false,
               expectedOTPLength: null,
               provider: null,
-              pageSignals: []
-            }
-          }
+              pageSignals: [],
+            },
+          },
         });
 
         if (response?.success && response.prediction) {
           return {
             type: response.prediction.label,
-            confidence: response.prediction.confidence
+            confidence: response.prediction.confidence,
           };
         }
       } catch (e) {
@@ -139,21 +165,21 @@ export class MLService {
   private static softmax(logits: Float32Array): Float32Array {
     let maxLogit = -Infinity;
     for (let i = 0; i < logits.length; i++) {
-      if (logits[i] > maxLogit) {
-        maxLogit = logits[i];
+      if (logits[i]! > maxLogit) {
+        maxLogit = logits[i]!;
       }
     }
-    
+
     const exps = new Float32Array(logits.length);
     let sum = 0;
     for (let i = 0; i < logits.length; i++) {
-      exps[i] = Math.exp(logits[i] - maxLogit);
-      sum += exps[i];
+      exps[i] = Math.exp(logits[i]! - maxLogit);
+      sum += exps[i]!;
     }
-    
+
     const results = new Float32Array(logits.length);
     for (let i = 0; i < logits.length; i++) {
-      results[i] = exps[i] / sum;
+      results[i] = exps[i]! / sum;
     }
     return results;
   }

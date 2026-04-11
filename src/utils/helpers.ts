@@ -77,7 +77,6 @@ export async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
-
 /**
  * Generate unique CSS selector for element
  * FIX: Improved selector uniqueness by:
@@ -242,7 +241,7 @@ export function getElementLabel(input: HTMLInputElement | HTMLTextAreaElement): 
       if (label) {
         return label.textContent?.trim() || '';
       }
-    } catch (e) {
+    } catch {
       // Ignore syntax errors from invalid selectors
     }
   }
@@ -314,11 +313,9 @@ export function deepQuerySelectorAll<T extends Element>(
 
     for (let i = 0; i < scanLimit; i++) {
       const el = allElements[i];
-      if (el.shadowRoot) {
+      if (el?.shadowRoot) {
         try {
-          results.push(
-            ...deepQuerySelectorAll<T>(selector, el.shadowRoot, depth + 1)
-          );
+          results.push(...deepQuerySelectorAll<T>(selector, el.shadowRoot, depth + 1));
         } catch {
           // Shadow root access denied or detached
         }

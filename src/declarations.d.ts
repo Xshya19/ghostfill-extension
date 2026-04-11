@@ -3,8 +3,8 @@ declare module '*.jpg';
 declare module '*.jpeg';
 declare module '*.svg';
 declare module '*.gif';
+declare module '*.mp3';
+declare module '*.onnx';
+declare module '*.wasm';
 
-interface WeakRef<T> {
-  readonly ref: T | undefined;
-  deref(): T | undefined;
-}
+declare const process: { env: Record<string, string | undefined> };

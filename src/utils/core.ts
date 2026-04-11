@@ -9,7 +9,7 @@ const log = createLogger('Core');
  * Generate a cryptographically secure random number between 0 (inclusive) and 1 (exclusive)
  */
 export function secureMathRandom(): number {
-  return crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296;
+  return crypto.getRandomValues(new Uint32Array(1))[0]! / 4294967296;
 }
 
 /**
@@ -20,16 +20,31 @@ export function generateId(): string {
 }
 
 /**
- * Generate a random string of specified length
+ * Generate a cryptographically secure random string of specified length
+ * Uses rejection sampling to avoid modulo bias
  */
 export function generateRandomString(length: number, charset: string): string {
-  const array = new Uint32Array(length);
-  crypto.getRandomValues(array);
-
-  let result = '';
-  for (let i = 0; i < length; i++) {
-    result += charset[array[i] % charset.length];
+  if (charset.length <= 1) {
+    return charset.repeat(length);
   }
+
+  // Compute the largest uint32 that can be drawn without bias
+  const limit = Math.floor(0x100000000 / charset.length) * charset.length;
+
+  const array = new Uint32Array(length);
+  let result = '';
+  let offset = 0;
+
+  while (offset < length) {
+    crypto.getRandomValues(array);
+    for (let i = 0; i < array.length && offset < length; i++) {
+      if (array[i]! < limit) {
+        result += charset[array[i]! % charset.length];
+        offset++;
+      }
+    }
+  }
+
   return result;
 }
 
@@ -187,7 +202,6 @@ export function formatDateTime(timestamp: number | string | Date): string {
   return `${formatDate(timestamp)} ${formatTime(timestamp)}`;
 }
 
-
 /**
  * Format file size
  */
@@ -296,7 +310,7 @@ export function parseEmail(email: string): { login: string; domain: string } | n
   if (!match) {
     return null;
   }
-  return { login: match[1], domain: match[2] };
+  return { login: match[1]!, domain: match[2]! };
 }
 
 /**
@@ -318,4 +332,3 @@ export function getDomain(url: string): string {
     return '';
   }
 }
-

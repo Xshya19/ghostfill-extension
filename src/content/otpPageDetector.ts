@@ -78,7 +78,7 @@ interface SignalScore {
   readonly signal: string;
   readonly weight: number;
   readonly matched: boolean;
-  readonly detail?: string;
+  readonly detail?: string | undefined;
 }
 
 interface DetectionMetrics {
@@ -213,31 +213,84 @@ const VALID_OTP_INPUT_TYPES = new Set(['text', 'tel', 'number', '']);
 // ═══════════════════════════════════════════════════════════════
 
 const OTP_KEYWORDS: ReadonlySet<string> = new Set([
-  'otp', 'code', 'verify', 'verification', 'token', 'pin',
-  '2fa', 'mfa', 'totp', 'passcode', 'one-time', 'onetime',
-  'auth-code', 'authcode', 'security-code', 'securitycode',
-  'confirmation', 'confirm-code', 'sms-code', 'smscode',
-  'twofa', 'twofactor', 'authenticator',
+  'otp',
+  'code',
+  'verify',
+  'verification',
+  'token',
+  'pin',
+  '2fa',
+  'mfa',
+  'totp',
+  'passcode',
+  'one-time',
+  'onetime',
+  'auth-code',
+  'authcode',
+  'security-code',
+  'securitycode',
+  'confirmation',
+  'confirm-code',
+  'sms-code',
+  'smscode',
+  'twofa',
+  'twofactor',
+  'authenticator',
 ]);
 
 const OTP_CONTEXT_PHRASES: readonly string[] = [
-  'verification code', 'verify code', 'enter code', 'enter the code',
-  'one-time password', 'one time password', 'otp', 'authentication code',
-  'security code', 'confirmation code', 'sms code', 'two-factor',
-  'two factor', '2fa', 'mfa', 'we sent', "we've sent", 'code sent',
-  'code was sent', 'digit code', 'check your phone', 'check your email',
-  'verify your identity', 'verify your account', 'enter verification',
-  'enter your code', 'enter otp',
+  'verification code',
+  'verify code',
+  'enter code',
+  'enter the code',
+  'one-time password',
+  'one time password',
+  'otp',
+  'authentication code',
+  'security code',
+  'confirmation code',
+  'sms code',
+  'two-factor',
+  'two factor',
+  '2fa',
+  'mfa',
+  'we sent',
+  "we've sent",
+  'code sent',
+  'code was sent',
+  'digit code',
+  'check your phone',
+  'check your email',
+  'verify your identity',
+  'verify your account',
+  'enter verification',
+  'enter your code',
+  'enter otp',
 ];
 
 const SEARCH_INDICATORS: ReadonlySet<string> = new Set([
-  'search', 'query', 'q', 'keyword', 'find', 'lookup',
+  'search',
+  'query',
+  'q',
+  'keyword',
+  'find',
+  'lookup',
 ]);
 
 /** MutationObserver attribute filter */
 const OBSERVED_ATTRIBUTES: readonly string[] = [
-  'type', 'name', 'id', 'placeholder', 'maxlength', 'autocomplete',
-  'inputmode', 'aria-label', 'style', 'class', 'hidden', 'disabled',
+  'type',
+  'name',
+  'id',
+  'placeholder',
+  'maxlength',
+  'autocomplete',
+  'inputmode',
+  'aria-label',
+  'style',
+  'class',
+  'hidden',
+  'disabled',
 ];
 
 // ═══════════════════════════════════════════════════════════════
@@ -253,7 +306,9 @@ function pct(n: number): string {
 }
 
 function truncate(s: string | undefined | null, max: number): string {
-  if (!s) {return '';}
+  if (!s) {
+    return '';
+  }
   return s.length > max ? s.substring(0, max) + '…' : s;
 }
 
@@ -265,10 +320,7 @@ function escapeCSS(value: string): string {
   }
 }
 
-function safeQuerySelector<T extends Element>(
-  root: ParentNode,
-  selector: string
-): T | null {
+function safeQuerySelector<T extends Element>(root: ParentNode, selector: string): T | null {
   try {
     return root.querySelector<T>(selector);
   } catch {
@@ -291,10 +343,14 @@ class VisibilityEngine {
    * up to CONFIG.VISIBILITY_MAX_DEPTH ancestor levels.
    */
   static isVisible(el: HTMLElement): boolean {
-    if (!el.isConnected) {return false;}
+    if (!el.isConnected) {
+      return false;
+    }
 
     const rect = el.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) {return false;}
+    if (rect.width <= 0 || rect.height <= 0) {
+      return false;
+    }
 
     let current: HTMLElement | null = el;
     let depth = 0;
@@ -342,14 +398,18 @@ class KeywordMatcher {
    * Check if input looks like a search field.
    */
   static isSearchInput(input: HTMLInputElement): boolean {
-    if (input.type === 'search') {return true;}
+    if (input.type === 'search') {
+      return true;
+    }
 
     const combined = [
       input.name ?? '',
       input.id ?? '',
       input.placeholder ?? '',
       input.getAttribute('aria-label') ?? '',
-    ].join(' ').toLowerCase();
+    ]
+      .join(' ')
+      .toLowerCase();
 
     const tokens = combined.split(/[^a-z0-9]+/);
     return tokens.some((t) => t.length > 0 && SEARCH_INDICATORS.has(t));
@@ -425,21 +485,27 @@ class SelectorGenerator {
     const strategies: Array<() => string | null> = [
       // Strategy 1: ID
       () => {
-        if (!el.id) {return null;}
+        if (!el.id) {
+          return null;
+        }
         const sel = `#${escapeCSS(el.id)}`;
         return this.verify(sel, el) ? sel : null;
       },
 
       // Strategy 2: name
       () => {
-        if (!el.name) {return null;}
+        if (!el.name) {
+          return null;
+        }
         const sel = `input[name="${escapeCSS(el.name)}"]`;
         return this.verify(sel, el) ? sel : null;
       },
 
       // Strategy 3: autocomplete=one-time-code
       () => {
-        if (el.autocomplete !== 'one-time-code') {return null;}
+        if (el.autocomplete !== 'one-time-code') {
+          return null;
+        }
         const sel = 'input[autocomplete="one-time-code"]';
         return this.verify(sel, el) ? sel : null;
       },
@@ -449,7 +515,9 @@ class SelectorGenerator {
         for (const attr of el.attributes) {
           if (attr.name.startsWith('data-') && attr.value) {
             const sel = `input[${attr.name}="${escapeCSS(attr.value)}"]`;
-            if (this.verify(sel, el)) {return sel;}
+            if (this.verify(sel, el)) {
+              return sel;
+            }
           }
         }
         return null;
@@ -457,12 +525,16 @@ class SelectorGenerator {
 
       // Strategy 5: class names (max 2)
       () => {
-        if (!el.className || typeof el.className !== 'string') {return null;}
+        if (!el.className || typeof el.className !== 'string') {
+          return null;
+        }
         const valid = el.className
           .split(/\s+/)
           .filter((c) => c.length > 1 && /^[a-zA-Z_-][\w-]*$/.test(c))
           .slice(0, CONFIG.MAX_CLASS_SELECTOR_COUNT);
-        if (valid.length === 0) {return null;}
+        if (valid.length === 0) {
+          return null;
+        }
         const sel = `input.${valid.map(escapeCSS).join('.')}`;
         return this.verify(sel, el) ? sel : null;
       },
@@ -470,11 +542,15 @@ class SelectorGenerator {
       // Strategy 6: nth-of-type scoped to parent
       () => {
         const parent = el.parentElement;
-        if (!parent) {return null;}
+        if (!parent) {
+          return null;
+        }
 
         const siblings = Array.from(parent.querySelectorAll(':scope > input'));
         const idx = siblings.indexOf(el);
-        if (idx < 0) {return null;}
+        if (idx < 0) {
+          return null;
+        }
 
         let parentSel = '';
         if (parent.id) {
@@ -502,7 +578,9 @@ class SelectorGenerator {
     for (const strategy of strategies) {
       try {
         const sel = strategy();
-        if (sel) {return sel;}
+        if (sel) {
+          return sel;
+        }
       } catch {
         /* next strategy */
       }
@@ -527,7 +605,9 @@ class SelectorGenerator {
 
     while (current && current !== document.body && current !== document.documentElement) {
       const parentElement: HTMLElement | null = current.parentElement;
-      if (!parentElement) {break;}
+      if (!parentElement) {
+        break;
+      }
 
       const tag = current.tagName.toLowerCase();
       const siblings = Array.from(parentElement.children);
@@ -630,7 +710,9 @@ class FieldRegistry {
   getMaxScore(): number {
     let max = 0;
     for (const field of this.map.values()) {
-      if (field.score > max) {max = field.score;}
+      if (field.score > max) {
+        max = field.score;
+      }
     }
     return max;
   }
@@ -645,11 +727,11 @@ class SplitDigitDetector {
    * Find groups of contiguous maxlength=1 inputs (split-digit OTP).
    */
   static detect(inputs: HTMLInputElement[]): HTMLInputElement[][] {
-    const candidates = inputs.filter(
-      (i) => i.maxLength === 1 && !KeywordMatcher.isSearchInput(i)
-    );
+    const candidates = inputs.filter((i) => i.maxLength === 1 && !KeywordMatcher.isSearchInput(i));
 
-    if (candidates.length < CONFIG.SPLIT_DIGIT_MIN) {return [];}
+    if (candidates.length < CONFIG.SPLIT_DIGIT_MIN) {
+      return [];
+    }
 
     const groups: HTMLInputElement[][] = [];
     let currentGroup: HTMLInputElement[] = [];
@@ -702,7 +784,9 @@ class SplitDigitDetector {
     for (let depth = 1; depth <= CONFIG.CONTIGUITY_MAX_DEPTH; depth++) {
       const ancestorA = this.nthAncestor(a, depth);
       const ancestorB = this.nthAncestor(b, depth);
-      if (ancestorA && ancestorA === ancestorB) {return true;}
+      if (ancestorA && ancestorA === ancestorB) {
+        return true;
+      }
     }
 
     return false;
@@ -739,14 +823,18 @@ class SmallInputClusterDetector {
       );
     });
 
-    if (small.length < CONFIG.SPLIT_DIGIT_MIN) {return [];}
+    if (small.length < CONFIG.SPLIT_DIGIT_MIN) {
+      return [];
+    }
 
     // Group by shared ancestor (up to 2 levels)
     const parentMap = new Map<Element, HTMLInputElement[]>();
 
     for (const el of small) {
       const parent = el.parentElement?.parentElement ?? el.parentElement;
-      if (!parent) {continue;}
+      if (!parent) {
+        continue;
+      }
 
       let list = parentMap.get(parent);
       if (!list) {
@@ -759,10 +847,7 @@ class SmallInputClusterDetector {
     const clusters: HTMLInputElement[][] = [];
 
     for (const group of parentMap.values()) {
-      if (
-        group.length < CONFIG.SPLIT_DIGIT_MIN ||
-        group.length > CONFIG.SPLIT_DIGIT_MAX
-      ) {
+      if (group.length < CONFIG.SPLIT_DIGIT_MIN || group.length > CONFIG.SPLIT_DIGIT_MAX) {
         continue;
       }
 
@@ -800,7 +885,9 @@ class AIContainerAnalyzer {
       for (let d = 0; d < 3 && container; d++) {
         container = container.parentElement;
       }
-      if (!container) {continue;}
+      if (!container) {
+        continue;
+      }
 
       let list = containerMap.get(container);
       if (!list) {
@@ -811,20 +898,21 @@ class AIContainerAnalyzer {
     }
 
     for (const group of containerMap.values()) {
-      if (
-        group.length < CONFIG.SPLIT_DIGIT_MIN ||
-        group.length > CONFIG.SPLIT_DIGIT_MAX
-      ) {
+      if (group.length < CONFIG.SPLIT_DIGIT_MIN || group.length > CONFIG.SPLIT_DIGIT_MAX) {
         continue;
       }
 
       // Verify visual similarity
       const widths = group.map((i) => i.getBoundingClientRect().width);
       const avg = widths.reduce((a, b) => a + b, 0) / widths.length;
-      if (!widths.every((w) => Math.abs(w - avg) <= CONFIG.SIZE_VARIANCE_PX)) {continue;}
+      if (!widths.every((w) => Math.abs(w - avg) <= CONFIG.SIZE_VARIANCE_PX)) {
+        continue;
+      }
 
       // Verify valid input types only
-      if (!group.every((i) => VALID_OTP_INPUT_TYPES.has(i.type))) {continue;}
+      if (!group.every((i) => VALID_OTP_INPUT_TYPES.has(i.type))) {
+        continue;
+      }
 
       const groupId = generateGroupId('ai');
       group.forEach((input, idx) => {
@@ -906,7 +994,9 @@ class ToastFeedback {
     setTimeout(() => {
       toast.classList.add('out');
       setTimeout(() => {
-        if (container.isConnected) {container.remove();}
+        if (container.isConnected) {
+          container.remove();
+        }
       }, CONFIG.TOAST_ANIMATION_MS);
     }, CONFIG.TOAST_DURATION_MS);
   }
@@ -927,9 +1017,10 @@ class ToastFeedback {
     const toast = document.createElement('div');
     toast.className = 'toast';
 
-    const icon = type === 'working'
-      ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="spin"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>`
-      : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>`;
+    const icon =
+      type === 'working'
+        ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="spin"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>`
+        : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>`;
 
     setHTML(
       toast,
@@ -963,7 +1054,9 @@ class ToastFeedback {
       setTimeout(() => {
         toast.classList.add('out');
         setTimeout(() => {
-          if (container.isConnected) {container.remove();}
+          if (container.isConnected) {
+            container.remove();
+          }
         }, CONFIG.TOAST_ANIMATION_MS);
       }, durationMs);
     }
@@ -974,7 +1067,9 @@ class ToastFeedback {
   }
 
   private static maskOTP(otp: string): string {
-    if (otp.length <= 2) {return '●'.repeat(otp.length);}
+    if (otp.length <= 2) {
+      return '●'.repeat(otp.length);
+    }
     return '●'.repeat(otp.length - 2) + otp.slice(-2);
   }
 
@@ -1098,13 +1193,11 @@ class ScoringEngine {
         const f = fields.get(el);
         return f?.source === 'split-digit-group';
       });
-      if (alreadyCounted) {continue;}
+      if (alreadyCounted) {
+        continue;
+      }
 
-      signals.push(
-        `small-cluster (${cluster.length} inputs)`,
-        SIGNAL_WEIGHTS.SMALL_CLUSTER,
-        true
-      );
+      signals.push(`small-cluster (${cluster.length} inputs)`, SIGNAL_WEIGHTS.SMALL_CLUSTER, true);
 
       const groupId = generateGroupId('cluster');
       cluster.forEach((input, idx) => {
@@ -1153,10 +1246,18 @@ class ScoringEngine {
     const fieldConfidence = clamp(fields.getMaxScore(), 0, 1);
 
     let contextScore = 0;
-    if (titleMatch) {contextScore += SIGNAL_WEIGHTS.PAGE_TITLE_KEYWORD;}
-    if (bodyMatch) {contextScore += SIGNAL_WEIGHTS.BODY_TEXT_KEYWORD;}
-    if (urlMatch) {contextScore += SIGNAL_WEIGHTS.URL_KEYWORD;}
-    if (hasPassword) {contextScore += SIGNAL_WEIGHTS.LOGIN_FORM_PRESENT;}
+    if (titleMatch) {
+      contextScore += SIGNAL_WEIGHTS.PAGE_TITLE_KEYWORD;
+    }
+    if (bodyMatch) {
+      contextScore += SIGNAL_WEIGHTS.BODY_TEXT_KEYWORD;
+    }
+    if (urlMatch) {
+      contextScore += SIGNAL_WEIGHTS.URL_KEYWORD;
+    }
+    if (hasPassword) {
+      contextScore += SIGNAL_WEIGHTS.LOGIN_FORM_PRESENT;
+    }
     contextScore = clamp(contextScore, CONFIG.CONTEXT_SCORE_MIN, CONFIG.CONTEXT_SCORE_MAX);
 
     const composite = clamp(fieldConfidence + contextScore, 0, 1);
@@ -1228,7 +1329,12 @@ class ScoringEngine {
     const ph = (input.placeholder ?? '').toLowerCase();
     if (ph && (KeywordMatcher.matchesContextPhrase(ph) || KeywordMatcher.matchesKeyword(ph))) {
       inputScore += SIGNAL_WEIGHTS.PLACEHOLDER_KEYWORD;
-      bestSource = this.selectBestSource(bestSource, 'placeholder-attr', inputScore, fields.get(input));
+      bestSource = this.selectBestSource(
+        bestSource,
+        'placeholder-attr',
+        inputScore,
+        fields.get(input)
+      );
       signals.push(
         `placeholder="${truncate(input.placeholder, 30)}"`,
         SIGNAL_WEIGHTS.PLACEHOLDER_KEYWORD,
@@ -1240,7 +1346,12 @@ class ScoringEngine {
     const aria = (input.getAttribute('aria-label') ?? '').toLowerCase();
     if (aria && KeywordMatcher.matchesKeyword(aria)) {
       inputScore += SIGNAL_WEIGHTS.ARIA_LABEL_KEYWORD;
-      bestSource = this.selectBestSource(bestSource, 'aria-label-attr', inputScore, fields.get(input));
+      bestSource = this.selectBestSource(
+        bestSource,
+        'aria-label-attr',
+        inputScore,
+        fields.get(input)
+      );
       signals.push('aria-label match', SIGNAL_WEIGHTS.ARIA_LABEL_KEYWORD, true);
     }
 
@@ -1248,12 +1359,13 @@ class ScoringEngine {
     const labelText = LabelResolver.getAssociatedLabelText(input);
     if (labelText && KeywordMatcher.matchesKeyword(labelText)) {
       inputScore += SIGNAL_WEIGHTS.LABEL_KEYWORD;
-      bestSource = this.selectBestSource(bestSource, 'label-association', inputScore, fields.get(input));
-      signals.push(
-        `label="${truncate(labelText, 30)}"`,
-        SIGNAL_WEIGHTS.LABEL_KEYWORD,
-        true
+      bestSource = this.selectBestSource(
+        bestSource,
+        'label-association',
+        inputScore,
+        fields.get(input)
       );
+      signals.push(`label="${truncate(labelText, 30)}"`, SIGNAL_WEIGHTS.LABEL_KEYWORD, true);
     }
 
     // maxlength 4-8
@@ -1284,8 +1396,12 @@ class ScoringEngine {
   }
 
   private static selectorHint(el: HTMLInputElement): string {
-    if (el.id) {return `#${el.id}`;}
-    if (el.name) {return `[name=${el.name}]`;}
+    if (el.id) {
+      return `#${el.id}`;
+    }
+    if (el.name) {
+      return `[name=${el.name}]`;
+    }
     return el.tagName;
   }
 
@@ -1341,7 +1457,8 @@ class ScoringEngine {
   }
 
   private static pageBodyHasKeyword(): boolean {
-    const text = (document.body?.innerText ?? '')
+    // Use textContent instead of innerText to avoid expensive layout recalculation (reflow)
+    const text = (document.body?.textContent ?? '')
       .toLowerCase()
       .substring(0, CONFIG.MAX_BODY_SCAN_CHARS);
     return KeywordMatcher.matchesContextPhrase(text);
@@ -1401,6 +1518,8 @@ export class OTPPageDetector {
   private focusHandler: ((e: FocusEvent) => void) | null = null;
   private popstateHandler: (() => void) | null = null;
   private unloadHandler: (() => void) | null = null;
+  private formSubmitHandler: ((e: Event) => void) | null = null;
+  private formSubmittedRecently = false;
 
   // ── History patch management ──
   private originalPushState: typeof history.pushState | null = null;
@@ -1436,13 +1555,16 @@ export class OTPPageDetector {
   // ═══════════════════════════════════════════════════════════
 
   init(): void {
-    if (this.destroyed) {return;}
+    if (this.destroyed) {
+      return;
+    }
 
     this.lastUrl = location.href;
 
     this.installMutationObserver();
     this.installFocusListener();
     this.installNavigationWatcher();
+    this.installFormSubmissionListener();
 
     // Initial detection (slight delay for DOM hydration)
     setTimeout(() => {
@@ -1455,7 +1577,9 @@ export class OTPPageDetector {
   }
 
   destroy(): void {
-    if (this.destroyed) {return;}
+    if (this.destroyed) {
+      return;
+    }
     this.destroyed = true;
 
     // Cancel pending detection
@@ -1487,6 +1611,11 @@ export class OTPPageDetector {
       this.unloadHandler = null;
     }
 
+    if (this.formSubmitHandler) {
+      document.removeEventListener('submit', this.formSubmitHandler, true);
+      this.formSubmitHandler = null;
+    }
+
     // Restore history patch
     this.restoreHistoryMethods();
 
@@ -1506,10 +1635,14 @@ export class OTPPageDetector {
   // ═══════════════════════════════════════════════════════════
 
   private installMutationObserver(): void {
-    if (!document.body) {return;}
+    if (!document.body) {
+      return;
+    }
 
     this.mutationObserver = new MutationObserver((mutations) => {
-      if (this.destroyed) {return;}
+      if (this.destroyed) {
+        return;
+      }
 
       const relevant = mutations.some((m) => {
         if (m.type === 'childList' && (m.addedNodes.length > 0 || m.removedNodes.length > 0)) {
@@ -1534,7 +1667,9 @@ export class OTPPageDetector {
 
   private installFocusListener(): void {
     this.focusHandler = (e: FocusEvent) => {
-      if (this.destroyed) {return;}
+      if (this.destroyed) {
+        return;
+      }
       if (e.target instanceof HTMLInputElement) {
         this.scheduleDetection('focus');
       }
@@ -1568,7 +1703,9 @@ export class OTPPageDetector {
   }
 
   private restoreHistoryMethods(): void {
-    if (!this.isHistoryPatched) {return;}
+    if (!this.isHistoryPatched) {
+      return;
+    }
 
     if (this.originalPushState) {
       history.pushState = this.originalPushState;
@@ -1581,10 +1718,135 @@ export class OTPPageDetector {
     this.isHistoryPatched = false;
   }
 
+  /**
+   * Install form submission listener for event-driven polling
+   * Detects when user submits a registration/signup form
+   */
+  private installFormSubmissionListener(): void {
+    this.formSubmitHandler = (e: Event) => {
+      const form = e.target as HTMLFormElement;
+      if (!form || form.tagName !== 'FORM') return;
+
+      // Check if this looks like a registration/signup form
+      const isRegistrationForm = this.isRegistrationForm(form);
+
+      if (isRegistrationForm) {
+        log.info('⚡ Registration form submitted', {
+          action: form.action,
+          method: form.method,
+        });
+
+        this.formSubmittedRecently = true;
+        setTimeout(() => {
+          this.formSubmittedRecently = false;
+        }, 120_000);
+
+        // Notify background script to start ultra-aggressive polling
+        void safeSendMessage({
+          action: 'REGISTRATION_FORM_SUBMITTED',
+          payload: {
+            url: location.href,
+            formAction: form.action,
+            timestamp: Date.now(),
+          },
+        }).catch(() => {});
+      }
+    };
+
+    // Use capture phase to catch the event before it might be stopped
+    document.addEventListener('submit', this.formSubmitHandler, true);
+  }
+
+  /**
+   * Check if a form looks like a registration/signup form
+   */
+  private isRegistrationForm(form: HTMLFormElement): boolean {
+    let score = 0;
+
+    // Check form attributes
+    const action = (form.action || '').toLowerCase();
+    const id = (form.id || '').toLowerCase();
+    const name = (form.name || '').toLowerCase();
+    const className = (form.className || '').toLowerCase();
+
+    const registrationKeywords = [
+      'signup',
+      'sign-up',
+      'register',
+      'create-account',
+      'create_account',
+      'join',
+      'enroll',
+      'subscribe',
+      'new-user',
+      'new_user',
+    ];
+
+    const allText = `${action} ${id} ${name} ${className}`;
+    for (const keyword of registrationKeywords) {
+      if (allText.includes(keyword)) {
+        score += 2;
+      }
+    }
+
+    // Check for email + password fields (strong signal for registration)
+    const inputs = form.querySelectorAll('input');
+    let hasEmail = false;
+    let hasPassword = false;
+    let hasUsername = false;
+
+    inputs.forEach((input) => {
+      const type = (input as HTMLInputElement).type.toLowerCase();
+      const name = ((input as HTMLInputElement).name || '').toLowerCase();
+      const placeholder = ((input as HTMLInputElement).placeholder || '').toLowerCase();
+      const autocomplete = ((input as HTMLInputElement).autocomplete || '').toLowerCase();
+      const fieldText = `${type} ${name} ${placeholder} ${autocomplete}`;
+
+      if (type === 'email' || name.includes('email') || autocomplete.includes('email')) {
+        hasEmail = true;
+      }
+      if (type === 'password') {
+        hasPassword = true;
+      }
+      if (
+        name.includes('username') ||
+        name.includes('user_name') ||
+        autocomplete.includes('username')
+      ) {
+        hasUsername = true;
+      }
+    });
+
+    if (hasEmail && hasPassword) score += 3;
+    if (hasUsername) score += 1;
+
+    // Check for common registration button text
+    const buttons = form.querySelectorAll('button, input[type="submit"]');
+    buttons.forEach((btn) => {
+      const text = (btn.textContent || '').toLowerCase();
+      const value = ((btn as HTMLInputElement).value || '').toLowerCase();
+      const btnText = `${text} ${value}`;
+      if (
+        btnText.includes('sign up') ||
+        btnText.includes('register') ||
+        btnText.includes('create account') ||
+        btnText.includes('join')
+      ) {
+        score += 2;
+      }
+    });
+
+    return score >= 3;
+  }
+
   private onNavigate(): void {
-    if (this.destroyed) {return;}
+    if (this.destroyed) {
+      return;
+    }
     const newUrl = location.href;
-    if (newUrl === this.lastUrl) {return;}
+    if (newUrl === this.lastUrl) {
+      return;
+    }
 
     log.debug('Navigation detected', { to: newUrl });
     this.lastUrl = newUrl;
@@ -1610,13 +1872,17 @@ export class OTPPageDetector {
   // ═══════════════════════════════════════════════════════════
 
   private scheduleDetection(trigger: string): void {
-    if (this.destroyed) {return;}
+    if (this.destroyed) {
+      return;
+    }
 
     // Throttle mutation-triggered runs
     if (trigger === 'mutation') {
       const gap = Date.now() - this.lastRunTime;
       if (gap < CONFIG.OBSERVER_THROTTLE_MS) {
-        if (this.debounceTimer !== null) {clearTimeout(this.debounceTimer);}
+        if (this.debounceTimer !== null) {
+          clearTimeout(this.debounceTimer);
+        }
         this.debounceTimer = setTimeout(
           () => this.runDetection(trigger),
           CONFIG.OBSERVER_THROTTLE_MS - gap
@@ -1626,11 +1892,10 @@ export class OTPPageDetector {
     }
 
     // Debounce everything else
-    if (this.debounceTimer !== null) {clearTimeout(this.debounceTimer);}
-    this.debounceTimer = setTimeout(
-      () => this.runDetection(trigger),
-      CONFIG.DEBOUNCE_MS
-    );
+    if (this.debounceTimer !== null) {
+      clearTimeout(this.debounceTimer);
+    }
+    this.debounceTimer = setTimeout(() => this.runDetection(trigger), CONFIG.DEBOUNCE_MS);
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -1638,7 +1903,9 @@ export class OTPPageDetector {
   // ═══════════════════════════════════════════════════════════
 
   private runDetection(trigger: string): void {
-    if (this.destroyed) {return;}
+    if (this.destroyed) {
+      return;
+    }
 
     const t0 = performance.now();
     const { result, titleMatch, bodyMatch, urlMatch } = ScoringEngine.score(
@@ -1693,7 +1960,9 @@ export class OTPPageDetector {
   // ═══════════════════════════════════════════════════════════
 
   private async requestAIFallback(): Promise<void> {
-    if (this.destroyed) {return;}
+    if (this.destroyed) {
+      return;
+    }
 
     this.aiRequested = true;
     this.metrics.aiRequested = true;
@@ -1709,7 +1978,9 @@ export class OTPPageDetector {
         payload: { simplifiedDOM: snapshot },
       })) as AIAnalysisResponse | undefined;
 
-      if (this.destroyed) {return;}
+      if (this.destroyed) {
+        return;
+      }
 
       this.aiResponded = true;
       this.metrics.aiResponded = true;
@@ -1753,7 +2024,9 @@ export class OTPPageDetector {
   // ═══════════════════════════════════════════════════════════
 
   async handleAutoFill(payload: AutoFillPayload): Promise<boolean> {
-    if (this.destroyed) {return false;}
+    if (this.destroyed) {
+      return false;
+    }
 
     const { otp, source, confidence, fieldSelectors } = payload;
 
@@ -1770,23 +2043,30 @@ export class OTPPageDetector {
       const delays = [0, 700, 2000];
       for (let i = 0; i < delays.length; i++) {
         const delay = delays[i];
-        if (delay > 0) {
-          log.info(`⏳ No fields found, waiting ${delay}ms for DOM to settle (attempt ${i + 1}/${delays.length})...`);
-          await new Promise(r => { setTimeout(r, delay); });
+        if (delay && delay > 0) {
+          log.info(
+            `⏳ No fields found, waiting ${delay}ms for DOM to settle (attempt ${i + 1}/${delays.length})...`
+          );
+          await new Promise((r) => {
+            setTimeout(r, delay);
+          });
         }
-        
+
         this.runDetection(delay === 0 ? 'auto-fill-trigger' : 'auto-fill-trigger-retry');
-        
+
         if (this.fields.length > 0) {
           break;
         }
       }
 
       if (this.fields.length === 0) {
-        // Suppress error toast for automated deliveries (isBackgroundTab) 
+        // Suppress error toast for automated deliveries (isBackgroundTab)
         // or if we're on a likely landing/app page after activation.
         const isAppPage = /chat|app|dashboard|home|workspace/i.test(document.title + location.href);
-        const shouldSuppressError = payload.isBackgroundTab || isAppPage || /success|activated|verified|confirmed/i.test(document.title + location.href);
+        const shouldSuppressError =
+          payload.isBackgroundTab ||
+          isAppPage ||
+          /success|activated|verified|confirmed/i.test(document.title + location.href);
 
         if (shouldSuppressError) {
           log.info('ℹ️ OTP fill skipped — no fields found (likely landing or app page)');
@@ -1820,7 +2100,9 @@ export class OTPPageDetector {
       clearTimeout(timeoutId);
     }
 
-    if (this.destroyed) {return false;}
+    if (this.destroyed) {
+      return false;
+    }
 
     if (success) {
       this.metrics.otpsFilled++;
@@ -1839,8 +2121,10 @@ export class OTPPageDetector {
   // ═══════════════════════════════════════════════════════════
 
   handlePollingStateChange(state: 'ANALYZING_EMAIL' | 'LINK_ACTIVATION_STARTED'): void {
-    if (this.destroyed) {return;}
-    
+    if (this.destroyed) {
+      return;
+    }
+
     if (state === 'ANALYZING_EMAIL') {
       log.info('🔄 PollingManager is analyzing a new email...');
       ToastFeedback.showState('Studying new email...', 'working', 4000);
@@ -1854,23 +2138,23 @@ export class OTPPageDetector {
   //  BACKGROUND NOTIFICATION
   // ═══════════════════════════════════════════════════════════
 
-  private async notifyBackground(
-    action: 'OTP_PAGE_DETECTED' | 'OTP_PAGE_LEFT'
-  ): Promise<void> {
-    if (this.destroyed && action !== 'OTP_PAGE_LEFT') {return;}
+  private async notifyBackground(action: 'OTP_PAGE_DETECTED' | 'OTP_PAGE_LEFT'): Promise<void> {
+    if (this.destroyed && action !== 'OTP_PAGE_LEFT') {
+      return;
+    }
 
     const message: ExtensionMessage =
       action === 'OTP_PAGE_DETECTED'
         ? ({
-          action,
-          payload: {
-            url: location.href,
-            fieldCount: this.fields.length,
-            fieldSelectors: this.fields.map((f) => f.selector),
-            confidence: this.confidence,
-            verdict: this.verdict,
-          },
-        } as ExtensionMessage)
+            action,
+            payload: {
+              url: location.href,
+              fieldCount: this.fields.length,
+              fieldSelectors: this.fields.map((f) => f.selector),
+              confidence: this.confidence,
+              verdict: this.verdict,
+            },
+          } as ExtensionMessage)
         : ({ action } as ExtensionMessage);
 
     try {

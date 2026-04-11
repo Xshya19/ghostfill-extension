@@ -449,7 +449,7 @@ function registerDefaultActions(): void {
     if (link) {
       try {
         await chrome.tabs.create({ url: link, active: true });
-      } catch (err) {
+      } catch {
         // Fallback: copy link to clipboard
         await copyToClipboard(link);
         await notify({
@@ -1067,16 +1067,32 @@ function extractMessage(error: unknown): string {
   return String(error);
 }
 
-// function sleep removed in favor of import
-
 async function copyToClipboard(text: string): Promise<void> {
   try {
     const { clipboardService } = await import('../services/clipboardService');
-    await clipboardService.copyOTP(text);
+    const success = await clipboardService.copyOTP(text);
+    if (success) {
+      await chrome.notifications.create(`gf-success-${Date.now()}`, {
+        type: 'basic',
+        iconUrl: 'assets/icon-128.png',
+        title: 'GhostFill',
+        message: `OTP copied to clipboard`,
+        priority: 1,
+      });
+      return;
+    }
   } catch (error) {
     log.warn('Clipboard copy failed', extractMessage(error));
-    // Fallback: Clipboard API throws in MV3 Service Worker context
-    // We already tried clipboardService which uses offscreen document.
-    log.error('All clipboard methods failed - MV3 SW cannot access navigator.clipboard directly');
   }
+
+  // Fallback: show masked OTP in notification since clipboard API failed
+  const masked = text.length > 4 ? text.substring(0, 4) + '••••' : text;
+  await chrome.notifications.create(`gf-otp-fallback-${Date.now()}`, {
+    type: 'basic',
+    iconUrl: 'assets/icon-128.png',
+    title: 'GhostFill — OTP Code',
+    message: `Your code: ${masked}\n\n(Could not auto-copy — clipboard not available. Retrieve full code from extension popup.)`,
+    priority: 2,
+    buttons: [{ title: 'Dismiss' }],
+  });
 }

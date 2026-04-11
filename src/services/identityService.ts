@@ -11,8 +11,6 @@ import { storageService } from './storageService';
 
 const log = createLogger('IdentityService');
 
-
-
 // Note: Name pools and email domains are now externalized in ./data/identityData.ts
 // This allows for easier customization and extension without modifying service logic
 
@@ -28,8 +26,10 @@ class IdentityService {
    */
   generateIdentity(): IdentityProfile {
     // Safety checks for data arrays
-    const first = firstNames?.length ? firstNames[this.secureRandomIndex(firstNames.length)] : 'User';
-    const last = lastNames?.length ? lastNames[this.secureRandomIndex(lastNames.length)] : 'Test';
+    const first = firstNames?.length
+      ? firstNames[this.secureRandomIndex(firstNames.length)]!
+      : 'User';
+    const last = lastNames?.length ? lastNames[this.secureRandomIndex(lastNames.length)]! : 'Test';
     const randomNum = getRandomInt(100, 9999);
 
     const identity: IdentityProfile = {
@@ -75,23 +75,19 @@ class IdentityService {
     try {
       const identity = await this.getCurrentIdentity();
 
-      // Get current email account (fallback to realistic domain if none exists)
+      // Get current email account — require a real email, no fake fallbacks
       let email: string;
       try {
         const currentEmail = await storageService.get('currentEmail');
         if (currentEmail?.fullEmail) {
           email = currentEmail.fullEmail;
         } else {
-          // Use realistic email domain instead of temp.mail
-          const randomDomain = emailDomains[this.secureRandomIndex(emailDomains.length)];
-          email = `${identity.emailPrefix}@${randomDomain}`;
-          log.info('Using realistic email domain', { domain: randomDomain });
+          log.warn('No email account configured — generate an email first');
+          email = '';
         }
       } catch (e) {
-        // Fallback if storage fails - use realistic domain
-        const randomDomain = emailDomains[this.secureRandomIndex(emailDomains.length)];
-        email = `${identity.emailPrefix}@${randomDomain}`;
-        log.warn('Failed to get currentEmail from storage, using realistic domain', e);
+        log.warn('Failed to get currentEmail from storage', e);
+        email = '';
       }
 
       // Use cached password if available, otherwise generate and cache

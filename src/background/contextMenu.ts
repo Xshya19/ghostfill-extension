@@ -70,13 +70,13 @@ interface ActionContext {
 type ActionHandler = (ctx: ActionContext) => Promise<ActionResult>;
 
 interface ActionResult {
-  notifyTitle?: string;
-  notifyMessage?: string;
-  notifyType?: 'success' | 'error';
-  fillValue?: string;
-  fillFieldType?: string;
-  clipboardValue?: string;
-  clipboardType?: 'email' | 'password' | 'otp';
+  notifyTitle?: string | undefined;
+  notifyMessage?: string | undefined;
+  notifyType?: 'success' | 'error' | undefined;
+  fillValue?: string | undefined;
+  fillFieldType?: string | undefined;
+  clipboardValue?: string | undefined;
+  clipboardType?: 'email' | 'password' | 'otp' | undefined;
 }
 
 interface ActionMetrics {
@@ -204,13 +204,26 @@ function buildMenuTree(): MenuItemSpec[] {
       title: '🧠 Report Misclassification',
       contexts: ['editable'],
     },
-    ...['email', 'password', 'new-password', 'otp', 'name', 'phone', 'address', 'card-number', 'card-expiry', 'unknown'].map((cls): MenuItemSpec => ({
-      id: `report-${cls}`,
-      parentId: CONTEXT_MENU_IDS.REPORT_MISCLASS,
-      title: `Correct type: ${cls}`,
-      contexts: ['editable'] as chrome.contextMenus.ContextType[],
-      action: `report-${cls}`,
-    })),
+    ...[
+      'email',
+      'password',
+      'new-password',
+      'otp',
+      'name',
+      'phone',
+      'address',
+      'card-number',
+      'card-expiry',
+      'unknown',
+    ].map(
+      (cls): MenuItemSpec => ({
+        id: `report-${cls}`,
+        parentId: CONTEXT_MENU_IDS.REPORT_MISCLASS,
+        title: `Correct type: ${cls}`,
+        contexts: ['editable'] as chrome.contextMenus.ContextType[],
+        action: `report-${cls}`,
+      })
+    ),
   ];
 }
 
@@ -377,7 +390,18 @@ function registerDefaultActions(): void {
   });
 
   // ── Continuous Learning ──
-  ['email', 'password', 'new-password', 'otp', 'name', 'phone', 'address', 'card-number', 'card-expiry', 'unknown'].forEach((cls) => {
+  [
+    'email',
+    'password',
+    'new-password',
+    'otp',
+    'name',
+    'phone',
+    'address',
+    'card-number',
+    'card-expiry',
+    'unknown',
+  ].forEach((cls) => {
     register(`report-${cls}`, async (ctx) => {
       if (!ctx.tabId) {
         return { notifyType: 'error', notifyTitle: 'Error', notifyMessage: 'No active tab' };
@@ -435,6 +459,10 @@ export async function setupContextMenu(): Promise<void> {
 }
 
 export async function teardownContextMenu(): Promise<void> {
+  if (rebuildTimer) {
+    clearTimeout(rebuildTimer);
+    rebuildTimer = null;
+  }
   await new Promise<void>((resolve) => {
     chrome.contextMenus.removeAll(() => {
       resolve();
@@ -612,12 +640,15 @@ async function processResult(result: ActionResult, ctx: ActionContext): Promise<
 
   // ── Content-script fill ──
   if (result.fillValue && ctx.tabId && ctx.info.editable) {
+    const fillPayload: { value: string; selector?: string; fieldType?: string } = {
+      value: result.fillValue,
+    };
+    if (result.fillFieldType) {
+      fillPayload.fieldType = result.fillFieldType;
+    }
     await safeSendTabMessage(ctx.tabId, {
       action: 'FILL_FIELD',
-      payload: {
-        value: result.fillValue,
-        fieldType: result.fillFieldType,
-      },
+      payload: fillPayload,
     }).catch((err) => log.debug('Fill message failed', extractMsg(err)));
   }
 

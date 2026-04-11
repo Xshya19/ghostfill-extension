@@ -112,12 +112,11 @@ class OTPService {
     emailSubject?: string,
     confidence: number = 0.8
   ): Promise<{ saved: boolean; reason?: string; retryAfterMs?: number }> {
-    // Acquire local mutex to prevent concurrent reads/writes of rate limit arrays
-    let releaseMutex!: () => void;
+    const previousMutex = this.rateLimitMutex;
+    let releaseMutex: () => void = () => {};
     const nextMutex = new Promise<void>((res) => {
       releaseMutex = res;
     });
-    const previousMutex = this.rateLimitMutex;
     this.rateLimitMutex = previousMutex.then(() => nextMutex);
     await previousMutex;
 
@@ -140,11 +139,15 @@ class OTPService {
       const lastOTP: LastOTP = {
         code: otp,
         source,
-        emailFrom,
-        emailSubject,
         extractedAt: now,
         confidence,
       };
+      if (emailFrom) {
+        lastOTP.emailFrom = emailFrom;
+      }
+      if (emailSubject) {
+        lastOTP.emailSubject = emailSubject;
+      }
 
       await storageService.set('lastOTP', lastOTP);
       await this.recordSaveLocked(now);
@@ -176,7 +179,7 @@ class OTPService {
           // No UI is listening because popup is closed. Fallback to notification
           chrome.notifications.create({
             type: 'basic',
-            iconUrl: 'assets/icon128.png',
+            iconUrl: 'assets/icons/icon128.png',
             title: 'GhostFill: Too Many OTPs',
             message: message.payload.message,
           });
@@ -195,7 +198,7 @@ class OTPService {
   async getLastOTP(): Promise<LastOTP | null> {
     const lastOTP = await storageService.get('lastOTP');
 
-    if (lastOTP && Date.now() - lastOTP.extractedAt > 5 * 60 * 1000) {
+    if (lastOTP && Date.now() - lastOTP.extractedAt > 3 * 60 * 1000) {
       log.debug('Last OTP expired');
       return null;
     }
@@ -206,6 +209,14 @@ class OTPService {
     }
 
     return lastOTP || null;
+  }
+
+  /**
+   * Clear the stored OTP (used on session reset / email change)
+   */
+  async clearLastOTP(): Promise<void> {
+    await storageService.remove('lastOTP');
+    log.info('Last OTP cleared from storage');
   }
 
   /**
@@ -231,12 +242,16 @@ class OTPService {
     }
 
     return new Promise((resolve) => {
-      const startTime = Date.now();
-      
+      const _startTime = Date.now();
+
       const listener = (changes: { [key: string]: chrome.storage.StorageChange }) => {
         if (changes.lastOTP) {
           const newOTP = changes.lastOTP.newValue as LastOTP;
-          if (newOTP && !newOTP.usedAt && (Date.now() - newOTP.extractedAt < OTP_FRESHNESS.FRESH_WINDOW_MS)) {
+          if (
+            newOTP &&
+            !newOTP.usedAt &&
+            Date.now() - newOTP.extractedAt < OTP_FRESHNESS.FRESH_WINDOW_MS
+          ) {
             chrome.storage.onChanged.removeListener(listener);
             clearTimeout(timeoutId);
             resolve(newOTP);
@@ -264,14 +279,6 @@ class OTPService {
       await storageService.set('lastOTP', lastOTP);
       log.debug('OTP marked as used');
     }
-  }
-
-  /**
-   * Clear last OTP
-   */
-  async clearLastOTP(): Promise<void> {
-    await storageService.remove('lastOTP');
-    log.debug('Last OTP cleared');
   }
 
   /**

@@ -256,7 +256,7 @@ const OptionsApp: React.FC = () => {
       if (field.includes('.')) {
         const [parent, child] = field.split('.');
         if (parent === 'passwordDefaults' && formErrors.passwordDefaults) {
-          return formErrors.passwordDefaults[child];
+          return formErrors.passwordDefaults[child as keyof typeof formErrors.passwordDefaults];
         }
       }
       return (formErrors as Record<string, string>)[field];
@@ -292,8 +292,8 @@ const OptionsApp: React.FC = () => {
         setSettings(loaded);
         previousSettingsRef.current = loaded;
       }
-      const customDomainKey = await storageService.getCustomDomainKey() || '';
-      const llmApiKey = await storageService.getLLMApiKey() || '';
+      const customDomainKey = (await storageService.getCustomDomainKey()) || '';
+      const llmApiKey = (await storageService.getLLMApiKey()) || '';
       setSessionSecrets({
         customDomainKey,
         llmApiKey,
@@ -351,7 +351,7 @@ const OptionsApp: React.FC = () => {
   }, []);
 
   // Auto-save when settings change (skip first load)
-  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (isFirstLoad.current) {
@@ -398,9 +398,13 @@ const OptionsApp: React.FC = () => {
       setSessionSecrets((prev) => ({ ...prev, [key]: value }));
       try {
         if (key === 'customDomainKey') {
-          void (value ? storageService.setCustomDomainKey(value) : storageService.clearSessionSecret(key));
+          void (value
+            ? storageService.setCustomDomainKey(value)
+            : storageService.clearSessionSecret(key));
         } else {
-          void (value ? storageService.setLLMApiKey(value) : storageService.clearSessionSecret(key));
+          void (value
+            ? storageService.setLLMApiKey(value)
+            : storageService.clearSessionSecret(key));
         }
       } catch (error) {
         log.error('Failed to set session secret', error);
@@ -457,10 +461,12 @@ const OptionsApp: React.FC = () => {
         setFormErrors({});
         setTouchedFields(new Set());
         setSaved(true);
+        // Persist immediately instead of relying on auto-save debounce
+        void saveSettings();
         setTimeout(() => setSaved(false), 2000);
       },
     });
-  }, []);
+  }, [saveSettings]);
 
   const handleClearData = useCallback(() => {
     setConfirmModal({

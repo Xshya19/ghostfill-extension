@@ -32,23 +32,10 @@ export class AutoSubmitDetector {
       log.info('Found submit button — highlighting');
       this.highlight(button);
 
-      // ── Upgrade 8: Auto-Click ────────────────────────
-      if (this.shouldAutoClick(group, button)) {
-        log.info('High confidence match — clicking submit button');
-        button.click();
-      }
+      // SECURITY: Auto-click removed — submitting forms without explicit user consent
+      // could trigger unintended actions (navigation, irreversible operations, etc.)
+      // Users can click the highlighted button themselves.
     }
-  }
-
-  private static shouldAutoClick(group: OTPFieldGroup, button: HTMLElement): boolean {
-    // High confidence only (L4)
-    if (group.score < 90) {return false;}
-
-    const text = (button.textContent ?? '').toLowerCase().trim();
-    // Strict pattern for auto-click safety
-    const AUTO_CLICK_TEXT = /^(verify|confirm|continue|next|submit|ok|go|verify\s*code|confirm\s*code)$/i;
-    
-    return AUTO_CLICK_TEXT.test(text);
   }
 
   private static findButton(group: OTPFieldGroup): HTMLElement | null {

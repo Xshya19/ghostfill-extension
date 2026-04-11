@@ -140,17 +140,15 @@ class EmailServiceAggregator {
             (service === 'tempmail' || service === '1secmail') &&
             tempMailService.isUsingFallbackDomains()
           ) {
-            log.warn(`Health check degraded for ${service}: using fallback domains`);
-            this.healthManager.recordFailure(
-              service,
-              new Error('Health check degraded: provider is serving fallback domains')
-            );
-            return null;
+            // This is expected behavior - just use debug level, not warn
+            log.debug(`Health check degraded for ${service}: using fallback domains`);
+            // Don't record as failure - fallback domains still work
+            return service;
           }
           return service;
         }
       } catch (e) {
-        log.warn(`Health check failed for ${service}`, e);
+        log.debug(`Health check failed for ${service}`, e);
       }
       return null;
     });
@@ -223,7 +221,7 @@ class EmailServiceAggregator {
         !this.availableServices.includes(service) &&
         this.availableServices.length > 0
       ) {
-        service = this.availableServices[0];
+        service = this.availableServices[0]!;
         log.info(`Preferred service unavailable, switching to ${service}`);
       }
 
@@ -278,7 +276,14 @@ class EmailServiceAggregator {
         case 'mailgw':
           return await mailGwService.createAccount(options.prefix, undefined, signal);
         case 'mailtm':
-          return await mailTmService.createAccount(options.prefix, undefined, signal);
+          if (mailTmService.isCircuitBreakerOpen()) {
+            throw new Error(
+              'Mail.tm circuit breaker open — skipping due to repeated auth failures'
+            );
+          }
+          // Mail.tm rejects custom prefix/address requests with 401.
+          // Pass undefined to let Mail.tm generate a random login.
+          return await mailTmService.createAccount(undefined, undefined, signal);
         case 'guerrilla':
           return await guerrillaMailService.createAccount(signal);
         case 'tempmail':
@@ -286,7 +291,8 @@ class EmailServiceAggregator {
           return await tempMailService.generateEmail(options.prefix, options.domain, signal);
         default:
           log.warn(`Unknown service "${service}", defaulting to Mail.tm`);
-          return await mailTmService.createAccount(options.prefix, undefined, signal);
+          // Same fix for default fallback
+          return await mailTmService.createAccount(undefined, undefined, signal);
       }
     } finally {
       clearTimeout(timeoutId);
@@ -351,7 +357,20 @@ class EmailServiceAggregator {
     service: EmailService,
     startTime: number
   ): Promise<EmailAccount> {
-    log.info('Saving email to storage...', { email: account.fullEmail });
+    // CRITICAL: Validate account.id before saving — required for SSE
+    if (service === 'mailtm' && !account.id) {
+      // Generate a fallback ID from the email address
+      account.id = `fallback_${Date.now()}_${account.fullEmail.replace(/[@.]/g, '_')}`;
+      log.warn('Mail.tm account missing id field — generated fallback ID for SSE', {
+        fallbackId: account.id,
+        email: account.fullEmail,
+      });
+    }
+
+    log.info('Saving email to storage...', {
+      email: account.fullEmail,
+      hasId: Boolean(account.id),
+    });
     await storageService.set('currentEmail', account);
     log.info('✅ Email saved to storage');
 
@@ -422,7 +441,10 @@ class EmailServiceAggregator {
   async checkInbox(account: EmailAccount, signal?: AbortSignal): Promise<Email[]> {
     try {
       const maskedEmail = account.fullEmail
-        ? account.fullEmail.replace(/^(.)(.*)(@.*)$/, (_, f, m, d) => `${f}${'*'.repeat(Math.min(m.length, 5))}${d}`)
+        ? account.fullEmail.replace(
+            /^(.)(.*)(@.*)$/,
+            (_, f, m, d) => `${f}${'*'.repeat(Math.min(m.length, 5))}${d}`
+          )
         : 'unknown';
 
       log.debug('Checking inbox for account:', {
@@ -466,7 +488,18 @@ class EmailServiceAggregator {
           } else if (account.password) {
             await mailTmService.authenticate(account.fullEmail, account.password, signal);
           }
-          emails = await mailTmService.getMessages(signal);
+          try {
+            emails = await mailTmService.getMessages(signal);
+          } catch (e) {
+            // If 401, re-authenticate with password and retry
+            if (account.password && e instanceof Error && e.message.includes('401')) {
+              log.info('Mail.tm 401 during checkInbox — re-authenticating and retrying');
+              await mailTmService.authenticate(account.fullEmail, account.password, signal);
+              emails = await mailTmService.getMessages(signal);
+            } else {
+              throw e;
+            }
+          }
           break;
         case 'guerrilla':
           if (account.token) {
@@ -504,8 +537,8 @@ class EmailServiceAggregator {
       // chrome.storage operations on every 10s poll cycle.
       // PERFORMANCE FIX: Efficient comparison using ID concatenation
       const cachedInbox = (await storageService.get('inbox')) || [];
-      const inboxHash = (list: Email[]) => list.map(e => `${e.id}:${e.read}`).join('|');
-      
+      const inboxHash = (list: Email[]) => list.map((e) => `${e.id}:${e.read}`).join('|');
+
       if (inboxHash(safeEmails) !== inboxHash(cachedInbox)) {
         await storageService.set('inbox', safeEmails);
       }
@@ -624,7 +657,7 @@ class EmailServiceAggregator {
         return safeEmail;
       }
 
-      const updatedInbox = inbox.map((e) => (e.id === emailId ? safeEmail : e));
+      const updatedInbox = inbox.map((e) => (String(e.id) === String(emailId) ? safeEmail : e));
       await storageService.set('inbox', updatedInbox);
 
       log.debug('Email read', { id: emailId });

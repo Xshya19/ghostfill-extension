@@ -30,17 +30,46 @@ export interface AuthStep {
 export class AuthSessionTracker {
   private static activeSessions: Map<string, AuthSession> = new Map();
 
+  private static STORAGE_KEY = 'ghostfill_auth_sessions';
+
   /**
    * Resume session tracking from storage.
    */
-  public static resume(): void {
-    // Implementation to load from chrome.storage.local
+  public static async resume(): Promise<void> {
+    try {
+      if (typeof chrome === 'undefined' || !chrome.storage) {
+        return;
+      }
+      const data = await chrome.storage.local.get(this.STORAGE_KEY);
+      const saved = data[this.STORAGE_KEY];
+      if (saved && typeof saved === 'object') {
+        for (const [domain, session] of Object.entries(saved)) {
+          if (!this.isSessionStale(session as AuthSession)) {
+            this.activeSessions.set(domain, session as AuthSession);
+          }
+        }
+      }
+    } catch (e) {
+      // Storage might be unavailable in some contexts
+    }
+  }
+
+  private static async persist(): Promise<void> {
+    try {
+      if (typeof chrome === 'undefined' || !chrome.storage) {
+        return;
+      }
+      const sessionsObj = Object.fromEntries(this.activeSessions);
+      await chrome.storage.local.set({ [this.STORAGE_KEY]: sessionsObj });
+    } catch (e) {
+      // Non-critical
+    }
   }
 
   /**
    * Record a new step in the authentication flow.
    */
-  public static recordStep(domain: string, fingerprint: any, fields: Array<{ selector: string; type: string }>): any {
+  public static async recordStep(domain: string, fingerprint: any, fields: Array<{ selector: string; type: string }>): Promise<AuthSession> {
     let session = AuthSessionTracker.activeSessions.get(domain);
 
     if (!session || AuthSessionTracker.isSessionStale(session)) {
@@ -56,6 +85,7 @@ export class AuthSessionTracker {
     });
 
     session.detectedFlow = AuthSessionTracker.classifyFlow(session);
+    void AuthSessionTracker.persist();
     return session;
   }
 

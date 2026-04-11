@@ -106,8 +106,8 @@ export function classifyWithGhostCore(
     // Mistral/Clerk pattern: code embedded in the required URL
     category = 'both';
     confidence = Math.min(scores.linkScore / 100, 1);
-    code = scores.urlCodes[0].code;
-    link = scores.urlCodes[0].url;
+    code = scores.urlCodes[0]?.code;
+    link = scores.urlCodes[0]?.url;
   } else if (hasCode) {
     category = 'otp';
     confidence = Math.min(scores.codeScore / 100, 1);
@@ -120,8 +120,8 @@ export function classifyWithGhostCore(
     // Edge case fallback: link is valid but happens to have a code we missed in URL parser
     if (hasUrlCode) {
       category = 'both';
-      code = scores.urlCodes[0].code;
-      link = scores.urlCodes[0].url;
+      code = scores.urlCodes[0]?.code;
+      link = scores.urlCodes[0]?.url;
     }
   } else {
     category = 'none';
@@ -218,11 +218,28 @@ function score(
   // STATE A: Tab-Context Predictor
   // Helper to extract root domain (e.g. mail.google.com -> google.com)
   const getRootDomain = (hostname: string) => {
+    const multiLevelTlds = [
+      'co.uk',
+      'com.au',
+      'co.nz',
+      'co.in',
+      'co.za',
+      'com.br',
+      'co.jp',
+      'com.cn',
+      'org.uk',
+      'net.au',
+    ];
     const parts = hostname.split('.');
     if (parts.length <= 2) {
       return hostname;
-    } // Already root or TLD
-    return parts.slice(-2).join('.');
+    }
+    const lastTwo = parts.slice(-2).join('.');
+    const lastThree = parts.slice(-3).join('.');
+    if (multiLevelTlds.includes(lastTwo)) {
+      return lastThree;
+    }
+    return lastTwo;
   };
 
   if (expectedDomains.length > 0) {

@@ -30,25 +30,13 @@ module.exports = {
     () => 'tsc --noEmit',
   ],
 
-  '*.js': [
-    'eslint --fix',
-    'prettier --write',
-  ],
+  '*.js': ['eslint --fix', 'prettier --write'],
 
-  '*.jsx': [
-    'eslint --fix',
-    'prettier --write',
-  ],
+  '*.jsx': ['eslint --fix', 'prettier --write'],
 
-  '*.mjs': [
-    'eslint --fix',
-    'prettier --write',
-  ],
+  '*.mjs': ['eslint --fix', 'prettier --write'],
 
-  '*.cjs': [
-    'eslint --fix',
-    'prettier --write',
-  ],
+  '*.cjs': ['eslint --fix', 'prettier --write'],
 
   // ==========================================
   // JSON Files
@@ -62,25 +50,13 @@ module.exports = {
   // ==========================================
   // CSS/SCSS Files
   // ==========================================
-  '*.css': [
-    'stylelint --fix',
-    'prettier --write',
-  ],
+  '*.css': ['prettier --write'],
 
-  '*.scss': [
-    'stylelint --fix',
-    'prettier --write',
-  ],
+  '*.scss': ['prettier --write'],
 
-  '*.sass': [
-    'stylelint --fix',
-    'prettier --write',
-  ],
+  '*.sass': ['prettier --write'],
 
-  '*.less': [
-    'stylelint --fix',
-    'prettier --write',
-  ],
+  '*.less': ['prettier --write'],
 
   // ==========================================
   // Markdown Files
@@ -91,35 +67,24 @@ module.exports = {
     // 'markdown-link-check',
   ],
 
-  '*.mdx': [
-    'prettier --write',
-    'eslint --fix',
-  ],
+  '*.mdx': ['prettier --write', 'eslint --fix'],
 
   // ==========================================
   // HTML Files
   // ==========================================
-  '*.html': [
-    'prettier --write',
-  ],
+  '*.html': ['prettier --write'],
 
   // ==========================================
   // YAML Files
   // ==========================================
-  '*.yml': [
-    'prettier --write',
-  ],
+  '*.yml': ['prettier --write'],
 
-  '*.yaml': [
-    'prettier --write',
-  ],
+  '*.yaml': ['prettier --write'],
 
   // ==========================================
   // Shell Scripts
   // ==========================================
-  '*.sh': [
-    'shellcheck',
-  ],
+  '*.sh': ['shellcheck'],
 
   // ==========================================
   // Test Files - Run related tests

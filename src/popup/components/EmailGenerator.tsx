@@ -16,6 +16,7 @@ import { TIMING } from '../../utils/constants';
 import { formatRelativeTime, extractOTP, extractActivationLink } from '../../utils/formatters';
 import { copyToClipboard } from '../../utils/helpers';
 import { safeSendMessage } from '../../utils/messaging';
+import { useOTPExtractor } from '../hooks/useOTPExtractor';
 
 import { useStorageSubscription } from '../hooks/useStorageSubscription';
 
@@ -60,6 +61,11 @@ const EmailGenerator: React.FC<Props> = ({
   const [lastUpdated, setLastUpdated] = useState<number>(Date.now());
   const [timeLeft, setTimeLeft] = useState<string>('');
   const lastCheckedIdRef = useRef<string | null>(null);
+  const copyBtnRef = useRef<HTMLButtonElement>(null);
+
+  // Memoize top 50 emails and asynchronously fetch their OTPs
+  const latestInbox = React.useMemo(() => inbox.slice(0, 50), [inbox]);
+  const { otps: emailOTPs, links: emailLinks } = useOTPExtractor(latestInbox);
 
   // Focus trap sub-refs and escape key listener for modal accessibility (H7)
   const confirmCancelBtnRef = useRef<HTMLButtonElement>(null);
@@ -115,7 +121,7 @@ const EmailGenerator: React.FC<Props> = ({
           onToast(response?.error || 'Sync failed: No response');
         }
         return false;
-      } catch (error) {
+      } catch {
         setSyncError('Connection lost');
         if (showToast) {
           onToast('Sync failed: Connection lost');
@@ -174,11 +180,27 @@ const EmailGenerator: React.FC<Props> = ({
     };
   }, []);
 
-  const copyEmail = async () => {
+  const copyEmail = useCallback(async () => {
     if (!emailAccount) {
       return;
     }
     try {
+      // Create ripple effect
+      if (copyBtnRef.current) {
+        const btn = copyBtnRef.current;
+        const ripple = document.createElement('span');
+        ripple.className = 'copy-ripple';
+        const rect = btn.getBoundingClientRect();
+        const size = Math.max(rect.width, rect.height);
+        ripple.style.width = ripple.style.height = `${size}px`;
+        ripple.style.left = '0px';
+        ripple.style.top = '0px';
+        btn.style.position = 'relative';
+        btn.style.overflow = 'hidden';
+        btn.appendChild(ripple);
+        setTimeout(() => ripple.remove(), 600);
+      }
+
       await copyToClipboard(emailAccount.fullEmail);
       setCopied(true);
       onToast('Email copied');
@@ -187,10 +209,10 @@ const EmailGenerator: React.FC<Props> = ({
         clearTimeout(timeoutRef.current);
       }
       timeoutRef.current = setTimeout(() => setCopied(false), TIMING.COPY_CONFIRMATION_MS);
-    } catch (error) {
+    } catch {
       onToast('Copy failed');
     }
-  };
+  }, [emailAccount, onToast]);
 
   const openActivationLink = useCallback(
     async (event: React.MouseEvent, activationLink: string) => {
@@ -208,13 +230,8 @@ const EmailGenerator: React.FC<Props> = ({
           return;
         }
 
-        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (activeTab?.id) {
-          await chrome.tabs.update(activeTab.id, { url: safeUrl });
-        } else {
-          await chrome.tabs.create({ url: safeUrl });
-        }
         onToast('Opening activation link...');
+        await chrome.tabs.create({ url: safeUrl, active: true });
       } catch {
         onToast('Failed to open activation link');
       }
@@ -342,11 +359,25 @@ const EmailGenerator: React.FC<Props> = ({
               marginTop: variant === 'inbox' ? 0 : 24,
               flex: variant === 'inbox' ? 1 : 'none',
               display: 'flex',
-              flexDirection: 'column'
+              flexDirection: 'column',
             }}
           >
             {syncError && (
-              <div className="sync-error-banner" style={{ padding: '8px 12px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderRadius: '8px', fontSize: '13px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+              <div
+                className="sync-error-banner"
+                style={{
+                  padding: '8px 12px',
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  color: '#ef4444',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  marginBottom: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                }}
+              >
                 <Zap size={14} /> {syncError}
               </div>
             )}
@@ -378,6 +409,7 @@ const EmailGenerator: React.FC<Props> = ({
                       onClick={onBack}
                       whileTap={{ scale: 0.85 }}
                       title="Go back"
+                      aria-label="Go back to dashboard"
                       style={{
                         marginRight: 8,
                         borderRadius: '50%',
@@ -399,18 +431,19 @@ const EmailGenerator: React.FC<Props> = ({
                     disabled={checking}
                     whileTap={{ scale: 0.85 }}
                     title={checking ? 'Syncing...' : 'Refresh inbox'}
+                    aria-label="Refresh inbox"
                   >
                     <RefreshCw size={14} className={checking ? 'spin' : ''} />
                   </motion.button>
                 </div>
 
                 {/* Email List - Dashboard Style */}
-                <div className="inbox-list inbox-list-scroll">
-                  {inbox.length > 0 ? (
-                    inbox.slice(0, 50).map((item: Email, i: number) => {
+                <div className="inbox-list inbox-list-scroll" aria-live="polite">
+                  {latestInbox.length > 0 ? (
+                    latestInbox.map((item: Email, i: number) => {
                       // Use shared utility functions
-                      const verificationCode = extractOTP(item.subject + ' ' + (item.body || ''));
-                      const activationLink = extractActivationLink(item.body || '');
+                      const verificationCode = emailOTPs[item.id] !== undefined ? emailOTPs[item.id] : undefined;
+                      const activationLink = emailLinks[item.id] || null;
 
                       return (
                         <motion.div
@@ -427,9 +460,21 @@ const EmailGenerator: React.FC<Props> = ({
                           }}
                         >
                           <div className="inbox-item-avatar" style={{ position: 'relative' }}>
-                            {item.from.charAt(0).toUpperCase()}
+                            {item.from?.charAt(0)?.toUpperCase() ?? '?'}
                             {!item.read && (
-                              <div style={{ position: 'absolute', top: -2, right: -2, width: 8, height: 8, background: 'var(--brand-primary)', borderRadius: '50%', boxShadow: '0 0 0 2px var(--glass-card-bg)' }} title="Unread" />
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  top: -2,
+                                  right: -2,
+                                  width: 8,
+                                  height: 8,
+                                  background: 'var(--brand-primary)',
+                                  borderRadius: '50%',
+                                  boxShadow: '0 0 0 2px var(--glass-card-bg)',
+                                }}
+                                title="Unread"
+                              />
                             )}
                           </div>
                           <div className="inbox-item-content">
@@ -501,9 +546,9 @@ const EmailGenerator: React.FC<Props> = ({
                 <div className="inbox-list-default">
                   {inbox.length > 0 ? (
                     inbox.slice(0, 50).map((item: Email, i: number) => {
-                      // Use shared utility functions
-                      const verificationCode = extractOTP(item.subject + ' ' + (item.body || ''));
-                      const activationLink = extractActivationLink(item.body || '');
+                      // Use intelligently extracted payload maps
+                      const verificationCode = emailOTPs[item.id] || null;
+                      const activationLink = emailLinks[item.id] || null;
 
                       return (
                         <motion.div
@@ -521,9 +566,21 @@ const EmailGenerator: React.FC<Props> = ({
                         >
                           {/* Avatar */}
                           <div className="inbox-avatar-default" style={{ position: 'relative' }}>
-                            {item.from.charAt(0).toUpperCase()}
+                            {item.from?.charAt(0)?.toUpperCase() ?? '?'}
                             {!item.read && (
-                              <div style={{ position: 'absolute', top: -1, right: -1, width: 8, height: 8, background: 'var(--brand-primary)', borderRadius: '50%', boxShadow: '0 0 0 2px var(--glass-card-bg)' }} title="Unread" />
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  top: -1,
+                                  right: -1,
+                                  width: 8,
+                                  height: 8,
+                                  background: 'var(--brand-primary)',
+                                  borderRadius: '50%',
+                                  boxShadow: '0 0 0 2px var(--glass-card-bg)',
+                                }}
+                                title="Unread"
+                              />
                             )}
                           </div>
 
@@ -645,8 +702,8 @@ const EmailGenerator: React.FC<Props> = ({
       {/* Confirmation Modal overlay */}
       <AnimatePresence>
         {showConfirm && (
-          <motion.div 
-            className="modal-overlay" 
+          <motion.div
+            className="modal-overlay"
             onClick={() => setShowConfirm(false)}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -659,28 +716,52 @@ const EmailGenerator: React.FC<Props> = ({
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              style={{ margin: 'auto', background: 'var(--bg-primary)', width: '100%', maxWidth: '320px', padding: '24px' }}
+              style={{
+                margin: 'auto',
+                background: 'var(--bg-primary)',
+                width: '100%',
+                maxWidth: '320px',
+                padding: '24px',
+              }}
               role="dialog"
               aria-modal="true"
               aria-labelledby="modal-title"
             >
-              <h3 id="modal-title" style={{ marginTop: 0, marginBottom: '8px', fontSize: '18px', color: 'var(--text-primary)' }}>Generate New Email?</h3>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '14px', lineHeight: 1.5, margin: 0 }}>
-                Your current temporary email and its inbox will be permanently lost. Are you sure you want to generate a new one?
+              <h3
+                id="modal-title"
+                style={{
+                  marginTop: 0,
+                  marginBottom: '8px',
+                  fontSize: '18px',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                Generate New Email?
+              </h3>
+              <p
+                style={{
+                  color: 'var(--text-secondary)',
+                  fontSize: '14px',
+                  lineHeight: 1.5,
+                  margin: 0,
+                }}
+              >
+                Your current temporary email and its inbox will be permanently lost. Are you sure
+                you want to generate a new one?
               </p>
               <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
-                <motion.button 
+                <motion.button
                   ref={confirmCancelBtnRef}
-                  className="ios-button button-secondary" 
-                  style={{ flex: 1 }} 
+                  className="ios-button button-secondary"
+                  style={{ flex: 1 }}
                   onClick={() => setShowConfirm(false)}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.96 }}
                 >
                   Cancel
                 </motion.button>
-                <motion.button 
-                  className="ios-button button-primary" 
+                <motion.button
+                  className="ios-button button-primary"
                   style={{ flex: 1, background: 'var(--error)' }}
                   onClick={() => {
                     setShowConfirm(false);

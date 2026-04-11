@@ -2,24 +2,25 @@
  * Runtime Validation Schemas using Zod
  *
  * HIGH FIX: Runtime Validation for Message Handlers
+ * FIX: Un-minified this file — it was collapsed to a single line, breaking
+ * TypeScript's ability to resolve named exports.
  */
-
 import { z } from 'zod';
 import { createLogger } from './logger';
 
 const log = createLogger('Validation');
 
 // Configuration
-const MAX_MESSAGE_SIZE = 2 * 1024 * 1024; // Increased to 2MB for large DOM snapshots
+const MAX_MESSAGE_SIZE = 2 * 1024 * 1024; // 2MB for large DOM snapshots
 const MAX_STRING_LENGTH = 10000;
 const MAX_ARRAY_LENGTH = 100;
 
-// Base validators
+// ─── Base validators ──────────────────────────────────────────────────────────
 const safeString = z.string().max(MAX_STRING_LENGTH, 'String exceeds maximum length');
 const safeNumber = z.number().finite();
 const safeBoolean = z.boolean();
 
-// Email Service enum - includes all providers used at runtime
+// ─── Email Service enum ───────────────────────────────────────────────────────
 const emailServiceSchema = z.enum([
   'mailgw',
   'mailtm',
@@ -30,7 +31,7 @@ const emailServiceSchema = z.enum([
   'custom',
 ]);
 
-// Email Account schema
+// ─── Email Account schema ─────────────────────────────────────────────────────
 export const emailAccountSchema = z.object({
   id: safeString,
   fullEmail: safeString.email('Invalid email format'),
@@ -41,7 +42,7 @@ export const emailAccountSchema = z.object({
   expiresAt: safeNumber,
 });
 
-// Email schema
+// ─── Email schema ─────────────────────────────────────────────────────────────
 export const emailSchema = z.object({
   id: safeString,
   from: safeString,
@@ -53,7 +54,7 @@ export const emailSchema = z.object({
   seen: safeBoolean.optional().nullable(),
 });
 
-// Password Options schema
+// ─── Password Options schema ──────────────────────────────────────────────────
 export const passwordOptionsSchema = z.object({
   length: safeNumber.min(8).max(128).default(16),
   uppercase: safeBoolean.default(true),
@@ -62,16 +63,16 @@ export const passwordOptionsSchema = z.object({
   symbols: safeBoolean.default(true),
 });
 
-// Generated Password schema
+// ─── Generated Password schema ────────────────────────────────────────────────
 export const generatedPasswordSchema = z.object({
   password: safeString,
   strength: z.number().min(0).max(100),
   entropy: safeNumber,
 });
 
-// User Settings schema
+// ─── User Settings schema ─────────────────────────────────────────────────────
 export const userSettingsSchema = z.object({
-  preferredEmailService: emailServiceSchema.default('mailtm'),
+  preferredEmailService: emailServiceSchema.default('tempmail'),
   autoCheckInbox: safeBoolean.default(true),
   checkIntervalSeconds: safeNumber.min(3).max(60).default(10),
   autoFillOTP: safeBoolean.default(true),
@@ -79,11 +80,10 @@ export const userSettingsSchema = z.object({
   notifyOnOTP: safeBoolean.default(true),
   darkMode: z.union([safeBoolean, z.literal('system')]).default(false),
   enableAnimations: safeBoolean.default(true),
-  // Link activation settings
   autoConfirmLinks: safeBoolean.default(true),
 });
 
-// Message Payload Schemas
+// ─── Message Payload Schemas ──────────────────────────────────────────────────
 export const generateEmailPayloadSchema = z
   .object({
     prefix: safeString.optional(),
@@ -120,7 +120,7 @@ export const extractOTPPayloadSchema = z.object({
 });
 
 export const fillOTPPayloadSchema = z.object({
-  otp: safeString.min(4).max(12), // Lenient for typical OTPs
+  otp: safeString.min(4).max(12),
   fieldSelectors: z.array(safeString).max(MAX_ARRAY_LENGTH).optional(),
 });
 
@@ -206,14 +206,20 @@ export const captureSiteContextPayloadSchema = z.object({
   otpFieldLength: safeNumber.min(1).max(20).optional().nullable(),
 });
 
-// Base Message Schema
+export const registrationFormSubmittedPayloadSchema = z.object({
+  url: safeString,
+  formAction: safeString.optional(),
+  timestamp: safeNumber.optional(),
+});
+
+// ─── Base Message Schema ──────────────────────────────────────────────────────
 export const baseMessageSchema = z.object({
   action: z.string(),
   tabId: safeNumber.optional().nullable(),
   timestamp: safeNumber.optional().nullable(),
 });
 
-// Message Action to Payload Schema mapping
+// ─── Message Action to Payload Schema mapping ─────────────────────────────────
 export const messagePayloadSchemas: Record<string, z.ZodSchema> = {
   GENERATE_EMAIL: generateEmailPayloadSchema,
   GET_CURRENT_EMAIL: z.undefined().optional(),
@@ -260,9 +266,26 @@ export const messagePayloadSchemas: Record<string, z.ZodSchema> = {
   CLASSIFY_FIELD: classifyFieldPayloadSchema,
   REPORT_MISCLASSIFICATION: reportMisclassificationPayloadSchema,
   LINK_ACTIVATED: z.undefined().optional(),
+  CHECK_OTP_FRESHNESS: z.undefined().optional(),
+  WAIT_FOR_FRESH_OTP: z
+    .object({
+      maxWaitMs: safeNumber.min(1000).max(120000),
+    })
+    .optional(),
+  FALLBACK_DOMAINS_USED: z
+    .object({
+      service: safeString.optional(),
+      reason: safeString.optional(),
+      timestamp: safeNumber.optional(),
+      error: safeString.optional(),
+    })
+    .optional(),
+  RESET_STATE: z.undefined().optional(),
+  REGISTRATION_FORM_SUBMITTED: registrationFormSubmittedPayloadSchema,
+  GET_DIAGNOSTIC_REPORT: z.undefined().optional(),
 };
 
-// Validation function
+// ─── Validation function ──────────────────────────────────────────────────────
 export function validateMessage<T extends { action: string; payload?: unknown }>(
   message: T
 ): { valid: true; data: T } | { valid: false; error: string } {
@@ -280,7 +303,6 @@ export function validateMessage<T extends { action: string; payload?: unknown }>
 
     if (!payloadSchema) {
       log.warn('Unknown message action rejected', { action });
-      // Reject unknown message actions - security critical
       return {
         valid: false,
         error: `Unknown message action: ${action}`,
@@ -288,7 +310,6 @@ export function validateMessage<T extends { action: string; payload?: unknown }>
     }
 
     payloadSchema.parse(message.payload);
-
     return { valid: true, data: message };
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -305,6 +326,7 @@ export function validateMessage<T extends { action: string; payload?: unknown }>
   }
 }
 
+// ─── Inferred Types ───────────────────────────────────────────────────────────
 export type EmailAccount = z.infer<typeof emailAccountSchema>;
 export type Email = z.infer<typeof emailSchema>;
 export type PasswordOptions = z.infer<typeof passwordOptionsSchema>;

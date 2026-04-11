@@ -31,7 +31,7 @@ type LoggerGlobal = typeof globalThis & {
 // Check if we're in production mode
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
-// Allowlist for production logging - show all logs for debugging
+// Allowlist for production logging - show ALL logs for debugging
 // Sensitive data is still redacted regardless of log level
 const PRODUCTION_LOG_ALLOWLIST: LogLevel[] = ['debug', 'info', 'warn', 'error'];
 const PERSISTED_LOG_KEY = 'ghostfill_debug_logs';
@@ -249,7 +249,9 @@ function redactSensitiveData(data: unknown, depth = 0): unknown {
 
   if (data instanceof Error) {
     const redacted = new Error(redactSensitiveData(data.message, depth + 1) as string);
-    redacted.stack = data.stack;
+    if (data.stack) {
+      redacted.stack = data.stack;
+    }
     return redacted;
   }
 
@@ -299,10 +301,14 @@ class Logger {
       const entry: LogEntry = {
         level,
         message: redactSensitiveData(message) as string,
-        data: data !== undefined ? redactSensitiveData(data) : undefined,
         timestamp: Date.now(),
-        source,
       };
+      if (data !== undefined) {
+        entry.data = redactSensitiveData(data);
+      }
+      if (source) {
+        entry.source = source;
+      }
       this.history.push(entry);
       if (this.history.length > this.maxHistory) {
         this.history.shift();
@@ -319,10 +325,14 @@ class Logger {
     const entry: LogEntry = {
       level,
       message: redactedMessage,
-      data: redactedData,
       timestamp: Date.now(),
-      source,
     };
+    if (redactedData !== undefined) {
+      entry.data = redactedData;
+    }
+    if (source) {
+      entry.source = source;
+    }
 
     // Store in history
     this.history.push(entry);
@@ -404,14 +414,6 @@ class Logger {
           return sessionLogs as LogEntry[];
         }
       }
-
-      if (chrome.storage?.local) {
-        const localData = await chrome.storage.local.get(PERSISTED_LOG_KEY);
-        const localLogs = localData?.[PERSISTED_LOG_KEY];
-        if (Array.isArray(localLogs)) {
-          return localLogs as LogEntry[];
-        }
-      }
     } catch {
       // Best effort only; fall back to in-memory history below.
     }
@@ -427,9 +429,6 @@ class Logger {
         if (chrome.storage?.session) {
           void chrome.storage.session.remove(PERSISTED_LOG_KEY);
         }
-        if (chrome.storage?.local) {
-          void chrome.storage.local.remove(PERSISTED_LOG_KEY);
-        }
       } catch {
         // Ignore cleanup failures.
       }
@@ -442,7 +441,7 @@ class Logger {
   }
 
   private persistHistory(): void {
-    if (typeof chrome === 'undefined' || (!chrome.storage?.session && !chrome.storage?.local)) {
+    if (typeof chrome === 'undefined' || !chrome.storage?.session) {
       return;
     }
 
@@ -450,20 +449,19 @@ class Logger {
     this.persistPromise = (this.persistPromise || Promise.resolve())
       .catch(() => undefined)
       .then(async () => {
-        if (chrome.storage?.session) {
-          await chrome.storage.session
-            .set({ [PERSISTED_LOG_KEY]: snapshot })
-            .catch(() => undefined);
-        }
-        if (chrome.storage?.local) {
-          await chrome.storage.local.set({ [PERSISTED_LOG_KEY]: snapshot }).catch(() => undefined);
-        }
+        await chrome.storage.session.set({ [PERSISTED_LOG_KEY]: snapshot }).catch(() => undefined);
       });
   }
 
   private installGlobalDebugHelpers(): void {
     const globalScope = globalThis as LoggerGlobal;
     this.syncGlobalHistory();
+
+    // Only expose debug helpers in extension context (not on web pages)
+    const isExtensionContext = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
+    if (!isExtensionContext) {
+      return;
+    }
 
     globalScope.dumpGhostFillLogs = async () => {
       const logs = await this.getPersistedHistory();

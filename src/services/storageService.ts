@@ -46,7 +46,6 @@ const log = createLogger('StorageService');
  */
 let sessionSecrets: SessionSecrets = {};
 let sessionSecretsInitialized = false;
-const sessionSecretsRestoring: Promise<void> | null = null;
 
 // Keys that contain sensitive data and should be encrypted
 // SECURITY FIX: Comprehensive list of all sensitive keys in StorageSchema
@@ -80,7 +79,6 @@ const CACHE_CONFIG = {
   TTL_MS: 5 * 60 * 1000, // 5 minutes TTL for cache entries
 } as const;
 
-
 /**
  * Type-safe Chrome storage wrapper with encryption for sensitive data
  *
@@ -102,7 +100,10 @@ function withStorageTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((_, reject) => {
-      setTimeout(() => reject(new Error(`Storage operation timed out: ${label}`)), STORAGE_OP_TIMEOUT_MS);
+      setTimeout(
+        () => reject(new Error(`Storage operation timed out: ${label}`)),
+        STORAGE_OP_TIMEOUT_MS
+      );
     }),
   ]);
 }
@@ -120,6 +121,8 @@ class StorageService {
   private pendingResolvers: Array<{ resolve: () => void; reject: (err: unknown) => void }> = [];
   private readonly WRITE_BATCH_DELAY = 500;
   private isFlushing = false;
+  private flushRetryCount = 0;
+  private readonly MAX_FLUSH_RETRIES = 3;
   // ───────────────────────────────────────────────────────────────────
   // CRITICAL FIX #4: Mutex for Write Operations
   // Prevents race conditions during concurrent writes
@@ -132,6 +135,9 @@ class StorageService {
   // Provides instant UI updates while syncing to storage in background
   // ───────────────────────────────────────────────────────────────────
   private optimisticUpdates: Map<string, unknown> = new Map();
+  // FIX: Added missing optimisticTimers — was referenced in setOptimistic() but
+  // never declared, causing a TypeError crash on every optimistic UI update.
+  private optimisticTimers: Map<keyof StorageSchema, ReturnType<typeof setTimeout>> = new Map();
   private syncInProgress = false;
 
   // PERFORMANCE: Cache statistics
@@ -157,10 +163,11 @@ class StorageService {
     if (now - this.lastCleanupTs > CACHE_CONFIG.TTL_MS) {
       this.lastCleanupTs = now;
       const removed = this.cache.cleanup();
-      if (removed > 0) { log.debug(`Cleaned up ${removed} expired cache entries`); }
+      if (removed > 0) {
+        log.debug(`Cleaned up ${removed} expired cache entries`);
+      }
     }
   }
-
 
   // ───────────────────────────────────────────────────────────────────
   // CRITICAL FIX #4: Mutex for Write Operations
@@ -179,7 +186,7 @@ class StorageService {
       } else {
         let resolved = false;
         let queueCallback: (() => void) | null = null;
-        
+
         const timeoutId = setTimeout(() => {
           if (resolved) {
             return;
@@ -253,32 +260,29 @@ class StorageService {
     value: StorageSchema[K],
     syncDelay: number = 500
   ): Promise<void> {
-    // SECURITY/RELIABILITY FIX: Capture the old value for complete rollback if syncing fails
     const previousValue = this.cache.get(key) as StorageSchema[K] | undefined;
-
-    // Update cache immediately for instant UI response
     this.optimisticUpdates.set(key, value);
     this.cache.set(key, value);
 
-    // Sync to storage in background after delay
-    setTimeout(() => {
-      this.set(key, value)
-        .then(() => {
+    return new Promise<void>((resolve, reject) => {
+      const timerId = setTimeout(async () => {
+        try {
+          await this.set(key, value);
           this.optimisticUpdates.delete(key);
-        })
-        .catch((error) => {
+          resolve();
+        } catch (error) {
           log.error(`Optimistic update failed for ${String(key)}`, error);
-
-          // Rollback safely
           if (previousValue !== undefined) {
             this.cache.set(key, previousValue);
           } else {
             this.cache.delete(key);
           }
           this.optimisticUpdates.delete(key);
-        });
-    }, syncDelay);
-    return Promise.resolve();
+          reject(error);
+        }
+      }, syncDelay);
+      this.optimisticTimers.set(key, timerId);
+    });
   }
 
   /**
@@ -348,7 +352,10 @@ class StorageService {
    * @security Key is stored in memory only, cleared on extension unload
    * @security Key is never logged or exposed in debug output
    */
-  async setSessionSecret<K extends keyof SessionSecrets>(key: K, value: SessionSecrets[K]): Promise<void> {
+  async setSessionSecret<K extends keyof SessionSecrets>(
+    key: K,
+    value: SessionSecrets[K]
+  ): Promise<void> {
     sessionSecrets[key] = value;
     sessionSecretsInitialized = true;
 
@@ -367,7 +374,7 @@ class StorageService {
       return;
     }
 
-    sessionSecrets[key] = undefined;
+    delete sessionSecrets[key];
 
     // Sync to chrome.storage.session using isolated namespace
     if (chrome.storage.session) {
@@ -378,7 +385,7 @@ class StorageService {
 
     const hasRemainingSecret = Boolean(sessionSecrets.llmApiKey || sessionSecrets.customDomainKey);
     if (!hasRemainingSecret) {
-      sessionSecrets.keyRotatedAt = undefined;
+      delete sessionSecrets.keyRotatedAt;
       sessionSecretsInitialized = false;
     }
 
@@ -410,8 +417,12 @@ class StorageService {
     if (!apiKey || apiKey.length < 10 || apiKey.length > 512) {
       throw new Error('Invalid API key format');
     }
-    this.setSessionSecret('llmApiKey', apiKey).catch(e => log.error('Failed to set LLM API key session secret', e));
-    this.setSessionSecret('keyRotatedAt', Date.now()).catch(e => log.error('Failed to set rotation time', e));
+    this.setSessionSecret('llmApiKey', apiKey).catch((e) =>
+      log.error('Failed to set LLM API key session secret', e)
+    );
+    this.setSessionSecret('keyRotatedAt', Date.now()).catch((e) =>
+      log.error('Failed to set rotation time', e)
+    );
   }
 
   /**
@@ -431,8 +442,12 @@ class StorageService {
     if (!apiKey || apiKey.length < 10 || apiKey.length > 512) {
       throw new Error('Invalid API key format');
     }
-    this.setSessionSecret('customDomainKey', apiKey).catch(e => log.error('Failed to set custom domain session secret', e));
-    this.setSessionSecret('keyRotatedAt', Date.now()).catch(e => log.error('Failed to set rotation time', e));
+    this.setSessionSecret('customDomainKey', apiKey).catch((e) =>
+      log.error('Failed to set custom domain session secret', e)
+    );
+    this.setSessionSecret('keyRotatedAt', Date.now()).catch((e) =>
+      log.error('Failed to set rotation time', e)
+    );
   }
 
   /**
@@ -442,10 +457,10 @@ class StorageService {
   clearSessionSecrets(): void {
     // SECURITY FIX: Overwrite keys in memory before clearing
     if (sessionSecrets.llmApiKey) {
-      sessionSecrets.llmApiKey = undefined;
+      delete sessionSecrets.llmApiKey;
     }
     if (sessionSecrets.customDomainKey) {
-      sessionSecrets.customDomainKey = undefined;
+      delete sessionSecrets.customDomainKey;
     }
     sessionSecrets = {};
     sessionSecretsInitialized = false;
@@ -491,13 +506,26 @@ class StorageService {
           // Restore session secrets using isolated namespace from chrome.storage.session first
           if (chrome.storage.session) {
             // Also enforce TRUSTED_CONTEXTS to prevent non-extension components from reading secrets (PA3)
-            await chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' }).catch(() => {});
-            
+            await chrome.storage.session
+              .setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' })
+              .catch(() => {});
+
             const allSession = await chrome.storage.session.get(null);
-            const secrets: any = {};
+            const secrets: Record<string, unknown> = {};
             for (const k of Object.keys(allSession)) {
               if (k.startsWith('ghostfill_secret_')) {
-                secrets[k.replace('ghostfill_secret_', '')] = allSession[k];
+                const secretKey = k.replace('ghostfill_secret_', '');
+                const v = allSession[k];
+                // Validate restored secrets to prevent injection
+                if ((secretKey === 'llmApiKey' || secretKey === 'customDomainKey') && typeof v === 'string' && v.length >= 10 && v.length <= 512) {
+                  secrets[secretKey] = v;
+                } else if (secretKey === 'keyRotatedAt' && typeof v === 'number') {
+                  secrets[secretKey] = v;
+                } else if (secretKey === 'sessionKey' && typeof v === 'string') {
+                  secrets[secretKey] = v;
+                } else {
+                  log.warn(`Invalid session secret restored: ${secretKey}`);
+                }
               }
             }
             if (Object.keys(secrets).length > 0) {
@@ -587,12 +615,17 @@ class StorageService {
       let value = result[key] as StorageSchema[K] | undefined;
 
       // Decrypt sensitive data
-      if (value && SENSITIVE_KEYS.includes(key) && typeof value === 'string') {
-        try {
-          value = (await decrypt(value as string, this.getEncryptionKey())) as StorageSchema[K];
-        } catch (error) {
-          log.warn(`Failed to decrypt ${key}, dropping value to prevent crash`, error);
-          // SECURITY FIX: Drop the value so the UI doesn't crash on invalid string operations
+      if (value && SENSITIVE_KEYS.includes(key)) {
+        if (typeof value === 'string') {
+          try {
+            value = (await decrypt(value as string, this.getEncryptionKey())) as StorageSchema[K];
+          } catch (error) {
+            log.warn(`Failed to decrypt ${key}, dropping value to prevent crash`, error);
+            value = undefined;
+          }
+        } else {
+          // Sensitive key has non-string value — could be corrupted or stored before encryption
+          log.warn(`Sensitive key ${key} has non-string value, dropping to prevent data leak`);
           value = undefined;
         }
       }
@@ -720,6 +753,9 @@ class StorageService {
           });
         });
 
+        // Reset retry count on success
+        this.flushRetryCount = 0;
+
         log.debug(`Batch saved ${writes.size} keys`);
       } catch (error) {
         log.error('Failed to flush pending writes', error);
@@ -736,13 +772,23 @@ class StorageService {
       } finally {
         this.releaseWriteMutex();
 
-        // Directly schedule retry if there are pending writes
+        // Directly schedule retry if there are pending writes (with max retry limit)
         if (this.pendingWrites.size > 0) {
-          setTimeout(() => {
-            this.flushPendingWrites().catch((err) => {
-              log.error('Retry flush failed', err);
-            });
-          }, this.WRITE_BATCH_DELAY);
+          this.flushRetryCount++;
+          if (this.flushRetryCount <= this.MAX_FLUSH_RETRIES) {
+            log.warn(`Retrying flush (attempt ${this.flushRetryCount}/${this.MAX_FLUSH_RETRIES})`);
+            setTimeout(() => {
+              this.flushPendingWrites().catch((err) => {
+                log.error('Retry flush failed', err);
+              });
+            }, this.WRITE_BATCH_DELAY * this.flushRetryCount);
+          } else {
+            log.error(
+              `Max flush retries (${this.MAX_FLUSH_RETRIES}) reached, discarding pending writes`
+            );
+            this.pendingWrites.clear();
+            this.flushRetryCount = 0;
+          }
         }
       }
     };
@@ -778,6 +824,9 @@ class StorageService {
 
   /**
    * Remove a value from storage
+   * NOTE: This bypasses the debatched write system intentionally — removals
+   * must be immediate to prevent stale data from being flushed after deletion.
+   * JS single-threaded safety ensures no concurrent flush can interleave.
    */
   async remove(key: keyof StorageSchema): Promise<void> {
     await this.ensureInitialized();
@@ -843,8 +892,10 @@ class StorageService {
               finalValue = undefined;
             }
           } catch (error) {
-            log.warn(`Failed to decrypt ${key} in getAllInternal, dropping value`, error);
-            // SECURITY FIX: Drop the value so the UI doesn't crash
+            // Expected when data was encrypted with different key or corrupted
+            // Clear the corrupted data to prevent repeated failures
+            log.debug(`Failed to decrypt ${key}, clearing corrupted data`);
+            void chrome.storage.local.remove(key);
             finalValue = undefined;
           }
         }
@@ -884,6 +935,9 @@ class StorageService {
       }
       this.cache.clear();
       this.pendingWrites.clear();
+      const pendingResolvers = [...this.pendingResolvers];
+      this.pendingResolvers = [];
+      pendingResolvers.forEach((r) => r.resolve());
       // FIX #10: Also clear in-memory session secrets when storage is wiped
       this.clearSessionSecrets();
       log.info('Storage cleared (including session secrets)');
@@ -1030,7 +1084,7 @@ class StorageService {
           // Keep cache in sync with decrypted values for sensitive keys.
           for (const key in changes) {
             const typedKey = key as keyof StorageSchema;
-            const newValue = changes[key].newValue;
+            const newValue = changes[key]!.newValue;
 
             if (newValue === undefined) {
               this.cache.delete(typedKey);

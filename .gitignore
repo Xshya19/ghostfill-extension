@@ -163,4 +163,22 @@ __pycache__/
 *.pyc
 ml/venv/
 .tmp-script-run/
-tests/
+tests/accuracy_log*.txt
+tests/accuracy_log*.jsonl
+
+# ───────────────────────────────────────────────────────────────────
+# Diagnostic dump files
+# ───────────────────────────────────────────────────────────────────
+*-errors.txt
+*errors*.txt
+*_errors.txt
+provider_results.txt
+error-lines.txt
+ts-errors.txt
+ts-errors-full.txt
+lint_output.txt
+typecheck_output.txt
+remaining-errors.txt
+current-errors.txt
+new_issues*.md
+*_FIXES_*.md

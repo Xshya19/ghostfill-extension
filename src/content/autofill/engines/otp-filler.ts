@@ -5,10 +5,13 @@ import { FieldSetter } from './field-setter';
 import { PhantomTyper } from './phantom-typer';
 
 const SPLIT_FIELD_SETTLE_MS = 50;
+const AUTO_ADVANCE_DETECT_DELAY = 15;
 
 /**
  * OTP FILLER ENGINE
  * Orchestrates the filling of single or split OTP fields.
+ * Handles: single inputs, split digit boxes, contenteditable, shadow DOM,
+ * auto-advancing fields, paste-distribution, and framework-controlled inputs.
  */
 export class OTPFiller {
   static async fill(
@@ -22,23 +25,49 @@ export class OTPFiller {
       return { success: false, filledCount: 0, strategy: 'none' };
     }
 
+    // Check if this is a contenteditable group
+    const isEditableGroup = group.signals?.includes('contenteditable');
+    if (isEditableGroup) {
+      return this.fillContentEditable(
+        cleanOTP,
+        group.fields as unknown as HTMLElement[],
+        framework
+      );
+    }
+
     return group.isSplit
       ? this.fillSplit(cleanOTP, group.fields, framework, isBackgroundTab)
-      : this.fillSingle(otp, group.fields[0], framework, isBackgroundTab);
+      : this.fillSingle(otp, group.fields[0]!, framework, isBackgroundTab);
   }
 
-  private static async fillSingle(otp: string, field: HTMLInputElement, framework: FrameworkType, isBackgroundTab: boolean = false): Promise<OTPFillOutcome> {
+  private static async fillSingle(
+    otp: string,
+    field: HTMLInputElement,
+    framework: FrameworkType,
+    isBackgroundTab: boolean = false
+  ): Promise<OTPFillOutcome> {
     if (!field) {
       return { success: false, filledCount: 0, strategy: 'single-field' };
     }
-    const success = await FieldSetter.setValue(field, otp, framework, isBackgroundTab);
+
+    // For single-input split OTP (letter-spacing styled), use clean OTP
+    const cleanOTP = otp.replace(/[-\s]/g, '');
+    const valueToSet = field.type === 'number' ? cleanOTP : otp;
+
+    const success = await FieldSetter.setValue(field, valueToSet, framework, isBackgroundTab);
     return { success, filledCount: success ? 1 : 0, strategy: 'single-field' };
   }
 
-  private static async fillSplit(digits: string, fields: HTMLInputElement[], framework: FrameworkType, isBackgroundTab: boolean = false): Promise<OTPFillOutcome> {
+  private static async fillSplit(
+    digits: string,
+    fields: HTMLInputElement[],
+    framework: FrameworkType,
+    isBackgroundTab: boolean = false
+  ): Promise<OTPFillOutcome> {
     const total = Math.min(digits.length, fields.length);
     let filledCount = 0;
 
+    // Strategy 1: Try paste distribution first (fastest if it works)
     if (!isBackgroundTab) {
       const pasted = await this.tryPasteDistributedCode(digits.slice(0, total), fields);
       if (pasted) {
@@ -46,8 +75,14 @@ export class OTPFiller {
       }
     }
 
+    // Strategy 2: Detect if site auto-advances focus
+    const autoAdvances = await this.detectAutoAdvance(fields[0]);
+
+    // Strategy 3: Character-by-character filling
     for (let i = 0; i < fields.length; i++) {
       const field = fields[i];
+      if (!field) continue;
+
       if (i < total) {
         const success = isBackgroundTab
           ? await FieldSetter.setCharDirect(field, digits[i]!, true)
@@ -56,15 +91,17 @@ export class OTPFiller {
           filledCount++;
         }
       }
+
+      // Focus management: only advance if site doesn't auto-advance
       if (i < fields.length - 1) {
-        await delay(35);
-        // Only trigger blur and advance focus if the site's own Javascript hasn't already done it
-        if (!isBackgroundTab && document.activeElement === field) {
-           field.blur();
-           const nextField = fields[i + 1];
-           if (nextField) {
-             nextField.focus({ preventScroll: true });
-           }
+        await delay(autoAdvances ? 10 : 35);
+
+        if (!isBackgroundTab && !autoAdvances && document.activeElement === field) {
+          field.blur();
+          const nextField = fields[i + 1];
+          if (nextField) {
+            nextField.focus({ preventScroll: true });
+          }
         }
       }
     }
@@ -78,10 +115,104 @@ export class OTPFiller {
     };
   }
 
-  private static async typeIntoSplitField(
-    field: HTMLInputElement,
-    char: string
-  ): Promise<boolean> {
+  /**
+   * Fill contenteditable OTP fields (divs/spans with contenteditable="true")
+   */
+  private static async fillContentEditable(
+    digits: string,
+    fields: HTMLElement[],
+    _framework: FrameworkType
+  ): Promise<OTPFillOutcome> {
+    const total = Math.min(digits.length, fields.length);
+    let filledCount = 0;
+
+    for (let i = 0; i < fields.length; i++) {
+      const field = fields[i];
+      if (!field) continue;
+
+      if (i < total) {
+        const char = digits[i]!;
+        field.focus({ preventScroll: true });
+        field.textContent = char;
+
+        field.dispatchEvent(
+          new InputEvent('input', {
+            bubbles: true,
+            inputType: 'insertText',
+            data: char,
+          })
+        );
+        field.dispatchEvent(new Event('change', { bubbles: true }));
+
+        if (field.textContent === char) {
+          filledCount++;
+        }
+      }
+
+      if (i < fields.length - 1) {
+        await delay(30);
+        if (document.activeElement === field) {
+          field.blur();
+          const nextField = fields[i + 1];
+          if (nextField) {
+            nextField.focus({ preventScroll: true });
+          }
+        }
+      }
+    }
+
+    const finalValue = fields
+      .map((f) => f.textContent ?? '')
+      .join('')
+      .slice(0, total);
+    const success = finalValue === digits.slice(0, total);
+    return {
+      success,
+      filledCount: success ? total : filledCount,
+      strategy: 'contenteditable-split',
+    };
+  }
+
+  /**
+   * Detect if a site auto-advances focus after typing a character.
+   * Some sites (like Google, Microsoft) automatically move focus to the next field.
+   */
+  private static async detectAutoAdvance(field: HTMLInputElement | undefined): Promise<boolean> {
+    if (!field) return false;
+
+    try {
+      field.focus({ preventScroll: true });
+      const initialActive = document.activeElement;
+
+      // Simulate a single character input
+      const nativeSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value'
+      )?.set;
+      if (nativeSetter) {
+        nativeSetter.call(field, '1');
+      } else {
+        field.value = '1';
+      }
+      field.dispatchEvent(new InputEvent('input', { bubbles: true, data: '1' }));
+
+      // Wait briefly for any auto-advance to occur
+      await delay(AUTO_ADVANCE_DETECT_DELAY);
+
+      // If focus moved away from our field, the site auto-advances
+      const autoAdvances = document.activeElement !== field;
+
+      // Clean up the test character
+      field.value = '';
+      field.dispatchEvent(new InputEvent('input', { bubbles: true }));
+
+      return autoAdvances;
+    } catch {
+      return false;
+    }
+  }
+
+  private static async typeIntoSplitField(field: HTMLInputElement, char: string): Promise<boolean> {
     field.focus({ preventScroll: true });
     field.click();
     await delay(10);
@@ -108,6 +239,7 @@ export class OTPFiller {
       const dataTransfer = new DataTransfer();
       dataTransfer.setData('text/plain', digits);
 
+      // Dispatch paste event
       target.dispatchEvent(
         new ClipboardEvent('paste', {
           clipboardData: dataTransfer,
@@ -116,6 +248,7 @@ export class OTPFiller {
         })
       );
 
+      // Also dispatch beforeinput and input events for frameworks that listen to these
       target.dispatchEvent(
         new InputEvent('beforeinput', {
           data: digits,

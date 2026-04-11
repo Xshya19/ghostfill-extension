@@ -511,7 +511,7 @@ class OTPDeliveryEngine {
           {
             timeout: OTP_DELIVERY_MESSAGE_TIMEOUT_MS,
             retries: 0,
-            frameId,
+            ...(frameId !== undefined ? { frameId } : {})
           }
         );
 
@@ -892,8 +892,8 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
         otpDelivered = await deliverOTP(extractedOTPCode, detection.confidence ?? 0.9, {
           from: fullEmail.from,
           subject: fullEmail.subject,
-          provider: detection.provider,
-          linkUrl: detection.link,
+          ...(detection.provider !== undefined ? { provider: detection.provider } : {}),
+          ...(detection.link !== undefined ? { linkUrl: detection.link } : {})
         });
 
         if (otpDelivered) {
@@ -922,8 +922,8 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
     otpDelivered = await deliverOTP(extractedOTPCode, detection.confidence, {
       from: fullEmail.from,
       subject: fullEmail.subject,
-      provider: detection.provider,
-      linkUrl: detection.link,
+      ...(detection.provider !== undefined ? { provider: detection.provider } : {}),
+      ...(detection.link !== undefined ? { linkUrl: detection.link } : {})
     });
   }
 
@@ -1193,7 +1193,7 @@ export function startFastOTPPolling(
     url,
     hostname,
     fieldSelectors,
-    frameId,
+    ...(frameId !== undefined ? { frameId } : {}),
     registeredAt: Date.now(),
     priority: priorityCounter++,
     deliveryAttempts: 0,
@@ -1350,4 +1350,19 @@ function chunk<T>(arr: T[], size: number): T[][] {
     out.push(arr.slice(i, i + size));
   }
   return out;
+}
+
+export function triggerEventDrivenPolling(reason: string): void {
+  log.info(`⚡ Triggering event-driven poll: ${reason}`);
+  if (checkPermitted('fast')) {
+    performCheck('fast').catch((e) => log.warn('Event-driven poll error', e));
+  } else {
+    // maybe try general or just force it
+    performCheck('general').catch((e) => log.warn('Event-driven poll error', e));
+  }
+}
+
+export function recordEmailReceived(): void {
+  log.info('🔔 SSE received email event — forcing immediate inbox check');
+  performCheck('fast').catch((e) => log.warn('SSE-driven poll error', e));
 }

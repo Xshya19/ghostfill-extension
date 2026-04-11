@@ -33,28 +33,37 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
   return (
     <nav className="settings-sidebar" role="tablist" aria-label="Settings navigation">
-      {TABS.map((tab) => (
+      {TABS.map((tab, index) => (
         <button
           key={tab.id}
           role="tab"
           aria-selected={activeTab === tab.id}
           aria-controls={`tabpanel-${tab.id}`}
           id={`tab-${tab.id}`}
+          tabIndex={activeTab === tab.id ? 0 : -1}
           className={`sidebar-tab${activeTab === tab.id ? ' sidebar-tab--active' : ''}`}
           onClick={() => onTabChange(tab.id)}
           onKeyDown={(e) => {
-            const index = TABS.findIndex(t => t.id === tab.id);
+            let targetIndex = -1;
             if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
               e.preventDefault();
-              const next = TABS[(index + 1) % TABS.length];
-              if (next) {onTabChange(next.id);}
-              document.getElementById(`tab-${TABS[(index + 1) % TABS.length]?.id}`)?.focus();
+              targetIndex = (index + 1) % TABS.length;
             } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
               e.preventDefault();
-              const prevIndex = (index - 1 + TABS.length) % TABS.length;
-              const prev = TABS[prevIndex];
-              if (prev) {onTabChange(prev.id);}
-              document.getElementById(`tab-${TABS[prevIndex]?.id}`)?.focus();
+              targetIndex = (index - 1 + TABS.length) % TABS.length;
+            } else if (e.key === 'Home') {
+              e.preventDefault();
+              targetIndex = 0;
+            } else if (e.key === 'End') {
+              e.preventDefault();
+              targetIndex = TABS.length - 1;
+            }
+            if (targetIndex >= 0) {
+              const target = TABS[targetIndex];
+              if (target) {
+                onTabChange(target.id);
+                document.getElementById(`tab-${target.id}`)?.focus();
+              }
             }
           }}
           type="button"

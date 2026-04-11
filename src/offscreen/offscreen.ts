@@ -1,5 +1,6 @@
 // Removed console.error override previously used for ONNX warnings
 
+import { RawFieldFeatures } from '../content/extractor';
 import { PageContext } from '../types/form.types';
 import { classifyField, initInferenceEngine } from './inferenceEngine';
 
@@ -28,8 +29,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     // ---- ML Classification ----
     if (message.target === 'offscreen-doc' && message.type === 'CLASSIFY_FIELD') {
-      const { features, context } = message.payload;
-      classifyField(features, context)
+      if (!message.payload || typeof message.payload !== 'object') {
+        sendResponse({ success: false, error: 'Missing or invalid payload' });
+        return true;
+      }
+      const { features, context } = message.payload as {
+        features?: Omit<RawFieldFeatures, 'element'>;
+        context?: unknown;
+      };
+      // FIX: features was typed as unknown, causing TS2345. Cast after null check
+      // from the outer guard (typeof message.payload !== 'object') above.
+      classifyField(features as Omit<RawFieldFeatures, 'element'>, context as PageContext)
         .then((prediction) => sendResponse({ success: true, prediction }))
         .catch((error: Error) => sendResponse({ success: false, error: String(error) }));
       return true;

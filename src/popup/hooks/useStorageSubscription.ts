@@ -19,7 +19,9 @@ export function useStorageSubscription<K extends keyof StorageSchema>(
         setValue((data ?? null) as StorageSchema[K] | null);
       } catch (error) {
         console.error(`[useStorageSubscription] Failed for key ${String(key)}:`, error);
-        // Do not update state if we throw, leaving the hook with its previous value
+        if (isMounted) {
+          setValue(initialValue);
+        }
       }
     };
 
@@ -32,8 +34,10 @@ export function useStorageSubscription<K extends keyof StorageSchema>(
       areaName: string
     ) => {
       if (areaName === 'local' && changes[key as string]) {
-        // Ensure we correctly decrypt the new value by asking StorageService to get it
-        void refreshValue();
+        if (isMounted) {
+          const newValue = changes[key as string]?.newValue;
+          setValue((newValue ?? null) as StorageSchema[K] | null);
+        }
       }
     };
 

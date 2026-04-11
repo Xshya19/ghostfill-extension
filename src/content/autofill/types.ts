@@ -1,5 +1,3 @@
-import { FrameworkType } from '../../types/form.types';
-
 export interface OTPFieldGroup {
   fields: HTMLInputElement[];
   score: number;

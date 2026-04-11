@@ -170,7 +170,7 @@ export function analyzeEmailZones(html: string, plainText: string): EmailZone[] 
     regex.lastIndex = 0;
     let m;
     while ((m = regex.exec(decoded)) !== null) {
-      const content = stripHtml(m[2]);
+      const content = stripHtml(m[2] ?? '');
       if (content.length > 5) {
         zones.push({
           zone: 'preheader',

@@ -8,15 +8,7 @@ import {
   pluralize,
 } from './core';
 
-export {
-  formatFileSize,
-  formatDate,
-  formatTime,
-  formatDateTime,
-  formatRelativeTime,
-  pluralize,
-};
-
+export { formatFileSize, formatDate, formatTime, formatDateTime, formatRelativeTime, pluralize };
 
 /**
  * Format password strength as text
@@ -86,9 +78,8 @@ export function formatEmailDisplay(email: string, maxLength: number = 30): strin
     return email.substring(0, maxLength - 3) + '...';
   }
 
-  return local.substring(0, availableForLocal) + '...@' + domain;
+  return local!.substring(0, availableForLocal) + '...@' + domain;
 }
-
 
 /**
  * Format OTP for display (add spaces for readability)
@@ -137,7 +128,6 @@ export function maskPassword(
 export function formatEntropy(entropy: number): string {
   return `${Math.round(entropy)} bits`;
 }
-
 
 /**
  * Extract OTP/verification code from text
@@ -222,10 +212,10 @@ export function extractOTP(text: string): string | null {
 
     // Get context window around the number (80 chars before and after)
     const contextStart = Math.max(0, index - 80);
-    const contextEnd = Math.min(text.length, index + value.length + 80);
+    const contextEnd = Math.min(text.length, index! + value!.length + 80);
     const context = text.substring(contextStart, contextEnd).toLowerCase();
 
-    candidates.push({ value, index, context });
+    candidates.push({ value: value!, index: index!, context });
   }
 
   if (candidates.length === 0) {
@@ -322,7 +312,7 @@ export function extractOTP(text: string): string | null {
     return null;
   }
 
-  return scoredCandidates[0].value;
+  return scoredCandidates[0]!.value;
 }
 
 /**
@@ -528,5 +518,5 @@ export function extractActivationLink(text: string): string | null {
 
   // Sort by score and return the best match
   candidates.sort((a, b) => b.score - a.score);
-  return candidates[0].url;
+  return candidates[0]!.url;
 }

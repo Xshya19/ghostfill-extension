@@ -56,7 +56,9 @@ class PerformanceMonitor {
   private reportCallback?: (metric: LocalMetric) => void;
 
   constructor(reportCallback?: (metric: LocalMetric) => void) {
-    this.reportCallback = reportCallback;
+    if (reportCallback) {
+      this.reportCallback = reportCallback;
+    }
   }
 
   /**
@@ -69,9 +71,7 @@ class PerformanceMonitor {
     // error. Guard on window + document before setting them up.
     const isPage = typeof window !== 'undefined' && typeof document !== 'undefined';
     const isExtensionPage =
-      isPage &&
-      typeof location !== 'undefined' &&
-      location.protocol === 'chrome-extension:';
+      isPage && typeof location !== 'undefined' && location.protocol === 'chrome-extension:';
 
     if (isExtensionPage) {
       this.observeLCP();
@@ -95,6 +95,7 @@ class PerformanceMonitor {
     const observer = new PerformanceObserver((entryList) => {
       const entries = entryList.getEntries();
       const lastEntry = entries[entries.length - 1];
+      if (!lastEntry) {return;}
 
       const metric: LocalMetric = {
         name: 'LCP',
@@ -319,23 +320,29 @@ class PerformanceMonitor {
    * Report long task for investigation
    */
   private reportLongTask(entry: PerformanceEntry): void {
-    log.warn('Long task detected', JSON.stringify({
-      name: entry.name,
-      duration: entry.duration,
-      startTime: entry.startTime,
-    }));
+    log.warn(
+      'Long task detected',
+      JSON.stringify({
+        name: entry.name,
+        duration: entry.duration,
+        startTime: entry.startTime,
+      })
+    );
   }
 
   /**
    * Report slow resource for investigation
    */
   private reportSlowResource(entry: PerformanceResourceTiming): void {
-    log.warn('Slow resource detected', JSON.stringify({
-      name: entry.name,
-      duration: entry.duration,
-      transferSize: entry.transferSize || 0,
-      encodedBodySize: entry.encodedBodySize || 0,
-    }));
+    log.warn(
+      'Slow resource detected',
+      JSON.stringify({
+        name: entry.name,
+        duration: entry.duration,
+        transferSize: entry.transferSize || 0,
+        encodedBodySize: entry.encodedBodySize || 0,
+      })
+    );
   }
 
   /**
@@ -400,7 +407,7 @@ export class MemoryMonitor {
   stop(): void {
     if (this.timeoutId) {
       clearTimeout(this.timeoutId);
-      this.timeoutId = undefined;
+      delete this.timeoutId;
     }
   }
 
@@ -440,17 +447,20 @@ export class MemoryMonitor {
     }
 
     const recent = this.snapshots.slice(-10);
-    const first = recent[0].usedJSHeapSize;
-    const last = recent[recent.length - 1].usedJSHeapSize;
+    const first = recent[0]!.usedJSHeapSize;
+    const last = recent[recent.length - 1]!.usedJSHeapSize;
 
     // If memory increased by more than 20% in last 10 snapshots
     const increase = (last - first) / first;
     if (increase > 0.2) {
-      log.warn('Potential memory leak detected', JSON.stringify({
-        increase: `${(increase * 100).toFixed(2)}%`,
-        from: first,
-        to: last,
-      }));
+      log.warn(
+        'Potential memory leak detected',
+        JSON.stringify({
+          increase: `${(increase * 100).toFixed(2)}%`,
+          from: first,
+          to: last,
+        })
+      );
     }
   }
 
@@ -462,8 +472,8 @@ export class MemoryMonitor {
       return 'stable';
     }
 
-    const first = this.snapshots[0].usedJSHeapSize;
-    const last = this.snapshots[this.snapshots.length - 1].usedJSHeapSize;
+    const first = this.snapshots[0]!.usedJSHeapSize;
+    const last = this.snapshots[this.snapshots.length - 1]!.usedJSHeapSize;
     const change = (last - first) / first;
 
     if (change > 0.1) {
@@ -569,11 +579,14 @@ export class ErrorTracker {
    * Sanitize entire error object
    */
   private sanitizeError(error: TrackedError): TrackedError {
-    return {
+    const result: TrackedError = {
       ...error,
       message: this.sanitizeMessage(error.message),
-      stack: error.stack ? this.sanitizeMessage(error.stack) : undefined,
     };
+    if (error.stack) {
+      result.stack = this.sanitizeMessage(error.stack);
+    }
+    return result;
   }
 
   /**

@@ -92,7 +92,14 @@ interface IntentClassification {
 
 interface ProviderKnowledge {
   readonly name: string;
-  readonly category: 'auth-platform' | 'saas' | 'social' | 'devtools' | 'cloud' | 'finance' | 'productivity';
+  readonly category:
+    | 'auth-platform'
+    | 'saas'
+    | 'social'
+    | 'devtools'
+    | 'cloud'
+    | 'finance'
+    | 'productivity';
   readonly senderDomains: readonly RegExp[];
   readonly verificationUrlPatterns: readonly RegExp[];
   readonly codeParams: readonly string[];
@@ -175,7 +182,9 @@ interface ParsedAnchor {
 // ═══════════════════════════════════════════════════════════════
 
 function truncate(str: string | undefined | null, maxLen: number): string {
-  if (!str) {return '';}
+  if (!str) {
+    return '';
+  }
   return str.length > maxLen ? str.slice(0, maxLen - 3) + '...' : str;
 }
 
@@ -205,8 +214,17 @@ function normalizeUrl(url: string): string {
   try {
     const u = new URL(url);
     const trackingParams = [
-      'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term',
-      'ref', 'source', 'mc_cid', 'mc_eid', 'fbclid', 'gclid',
+      'utm_source',
+      'utm_medium',
+      'utm_campaign',
+      'utm_content',
+      'utm_term',
+      'ref',
+      'source',
+      'mc_cid',
+      'mc_eid',
+      'fbclid',
+      'gclid',
     ];
     for (const p of trackingParams) {
       u.searchParams.delete(p);
@@ -226,7 +244,10 @@ function safeNewUrl(url: string): URL | null {
 }
 
 function stripHtmlTags(html: string): string {
-  return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  return html
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function getCleanAnchorText(anchor: ParsedAnchor): string {
@@ -243,74 +264,294 @@ function getCleanAnchorText(anchor: ParsedAnchor): string {
 
 const INTENT_SIGNALS: readonly IntentSignal[] = [
   // ── Verification Intent ──
-  { pattern: /verify\s*(your|my|this|the)?\s*(email|e-?mail|account|address)/i, intent: 'verification', weight: 40, name: 'verify-email-phrase' },
-  { pattern: /confirm\s*(your|my|this|the)?\s*(email|e-?mail|account|registration|sign\s*up)/i, intent: 'verification', weight: 40, name: 'confirm-email-phrase' },
-  { pattern: /activate\s*(your|my|this)?\s*(account|email|profile)/i, intent: 'verification', weight: 35, name: 'activate-phrase' },
-  { pattern: /validate\s*(your|my|this)?\s*(email|account|address)/i, intent: 'verification', weight: 35, name: 'validate-phrase' },
-  { pattern: /complete\s*(your|my)?\s*(registration|sign\s*up|setup|verification)/i, intent: 'verification', weight: 30, name: 'complete-registration' },
+  {
+    pattern: /verify\s*(your|my|this|the)?\s*(email|e-?mail|account|address)/i,
+    intent: 'verification',
+    weight: 40,
+    name: 'verify-email-phrase',
+  },
+  {
+    pattern: /confirm\s*(your|my|this|the)?\s*(email|e-?mail|account|registration|sign\s*up)/i,
+    intent: 'verification',
+    weight: 40,
+    name: 'confirm-email-phrase',
+  },
+  {
+    pattern: /activate\s*(your|my|this)?\s*(account|email|profile)/i,
+    intent: 'verification',
+    weight: 35,
+    name: 'activate-phrase',
+  },
+  {
+    pattern: /validate\s*(your|my|this)?\s*(email|account|address)/i,
+    intent: 'verification',
+    weight: 35,
+    name: 'validate-phrase',
+  },
+  {
+    pattern: /complete\s*(your|my)?\s*(registration|sign\s*up|setup|verification)/i,
+    intent: 'verification',
+    weight: 30,
+    name: 'complete-registration',
+  },
   { pattern: /welcome.*verify/i, intent: 'verification', weight: 25, name: 'welcome-verify' },
-  { pattern: /thanks?\s*(for)?\s*(signing\s*up|registering|joining|creating)/i, intent: 'verification', weight: 25, name: 'thanks-signup' },
+  {
+    pattern: /thanks?\s*(for)?\s*(signing\s*up|registering|joining|creating)/i,
+    intent: 'verification',
+    weight: 25,
+    name: 'thanks-signup',
+  },
   { pattern: /one\s*more\s*step/i, intent: 'verification', weight: 20, name: 'one-more-step' },
-  { pattern: /almost\s*(there|done|finished)/i, intent: 'verification', weight: 15, name: 'almost-there' },
+  {
+    pattern: /almost\s*(there|done|finished)/i,
+    intent: 'verification',
+    weight: 15,
+    name: 'almost-there',
+  },
 
   // ── Magic Link Intent ──
   { pattern: /magic\s*link/i, intent: 'magic-link-login', weight: 45, name: 'magic-link-phrase' },
-  { pattern: /sign\s*in\s*(to|with|using)\s*(your|a|this)?\s*(link|button|click)/i, intent: 'magic-link-login', weight: 40, name: 'sign-in-with-link' },
-  { pattern: /log\s*in\s*(to|with)\s*(your|this)?\s*(link|click|button)/i, intent: 'magic-link-login', weight: 40, name: 'login-with-link' },
-  { pattern: /passwordless\s*(sign|log)\s*in/i, intent: 'magic-link-login', weight: 40, name: 'passwordless-login' },
-  { pattern: /sign\s*in\s*to\s+\w+/i, intent: 'magic-link-login', weight: 20, name: 'sign-in-to-service' },
-  { pattern: /log\s*in\s*to\s+\w+/i, intent: 'magic-link-login', weight: 20, name: 'login-to-service' },
-  { pattern: /click\s*(below|the\s*button|here|this\s*link)\s*to\s*(sign|log)\s*in/i, intent: 'magic-link-login', weight: 35, name: 'click-to-sign-in' },
-  { pattern: /requested\s*a?\s*(sign|log)\s*in\s*(link|email|code)/i, intent: 'magic-link-login', weight: 30, name: 'requested-login-link' },
+  {
+    pattern: /sign\s*in\s*(to|with|using)\s*(your|a|this)?\s*(link|button|click)/i,
+    intent: 'magic-link-login',
+    weight: 40,
+    name: 'sign-in-with-link',
+  },
+  {
+    pattern: /log\s*in\s*(to|with)\s*(your|this)?\s*(link|click|button)/i,
+    intent: 'magic-link-login',
+    weight: 40,
+    name: 'login-with-link',
+  },
+  {
+    pattern: /passwordless\s*(sign|log)\s*in/i,
+    intent: 'magic-link-login',
+    weight: 40,
+    name: 'passwordless-login',
+  },
+  {
+    pattern: /sign\s*in\s*to\s+\w+/i,
+    intent: 'magic-link-login',
+    weight: 20,
+    name: 'sign-in-to-service',
+  },
+  {
+    pattern: /log\s*in\s*to\s+\w+/i,
+    intent: 'magic-link-login',
+    weight: 20,
+    name: 'login-to-service',
+  },
+  {
+    pattern: /click\s*(below|the\s*button|here|this\s*link)\s*to\s*(sign|log)\s*in/i,
+    intent: 'magic-link-login',
+    weight: 35,
+    name: 'click-to-sign-in',
+  },
+  {
+    pattern: /requested\s*a?\s*(sign|log)\s*in\s*(link|email|code)/i,
+    intent: 'magic-link-login',
+    weight: 30,
+    name: 'requested-login-link',
+  },
 
   // ── Password Reset Intent ──
-  { pattern: /reset\s*(your|my|the)?\s*password/i, intent: 'password-reset', weight: 45, name: 'reset-password' },
-  { pattern: /change\s*(your|my|the)?\s*password/i, intent: 'password-reset', weight: 35, name: 'change-password' },
-  { pattern: /forgot\s*(your|my|the)?\s*password/i, intent: 'password-reset', weight: 40, name: 'forgot-password' },
-  { pattern: /password\s*(recovery|reset|change)/i, intent: 'password-reset', weight: 40, name: 'password-recovery' },
-  { pattern: /lost\s*(your|my)?\s*(password|access)/i, intent: 'password-reset', weight: 30, name: 'lost-password' },
-  { pattern: /set\s*(a\s*)?new\s*password/i, intent: 'password-reset', weight: 35, name: 'set-new-password' },
-  { pattern: /update\s*(your|my)?\s*password/i, intent: 'password-reset', weight: 30, name: 'update-password' },
+  {
+    pattern: /reset\s*(your|my|the)?\s*password/i,
+    intent: 'password-reset',
+    weight: 45,
+    name: 'reset-password',
+  },
+  {
+    pattern: /change\s*(your|my|the)?\s*password/i,
+    intent: 'password-reset',
+    weight: 35,
+    name: 'change-password',
+  },
+  {
+    pattern: /forgot\s*(your|my|the)?\s*password/i,
+    intent: 'password-reset',
+    weight: 40,
+    name: 'forgot-password',
+  },
+  {
+    pattern: /password\s*(recovery|reset|change)/i,
+    intent: 'password-reset',
+    weight: 40,
+    name: 'password-recovery',
+  },
+  {
+    pattern: /lost\s*(your|my)?\s*(password|access)/i,
+    intent: 'password-reset',
+    weight: 30,
+    name: 'lost-password',
+  },
+  {
+    pattern: /set\s*(a\s*)?new\s*password/i,
+    intent: 'password-reset',
+    weight: 35,
+    name: 'set-new-password',
+  },
+  {
+    pattern: /update\s*(your|my)?\s*password/i,
+    intent: 'password-reset',
+    weight: 30,
+    name: 'update-password',
+  },
 
   // ── Device Confirmation Intent ──
-  { pattern: /new\s*(device|browser|location|login|sign\s*in)\s*(detected|attempt|activity)/i, intent: 'device-confirmation', weight: 35, name: 'new-device' },
-  { pattern: /authorize\s*(this|your|the)?\s*(device|browser|login|computer)/i, intent: 'device-confirmation', weight: 40, name: 'authorize-device' },
-  { pattern: /unusual\s*(activity|sign\s*in|login|access)/i, intent: 'device-confirmation', weight: 30, name: 'unusual-activity' },
-  { pattern: /verify\s*(this|your|the)?\s*(login|sign\s*in|device|attempt)/i, intent: 'device-confirmation', weight: 35, name: 'verify-login' },
+  {
+    pattern: /new\s*(device|browser|location|login|sign\s*in)\s*(detected|attempt|activity)/i,
+    intent: 'device-confirmation',
+    weight: 35,
+    name: 'new-device',
+  },
+  {
+    pattern: /authorize\s*(this|your|the)?\s*(device|browser|login|computer)/i,
+    intent: 'device-confirmation',
+    weight: 40,
+    name: 'authorize-device',
+  },
+  {
+    pattern: /unusual\s*(activity|sign\s*in|login|access)/i,
+    intent: 'device-confirmation',
+    weight: 30,
+    name: 'unusual-activity',
+  },
+  {
+    pattern: /verify\s*(this|your|the)?\s*(login|sign\s*in|device|attempt)/i,
+    intent: 'device-confirmation',
+    weight: 35,
+    name: 'verify-login',
+  },
   { pattern: /was\s*this\s*you/i, intent: 'device-confirmation', weight: 30, name: 'was-this-you' },
-  { pattern: /someone\s*(is\s*)?trying\s*to\s*(sign|log)\s*in/i, intent: 'device-confirmation', weight: 30, name: 'someone-trying' },
+  {
+    pattern: /someone\s*(is\s*)?trying\s*to\s*(sign|log)\s*in/i,
+    intent: 'device-confirmation',
+    weight: 30,
+    name: 'someone-trying',
+  },
 
   // ── Invitation Intent ──
-  { pattern: /invited?\s*(you|to\s*join)/i, intent: 'invitation', weight: 30, name: 'invited-phrase' },
-  { pattern: /join\s*(my|our|the|this)?\s*(team|workspace|organization|project|group)/i, intent: 'invitation', weight: 30, name: 'join-team' },
-  { pattern: /accept\s*(this|your|the)?\s*invit/i, intent: 'invitation', weight: 35, name: 'accept-invitation' },
+  {
+    pattern: /invited?\s*(you|to\s*join)/i,
+    intent: 'invitation',
+    weight: 30,
+    name: 'invited-phrase',
+  },
+  {
+    pattern: /join\s*(my|our|the|this)?\s*(team|workspace|organization|project|group)/i,
+    intent: 'invitation',
+    weight: 30,
+    name: 'join-team',
+  },
+  {
+    pattern: /accept\s*(this|your|the)?\s*invit/i,
+    intent: 'invitation',
+    weight: 35,
+    name: 'accept-invitation',
+  },
 
   // ── Two-Factor Intent ──
-  { pattern: /two[- ]?factor|2fa|multi[- ]?factor|mfa/i, intent: 'two-factor', weight: 35, name: '2fa-phrase' },
-  { pattern: /security\s*key|authenticator/i, intent: 'two-factor', weight: 25, name: 'security-key' },
+  {
+    pattern: /two[- ]?factor|2fa|multi[- ]?factor|mfa/i,
+    intent: 'two-factor',
+    weight: 35,
+    name: '2fa-phrase',
+  },
+  {
+    pattern: /security\s*key|authenticator/i,
+    intent: 'two-factor',
+    weight: 25,
+    name: 'security-key',
+  },
   { pattern: /backup\s*code/i, intent: 'two-factor', weight: 20, name: 'backup-code' },
 
   // ── Anti-Intent: Marketing ──
-  { pattern: /\b(sale|discount|%\s*off|promo|coupon|deal)\b/i, intent: 'marketing', weight: 35, name: 'marketing-language' },
-  { pattern: /limited\s*time\s*(offer|deal)/i, intent: 'marketing', weight: 30, name: 'limited-time' },
-  { pattern: /buy\s*now|shop\s*now|order\s*now/i, intent: 'marketing', weight: 35, name: 'buy-now' },
+  {
+    pattern: /\b(sale|discount|%\s*off|promo|coupon|deal)\b/i,
+    intent: 'marketing',
+    weight: 35,
+    name: 'marketing-language',
+  },
+  {
+    pattern: /limited\s*time\s*(offer|deal)/i,
+    intent: 'marketing',
+    weight: 30,
+    name: 'limited-time',
+  },
+  {
+    pattern: /buy\s*now|shop\s*now|order\s*now/i,
+    intent: 'marketing',
+    weight: 35,
+    name: 'buy-now',
+  },
   { pattern: /free\s*shipping/i, intent: 'marketing', weight: 25, name: 'free-shipping' },
-  { pattern: /exclusive\s*(offer|deal|access)/i, intent: 'marketing', weight: 20, name: 'exclusive-offer' },
+  {
+    pattern: /exclusive\s*(offer|deal|access)/i,
+    intent: 'marketing',
+    weight: 20,
+    name: 'exclusive-offer',
+  },
 
   // ── Anti-Intent: Newsletter ──
-  { pattern: /newsletter|weekly\s*(digest|recap|update)|monthly\s*(digest|recap|update)/i, intent: 'newsletter', weight: 40, name: 'newsletter' },
-  { pattern: /top\s*stories|trending|what'?s\s*new|round\s*up/i, intent: 'newsletter', weight: 25, name: 'digest-language' },
-  { pattern: /this\s*week\s*(in|at|on)|here'?s\s*what/i, intent: 'newsletter', weight: 20, name: 'this-week' },
+  {
+    pattern: /newsletter|weekly\s*(digest|recap|update)|monthly\s*(digest|recap|update)/i,
+    intent: 'newsletter',
+    weight: 40,
+    name: 'newsletter',
+  },
+  {
+    pattern: /top\s*stories|trending|what'?s\s*new|round\s*up/i,
+    intent: 'newsletter',
+    weight: 25,
+    name: 'digest-language',
+  },
+  {
+    pattern: /this\s*week\s*(in|at|on)|here'?s\s*what/i,
+    intent: 'newsletter',
+    weight: 20,
+    name: 'this-week',
+  },
 
   // ── Anti-Intent: Social ──
-  { pattern: /(liked|commented|mentioned|followed|shared|replied\s*to|reacted\s*to)\s*(your|you)/i, intent: 'social-notification', weight: 35, name: 'social-action' },
-  { pattern: /new\s*(follower|like|comment|reply|mention|reaction)/i, intent: 'social-notification', weight: 25, name: 'new-social' },
+  {
+    pattern: /(liked|commented|mentioned|followed|shared|replied\s*to|reacted\s*to)\s*(your|you)/i,
+    intent: 'social-notification',
+    weight: 35,
+    name: 'social-action',
+  },
+  {
+    pattern: /new\s*(follower|like|comment|reply|mention|reaction)/i,
+    intent: 'social-notification',
+    weight: 25,
+    name: 'new-social',
+  },
 
   // ── Anti-Intent: Transactional ──
-  { pattern: /order\s*(confirm|#|number)|receipt|invoice/i, intent: 'transactional', weight: 35, name: 'order-receipt' },
-  { pattern: /payment\s*(received|confirmed|processed)/i, intent: 'transactional', weight: 30, name: 'payment' },
-  { pattern: /ship(ped|ping)|delivered|tracking\s*(number|#|id)/i, intent: 'transactional', weight: 35, name: 'shipping' },
-  { pattern: /subscription\s*(renewed|receipt|invoice|billing)/i, intent: 'transactional', weight: 25, name: 'subscription-billing' },
+  {
+    pattern: /order\s*(confirm|#|number)|receipt|invoice/i,
+    intent: 'transactional',
+    weight: 35,
+    name: 'order-receipt',
+  },
+  {
+    pattern: /payment\s*(received|confirmed|processed)/i,
+    intent: 'transactional',
+    weight: 30,
+    name: 'payment',
+  },
+  {
+    pattern: /ship(ped|ping)|delivered|tracking\s*(number|#|id)/i,
+    intent: 'transactional',
+    weight: 35,
+    name: 'shipping',
+  },
+  {
+    pattern: /subscription\s*(renewed|receipt|invoice|billing)/i,
+    intent: 'transactional',
+    weight: 25,
+    name: 'subscription-billing',
+  },
 ];
 
 function classifyEmailIntent(text: string): IntentClassification {
@@ -337,9 +578,8 @@ function classifyEmailIntent(text: string): IntentClassification {
     }
   }
 
-  const confidence = totalScore > 0
-    ? clampConfidence(bestScore / Math.max(totalScore * 0.6, 40))
-    : 0;
+  const confidence =
+    totalScore > 0 ? clampConfidence(bestScore / Math.max(totalScore * 0.6, 40)) : 0;
 
   return { intent: bestIntent, confidence, signals: matchedSignals, allIntentScores: intentScores };
 }
@@ -350,35 +590,248 @@ function classifyEmailIntent(text: string): IntentClassification {
 
 const PROVIDER_KNOWLEDGE_BASE: readonly ProviderKnowledge[] = [
   // Auth Platforms
-  { name: 'Ory Kratos', category: 'auth-platform', senderDomains: [/ory\.(sh|dev)/i], verificationUrlPatterns: [/self[-_]?service\/(verification|recovery|login)/i, /\/\.ory\//i], codeParams: ['code', 'flow', 'token'], expectedLinkType: 'email-verification', recognitionBonus: 20 },
-  { name: 'Auth0', category: 'auth-platform', senderDomains: [/auth0\.(com|dev)/i], verificationUrlPatterns: [/\/u\/email[-_]?verification/i, /auth0\.com.*verify/i, /\/authorize\?/i], codeParams: ['verification_code', 'code', 'ticket'], expectedLinkType: 'email-verification', recognitionBonus: 20 },
-  { name: 'Firebase Auth', category: 'auth-platform', senderDomains: [/firebase/i, /gcp/i], verificationUrlPatterns: [/__\/auth\/action\?mode=verifyEmail/i, /firebaseapp\.com.*auth/i], codeParams: ['oobCode', 'apiKey'], expectedLinkType: 'email-verification', recognitionBonus: 20 },
-  { name: 'Supabase Auth', category: 'auth-platform', senderDomains: [/supabase/i], verificationUrlPatterns: [/supabase\.\w+\/auth\/v\d\/verify/i, /supabase\.\w+\/auth\/v\d\/callback/i], codeParams: ['token', 'type', 'redirect_to'], expectedLinkType: 'email-verification', recognitionBonus: 20 },
-  { name: 'Clerk', category: 'auth-platform', senderDomains: [/clerk\.(dev|com)/i], verificationUrlPatterns: [/clerk\.(dev|com).*verify/i, /accounts\..*\.dev\/v\d\/verify/i], codeParams: ['token', 'code', '__clerk_ticket'], expectedLinkType: 'email-verification', recognitionBonus: 20 },
-  { name: 'AWS Cognito', category: 'auth-platform', senderDomains: [/amazonaws\.com|cognito/i], verificationUrlPatterns: [/cognito.*confirm/i, /cognito.*verify/i], codeParams: ['confirmation_code', 'code', 'client_id'], expectedLinkType: 'email-verification', recognitionBonus: 20 },
-  { name: 'Okta', category: 'auth-platform', senderDomains: [/okta\.com|oktapreview\.com/i], verificationUrlPatterns: [/okta.*activate/i, /okta.*verify/i, /\/signin\/verify/i], codeParams: ['token', 'activationToken'], expectedLinkType: 'email-verification', recognitionBonus: 20 },
-  { name: 'OneLogin', category: 'auth-platform', senderDomains: [/onelogin\.com/i], verificationUrlPatterns: [/onelogin.*verify|onelogin.*activate/i], codeParams: ['token', 'code'], expectedLinkType: 'email-verification', recognitionBonus: 15 },
-  { name: 'Keycloak', category: 'auth-platform', senderDomains: [], verificationUrlPatterns: [/\/auth\/realms\/.*\/login-actions\/action-token/i, /keycloak.*verify/i], codeParams: ['key', 'token'], expectedLinkType: 'email-verification', recognitionBonus: 20 },
-  { name: 'Stytch', category: 'auth-platform', senderDomains: [/stytch\.com/i], verificationUrlPatterns: [/stytch\.com.*authenticate/i, /stytch.*magic/i], codeParams: ['token'], expectedLinkType: 'magic-link', recognitionBonus: 20 },
-  { name: 'WorkOS', category: 'auth-platform', senderDomains: [/workos\.com/i], verificationUrlPatterns: [/workos\.com.*verify/i, /workos.*magic/i], codeParams: ['token', 'code'], expectedLinkType: 'email-verification', recognitionBonus: 15 },
+  {
+    name: 'Ory Kratos',
+    category: 'auth-platform',
+    senderDomains: [/ory\.(sh|dev)/i],
+    verificationUrlPatterns: [/self[-_]?service\/(verification|recovery|login)/i, /\/\.ory\//i],
+    codeParams: ['code', 'flow', 'token'],
+    expectedLinkType: 'email-verification',
+    recognitionBonus: 20,
+  },
+  {
+    name: 'Auth0',
+    category: 'auth-platform',
+    senderDomains: [/auth0\.(com|dev)/i],
+    verificationUrlPatterns: [
+      /\/u\/email[-_]?verification/i,
+      /auth0\.com.*verify/i,
+      /\/authorize\?/i,
+    ],
+    codeParams: ['verification_code', 'code', 'ticket'],
+    expectedLinkType: 'email-verification',
+    recognitionBonus: 20,
+  },
+  {
+    name: 'Firebase Auth',
+    category: 'auth-platform',
+    senderDomains: [/firebase/i, /gcp/i],
+    verificationUrlPatterns: [/__\/auth\/action\?mode=verifyEmail/i, /firebaseapp\.com.*auth/i],
+    codeParams: ['oobCode', 'apiKey'],
+    expectedLinkType: 'email-verification',
+    recognitionBonus: 20,
+  },
+  {
+    name: 'Supabase Auth',
+    category: 'auth-platform',
+    senderDomains: [/supabase/i],
+    verificationUrlPatterns: [
+      /supabase\.\w+\/auth\/v\d\/verify/i,
+      /supabase\.\w+\/auth\/v\d\/callback/i,
+    ],
+    codeParams: ['token', 'type', 'redirect_to'],
+    expectedLinkType: 'email-verification',
+    recognitionBonus: 20,
+  },
+  {
+    name: 'Clerk',
+    category: 'auth-platform',
+    senderDomains: [/clerk\.(dev|com)/i],
+    verificationUrlPatterns: [/clerk\.(dev|com).*verify/i, /accounts\..*\.dev\/v\d\/verify/i],
+    codeParams: ['token', 'code', '__clerk_ticket'],
+    expectedLinkType: 'email-verification',
+    recognitionBonus: 20,
+  },
+  {
+    name: 'AWS Cognito',
+    category: 'auth-platform',
+    senderDomains: [/amazonaws\.com|cognito/i],
+    verificationUrlPatterns: [/cognito.*confirm/i, /cognito.*verify/i],
+    codeParams: ['confirmation_code', 'code', 'client_id'],
+    expectedLinkType: 'email-verification',
+    recognitionBonus: 20,
+  },
+  {
+    name: 'Okta',
+    category: 'auth-platform',
+    senderDomains: [/okta\.com|oktapreview\.com/i],
+    verificationUrlPatterns: [/okta.*activate/i, /okta.*verify/i, /\/signin\/verify/i],
+    codeParams: ['token', 'activationToken'],
+    expectedLinkType: 'email-verification',
+    recognitionBonus: 20,
+  },
+  {
+    name: 'OneLogin',
+    category: 'auth-platform',
+    senderDomains: [/onelogin\.com/i],
+    verificationUrlPatterns: [/onelogin.*verify|onelogin.*activate/i],
+    codeParams: ['token', 'code'],
+    expectedLinkType: 'email-verification',
+    recognitionBonus: 15,
+  },
+  {
+    name: 'Keycloak',
+    category: 'auth-platform',
+    senderDomains: [],
+    verificationUrlPatterns: [
+      /\/auth\/realms\/.*\/login-actions\/action-token/i,
+      /keycloak.*verify/i,
+    ],
+    codeParams: ['key', 'token'],
+    expectedLinkType: 'email-verification',
+    recognitionBonus: 20,
+  },
+  {
+    name: 'Stytch',
+    category: 'auth-platform',
+    senderDomains: [/stytch\.com/i],
+    verificationUrlPatterns: [/stytch\.com.*authenticate/i, /stytch.*magic/i],
+    codeParams: ['token'],
+    expectedLinkType: 'magic-link',
+    recognitionBonus: 20,
+  },
+  {
+    name: 'WorkOS',
+    category: 'auth-platform',
+    senderDomains: [/workos\.com/i],
+    verificationUrlPatterns: [/workos\.com.*verify/i, /workos.*magic/i],
+    codeParams: ['token', 'code'],
+    expectedLinkType: 'email-verification',
+    recognitionBonus: 15,
+  },
 
   // SaaS / Productivity
-  { name: 'Linear', category: 'productivity', senderDomains: [/linear\.app/i], verificationUrlPatterns: [/linear\.app\/auth\/magic[-_]?link/i], codeParams: ['token'], expectedLinkType: 'magic-link', recognitionBonus: 15 },
-  { name: 'Notion', category: 'productivity', senderDomains: [/notion\.so|makenotion\.com/i], verificationUrlPatterns: [/notion\.so\/(loginwithemail|verify)/i], codeParams: ['token', 'email'], expectedLinkType: 'magic-link', recognitionBonus: 15 },
-  { name: 'Slack', category: 'productivity', senderDomains: [/slack\.com|slackb\.com/i], verificationUrlPatterns: [/slack\.com\/(confirm|verify)/i], codeParams: ['code', 'crumb'], expectedLinkType: 'email-verification', recognitionBonus: 15 },
-  { name: 'Figma', category: 'productivity', senderDomains: [/figma\.com/i], verificationUrlPatterns: [/figma\.com.*verify|figma\.com.*confirm/i], codeParams: ['token'], expectedLinkType: 'email-verification', recognitionBonus: 15 },
-  { name: 'Vercel', category: 'devtools', senderDomains: [/vercel\.com/i], verificationUrlPatterns: [/vercel\.com.*verify|vercel\.com.*confirm/i], codeParams: ['token', 'email'], expectedLinkType: 'email-verification', recognitionBonus: 15 },
-  { name: 'Stripe', category: 'finance', senderDomains: [/stripe\.com/i], verificationUrlPatterns: [/stripe\.com.*confirm|stripe\.com.*verify/i], codeParams: ['token', 'code'], expectedLinkType: 'email-verification', recognitionBonus: 15 },
-  { name: 'Mistral AI', category: 'saas', senderDomains: [/mistral\.ai/i], verificationUrlPatterns: [/mistral\.ai.*verification|auth\.mistral/i], codeParams: ['code', 'flow'], expectedLinkType: 'email-verification', recognitionBonus: 15 },
+  {
+    name: 'Linear',
+    category: 'productivity',
+    senderDomains: [/linear\.app/i],
+    verificationUrlPatterns: [/linear\.app\/auth\/magic[-_]?link/i],
+    codeParams: ['token'],
+    expectedLinkType: 'magic-link',
+    recognitionBonus: 15,
+  },
+  {
+    name: 'Notion',
+    category: 'productivity',
+    senderDomains: [/notion\.so|makenotion\.com/i],
+    verificationUrlPatterns: [/notion\.so\/(loginwithemail|verify)/i],
+    codeParams: ['token', 'email'],
+    expectedLinkType: 'magic-link',
+    recognitionBonus: 15,
+  },
+  {
+    name: 'Slack',
+    category: 'productivity',
+    senderDomains: [/slack\.com|slackb\.com/i],
+    verificationUrlPatterns: [/slack\.com\/(confirm|verify)/i],
+    codeParams: ['code', 'crumb'],
+    expectedLinkType: 'email-verification',
+    recognitionBonus: 15,
+  },
+  {
+    name: 'Figma',
+    category: 'productivity',
+    senderDomains: [/figma\.com/i],
+    verificationUrlPatterns: [/figma\.com.*verify|figma\.com.*confirm/i],
+    codeParams: ['token'],
+    expectedLinkType: 'email-verification',
+    recognitionBonus: 15,
+  },
+  {
+    name: 'Vercel',
+    category: 'devtools',
+    senderDomains: [/vercel\.com/i],
+    verificationUrlPatterns: [/vercel\.com.*verify|vercel\.com.*confirm/i],
+    codeParams: ['token', 'email'],
+    expectedLinkType: 'email-verification',
+    recognitionBonus: 15,
+  },
+  {
+    name: 'Stripe',
+    category: 'finance',
+    senderDomains: [/stripe\.com/i],
+    verificationUrlPatterns: [/stripe\.com.*confirm|stripe\.com.*verify/i],
+    codeParams: ['token', 'code'],
+    expectedLinkType: 'email-verification',
+    recognitionBonus: 15,
+  },
+  {
+    name: 'Mistral AI',
+    category: 'saas',
+    senderDomains: [/mistral\.ai/i],
+    verificationUrlPatterns: [/mistral\.ai.*verification|auth\.mistral/i],
+    codeParams: ['code', 'flow'],
+    expectedLinkType: 'email-verification',
+    recognitionBonus: 15,
+  },
 
   // Social / DevTools
-  { name: 'GitHub', category: 'devtools', senderDomains: [/github\.com/i], verificationUrlPatterns: [/github\.com\/(password_reset|confirm|verify|settings\/emails)/i], codeParams: ['token', 'nonce'], expectedLinkType: 'email-verification', recognitionBonus: 15 },
-  { name: 'GitLab', category: 'devtools', senderDomains: [/gitlab\.com/i], verificationUrlPatterns: [/gitlab\.com.*confirm|gitlab.*verify/i], codeParams: ['confirmation_token'], expectedLinkType: 'email-verification', recognitionBonus: 15 },
-  { name: 'Discord', category: 'social', senderDomains: [/discord\.com|discordapp\.com/i], verificationUrlPatterns: [/discord\.com.*verify|click\.discord/i], codeParams: ['token'], expectedLinkType: 'email-verification', recognitionBonus: 15 },
-  { name: 'Google', category: 'cloud', senderDomains: [/google\.com|gmail\.com/i], verificationUrlPatterns: [/accounts\.google\.com.*verify/i, /google\.com.*signin.*challenge/i], codeParams: ['token', 'continue'], expectedLinkType: 'email-verification', recognitionBonus: 15 },
-  { name: 'Microsoft', category: 'cloud', senderDomains: [/microsoft\.com|outlook\.com|live\.com/i], verificationUrlPatterns: [/microsoft\.com.*verify|login\.microsoftonline/i, /account\.live\.com.*confirm/i], codeParams: ['token', 'code'], expectedLinkType: 'email-verification', recognitionBonus: 15 },
-  { name: 'Apple', category: 'cloud', senderDomains: [/apple\.com|icloud\.com/i], verificationUrlPatterns: [/appleid\.apple\.com.*verify/i], codeParams: ['token'], expectedLinkType: 'email-verification', recognitionBonus: 15 },
-  { name: 'Twitter/X', category: 'social', senderDomains: [/twitter\.com|x\.com/i], verificationUrlPatterns: [/twitter\.com.*confirm|x\.com.*verify/i], codeParams: ['token', 'code'], expectedLinkType: 'email-verification', recognitionBonus: 15 },
+  {
+    name: 'GitHub',
+    category: 'devtools',
+    senderDomains: [/github\.com/i],
+    verificationUrlPatterns: [/github\.com\/(password_reset|confirm|verify|settings\/emails)/i],
+    codeParams: ['token', 'nonce'],
+    expectedLinkType: 'email-verification',
+    recognitionBonus: 15,
+  },
+  {
+    name: 'GitLab',
+    category: 'devtools',
+    senderDomains: [/gitlab\.com/i],
+    verificationUrlPatterns: [/gitlab\.com.*confirm|gitlab.*verify/i],
+    codeParams: ['confirmation_token'],
+    expectedLinkType: 'email-verification',
+    recognitionBonus: 15,
+  },
+  {
+    name: 'Discord',
+    category: 'social',
+    senderDomains: [/discord\.com|discordapp\.com/i],
+    verificationUrlPatterns: [/discord\.com.*verify|click\.discord/i],
+    codeParams: ['token'],
+    expectedLinkType: 'email-verification',
+    recognitionBonus: 15,
+  },
+  {
+    name: 'Google',
+    category: 'cloud',
+    senderDomains: [/google\.com|gmail\.com/i],
+    verificationUrlPatterns: [/accounts\.google\.com.*verify/i, /google\.com.*signin.*challenge/i],
+    codeParams: ['token', 'continue'],
+    expectedLinkType: 'email-verification',
+    recognitionBonus: 15,
+  },
+  {
+    name: 'Microsoft',
+    category: 'cloud',
+    senderDomains: [/microsoft\.com|outlook\.com|live\.com/i],
+    verificationUrlPatterns: [
+      /microsoft\.com.*verify|login\.microsoftonline/i,
+      /account\.live\.com.*confirm/i,
+    ],
+    codeParams: ['token', 'code'],
+    expectedLinkType: 'email-verification',
+    recognitionBonus: 15,
+  },
+  {
+    name: 'Apple',
+    category: 'cloud',
+    senderDomains: [/apple\.com|icloud\.com/i],
+    verificationUrlPatterns: [/appleid\.apple\.com.*verify/i],
+    codeParams: ['token'],
+    expectedLinkType: 'email-verification',
+    recognitionBonus: 15,
+  },
+  {
+    name: 'Twitter/X',
+    category: 'social',
+    senderDomains: [/twitter\.com|x\.com/i],
+    verificationUrlPatterns: [/twitter\.com.*confirm|x\.com.*verify/i],
+    codeParams: ['token', 'code'],
+    expectedLinkType: 'email-verification',
+    recognitionBonus: 15,
+  },
 ];
 
 function getProviderBonus(url: string): ProviderBonusResult {
@@ -417,9 +870,21 @@ function detectEmailProvider(senderEmail: string, bodyText: string): string | nu
 // ═══════════════════════════════════════════════════════════════
 
 const ACTION_PATTERNS: ReadonlyArray<readonly [RegExp, string, number]> = [
-  [/please\s*(click|tap|press|select|use)\s*(the|this|below|above)?\s*(link|button|url)/i, 'click-link', 25],
-  [/click\s*(the|this)?\s*(link|button|below|above)\s*to\s*(verify|confirm|activate|validate|reset|complete)/i, 'click-to-verify', 30],
-  [/(verify|confirm|activate|validate)\s*(your|my|this|the)?\s*(email|account|address|identity)/i, 'verify-action', 25],
+  [
+    /please\s*(click|tap|press|select|use)\s*(the|this|below|above)?\s*(link|button|url)/i,
+    'click-link',
+    25,
+  ],
+  [
+    /click\s*(the|this)?\s*(link|button|below|above)\s*to\s*(verify|confirm|activate|validate|reset|complete)/i,
+    'click-to-verify',
+    30,
+  ],
+  [
+    /(verify|confirm|activate|validate)\s*(your|my|this|the)?\s*(email|account|address|identity)/i,
+    'verify-action',
+    25,
+  ],
   [/follow\s*this\s*link/i, 'follow-link', 15],
   [/by\s*clicking\s*(the|this)?\s*(link|button|below)/i, 'by-clicking', 20],
   [/use\s*(the|this)?\s*(link|button)\s*(below|above)/i, 'use-link', 15],
@@ -506,11 +971,17 @@ function analyzeSemanticContextFromText(contextText: string): SemanticContext {
     .filter((s) => s.length > 10);
 
   for (const sentence of sentences) {
-    if (/click|tap|press|follow|use|copy/i.test(sentence) && /link|button|below|above|url/i.test(sentence)) {
+    if (
+      /click|tap|press|follow|use|copy/i.test(sentence) &&
+      /link|button|below|above|url/i.test(sentence)
+    ) {
       instructionText = sentence.slice(0, MAX_INSTRUCTION_TEXT_LENGTH);
       break;
     }
-    if (/verify|confirm|activate|validate|reset/i.test(sentence) && /email|account|password/i.test(sentence)) {
+    if (
+      /verify|confirm|activate|validate|reset/i.test(sentence) &&
+      /email|account|password/i.test(sentence)
+    ) {
       instructionText = sentence.slice(0, MAX_INSTRUCTION_TEXT_LENGTH);
     }
   }
@@ -567,11 +1038,19 @@ function analyzeVisualWeightFromHtml(outerHTML: string): VisualWeightResult {
 
   // Background color
   const bgMatch = style.match(/background(?:-color)?\s*:\s*([^;]+)/i);
-  if (bgMatch) {
+  if (bgMatch?.[1]) {
     const bg = bgMatch[1].trim().toLowerCase();
     const transparentValues = new Set([
-      'transparent', 'none', 'inherit', 'initial', 'unset',
-      '#ffffff', '#fff', 'white', 'rgb(255, 255, 255)', 'rgba(255, 255, 255, 1)',
+      'transparent',
+      'none',
+      'inherit',
+      'initial',
+      'unset',
+      '#ffffff',
+      '#fff',
+      'white',
+      'rgb(255, 255, 255)',
+      'rgba(255, 255, 255, 1)',
     ]);
     if (!transparentValues.has(bg)) {
       weight += 20;
@@ -581,27 +1060,60 @@ function analyzeVisualWeightFromHtml(outerHTML: string): VisualWeightResult {
 
   // Padding
   const paddingMatch = style.match(/padding\s*:\s*(\d+)/i);
-  if (paddingMatch && parseInt(paddingMatch[1], 10) >= 8) {
+  if (paddingMatch?.[1] && parseInt(paddingMatch[1], 10) >= 8) {
     weight += 10;
     signals.push('has-padding');
   }
 
-  if (/border-radius\s*:\s*\d+/i.test(style)) { weight += 8; signals.push('has-border-radius'); }
-  if (/display\s*:\s*(inline-)?block/i.test(style)) { weight += 5; signals.push('display-block'); }
-  if (/text-align\s*:\s*center/i.test(style)) { weight += 5; signals.push('text-center'); }
-  if (/font-weight\s*:\s*(bold|700|800|900)/i.test(style)) { weight += 5; signals.push('font-bold'); }
+  if (/border-radius\s*:\s*\d+/i.test(style)) {
+    weight += 8;
+    signals.push('has-border-radius');
+  }
+  if (/display\s*:\s*(inline-)?block/i.test(style)) {
+    weight += 5;
+    signals.push('display-block');
+  }
+  if (/text-align\s*:\s*center/i.test(style)) {
+    weight += 5;
+    signals.push('text-center');
+  }
+  if (/font-weight\s*:\s*(bold|700|800|900)/i.test(style)) {
+    weight += 5;
+    signals.push('font-bold');
+  }
 
   const fontSizeMatch = style.match(/font-size\s*:\s*(\d+)/i);
-  if (fontSizeMatch && parseInt(fontSizeMatch[1], 10) >= 16) { weight += 8; signals.push('large-font'); }
+  if (fontSizeMatch && parseInt(fontSizeMatch[1] ?? '0', 10) >= 16) {
+    weight += 8;
+    signals.push('large-font');
+  }
 
-  if (/width\s*:\s*\d+|min-width/i.test(style)) { weight += 5; signals.push('has-width'); }
+  if (/width\s*:\s*\d+|min-width/i.test(style)) {
+    weight += 5;
+    signals.push('has-width');
+  }
 
   // Class-based signals
-  if (/btn|button/i.test(className)) { weight += 15; signals.push('button-class'); }
-  if (/cta|call[-_]?to[-_]?action/i.test(className)) { weight += 15; signals.push('cta-class'); }
-  if (/primary|main|hero/i.test(className)) { weight += 10; signals.push('primary-class'); }
-  if (/action/i.test(className)) { weight += 8; signals.push('action-class'); }
-  if (role === 'button') { weight += 12; signals.push('role-button'); }
+  if (/btn|button/i.test(className)) {
+    weight += 15;
+    signals.push('button-class');
+  }
+  if (/cta|call[-_]?to[-_]?action/i.test(className)) {
+    weight += 15;
+    signals.push('cta-class');
+  }
+  if (/primary|main|hero/i.test(className)) {
+    weight += 10;
+    signals.push('primary-class');
+  }
+  if (/action/i.test(className)) {
+    weight += 8;
+    signals.push('action-class');
+  }
+  if (role === 'button') {
+    weight += 12;
+    signals.push('role-button');
+  }
 
   // Inner table button pattern (common in email HTML)
   if (/<table[^>]*style=["'][^"']*background/i.test(outerHTML)) {
@@ -618,85 +1130,428 @@ function analyzeVisualWeightFromHtml(outerHTML: string): VisualWeightResult {
 
 const URL_SIGNALS: readonly UrlSignalDef[] = [
   // Tier 1: Path-based (strongest)
-  { pattern: /\/verify[-_]?email/i, score: 50, type: 'email-verification', name: 'url:verify-email-path', layer: 'url-intelligence' },
-  { pattern: /\/email[-_]?verification/i, score: 50, type: 'email-verification', name: 'url:email-verification-path', layer: 'url-intelligence' },
-  { pattern: /\/confirm[-_]?email/i, score: 50, type: 'email-verification', name: 'url:confirm-email-path', layer: 'url-intelligence' },
-  { pattern: /\/confirm[-_]?account/i, score: 45, type: 'account-confirmation', name: 'url:confirm-account-path', layer: 'url-intelligence' },
-  { pattern: /\/activate[-_]?account/i, score: 45, type: 'account-confirmation', name: 'url:activate-account-path', layer: 'url-intelligence' },
-  { pattern: /\/magic[-_]?link/i, score: 50, type: 'magic-link', name: 'url:magic-link-path', layer: 'url-intelligence' },
-  { pattern: /\/passwordless/i, score: 45, type: 'magic-link', name: 'url:passwordless-path', layer: 'url-intelligence' },
-  { pattern: /\/password[-_]?reset/i, score: 45, type: 'password-reset', name: 'url:password-reset-path', layer: 'url-intelligence' },
-  { pattern: /\/reset[-_]?password/i, score: 45, type: 'password-reset', name: 'url:reset-password-path', layer: 'url-intelligence' },
-  { pattern: /\/self[-_]?service\/verification/i, score: 50, type: 'email-verification', name: 'url:ory-kratos-path', layer: 'url-intelligence' },
-  { pattern: /\/__\/auth\/action\?mode=verifyEmail/i, score: 50, type: 'email-verification', name: 'url:firebase-verify', layer: 'url-intelligence' },
-  { pattern: /\/confirmUser/i, score: 45, type: 'email-verification', name: 'url:confirm-user-path', layer: 'url-intelligence' },
-  { pattern: /\/confirm[-_]?signup/i, score: 45, type: 'account-confirmation', name: 'url:confirm-signup-path', layer: 'url-intelligence' },
+  {
+    pattern: /\/verify[-_]?email/i,
+    score: 50,
+    type: 'email-verification',
+    name: 'url:verify-email-path',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/email[-_]?verification/i,
+    score: 50,
+    type: 'email-verification',
+    name: 'url:email-verification-path',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/confirm[-_]?email/i,
+    score: 50,
+    type: 'email-verification',
+    name: 'url:confirm-email-path',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/confirm[-_]?account/i,
+    score: 45,
+    type: 'account-confirmation',
+    name: 'url:confirm-account-path',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/activate[-_]?account/i,
+    score: 45,
+    type: 'account-confirmation',
+    name: 'url:activate-account-path',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/magic[-_]?link/i,
+    score: 50,
+    type: 'magic-link',
+    name: 'url:magic-link-path',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/passwordless/i,
+    score: 45,
+    type: 'magic-link',
+    name: 'url:passwordless-path',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/password[-_]?reset/i,
+    score: 45,
+    type: 'password-reset',
+    name: 'url:password-reset-path',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/reset[-_]?password/i,
+    score: 45,
+    type: 'password-reset',
+    name: 'url:reset-password-path',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/self[-_]?service\/verification/i,
+    score: 50,
+    type: 'email-verification',
+    name: 'url:ory-kratos-path',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/__\/auth\/action\?mode=verifyEmail/i,
+    score: 50,
+    type: 'email-verification',
+    name: 'url:firebase-verify',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/confirmUser/i,
+    score: 45,
+    type: 'email-verification',
+    name: 'url:confirm-user-path',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/confirm[-_]?signup/i,
+    score: 45,
+    type: 'account-confirmation',
+    name: 'url:confirm-signup-path',
+    layer: 'url-intelligence',
+  },
 
   // Tier 2: Generic path keywords
-  { pattern: /\/verify\b/i, score: 30, type: 'email-verification', name: 'url:verify-path', layer: 'url-intelligence' },
-  { pattern: /\/verification\b/i, score: 30, type: 'email-verification', name: 'url:verification-path', layer: 'url-intelligence' },
-  { pattern: /\/confirm\b/i, score: 28, type: 'account-confirmation', name: 'url:confirm-path', layer: 'url-intelligence' },
-  { pattern: /\/activate\b/i, score: 28, type: 'account-confirmation', name: 'url:activate-path', layer: 'url-intelligence' },
-  { pattern: /\/validate\b/i, score: 25, type: 'email-verification', name: 'url:validate-path', layer: 'url-intelligence' },
-  { pattern: /\/sign[-_]?in[-_]?token/i, score: 35, type: 'magic-link', name: 'url:sign-in-token', layer: 'url-intelligence' },
-  { pattern: /\/login[-_]?token/i, score: 35, type: 'magic-link', name: 'url:login-token', layer: 'url-intelligence' },
-  { pattern: /\/auto[-_]?login/i, score: 30, type: 'magic-link', name: 'url:auto-login', layer: 'url-intelligence' },
-  { pattern: /\/auth\/action/i, score: 25, type: null, name: 'url:auth-action', layer: 'url-intelligence' },
-  { pattern: /\/loginwithemail/i, score: 35, type: 'magic-link', name: 'url:login-with-email', layer: 'url-intelligence' },
-  { pattern: /\/authorize[-_]?device/i, score: 35, type: 'device-authorization', name: 'url:authorize-device', layer: 'url-intelligence' },
+  {
+    pattern: /\/verify\b/i,
+    score: 30,
+    type: 'email-verification',
+    name: 'url:verify-path',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/verification\b/i,
+    score: 30,
+    type: 'email-verification',
+    name: 'url:verification-path',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/confirm\b/i,
+    score: 28,
+    type: 'account-confirmation',
+    name: 'url:confirm-path',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/activate\b/i,
+    score: 28,
+    type: 'account-confirmation',
+    name: 'url:activate-path',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/validate\b/i,
+    score: 25,
+    type: 'email-verification',
+    name: 'url:validate-path',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/sign[-_]?in[-_]?token/i,
+    score: 35,
+    type: 'magic-link',
+    name: 'url:sign-in-token',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/login[-_]?token/i,
+    score: 35,
+    type: 'magic-link',
+    name: 'url:login-token',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/auto[-_]?login/i,
+    score: 30,
+    type: 'magic-link',
+    name: 'url:auto-login',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/auth\/action/i,
+    score: 25,
+    type: null,
+    name: 'url:auth-action',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/loginwithemail/i,
+    score: 35,
+    type: 'magic-link',
+    name: 'url:login-with-email',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/authorize[-_]?device/i,
+    score: 35,
+    type: 'device-authorization',
+    name: 'url:authorize-device',
+    layer: 'url-intelligence',
+  },
 
   // Tier 3: Query parameter signals
-  { pattern: /[?&]mode=verifyEmail/i, score: 40, type: 'email-verification', name: 'url:mode-verify-email', layer: 'url-intelligence' },
-  { pattern: /[?&]type=email_verification/i, score: 40, type: 'email-verification', name: 'url:type-email-verification', layer: 'url-intelligence' },
-  { pattern: /[?&]type=signup/i, score: 35, type: 'account-confirmation', name: 'url:type-signup', layer: 'url-intelligence' },
-  { pattern: /[?&]type=recovery/i, score: 35, type: 'password-reset', name: 'url:type-recovery', layer: 'url-intelligence' },
-  { pattern: /[?&]action=verify/i, score: 35, type: 'email-verification', name: 'url:action-verify', layer: 'url-intelligence' },
-  { pattern: /[?&]verification[-_]?code=/i, score: 30, type: null, name: 'url:has-verification-code', layer: 'url-intelligence' },
-  { pattern: /[?&]otp=/i, score: 30, type: null, name: 'url:has-otp-param', layer: 'url-intelligence' },
-  { pattern: /[?&]code=[A-Za-z0-9]{4,10}(&|$)/i, score: 22, type: null, name: 'url:has-code-param', layer: 'url-intelligence' },
-  { pattern: /[?&]token=[A-Za-z0-9_-]{10,}/i, score: 18, type: null, name: 'url:has-long-token', layer: 'url-intelligence' },
-  { pattern: /[?&]oobCode=/i, score: 25, type: null, name: 'url:has-oob-code', layer: 'url-intelligence' },
-  { pattern: /[?&]confirmation_token=/i, score: 25, type: null, name: 'url:has-confirmation-token', layer: 'url-intelligence' },
-  { pattern: /[?&]activationToken=/i, score: 25, type: null, name: 'url:has-activation-token', layer: 'url-intelligence' },
-  { pattern: /[?&]hash=[A-Za-z0-9_-]{10,}/i, score: 15, type: null, name: 'url:has-hash', layer: 'url-intelligence' },
-  { pattern: /[?&]nonce=/i, score: 15, type: null, name: 'url:has-nonce', layer: 'url-intelligence' },
-  { pattern: /[?&]ticket=/i, score: 15, type: null, name: 'url:has-ticket', layer: 'url-intelligence' },
-  { pattern: /[?&]key=[A-Za-z0-9_-]{10,}/i, score: 15, type: null, name: 'url:has-key', layer: 'url-intelligence' },
+  {
+    pattern: /[?&]mode=verifyEmail/i,
+    score: 40,
+    type: 'email-verification',
+    name: 'url:mode-verify-email',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /[?&]type=email_verification/i,
+    score: 40,
+    type: 'email-verification',
+    name: 'url:type-email-verification',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /[?&]type=signup/i,
+    score: 35,
+    type: 'account-confirmation',
+    name: 'url:type-signup',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /[?&]type=recovery/i,
+    score: 35,
+    type: 'password-reset',
+    name: 'url:type-recovery',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /[?&]action=verify/i,
+    score: 35,
+    type: 'email-verification',
+    name: 'url:action-verify',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /[?&]verification[-_]?code=/i,
+    score: 30,
+    type: null,
+    name: 'url:has-verification-code',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /[?&]otp=/i,
+    score: 30,
+    type: null,
+    name: 'url:has-otp-param',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /[?&]code=[A-Za-z0-9]{4,10}(&|$)/i,
+    score: 22,
+    type: null,
+    name: 'url:has-code-param',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /[?&]token=[A-Za-z0-9_-]{10,}/i,
+    score: 18,
+    type: null,
+    name: 'url:has-long-token',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /[?&]oobCode=/i,
+    score: 25,
+    type: null,
+    name: 'url:has-oob-code',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /[?&]confirmation_token=/i,
+    score: 25,
+    type: null,
+    name: 'url:has-confirmation-token',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /[?&]activationToken=/i,
+    score: 25,
+    type: null,
+    name: 'url:has-activation-token',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /[?&]hash=[A-Za-z0-9_-]{10,}/i,
+    score: 15,
+    type: null,
+    name: 'url:has-hash',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /[?&]nonce=/i,
+    score: 15,
+    type: null,
+    name: 'url:has-nonce',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /[?&]ticket=/i,
+    score: 15,
+    type: null,
+    name: 'url:has-ticket',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /[?&]key=[A-Za-z0-9_-]{10,}/i,
+    score: 15,
+    type: null,
+    name: 'url:has-key',
+    layer: 'url-intelligence',
+  },
   { pattern: /[?&]flow=/i, score: 8, type: null, name: 'url:has-flow', layer: 'url-intelligence' },
 
   // Tier 4: Domain/path structure
-  { pattern: /\/auth\//i, score: 10, type: null, name: 'url:auth-path-segment', layer: 'url-intelligence' },
-  { pattern: /\/api\/v\d/i, score: 5, type: null, name: 'url:api-versioned', layer: 'url-intelligence' },
+  {
+    pattern: /\/auth\//i,
+    score: 10,
+    type: null,
+    name: 'url:auth-path-segment',
+    layer: 'url-intelligence',
+  },
+  {
+    pattern: /\/api\/v\d/i,
+    score: 5,
+    type: null,
+    name: 'url:api-versioned',
+    layer: 'url-intelligence',
+  },
   { pattern: /\/callback/i, score: 5, type: null, name: 'url:callback', layer: 'url-intelligence' },
-  { pattern: /\/emails?\//i, score: 8, type: null, name: 'url:emails-path', layer: 'url-intelligence' },
+  {
+    pattern: /\/emails?\//i,
+    score: 8,
+    type: null,
+    name: 'url:emails-path',
+    layer: 'url-intelligence',
+  },
 ];
 
 const URL_NEGATIVE_SIGNALS: readonly NegativeSignalDef[] = [
   // Absolute eliminators
   { pattern: /unsubscribe/i, score: -90, name: 'url:unsubscribe', layer: 'negative-intelligence' },
   { pattern: /opt[-_]?out/i, score: -90, name: 'url:opt-out', layer: 'negative-intelligence' },
-  { pattern: /manage[-_]?preference/i, score: -80, name: 'url:manage-preferences', layer: 'negative-intelligence' },
-  { pattern: /email[-_]?preference/i, score: -80, name: 'url:email-preferences', layer: 'negative-intelligence' },
-  { pattern: /notification[-_]?setting/i, score: -70, name: 'url:notification-settings', layer: 'negative-intelligence' },
-  { pattern: /list[-_]?unsubscribe/i, score: -90, name: 'url:list-unsubscribe', layer: 'negative-intelligence' },
-  { pattern: /communication[-_]?preference/i, score: -75, name: 'url:comm-preferences', layer: 'negative-intelligence' },
+  {
+    pattern: /manage[-_]?preference/i,
+    score: -80,
+    name: 'url:manage-preferences',
+    layer: 'negative-intelligence',
+  },
+  {
+    pattern: /email[-_]?preference/i,
+    score: -80,
+    name: 'url:email-preferences',
+    layer: 'negative-intelligence',
+  },
+  {
+    pattern: /notification[-_]?setting/i,
+    score: -70,
+    name: 'url:notification-settings',
+    layer: 'negative-intelligence',
+  },
+  {
+    pattern: /list[-_]?unsubscribe/i,
+    score: -90,
+    name: 'url:list-unsubscribe',
+    layer: 'negative-intelligence',
+  },
+  {
+    pattern: /communication[-_]?preference/i,
+    score: -75,
+    name: 'url:comm-preferences',
+    layer: 'negative-intelligence',
+  },
 
   // Social domains
-  { pattern: /^https?:\/\/(www\.)?(twitter|x)\.com/i, score: -80, name: 'url:twitter-domain', layer: 'negative-intelligence' },
-  { pattern: /^https?:\/\/(www\.)?facebook\.com/i, score: -80, name: 'url:facebook-domain', layer: 'negative-intelligence' },
-  { pattern: /^https?:\/\/(www\.)?linkedin\.com/i, score: -80, name: 'url:linkedin-domain', layer: 'negative-intelligence' },
-  { pattern: /^https?:\/\/(www\.)?instagram\.com/i, score: -80, name: 'url:instagram-domain', layer: 'negative-intelligence' },
-  { pattern: /^https?:\/\/(www\.)?youtube\.com/i, score: -80, name: 'url:youtube-domain', layer: 'negative-intelligence' },
-  { pattern: /^https?:\/\/(www\.)?tiktok\.com/i, score: -80, name: 'url:tiktok-domain', layer: 'negative-intelligence' },
-  { pattern: /^https?:\/\/(www\.)?reddit\.com/i, score: -70, name: 'url:reddit-domain', layer: 'negative-intelligence' },
-  { pattern: /^https?:\/\/discord\.gg/i, score: -60, name: 'url:discord-invite', layer: 'negative-intelligence' },
-  { pattern: /^https?:\/\/t\.me\//i, score: -60, name: 'url:telegram', layer: 'negative-intelligence' },
+  {
+    pattern: /^https?:\/\/(www\.)?(twitter|x)\.com/i,
+    score: -80,
+    name: 'url:twitter-domain',
+    layer: 'negative-intelligence',
+  },
+  {
+    pattern: /^https?:\/\/(www\.)?facebook\.com/i,
+    score: -80,
+    name: 'url:facebook-domain',
+    layer: 'negative-intelligence',
+  },
+  {
+    pattern: /^https?:\/\/(www\.)?linkedin\.com/i,
+    score: -80,
+    name: 'url:linkedin-domain',
+    layer: 'negative-intelligence',
+  },
+  {
+    pattern: /^https?:\/\/(www\.)?instagram\.com/i,
+    score: -80,
+    name: 'url:instagram-domain',
+    layer: 'negative-intelligence',
+  },
+  {
+    pattern: /^https?:\/\/(www\.)?youtube\.com/i,
+    score: -80,
+    name: 'url:youtube-domain',
+    layer: 'negative-intelligence',
+  },
+  {
+    pattern: /^https?:\/\/(www\.)?tiktok\.com/i,
+    score: -80,
+    name: 'url:tiktok-domain',
+    layer: 'negative-intelligence',
+  },
+  {
+    pattern: /^https?:\/\/(www\.)?reddit\.com/i,
+    score: -70,
+    name: 'url:reddit-domain',
+    layer: 'negative-intelligence',
+  },
+  {
+    pattern: /^https?:\/\/discord\.gg/i,
+    score: -60,
+    name: 'url:discord-invite',
+    layer: 'negative-intelligence',
+  },
+  {
+    pattern: /^https?:\/\/t\.me\//i,
+    score: -60,
+    name: 'url:telegram',
+    layer: 'negative-intelligence',
+  },
 
   // Legal/Footer
-  { pattern: /\/privacy[-_]?policy/i, score: -70, name: 'url:privacy-policy', layer: 'negative-intelligence' },
-  { pattern: /\/terms[-_]?(of[-_]?(service|use)|and[-_]?conditions)/i, score: -70, name: 'url:terms', layer: 'negative-intelligence' },
+  {
+    pattern: /\/privacy[-_]?policy/i,
+    score: -70,
+    name: 'url:privacy-policy',
+    layer: 'negative-intelligence',
+  },
+  {
+    pattern: /\/terms[-_]?(of[-_]?(service|use)|and[-_]?conditions)/i,
+    score: -70,
+    name: 'url:terms',
+    layer: 'negative-intelligence',
+  },
   { pattern: /\/legal\b/i, score: -55, name: 'url:legal', layer: 'negative-intelligence' },
-  { pattern: /\/cookie[-_]?policy/i, score: -55, name: 'url:cookie-policy', layer: 'negative-intelligence' },
+  {
+    pattern: /\/cookie[-_]?policy/i,
+    score: -55,
+    name: 'url:cookie-policy',
+    layer: 'negative-intelligence',
+  },
   { pattern: /\/gdpr/i, score: -55, name: 'url:gdpr', layer: 'negative-intelligence' },
   { pattern: /\/imprint/i, score: -50, name: 'url:imprint', layer: 'negative-intelligence' },
   { pattern: /\/about\b/i, score: -40, name: 'url:about', layer: 'negative-intelligence' },
@@ -708,24 +1563,64 @@ const URL_NEGATIVE_SIGNALS: readonly NegativeSignalDef[] = [
   { pattern: /\/careers?\b/i, score: -40, name: 'url:careers', layer: 'negative-intelligence' },
 
   // App stores
-  { pattern: /play\.google\.com/i, score: -65, name: 'url:play-store', layer: 'negative-intelligence' },
-  { pattern: /apps\.apple\.com|itunes\.apple\.com/i, score: -65, name: 'url:app-store', layer: 'negative-intelligence' },
-  { pattern: /microsoft\.com\/.*store/i, score: -55, name: 'url:ms-store', layer: 'negative-intelligence' },
+  {
+    pattern: /play\.google\.com/i,
+    score: -65,
+    name: 'url:play-store',
+    layer: 'negative-intelligence',
+  },
+  {
+    pattern: /apps\.apple\.com|itunes\.apple\.com/i,
+    score: -65,
+    name: 'url:app-store',
+    layer: 'negative-intelligence',
+  },
+  {
+    pattern: /microsoft\.com\/.*store/i,
+    score: -55,
+    name: 'url:ms-store',
+    layer: 'negative-intelligence',
+  },
 
   // Tracking/Pixels
-  { pattern: /\.(gif|png|jpg|jpeg|svg|webp|ico|bmp)(\?|$)/i, score: -70, name: 'url:image-file', layer: 'negative-intelligence' },
+  {
+    pattern: /\.(gif|png|jpg|jpeg|svg|webp|ico|bmp)(\?|$)/i,
+    score: -70,
+    name: 'url:image-file',
+    layer: 'negative-intelligence',
+  },
   { pattern: /\/open\./i, score: -60, name: 'url:open-tracking', layer: 'negative-intelligence' },
   { pattern: /\/beacon/i, score: -60, name: 'url:beacon', layer: 'negative-intelligence' },
   { pattern: /\/pixel/i, score: -60, name: 'url:pixel', layer: 'negative-intelligence' },
   { pattern: /\/track\b/i, score: -30, name: 'url:track', layer: 'negative-intelligence' },
-  { pattern: /width=1|height=1/i, score: -60, name: 'url:1x1-pixel', layer: 'negative-intelligence' },
+  {
+    pattern: /width=1|height=1/i,
+    score: -60,
+    name: 'url:1x1-pixel',
+    layer: 'negative-intelligence',
+  },
 
   // Documents
-  { pattern: /\.(pdf|doc|docx|xls|xlsx|csv|ppt|pptx)(\?|$)/i, score: -50, name: 'url:document-file', layer: 'negative-intelligence' },
+  {
+    pattern: /\.(pdf|doc|docx|xls|xlsx|csv|ppt|pptx)(\?|$)/i,
+    score: -50,
+    name: 'url:document-file',
+    layer: 'negative-intelligence',
+  },
 
   // Root/Homepage
-  { pattern: /^https?:\/\/[^/?#]+\/?$/i, score: -35, name: 'url:homepage-root', layer: 'negative-intelligence' },
-  { pattern: /^https?:\/\/[^/?#]+\/?#?$/i, score: -35, name: 'url:homepage-hash', layer: 'negative-intelligence' },
+  {
+    pattern: /^https?:\/\/[^/?#]+\/?$/i,
+    score: -35,
+    name: 'url:homepage-root',
+    layer: 'negative-intelligence',
+  },
+  {
+    pattern: /^https?:\/\/[^/?#]+\/?#?$/i,
+    score: -35,
+    name: 'url:homepage-hash',
+    layer: 'negative-intelligence',
+  },
 
   // E-commerce
   { pattern: /\/shop\b/i, score: -40, name: 'url:shop', layer: 'negative-intelligence' },
@@ -735,66 +1630,371 @@ const URL_NEGATIVE_SIGNALS: readonly NegativeSignalDef[] = [
   { pattern: /\/invoice/i, score: -30, name: 'url:invoice', layer: 'negative-intelligence' },
 
   // View in browser
-  { pattern: /view[-_]?(in|as)[-_]?(browser|web|html|page)/i, score: -40, name: 'url:view-in-browser', layer: 'negative-intelligence' },
+  {
+    pattern: /view[-_]?(in|as)[-_]?(browser|web|html|page)/i,
+    score: -40,
+    name: 'url:view-in-browser',
+    layer: 'negative-intelligence',
+  },
   { pattern: /\/webversion/i, score: -40, name: 'url:webversion', layer: 'negative-intelligence' },
 ];
 
 const ANCHOR_TEXT_SIGNALS: readonly UrlSignalDef[] = [
   // Tier 1: Exact match button text
-  { pattern: /^verify\s*(my|your|this|the)?\s*(email|e-?mail)\s*(address)?$/i, score: 50, type: 'email-verification', name: 'text:verify-email-exact', layer: 'text-intelligence' },
-  { pattern: /^confirm\s*(my|your|this|the)?\s*(email|e-?mail)\s*(address)?$/i, score: 50, type: 'email-verification', name: 'text:confirm-email-exact', layer: 'text-intelligence' },
-  { pattern: /^verify\s*(my|your|this)?\s*account$/i, score: 45, type: 'account-confirmation', name: 'text:verify-account-exact', layer: 'text-intelligence' },
-  { pattern: /^confirm\s*(my|your|this)?\s*account$/i, score: 45, type: 'account-confirmation', name: 'text:confirm-account-exact', layer: 'text-intelligence' },
-  { pattern: /^activate\s*(my|your|this)?\s*account$/i, score: 45, type: 'account-confirmation', name: 'text:activate-account-exact', layer: 'text-intelligence' },
-  { pattern: /^reset\s*(my|your|this)?\s*password$/i, score: 45, type: 'password-reset', name: 'text:reset-password-exact', layer: 'text-intelligence' },
-  { pattern: /^sign\s*in\s*to\s+.+$/i, score: 40, type: 'magic-link', name: 'text:sign-in-to-exact', layer: 'text-intelligence' },
-  { pattern: /^log\s*in\s*to\s+.+$/i, score: 40, type: 'magic-link', name: 'text:log-in-to-exact', layer: 'text-intelligence' },
-  { pattern: /^verify$/i, score: 30, type: null, name: 'text:verify-alone', layer: 'text-intelligence' },
-  { pattern: /^confirm$/i, score: 30, type: null, name: 'text:confirm-alone', layer: 'text-intelligence' },
-  { pattern: /^activate$/i, score: 30, type: null, name: 'text:activate-alone', layer: 'text-intelligence' },
+  {
+    pattern: /^verify\s*(my|your|this|the)?\s*(email|e-?mail)\s*(address)?$/i,
+    score: 50,
+    type: 'email-verification',
+    name: 'text:verify-email-exact',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /^confirm\s*(my|your|this|the)?\s*(email|e-?mail)\s*(address)?$/i,
+    score: 50,
+    type: 'email-verification',
+    name: 'text:confirm-email-exact',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /^verify\s*(my|your|this)?\s*account$/i,
+    score: 45,
+    type: 'account-confirmation',
+    name: 'text:verify-account-exact',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /^confirm\s*(my|your|this)?\s*account$/i,
+    score: 45,
+    type: 'account-confirmation',
+    name: 'text:confirm-account-exact',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /^activate\s*(my|your|this)?\s*account$/i,
+    score: 45,
+    type: 'account-confirmation',
+    name: 'text:activate-account-exact',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /^reset\s*(my|your|this)?\s*password$/i,
+    score: 45,
+    type: 'password-reset',
+    name: 'text:reset-password-exact',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /^sign\s*in\s*to\s+.+$/i,
+    score: 40,
+    type: 'magic-link',
+    name: 'text:sign-in-to-exact',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /^log\s*in\s*to\s+.+$/i,
+    score: 40,
+    type: 'magic-link',
+    name: 'text:log-in-to-exact',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /^verify$/i,
+    score: 30,
+    type: null,
+    name: 'text:verify-alone',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /^confirm$/i,
+    score: 30,
+    type: null,
+    name: 'text:confirm-alone',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /^activate$/i,
+    score: 30,
+    type: null,
+    name: 'text:activate-alone',
+    layer: 'text-intelligence',
+  },
 
   // Tier 2: Phrase match
-  { pattern: /verify\s*(my|your|this|the)?\s*(email|account|identity|address)/i, score: 40, type: 'email-verification', name: 'text:verify-phrase', layer: 'text-intelligence' },
-  { pattern: /confirm\s*(my|your|this|the)?\s*(email|account|registration|sign\s*up|address)/i, score: 40, type: 'account-confirmation', name: 'text:confirm-phrase', layer: 'text-intelligence' },
-  { pattern: /activate\s*(my|your|this)?\s*(account|email|profile)/i, score: 35, type: 'account-confirmation', name: 'text:activate-phrase', layer: 'text-intelligence' },
-  { pattern: /validate\s*(my|your|this)?\s*(email|account|address)/i, score: 35, type: 'email-verification', name: 'text:validate-phrase', layer: 'text-intelligence' },
-  { pattern: /complete\s*(my|your)?\s*(registration|verification|sign\s*up|setup)/i, score: 30, type: 'account-confirmation', name: 'text:complete-phrase', layer: 'text-intelligence' },
-  { pattern: /magic\s*link/i, score: 40, type: 'magic-link', name: 'text:magic-link', layer: 'text-intelligence' },
-  { pattern: /sign\s*in\s*(with|using)?\s*(this|a|one)?\s*(link|click)/i, score: 35, type: 'magic-link', name: 'text:sign-in-link', layer: 'text-intelligence' },
-  { pattern: /reset\s*(my|your)?\s*password/i, score: 35, type: 'password-reset', name: 'text:reset-password', layer: 'text-intelligence' },
-  { pattern: /click\s*(here|this|below)\s*to\s*(verify|confirm|activate|validate|reset|complete)/i, score: 30, type: null, name: 'text:click-to-action', layer: 'text-intelligence' },
-  { pattern: /yes,?\s*(this|that'?s)\s*(is|was)?\s*me/i, score: 35, type: 'device-authorization', name: 'text:yes-its-me', layer: 'text-intelligence' },
-  { pattern: /authorize\s*(this)?\s*(device|login|browser)/i, score: 30, type: 'device-authorization', name: 'text:authorize-device', layer: 'text-intelligence' },
-  { pattern: /accept\s*(this)?\s*invit/i, score: 30, type: 'invite-acceptance', name: 'text:accept-invite', layer: 'text-intelligence' },
-  { pattern: /join\s*(the|this|my|our)?\s*(team|workspace|org)/i, score: 25, type: 'invite-acceptance', name: 'text:join-team', layer: 'text-intelligence' },
-  { pattern: /get\s*started/i, score: 10, type: null, name: 'text:get-started', layer: 'text-intelligence' },
-  { pattern: /^continue$/i, score: 5, type: null, name: 'text:continue', layer: 'text-intelligence' },
+  {
+    pattern: /verify\s*(my|your|this|the)?\s*(email|account|identity|address)/i,
+    score: 40,
+    type: 'email-verification',
+    name: 'text:verify-phrase',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /confirm\s*(my|your|this|the)?\s*(email|account|registration|sign\s*up|address)/i,
+    score: 40,
+    type: 'account-confirmation',
+    name: 'text:confirm-phrase',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /activate\s*(my|your|this)?\s*(account|email|profile)/i,
+    score: 35,
+    type: 'account-confirmation',
+    name: 'text:activate-phrase',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /validate\s*(my|your|this)?\s*(email|account|address)/i,
+    score: 35,
+    type: 'email-verification',
+    name: 'text:validate-phrase',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /complete\s*(my|your)?\s*(registration|verification|sign\s*up|setup)/i,
+    score: 30,
+    type: 'account-confirmation',
+    name: 'text:complete-phrase',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /magic\s*link/i,
+    score: 40,
+    type: 'magic-link',
+    name: 'text:magic-link',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /sign\s*in\s*(with|using)?\s*(this|a|one)?\s*(link|click)/i,
+    score: 35,
+    type: 'magic-link',
+    name: 'text:sign-in-link',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /reset\s*(my|your)?\s*password/i,
+    score: 35,
+    type: 'password-reset',
+    name: 'text:reset-password',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /click\s*(here|this|below)\s*to\s*(verify|confirm|activate|validate|reset|complete)/i,
+    score: 30,
+    type: null,
+    name: 'text:click-to-action',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /yes,?\s*(this|that'?s)\s*(is|was)?\s*me/i,
+    score: 35,
+    type: 'device-authorization',
+    name: 'text:yes-its-me',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /authorize\s*(this)?\s*(device|login|browser)/i,
+    score: 30,
+    type: 'device-authorization',
+    name: 'text:authorize-device',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /accept\s*(this)?\s*invit/i,
+    score: 30,
+    type: 'invite-acceptance',
+    name: 'text:accept-invite',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /join\s*(the|this|my|our)?\s*(team|workspace|org)/i,
+    score: 25,
+    type: 'invite-acceptance',
+    name: 'text:join-team',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /get\s*started/i,
+    score: 10,
+    type: null,
+    name: 'text:get-started',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /^continue$/i,
+    score: 5,
+    type: null,
+    name: 'text:continue',
+    layer: 'text-intelligence',
+  },
 
   // Negative text
-  { pattern: /^unsubscribe$/i, score: -90, type: null, name: 'text:unsubscribe', layer: 'text-intelligence' },
-  { pattern: /unsubscribe\s*(from|here)/i, score: -90, type: null, name: 'text:unsubscribe-from', layer: 'text-intelligence' },
-  { pattern: /opt\s*out/i, score: -80, type: null, name: 'text:opt-out', layer: 'text-intelligence' },
-  { pattern: /manage\s*(email\s*)?(preferences|settings)/i, score: -70, type: null, name: 'text:manage-prefs', layer: 'text-intelligence' },
-  { pattern: /privacy\s*policy/i, score: -70, type: null, name: 'text:privacy-policy', layer: 'text-intelligence' },
-  { pattern: /terms\s*(of\s*)?(service|use)/i, score: -70, type: null, name: 'text:terms', layer: 'text-intelligence' },
-  { pattern: /cookie\s*policy/i, score: -55, type: null, name: 'text:cookie-policy', layer: 'text-intelligence' },
-  { pattern: /contact\s*us/i, score: -45, type: null, name: 'text:contact-us', layer: 'text-intelligence' },
-  { pattern: /help\s*(center|centre)/i, score: -45, type: null, name: 'text:help-center', layer: 'text-intelligence' },
-  { pattern: /learn\s*more/i, score: -35, type: null, name: 'text:learn-more', layer: 'text-intelligence' },
-  { pattern: /read\s*more/i, score: -35, type: null, name: 'text:read-more', layer: 'text-intelligence' },
-  { pattern: /view\s*(in\s*)?(browser|web)/i, score: -40, type: null, name: 'text:view-browser', layer: 'text-intelligence' },
-  { pattern: /download\s*(the\s*)?(app|mobile)/i, score: -50, type: null, name: 'text:download-app', layer: 'text-intelligence' },
-  { pattern: /follow\s*us/i, score: -60, type: null, name: 'text:follow-us', layer: 'text-intelligence' },
-  { pattern: /^(home|blog|about|faq|pricing|features|docs|documentation)$/i, score: -55, type: null, name: 'text:nav-link', layer: 'text-intelligence' },
-  { pattern: /^(twitter|facebook|linkedin|instagram|youtube|github|discord)$/i, score: -80, type: null, name: 'text:social-name', layer: 'text-intelligence' },
-  { pattern: /report\s*(this|spam|abuse|suspicious)/i, score: -30, type: null, name: 'text:report', layer: 'text-intelligence' },
-  { pattern: /^©|^copyright/i, score: -60, type: null, name: 'text:copyright', layer: 'text-intelligence' },
-  { pattern: /no\s*longer\s*wish/i, score: -70, type: null, name: 'text:no-longer-wish', layer: 'text-intelligence' },
-  { pattern: /trouble\s*(viewing|clicking|seeing)/i, score: -25, type: null, name: 'text:trouble-viewing', layer: 'text-intelligence' },
-  { pattern: /view\s*(this\s*)?email\s*(online|in)/i, score: -35, type: null, name: 'text:view-email-online', layer: 'text-intelligence' },
-  { pattern: /sent\s*(by|from|to)\s/i, score: -30, type: null, name: 'text:sent-by', layer: 'text-intelligence' },
-  { pattern: /all\s*rights\s*reserved/i, score: -50, type: null, name: 'text:all-rights', layer: 'text-intelligence' },
-  { pattern: /\d{3,5}\s*([\w\s]+,\s*){1,2}\w{2}\s*\d{5}/i, score: -40, type: null, name: 'text:address-pattern', layer: 'text-intelligence' },
+  {
+    pattern: /^unsubscribe$/i,
+    score: -90,
+    type: null,
+    name: 'text:unsubscribe',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /unsubscribe\s*(from|here)/i,
+    score: -90,
+    type: null,
+    name: 'text:unsubscribe-from',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /opt\s*out/i,
+    score: -80,
+    type: null,
+    name: 'text:opt-out',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /manage\s*(email\s*)?(preferences|settings)/i,
+    score: -70,
+    type: null,
+    name: 'text:manage-prefs',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /privacy\s*policy/i,
+    score: -70,
+    type: null,
+    name: 'text:privacy-policy',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /terms\s*(of\s*)?(service|use)/i,
+    score: -70,
+    type: null,
+    name: 'text:terms',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /cookie\s*policy/i,
+    score: -55,
+    type: null,
+    name: 'text:cookie-policy',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /contact\s*us/i,
+    score: -45,
+    type: null,
+    name: 'text:contact-us',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /help\s*(center|centre)/i,
+    score: -45,
+    type: null,
+    name: 'text:help-center',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /learn\s*more/i,
+    score: -35,
+    type: null,
+    name: 'text:learn-more',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /read\s*more/i,
+    score: -35,
+    type: null,
+    name: 'text:read-more',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /view\s*(in\s*)?(browser|web)/i,
+    score: -40,
+    type: null,
+    name: 'text:view-browser',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /download\s*(the\s*)?(app|mobile)/i,
+    score: -50,
+    type: null,
+    name: 'text:download-app',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /follow\s*us/i,
+    score: -60,
+    type: null,
+    name: 'text:follow-us',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /^(home|blog|about|faq|pricing|features|docs|documentation)$/i,
+    score: -55,
+    type: null,
+    name: 'text:nav-link',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /^(twitter|facebook|linkedin|instagram|youtube|github|discord)$/i,
+    score: -80,
+    type: null,
+    name: 'text:social-name',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /report\s*(this|spam|abuse|suspicious)/i,
+    score: -30,
+    type: null,
+    name: 'text:report',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /^©|^copyright/i,
+    score: -60,
+    type: null,
+    name: 'text:copyright',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /no\s*longer\s*wish/i,
+    score: -70,
+    type: null,
+    name: 'text:no-longer-wish',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /trouble\s*(viewing|clicking|seeing)/i,
+    score: -25,
+    type: null,
+    name: 'text:trouble-viewing',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /view\s*(this\s*)?email\s*(online|in)/i,
+    score: -35,
+    type: null,
+    name: 'text:view-email-online',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /sent\s*(by|from|to)\s/i,
+    score: -30,
+    type: null,
+    name: 'text:sent-by',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /all\s*rights\s*reserved/i,
+    score: -50,
+    type: null,
+    name: 'text:all-rights',
+    layer: 'text-intelligence',
+  },
+  {
+    pattern: /\d{3,5}\s*([\w\s]+,\s*){1,2}\w{2}\s*\d{5}/i,
+    score: -40,
+    type: null,
+    name: 'text:address-pattern',
+    layer: 'text-intelligence',
+  },
 ];
 
 function analyzeUrl(url: string): UrlIntelligence {
@@ -806,15 +2006,27 @@ function analyzeUrl(url: string): UrlIntelligence {
   for (const signal of URL_SIGNALS) {
     if (signal.pattern.test(url)) {
       urlScore += signal.score;
-      if (signal.type && !detectedType) {detectedType = signal.type;}
-      signals.push({ name: signal.name, points: signal.score, layer: signal.layer, detail: `URL matched: ${signal.pattern.source}` });
+      if (signal.type && !detectedType) {
+        detectedType = signal.type;
+      }
+      signals.push({
+        name: signal.name,
+        points: signal.score,
+        layer: signal.layer,
+        detail: `URL matched: ${signal.pattern.source}`,
+      });
     }
   }
 
   for (const signal of URL_NEGATIVE_SIGNALS) {
     if (signal.pattern.test(url)) {
       urlScore += signal.score;
-      negativeSignals.push({ name: signal.name, points: signal.score, layer: signal.layer, detail: `URL negative: ${signal.pattern.source}` });
+      negativeSignals.push({
+        name: signal.name,
+        points: signal.score,
+        layer: signal.layer,
+        detail: `URL negative: ${signal.pattern.source}`,
+      });
     }
   }
 
@@ -828,7 +2040,16 @@ function analyzeUrl(url: string): UrlIntelligence {
   const pathDepth = urlObj ? urlObj.pathname.split('/').filter((s) => s.length > 0).length : 0;
   const paramCount = urlObj ? Array.from(urlObj.searchParams).length : 0;
 
-  return { urlScore, detectedType, signals, negativeSignals, embeddedCode, isTrackingWrapper, pathDepth, paramCount };
+  return {
+    urlScore,
+    detectedType,
+    signals,
+    negativeSignals,
+    embeddedCode,
+    isTrackingWrapper,
+    pathDepth,
+    paramCount,
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -836,9 +2057,17 @@ function analyzeUrl(url: string): UrlIntelligence {
 // ═══════════════════════════════════════════════════════════════
 
 const CODE_PRIORITY_PARAMS: readonly string[] = [
-  'verification_code', 'verification-code', 'verificationCode',
-  'confirmation_code', 'confirmation-code',
-  'otp', 'code', 'pin', 'one_time_code', 'one-time-code', 'oneTimeCode',
+  'verification_code',
+  'verification-code',
+  'verificationCode',
+  'confirmation_code',
+  'confirmation-code',
+  'otp',
+  'code',
+  'pin',
+  'one_time_code',
+  'one-time-code',
+  'oneTimeCode',
 ];
 
 function extractEmbeddedCode(url: string): EmbeddedCode | null {
@@ -848,19 +2077,31 @@ function extractEmbeddedCode(url: string): EmbeddedCode | null {
     // Check priority params first
     for (const param of CODE_PRIORITY_PARAMS) {
       const value = urlObj.searchParams.get(param);
-      if (value && value.length >= MIN_CODE_LENGTH && value.length <= MAX_CODE_LENGTH && /^[A-Za-z0-9]+$/.test(value)) {
+      if (
+        value &&
+        value.length >= MIN_CODE_LENGTH &&
+        value.length <= MAX_CODE_LENGTH &&
+        /^[A-Za-z0-9]+$/.test(value)
+      ) {
         return { code: value, param };
       }
     }
     // Check any param matching code/otp/pin
     for (const [key, value] of urlObj.searchParams) {
-      if (/code|otp|pin/i.test(key) && value.length >= MIN_CODE_LENGTH && value.length <= MAX_CODE_LENGTH && /^[A-Za-z0-9]+$/.test(value)) {
+      if (
+        /code|otp|pin/i.test(key) &&
+        value.length >= MIN_CODE_LENGTH &&
+        value.length <= MAX_CODE_LENGTH &&
+        /^[A-Za-z0-9]+$/.test(value)
+      ) {
         return { code: value, param: key };
       }
     }
   } else {
     // Regex fallback for invalid URLs
-    const match = url.match(/[?&](verification[-_]?code|confirmation[-_]?code|otp|code|pin)=([A-Za-z0-9]{4,10})(?:&|$)/i);
+    const match = url.match(
+      /[?&](verification[-_]?code|confirmation[-_]?code|otp|code|pin)=([A-Za-z0-9]{4,10})(?:&|$)/i
+    );
     if (match && match[1] && match[2]) {
       return { code: match[2], param: match[1] };
     }
@@ -874,26 +2115,46 @@ function extractEmbeddedCode(url: string): EmbeddedCode | null {
 // ═══════════════════════════════════════════════════════════════
 
 const VERIFICATION_INTENTS: ReadonlySet<EmailIntent> = new Set([
-  'verification', 'magic-link-login', 'password-reset',
-  'device-confirmation', 'invitation', 'two-factor',
+  'verification',
+  'magic-link-login',
+  'password-reset',
+  'device-confirmation',
+  'invitation',
+  'two-factor',
 ]);
 
 const ANTI_INTENTS: ReadonlySet<EmailIntent> = new Set([
-  'marketing', 'newsletter', 'social-notification', 'transactional',
+  'marketing',
+  'newsletter',
+  'social-notification',
+  'transactional',
 ]);
 
 const POSITIVE_SECTIONS: ReadonlySet<EmailSection> = new Set([
-  'primary-content', 'cta-zone', 'hero',
+  'primary-content',
+  'cta-zone',
+  'hero',
 ]);
 
 const NEGATIVE_SECTIONS: ReadonlySet<EmailSection> = new Set([
-  'footer', 'legal', 'social-bar', 'unsubscribe-zone',
+  'footer',
+  'legal',
+  'social-bar',
+  'unsubscribe-zone',
 ]);
 
 const SECTION_SCORES: Readonly<Partial<Record<EmailSection, number>>> = {
-  preheader: -10, header: -15, hero: 10, 'primary-content': 10,
-  'cta-zone': 15, 'secondary-content': 0, footer: -25, legal: -30,
-  'social-bar': -35, 'unsubscribe-zone': -40, unknown: 0,
+  preheader: -10,
+  header: -15,
+  hero: 10,
+  'primary-content': 10,
+  'cta-zone': 15,
+  'secondary-content': 0,
+  footer: -25,
+  legal: -30,
+  'social-bar': -35,
+  'unsubscribe-zone': -40,
+  unknown: 0,
 };
 
 function buildReasoningChain(
@@ -909,49 +2170,114 @@ function buildReasoningChain(
   const steps: ReasoningStep[] = [];
 
   if (VERIFICATION_INTENTS.has(emailIntent)) {
-    steps.push({ layer: 'Email Intent', observation: `Email classified as "${emailIntent}" intent`, conclusion: 'This email is asking the user to take a verification-type action', impact: 'strong-positive' });
+    steps.push({
+      layer: 'Email Intent',
+      observation: `Email classified as "${emailIntent}" intent`,
+      conclusion: 'This email is asking the user to take a verification-type action',
+      impact: 'strong-positive',
+    });
   } else if (ANTI_INTENTS.has(emailIntent)) {
-    steps.push({ layer: 'Email Intent', observation: `Email classified as "${emailIntent}" intent`, conclusion: 'This email is NOT a verification email', impact: 'strong-negative' });
+    steps.push({
+      layer: 'Email Intent',
+      observation: `Email classified as "${emailIntent}" intent`,
+      conclusion: 'This email is NOT a verification email',
+      impact: 'strong-negative',
+    });
   }
 
   if (provider) {
-    steps.push({ layer: 'Provider Knowledge', observation: `Recognized provider: ${provider.name} (${provider.category})`, conclusion: `URL matches known ${provider.name} verification pattern`, impact: 'strong-positive' });
+    steps.push({
+      layer: 'Provider Knowledge',
+      observation: `Recognized provider: ${provider.name} (${provider.category})`,
+      conclusion: `URL matches known ${provider.name} verification pattern`,
+      impact: 'strong-positive',
+    });
   }
 
   if (urlIntel.urlScore > 30) {
-    steps.push({ layer: 'URL Intelligence', observation: `URL scored ${urlIntel.urlScore} with ${urlIntel.signals.length} positive signals`, conclusion: `URL structure strongly indicates ${urlIntel.detectedType ?? 'verification'} link`, impact: 'strong-positive' });
+    steps.push({
+      layer: 'URL Intelligence',
+      observation: `URL scored ${urlIntel.urlScore} with ${urlIntel.signals.length} positive signals`,
+      conclusion: `URL structure strongly indicates ${urlIntel.detectedType ?? 'verification'} link`,
+      impact: 'strong-positive',
+    });
   } else if (urlIntel.urlScore > 10) {
-    steps.push({ layer: 'URL Intelligence', observation: `URL scored ${urlIntel.urlScore} (moderate)`, conclusion: 'URL has some verification indicators', impact: 'positive' });
+    steps.push({
+      layer: 'URL Intelligence',
+      observation: `URL scored ${urlIntel.urlScore} (moderate)`,
+      conclusion: 'URL has some verification indicators',
+      impact: 'positive',
+    });
   }
 
   if (urlIntel.embeddedCode) {
-    steps.push({ layer: 'Code Extraction', observation: `Found embedded code "${urlIntel.embeddedCode.code}" in param "${urlIntel.embeddedCode.param}"`, conclusion: 'This URL carries an embedded verification code', impact: 'strong-positive' });
+    steps.push({
+      layer: 'Code Extraction',
+      observation: `Found embedded code "${urlIntel.embeddedCode.code}" in param "${urlIntel.embeddedCode.param}"`,
+      conclusion: 'This URL carries an embedded verification code',
+      impact: 'strong-positive',
+    });
   }
 
   if (semantics.verificationRelevance > 20) {
-    steps.push({ layer: 'Semantic Analysis', observation: `Surrounding text has verification relevance of ${semantics.verificationRelevance}`, conclusion: `Context strongly supports verification intent (${semantics.requestedAction ?? 'general'})`, impact: 'strong-positive' });
+    steps.push({
+      layer: 'Semantic Analysis',
+      observation: `Surrounding text has verification relevance of ${semantics.verificationRelevance}`,
+      conclusion: `Context strongly supports verification intent (${semantics.requestedAction ?? 'general'})`,
+      impact: 'strong-positive',
+    });
   }
 
   if (semantics.hasDisclaimerNearby) {
-    steps.push({ layer: 'Semantic Analysis', observation: 'Found "if you didn\'t request this" disclaimer', conclusion: 'Strong indicator of legitimate verification email', impact: 'positive' });
+    steps.push({
+      layer: 'Semantic Analysis',
+      observation: 'Found "if you didn\'t request this" disclaimer',
+      conclusion: 'Strong indicator of legitimate verification email',
+      impact: 'positive',
+    });
   }
 
   if (semantics.hasUrgency) {
-    steps.push({ layer: 'Semantic Analysis', observation: 'Detected expiration/urgency language', conclusion: 'Time-limited links are characteristic of verification flows', impact: 'positive' });
+    steps.push({
+      layer: 'Semantic Analysis',
+      observation: 'Detected expiration/urgency language',
+      conclusion: 'Time-limited links are characteristic of verification flows',
+      impact: 'positive',
+    });
   }
 
   if (visualWeight >= 25) {
-    steps.push({ layer: 'CTA Detection', observation: `Visual weight = ${visualWeight} (button styling detected)`, conclusion: 'This link is styled as the PRIMARY call-to-action', impact: 'positive' });
+    steps.push({
+      layer: 'CTA Detection',
+      observation: `Visual weight = ${visualWeight} (button styling detected)`,
+      conclusion: 'This link is styled as the PRIMARY call-to-action',
+      impact: 'positive',
+    });
   }
 
   if (POSITIVE_SECTIONS.has(section)) {
-    steps.push({ layer: 'Email Anatomy', observation: `Link is in the "${section}" section`, conclusion: 'Correct position for an activation link', impact: 'positive' });
+    steps.push({
+      layer: 'Email Anatomy',
+      observation: `Link is in the "${section}" section`,
+      conclusion: 'Correct position for an activation link',
+      impact: 'positive',
+    });
   } else if (NEGATIVE_SECTIONS.has(section)) {
-    steps.push({ layer: 'Email Anatomy', observation: `Link is in the "${section}" section`, conclusion: 'Very unlikely to be the activation link', impact: 'strong-negative' });
+    steps.push({
+      layer: 'Email Anatomy',
+      observation: `Link is in the "${section}" section`,
+      conclusion: 'Very unlikely to be the activation link',
+      impact: 'strong-negative',
+    });
   }
 
   if (relationship.isDirectlyFollowingInstruction) {
-    steps.push({ layer: 'Text Relationship', observation: `Link directly follows instruction: "${relationship.associatedInstruction?.slice(0, 80)}..."`, conclusion: 'Strong association between instruction and this link', impact: 'strong-positive' });
+    steps.push({
+      layer: 'Text Relationship',
+      observation: `Link directly follows instruction: "${relationship.associatedInstruction?.slice(0, 80)}..."`,
+      conclusion: 'Strong association between instruction and this link',
+      impact: 'strong-positive',
+    });
   }
 
   const positiveSteps = steps.filter((s) => s.impact.includes('positive')).length;
@@ -963,13 +2289,16 @@ function buildReasoningChain(
 
   if (totalScore >= 60) {
     summary = `HIGH CONFIDENCE: ${positiveSteps} positive signals across ${layerCount} intelligence layers confirm this is an activation link.`;
-    confidenceExplanation = 'Multiple independent intelligence layers agree this is the activation link.';
+    confidenceExplanation =
+      'Multiple independent intelligence layers agree this is the activation link.';
   } else if (totalScore >= 30) {
     summary = `MODERATE CONFIDENCE: ${positiveSteps} positive vs ${negativeSteps} negative signals.`;
-    confidenceExplanation = 'Some evidence supports this being an activation link, but not all layers agree.';
+    confidenceExplanation =
+      'Some evidence supports this being an activation link, but not all layers agree.';
   } else if (totalScore > 0) {
     summary = `LOW CONFIDENCE: Only ${positiveSteps} weak positive signals detected.`;
-    confidenceExplanation = 'Insufficient evidence to confidently identify this as an activation link.';
+    confidenceExplanation =
+      'Insufficient evidence to confidently identify this as an activation link.';
   } else {
     summary = `REJECTED: ${negativeSteps} negative signals indicate this is NOT an activation link.`;
     confidenceExplanation = 'Negative signals outweigh any positive indicators.';
@@ -1000,9 +2329,15 @@ function calibrateConfidence(
     confidence *= 0.2;
   }
 
-  if (isPrimaryCTA) {confidence = Math.min(confidence * 1.1, 1.0);}
-  if (hasProvider) {confidence = Math.min(confidence * 1.15, 1.0);}
-  if (semanticRelevance > 20) {confidence = Math.min(confidence * 1.1, 1.0);}
+  if (isPrimaryCTA) {
+    confidence = Math.min(confidence * 1.1, 1.0);
+  }
+  if (hasProvider) {
+    confidence = Math.min(confidence * 1.15, 1.0);
+  }
+  if (semanticRelevance > 20) {
+    confidence = Math.min(confidence * 1.1, 1.0);
+  }
 
   return clampConfidence(confidence);
 }
@@ -1030,9 +2365,14 @@ function parseAnchorsFromHtml(emailHtml: string): ParsedAnchor[] {
       outerHTML,
       innerHTML,
       getAttribute(attr: string): string | null {
-        if (attr === 'href') {return href;}
-        const attrMatch = new RegExp(`${attr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}=["']([^"']*)["']`, 'i').exec(outerHTML);
-        return attrMatch ? attrMatch[1] : null;
+        if (attr === 'href') {
+          return href;
+        }
+        const attrMatch = new RegExp(
+          `${attr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}=["']([^"']*)["']`,
+          'i'
+        ).exec(outerHTML);
+        return attrMatch ? (attrMatch[1] ?? null) : null;
       },
     });
   }
@@ -1045,18 +2385,23 @@ function parseAnchorsFromHtml(emailHtml: string): ParsedAnchor[] {
 // ═══════════════════════════════════════════════════════════════
 
 function postProcessCandidates(candidates: ActivationLink[]): void {
-  if (candidates.length === 0) {return;}
+  if (candidates.length === 0) {
+    return;
+  }
 
   // Bonus for sole strong candidate
   const highScorers = candidates.filter((c) => c.score > HIGH_SCORE_THRESHOLD);
   if (highScorers.length === 1) {
-    highScorers[0].score += SOLE_CANDIDATE_BONUS;
-    highScorers[0].matchedSignals.push({
-      name: 'post:sole-strong-candidate',
-      points: SOLE_CANDIDATE_BONUS,
-      layer: 'post-processor',
-      detail: `Only one link scored above ${HIGH_SCORE_THRESHOLD}`,
-    });
+    const sole = highScorers[0];
+    if (sole) {
+      sole.score += SOLE_CANDIDATE_BONUS;
+      sole.matchedSignals.push({
+        name: 'post:sole-strong-candidate',
+        points: SOLE_CANDIDATE_BONUS,
+        layer: 'post-processor',
+        detail: `Only one link scored above ${HIGH_SCORE_THRESHOLD}`,
+      });
+    }
   }
 
   // Deduplicate URLs (keep higher-scoring variant)
@@ -1064,15 +2409,18 @@ function postProcessCandidates(candidates: ActivationLink[]): void {
   const toRemove = new Set<number>();
 
   for (let i = 0; i < candidates.length; i++) {
-    const normalized = normalizeUrl(candidates[i].url);
+    const candidate = candidates[i];
+    if (!candidate) {continue;}
+    const normalized = normalizeUrl(candidate.url);
     const existingIdx = urlMap.get(normalized);
 
     if (existingIdx !== undefined) {
-      if (candidates[i].score > candidates[existingIdx].score) {
-        candidates[i].score += DUPLICATE_URL_BONUS;
+      const existingCandidate = candidates[existingIdx];
+      if (existingCandidate && candidate.score > existingCandidate.score) {
+        candidate.score += DUPLICATE_URL_BONUS;
         toRemove.add(existingIdx);
-      } else {
-        candidates[existingIdx].score += DUPLICATE_URL_BONUS;
+      } else if (existingCandidate) {
+        existingCandidate.score += DUPLICATE_URL_BONUS;
         toRemove.add(i);
       }
     } else {
@@ -1088,8 +2436,9 @@ function postProcessCandidates(candidates: ActivationLink[]): void {
 
   // Bonus for sole primary CTA
   const primaryCTAs = candidates.filter((c) => c.isPrimaryCTA);
-  if (primaryCTAs.length === 1 && primaryCTAs[0].score > 20) {
-    primaryCTAs[0].score += SINGLE_PRIMARY_CTA_BONUS;
+  const solePrimaryCTA = primaryCTAs.length === 1 ? primaryCTAs[0] : undefined;
+  if (solePrimaryCTA && solePrimaryCTA.score > 20) {
+    solePrimaryCTA.score += SINGLE_PRIMARY_CTA_BONUS;
   }
 
   // Recalibrate confidence
@@ -1124,7 +2473,9 @@ export function extractActivationLinks(
   const totalLinksFound = allAnchors.length;
 
   // ── Semantic context from full body text ──
-  const bodySemantics = analyzeSemanticContextFromText(bodyText.slice(0, MAX_CONTEXT_TEXT_LENGTH * 3));
+  const bodySemantics = analyzeSemanticContextFromText(
+    bodyText.slice(0, MAX_CONTEXT_TEXT_LENGTH * 3)
+  );
   layersExecuted.push('semantic-analyzer');
 
   const candidates: ActivationLink[] = [];
@@ -1133,13 +2484,19 @@ export function extractActivationLinks(
   // ── Score each anchor ──
   for (const anchor of allAnchors) {
     const href = anchor.href;
-    if (!href) { continue; }
+    if (!href) {
+      continue;
+    }
 
     const url = decodeHtmlEntities(href.trim());
 
     // Protocol filter
     if (REJECTED_PROTOCOLS.test(url)) {
-      rejected.push({ url: truncate(url, TRUNCATE_URL_LENGTH), reason: 'protocol-reject', section: 'unknown' });
+      rejected.push({
+        url: truncate(url, TRUNCATE_URL_LENGTH),
+        reason: 'protocol-reject',
+        section: 'unknown',
+      });
       continue;
     }
 
@@ -1155,7 +2512,11 @@ export function extractActivationLinks(
     if (anchorText.length === 0) {
       const hasVerifyUrl = URL_SIGNALS.some((s) => s.score >= 25 && s.pattern.test(url));
       if (!hasVerifyUrl) {
-        rejected.push({ url: truncate(url, TRUNCATE_URL_LENGTH), reason: 'image-only-no-verify-url', section: 'unknown' });
+        rejected.push({
+          url: truncate(url, TRUNCATE_URL_LENGTH),
+          reason: 'image-only-no-verify-url',
+          section: 'unknown',
+        });
         continue;
       }
     }
@@ -1268,7 +2629,12 @@ export function extractActivationLinks(
     totalScore += sectionScore;
     if (sectionScore !== 0) {
       const target = sectionScore > 0 ? allPositiveSignals : allNegativeSignals;
-      target.push({ name: `section:${section}`, points: sectionScore, layer: 'anatomy-engine', detail: `Link in "${section}" section` });
+      target.push({
+        name: `section:${section}`,
+        points: sectionScore,
+        layer: 'anatomy-engine',
+        detail: `Link in "${section}" section`,
+      });
     }
 
     // Intent alignment
@@ -1284,7 +2650,10 @@ export function extractActivationLinks(
     }
 
     // Anti-intent penalty
-    if (ANTI_INTENTS.has(intentResult.intent) && intentResult.confidence > ANTI_INTENT_CONFIDENCE_THRESHOLD) {
+    if (
+      ANTI_INTENTS.has(intentResult.intent) &&
+      intentResult.confidence > ANTI_INTENT_CONFIDENCE_THRESHOLD
+    ) {
       const intentPenalty = -Math.round(Math.abs(totalScore) * ANTI_INTENT_PENALTY_MULTIPLIER);
       totalScore += intentPenalty;
       allNegativeSignals.push({
@@ -1297,7 +2666,11 @@ export function extractActivationLinks(
 
     // Reject non-positive scores
     if (totalScore <= 0) {
-      rejected.push({ url: truncate(url, TRUNCATE_URL_LENGTH), reason: `score=${totalScore}`, section });
+      rejected.push({
+        url: truncate(url, TRUNCATE_URL_LENGTH),
+        reason: `score=${totalScore}`,
+        section,
+      });
       continue;
     }
 
@@ -1316,14 +2689,21 @@ export function extractActivationLinks(
       urlIntel.detectedType ??
       textDetectedType ??
       (providerResult.provider
-        ? PROVIDER_KNOWLEDGE_BASE.find((p) => p.name === providerResult.provider!.name)?.expectedLinkType ?? null
+        ? (PROVIDER_KNOWLEDGE_BASE.find((p) => p.name === providerResult.provider!.name)
+            ?.expectedLinkType ?? null)
         : null) ??
       'unknown-verification';
 
     // Build reasoning
     const reasoning = buildReasoningChain(
-      urlIntel, semantics, visual.visualWeight, section,
-      intentResult.intent, providerResult.provider, relationship, totalScore
+      urlIntel,
+      semantics,
+      visual.visualWeight,
+      section,
+      intentResult.intent,
+      providerResult.provider,
+      relationship,
+      totalScore
     );
 
     candidates.push({
@@ -1341,15 +2721,21 @@ export function extractActivationLinks(
       matchedSignals: allPositiveSignals,
       negativeSignals: allNegativeSignals,
       providerMatch: providerResult.provider,
-      surroundingContext: (semantics.instructionText ?? relationship.associatedInstruction) ?? '',
+      surroundingContext: semantics.instructionText ?? relationship.associatedInstruction ?? '',
       visualWeight: visual.visualWeight,
     });
   }
 
   // Ensure layer tracking is complete
-  if (!layersExecuted.includes('url-intelligence')) {layersExecuted.push('url-intelligence');}
-  if (!layersExecuted.includes('text-intelligence')) {layersExecuted.push('text-intelligence');}
-  if (!layersExecuted.includes('visual-weight')) {layersExecuted.push('visual-weight');}
+  if (!layersExecuted.includes('url-intelligence')) {
+    layersExecuted.push('url-intelligence');
+  }
+  if (!layersExecuted.includes('text-intelligence')) {
+    layersExecuted.push('text-intelligence');
+  }
+  if (!layersExecuted.includes('visual-weight')) {
+    layersExecuted.push('visual-weight');
+  }
 
   // Post-process and sort
   postProcessCandidates(candidates);
@@ -1360,7 +2746,8 @@ export function extractActivationLinks(
   const verificationLanguageStrength = clampConfidence(
     ((intentResult.allIntentScores.get('verification') ?? 0) +
       (intentResult.allIntentScores.get('magic-link-login') ?? 0) +
-      (intentResult.allIntentScores.get('password-reset') ?? 0)) / 100
+      (intentResult.allIntentScores.get('password-reset') ?? 0)) /
+      100
   );
 
   const urgencyLevel = /expires?\s*in\s*\d+\s*(min|sec)/i.test(bodyText)
@@ -1374,7 +2761,7 @@ export function extractActivationLinks(
   const extractionTimeMs = performance.now() - startTime;
 
   return {
-    best: candidates.length > 0 ? candidates[0] : null,
+    best: candidates.length > 0 ? (candidates[0] ?? null) : null,
     allCandidates: candidates,
     rejected,
     emailAnalysis: {

@@ -46,33 +46,75 @@ const App: React.FC = () => {
   const [emailAccount, setEmailAccount] = useState<EmailAccount | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const helpTriggerRef = useRef<HTMLElement | null>(null);
 
   // Track toast timeout to prevent race conditions
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const showToast = useCallback((message: string) => {
-    if (toastTimeoutRef.current) {
-      clearTimeout(toastTimeoutRef.current);
-    }
-    setToast(message);
-    toastTimeoutRef.current = setTimeout(() => setToast(null), 3000);
-  }, [setToast]);
+  const showToast = useCallback(
+    (message: string) => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+      setToast(message);
+      toastTimeoutRef.current = setTimeout(() => setToast(null), 3000);
+    },
+    [setToast]
+  );
 
   useEffect(() => {
+    if (!showHelp) {
+      return;
+    }
+
+    const modal = document.querySelector('.help-card') as HTMLElement | null;
+    if (modal) {
+      const focusable = modal.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      const first = focusable[0];
+      first?.focus();
+    }
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && showHelp) {
+      if (e.key === 'Escape') {
         setShowHelp(false);
+        return;
+      }
+      if (e.key === 'Tab' && modal) {
+        const focusable = modal.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            last?.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first?.focus();
+          }
+        }
       }
     };
 
-    if (showHelp) {
-      document.addEventListener('keydown', handleKeyDown);
-    }
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
   }, [showHelp]);
+
+  useEffect(() => {
+    if (!showHelp && helpTriggerRef.current) {
+      helpTriggerRef.current.focus();
+    }
+  }, [showHelp]);
+
+  const handleOpenHelp = useCallback(() => {
+    helpTriggerRef.current = document.activeElement as HTMLElement;
+    setShowHelp(true);
+  }, []);
 
   const refreshCurrentEmail = useCallback(async () => {
     try {
@@ -103,7 +145,13 @@ const App: React.FC = () => {
     try {
       log.info('Generating new identity...');
       const res = await safeSendMessage({ action: 'GENERATE_EMAIL' });
-      if (res && 'email' in res && res.email && typeof res.email === 'object' && 'fullEmail' in res.email) {
+      if (
+        res &&
+        'email' in res &&
+        res.email &&
+        typeof res.email === 'object' &&
+        'fullEmail' in res.email
+      ) {
         const email = res.email as EmailAccount;
         setEmailAccount(email);
         showToast(t('newIdentityGenerated'));
@@ -129,22 +177,21 @@ const App: React.FC = () => {
         try {
           const result = await chrome.storage.local.get('hasSeenOnboarding');
           isFirst = !result.hasSeenOnboarding;
-          if (mounted) {setIsFirstTime(isFirst);}
+          if (mounted) {
+            setIsFirstTime(isFirst);
+          }
         } catch (e) {
           log.warn('Failed to check onboarding status', e);
-          if (mounted) {setIsFirstTime(false);}
+          if (mounted) {
+            setIsFirstTime(false);
+          }
           isFirst = false;
         }
 
         const currentEmail = await refreshCurrentEmail();
 
-        if (!currentEmail && !isFirst) {
-          const recheck = await refreshCurrentEmail();
-          if (!recheck) {
-            log.debug('No current email after re-check. Auto-generating...');
-            void generateIdentity();
-          }
-        }
+        // Removed aggressive auto-generation block. 
+        // Generates identity ONLY upon explicit user onboarding dismiss or manual generation.
       } catch (e) {
         log.error('Failed to initialize app', e);
       } finally {
@@ -159,10 +206,13 @@ const App: React.FC = () => {
     return () => {
       mounted = false;
     };
-  }, [generateIdentity, refreshCurrentEmail, setIsFirstTime]);
+  }, [refreshCurrentEmail, setIsFirstTime]);
 
   useEffect(() => {
-    const listener = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
+    const listener = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      areaName: string
+    ) => {
       if (areaName === 'local' && changes.currentEmail) {
         void refreshCurrentEmail();
       }
@@ -179,17 +229,18 @@ const App: React.FC = () => {
     };
   }, [refreshCurrentEmail]);
 
-  const handleDismissOnboarding = async () => {
+  const handleDismissOnboarding = useCallback(async () => {
     try {
       await chrome.storage.local.set({ hasSeenOnboarding: true });
       setIsFirstTime(false);
-      void refreshCurrentEmail();
+      // Auto-generate email on first dismiss so user has a working email immediately
+      void generateIdentity();
     } catch (e) {
       log.warn('Failed to dismiss onboarding', e);
       setIsFirstTime(false);
-      void refreshCurrentEmail();
+      void generateIdentity();
     }
-  };
+  }, [generateIdentity]);
 
   const handleOpenSettings = useCallback(() => {
     try {
@@ -207,9 +258,7 @@ const App: React.FC = () => {
     void generateIdentity();
   }, [generateIdentity]);
 
-  const dismissOnboarding = useCallback(() => {
-    void handleDismissOnboarding();
-  }, [handleDismissOnboarding]);
+  const dismissOnboarding = handleDismissOnboarding;
 
   const springTransition: Transition = {
     type: 'spring',
@@ -343,7 +392,7 @@ const App: React.FC = () => {
               transition={springTransition}
               className="app-view-container"
             >
-              <Header onOpenSettings={handleOpenSettings} onOpenHelp={() => setShowHelp(true)} />
+              <Header onOpenSettings={handleOpenSettings} onOpenHelp={handleOpenHelp} />
               <Hub
                 onNavigate={(v) => setView(v)}
                 emailAccount={emailAccount}
@@ -362,7 +411,7 @@ const App: React.FC = () => {
               transition={springTransition}
               className="app-view-container"
             >
-              <Header onOpenSettings={handleOpenSettings} onOpenHelp={() => setShowHelp(true)} />
+              <Header onOpenSettings={handleOpenSettings} onOpenHelp={handleOpenHelp} />
               <div className="ghost-dashboard" style={{ paddingTop: 0 }}>
                 <EmailGenerator
                   emailAccount={emailAccount}
@@ -424,7 +473,9 @@ const App: React.FC = () => {
               initial={{ opacity: 0, y: 100 }}
               animate={{ opacity: 1, y: 0 }}
             >
-              <h2 id="help-modal-title" className="help-title">{t('helpTitle')}</h2>
+              <h2 id="help-modal-title" className="help-title">
+                {t('helpTitle')}
+              </h2>
               <p className="help-desc">{t('helpDescription')}</p>
               <button
                 className="ios-button button-primary help-btn"

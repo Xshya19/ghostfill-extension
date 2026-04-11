@@ -21,13 +21,17 @@
       g.trustedTypes.createPolicy('default', {
         createHTML: (s: string) => s.replace(/</g, '&lt;').replace(/>/g, '&gt;'),
         createScriptURL: (s: string) => {
-          if (s.startsWith('chrome-extension://') || s.startsWith('/')) { return s; }
+          if (s.startsWith('chrome-extension://') || s.startsWith('/')) {
+            return s;
+          }
           console.warn('Blocked uncontrolled script URL');
           return '';
         },
-        createScript: (s: string) => s,
+        createScript: (_s: string) => {
+          throw new Error('createScript is not allowed by GhostFill policy');
+        },
       });
-    } catch (_) {
+    } catch {
       // Policy may already exist
     }
   }

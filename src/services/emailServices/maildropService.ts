@@ -68,9 +68,9 @@ class MaildropService {
     const nouns = ['fox', 'owl', 'hawk', 'bear', 'wolf', 'lion', 'deer', 'seal'];
     const rng = new Uint32Array(3);
     crypto.getRandomValues(rng);
-    const adj = adjectives[rng[0] % adjectives.length];
-    const noun = nouns[rng[1] % nouns.length];
-    const num = rng[2] % 9999;
+    const adj = adjectives[rng[0]!]!;
+    const noun = nouns[rng[1]!]!;
+    const num = rng[2]! % 9999;
     return `${adj}${noun}${num}`;
   }
 
@@ -87,7 +87,7 @@ class MaildropService {
 
     for (let i = 0; i < retries; i++) {
       try {
-        const response = await fetch(MAILDROP_API, {
+        const fetchInit: RequestInit = {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -97,8 +97,11 @@ class MaildropService {
             'apollo-require-preflight': 'true',
           },
           body: JSON.stringify({ query, variables }),
-          signal,
-        });
+        };
+        if (signal) {
+          fetchInit.signal = signal;
+        }
+        const response = await fetch(MAILDROP_API, fetchInit);
 
         if (!response.ok) {
           // If 429 or 5xx, retry
@@ -113,7 +116,7 @@ class MaildropService {
 
         if (result.errors && result.errors.length > 0) {
           // Check if it's a transient GraphQL error
-          const msg = result.errors[0].message;
+          const msg = result.errors[0]!.message;
           if (msg.toLowerCase().includes('timeout') || msg.toLowerCase().includes('rate limit')) {
             throw new Error(msg);
           }
@@ -127,7 +130,7 @@ class MaildropService {
         return result.data;
       } catch (error) {
         lastError = error;
-        
+
         // Don't retry if aborted
         if (signal?.aborted) {
           throw error;
@@ -224,7 +227,9 @@ class MaildropService {
       // Limit to first 10 to avoid excessive API calls
       const fullMessages: Email[] = [];
       for (const msg of messages.slice(0, 10)) {
-        if (signal?.aborted) {break;}
+        if (signal?.aborted) {
+          break;
+        }
         try {
           const fullData = await this.executeGraphQL<{ message: MaildropFullMessage }>(
             MESSAGE_QUERY,

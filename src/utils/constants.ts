@@ -79,8 +79,6 @@ export const UI = {
   DEFAULT_PASSWORD_LENGTH: 16,
 } as const;
 
-
-
 // Storage keys
 export const STORAGE_KEYS = {
   CURRENT_EMAIL: 'currentEmail',
@@ -117,11 +115,11 @@ export const CONTEXT_MENU_IDS = {
   REPORT_MISCLASS: 'report-misclass',
 } as const;
 
-// Keyboard shortcuts
+// Keyboard shortcuts — aligned with manifest.json command definitions
 export const SHORTCUTS = {
   OPEN_POPUP: 'Ctrl+Shift+E',
   GENERATE_EMAIL: 'Ctrl+Shift+M',
-  GENERATE_PASSWORD: 'Ctrl+Shift+P',
+  GENERATE_PASSWORD: 'Ctrl+Shift+G',
   AUTO_FILL: 'Ctrl+Shift+F',
 } as const;
 

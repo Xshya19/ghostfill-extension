@@ -25,10 +25,7 @@ export interface PageAnalysis {
   readonly signals: readonly string[];
 }
 
-export function safeQuerySelector<T extends Element>(
-  root: ParentNode,
-  selector: string
-): T | null {
+export function safeQuerySelector<T extends Element>(root: ParentNode, selector: string): T | null {
   try {
     return root.querySelector<T>(selector);
   } catch {
@@ -94,7 +91,8 @@ export class PageAnalyzer {
   }> = [
     {
       type: 'verification',
-      pattern: /verify|verification|confirm[\s._-]*email|activate[\s._-]*account|enter[\s._-]*(your\s+)?code|one[-_\s]?time|otp|self[-_\s]?service[\s._-]*verification/i,
+      pattern:
+        /verify|verification|confirm[\s._-]*email|activate[\s._-]*account|enter[\s._-]*(your\s+)?code|one[-_\s]?time|otp|self[-_\s]?service[\s._-]*verification/i,
       signal: 'page:verification',
     },
     {
@@ -104,7 +102,8 @@ export class PageAnalyzer {
     },
     {
       type: 'password-reset',
-      pattern: /reset[\s._-]*password|forgot[\s._-]*password|recover|new[\s._-]*password|change[\s._-]*password/i,
+      pattern:
+        /reset[\s._-]*password|forgot[\s._-]*password|recover|new[\s._-]*password|change[\s._-]*password/i,
       signal: 'page:password-reset',
     },
     {
@@ -131,7 +130,8 @@ export class PageAnalyzer {
 
   // ── Field Detection Selectors ───────────────────────────
   private static readonly FIELD_SELECTORS = {
-    email: 'input[type="email"], input[name*="email" i], input[id*="email" i], input[autocomplete*="email"]',
+    email:
+      'input[type="email"], input[name*="email" i], input[id*="email" i], input[autocomplete*="email"]',
     password: 'input[type="password"]',
     otp: [
       'input[autocomplete="one-time-code"]',
@@ -159,21 +159,32 @@ export class PageAnalyzer {
     {
       name: 'react',
       detect: () => {
-        const el = safeQuerySelector<HTMLElement>(document, 'input') ?? safeQuerySelector<HTMLElement>(document, 'div');
-        if (!el) {return false;}
+        const el =
+          safeQuerySelector<HTMLElement>(document, 'input') ??
+          safeQuerySelector<HTMLElement>(document, 'div');
+        if (!el) {
+          return false;
+        }
         return Object.keys(el).some(
-          (k) => k.startsWith('__reactFiber$') || k.startsWith('__reactProps$') || k.startsWith('__reactInternalInstance$')
+          (k) =>
+            k.startsWith('__reactFiber$') ||
+            k.startsWith('__reactProps$') ||
+            k.startsWith('__reactInternalInstance$')
         );
       },
     },
     {
       name: 'vue',
       detect: () => {
-        if ((document as Document & { __vue_app__?: unknown }).__vue_app__) {return true;}
+        if ((document as Document & { __vue_app__?: unknown }).__vue_app__) {
+          return true;
+        }
         const allEls = document.body?.querySelectorAll('*');
-        if (!allEls) {return false;}
+        if (!allEls) {
+          return false;
+        }
         for (let i = 0, len = Math.min(allEls.length, 100); i < len; i++) {
-          if (allEls[i].getAttributeNames().some((a) => /^data-v-[a-f0-9]+$/.test(a))) {
+          if (allEls[i]!.getAttributeNames().some((a) => /^data-v-[a-f0-9]+$/.test(a))) {
             return true;
           }
         }
@@ -182,26 +193,28 @@ export class PageAnalyzer {
     },
     {
       name: 'angular',
-      detect: () => !!(
-        (window as Window & { ng?: unknown }).ng ??
-        safeQuerySelector(document, '[ng-version]') ??
-        safeQuerySelector(document, '[_nghost]') ??
-        safeQuerySelector(document, '[ng-app]')
-      ),
+      detect: () =>
+        !!(
+          (window as Window & { ng?: unknown }).ng ??
+          safeQuerySelector(document, '[ng-version]') ??
+          safeQuerySelector(document, '[_nghost]') ??
+          safeQuerySelector(document, '[ng-app]')
+        ),
     },
     {
       name: 'svelte',
-      detect: () => !!(
-        safeQuerySelector(document, '[class*="svelte-"]') ??
-        safeQuerySelector(document, 'script[type="svelte-data"]')
-      ),
+      detect: () =>
+        !!(
+          safeQuerySelector(document, '[class*="svelte-"]') ??
+          safeQuerySelector(document, 'script[type="svelte-data"]')
+        ),
     },
     {
       name: 'solid',
-      detect: () => !!(
-        (window as Window & { _$HY?: unknown })._$HY ??
-        safeQuerySelector(document, '[data-hk]')
-      ),
+      detect: () =>
+        !!(
+          (window as Window & { _$HY?: unknown })._$HY ?? safeQuerySelector(document, '[data-hk]')
+        ),
     },
     {
       name: 'htmx',
@@ -217,7 +230,9 @@ export class PageAnalyzer {
     const url = window.location.href.toLowerCase();
     const path = window.location.pathname.toLowerCase();
     const title = document.title.toLowerCase();
-    const bodyText = (document.body?.textContent ?? '').slice(0, PAGE_TEXT_SCAN_LIMIT).toLowerCase();
+    const bodyText = (document.body?.textContent ?? '')
+      .slice(0, PAGE_TEXT_SCAN_LIMIT)
+      .toLowerCase();
     const metaContent = Array.from(document.querySelectorAll('meta'))
       .map((m) => (m.getAttribute('content') ?? '').toLowerCase())
       .join(' ');
@@ -233,7 +248,13 @@ export class PageAnalyzer {
     const inputCount = deepQuerySelectorAll('input:not([type="hidden"])').length;
 
     // ── Page-type classification ──────────────────────────
-    const pageType = this.classifyPage(combined, hasOTPField, hasPasswordField, hasEmailField, signals);
+    const pageType = this.classifyPage(
+      combined,
+      hasOTPField,
+      hasPasswordField,
+      hasEmailField,
+      signals
+    );
 
     // ── Provider detection ────────────────────────────────
     const provider = this.detectProvider(url, signals);
@@ -265,8 +286,8 @@ export class PageAnalyzer {
     signals: string[]
   ): PageType {
     // Special: OTP field present OR verification language → check 2FA vs verification
-    if (hasOTPField || this.PAGE_PATTERNS[0].pattern.test(combined)) {
-      const is2FA = this.PAGE_PATTERNS[1].pattern.test(combined);
+    if (hasOTPField || this.PAGE_PATTERNS[0]!.pattern.test(combined)) {
+      const is2FA = this.PAGE_PATTERNS[1]!.pattern.test(combined);
       const type = is2FA ? '2fa' : 'verification';
       signals.push(`page:${type}`);
       return type;
@@ -274,7 +295,9 @@ export class PageAnalyzer {
 
     // Iterate remaining patterns in priority order
     for (const { type, pattern, signal } of this.PAGE_PATTERNS) {
-      if (type === 'verification' || type === '2fa') {continue;} // Already handled above
+      if (type === 'verification' || type === '2fa') {
+        continue;
+      } // Already handled above
       if (pattern.test(combined)) {
         signals.push(signal);
         return type;
@@ -303,7 +326,9 @@ export class PageAnalyzer {
   private static detectFramework(): string {
     for (const detector of this.FRAMEWORK_DETECTORS) {
       try {
-        if (detector.detect()) {return detector.name;}
+        if (detector.detect()) {
+          return detector.name;
+        }
       } catch {
         /* detection failed, continue */
       }

@@ -1,9 +1,8 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './App';
-import ErrorBoundary from './components/ErrorBoundary';
-import './styles/popup.css';
 import { initRemoteLogger } from '../utils/remoteLogger';
+import App from './App';
+import './styles/popup.css';
 
 initRemoteLogger('Popup');
 
@@ -12,9 +11,7 @@ if (container) {
   const root = createRoot(container);
   root.render(
     <React.StrictMode>
-      <ErrorBoundary>
-        <App />
-      </ErrorBoundary>
+      <App />
     </React.StrictMode>
   );
 }

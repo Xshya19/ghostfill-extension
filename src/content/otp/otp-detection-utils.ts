@@ -34,7 +34,7 @@ export interface SignalScore {
   readonly signal: string;
   readonly weight: number;
   readonly matched: boolean;
-  readonly detail?: string;
+  readonly detail?: string | undefined;
 }
 
 // ── Config (consumed by utility classes only) ─────────────────────────────────
@@ -56,25 +56,68 @@ export const OTP_DETECTION_CONFIG = {
 // ── Keyword Sets ──────────────────────────────────────────────────────────────
 
 export const OTP_KEYWORDS: ReadonlySet<string> = new Set([
-  'otp', 'code', 'verify', 'verification', 'token', 'pin',
-  '2fa', 'mfa', 'totp', 'passcode', 'one-time', 'onetime',
-  'auth-code', 'authcode', 'security-code', 'securitycode',
-  'confirmation', 'confirm-code', 'sms-code', 'smscode',
-  'twofa', 'twofactor', 'authenticator',
+  'otp',
+  'code',
+  'verify',
+  'verification',
+  'token',
+  'pin',
+  '2fa',
+  'mfa',
+  'totp',
+  'passcode',
+  'one-time',
+  'onetime',
+  'auth-code',
+  'authcode',
+  'security-code',
+  'securitycode',
+  'confirmation',
+  'confirm-code',
+  'sms-code',
+  'smscode',
+  'twofa',
+  'twofactor',
+  'authenticator',
 ]);
 
 export const OTP_CONTEXT_PHRASES: readonly string[] = [
-  'verification code', 'verify code', 'enter code', 'enter the code',
-  'one-time password', 'one time password', 'otp', 'authentication code',
-  'security code', 'confirmation code', 'sms code', 'two-factor',
-  'two factor', '2fa', 'mfa', 'we sent', "we've sent", 'code sent',
-  'code was sent', 'digit code', 'check your phone', 'check your email',
-  'verify your identity', 'verify your account', 'enter verification',
-  'enter your code', 'enter otp',
+  'verification code',
+  'verify code',
+  'enter code',
+  'enter the code',
+  'one-time password',
+  'one time password',
+  'otp',
+  'authentication code',
+  'security code',
+  'confirmation code',
+  'sms code',
+  'two-factor',
+  'two factor',
+  '2fa',
+  'mfa',
+  'we sent',
+  "we've sent",
+  'code sent',
+  'code was sent',
+  'digit code',
+  'check your phone',
+  'check your email',
+  'verify your identity',
+  'verify your account',
+  'enter verification',
+  'enter your code',
+  'enter otp',
 ];
 
 export const SEARCH_INDICATORS: ReadonlySet<string> = new Set([
-  'search', 'query', 'q', 'keyword', 'find', 'lookup',
+  'search',
+  'query',
+  'q',
+  'keyword',
+  'find',
+  'lookup',
 ]);
 
 // ── Pure Utility Functions ────────────────────────────────────────────────────
@@ -91,10 +134,7 @@ export function escapeCSS(value: string): string {
   }
 }
 
-export function safeQuerySelector<T extends Element>(
-  root: ParentNode,
-  selector: string
-): T | null {
+export function safeQuerySelector<T extends Element>(root: ParentNode, selector: string): T | null {
   try {
     return root.querySelector<T>(selector);
   } catch {
@@ -114,9 +154,13 @@ export function generateGroupId(prefix: string, hint?: string): string {
  */
 export class VisibilityEngine {
   static isVisible(el: HTMLElement): boolean {
-    if (!el.isConnected) {return false;}
+    if (!el.isConnected) {
+      return false;
+    }
     const rect = el.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) {return false;}
+    if (rect.width <= 0 || rect.height <= 0) {
+      return false;
+    }
 
     let current: HTMLElement | null = el;
     let depth = 0;
@@ -155,13 +199,17 @@ export class KeywordMatcher {
   }
 
   static isSearchInput(input: HTMLInputElement): boolean {
-    if (input.type === 'search') {return true;}
+    if (input.type === 'search') {
+      return true;
+    }
     const combined = [
       input.name ?? '',
       input.id ?? '',
       input.placeholder ?? '',
       input.getAttribute('aria-label') ?? '',
-    ].join(' ').toLowerCase();
+    ]
+      .join(' ')
+      .toLowerCase();
     const tokens = combined.split(/[^a-z0-9]+/);
     return tokens.some((t) => t.length > 0 && SEARCH_INDICATORS.has(t));
   }
@@ -176,17 +224,24 @@ export class KeywordMatcher {
 export class LabelResolver {
   static getAssociatedLabelText(input: HTMLInputElement): string {
     if (input.id) {
-      const label = safeQuerySelector<HTMLLabelElement>(document, `label[for="${escapeCSS(input.id)}"]`);
+      const label = safeQuerySelector<HTMLLabelElement>(
+        document,
+        `label[for="${escapeCSS(input.id)}"]`
+      );
       if (label?.textContent) {
         const text = label.textContent.trim();
-        if (text.length <= OTP_DETECTION_CONFIG.MAX_LABEL_TEXT_LENGTH) {return text.toLowerCase();}
+        if (text.length <= OTP_DETECTION_CONFIG.MAX_LABEL_TEXT_LENGTH) {
+          return text.toLowerCase();
+        }
       }
     }
 
     const wrapping = input.closest('label');
     if (wrapping?.textContent) {
       const text = wrapping.textContent.trim();
-      if (text.length <= OTP_DETECTION_CONFIG.MAX_LABEL_TEXT_LENGTH) {return text.toLowerCase();}
+      if (text.length <= OTP_DETECTION_CONFIG.MAX_LABEL_TEXT_LENGTH) {
+        return text.toLowerCase();
+      }
     }
 
     const labelledBy = input.getAttribute('aria-labelledby');
@@ -194,11 +249,15 @@ export class LabelResolver {
       const texts: string[] = [];
       for (const id of labelledBy.split(/\s+/)) {
         const el = document.getElementById(id.trim());
-        if (el?.textContent) {texts.push(el.textContent.trim());}
+        if (el?.textContent) {
+          texts.push(el.textContent.trim());
+        }
       }
       if (texts.length > 0) {
         const combined = texts.join(' ');
-        if (combined.length <= OTP_DETECTION_CONFIG.MAX_LABEL_TEXT_LENGTH) {return combined.toLowerCase();}
+        if (combined.length <= OTP_DETECTION_CONFIG.MAX_LABEL_TEXT_LENGTH) {
+          return combined.toLowerCase();
+        }
       }
     }
 
@@ -216,17 +275,23 @@ export class SelectorGenerator {
   static generate(el: HTMLInputElement): string {
     const strategies: Array<() => string | null> = [
       () => {
-        if (!el.id) {return null;}
+        if (!el.id) {
+          return null;
+        }
         const sel = `#${escapeCSS(el.id)}`;
         return this.verify(sel, el) ? sel : null;
       },
       () => {
-        if (!el.name) {return null;}
+        if (!el.name) {
+          return null;
+        }
         const sel = `input[name="${escapeCSS(el.name)}"]`;
         return this.verify(sel, el) ? sel : null;
       },
       () => {
-        if (el.autocomplete !== 'one-time-code') {return null;}
+        if (el.autocomplete !== 'one-time-code') {
+          return null;
+        }
         const sel = 'input[autocomplete="one-time-code"]';
         return this.verify(sel, el) ? sel : null;
       },
@@ -234,35 +299,52 @@ export class SelectorGenerator {
         for (const attr of el.attributes) {
           if (attr.name.startsWith('data-') && attr.value) {
             const sel = `input[${attr.name}="${escapeCSS(attr.value)}"]`;
-            if (this.verify(sel, el)) {return sel;}
+            if (this.verify(sel, el)) {
+              return sel;
+            }
           }
         }
         return null;
       },
       () => {
-        if (!el.className || typeof el.className !== 'string') {return null;}
+        if (!el.className || typeof el.className !== 'string') {
+          return null;
+        }
         const valid = el.className
           .split(/\s+/)
           .filter((c) => c.length > 1 && /^[a-zA-Z_-][\w-]*$/.test(c))
           .slice(0, OTP_DETECTION_CONFIG.MAX_CLASS_SELECTOR_COUNT);
-        if (valid.length === 0) {return null;}
+        if (valid.length === 0) {
+          return null;
+        }
         const sel = `input.${valid.map(escapeCSS).join('.')}`;
         return this.verify(sel, el) ? sel : null;
       },
       () => {
         const parent = el.parentElement;
-        if (!parent) {return null;}
+        if (!parent) {
+          return null;
+        }
         const siblings = Array.from(parent.querySelectorAll(':scope > input'));
         const idx = siblings.indexOf(el);
-        if (idx < 0) {return null;}
+        if (idx < 0) {
+          return null;
+        }
         let parentSel = '';
         if (parent.id) {
           parentSel = `#${escapeCSS(parent.id)}`;
         } else if (parent.className && typeof parent.className === 'string') {
-          const cls = parent.className.split(/\s+/).filter((c) => /^[a-zA-Z_-][\w-]*$/.test(c)).slice(0, 1);
-          if (cls.length > 0 && cls[0]) {parentSel = `.${escapeCSS(cls[0])}`;}
+          const cls = parent.className
+            .split(/\s+/)
+            .filter((c) => /^[a-zA-Z_-][\w-]*$/.test(c))
+            .slice(0, 1);
+          if (cls.length > 0 && cls[0]) {
+            parentSel = `.${escapeCSS(cls[0])}`;
+          }
         }
-        const sel = parentSel ? `${parentSel} > input:nth-of-type(${idx + 1})` : `input:nth-of-type(${idx + 1})`;
+        const sel = parentSel
+          ? `${parentSel} > input:nth-of-type(${idx + 1})`
+          : `input:nth-of-type(${idx + 1})`;
         return this.verify(sel, el) ? sel : null;
       },
       () => this.buildDomPath(el),
@@ -271,8 +353,12 @@ export class SelectorGenerator {
     for (const strategy of strategies) {
       try {
         const sel = strategy();
-        if (sel) {return sel;}
-      } catch { /* next strategy */ }
+        if (sel) {
+          return sel;
+        }
+      } catch {
+        /* next strategy */
+      }
     }
 
     return `input[type="${escapeCSS(el.type || 'text')}"]`;
@@ -292,7 +378,9 @@ export class SelectorGenerator {
     let current: HTMLElement | null = el;
     while (current && current !== document.body && current !== document.documentElement) {
       const parentElement: HTMLElement | null = current.parentElement;
-      if (!parentElement) {break;}
+      if (!parentElement) {
+        break;
+      }
       const tag = current.tagName.toLowerCase();
       const siblings = Array.from(parentElement.children);
       const index = siblings.indexOf(current) + 1;
@@ -330,16 +418,17 @@ export class SignalCollector {
 export class FieldRegistry {
   private readonly map = new Map<HTMLInputElement, OTPFieldEntry>();
 
-  get size(): number { return this.map.size; }
-  get(input: HTMLInputElement): OTPFieldEntry | undefined { return this.map.get(input); }
-  has(input: HTMLInputElement): boolean { return this.map.has(input); }
+  get size(): number {
+    return this.map.size;
+  }
+  get(input: HTMLInputElement): OTPFieldEntry | undefined {
+    return this.map.get(input);
+  }
+  has(input: HTMLInputElement): boolean {
+    return this.map.has(input);
+  }
 
-  register(
-    input: HTMLInputElement,
-    source: string,
-    score: number,
-    group?: OTPGroupInfo
-  ): void {
+  register(input: HTMLInputElement, source: string, score: number, group?: OTPGroupInfo): void {
     const existing = this.map.get(input);
     if (existing) {
       if (score > existing.score) {
@@ -376,7 +465,9 @@ export class FieldRegistry {
   getMaxScore(): number {
     let max = 0;
     for (const field of this.map.values()) {
-      if (field.score > max) {max = field.score;}
+      if (field.score > max) {
+        max = field.score;
+      }
     }
     return max;
   }

@@ -123,15 +123,17 @@ class PerformanceService {
       return;
     }
 
-    this.formMetrics.push({
+    const metric: OperationMetric = {
       timestamp: Date.now(),
       method,
       latencyMs,
       success,
       confidence,
-      errorType: error,
-      details: fieldsDetected ? JSON.stringify(fieldsDetected) : undefined,
-    });
+    };
+    if (error) {metric.errorType = error;}
+    if (fieldsDetected) {metric.details = JSON.stringify(fieldsDetected);}
+
+    this.formMetrics.push(metric);
 
     // Cap metrics array
     if (this.formMetrics.length > this.MAX_METRIC_ENTRIES) {
@@ -173,15 +175,17 @@ class PerformanceService {
       return;
     }
 
-    this.otpMetrics.push({
+    const metric: OperationMetric = {
       timestamp: Date.now(),
       method,
       latencyMs,
       success,
       confidence,
-      errorType: error,
-      details: otp ? `OTP: ${otp.length} chars, pattern: ${pattern}` : undefined,
-    });
+    };
+    if (error) {metric.errorType = error;}
+    if (otp) {metric.details = `OTP: ${otp.length} chars, pattern: ${pattern}`;}
+
+    this.otpMetrics.push(metric);
 
     if (this.otpMetrics.length > this.MAX_METRIC_ENTRIES) {
       this.otpMetrics.shift();
@@ -220,15 +224,17 @@ class PerformanceService {
       return;
     }
 
-    this.linkMetrics.push({
+    const metric: OperationMetric = {
       timestamp: Date.now(),
       method,
       latencyMs,
       success,
       confidence,
-      errorType: error,
-      details: activated ? 'Link activated' : 'Link found but not activated',
-    });
+    };
+    if (error) {metric.errorType = error;}
+    metric.details = activated ? 'Link activated' : 'Link found but not activated';
+
+    this.linkMetrics.push(metric);
 
     if (this.linkMetrics.length > this.MAX_METRIC_ENTRIES) {
       this.linkMetrics.shift();
@@ -262,15 +268,17 @@ class PerformanceService {
       return;
     }
 
-    this.emailMetrics.push({
+    const metric: OperationMetric = {
       timestamp: Date.now(),
       method,
       latencyMs,
       success,
       confidence,
-      errorType: error,
-      details: result ? `OTP: ${result.hasOtp}, Link: ${result.hasLink}` : undefined,
-    });
+    };
+    if (error) {metric.errorType = error;}
+    if (result) {metric.details = `OTP: ${result.hasOtp}, Link: ${result.hasLink}`;}
+
+    this.emailMetrics.push(metric);
 
     if (this.emailMetrics.length > this.MAX_METRIC_ENTRIES) {
       this.emailMetrics.shift();

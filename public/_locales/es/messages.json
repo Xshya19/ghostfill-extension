@@ -1,10 +1,121 @@
 {
-    "appName": {
-        "message": "GhostFill",
-        "description": "The name of the extension"
-    },
-    "appDescription": {
-        "message": "Autocompletado inteligente para correos temporales, contraseñas seguras y detección automática de OTP.",
-        "description": "The description of the extension"
-    }
+  "extensionName": {
+    "message": "GhostFill",
+    "description": "The name of the extension"
+  },
+  "extensionDescription": {
+    "message": "Correos temporales, contraseñas seguras y detección automática de OTP. IA local — sin clave API.",
+    "description": "Description of the extension"
+  },
+  "emailLabel": {
+    "message": "CORREO"
+  },
+  "syncingIdentity": {
+    "message": "Sincronizando identidad..."
+  },
+  "passwordLabel": {
+    "message": "CONTRASEÑA"
+  },
+  "generatingPassword": {
+    "message": "Generando..."
+  },
+  "emailCopied": {
+    "message": "Correo copiado"
+  },
+  "passwordCopied": {
+    "message": "Contraseña copiada"
+  },
+  "codeCopied": {
+    "message": "Código copiado"
+  },
+  "recentMessages": {
+    "message": "Bandeja de entrada"
+  },
+  "fullInbox": {
+    "message": "Ver todo"
+  },
+  "scanning": {
+    "message": "Escaneando..."
+  },
+  "listening": {
+    "message": "Escuchando códigos..."
+  },
+  "activeIdentity": {
+    "message": "Identidad activa"
+  },
+  "secureInbox": {
+    "message": "Bandeja segura"
+  },
+  "identityRequired": {
+    "message": "Se requiere identidad"
+  },
+  "generateIdentityMessage": {
+    "message": "Genera una identidad segura para acceder a tu bandeja cifrada."
+  },
+  "generateIdentity": {
+    "message": "Generar identidad"
+  },
+  "newIdentityGenerated": {
+    "message": "Nueva identidad generada"
+  },
+  "generatedEmailInvalid": {
+    "message": "El correo generado no es válido"
+  },
+  "generationFailed": {
+    "message": "La generación falló. Intenta de nuevo."
+  },
+  "helpTitle": {
+    "message": "Cómo funciona GhostFill"
+  },
+  "helpDescription": {
+    "message": "GhostFill crea correos temporales y contraseñas seguras para proteger tu privacidad en línea."
+  },
+  "dismiss": {
+    "message": "Entendido"
+  },
+  "vaultSettings": {
+    "message": "Bóveda de contraseñas"
+  },
+  "passcodeSync": {
+    "message": "Sincronización de códigos"
+  },
+  "onboardingTitle": {
+    "message": "Bienvenido a GhostFill"
+  },
+  "onboardingSubtitle": {
+    "message": "Tu escudo de privacidad en la web."
+  },
+  "onboardingFeature1": {
+    "message": "Correos temporales"
+  },
+  "onboardingFeature1Sub": {
+    "message": "Crea direcciones de correo temporales al instante"
+  },
+  "onboardingFeature2": {
+    "message": "Contraseñas seguras"
+  },
+  "onboardingFeature2Sub": {
+    "message": "Genera contraseñas criptográficamente seguras"
+  },
+  "onboardingFeature3": {
+    "message": "Autocompletado OTP"
+  },
+  "onboardingFeature3Sub": {
+    "message": "Detecta y rellena códigos de verificación automáticamente"
+  },
+  "onboardingButton": {
+    "message": "Comenzar"
+  },
+  "onboardingFooter": {
+    "message": "100% local · Sin clave API · Código abierto"
+  },
+  "appName": {
+    "message": "GhostFill"
+  },
+  "appDescription": {
+    "message": "Correos temporales, contraseñas seguras y detección automática de OTP — con IA local."
+  },
+  "confirmNewIdentity": {
+    "message": "¿Estás seguro de que quieres generar una nueva identidad? Tu correo y datos actuales se reemplazarán."
+  }
 }

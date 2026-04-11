@@ -20,7 +20,6 @@ export interface ProcessedEmailRecord {
 
 class DedupService {
   private readonly records = new Map<string, ProcessedEmailRecord>();
-  private recordsMutex: Promise<void> = Promise.resolve();
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
   private initialized = false;
@@ -56,8 +55,6 @@ class DedupService {
   }
 
   async isProcessed(emailId: string | number, accountId: string): Promise<boolean> {
-    await this.recordsMutex;
-
     const key = this.makeKey(emailId, accountId);
     const record = this.records.get(key);
 
@@ -66,7 +63,8 @@ class DedupService {
     }
 
     if (Date.now() >= record.ttlExpiresAt) {
-      await this.evict(key);
+      this.records.delete(key);
+      this.persist();
       return false;
     }
 
@@ -79,27 +77,19 @@ class DedupService {
     hadOTP: boolean,
     hadLink: boolean
   ): Promise<void> {
-    const previousMutex = this.recordsMutex;
+    const key = this.makeKey(emailId, accountId);
 
-    this.recordsMutex = (async () => {
-      await previousMutex;
+    const record: ProcessedEmailRecord = {
+      id: String(emailId),
+      accountId,
+      processedAt: Date.now(),
+      hadOTP,
+      hadLink,
+      ttlExpiresAt: Date.now() + CONFIG.DEDUP_TTL_MS,
+    };
 
-      const key = this.makeKey(emailId, accountId);
-
-      const record: ProcessedEmailRecord = {
-        id: String(emailId),
-        accountId,
-        processedAt: Date.now(),
-        hadOTP,
-        hadLink,
-        ttlExpiresAt: Date.now() + CONFIG.DEDUP_TTL_MS,
-      };
-
-      this.records.set(key, record);
-      this.persist();
-    })();
-
-    await this.recordsMutex;
+    this.records.set(key, record);
+    this.persist();
   }
 
   async updateRecord(
@@ -107,26 +97,16 @@ class DedupService {
     accountId: string,
     updates: Partial<Pick<ProcessedEmailRecord, 'hadOTP' | 'hadLink'>>
   ): Promise<void> {
-    const previousMutex = this.recordsMutex;
-
-    this.recordsMutex = (async () => {
-      await previousMutex;
-
-      const key = this.makeKey(emailId, accountId);
-      const existing = this.records.get(key);
-      if (existing) {
-        const updated = { ...existing, ...updates };
-        this.records.set(key, updated);
-        this.persist();
-      }
-    })();
-
-    await this.recordsMutex;
+    const key = this.makeKey(emailId, accountId);
+    const existing = this.records.get(key);
+    if (existing) {
+      const updated = { ...existing, ...updates };
+      this.records.set(key, updated);
+      this.persist();
+    }
   }
 
   async prune(): Promise<number> {
-    await this.recordsMutex;
-
     const now = Date.now();
     let pruned = 0;
 
@@ -159,8 +139,7 @@ class DedupService {
     return `${accountId}:${emailId}`;
   }
 
-  private async evict(key: string): Promise<void> {
-    await this.recordsMutex;
+  private evict(key: string): void {
     this.records.delete(key);
     this.persist();
   }

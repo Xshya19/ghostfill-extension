@@ -54,6 +54,10 @@ class ClipboardService {
             : CLIPBOARD_CLEAR_TIMEOUTS.EMAIL);
 
       if (clearTime > 0) {
+        // Cancel any previously scheduled auto-clear to prevent race condition
+        if (this.clearTimer) {
+          clearTimeout(this.clearTimer);
+        }
         this.clearTimer = setTimeout(() => {
           void this.clearClipboard().then((success) => {
             if (success) {
@@ -66,7 +70,7 @@ class ClipboardService {
       }
 
       return true;
-    } catch (error) {
+    } catch {
       // Fallback for content scripts or older browsers
       return this.copyFallback(text);
     }

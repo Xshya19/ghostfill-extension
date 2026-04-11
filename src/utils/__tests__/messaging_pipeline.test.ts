@@ -19,7 +19,9 @@ describe('Message Validation Pipeline', () => {
     it('accepts PING with no payload', () => {
       const result = validateMessage({ action: 'PING' });
       expect(result.valid).toBe(true);
-      expect(result.error).toBeUndefined();
+      if (!result.valid) {
+        expect(result.error).toBeUndefined();
+      }
     });
 
     it('accepts GET_CURRENT_EMAIL with no payload', () => {
@@ -55,12 +57,17 @@ describe('Message Validation Pipeline', () => {
     it('rejects unknown action strings', () => {
       const result = validateMessage({ action: 'INJECT_SCRIPT' } as never);
       expect(result.valid).toBe(false);
-      expect(result.error).toContain('Unknown message action');
+      if (!result.valid) {
+        expect(result.error).toContain('Unknown message action');
+      }
     });
 
     it('rejects empty action string', () => {
       const result = validateMessage({ action: '' } as never);
       expect(result.valid).toBe(false);
+      if (!result.valid) {
+        expect(result.error).toBeDefined();
+      }
     });
 
     it('rejects missing action', () => {

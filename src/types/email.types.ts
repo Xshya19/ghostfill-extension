@@ -1,7 +1,7 @@
 // Email Types
 
 export interface EmailAccount {
-  id?: string; // Unique identifier
+  id: string; // Required: Unique identifier from provider (critical for SSE)
   login?: string; // Legacy - use username instead
   username?: string; // Account username part
   domain: string;

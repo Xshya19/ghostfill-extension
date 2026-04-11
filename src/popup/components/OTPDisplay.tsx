@@ -1,6 +1,6 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import { Hash, Copy, Zap, Info, ShieldCheck, Check, Inbox } from 'lucide-react';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { copyToClipboard } from '../../utils/helpers';
 import { safeSendMessage, safeSendTabMessage } from '../../utils/messaging';
 import { useStorageSubscription } from '../hooks/useStorageSubscription';
@@ -9,7 +9,10 @@ interface Props {
   onToast: (message: string) => void;
 }
 
-const OTPTimerBar: React.FC<{ lastOTP: any; shouldReduceMotion: boolean | null | undefined }> = ({ lastOTP, shouldReduceMotion }) => {
+const OTPTimerBar: React.FC<{ lastOTP: any; shouldReduceMotion: boolean | null | undefined }> = ({
+  lastOTP,
+  shouldReduceMotion,
+}) => {
   const [timePercentage, setTimePercentage] = useState<number>(100);
   const [timeText, setTimeText] = useState<string>('');
 
@@ -23,7 +26,9 @@ const OTPTimerBar: React.FC<{ lastOTP: any; shouldReduceMotion: boolean | null |
     const updateTimer = () => {
       const elapsed = Date.now() - lastOTP.extractedAt;
       const hasExplicitExpiry = !!lastOTP.expiresAt;
-      const total = hasExplicitExpiry ? Math.max(1, lastOTP.expiresAt! - lastOTP.extractedAt) : 10 * 60 * 1000;
+      const total = hasExplicitExpiry
+        ? Math.max(1, lastOTP.expiresAt! - lastOTP.extractedAt)
+        : 10 * 60 * 1000;
       const remaining = total - elapsed;
 
       if (remaining <= 0) {
@@ -44,12 +49,12 @@ const OTPTimerBar: React.FC<{ lastOTP: any; shouldReduceMotion: boolean | null |
 
   return (
     <div className="otp-timer-container">
-      <div 
-        className="otp-timer-bg" 
-        role="progressbar" 
-        aria-valuenow={timePercentage} 
-        aria-valuemin={0} 
-        aria-valuemax={100} 
+      <div
+        className="otp-timer-bg"
+        role="progressbar"
+        aria-valuenow={timePercentage}
+        aria-valuemin={0}
+        aria-valuemax={100}
         aria-label={`OTP timer urgency: ${timePercentage < 20 ? 'Critical' : 'Safe'}`}
       >
         <motion.div
@@ -102,7 +107,7 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
     };
   }, []);
 
-  const copyOTP = async () => {
+  const copyOTP = useCallback(async () => {
     if (!lastOTP) {
       return;
     }
@@ -115,12 +120,12 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
         clearTimeout(timeoutRef.current);
       }
       timeoutRef.current = setTimeout(() => setCopied(false), 2500); // Longer confirmation
-    } catch (error) {
+    } catch {
       onToast('Copy failed');
     }
-  };
+  }, [lastOTP, onToast]);
 
-  const fillOTP = async () => {
+  const fillOTP = useCallback(async () => {
     if (!lastOTP) {
       return;
     }
@@ -138,10 +143,10 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
           onToast('GhostFill not found on page');
         }
       }
-    } catch (error) {
+    } catch {
       onToast('Failed to fill');
     }
-  };
+  }, [lastOTP, onToast]);
 
   const handleCopyOTP = () => {
     void copyOTP();
@@ -173,7 +178,11 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
               {lastOTP.code.split('').map((char: string, i: number) => (
                 <motion.span
                   key={i}
-                  initial={{ opacity: 0, scale: shouldReduceMotion ? 1 : 0.8, y: shouldReduceMotion ? 0 : 5 }}
+                  initial={{
+                    opacity: 0,
+                    scale: shouldReduceMotion ? 1 : 0.8,
+                    y: shouldReduceMotion ? 0 : 5,
+                  }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   transition={{
                     delay: shouldReduceMotion ? 0 : i * 0.04,
@@ -190,11 +199,31 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
 
             <OTPTimerBar lastOTP={lastOTP} shouldReduceMotion={shouldReduceMotion} />
 
+            {lastOTP.confidence && (
+              <div className="otp-confidence-row">
+                <span className="otp-confidence-label">Confidence</span>
+                <div className="otp-confidence-bar">
+                  <div
+                    className="otp-confidence-fill"
+                    style={{
+                      width: `${Math.round(lastOTP.confidence * 100)}%`,
+                      background:
+                        lastOTP.confidence >= 0.9
+                          ? 'var(--success)'
+                          : lastOTP.confidence >= 0.7
+                            ? 'var(--warning)'
+                            : 'var(--error)',
+                    }}
+                  />
+                </div>
+                <span className="otp-confidence-value">
+                  {Math.round(lastOTP.confidence * 100)}%
+                </span>
+              </div>
+            )}
+
             <div className="otp-actions">
-              <button
-                className="premium-btn otp-action-primary"
-                onClick={handleFillOTP}
-              >
+              <button className="premium-btn otp-action-primary" onClick={handleFillOTP}>
                 <Zap size={16} fill="white" />
                 Auto-Fill
               </button>
@@ -213,22 +242,30 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
             <motion.div
               className="otp-loading-container"
               animate={
-                shouldReduceMotion ? {} : {
-                  scale: [1, 1.05, 1],
-                  opacity: [0.75, 1, 0.75],
-                }
+                shouldReduceMotion
+                  ? {}
+                  : {
+                      scale: [1, 1.05, 1],
+                      opacity: [0.75, 1, 0.75],
+                    }
               }
               transition={
-                shouldReduceMotion ? { duration: 0 } : {
-                  duration: 2,
-                  repeat: Infinity,
-                  ease: 'easeInOut',
-                }
+                shouldReduceMotion
+                  ? { duration: 0 }
+                  : {
+                      duration: 2,
+                      repeat: Infinity,
+                      ease: 'easeInOut',
+                    }
               }
             >
               <motion.div
                 animate={shouldReduceMotion ? {} : { rotate: 360 }}
-                transition={shouldReduceMotion ? { duration: 0 } : { duration: 2, repeat: Infinity, ease: 'linear' }}
+                transition={
+                  shouldReduceMotion
+                    ? { duration: 0 }
+                    : { duration: 2, repeat: Infinity, ease: 'linear' }
+                }
               >
                 <Inbox size={36} color="var(--brand-primary)" strokeWidth={1.5} />
               </motion.div>

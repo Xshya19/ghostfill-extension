@@ -126,7 +126,7 @@ class FeatureFlagManager {
     // Load from storage (for A/B testing persistence)
     try {
       const stored = await chrome.storage.local.get(['featureFlags', 'abUserHash']);
-      
+
       if (stored.abUserHash !== undefined) {
         this.userHash = stored.abUserHash;
       } else {
@@ -244,7 +244,7 @@ class FeatureFlagManager {
     };
 
     const result: Partial<FeatureFlags> = {};
-    for (const flag of layerFlags[layer]) {
+    for (const flag of layerFlags[layer]!) {
       (result as Record<keyof FeatureFlags, FeatureFlags[keyof FeatureFlags]>)[flag] =
         this.flags[flag];
     }
@@ -302,10 +302,7 @@ export function useFeatureFlag(flag: keyof FeatureFlags): boolean {
     (callback: () => void) => featureFlags.subscribe(callback),
     []
   );
-  const getSnapshot = React.useCallback(
-    () => featureFlags.isEnabled(flag),
-    [flag]
-  );
+  const getSnapshot = React.useCallback(() => featureFlags.isEnabled(flag), [flag]);
   return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 

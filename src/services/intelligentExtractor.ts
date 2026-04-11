@@ -3,7 +3,6 @@
 // Coordinates extraction pipeline across specialized modules
 // Version 2.0: Three-Layer Hybrid Intelligence
 
-
 import { createLogger } from '../utils/logger';
 import {
   sanitizeEmailBody,
@@ -158,78 +157,97 @@ function calculateAdaptiveThresholds(
 /**
  * Layer 3: Security Guard — Calculates trust score based on phishing markers
  */
-function calculateSecurityScore(allUrls: string[], body: string): { score: number; risk: 'low' | 'medium' | 'high' } {
-    let riskPoints = 0;
-    
-    // URL Density (Insight from 100k Dataset)
-    if (allUrls.length > 5) {riskPoints += 20;}
-    if (allUrls.length > 15) {riskPoints += 40;}
-    
-    // Tracking tokens (Insight from 100k Dataset)
-    if (body.includes('click.email') || body.includes('tracking') || body.includes('utm_source')) {
-        riskPoints += 15;
-    }
+function calculateSecurityScore(
+  allUrls: string[],
+  body: string
+): { score: number; risk: 'low' | 'medium' | 'high' } {
+  let riskPoints = 0;
 
-    // High URL-to-Text ratio (Phishing commonality)
-    const urlTextLength = allUrls.join('').length;
-    if (urlTextLength > body.length * 0.5) {riskPoints += 30;}
+  // URL Density (Insight from 100k Dataset)
+  if (allUrls.length > 5) {
+    riskPoints += 20;
+  }
+  if (allUrls.length > 15) {
+    riskPoints += 40;
+  }
 
-    const score = Math.max(0, 100 - riskPoints);
-    let risk: 'low' | 'medium' | 'high' = 'low';
-    if (score < 40) {risk = 'high';}
-    else if (score < 75) {risk = 'medium';}
+  // Tracking tokens (Insight from 100k Dataset)
+  if (body.includes('click.email') || body.includes('tracking') || body.includes('utm_source')) {
+    riskPoints += 15;
+  }
 
-    return { score, risk };
+  // High URL-to-Text ratio (Phishing commonality)
+  const urlTextLength = allUrls.join('').length;
+  if (urlTextLength > body.length * 0.5) {
+    riskPoints += 30;
+  }
+
+  const score = Math.max(0, 100 - riskPoints);
+  let risk: 'low' | 'medium' | 'high' = 'low';
+  if (score < 40) {
+    risk = 'high';
+  } else if (score < 75) {
+    risk = 'medium';
+  }
+
+  return { score, risk };
 }
 
-function refineIntent(
-  subject: string,
-  body: string,
-  currentIntent: EmailIntent
-): IntentResult {
+function refineIntent(subject: string, body: string, currentIntent: EmailIntent): IntentResult {
   // Tier 1: Fast Path (High-confidence regex rules)
   if (
-    /verify.*email/i.test(subject) || 
+    /verify.*email/i.test(subject) ||
     /activate.*account/i.test(subject) ||
     /confirm.*registration/i.test(subject) ||
     /welcome.*verify/i.test(subject)
   ) {
-    return { 
-      intent: 'activation', 
-      confidence: 1.0, 
-      signals: [{ type: 'regex', source: 'subject', detail: 'high-confidence-activation', weight: 1.0 }], 
-      scores: { 'activation': 1.0 },
-      secondaryIntent: null
+    return {
+      intent: 'activation',
+      confidence: 1.0,
+      signals: [
+        { type: 'regex', source: 'subject', detail: 'high-confidence-activation', weight: 1.0 },
+      ],
+      scores: { activation: 1.0 },
+      secondaryIntent: null,
     };
   }
 
   if (
-    /security.*code/i.test(subject) || 
+    /security.*code/i.test(subject) ||
     /verification.*code/i.test(subject) ||
     /one-time.*password/i.test(subject) ||
     /your.*otp/i.test(subject)
   ) {
-    return { 
-      intent: 'verification', 
-      confidence: 1.0, 
-      signals: [{ type: 'regex', source: 'subject', detail: 'high-confidence-verification', weight: 1.0 }], 
-      scores: { 'verification': 1.0 },
-      secondaryIntent: null
+    return {
+      intent: 'verification',
+      confidence: 1.0,
+      signals: [
+        { type: 'regex', source: 'subject', detail: 'high-confidence-verification', weight: 1.0 },
+      ],
+      scores: { verification: 1.0 },
+      secondaryIntent: null,
     };
   }
 
   // Tier 2: Smart Path (Naive Bayes ML Model)
   const mlResult = IntentClassifier.classify(subject, body);
-  
+
   if (mlResult.confidence > 0.6) {
-      log.info(`ML Intent match: ${mlResult.intent} (conf=${mlResult.confidence.toFixed(2)})`);
-      return {
-          intent: mlResult.intent as EmailIntent,
-          confidence: mlResult.confidence,
-          signals: [{ type: 'ml', source: 'naive-bayes', detail: `predicted-${mlResult.intent}`, weight: mlResult.confidence }],
-          scores: { [mlResult.intent]: mlResult.confidence },
-          secondaryIntent: null
-      };
+    log.info(`ML Intent match: ${mlResult.intent} (conf=${mlResult.confidence.toFixed(2)})`);
+    return {
+      intent: mlResult.intent as EmailIntent,
+      confidence: mlResult.confidence,
+      signals: [
+        {
+          type: 'ml',
+          source: 'naive-bayes',
+          detail: `predicted-${mlResult.intent}`,
+          weight: mlResult.confidence,
+        },
+      ],
+      scores: { [mlResult.intent]: mlResult.confidence },
+      secondaryIntent: null,
+    };
   }
 
   return { intent: currentIntent, confidence: 0.5, signals: [], scores: {}, secondaryIntent: null };
@@ -247,10 +265,10 @@ export function extractAll(
 
   const sanitizedSubject = sanitizeEmailSubject(subject);
   const sanitizedBody = sanitizeEmailBody(htmlBody, body);
-  const sanitizedHtmlBody = sanitizeEmailBody(htmlBody, body);
+  const sanitizedHtmlBody = sanitizeEmailBody(htmlBody, htmlBody || body);
   const sanitizedSenderEmail = sanitizeEmail(senderEmail);
   const sourceHtml = htmlBody || body; // Use RAW html to extract URLs
-  
+
   const plainText = `${sanitizedSubject}\n\n${stripHtmlPreserveStructure(sanitizedHtmlBody || sanitizedBody)}`;
 
   log.info('═══ GhostFill Intelligent Extractor ═══');
@@ -275,10 +293,14 @@ export function extractAll(
 
   t = performance.now();
   const security = calculateSecurityScore(allUrls, sanitizedBody);
-  const intentResult = refineIntent(sanitizedSubject, sanitizedBody, provider?.emailIntent || 'other');
-  
+  const intentResult = refineIntent(
+    sanitizedSubject,
+    sanitizedBody,
+    provider?.emailIntent || 'other'
+  );
+
   // Link intent result into result object
-  intentResult.secondaryIntent = null; 
+  intentResult.secondaryIntent = null;
   timings.security = performance.now() - t;
 
   t = performance.now();
@@ -340,6 +362,61 @@ export function extractAll(
     }
   }
 
+  // H6: Emergency fallback — if both OTP and link are null, try emergency regex patterns
+  if (!otp && !link) {
+    const emergencyPatterns = [
+      /(?:code|pin|otp|token|passcode)\s*(?:is|:|=)\s*\b([A-Z0-9]{4,10})\b/i,
+      /(?:confirmation|verification|security|login|access)\s+code\s*:?\s*\b([A-Z0-9]{4,10})\b/i,
+      /your\s+(?:\w+\s+)?(?:code|pin|otp)\s*(?:is|:)\s*\b([A-Z0-9]{4,10})\b/i,
+      /\b([A-Z0-9]{4,10})\s+is\s+your\s+(?:\w+\s+)?(?:code|pin|otp)/i,
+    ];
+    const textToSearch = `${subject} ${body}`.substring(0, 5000);
+    for (const pattern of emergencyPatterns) {
+      const match = textToSearch.match(pattern);
+      if (match?.[1]) {
+        const code = match[1].replace(/[-\s]/g, '');
+        // Create a minimal ExtractedOTP with all required fields
+        otp = Object.freeze({
+          code,
+          rawCode: match[1],
+          score: 50,
+          confidence: 0.5,
+          type: 'otp' as const,
+          format: 'numeric' as const,
+          strategy: 'emergency-regex' as const,
+          length: code.length,
+          context: '',
+          label: null,
+          fromUrl: false,
+          urlParam: null,
+          sourceUrl: null,
+          visualProminence: 0,
+          htmlZone: 'body' as const,
+          textBefore: '',
+          textAfter: '',
+          providerMatch: null,
+          matchedSignals: [],
+          antiSignals: [],
+          // FIX: reasoning must be OTPReasoningChain object, not a string
+          reasoning: {
+            steps: [
+              {
+                layer: 'emergency-regex',
+                observation: 'Standard extraction strategies failed; emergency patterns attempted.',
+                conclusion: `Code '${code}' matched an emergency regex pattern.`,
+                impact: 'positive' as const,
+              },
+            ],
+            summary: 'emergency-regex-fallback',
+            confidenceExplanation: 'Low confidence — recovered via last-resort regex.',
+          },
+        });
+        log.info(`🚨 OTP recovered via emergency regex fallback: ${code}`);
+        break;
+      }
+    }
+  }
+
   const extractionTimeMs = performance.now() - startTime;
   timings.total = extractionTimeMs;
   if (extractionTimeMs > CONFIG.performance.slowThresholdMs) {
@@ -360,7 +437,9 @@ export function extractAll(
     link,
     debugInfo: {
       provider: provider?.name || null,
-      intentSignals: intentResult.signals.map((s: IntentSignal) => `${s.type}:${s.source}(w=${s.weight})`),
+      intentSignals: intentResult.signals.map(
+        (s: IntentSignal) => `${s.type}:${s.source}(w=${s.weight})`
+      ),
       contextValidated: otp !== null || link !== null,
       crossValidation: crossResult.reason,
       zones: zones.map((z) => z.zone),

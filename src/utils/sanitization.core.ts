@@ -143,8 +143,16 @@ export function sanitizeHtml(dirty: string): string {
   cleaned = cleaned.replace(/<\s*embed[\s>][\s\S]*?<\s*\/\s*embed\s*>/gi, '');
   cleaned = cleaned.replace(/<\s*form[\s>][\s\S]*?<\s*\/\s*form\s*>/gi, '');
 
+  cleaned = cleaned.replace(/<\s*style[\s>][\s\S]*?<\s*\/\s*style\s*>/gi, '');
+  cleaned = cleaned.replace(/<\s*link\b[^>]*>/gi, '');
+  cleaned = cleaned.replace(/<\s*meta\b[^>]*>/gi, '');
+  cleaned = cleaned.replace(/<\s*svg[\s>][\s\S]*?<\s*\/\s*svg\s*>/gi, '');
+
   // Remove self-closing dangerous tags
-  cleaned = cleaned.replace(/<\s*(script|iframe|object|embed|form)\b[^>]*\/?>/gi, '');
+  cleaned = cleaned.replace(
+    /<\s*(script|iframe|object|embed|form|style|link|meta|svg)\b[^>]*\/?>/gi,
+    ''
+  );
 
   // Strip on* event-handler attributes
   cleaned = cleaned.replace(/\bon[a-z]+\s*=\s*(['"])(?:(?!\1).)*?\1/gi, '');

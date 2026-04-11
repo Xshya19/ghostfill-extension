@@ -5,7 +5,7 @@ import { safeSendMessage, safeSendTabMessage } from '../../utils/messaging';
 
 export function useOTP() {
   const [lastOTP, setLastOTP] = useState<LastOTP | null>(null);
-  const [loading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
 
@@ -14,16 +14,30 @@ export function useOTP() {
   useEffect(() => {
     isMounted.current = true;
     const fetchOTP = async () => {
-      const otp = await storageService.get('lastOTP');
-      if (isMounted.current && otp) {
-        setLastOTP(otp);
+      setLoading(true);
+      try {
+        const otp = await storageService.get('lastOTP');
+        if (isMounted.current) {
+          setLastOTP(otp || null);
+        }
+      } catch (e) {
+        if (isMounted.current) {
+          setError('Failed to load OTP');
+        }
+      } finally {
+        if (isMounted.current) {
+          setLoading(false);
+        }
       }
     };
 
     void fetchOTP();
 
     // Listen for changes
-    const handleChange = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
+    const handleChange = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      areaName: string
+    ) => {
       if (areaName === 'local' && isMounted.current && changes.lastOTP) {
         setLastOTP((changes.lastOTP.newValue as LastOTP | null) ?? null);
       }
@@ -42,16 +56,14 @@ export function useOTP() {
   }, []);
 
   useEffect(() => {
-    if (!lastOTP) {return;}
+    if (!lastOTP) {
+      return;
+    }
 
     const updateTimer = () => {
       const elapsed = Date.now() - lastOTP.extractedAt;
       const remaining = 5 * 60 * 1000 - elapsed; // 5 minutes
       setTimeRemaining(Math.max(0, remaining));
-
-      if (remaining <= 0) {
-        clearInterval(interval);
-      }
     };
 
     updateTimer();
@@ -61,11 +73,15 @@ export function useOTP() {
 
   const loadLastOTP = useCallback(async () => {
     try {
-      if (isMounted.current) { setError(null); }
+      if (isMounted.current) {
+        setError(null);
+      }
       const response = await safeSendMessage({ action: 'GET_LAST_OTP' });
       if (response && 'lastOTP' in response) {
         const newOTP = response.lastOTP || null;
-        if (!isMounted.current) { return; }
+        if (!isMounted.current) {
+          return;
+        }
         setLastOTP(newOTP);
         // Cache it securely
         if (newOTP && typeof chrome !== 'undefined' && chrome.storage?.local) {
@@ -73,7 +89,9 @@ export function useOTP() {
         }
       }
     } catch {
-      if (isMounted.current) { setError('Failed to refresh OTP'); }
+      if (isMounted.current) {
+        setError('Failed to refresh OTP');
+      }
     }
   }, []);
 
@@ -82,7 +100,9 @@ export function useOTP() {
       return false;
     }
     try {
-      if (isMounted.current) { setError(null); }
+      if (isMounted.current) {
+        setError(null);
+      }
       await navigator.clipboard.writeText(lastOTP.code);
       return true;
     } catch {
@@ -95,7 +115,9 @@ export function useOTP() {
       return false;
     }
     try {
-      if (isMounted.current) { setError(null); }
+      if (isMounted.current) {
+        setError(null);
+      }
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tab?.id) {
         const response = await safeSendTabMessage(tab.id, {
@@ -106,7 +128,9 @@ export function useOTP() {
       }
       return false;
     } catch {
-      if (isMounted.current) { setError('Failed to auto-fill OTP'); }
+      if (isMounted.current) {
+        setError('Failed to auto-fill OTP');
+      }
       return false;
     }
   }, [lastOTP]);

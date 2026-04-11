@@ -49,18 +49,32 @@ class MailGwService {
         log.warn(`API request failed (${response.status}), retrying in ${Math.round(delay)}ms...`, {
           attempt: i + 1,
         });
-        await new Promise((resolve) => {
-          setTimeout(resolve, delay);
+        await new Promise((resolve, reject) => {
+          const timeoutId = setTimeout(resolve, delay);
+          if (options?.signal) {
+            options.signal.addEventListener('abort', () => {
+              clearTimeout(timeoutId);
+              reject(new DOMException('Aborted', 'AbortError'));
+            }, { once: true });
+          }
         });
       } catch (error) {
         lastError = error;
         if (i === retries - 1) {
-          throw typeof error === 'object' && error instanceof Error ? error : new Error(String(error));
+          throw typeof error === 'object' && error instanceof Error
+            ? error
+            : new Error(String(error));
         }
         const delay = 2000 * Math.pow(2, i);
         log.warn(`Network error, retrying in ${Math.round(delay)}ms...`, error);
-        await new Promise((resolve) => {
-          setTimeout(resolve, delay);
+        await new Promise((resolve, reject) => {
+          const timeoutId = setTimeout(resolve, delay);
+          if (options?.signal) {
+            options.signal.addEventListener('abort', () => {
+              clearTimeout(timeoutId);
+              reject(new DOMException('Aborted', 'AbortError'));
+            }, { once: true });
+          }
         });
       }
     }
@@ -77,9 +91,13 @@ class MailGwService {
   async getDomains(signal?: AbortSignal): Promise<string[]> {
     const fallbackDomains = ['exdonuts.com'];
     try {
+      const options: RequestInit = {};
+      if (signal) {
+        options.signal = signal;
+      }
       const response = await this.fetchWithRetry(
         `${this.baseUrl}${API.MAIL_GW.ENDPOINTS.DOMAINS}`,
-        { signal }
+        options
       );
 
       if (!response.ok) {
@@ -102,7 +120,11 @@ class MailGwService {
   /**
    * Create a new email account
    */
-  async createAccount(address?: string, password?: string, signal?: AbortSignal): Promise<EmailAccount> {
+  async createAccount(
+    address?: string,
+    password?: string,
+    signal?: AbortSignal
+  ): Promise<EmailAccount> {
     try {
       // Get available domains
       const domains = await this.getDomains(signal);
@@ -112,31 +134,30 @@ class MailGwService {
 
       // Generate random address if not provided
       // Pick a random domain to increase chance of bypassing blacklists
-      const domain = domains[Math.floor(Math.random() * domains.length)];
-      const login =
-        address || getRandomString(10, 'abcdefghijklmnopqrstuvwxyz0123456789');
+      const domain = domains[Math.floor(Math.random() * domains.length)]!;
+      const login = address || getRandomString(10, 'abcdefghijklmnopqrstuvwxyz0123456789');
       const fullEmail = `${login}@${domain}`;
       const pwd =
         password ||
-        getRandomString(
-          16,
-          'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-        );
+        getRandomString(16, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789');
 
       // Create account
+      const createOptions: RequestInit = {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          address: fullEmail,
+          password: pwd,
+        }),
+      };
+      if (signal) {
+        createOptions.signal = signal;
+      }
       const response = await this.fetchWithRetry(
         `${this.baseUrl}${API.MAIL_GW.ENDPOINTS.ACCOUNTS}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            address: fullEmail,
-            password: pwd,
-          }),
-          signal,
-        }
+        createOptions
       );
 
       if (!response.ok) {
@@ -144,22 +165,34 @@ class MailGwService {
         throw new Error(errorData.message || `HTTP error: ${response.status}`);
       }
 
-      const account: MailTmAccount = await response.json();
+      const apiAccount: MailTmAccount = await response.json();
+
+      // CRITICAL: Validate account.id exists
+      if (!apiAccount.id) {
+        log.error('Mail.gw API response missing account.id field', {
+          accountKeys: Object.keys(apiAccount),
+        });
+        apiAccount.id = `fallback_${Date.now()}_${fullEmail.replace(/[@.]/g, '_')}`;
+      }
 
       // Get auth token
       await this.authenticate(fullEmail, pwd, signal);
 
       const now = Date.now();
-      return {
+      const account: EmailAccount = {
+        id: apiAccount.id,
         login,
         domain,
-        fullEmail: account.address,
+        fullEmail: apiAccount.address,
         createdAt: now,
-        expiresAt: now + 7 * 24 * 60 * 60 * 1000, // 7 days
+        expiresAt: now + 7 * 24 * 60 * 60 * 1000,
         service: 'mailgw',
         password: pwd,
-        token: this.token || undefined,
       };
+      if (this.token) {
+        account.token = this.token;
+      }
+      return account;
     } catch (error) {
       log.warn('Failed to create Mail.gw account', error);
       throw error;
@@ -171,14 +204,20 @@ class MailGwService {
    */
   async authenticate(address: string, password: string, signal?: AbortSignal): Promise<string> {
     try {
-      const response = await this.fetchWithRetry(`${this.baseUrl}${API.MAIL_GW.ENDPOINTS.TOKEN}`, {
+      const authOptions: RequestInit = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ address, password }),
-        signal,
-      });
+      };
+      if (signal) {
+        authOptions.signal = signal;
+      }
+      const response = await this.fetchWithRetry(
+        `${this.baseUrl}${API.MAIL_GW.ENDPOINTS.TOKEN}`,
+        authOptions
+      );
 
       if (!response.ok) {
         throw new Error(`Authentication failed: ${response.status}`);
@@ -243,130 +282,154 @@ class MailGwService {
    * Get messages (inbox)
    */
   async getMessages(signal?: AbortSignal): Promise<Email[]> {
-    await this.ensureAuthenticated(signal);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await this.ensureAuthenticated(signal);
 
-    try {
-      const response = await this.fetchWithRetry(
-        `${this.baseUrl}${API.MAIL_GW.ENDPOINTS.MESSAGES}`,
-        {
+      try {
+        const msgOptions: RequestInit = {
           headers: {
             Authorization: `Bearer ${this.token}`,
           },
-          signal,
+        };
+        if (signal) {
+          msgOptions.signal = signal;
         }
-      );
+        const response = await this.fetchWithRetry(
+          `${this.baseUrl}${API.MAIL_GW.ENDPOINTS.MESSAGES}`,
+          msgOptions
+        );
 
-      if (response.status === 401) {
-        // Token might be invalid despite expiry check, retry once
-        this.token = null;
-        await this.ensureAuthenticated(signal);
-        return this.getMessages(signal);
+        if (response.status === 401) {
+          this.token = null;
+          await this.ensureAuthenticated(signal);
+          continue;
+        }
+
+        if (!response.ok) {
+          throw new Error(`HTTP error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const messages: MailTmMessage[] = data['hydra:member'] || [];
+
+        return messages.map((msg) => this.convertMessage(msg));
+      } catch (error) {
+        if (attempt === 1) {
+          log.error('Failed to get Mail.gw messages', error);
+          throw error;
+        }
       }
-
-      if (!response.ok) {
-        throw new Error(`HTTP error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      const messages: MailTmMessage[] = data['hydra:member'] || [];
-
-      return messages.map((msg) => this.convertMessage(msg));
-    } catch (error) {
-      log.error('Failed to get Mail.gw messages', error);
-      throw error;
     }
+    throw new Error('Failed to get Mail.gw messages after retry');
   }
 
   /**
    * Get a specific message
    */
   async getMessage(id: string, signal?: AbortSignal): Promise<Email> {
-    await this.ensureAuthenticated(signal);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await this.ensureAuthenticated(signal);
 
-    try {
-      const response = await this.fetchWithRetry(
-        `${this.baseUrl}${API.MAIL_GW.ENDPOINTS.MESSAGES}/${id}`,
-        {
+      try {
+        const msgOpts: RequestInit = {
           headers: {
             Authorization: `Bearer ${this.token}`,
           },
-          signal,
+        };
+        if (signal) {
+          msgOpts.signal = signal;
         }
-      );
+        const response = await this.fetchWithRetry(
+          `${this.baseUrl}${API.MAIL_GW.ENDPOINTS.MESSAGES}/${id}`,
+          msgOpts
+        );
 
-      if (response.status === 401) {
-        this.token = null;
-        await this.ensureAuthenticated(signal);
-        return this.getMessage(id, signal);
+        if (response.status === 401) {
+          this.token = null;
+          await this.ensureAuthenticated(signal);
+          continue;
+        }
+
+        if (!response.ok) {
+          throw new Error(`HTTP error: ${response.status}`);
+        }
+
+        const msg: MailTmMessage = await response.json();
+        return this.convertMessage(msg, true);
+      } catch (error) {
+        if (attempt === 1) {
+          log.error('Failed to get Mail.gw message', error);
+          throw error;
+        }
       }
-
-      if (!response.ok) {
-        throw new Error(`HTTP error: ${response.status}`);
-      }
-
-      const msg: MailTmMessage = await response.json();
-      return this.convertMessage(msg, true);
-    } catch (error) {
-      log.error('Failed to get Mail.gw message', error);
-      throw error;
     }
+    throw new Error('Failed to get Mail.gw message after retry');
   }
 
   /**
    * Delete a message
    */
   async deleteMessage(id: string): Promise<void> {
-    await this.ensureAuthenticated();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await this.ensureAuthenticated();
 
-    try {
-      const response = await this.fetchWithRetry(
-        `${this.baseUrl}${API.MAIL_GW.ENDPOINTS.MESSAGES}/${id}`,
-        {
-          method: 'DELETE',
-          headers: {
-            Authorization: `Bearer ${this.token}`,
-          },
+      try {
+        const response = await this.fetchWithRetry(
+          `${this.baseUrl}${API.MAIL_GW.ENDPOINTS.MESSAGES}/${id}`,
+          {
+            method: 'DELETE',
+            headers: {
+              Authorization: `Bearer ${this.token}`,
+            },
+          }
+        );
+
+        if (response.status === 401) {
+          this.token = null;
+          await this.ensureAuthenticated();
+          continue;
         }
-      );
 
-      if (response.status === 401) {
-        this.token = null;
-        await this.ensureAuthenticated();
-        return this.deleteMessage(id);
+        if (!response.ok && response.status !== 204) {
+          throw new Error(`HTTP error: ${response.status}`);
+        }
+
+        log.debug('Mail.gw message deleted', { id });
+        return;
+      } catch (error) {
+        if (attempt === 1) {
+          log.error('Failed to delete Mail.gw message', error);
+          throw error;
+        }
       }
-
-      if (!response.ok && response.status !== 204) {
-        throw new Error(`HTTP error: ${response.status}`);
-      }
-
-      log.debug('Mail.gw message deleted', { id });
-    } catch (error) {
-      log.error('Failed to delete Mail.gw message', error);
-      throw error;
     }
+    throw new Error('Failed to delete Mail.gw message after retry');
   }
 
   /**
    * Convert Mail.gw message to our Email type
    */
   private convertMessage(msg: MailTmMessage, includeBody: boolean = false): Email {
-    return {
+    const email: Email = {
       id: msg.id,
       from: msg.from.address,
-      to: msg.to[0]?.address,
       subject: msg.subject,
       date: new Date(msg.createdAt).getTime(),
       body: includeBody ? msg.text || msg.intro || '' : msg.intro || '',
-      htmlBody:
-        includeBody && msg.html
-          ? Array.isArray(msg.html)
-            ? msg.html.join('')
-            : String(msg.html)
-          : undefined,
-      textBody: msg.text,
       attachments: [],
       read: msg.seen,
     };
+    const toAddress = msg.to[0]?.address;
+    if (toAddress) {
+      email.to = toAddress;
+    }
+    if (includeBody && msg.html) {
+      email.htmlBody = Array.isArray(msg.html) ? msg.html.join('') : String(msg.html);
+    }
+    if (msg.text) {
+      email.textBody = msg.text;
+    }
+    return email;
   }
 }
 

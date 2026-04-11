@@ -16,11 +16,16 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { SentinelBrain } from '../intelligence/SentinelBrain';
-import { FieldType, DetectedField, FIELD_HEURISTICS, FormType, GhostContainer, FORM_INDICATORS, ClassifyFieldResponse, FormInputElement } from '../types';
+import {
+  FieldType,
+  DetectedField,
+  FIELD_HEURISTICS,
+  FormType,
+  GhostContainer,
+  FormInputElement,
+} from '../types';
 import { getUniqueSelector, getElementLabel, deepQuerySelectorAll } from '../utils/helpers';
 import { createLogger } from '../utils/logger';
-import { safeSendMessage } from '../utils/messaging';
-import { HistoryManager } from './utils/intelligenceCore';
 
 const log = createLogger('FieldAnalyzer');
 
@@ -40,12 +45,6 @@ const OTP_MAX_LENGTH = 8;
 
 /** Minimum confidence threshold for aggressive email fallback */
 const MIN_CONFIDENCE_THRESHOLD = 0.3;
-
-/** Maximum shadow DOM recursion depth to prevent infinite loops */
-const MAX_SHADOW_DEPTH = 10;
-
-/** Maximum elements to scan for shadow roots (performance guard) */
-const MAX_SHADOW_SCAN_ELEMENTS = 5000;
 
 /** Confidence scores for heuristic signals */
 const CONFIDENCE = {
@@ -92,10 +91,7 @@ function escapeCSS(value: string): string {
   }
 }
 
-function safeQuerySelector<T extends Element>(
-  root: ParentNode,
-  selector: string
-): T | null {
+function safeQuerySelector<T extends Element>(root: ParentNode, selector: string): T | null {
   try {
     return root.querySelector<T>(selector);
   } catch {
@@ -120,10 +116,14 @@ class VisibilityCheck {
    * (some frameworks animate opacity for transitions).
    */
   static isVisible(element: HTMLElement): boolean {
-    if (!element.isConnected) {return false;}
+    if (!element.isConnected) {
+      return false;
+    }
 
     const rect = element.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) {return false;}
+    if (rect.width <= 0 || rect.height <= 0) {
+      return false;
+    }
 
     const style = window.getComputedStyle(element);
     return style.display !== 'none' && style.visibility !== 'hidden';
@@ -153,7 +153,9 @@ class LabelResolver {
       );
       if (label?.textContent) {
         const text = label.textContent.trim();
-        if (text.length <= MAX_LABEL_TEXT_LENGTH) {return text;}
+        if (text.length <= MAX_LABEL_TEXT_LENGTH) {
+          return text;
+        }
       }
     }
 
@@ -161,7 +163,9 @@ class LabelResolver {
     const parentLabel = element.closest('label');
     if (parentLabel?.textContent) {
       const text = parentLabel.textContent.trim();
-      if (text.length <= MAX_LABEL_TEXT_LENGTH) {return text;}
+      if (text.length <= MAX_LABEL_TEXT_LENGTH) {
+        return text;
+      }
     }
 
     // 3. aria-labelledby
@@ -177,7 +181,9 @@ class LabelResolver {
       }
       if (texts.length > 0) {
         const combined = texts.join(' ');
-        if (combined.length <= MAX_LABEL_TEXT_LENGTH) {return combined;}
+        if (combined.length <= MAX_LABEL_TEXT_LENGTH) {
+          return combined;
+        }
       }
     }
 
@@ -185,20 +191,19 @@ class LabelResolver {
     const ariaLabel = element.getAttribute('aria-label');
     if (ariaLabel) {
       const text = ariaLabel.trim();
-      if (text.length <= MAX_LABEL_TEXT_LENGTH) {return text;}
+      if (text.length <= MAX_LABEL_TEXT_LENGTH) {
+        return text;
+      }
     }
 
     // 5. Previous sibling
     try {
       const prev = element.previousElementSibling;
-      if (
-        prev &&
-        prev.tagName !== 'INPUT' &&
-        prev.tagName !== 'TEXTAREA' &&
-        prev.textContent
-      ) {
+      if (prev && prev.tagName !== 'INPUT' && prev.tagName !== 'TEXTAREA' && prev.textContent) {
         const text = prev.textContent.trim();
-        if (text.length > 0 && text.length <= MAX_LABEL_TEXT_LENGTH) {return text;}
+        if (text.length > 0 && text.length <= MAX_LABEL_TEXT_LENGTH) {
+          return text;
+        }
       }
 
       // 6. Parent's previous sibling
@@ -212,7 +217,9 @@ class LabelResolver {
           pPrev.textContent
         ) {
           const text = pPrev.textContent.trim();
-          if (text.length > 0 && text.length <= MAX_LABEL_TEXT_LENGTH) {return text;}
+          if (text.length > 0 && text.length <= MAX_LABEL_TEXT_LENGTH) {
+            return text;
+          }
         }
       }
     } catch {
@@ -267,7 +274,9 @@ class OTPDetector {
     }
 
     // Explicit autocomplete
-    if (element.autocomplete === 'one-time-code') {return true;}
+    if (element.autocomplete === 'one-time-code') {
+      return true;
+    }
 
     // Pattern attribute for digits only (HTMLInputElement only)
     if (
@@ -294,10 +303,7 @@ class OTPDetector {
       confidence += this.hasSplitCluster(element)
         ? CONFIDENCE.OTP_SINGLE_CHAR
         : CONFIDENCE.OTP_SINGLE_CHAR * 0.25;
-    } else if (
-      element.maxLength >= OTP_MIN_LENGTH &&
-      element.maxLength <= OTP_MAX_LENGTH
-    ) {
+    } else if (element.maxLength >= OTP_MIN_LENGTH && element.maxLength <= OTP_MAX_LENGTH) {
       confidence += CONFIDENCE.OTP_NUMERIC_LENGTH;
     }
 
@@ -323,22 +329,27 @@ class OTPDetector {
       element.getAttribute('aria-label')
     );
 
-    if (/otp/i.test(textToCheck)) {confidence += CONFIDENCE.OTP_NAME_OTP;}
-    if (/code/i.test(textToCheck)) {confidence += CONFIDENCE.OTP_NAME_CODE;}
-    if (/verify/i.test(textToCheck)) {confidence += CONFIDENCE.OTP_NAME_VERIFY;}
+    if (/otp/i.test(textToCheck)) {
+      confidence += CONFIDENCE.OTP_NAME_OTP;
+    }
+    if (/code/i.test(textToCheck)) {
+      confidence += CONFIDENCE.OTP_NAME_CODE;
+    }
+    if (/verify/i.test(textToCheck)) {
+      confidence += CONFIDENCE.OTP_NAME_VERIFY;
+    }
 
     return clampConfidence(confidence);
   }
 
   private static hasSplitCluster(element: FormInputElement): boolean {
     const parent = element.parentElement;
-    if (!parent) {return false;}
+    if (!parent) {
+      return false;
+    }
 
     const siblings = Array.from(parent.querySelectorAll<HTMLInputElement>('input')).filter(
-      (input) =>
-        input !== element &&
-        input.maxLength === 1 &&
-        VisibilityCheck.isVisible(input)
+      (input) => input !== element && input.maxLength === 1 && VisibilityCheck.isVisible(input)
     );
 
     return siblings.length >= 3;
@@ -358,12 +369,16 @@ class FieldClassifier {
    * mentions "code", "otp", or "#" (which indicate OTP/token fields).
    */
   private static readonly IDENTITY_FIELD_TYPES = new Set<string>([
-    'name', 'first-name', 'last-name', 'username',
+    'name',
+    'first-name',
+    'last-name',
+    'username',
   ]);
 
   private static readonly IDENTITY_NEGATION_PATTERN = /code|otp|#/i;
 
-  private static readonly CONFIRM_PASSWORD_PATTERN = /confirm|repeat|retype|verify|re[-_\s]?enter|again/i;
+  private static readonly CONFIRM_PASSWORD_PATTERN =
+    /confirm|repeat|retype|verify|re[-_\s]?enter|again/i;
 
   /**
    * Classify a single field using the heuristic scoring engine.
@@ -371,7 +386,7 @@ class FieldClassifier {
    */
   static classify(
     element: FormInputElement,
-    isFirstVisible: boolean
+    _isFirstVisible: boolean
   ): { fieldType: FieldType; confidence: number } {
     const type = (element.type ?? 'text').toLowerCase();
     const name = (element.name ?? '').toLowerCase();
@@ -389,13 +404,12 @@ class FieldClassifier {
 
     // ── Phase 1: Heuristic scoring against FIELD_HEURISTICS ──
     for (const [fType, heuristics] of Object.entries(FIELD_HEURISTICS)) {
-      if (fType === 'unknown') {continue;}
+      if (fType === 'unknown') {
+        continue;
+      }
 
       // Negation: identity fields should not match OTP-like labels
-      if (
-        this.IDENTITY_FIELD_TYPES.has(fType) &&
-        this.IDENTITY_NEGATION_PATTERN.test(allText)
-      ) {
+      if (this.IDENTITY_FIELD_TYPES.has(fType) && this.IDENTITY_NEGATION_PATTERN.test(allText)) {
         continue;
       }
 
@@ -472,7 +486,7 @@ class FieldClassifier {
 
 export class FieldAnalyzer {
   private static instance: FieldAnalyzer;
-  
+
   public static getInstance(): FieldAnalyzer {
     if (!FieldAnalyzer.instance) {
       FieldAnalyzer.instance = new FieldAnalyzer();
@@ -491,7 +505,7 @@ export class FieldAnalyzer {
 
   // Intelligence 2.0: Attentive ML (Spatial Focus)
   private attentiveRegion: { x: number; y: number; radius: number } | null = null;
-  
+
   public setAttentiveRegion(x: number, y: number, radius: number = 300): void {
     this.attentiveRegion = { x, y, radius };
     // Auto-clear after 10 seconds to save performance
@@ -501,7 +515,7 @@ export class FieldAnalyzer {
       }
     }, 10000);
   }
-  
+
   private static pruneCache(): void {
     if (FieldAnalyzer.aiCache.size >= FieldAnalyzer.MAX_CACHE_SIZE) {
       // Evict the oldest entry (Map preserves insertion order)
@@ -522,7 +536,12 @@ export class FieldAnalyzer {
     'input[type="text"], input[type="number"], input[type="tel"], input:not([type])';
 
   private static readonly EXCLUDED_INPUT_TYPES = new Set([
-    'hidden', 'submit', 'button', 'reset', 'checkbox', 'radio',
+    'hidden',
+    'submit',
+    'button',
+    'reset',
+    'checkbox',
+    'radio',
   ]);
 
   // ═══════════════════════════════════════════════════════════
@@ -535,8 +554,11 @@ export class FieldAnalyzer {
    */
   analyzeField(element: FormInputElement, allInputs?: FormInputElement[]): DetectedField {
     const isFirstVisible = this.isFirstVisibleInput(element, allInputs);
-    const { fieldType, confidence: heuristicConf } = FieldClassifier.classify(element, isFirstVisible);
-    
+    const { fieldType, confidence: heuristicConf } = FieldClassifier.classify(
+      element,
+      isFirstVisible
+    );
+
     // Intelligence 2.0: Extract Spatial/Topology signals from Features
     let spatialConfidence = 0;
     try {
@@ -544,7 +566,7 @@ export class FieldAnalyzer {
       const rect = element.getBoundingClientRect();
       const isSquare = Math.abs(rect.width - rect.height) < 10;
       const isCentered = Math.abs(window.innerWidth / 2 - (rect.left + rect.width / 2)) < 200;
-      
+
       if (fieldType === 'otp') {
         if (isSquare) {
           spatialConfidence += 0.3;
@@ -553,7 +575,9 @@ export class FieldAnalyzer {
           spatialConfidence += 0.2;
         }
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
     return {
       element,
@@ -589,14 +613,14 @@ export class FieldAnalyzer {
    * Find all OTP-related fields on the page, sorted by confidence.
    */
   findOTPFields(): DetectedField[] {
-    const inputs = deepQuerySelectorAll<HTMLInputElement>(
-      FieldAnalyzer.OTP_INPUT_SELECTOR
-    );
+    const inputs = deepQuerySelectorAll<HTMLInputElement>(FieldAnalyzer.OTP_INPUT_SELECTOR);
 
     const otpFields: DetectedField[] = [];
 
     for (const input of inputs) {
-      if (!VisibilityCheck.isVisible(input)) {continue;}
+      if (!VisibilityCheck.isVisible(input)) {
+        continue;
+      }
       if (OTPDetector.isLikelyOTP(input)) {
         otpFields.push(this.analyzeField(input));
       }
@@ -613,12 +637,14 @@ export class FieldAnalyzer {
    * Combines ensemble ML, Spatial Topology, and Multilingual Heuristics.
    */
   async getAllFieldsWithAI(): Promise<FieldAnalysisResult> {
-    if (!this.isContextValid()) {return { fields: [] };}
-    
+    if (!this.isContextValid()) {
+      return { fields: [] };
+    }
+
     // 1. Get all fillable fields
     const elements = deepQuerySelectorAll<FormInputElement>(
       FieldAnalyzer.FILLABLE_INPUT_SELECTOR
-    ).filter(el => VisibilityCheck.isVisible(el));
+    ).filter((el) => VisibilityCheck.isVisible(el));
 
     if (elements.length === 0) {
       return { fields: [] };
@@ -627,8 +653,8 @@ export class FieldAnalyzer {
     // 2. Delegate to Sentinel Brain for Grandmaster Analysis
     try {
       const detections = await SentinelBrain.analyze(elements);
-      
-      const fields: DetectedField[] = detections.map(d => ({
+
+      const fields: DetectedField[] = detections.map((d) => ({
         element: d.element as FormInputElement,
         selector: getUniqueSelector(d.element as HTMLElement),
         fieldType: d.type as FieldType,
@@ -654,16 +680,14 @@ export class FieldAnalyzer {
    */
   findOTPInputGroup(startElement: HTMLInputElement): HTMLInputElement[] {
     const parent = startElement.parentElement;
-    if (!parent) {return [startElement];}
+    if (!parent) {
+      return [startElement];
+    }
 
     // Find all sibling single-char inputs that look like OTP digits
-    const siblings = Array.from(
-      parent.querySelectorAll<HTMLInputElement>('input')
-    ).filter(
+    const siblings = Array.from(parent.querySelectorAll<HTMLInputElement>('input')).filter(
       (input) =>
-        input.maxLength === 1 &&
-        VisibilityCheck.isVisible(input) &&
-        OTPDetector.isLikelyOTP(input)
+        input.maxLength === 1 && VisibilityCheck.isVisible(input) && OTPDetector.isLikelyOTP(input)
     );
 
     // Ensure startElement is included
@@ -690,14 +714,14 @@ export class FieldAnalyzer {
    * Pierces shadow DOM boundaries.
    */
   getAllFields(): DetectedField[] {
-    const elements = deepQuerySelectorAll<FormInputElement>(
-      FieldAnalyzer.FILLABLE_INPUT_SELECTOR
-    );
+    const elements = deepQuerySelectorAll<FormInputElement>(FieldAnalyzer.FILLABLE_INPUT_SELECTOR);
 
     const fields: DetectedField[] = [];
 
     for (const element of elements) {
-      if (!VisibilityCheck.isVisible(element)) {continue;}
+      if (!VisibilityCheck.isVisible(element)) {
+        continue;
+      }
       fields.push(this.analyzeField(element, elements));
     }
 
@@ -710,26 +734,41 @@ export class FieldAnalyzer {
    */
   scanHiddenModals(): GhostContainer[] {
     const ghostContainers: GhostContainer[] = [];
-    
+
     // Heuristic selectors for common modal/auth containers
     const potentialSelectors = [
-      '[id*="signup"]', '[id*="login"]', '[id*="auth"]', '[id*="register"]',
-      '[class*="signup"]', '[class*="login"]', '[class*="auth"]', '[class*="modal"]',
-      '[role="dialog"]', '[role="form"]', 'form[style*="display: none"]',
-      '[aria-label*="sign up"i]', '[aria-label*="log in"i]'
+      '[id*="signup"]',
+      '[id*="login"]',
+      '[id*="auth"]',
+      '[id*="register"]',
+      '[class*="signup"]',
+      '[class*="login"]',
+      '[class*="auth"]',
+      '[class*="modal"]',
+      '[role="dialog"]',
+      '[role="form"]',
+      'form[style*="display: none"]',
+      '[aria-label*="sign up"i]',
+      '[aria-label*="log in"i]',
     ];
-    
+
     const root = document.body;
     const elements = deepQuerySelectorAll<HTMLElement>(potentialSelectors.join(','), root);
 
     for (const el of elements) {
       // We only care about HIDDEN or VIRTUAL elements
       const style = window.getComputedStyle(el);
-      const isActuallyHidden = style.display === 'none' || style.visibility === 'hidden' || el.offsetWidth === 0;
-      
+      const isActuallyHidden =
+        style.display === 'none' || style.visibility === 'hidden' || el.offsetWidth === 0;
+
       if (isActuallyHidden) {
-        const text = (el.id + el.className + el.getAttribute('aria-label') + el.innerText).toLowerCase();
-        
+        const text = (
+          el.id +
+          el.className +
+          el.getAttribute('aria-label') +
+          el.innerText
+        ).toLowerCase();
+
         let type: FormType = 'unknown';
         let confidence = 0;
         let reason = '';
@@ -750,7 +789,7 @@ export class FieldAnalyzer {
             selector: getUniqueSelector(el),
             predictedType: type,
             confidence,
-            reason
+            reason,
           });
         }
       }
@@ -763,11 +802,7 @@ export class FieldAnalyzer {
    * Apply an AI-suggested selector override to the field list.
    * If the element exists, either updates its type/confidence or adds it.
    */
-  private applyAIOverride(
-    fields: DetectedField[],
-    selector: string,
-    fieldType: FieldType
-  ): void {
+  private applyAIOverride(fields: DetectedField[], selector: string, fieldType: FieldType): void {
     const el = safeQuerySelector<HTMLInputElement>(document, selector);
     if (!el) {
       log.warn(`AI suggested selector not found: ${selector}`);
@@ -800,7 +835,8 @@ export class FieldAnalyzer {
   extractSimplifiedDOM(): string {
     try {
       const forms = deepQuerySelectorAll<HTMLFormElement>('form');
-      const root: Document | Element = forms.length > 0 ? forms[0] : document.body;
+      const root: Document | Element =
+        forms.length > 0 ? (forms[0] ?? document.body) : document.body;
 
       const elements = deepQuerySelectorAll<HTMLElement>(
         'input, button, label, [role="button"]',
@@ -811,7 +847,9 @@ export class FieldAnalyzer {
 
       for (const el of elements) {
         const line = this.extractElementLine(el);
-        if (line) {parts.push(line);}
+        if (line) {
+          parts.push(line);
+        }
       }
 
       const result = parts.join('\n');
@@ -845,13 +883,23 @@ export class FieldAnalyzer {
   }
 
   private extractInputLine(el: HTMLInputElement): string | null {
-    if (FieldAnalyzer.EXCLUDED_INPUT_TYPES.has(el.type)) {return null;}
+    if (FieldAnalyzer.EXCLUDED_INPUT_TYPES.has(el.type)) {
+      return null;
+    }
 
     const attrs: string[] = [];
-    if (el.type) {attrs.push(`type="${this.sanitizeAttr(el.type)}"`);}
-    if (el.id) {attrs.push(`id="${this.sanitizeAttr(el.id)}"`);}
-    if (el.name) {attrs.push(`name="${this.sanitizeAttr(el.name)}"`);}
-    if (el.placeholder) {attrs.push(`ph="${this.sanitizeAttr(el.placeholder)}"`);}
+    if (el.type) {
+      attrs.push(`type="${this.sanitizeAttr(el.type)}"`);
+    }
+    if (el.id) {
+      attrs.push(`id="${this.sanitizeAttr(el.id)}"`);
+    }
+    if (el.name) {
+      attrs.push(`name="${this.sanitizeAttr(el.name)}"`);
+    }
+    if (el.placeholder) {
+      attrs.push(`ph="${this.sanitizeAttr(el.placeholder)}"`);
+    }
 
     // Resolve label text
     const labelText = LabelResolver.resolve(el);
@@ -871,22 +919,24 @@ export class FieldAnalyzer {
 
   private extractLabelLine(el: HTMLLabelElement): string | null {
     // Skip labels that wrap inputs (they'll be picked up by input extraction)
-    if (el.querySelector('input')) {return null;}
+    if (el.querySelector('input')) {
+      return null;
+    }
 
     const forAttr = el.getAttribute('for') ?? '';
     const text = (el.textContent ?? '').trim();
-    if (!text) {return null;}
+    if (!text) {
+      return null;
+    }
 
     return `<label for="${this.sanitizeAttr(forAttr)}">${this.sanitizeAttr(text)}</label>`;
   }
 
   private extractButtonLine(el: HTMLElement): string | null {
-    const text = (el.textContent?.trim() || el.getAttribute('aria-label') || 'submit');
+    const text = el.textContent?.trim() || el.getAttribute('aria-label') || 'submit';
     const sanitizedText = this.sanitizeAttr(text);
 
-    const selector = el.id
-      ? `#${escapeCSS(el.id)}`
-      : `button`; // Note: `:contains()` is not standard CSS
+    const selector = el.id ? `#${escapeCSS(el.id)}` : `button`; // Note: `:contains()` is not standard CSS
 
     return `[sel:${selector}] <button>${sanitizedText}</button>`;
   }
@@ -896,12 +946,7 @@ export class FieldAnalyzer {
    * simplified DOM output. Strips quotes and angle brackets.
    */
   private sanitizeAttr(value: string): string {
-    return value
-      .replace(/"/g, "'")
-      .replace(/</g, '')
-      .replace(/>/g, '')
-      .replace(/\n/g, ' ')
-      .trim();
+    return value.replace(/"/g, "'").replace(/</g, '').replace(/>/g, '').replace(/\n/g, ' ').trim();
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -912,11 +957,18 @@ export class FieldAnalyzer {
    * Check if element is the first visible text/email input in its form.
    * First input is typically email/username on login/signup forms.
    */
-  private isFirstVisibleInput(element: FormInputElement, precomputedInputs?: FormInputElement[]): boolean {
+  private isFirstVisibleInput(
+    element: FormInputElement,
+    precomputedInputs?: FormInputElement[]
+  ): boolean {
     const form = element.closest('form') ?? document.body;
 
-    const inputs = precomputedInputs 
-      ? precomputedInputs.filter(i => (i.type === 'text' || i.type === 'email' || !i.type) && i.closest('form') === (element.closest('form') || document.body))
+    const inputs = precomputedInputs
+      ? precomputedInputs.filter(
+          (i) =>
+            (i.type === 'text' || i.type === 'email' || !i.type) &&
+            i.closest('form') === (element.closest('form') || document.body)
+        )
       : Array.from(
           form.querySelectorAll<HTMLInputElement>(
             'input[type="text"], input[type="email"], input:not([type])'
@@ -930,4 +982,3 @@ export class FieldAnalyzer {
     return firstVisible === element;
   }
 }
-

@@ -18,6 +18,7 @@ import { formatRelativeTime, extractOTP } from '../../utils/formatters';
 import { copyToClipboard } from '../../utils/helpers';
 import { safeSendMessage } from '../../utils/messaging';
 import { useStorageSubscription } from '../hooks/useStorageSubscription';
+import { useOTPExtractor } from '../hooks/useOTPExtractor';
 
 // i18n helper
 const t = (key: string): string => {
@@ -57,7 +58,9 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && showConfirmEmail) {setShowConfirmEmail(false);}
+      if (e.key === 'Escape' && showConfirmEmail) {
+        setShowConfirmEmail(false);
+      }
     };
     if (showConfirmEmail) {
       window.addEventListener('keydown', handleKey);
@@ -65,6 +68,36 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     }
     return () => window.removeEventListener('keydown', handleKey);
   }, [showConfirmEmail]);
+
+  // Expiry Timer Logic
+  const [timeLeft, setTimeLeft] = useState<string>('');
+  useEffect(() => {
+    if (!emailAccount || !emailAccount.expiresAt) {
+      setTimeLeft('');
+      return;
+    }
+
+    const updateTimer = () => {
+      const remaining = emailAccount.expiresAt - Date.now();
+      if (remaining <= 0) {
+        setTimeLeft(t('expiredLabel') || 'Expired');
+        return;
+      }
+      const totalMins = Math.floor(remaining / 60000);
+      if (totalMins >= 60) {
+        const hours = Math.floor(totalMins / 60);
+        const mins = totalMins % 60;
+        setTimeLeft(`${hours}h ${mins}m`);
+      } else {
+        const secs = Math.floor((remaining % 60000) / 1000);
+        setTimeLeft(`${totalMins}:${secs < 10 ? '0' : ''}${secs}`);
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, timeLeft.includes('h') || (timeLeft.includes('m') && !timeLeft.includes(':')) ? 60000 : 1000);
+    return () => clearInterval(interval);
+  }, [emailAccount, timeLeft]);
 
   // Switch to Push-State UI instead of polling
   const rawInbox = useStorageSubscription('inbox', []);
@@ -75,12 +108,20 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     setIsGeneratingPassword(true);
     try {
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-        const { lastGeneratePasswordTime } = await chrome.storage.local.get('lastGeneratePasswordTime');
+        const { lastGeneratePasswordTime } = await chrome.storage.local.get(
+          'lastGeneratePasswordTime'
+        );
         const lastTime = parseInt(lastGeneratePasswordTime || '0', 10);
         const now = Date.now();
         if (now - lastTime < RATE_LIMIT_MS.GENERATE_PASSWORD) {
           setPasswordCooldown(true);
-          setTimeout(() => setPasswordCooldown(false), RATE_LIMIT_MS.GENERATE_PASSWORD - (now - lastTime));
+          if (passwordCooldownTimeoutRef.current) {
+            clearTimeout(passwordCooldownTimeoutRef.current);
+          }
+          passwordCooldownTimeoutRef.current = setTimeout(
+            () => setPasswordCooldown(false),
+            RATE_LIMIT_MS.GENERATE_PASSWORD - (now - lastTime)
+          );
           onToast('Rate limit hit. Please wait a moment.');
           return; // Rate limited
         }
@@ -94,7 +135,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       if (response && 'result' in response && response.result && 'password' in response.result) {
         setPassword(response.result.password);
       }
-    } catch (error) {
+    } catch {
       onToast('Failed to generate password');
     } finally {
       setIsGeneratingPassword(false);
@@ -119,25 +160,34 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       }
 
       await safeSendMessage({ action: 'CHECK_INBOX' });
-    } catch (e) {
+    } catch {
       onToast('Failed to sync inbox');
     }
   }, [emailAccount, onToast]);
 
+  const hasGeneratedPassword = useRef(false);
   useEffect(() => {
-    if (!password) {
+    if (!password && !hasGeneratedPassword.current) {
+      hasGeneratedPassword.current = true;
       void generatePassword();
     }
-  }, [generatePassword, password]);
+  }, [password, generatePassword]);
 
+  const prevEmailAccountId = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    void checkInbox();
-  }, [checkInbox]);
+    const currentId = emailAccount?.fullEmail;
+    if (currentId && currentId !== prevEmailAccountId.current) {
+      prevEmailAccountId.current = currentId;
+      void checkInbox();
+    }
+  }, [emailAccount?.fullEmail, checkInbox]);
 
   // Refs for timeout clearing
   const emailTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const passwordTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const generatingEmailTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const emailCooldownTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const passwordCooldownTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
@@ -149,6 +199,12 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       }
       if (generatingEmailTimeoutRef.current) {
         clearTimeout(generatingEmailTimeoutRef.current);
+      }
+      if (emailCooldownTimeoutRef.current) {
+        clearTimeout(emailCooldownTimeoutRef.current);
+      }
+      if (passwordCooldownTimeoutRef.current) {
+        clearTimeout(passwordCooldownTimeoutRef.current);
       }
     };
   }, []);
@@ -197,14 +253,17 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     );
   }, [onToast, password]);
 
-  const copyOTP = useCallback(async (code: string) => {
-    try {
-      await copyToClipboard(code);
-      onToast(t('codeCopied'));
-    } catch {
-      onToast(t('copyFailed'));
-    }
-  }, [onToast]);
+  const copyOTP = useCallback(
+    async (code: string) => {
+      try {
+        await copyToClipboard(code);
+        onToast(t('codeCopied'));
+      } catch {
+        onToast(t('copyFailed'));
+      }
+    },
+    [onToast]
+  );
 
   const handleCopyEmail = useCallback(() => {
     void copyEmail();
@@ -228,13 +287,19 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
           const lastTime = parseInt(lastGenerateEmailTime || '0', 10);
           if (now - lastTime < RATE_LIMIT_MS.GENERATE_EMAIL) {
             setEmailCooldown(true);
-            setTimeout(() => setEmailCooldown(false), RATE_LIMIT_MS.GENERATE_EMAIL - (now - lastTime));
+            if (emailCooldownTimeoutRef.current) {
+              clearTimeout(emailCooldownTimeoutRef.current);
+            }
+            emailCooldownTimeoutRef.current = setTimeout(
+              () => setEmailCooldown(false),
+              RATE_LIMIT_MS.GENERATE_EMAIL - (now - lastTime)
+            );
             onToast('Please wait before generating a new email');
             return;
           }
           await chrome.storage.local.set({ lastGenerateEmailTime: now.toString() });
         }
-        
+
         setIsGeneratingEmail(true);
         onGenerate();
 
@@ -242,8 +307,8 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
           clearTimeout(generatingEmailTimeoutRef.current);
         }
         generatingEmailTimeoutRef.current = setTimeout(() => setIsGeneratingEmail(false), 2000);
-      } catch (err) {
-        // silent catch
+      } catch {
+        onToast('Failed to generate email. Please try again.');
       }
     })();
   }, [onGenerate, onToast]);
@@ -288,12 +353,15 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     },
   };
 
+  const { otps: emailOTPs, links: emailLinks } = useOTPExtractor(inboxEmails.slice(0, 5));
+
   const displayedEmails = React.useMemo(() => {
     return inboxEmails.slice(0, 5).map((email: Email) => ({
       ...email,
-      otpCode: extractOTP(email.subject + ' ' + email.body),
+      otpCode: emailOTPs[email.id] !== undefined ? emailOTPs[email.id] : undefined,
+      activationLink: emailLinks[email.id] !== undefined ? emailLinks[email.id] : undefined,
     }));
-  }, [inboxEmails]);
+  }, [inboxEmails, emailOTPs, emailLinks]);
 
   return (
     <motion.div
@@ -312,9 +380,16 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
             <Mail size={18} className="icon-premium" />
           </div>
           <div className="identity-content">
-            <span className="identity-label">{t('emailLabel')}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="identity-label">{t('emailLabel')}</span>
+              {timeLeft && (
+                <span className={`expiry-badge ${timeLeft.includes(':') || timeLeft.includes('m') ? '' : 'expired'}`}>
+                  {timeLeft}
+                </span>
+              )}
+            </div>
             <span
-              className={`identity-value hub-val hub-val-email ${!emailAccount ? 'shimmer' : ''}`}
+              className={`identity-value hub-val hub-val-email ${!emailAccount ? 'shimmer' : ''} ${timeLeft.toLowerCase().includes('expired') ? 'text-dimmed' : ''}`}
             >
               {emailAccount?.fullEmail || t('syncingIdentity')}
             </span>
@@ -326,7 +401,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
               whileTap={{ scale: 0.94 }}
               whileHover={{ scale: 1.08 }}
               title="Copy email"
-              aria-label="Copy email to clipboard"
+              aria-label="Copy email address to clipboard"
             >
               {emailCopied ? <Check size={16} /> : <Copy size={16} />}
             </motion.button>
@@ -336,7 +411,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
               whileTap={{ scale: 0.94 }}
               whileHover={{ scale: 1.08 }}
               title="New identity"
-              aria-label="Generate new identity"
+              aria-label="Generate new temporary email"
               disabled={isGeneratingEmail || emailCooldown}
             >
               <RefreshCw size={16} className={isGeneratingEmail ? 'spin' : ''} />
@@ -389,6 +464,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
               whileTap={{ scale: 0.94 }}
               whileHover={{ scale: 1.08 }}
               title="Reset secure password"
+              aria-label="Generate new secure password"
               disabled={isGeneratingPassword || passwordCooldown}
             >
               <RefreshCw size={16} className={isGeneratingPassword ? 'spin' : ''} />
@@ -417,6 +493,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
             disabled={inboxEmails.length === 0}
             whileHover={inboxEmails.length > 0 ? { x: 2 } : {}}
             style={inboxEmails.length === 0 ? { opacity: 0.5, cursor: 'default' } : {}}
+            aria-label="View full inbox"
           >
             {inboxEmails.length > 0 ? (
               <>
@@ -452,7 +529,9 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
                     }}
                     whileHover={{ x: 4, background: 'var(--list-item-hover)' }}
                   >
-                    <div className="inbox-item-avatar">{emailItem.from.charAt(0).toUpperCase()}</div>
+                    <div className="inbox-item-avatar">
+                      {emailItem.from.charAt(0).toUpperCase()}
+                    </div>
                     <div className="inbox-item-content">
                       <div className="inbox-item-header">
                         <span className="inbox-item-from">{emailItem.from}</span>
@@ -462,25 +541,26 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
                         </span>
                       </div>
                       <div className="inbox-item-subject">{emailItem.subject}</div>
-                      {emailItem.otpCode && (
-                        <motion.button
-                          className="otp-badge"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (emailItem.otpCode) {
-                                handleCopyOTP(emailItem.otpCode);
-                            }
-                          }}
-                          whileHover={{
-                            scale: 1.05,
-                            boxShadow: '0 0 15px rgba(99, 102, 241, 0.4)',
-                          }}
-                          whileTap={{ scale: 0.95 }}
-                        >
-                          <span className="otp-badge-code">{emailItem.otpCode}</span>
-                          <Copy size={10} />
-                        </motion.button>
-                      )}
+                          {emailItem.otpCode && (
+                            <motion.button
+                              className="otp-badge"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (emailItem.otpCode) {
+                                  handleCopyOTP(emailItem.otpCode);
+                                }
+                              }}
+                              whileHover={{
+                                scale: 1.05,
+                                boxShadow: '0 0 15px rgba(99, 102, 241, 0.4)',
+                              }}
+                              whileTap={{ scale: 0.95 }}
+                              aria-label={`Copy verification code ${emailItem.otpCode}`}
+                            >
+                              <span className="otp-badge-code" aria-hidden="true">{emailItem.otpCode}</span>
+                              <Copy size={10} />
+                            </motion.button>
+                          )}
                     </div>
                   </motion.div>
                 );
@@ -493,8 +573,8 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       {/* Confirmation Modal overlay (Replaces window.confirm H4) */}
       <AnimatePresence>
         {showConfirmEmail && (
-          <motion.div 
-            className="modal-overlay" 
+          <motion.div
+            className="modal-overlay"
             onClick={() => setShowConfirmEmail(false)}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -507,28 +587,51 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              style={{ margin: 'auto', background: 'var(--bg-primary)', width: '100%', maxWidth: '320px', padding: '24px' }}
+              style={{
+                margin: 'auto',
+                background: 'var(--bg-primary)',
+                width: '100%',
+                maxWidth: '320px',
+                padding: '24px',
+              }}
               role="dialog"
               aria-modal="true"
               aria-labelledby="hub-modal-title"
             >
-              <h3 id="hub-modal-title" style={{ marginTop: 0, marginBottom: '8px', fontSize: '18px', color: 'var(--text-primary)' }}>Generate New Email?</h3>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '14px', lineHeight: 1.5, margin: 0 }}>
+              <h3
+                id="hub-modal-title"
+                style={{
+                  marginTop: 0,
+                  marginBottom: '8px',
+                  fontSize: '18px',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                Generate New Email?
+              </h3>
+              <p
+                style={{
+                  color: 'var(--text-secondary)',
+                  fontSize: '14px',
+                  lineHeight: 1.5,
+                  margin: 0,
+                }}
+              >
                 Your current temporary email and its inbox will be permanently lost.
               </p>
               <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
-                <motion.button 
+                <motion.button
                   ref={cancelBtnRef}
-                  className="ios-button button-secondary" 
-                  style={{ flex: 1 }} 
+                  className="ios-button button-secondary"
+                  style={{ flex: 1 }}
                   onClick={() => setShowConfirmEmail(false)}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.96 }}
                 >
                   Cancel
                 </motion.button>
-                <motion.button 
-                  className="ios-button button-primary" 
+                <motion.button
+                  className="ios-button button-primary"
                   style={{ flex: 1, background: 'var(--error)' }}
                   onClick={executeGenerateEmail}
                   whileHover={{ scale: 1.02 }}

@@ -16,6 +16,17 @@ import { createLogger } from './logger';
 
 const log = createLogger('Encryption');
 
+/**
+ * Convert a Uint8Array to a properly typed BufferSource for Web Crypto API.
+ * Copies bytes into a fresh ArrayBuffer to satisfy TS 5.9's strict
+ * Uint8Array<ArrayBuffer> constraint.
+ */
+function toBufferSource(arr: Uint8Array): Uint8Array<ArrayBuffer> {
+  const out = new Uint8Array(arr.byteLength);
+  out.set(arr);
+  return out;
+}
+
 // Encryption constants
 const ENCRYPTION_VERSION = 1;
 const SALT_LENGTH = 32; // 256 bits
@@ -36,7 +47,10 @@ let sessionKeyExpiration: number | null = null;
 const KEY_ROTATION_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
 const KEY_MAX_LIFETIME = 24 * 60 * 60 * 1000;
 
-interface DerivedKeyCacheEntry { key: CryptoKey; ts: number; }
+interface DerivedKeyCacheEntry {
+  key: CryptoKey;
+  ts: number;
+}
 const derivedKeyCache = new Map<string, DerivedKeyCacheEntry>();
 const MAX_CACHE_SIZE = 20;
 // L6: TTL for derived key cache entries (1 hour)
@@ -53,11 +67,13 @@ const DERIVED_KEY_TTL_MS = 60 * 60 * 1000;
  */
 export async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
   const saltBase64 = btoa(String.fromCharCode(...salt));
-  
+
   // Hash the password so we don't store plaintext in memory cache
   const encoder = new TextEncoder();
   const passBuf = await crypto.subtle.digest('SHA-256', encoder.encode(password));
-  const passHash = Array.from(new Uint8Array(passBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  const passHash = Array.from(new Uint8Array(passBuf))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
   const cacheKey = `${passHash}:${saltBase64}`;
 
   // L6: Evict expired entries and check cache
@@ -82,7 +98,9 @@ export async function deriveKey(password: string, salt: Uint8Array): Promise<Cry
     // If still full, evict the oldest entry (Map preserves insertion order)
     if (derivedKeyCache.size >= MAX_CACHE_SIZE) {
       const firstKey = derivedKeyCache.keys().next().value;
-      if (firstKey) { derivedKeyCache.delete(firstKey); }
+      if (firstKey) {
+        derivedKeyCache.delete(firstKey);
+      }
     }
   }
 
@@ -99,7 +117,7 @@ export async function deriveKey(password: string, salt: Uint8Array): Promise<Cry
   const key = await crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
-      salt: salt.buffer as ArrayBuffer,
+      salt: toBufferSource(salt),
       iterations: ITERATIONS,
       hash: 'SHA-256',
     },
@@ -167,7 +185,7 @@ export function secureClearKeys(): void {
     sessionKeySalt.set(randomSalt);
     sessionKeySalt = null;
   }
-  
+
   sessionKey = null;
   masterKey = null;
   sessionKeyExpiration = null;
@@ -304,7 +322,9 @@ export async function encrypt(data: unknown, passwordOrKey: string | CryptoKey):
     const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
 
     // Derive key from password or use provided key
-    const key = isString ? await deriveKey(passwordOrKey as string, salt) : passwordOrKey as CryptoKey;
+    const key = isString
+      ? await deriveKey(passwordOrKey as string, salt)
+      : (passwordOrKey as CryptoKey);
 
     // Serialize and encode data
     const encoder = new TextEncoder();
@@ -350,7 +370,10 @@ export async function encrypt(data: unknown, passwordOrKey: string | CryptoKey):
  * @example
  * const data = await decrypt(encryptedString, 'master-password');
  */
-export async function decrypt<T>(encryptedData: string, passwordOrKey: string | CryptoKey): Promise<T> {
+export async function decrypt<T>(
+  encryptedData: string,
+  passwordOrKey: string | CryptoKey
+): Promise<T> {
   let packed: Uint8Array;
   try {
     // Decode from base64
@@ -379,14 +402,19 @@ export async function decrypt<T>(encryptedData: string, passwordOrKey: string | 
   try {
     // Derive key and decrypt
     const isString = typeof passwordOrKey === 'string';
-    const key = isString ? await deriveKey(passwordOrKey as string, salt) : passwordOrKey as CryptoKey;
+    const key = isString
+      ? await deriveKey(passwordOrKey as string, salt)
+      : (passwordOrKey as CryptoKey);
     const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
 
     // Parse JSON
     const decoder = new TextDecoder();
     return JSON.parse(decoder.decode(plaintext)) as T;
   } catch (error) {
-    log.debug('Decryption failed (keys may have rotated or data encrypted with a different key)', error);
+    log.debug(
+      'Decryption failed (keys may have rotated or data encrypted with a different key)',
+      error
+    );
     throw new Error('Failed to decrypt data');
   }
 }
@@ -399,36 +427,50 @@ export function onRotationAlarm(alarm: chrome.alarms.Alarm) {
 
 /**
  * Initializes encryption for the current session
- * @security Generates a fresh session key (not persisted)
- * @security Key is cleared when extension unloads
- * @security Key has expiration time for automatic rotation
- */
-/**
- * Initializes encryption for the current session
- * @security P0.1/P0.3 FIX: Uses separate persistent Master Key and transient Session Key
+ * @security Uses separate persistent Master Key and transient Session Key
  * @security Both keys are non-extractable (Key Insulation)
+ * @security Key has expiration time for automatic rotation
  */
 export async function initializeSecureEncryption(): Promise<void> {
   try {
-    const currentVersion = typeof chrome !== 'undefined' ? chrome.runtime.getManifest().version : 'unknown';
+    const currentVersion =
+      typeof chrome !== 'undefined' ? chrome.runtime.getManifest().version : 'unknown';
 
     // 1. Initialize PERSISTENT MASTER KEY (for storage.local)
+    // SECURITY FIX: Master key seed is stored in chrome.storage.session (memory-only),
+    // NOT chrome.storage.local. This means "encrypted at rest" actually protects data
+    // — an attacker who reads raw disk storage gets only ciphertext with no key material.
     if (!masterKey && typeof chrome !== 'undefined' && chrome.storage?.local) {
-      const localData = await chrome.storage.local.get(['masterKeySeed']);
-      let masterSeed: Uint8Array;
+      let masterSeed: Uint8Array | null = null;
 
-      if (localData.masterKeySeed) {
-        masterSeed = Uint8Array.from(atob(localData.masterKeySeed), (c) => c.charCodeAt(0));
-      } else {
+      // Try session storage first (survives service worker restarts, cleared on extension reload)
+      if (chrome.storage?.session) {
+        try {
+          const sessionData = await chrome.storage.session.get(['masterKeySeed']);
+          if (sessionData.masterKeySeed) {
+            masterSeed = Uint8Array.from(atob(sessionData.masterKeySeed), (c) => c.charCodeAt(0));
+          }
+        } catch {
+          // Session storage may not be available; fall through to generation
+        }
+      }
+
+      if (!masterSeed) {
         masterSeed = crypto.getRandomValues(new Uint8Array(32));
-        await chrome.storage.local.set({
-          masterKeySeed: btoa(String.fromCharCode(...masterSeed)),
-        });
+        if (chrome.storage?.session) {
+          try {
+            await chrome.storage.session.set({
+              masterKeySeed: btoa(String.fromCharCode(...masterSeed)),
+            });
+          } catch {
+            // Best-effort persistence; the key still works in-memory for this session
+          }
+        }
       }
 
       masterKey = await crypto.subtle.importKey(
         'raw',
-        masterSeed as any,
+        toBufferSource(masterSeed),
         { name: 'AES-GCM', length: 256 },
         false, // NON-EXTRACTABLE (P0.3)
         ['encrypt', 'decrypt']
@@ -437,9 +479,15 @@ export async function initializeSecureEncryption(): Promise<void> {
     }
 
     // 2. Initialize TRANSIENT SESSION KEY (for storage.session)
-    if ((!sessionKey || isKeyExpired()) && typeof chrome !== 'undefined' && chrome.storage?.session) {
+    if (
+      (!sessionKey || isKeyExpired()) &&
+      typeof chrome !== 'undefined' &&
+      chrome.storage?.session
+    ) {
       try {
-        await chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' }).catch(() => {});
+        await chrome.storage.session
+          .setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' })
+          .catch(() => {});
         const sessionData = await chrome.storage.session.get([
           'sessionKeySeed',
           'encryptionSalt',
@@ -456,12 +504,14 @@ export async function initializeSecureEncryption(): Promise<void> {
           const seed = Uint8Array.from(atob(sessionData.sessionKeySeed), (c) => c.charCodeAt(0));
           sessionKey = await crypto.subtle.importKey(
             'raw',
-            seed as any,
+            seed.buffer.slice(seed.byteOffset, seed.byteOffset + seed.byteLength),
             { name: 'AES-GCM', length: 256 },
             false, // NON-EXTRACTABLE (P0.3)
             ['encrypt', 'decrypt']
           );
-          sessionKeySalt = Uint8Array.from(atob(sessionData.encryptionSalt), (c) => c.charCodeAt(0));
+          sessionKeySalt = Uint8Array.from(atob(sessionData.encryptionSalt), (c) =>
+            c.charCodeAt(0)
+          );
           sessionKeyExpiration = sessionData.keyExpiration;
           log.debug('Loaded existing Session Key from storage.session');
         } else {
@@ -497,11 +547,23 @@ export async function initializeSecureEncryption(): Promise<void> {
         throw new Error('Critical: Failed to generate or load persistent master key from storage');
       }
       const seed = crypto.getRandomValues(new Uint8Array(32));
-      masterKey = await crypto.subtle.importKey('raw', seed as any, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+      masterKey = await crypto.subtle.importKey(
+        'raw',
+        seed.buffer.slice(seed.byteOffset, seed.byteOffset + seed.byteLength),
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+      );
     }
     if (!sessionKey) {
       const seed = crypto.getRandomValues(new Uint8Array(32));
-      sessionKey = await crypto.subtle.importKey('raw', seed as any, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+      sessionKey = await crypto.subtle.importKey(
+        'raw',
+        seed.buffer.slice(seed.byteOffset, seed.byteOffset + seed.byteLength),
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+      );
       sessionKeySalt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
       sessionKeyExpiration = Date.now() + KEY_MAX_LIFETIME;
     }
@@ -627,24 +689,20 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
 export async function hashPassword(password: string): Promise<string> {
   const encoder = new TextEncoder();
   const passwordData = encoder.encode(password);
-  
+
   // Use dynamically generated, securely cached salt for PBKDF2 hash verification
   const salt = await getInternalSalt();
-  
-  const baseKey = await crypto.subtle.importKey(
-    'raw',
-    passwordData,
-    { name: 'PBKDF2' },
-    false,
-    ['deriveBits']
-  );
+
+  const baseKey = await crypto.subtle.importKey('raw', passwordData, { name: 'PBKDF2' }, false, [
+    'deriveBits',
+  ]);
 
   const hashBuffer = await crypto.subtle.deriveBits(
     {
       name: 'PBKDF2',
-      salt: salt.buffer as ArrayBuffer,
+      salt: toBufferSource(salt),
       iterations: 210000,
-      hash: 'SHA-256'
+      hash: 'SHA-256',
     },
     baseKey,
     256 // 32 bytes
@@ -663,9 +721,11 @@ export async function hashPassword(password: string): Promise<string> {
  */
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
   const computedHash = await hashPassword(password);
-  
+
   // Constant-time comparison to prevent timing attacks
-  if (computedHash.length !== hash.length) {return false;}
+  if (computedHash.length !== hash.length) {
+    return false;
+  }
   let result = 0;
   for (let i = 0; i < computedHash.length; i++) {
     result |= computedHash.charCodeAt(i) ^ hash.charCodeAt(i);
@@ -691,7 +751,9 @@ export function getRandomBytes(length: number): Uint8Array {
  * Security: Uses rejection sampling to eliminate modulo bias.
  */
 export function getRandomInt(min: number, max: number): number {
-  if (min >= max) {return min;}
+  if (min >= max) {
+    return min;
+  }
   const range = max - min + 1;
   const maxMultiple = Math.floor(4294967296 / range) * range;
   const randomArray = new Uint32Array(1);
@@ -724,7 +786,9 @@ export function secureShuffleArray<T>(array: T[], inPlace: boolean = false): T[]
   const result = inPlace ? array : [...array];
   for (let i = result.length - 1; i > 0; i--) {
     const j = getRandomInt(0, i);
-    [result[i], result[j]] = [result[j], result[i]];
+    const tmp = result[j]!;
+    result[j] = result[i]!;
+    result[i] = tmp;
   }
   return result;
 }
@@ -734,8 +798,8 @@ export function secureShuffleArray<T>(array: T[], inPlace: boolean = false): T[]
  */
 export function generateUUID(): string {
   const bytes = getRandomBytes(16);
-  bytes[6] = (bytes[6] & 0x0f) | 0x40; // Version 4
-  bytes[8] = (bytes[8] & 0x3f) | 0x80; // Variant 1
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40; // Version 4
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80; // Variant 1
 
   const hex = Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, '0'))

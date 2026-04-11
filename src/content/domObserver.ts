@@ -36,12 +36,15 @@ export class DOMObserver {
     }
 
     const debouncedUpdate = debounce(() => {
-        if (typeof chrome === 'undefined' || !chrome.runtime?.id) { this.stop(); return; }
-        log.debug('DOM changed, re-detecting forms and icons');
-        this.formDetector.detectForms();
-        void this.autoFiller.injectIcons();
+      if (typeof chrome === 'undefined' || !chrome.runtime?.id) {
+        this.stop();
+        return;
+      }
+      log.debug('DOM changed, re-detecting forms and icons');
+      this.formDetector.detectForms();
+      void this.autoFiller.injectIcons();
     }, 1500);
-    
+
     this.debouncedHandler = debouncedUpdate as unknown as DebouncedMutationHandler;
 
     // Create observer
@@ -68,10 +71,12 @@ export class DOMObserver {
             }
           }
         }
-        if (shouldRedetect) {break;}
+        if (shouldRedetect) {
+          break;
+        }
       }
 
-      if (shouldRedetect && (typeof chrome !== 'undefined' && chrome.runtime?.id)) {
+      if (shouldRedetect && typeof chrome !== 'undefined' && chrome.runtime?.id) {
         debouncedUpdate();
       }
     });
@@ -98,7 +103,7 @@ export class DOMObserver {
       if (location.href !== this.lastUrl) {
         this.handleSpaNavigation();
       }
-    }, 1000);
+    }, 3000);
 
     window.addEventListener('popstate', this.handleSpaNavigation);
     window.addEventListener('beforeunload', this.handleUnload);

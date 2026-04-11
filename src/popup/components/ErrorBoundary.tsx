@@ -21,16 +21,16 @@ class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error };
   }
 
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  public override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Uncaught error:', error, errorInfo);
   }
 
-  public componentDidMount() {
+  public override componentDidMount() {
     window.addEventListener('unhandledrejection', this.handleUnhandledRejection);
     window.addEventListener('error', this.handleGlobalError);
   }
 
-  public componentWillUnmount() {
+  public override componentWillUnmount() {
     window.removeEventListener('unhandledrejection', this.handleUnhandledRejection);
     window.removeEventListener('error', this.handleGlobalError);
   }
@@ -51,7 +51,7 @@ class ErrorBoundary extends Component<Props, State> {
     });
   }
 
-  public render() {
+  public override render() {
     if (this.state.hasError) {
       return (
         <div style={{ padding: 20, textAlign: 'center', fontFamily: '-apple-system, system-ui' }}>
@@ -63,7 +63,7 @@ class ErrorBoundary extends Component<Props, State> {
             onClick={() => chrome.runtime.reload()}
             style={{
               padding: '8px 16px',
-              background: 'var(--primary)',
+              background: 'var(--brand-primary)',
               color: 'white',
               border: 'none',
               borderRadius: 8,

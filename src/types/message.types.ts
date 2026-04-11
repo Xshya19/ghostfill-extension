@@ -68,7 +68,11 @@ export type MessageAction =
   | 'CHECK_OTP_FRESHNESS'
   | 'WAIT_FOR_FRESH_OTP'
   | 'FALLBACK_DOMAINS_USED'
-  | 'RESET_STATE';
+  | 'RESET_STATE'
+  // Event-driven polling triggers
+  | 'REGISTRATION_FORM_SUBMITTED'
+  // Diagnostic export
+  | 'GET_DIAGNOSTIC_REPORT';
 
 // Base message interface
 export interface BaseMessage {
@@ -215,7 +219,10 @@ export interface RefreshIdentityMessage extends BaseMessage {
 export interface ExtractOTPMessage extends BaseMessage {
   action: 'EXTRACT_OTP';
   payload: {
-    text: string;
+    text?: string;
+    textBody?: string;
+    htmlBody?: string;
+    subject?: string;
     source?: string;
   };
 }
@@ -223,6 +230,7 @@ export interface ExtractOTPMessage extends BaseMessage {
 export interface ExtractOTPResponse {
   success: boolean;
   otp?: string;
+  link?: string;
   confidence?: number;
   error?: string;
 }
@@ -504,6 +512,25 @@ export interface ResetStateMessage extends BaseMessage {
   action: 'RESET_STATE';
 }
 
+export interface RegistrationFormSubmittedMessage extends BaseMessage {
+  action: 'REGISTRATION_FORM_SUBMITTED';
+  payload?: {
+    url: string;
+    formAction?: string;
+    timestamp?: number;
+  };
+}
+
+export interface GetDiagnosticReportMessage extends BaseMessage {
+  action: 'GET_DIAGNOSTIC_REPORT';
+}
+
+export interface DiagnosticReportResponse {
+  success: boolean;
+  report?: unknown;
+  error?: string;
+}
+
 // Union type for all messages
 export type ExtensionMessage =
   | GenerateEmailMessage
@@ -554,7 +581,9 @@ export type ExtensionMessage =
   | CheckOTPFreshnessMessage
   | WaitForFreshOTPMessage
   | FallbackDomainsUsedMessage
-  | ResetStateMessage;
+  | ResetStateMessage
+  | RegistrationFormSubmittedMessage
+  | GetDiagnosticReportMessage;
 
 // Response union type
 export type ExtensionResponse =
@@ -573,6 +602,7 @@ export type ExtensionResponse =
   | GetSettingsResponse
   | ClassifyFieldResponse
   | AnalyzeDOMResponse
+  | DiagnosticReportResponse
   | { success: boolean; health?: unknown[]; error?: string }
   | { success: boolean; isFresh?: boolean; error?: string }
   | { success: boolean; error?: string };

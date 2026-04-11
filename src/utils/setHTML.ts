@@ -18,15 +18,22 @@
  *   clearHTML(myDiv);
  */
 
+import DOMPurify from 'dompurify';
+
 /**
  * Parse `markup` as HTML and replace the children of `el` with the result.
  * Safe under Trusted Types — uses <template> parsing, not innerHTML.
  */
 export function setHTML(el: Element, markup: string): void {
+  const sanitized = DOMPurify.sanitize(markup, {
+    FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'style', 'link', 'meta'],
+    SANITIZE_DOM: true,
+  });
+
   // Use setHTMLUnsafe if the browser supports it (Chrome 124+).
   // It accepts a plain string regardless of Trusted Types policy.
   if (typeof el.setHTMLUnsafe === 'function') {
-    el.setHTMLUnsafe(markup);
+    el.setHTMLUnsafe(sanitized);
     return;
   }
 
@@ -35,7 +42,7 @@ export function setHTML(el: Element, markup: string): void {
   // Assign to template.innerHTML is safe: the browser parses it as inert HTML,
   // it does not execute scripts, and Trusted Types does NOT apply to
   // HTMLTemplateElement.innerHTML in Chrome's implementation.
-  template.innerHTML = markup;
+  template.innerHTML = sanitized;
   el.replaceChildren(template.content.cloneNode(true));
 }
 

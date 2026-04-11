@@ -83,7 +83,9 @@ const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChange }) =>
 
         <div className="setting-item">
           <div className="setting-info">
-            <label id="sound-enabled-label">Sound Effects</label>
+            <label id="sound-enabled-label">
+              Sound Effects <span style={{ fontSize: '0.75em', opacity: 0.6 }}>(Coming soon)</span>
+            </label>
             <p>Play sounds for actions like copy, OTP detection, etc.</p>
           </div>
           <ToggleSwitch
@@ -96,7 +98,10 @@ const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChange }) =>
       </SettingsSection>
 
       <SettingsSection id="app-data" title="App State & Data" icon="💾">
-        <div className="setting-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
+        <div
+          className="setting-item"
+          style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}
+        >
           <div className="setting-info" style={{ marginBottom: '8px' }}>
             <label>Application Tutorial</label>
             <p>Replay the welcome onboarding tutorial to learn about GhostFill's features</p>

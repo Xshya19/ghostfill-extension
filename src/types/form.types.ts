@@ -2,7 +2,14 @@
 
 export type FormInputElement = HTMLInputElement | HTMLTextAreaElement;
 
-export type FrameworkType = 'react' | 'vue' | 'angular' | 'svelte' | 'solid' | 'vanilla' | 'unknown';
+export type FrameworkType =
+  | 'react'
+  | 'vue'
+  | 'angular'
+  | 'svelte'
+  | 'solid'
+  | 'vanilla'
+  | 'unknown';
 
 export interface PageContext {
   readonly isVerificationPage: boolean;
@@ -54,11 +61,11 @@ export interface DetectedField {
   selector: string;
   fieldType: FieldType;
   confidence: number;
-  label?: string;
-  placeholder?: string;
-  name?: string;
-  id?: string;
-  autocomplete?: string;
+  label?: string | undefined;
+  placeholder?: string | undefined;
+  name?: string | undefined;
+  id?: string | undefined;
+  autocomplete?: string | undefined;
   rect: DOMRect;
 }
 
@@ -99,8 +106,8 @@ export interface DetectedForm {
   formType: FormType;
   confidence: number;
   fields: DetectedField[];
-  submitButton?: HTMLButtonElement | HTMLInputElement;
-  actionUrl?: string;
+  submitButton?: HTMLButtonElement | HTMLInputElement | undefined;
+  actionUrl?: string | undefined;
 }
 
 export interface FormAnalysis {

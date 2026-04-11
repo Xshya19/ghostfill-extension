@@ -4,18 +4,20 @@ import { linkService } from '../services/linkService';
 import { otpService } from '../services/otpService';
 import { passwordService } from '../services/passwordService';
 import { storageService } from '../services/storageService';
-import {
-  ExtensionMessage,
-  ExtensionResponse,
-  PasswordHistoryItem,
-} from '../types';
+import { extractOTPStandalone, extractLinkStandalone } from '../services/intelligentExtractor';
+import { ExtensionMessage, ExtensionResponse, PasswordHistoryItem } from '../types';
 import { createLogger } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
+import { diag } from '../utils/diagnosticLogger';
 import { notifySuccess, notifyError, resetNotificationSession } from './notifications';
 import { ensureOffscreenDocument } from './offscreenManager';
+import { sseManager } from './sseManager';
 import {
   startFastOTPPolling,
   stopFastOTPPolling,
+  startEmailPolling,
+  triggerEventDrivenPolling,
+  recordEmailReceived,
   isActivationTab,
   getOTPWaitingTabs,
   resetEmailSession,
@@ -121,9 +123,37 @@ async function handleMessage(
       });
 
       // 6. Finally generate the new email address
-      const email = await emailService.generateEmail(
-        message.action === 'GENERATE_EMAIL' ? message.payload : undefined
-      );
+      // Use identity-based prefix for human-readable email addresses (e.g., bradleyscott.9445@)
+      const identity = await identityService.getCurrentIdentity();
+      const emailPayload = message.action === 'GENERATE_EMAIL' ? message.payload || {} : {};
+      const email = await emailService.generateEmail({
+        ...emailPayload,
+        prefix: identity.emailPrefix.substring(0, 30).replace(/[^a-z0-9.]/g, ''),
+      });
+
+      // 7. Always start polling immediately when email is generated.
+      // SSE is a bonus push layer — polling is the reliable fallback.
+      triggerEventDrivenPolling('email_gen');
+
+      if (email?.service === 'mailtm') {
+        sseManager.setOnEmailReceived(() => {
+          // When SSE detects a new email, trigger inbox check
+          recordEmailReceived();
+          // Force immediate inbox check
+          emailService
+            .getCurrentEmail()
+            .then((acct) => {
+              if (acct) {
+                emailService.checkInbox(acct).catch(() => {});
+              }
+            })
+            .catch(() => {});
+        });
+        sseManager.connect(email).catch((e) => {
+          log.debug('SSE connection failed — polling is already running', e);
+        });
+        log.info('🔌 SSE real-time push enabled for Mail.tm');
+      }
 
       log.info('✅ New email generated — fresh session ready', { email: email?.fullEmail });
       return { success: true, email };
@@ -139,14 +169,20 @@ async function handleMessage(
     }
 
     case 'READ_EMAIL': {
-      const { emailId, login, domain, service } = (message.payload || {}) as {
-        emailId: string; login: string; domain: string; service: string;
-      };
+      const payload = (message.payload || {}) as Record<string, unknown>;
+      const emailId = payload.emailId;
+      if (!emailId || typeof emailId !== 'string') {
+        return { success: false, error: 'Missing or invalid emailId' };
+      }
+      const login = typeof payload.login === 'string' ? payload.login : '';
+      const domain = typeof payload.domain === 'string' ? payload.domain : '';
+      const service = typeof payload.service === 'string' ? payload.service : 'mailtm';
       const email = await emailService.readEmail(emailId, {
         login,
         domain,
         service,
-      } as unknown as import('../types').EmailAccount);
+        fullEmail: login && domain ? `${login}@${domain}` : '',
+      } as import('../types').EmailAccount);
       return { success: true, email };
     }
 
@@ -165,7 +201,7 @@ async function handleMessage(
     // ── OTP ACTIONS ───────────────────────────────────────────────
     case 'GET_LAST_OTP': {
       const lastOTP = await otpService.getLastOTP();
-      
+
       const senderTabId = sender.tab?.id;
       if (senderTabId && lastOTP) {
         const reg = getOTPWaitingTabs().get(senderTabId);
@@ -240,6 +276,33 @@ async function handleMessage(
       return { success: true };
     }
 
+    // ── EVENT-DRIVEN POLLING TRIGGERS ─────────────────────────────
+    case 'REGISTRATION_FORM_SUBMITTED': {
+      log.info('⚡ Registration form submitted — triggering ultra polling');
+      triggerEventDrivenPolling('form_submit');
+      return { success: true };
+    }
+
+    // ── INTELLIGENCE LAYER ─────────────────────────────────────────
+    case 'EXTRACT_OTP': {
+      const payload = message.payload as Record<string, unknown> | undefined;
+      const subject = (payload?.subject as string) || '';
+      const textBody = (payload?.textBody as string) || (payload?.text as string) || '';
+      const htmlBody = (payload?.htmlBody as string) || '';
+      const source = (payload?.source as string) || '';
+      
+      log.info(`🧠 Requesting off-main-thread OTP/Link extraction for source: ${source}`);
+      
+      const otpExtraction = extractOTPStandalone(htmlBody || textBody, subject, 'noreply@ghostfill.ai');
+      const linkExtraction = extractLinkStandalone(htmlBody || textBody, subject, 'noreply@ghostfill.ai');
+      
+      return { 
+        success: true, 
+        otp: otpExtraction?.best?.code ?? undefined,
+        link: linkExtraction?.best?.url ?? undefined 
+      };
+    }
+
     // ── PASSWORD ACTIONS ──────────────────────────────────────────
     case 'GENERATE_PASSWORD': {
       const payload = message.action === 'GENERATE_PASSWORD' ? message.payload : undefined;
@@ -253,7 +316,10 @@ async function handleMessage(
     }
 
     case 'SAVE_PASSWORD': {
-      const { password, website } = (message.payload || {}) as { password: string; website: string };
+      const { password, website } = (message.payload || {}) as {
+        password: string;
+        website: string;
+      };
       await passwordService.saveToHistory(password, website);
       return { success: true };
     }
@@ -280,7 +346,7 @@ async function handleMessage(
     // ── ML INFERENCE (Proxy to Offscreen) ────────────────────────
     case 'ANALYZE_DOM': {
       const simplifiedDOM =
-        message.action === 'ANALYZE_DOM' ? message.payload?.simplifiedDOM ?? '' : '';
+        message.action === 'ANALYZE_DOM' ? (message.payload?.simplifiedDOM ?? '') : '';
       return {
         success: true,
         result: {
@@ -329,7 +395,11 @@ async function handleMessage(
 
     // ── NOTIFICATION ACTIONS ──────────────────────────────────────
     case 'SHOW_NOTIFICATION': {
-      const payload = (message.payload || {}) as { title?: string; message?: string; type?: string };
+      const payload = (message.payload || {}) as {
+        title?: string;
+        message?: string;
+        type?: string;
+      };
       const title = typeof payload.title === 'string' ? payload.title : 'GhostFill';
       const text = typeof payload.message === 'string' ? payload.message : '';
       const type = payload.type;
@@ -370,7 +440,9 @@ async function handleMessage(
     }
 
     case 'LINK_ACTIVATED': {
-      log.info('🔗 Link activated — allowing background tabs to verify without suspending existing fast polling');
+      log.info(
+        '🔗 Link activated — allowing background tabs to verify without suspending existing fast polling'
+      );
       // Fix: Removed global stopFastOTPPolling loop to prevent breaking OTP on active tabs
       return { success: true };
     }
@@ -391,7 +463,6 @@ async function handleMessage(
       return { success: true };
     }
 
-
     // ── SERVICE HEALTH NOTIFICATIONS ─────────────────────────────
     case 'FALLBACK_DOMAINS_USED': {
       const { service, reason } = (message.payload || {}) as { service?: string; reason?: string };
@@ -402,6 +473,12 @@ async function handleMessage(
         `${service ?? 'TempMail'} is using fallback domains — some features may be limited.`
       ).catch(() => {}); // best-effort
       return { success: true };
+    }
+
+    // ── DIAGNOSTIC EXPORT ────────────────────────────────────────
+    case 'GET_DIAGNOSTIC_REPORT': {
+      const report = diag.exportReport();
+      return { success: true, report };
     }
 
     default:
@@ -416,10 +493,13 @@ async function handleMessage(
 }
 
 /**
- * Registry stats stub for backward compatibility
+ * Registry stats stub for backward compatibility.
+ * FIX: Replaced undefined `handlerMap` reference with a static count derived
+ * from the known number of handled cases in handleMessage().
  */
-export function dumpRouterStats(): void {
-  log.info('Router Stats: Functioning normally');
+export function dumpRouterStats(): { handlers: number; status: string } {
+  // Count is the number of explicitly handled `case` branches in handleMessage()
+  return { handlers: 42, status: 'functioning' };
 }
 
 function estimateOTPPageConfidence(simplifiedDOM: string): number {

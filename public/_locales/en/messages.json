@@ -7,10 +7,6 @@
     "message": "Disposable emails, secure passwords, and automatic OTP detection & fill. Local AI — no API key required.",
     "description": "Description of the extension"
   },
-  "extensionVersion": {
-    "message": "1.1.0",
-    "description": "Version number"
-  },
   "emailLabel": {
     "message": "EMAIL"
   },

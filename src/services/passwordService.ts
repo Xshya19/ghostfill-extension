@@ -68,7 +68,7 @@ class PasswordService {
       charsetArrays.push(charArray);
       if (opts.minUppercase) {
         for (let i = 0; i < opts.minUppercase; i++) {
-          requiredChars.push(charArray[getRandomInt(0, charArray.length - 1)]);
+          requiredChars.push(charArray[getRandomInt(0, charArray.length - 1)]!);
         }
       }
     }
@@ -82,7 +82,7 @@ class PasswordService {
       charsetArrays.push(charArray);
       if (opts.minLowercase) {
         for (let i = 0; i < opts.minLowercase; i++) {
-          requiredChars.push(charArray[getRandomInt(0, charArray.length - 1)]);
+          requiredChars.push(charArray[getRandomInt(0, charArray.length - 1)]!);
         }
       }
     }
@@ -96,7 +96,7 @@ class PasswordService {
       charsetArrays.push(charArray);
       if (opts.minNumbers) {
         for (let i = 0; i < opts.minNumbers; i++) {
-          requiredChars.push(charArray[getRandomInt(0, charArray.length - 1)]);
+          requiredChars.push(charArray[getRandomInt(0, charArray.length - 1)]!);
         }
       }
     }
@@ -110,7 +110,7 @@ class PasswordService {
       charsetArrays.push(charArray);
       if (opts.minSymbols) {
         for (let i = 0; i < opts.minSymbols; i++) {
-          requiredChars.push(charArray[getRandomInt(0, charArray.length - 1)]);
+          requiredChars.push(charArray[getRandomInt(0, charArray.length - 1)]!);
         }
       }
     }
@@ -126,7 +126,11 @@ class PasswordService {
 
     if (charsetLength === 0) {
       // Fallback charset: alphanumeric + symbols for security (H14 fixed)
-      const fallback = CHARACTER_SETS.lowercase + CHARACTER_SETS.uppercase + CHARACTER_SETS.numbers + CHARACTER_SETS.symbols;
+      const fallback =
+        CHARACTER_SETS.lowercase +
+        CHARACTER_SETS.uppercase +
+        CHARACTER_SETS.numbers +
+        CHARACTER_SETS.symbols;
       charset.push(...fallback.split(''));
       charsetLength = charset.length;
     }
@@ -140,7 +144,7 @@ class PasswordService {
 
     // Build password array directly with O(1) array access
     const passwordChars: string[] = [...requiredChars];
-    
+
     // Calculate max valid value for uniform distribution to prevent modulo bias (H6 fixed)
     const maxValid = 4294967296 - (4294967296 % charsetLength);
 
@@ -148,7 +152,7 @@ class PasswordService {
       // Re-roll if value is out of uniform range
       if (randomIndices[i]! < maxValid) {
         const index = randomIndices[i]! % charsetLength;
-        passwordChars.push(charset[index]);
+        passwordChars.push(charset[index]!);
         i++;
       } else {
         // Just get one more random value to replace the biased one
@@ -184,7 +188,7 @@ class PasswordService {
     for (let i = 0; i < wordCount; i++) {
       const index = getRandomInt(0, words.length - 1);
       // Capitalize first letter randomly
-      let word = words[index];
+      let word = words[index]!;
       if (getRandomInt(0, 1) === 1) {
         word = word.charAt(0).toUpperCase() + word.slice(1);
       }
@@ -347,14 +351,16 @@ class PasswordService {
   async saveToHistory(password: string, website: string): Promise<void> {
     const strength = this.calculateStrength(password);
     const history = await this.getSessionHistory();
-    
+
     let storedPassword = password;
     let isEncrypted = false;
-    
+
     try {
-      const sessionKey = await import('../utils/encryption').then(m => m.getSessionKey());
+      const sessionKey = await import('../utils/encryption').then((m) => m.getSessionKey());
       if (sessionKey) {
-        storedPassword = await import('../utils/encryption').then(m => m.encrypt(password, sessionKey));
+        storedPassword = await import('../utils/encryption').then((m) =>
+          m.encrypt(password, sessionKey)
+        );
         isEncrypted = true;
       }
     } catch (e) {
@@ -376,7 +382,11 @@ class PasswordService {
     }
 
     await this.setSessionHistory(history);
-    log.info('Password saved to session history', { website, persisted: false, encrypted: isEncrypted });
+    log.info('Password saved to session history', {
+      website,
+      persisted: false,
+      encrypted: isEncrypted,
+    });
   }
 
   /**
@@ -388,9 +398,13 @@ class PasswordService {
     }
 
     try {
-      const sessionKey = await import('../utils/encryption').then(m => m.getSessionKey());
-      if (!sessionKey) {throw new Error('No session key available');}
-      return await import('../utils/encryption').then(m => m.decrypt(historyItem.password, sessionKey)) as string;
+      const sessionKey = await import('../utils/encryption').then((m) => m.getSessionKey());
+      if (!sessionKey) {
+        throw new Error('No session key available');
+      }
+      return (await import('../utils/encryption').then((m) =>
+        m.decrypt(historyItem.password, sessionKey)
+      )) as string;
     } catch (e) {
       log.error('Failed to decrypt password history item', e);
       throw new Error('Encrypted password history could not be decrypted');
@@ -423,33 +437,15 @@ class PasswordService {
   }
 
   /**
-   * Get a random character from charset
-   * @deprecated Use direct array access with getRandomInt instead
-   */
-  private getRandomChar(charset: string): string {
-    const index = getRandomInt(0, charset.length - 1);
-    return charset[index];
-  }
-
-  /**
-   * Shuffle a string using Fisher-Yates
-   * @deprecated Use shuffleArrayInPlace for better performance
-   */
-  private shuffleString(str: string): string {
-    const arr = str.split('');
-    this.shuffleArrayInPlace(arr);
-    return arr.join('');
-  }
-
-  /**
    * Optimized Fisher-Yates shuffle for arrays (in-place)
    * PERFORMANCE FIX: Avoids string splitting/joining overhead
    */
   private shuffleArrayInPlace(arr: string[]): void {
     for (let i = arr.length - 1; i > 0; i--) {
       const j = getRandomInt(0, i);
-      // Single swap operation
-      [arr[i], arr[j]] = [arr[j], arr[i]];
+      const tmp = arr[j]!;
+      arr[j] = arr[i]!;
+      arr[i] = tmp;
     }
   }
 

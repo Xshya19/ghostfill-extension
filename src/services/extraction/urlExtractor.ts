@@ -156,7 +156,10 @@ export function isValidUrl(url: string): boolean {
 
   try {
     const parsed = new URL(url);
-    if (parsed.hostname !== 'localhost' && (!parsed.hostname.includes('.') || parsed.hostname.split('.').pop()!.length < 2)) {
+    if (
+      parsed.hostname !== 'localhost' &&
+      (!parsed.hostname.includes('.') || parsed.hostname.split('.').pop()!.length < 2)
+    ) {
       return false;
     }
     if (STATIC_RESOURCE_PATTERN.test(parsed.pathname)) {
@@ -287,7 +290,7 @@ export function extractUrls(html: string): string[] {
     regex.lastIndex = 0;
     let match;
     while ((match = regex.exec(decoded)) !== null) {
-      processUrl(decodeHtmlEntities(match[1].trim()), urls);
+      processUrl(decodeHtmlEntities(match[1]?.trim() ?? ''), urls);
     }
   }
 
@@ -309,7 +312,7 @@ export function extractUrls(html: string): string[] {
   const safeRegex = /safelinks\.protection\.outlook\.com[^"'\s]*[?&]url=([^&"'\s]+)/gi;
   while ((match = safeRegex.exec(decoded)) !== null) {
     try {
-      processUrl(decodeURIComponent(match[1]), urls);
+      processUrl(decodeURIComponent(match[1] ?? ''), urls);
     } catch {
       // Skip invalid URLs
     }
@@ -323,7 +326,7 @@ export function extractUrls(html: string): string[] {
   for (const regex of googlePatterns) {
     while ((match = regex.exec(decoded)) !== null) {
       try {
-        let url = decodeURIComponent(match[1]);
+        let url = decodeURIComponent(match[1] ?? '');
         if (!/^https?:\/\//i.test(url)) {
           url = 'https://' + url;
         }

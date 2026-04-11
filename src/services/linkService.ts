@@ -79,11 +79,6 @@ interface ActivationRecord {
   durationMs: number | null;
 }
 
-interface ProcessedEmailEntry {
-  processedAt: number;
-  hadLink: boolean;
-}
-
 interface UrlValidation {
   safe: boolean;
   reason?: string;
@@ -440,14 +435,14 @@ class LinkService {
         });
       }
 
-      // ── Open the verification URL in a new background tab ──
+      // ── Open the verification URL in a new foreground tab ──
       // URL safety is already enforced by validateUrl() above (blocks bad
       // schemes, localhost, raw IPs, suspicious TLDs, punycode domains).
-      log.info('🌐 Opening activation link in background tab', { url: maskUrl(record.url) });
+      log.info('🌐 Opening activation link in foreground tab', { url: maskUrl(record.url) });
 
       const tab = await chrome.tabs.create({
         url: record.url,
-        active: false, // background — don't steal user focus
+        active: true, // foreground — show the tab to the user
       });
 
       if (!tab.id) {
@@ -477,7 +472,9 @@ class LinkService {
       const loaded = await this.waitForTabLoad(tab.id);
 
       if (!loaded) {
-        log.warn('⏱️ Tab load timeout — proceeding with delivery attempt anyway', { tabId: tab.id });
+        log.warn('⏱️ Tab load timeout — proceeding with delivery attempt anyway', {
+          tabId: tab.id,
+        });
       } else {
         log.info('✅ Page loaded', { tabId: tab.id });
       }
@@ -656,7 +653,10 @@ class LinkService {
       log.info('📲 Code delivered', { tabId, code: maskCode(code) });
       return true;
     } catch (error) {
-      log.warn('Delivery send failed — page may not have an OTP field to accept the code', { tabId, error: errorMessage(error) });
+      log.warn('Delivery send failed — page may not have an OTP field to accept the code', {
+        tabId,
+        error: errorMessage(error),
+      });
       return false;
     }
   }
@@ -734,7 +734,7 @@ class LinkService {
     // ── Punycode / IDN homoglyph domains ──
     const labels = host.split('.');
     if (labels.some((l) => l.startsWith(PUNYCODE_PREFIX))) {
-      log.info('Allowing Punycode / IDN domain', { host });
+      return { safe: false, reason: 'Punycode/IDN domain (homoglyph risk)' };
     }
 
     // ── Excessively deep subdomain nesting (common phishing pattern) ──

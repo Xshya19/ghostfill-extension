@@ -66,9 +66,14 @@ class ProviderHealthManager implements IProviderHealthManager {
       try {
         const data = await chrome.storage.session.get('phm_health');
         if (data.phm_health) {
-          const parsed = JSON.parse(data.phm_health) as [EmailService, ProviderHealthStatus][];
+          const parsed = JSON.parse(data.phm_health);
+          if (!Array.isArray(parsed)) return;
           for (const [provider, status] of parsed) {
-            this.health.set(provider, status);
+            if (typeof provider === 'string' && typeof status === 'object' && status !== null) {
+              if (typeof status.successRate === 'number' && typeof status.cooldownUntil === 'number') {
+                this.health.set(provider as EmailService, status as ProviderHealthStatus);
+              }
+            }
           }
         }
       } catch (error) {
@@ -81,7 +86,9 @@ class ProviderHealthManager implements IProviderHealthManager {
     if (typeof chrome !== 'undefined' && chrome.storage?.session) {
       try {
         const serialized = JSON.stringify(Array.from(this.health.entries()));
-        chrome.storage.session.set({ phm_health: serialized }).catch((e) => console.debug('PHM session save failed', e));
+        chrome.storage.session
+          .set({ phm_health: serialized })
+          .catch((e) => console.debug('PHM session save failed', e));
       } catch (error) {
         log.warn('Failed to save provider health state', error);
       }
@@ -262,9 +269,28 @@ class ProviderHealthManager implements IProviderHealthManager {
     const array = new Uint32Array(1);
     crypto.getRandomValues(array);
     // Convert to 0-1 range (Uint32 max is 4294967295)
-    const randomValue = array[0] / 4294967295;
+    const randomValue = array[0]! / 4294967295;
     // Apply percentage and center around 0 (range: -percentage to +percentage)
     return baseValue * percentage * (2 * randomValue - 1);
+  }
+
+  /**
+   * Try to recover a provider if its cooldown has expired.
+   * Resets circuit state if cooldown period has passed.
+   */
+  private tryRecoverProvider(provider: EmailService, health: ProviderHealthStatus): void {
+    if (health.circuitOpen && health.cooldownUntil > 0 && Date.now() > health.cooldownUntil) {
+      health.circuitOpen = false;
+      health.cooldownUntil = 0;
+      log.info(`🔄 ${provider} cooldown expired, attempting recovery`);
+
+      this.emitEvent({
+        type: 'provider:circuit-close',
+        provider,
+        timestamp: Date.now(),
+      });
+      this.saveState();
+    }
   }
 
   /**
@@ -274,23 +300,9 @@ class ProviderHealthManager implements IProviderHealthManager {
     const health = this.health.get(provider);
     if (!health) {
       return true;
-    } // Unknown providers are assumed available
-
-    // Check if cooldown has expired
-    if (health.cooldownUntil > 0 && Date.now() > health.cooldownUntil) {
-      // Cooldown expired, try half-open state
-      health.circuitOpen = false;
-      health.cooldownUntil = 0;
-      log.info(`🔄 ${provider} cooldown expired, attempting recovery`);
-
-      // Emit circuit-close event
-      this.emitEvent({
-        type: 'provider:circuit-close',
-        provider,
-        timestamp: Date.now(),
-      });
-      this.saveState();
     }
+
+    this.tryRecoverProvider(provider, health);
 
     return !health.circuitOpen && health.cooldownUntil <= Date.now();
   }
@@ -369,6 +381,9 @@ class ProviderHealthManager implements IProviderHealthManager {
     }
 
     const best = candidates[0];
+    if (!best) {
+      return null;
+    }
     log.debug(`📊 Best provider: ${best.provider} (score: ${best.score.toFixed(1)})`);
 
     return best.provider;
@@ -385,7 +400,7 @@ class ProviderHealthManager implements IProviderHealthManager {
    * Calculate exponential backoff delay for retries
    * Fast flat failover delay for responsive fallback
    */
-  getRetryDelay(attempt: number): number {
+  getRetryDelay(_attempt: number): number {
     return 500; // Flat 500ms retry delay for fast failover
   }
 

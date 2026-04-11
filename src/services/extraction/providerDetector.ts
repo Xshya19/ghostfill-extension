@@ -111,19 +111,30 @@ export function detectProvider(
       let domainMatched = false;
       for (const expectedDomain of expectedDomains) {
         const cleanExpected = expectedDomain
-          .replace(/^(www\.|app\.|auth\.|login\.|secure\.|id\.|sso\.|my\.|portal\.|dashboard\.|accounts\.)/, '')
+          .replace(
+            /^(www\.|app\.|auth\.|login\.|secure\.|id\.|sso\.|my\.|portal\.|dashboard\.|accounts\.)/,
+            ''
+          )
           .toLowerCase();
-        
-        const cleanSender = lowerSender
-          .split('@')
-          .pop()
-          ?.replace(/^(mail\.|notify\.|info\.|secure\.|auth\.|reply\.|accounts\.|accounts-|noreply\.|noreply-|no-reply\.|do-not-reply\.|team\.|security\.|support\.|hello\.|help\.|email\.|e\.|notifications?\.|alerts?\.|verify\.|verification\.|confirmation\.|mailer\.)/, '')
-          .toLowerCase() || lowerSender;
+
+        const cleanSender =
+          lowerSender
+            .split('@')
+            .pop()
+            ?.replace(
+              /^(mail\.|notify\.|info\.|secure\.|auth\.|reply\.|accounts\.|accounts-|noreply\.|noreply-|no-reply\.|do-not-reply\.|team\.|security\.|support\.|hello\.|help\.|email\.|e\.|notifications?\.|alerts?\.|verify\.|verification\.|confirmation\.|mailer\.)/,
+              ''
+            )
+            .toLowerCase() || lowerSender;
 
         const rootExpected = getRootDomain(cleanExpected);
         const rootSender = getRootDomain(cleanSender);
 
-        if (rootExpected === rootSender || cleanSender.includes(rootExpected) || cleanExpected.includes(rootSender)) {
+        if (
+          rootExpected === rootSender ||
+          cleanSender.includes(rootExpected) ||
+          cleanExpected.includes(rootSender)
+        ) {
           domainMatched = true;
           break;
         }
@@ -148,6 +159,7 @@ export function detectProvider(
   // Sort by score and return best match
   scores.sort((a, b) => b.score - a.score);
   const best = scores[0];
+  if (!best) {return { provider: null, confidence: 0, signals: [] };}
   const confidence = Math.min(best.score, 100);
 
   log.info(`Provider: ${best.provider.name} (${confidence}%) [${best.signals.join(', ')}]`);
@@ -205,10 +217,14 @@ export function getProviderOtpConfig(provider: ProviderKnowledge | null): {
     return {};
   }
 
-  return {
-    length: provider.otpLength,
-    format: provider.otpFormat as 'numeric' | 'alphanumeric' | undefined,
-  };
+  const result: { length?: number; format?: 'numeric' | 'alphanumeric' } = {};
+  if (provider.otpLength !== undefined) {
+    result.length = provider.otpLength;
+  }
+  if (provider.otpFormat) {
+    result.format = provider.otpFormat as 'numeric' | 'alphanumeric';
+  }
+  return result;
 }
 
 // ─── Helpers ───

@@ -1,12 +1,16 @@
 // Content Script Entry Point
 
+// Initialize debug console FIRST to capture all errors
+import './debugConsole';
+import './errorReportGenerator';
+
 import { SentinelBrain } from '../intelligence/SentinelBrain';
 import { createLogger } from '../utils/logger';
 import { errorTracker, performanceMonitor } from '../utils/monitoring';
 import { initRemoteLogger } from '../utils/remoteLogger';
 import { AutoFiller } from './autoFiller';
 import { DOMObserver } from './domObserver';
-import { extractFeatures, extractContextualFeatures } from './extractor';
+import { extractContextualFeatures } from './extractor';
 import { FieldAnalyzer } from './fieldAnalyzer';
 import { FloatingButton } from './floatingButton';
 import { FormDetector } from './formDetector';
@@ -27,14 +31,12 @@ function isContextValid(): boolean {
 window.addEventListener('error', (event) => {
   const msg = event.message?.toLowerCase() ?? '';
 
-  // Ignore context invalidation - expected on extension reload
   if (msg.includes('extension context invalidated') || msg.includes('context invalidated')) {
     log.debug('GhostFill: Content script context invalidated (expected on reload)');
     event.preventDefault();
     return;
   }
 
-  // Ignore connection errors from Chrome API
   if (
     msg.includes('could not establish connection') ||
     msg.includes('receiving end does not exist')
@@ -45,7 +47,6 @@ window.addEventListener('error', (event) => {
   }
 
   log.error('Unhandled content script error:', event.error);
-  event.preventDefault();
 });
 
 window.addEventListener('unhandledrejection', (event) => {
@@ -53,17 +54,15 @@ window.addEventListener('unhandledrejection', (event) => {
   const reasonStr = reason instanceof Error ? reason.message : String(reason);
   const reasonStrLower = reasonStr.toLowerCase();
 
-  // Ignore context invalidation - this is expected on extension reload
   if (
     reasonStrLower.includes('extension context invalidated') ||
     reasonStrLower.includes('context invalidated')
   ) {
     log.debug('GhostFill: Extension context invalidated (expected on reload)');
-    event.preventDefault(); // Prevent default browser handling
+    event.preventDefault();
     return;
   }
 
-  // Ignore connection errors
   if (
     reasonStrLower.includes('could not establish connection') ||
     reasonStrLower.includes('receiving end does not exist')
@@ -74,7 +73,6 @@ window.addEventListener('unhandledrejection', (event) => {
   }
 
   log.error('Unhandled content script promise rejection:', event.reason);
-  event.preventDefault(); // Prevent default browser error
 });
 
 log.info('GhostFill content script loaded');
@@ -96,7 +94,7 @@ function createSafeComponent<T extends object>(methods: Partial<T>, componentNam
       }
 
       // Only log + track when a MISSING method is actually called
-      return (...args: unknown[]) => {
+      return (..._args: unknown[]) => {
         log.warn(
           `GhostFill: Method '${prop}' called on degraded component '${componentName}' — using no-op fallback`
         );
@@ -208,7 +206,7 @@ function init(): void {
 
     // Initialize OTP page detection for auto-fill
     void otpPageDetector.init();
-    
+
     // Listen for messages from background
     if (chrome?.runtime?.onMessage) {
       chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -241,20 +239,20 @@ function init(): void {
     }
 
     // Cleanup on page unload to prevent memory leaks
-    window.addEventListener('pagehide', () => {
+    const cleanupHandler = () => {
       domObserver.stop();
       floatingButton?.hide?.();
       void otpPageDetector?.destroy?.();
-    });
+      document.removeEventListener('contextmenu', contextMenuHandler, true);
+      window.removeEventListener('beforeunload', cleanupHandler);
+    };
+    const contextMenuHandler = (e: MouseEvent) => {
+      lastRightClickedElement = e.target as HTMLElement;
+    };
+    window.addEventListener('beforeunload', cleanupHandler);
 
     // Track the last right-clicked element for Continuous Learning
-    document.addEventListener(
-      'contextmenu',
-      (e) => {
-        lastRightClickedElement = e.target as HTMLElement;
-      },
-      true
-    );
+    document.addEventListener('contextmenu', contextMenuHandler, true);
 
     log.debug('Content script initialized');
   } catch (error) {
@@ -292,6 +290,7 @@ async function handleMessage(message: {
               return { success: false, error: 'Context invalidated' };
             }
 
+            const MAX_TRAINING_SAMPLES = 500;
             chrome.storage.local.get(['ghostfill_training_data'], (res) => {
               // Re-check inside callback because storage calls are async
               if (!isContextValid()) {
@@ -301,8 +300,12 @@ async function handleMessage(message: {
               const data = Array.isArray(res.ghostfill_training_data)
                 ? res.ghostfill_training_data
                 : [];
+              // Cap training data to prevent unbounded growth
+              if (data.length >= MAX_TRAINING_SAMPLES) {
+                data.splice(0, data.length - MAX_TRAINING_SAMPLES);
+              }
               // We omit the DOM element itself and keep the text/structural numbers
-              const { element, ...savableFeatures } = rawFeatures;
+              const { element: _element, ...savableFeatures } = rawFeatures;
               data.push({ features: savableFeatures, label: correctType, timestamp: Date.now() });
 
               chrome.storage.local.set({ ghostfill_training_data: data }, () => {
@@ -370,17 +373,28 @@ async function handleMessage(message: {
             otp,
             source: 'manual',
             confidence: 1,
-            fieldSelectors,
-          } as any),
+            ...(fieldSelectors !== undefined && { fieldSelectors }),
+          }),
         };
       }
       return { success: false, error: 'No OTP provided' };
     }
 
     case 'AUTO_FILL_OTP': {
-      if (message.payload && (message.payload as any).otp) {
+      const rawPayload = message.payload as Record<string, unknown> | undefined;
+      if (rawPayload && typeof rawPayload.otp === 'string') {
         return {
-          success: await otpPageDetector.handleAutoFill(message.payload as any),
+          success: await otpPageDetector.handleAutoFill({
+            otp: rawPayload.otp,
+            source: typeof rawPayload.source === 'string' ? rawPayload.source : 'email',
+            confidence: typeof rawPayload.confidence === 'number' ? rawPayload.confidence : 1,
+            ...(Array.isArray(rawPayload.fieldSelectors) && {
+              fieldSelectors: rawPayload.fieldSelectors as string[],
+            }),
+            ...(typeof rawPayload.isBackgroundTab === 'boolean' && {
+              isBackgroundTab: rawPayload.isBackgroundTab,
+            }),
+          }),
         };
       }
       return { success: false, error: 'No OTP provided' };
@@ -388,7 +402,9 @@ async function handleMessage(message: {
 
     case 'POLLING_STATE_CHANGE': {
       if (message.payload && message.payload.state) {
-        otpPageDetector.handlePollingStateChange(message.payload.state as 'ANALYZING_EMAIL' | 'LINK_ACTIVATION_STARTED');
+        otpPageDetector.handlePollingStateChange(
+          message.payload.state as 'ANALYZING_EMAIL' | 'LINK_ACTIVATION_STARTED'
+        );
         return { success: true };
       }
       return { success: false, error: 'No state provided' };
@@ -475,4 +491,12 @@ if (document.readyState === 'complete') {
 }
 
 // Export for testing
-export { formDetector, fieldAnalyzer, autoFiller, floatingButton, domObserver, otpPageDetector, SentinelBrain };
+export {
+  formDetector,
+  fieldAnalyzer,
+  autoFiller,
+  floatingButton,
+  domObserver,
+  otpPageDetector,
+  SentinelBrain,
+};

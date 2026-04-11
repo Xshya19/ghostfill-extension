@@ -34,7 +34,10 @@ class SmartDetectionService {
       // SECURITY FIX: Key kept purely in isolated memory.
       // Cache will invalidate itself across service worker restarts
       // when decryption fails due to key rotation.
-      this.cacheKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+      this.cacheKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, [
+        'encrypt',
+        'decrypt',
+      ]);
       log.debug('Cache encryption key initialized in memory only');
     } catch (error) {
       log.error('Failed to initialize cache encryption', error);
@@ -120,7 +123,7 @@ class SmartDetectionService {
     this.maybeCleanupExpiredCache();
 
     // Cache check - MV3 safe
-    const hashStr = await this.hash(`${sender}|${subject}|${body.substring(0, 5000)}`);
+    const hashStr = await this.hash(`${sender}|${subject}|${body}`);
     const cacheKey = `det_${hashStr}`;
     const cachedResult = await this.getCachedResult(cacheKey);
     if (cachedResult) {
@@ -130,7 +133,7 @@ class SmartDetectionService {
 
     // 🧠 [SmartDetection] Executing 5-Layer Intelligent Pipeline...
     // GhostCore legacy classification removed in favor of consolidated IntelligentExtractor (P2.1)
-    
+
     // FIX: Pass raw htmlBody to extractAll so URLExtractor can find tags (a, href, etc.).
     // Internal sanitization for text-matching is handled inside the extractor.
     const intelligentResult = extractAll(subject, body, htmlBody, sender, expectedDomains);
@@ -148,9 +151,11 @@ class SmartDetectionService {
       type: 'none',
       confidence: 0,
       engine: 'intelligent',
-      provider: intelligentResult.debugInfo.provider || undefined,
       providerConfidence: intelligentResult.debugInfo.providerConfidence || 0,
     };
+    if (intelligentResult.debugInfo.provider) {
+      mergedResult.provider = intelligentResult.debugInfo.provider;
+    }
 
     if (intelligentResult.otp && intelligentResult.link) {
       mergedResult.type = 'both';
@@ -162,13 +167,17 @@ class SmartDetectionService {
 
     if (intelligentResult.otp) {
       mergedResult.code = intelligentResult.otp.code;
-      mergedResult.confidence = Math.max(mergedResult.confidence, intelligentResult.otp.confidence);
+      // intelligentResult.otp.confidence is 0-100 (percentage), normalize to 0-1
+      mergedResult.confidence = Math.max(
+        mergedResult.confidence,
+        intelligentResult.otp.confidence / 100
+      );
     }
     if (intelligentResult.link) {
       mergedResult.link = intelligentResult.link.url;
       mergedResult.confidence = Math.max(
         mergedResult.confidence,
-        intelligentResult.link.confidence
+        intelligentResult.link.confidence / 100
       );
     }
 
@@ -306,9 +315,7 @@ class SmartDetectionService {
     return result.link?.url || null;
   }
 
-  async analyzeForm(
-    simplifiedDOM: string
-  ): Promise<{
+  async analyzeForm(simplifiedDOM: string): Promise<{
     success: boolean;
     email?: string;
     password?: string;

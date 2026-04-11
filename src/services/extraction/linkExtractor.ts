@@ -141,7 +141,7 @@ export function getAnchorInfo(
   );
   if (strict) {
     return {
-      anchorText: stripHtml(strict[1]).trim(),
+      anchorText: stripHtml(strict[1] ?? '').trim(),
       anchorHtml: strict[0],
       isCTA: isCTAButton(strict[0]),
     };
@@ -151,9 +151,9 @@ export function getAnchorInfo(
   const loose = /<a([^>]*)>([\s\S]*?)<\/a>/gi;
   let m;
   while ((m = loose.exec(html)) !== null) {
-    if (m[0].includes(url) || m[1].includes(url)) {
+    if (m[0].includes(url) || (m[1] ?? '').includes(url)) {
       return {
-        anchorText: stripHtml(m[2]).trim(),
+        anchorText: stripHtml(m[2] ?? '').trim(),
         anchorHtml: m[0],
         isCTA: isCTAButton(m[0]),
       };
@@ -464,6 +464,7 @@ export function extractLink(
   });
 
   const best = candidates[0];
+  if (!best) {return null;}
 
   log.info(
     `Link: ${best.url.substring(0, 70)}... (${best.confidence.toFixed(0)}%) [${best.type}] CTA=${best.isCTA}`

@@ -32,7 +32,9 @@ class TempMailService {
     // Use iterative loop instead of recursion to prevent potential call stack overflow
     while (this.requestTimestamps.length >= RATE_LIMIT.MAX_REQUESTS_PER_MINUTE) {
       const now = Date.now();
-      this.requestTimestamps = this.requestTimestamps.filter((ts) => now - ts < RATE_LIMIT.WINDOW_MS);
+      this.requestTimestamps = this.requestTimestamps.filter(
+        (ts) => now - ts < RATE_LIMIT.WINDOW_MS
+      );
 
       if (this.requestTimestamps.length < RATE_LIMIT.MAX_REQUESTS_PER_MINUTE) {
         break;
@@ -72,8 +74,9 @@ class TempMailService {
         `${this.baseUrl}?action=${API.TEMP_MAIL.ENDPOINTS.GET_DOMAINS}`,
         {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/javascript, */*; q=0.01',
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            Accept: 'application/json, text/javascript, */*; q=0.01',
             'Accept-Language': 'en-US,en;q=0.9',
             'Sec-Ch-Ua': '"Google Chrome";v="123", "Not:A-Brand";v="8", "Chromium";v="123"',
             'Sec-Ch-Ua-Mobile': '?0',
@@ -82,7 +85,7 @@ class TempMailService {
             'Sec-Fetch-Mode': 'cors',
             'Sec-Fetch-Site': 'cross-site',
           },
-          signal,
+          ...(signal ? { signal } : {}),
         }
       );
 
@@ -104,12 +107,12 @@ class TempMailService {
     } catch (error) {
       // Capture error for logging
       apiError = error instanceof Error ? error.message : String(error);
+      // Only log once per unique error to reduce noise
       if (apiError !== this.lastDomainFetchError) {
-        log.warn('TempMail domain fetch failed, using fallback domains', { error: apiError });
+        log.debug('TempMail domain fetch failed, using fallback domains', { error: apiError });
         this.lastDomainFetchError = apiError;
-      } else {
-        log.debug('TempMail domain fetch still failing; reusing fallback domains', { error: apiError });
       }
+      // Silent fallback - don't spam console
     }
 
     // Notify user when using fallback (best effort - don't block on this)
@@ -157,7 +160,11 @@ class TempMailService {
   /**
    * Generate a random email address
    */
-  async generateEmail(prefix?: string, domain?: string, signal?: AbortSignal): Promise<EmailAccount> {
+  async generateEmail(
+    prefix?: string,
+    domain?: string,
+    signal?: AbortSignal
+  ): Promise<EmailAccount> {
     await this.checkRateLimit();
     this.recordRequest();
 
@@ -174,13 +181,14 @@ class TempMailService {
           `${this.baseUrl}?action=${API.TEMP_MAIL.ENDPOINTS.GEN_RANDOM}&count=1`,
           {
             headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-              'Accept': 'application/json',
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+              Accept: 'application/json',
               'Sec-Ch-Ua': '"Google Chrome";v="123", "Not:A-Brand";v="8", "Chromium";v="123"',
               'Sec-Ch-Ua-Mobile': '?0',
               'Sec-Ch-Ua-Platform': '"Windows"',
             },
-            signal,
+            ...(signal ? { signal } : {}),
           }
         );
 
@@ -194,8 +202,8 @@ class TempMailService {
         }
         const [generatedEmail] = emails;
         const parts = generatedEmail.split('@');
-        login = parts[0];
-        emailDomain = parts[1];
+        login = parts[0] ?? '';
+        emailDomain = parts[1] ?? '';
       }
 
       // Use provided domain or get from generated email or default
@@ -203,13 +211,14 @@ class TempMailService {
         emailDomain = domain;
       } else if (!emailDomain) {
         const domains = await this.getDomains(signal);
-        emailDomain = domains[Math.floor(Math.random() * domains.length)];
+        emailDomain = domains[Math.floor(Math.random() * domains.length)] ?? '';
       }
 
       const fullEmail = `${login}@${emailDomain}`;
       const now = Date.now();
 
       const account: EmailAccount = {
+        id: `tempmail_${now}_${login}_${emailDomain}`, // Required for EmailAccount interface
         login,
         domain: emailDomain,
         fullEmail,
@@ -238,9 +247,10 @@ class TempMailService {
         `${this.baseUrl}?action=${API.TEMP_MAIL.ENDPOINTS.GET_MESSAGES}&login=${login}&domain=${domain}`,
         {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
           },
-          signal
+          ...(signal ? { signal } : {}),
         }
       );
 
@@ -284,9 +294,10 @@ class TempMailService {
         `${this.baseUrl}?action=${API.TEMP_MAIL.ENDPOINTS.READ_MESSAGE}&login=${login}&domain=${domain}&id=${id}`,
         {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
           },
-          signal
+          ...(signal ? { signal } : {}),
         }
       );
 

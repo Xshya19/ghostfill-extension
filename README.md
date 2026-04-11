@@ -5,7 +5,7 @@
 # 👻 GhostFill
 
 **The ultimate invisible privacy layer for your digital identity.** <br>
-*Generate disposable emails · Secure passwords · Automatic OTP fill · Local AI Inference · 100% Free*
+_Generate disposable emails · Secure passwords · Automatic OTP fill · Local AI Inference · 100% Free_
 
 [![Version](https://img.shields.io/badge/version-1.1.0-blueviolet?style=for-the-badge&logo=semver)](https://github.com/Xshya19/ghostfill-extension/releases)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-orange?style=for-the-badge&logo=googlechrome)](https://developer.chrome.com/docs/extensions/develop/migrate/what-is-mv3)
@@ -43,12 +43,13 @@
 GhostFill is a **Next-Gen Chrome Extension** that acts as your invisible privacy shield. Are you tired of giving away your personal email and switching tabs back and forth just to hunt for an OTP code?
 
 GhostFill handles the entire sign-up lifecycle seamlessly:
+
 1. **Generates** a disposable email on the fly.
 2. **Creates** a cryptographically secure password.
 3. **Automatically detects** OTP codes and activation links in incoming emails.
 4. **Fills** them right into your browser without you breaking a sweat!
 
-> 🛡️ **Zero Tracking. Zero Servers. Total Privacy.** Everything GhostFill does, it does purely locally on your device.
+> 🛡️ **Zero Tracking. No Telemetry. Open Source.** GhostFill processes everything locally in your browser — it connects only to the email provider APIs you choose.
 
 ---
 
@@ -61,28 +62,35 @@ GhostFill isn't just a basic email generator. It's an intelligent AI-backed loca
 <td width="50%">
 
 ### 📬 Resilient Email Engine
+
 Powered by 7 independent, highly-vetted providers running in parallel. GhostFill features **intelligent health scoring**, automatic fallback mechanisms with exponential backoff, and AES-encrypted session-aware cache resets. Never lose an inbox.
 
 ### 🔐 Unhackable Passwords
+
 Generate cryptographically impregnable passwords tailored to standard requirements. One-click copy, history logs, and instant auto-injection into detected application password fields.
 
 ### 🔗 Silent Activation Service
+
 Say goodbye to "Click here to verify". Detected link activations are dynamically opened in a **silent background tab**—meaning you stay right exactly where you are. It ships with a powerful URL gatekeeper that blocks suspicious TLDs and bad schemes.
 
 </td>
 <td width="50%">
 
 ### 👻 The Floating Ghost
+
 Your ever-present companion. Sits safely isolated within a **Shadow DOM** on every webpage. Watches for OTP requirements using aggressive multi-strategy heuristics and a Proactive Shadow Scanner custom-built for modern SPAs.
 
 ### 💎 Premium Fluid UI
+
 The entire frontend is powered by a custom **mass-spring-damper physics engine (Framer Motion)**. Enjoy liquid-smooth spatial routing, hardware-accelerated glassmorphism, and satisfying micro-interactions that feel natively integrated into your OS.
 
 ### 📋 Smart Form Autofill
+
 A framework-aware form scanner designed to handle React, Vue, Angular, and Vanilla JS forms cleanly. Automatically injects standard fields, usernames, and dynamic OTP boxes.
 
 ### 🔔 Lightning Fast Polling
-No delayed emails. GhostFill rapidly polls your active inboxes (~1–2s cycle time), alerting you with non-intrusive toasts, and executing OTP injection the microsecond the email hits your inbox!
+
+No delayed emails. GhostFill rapidly polls your active inboxes (~5–10s cycle time), alerting you with non-intrusive toasts, and executing OTP injection quickly after the email hits your inbox!
 
 </td>
 </tr>
@@ -94,15 +102,15 @@ No delayed emails. GhostFill rapidly polls your active inboxes (~1–2s cycle ti
 
 GhostFill's Crown Jewel is its deeply sophisticated intelligence engine. Every single email is processed through **Five Stages of Deep Analysis**:
 
-| Stage | Name | Operations Performed |
-|:---:|---|---|
-| 🔍 **1** | **Provider Detection** | Determines contextual brand sender (e.g. Google, GitHub, Amazon). |
-| 🧩 **2** | **OTP Extraction** | Deploys multi-strategy regex, adjacent-label parsing, & ML position heuristics. |
-| 🔗 **3** | **Link Extraction** | Scrapes for activation/verification URLs with call-to-action (CTA) confidence scoring. |
-| ⚖️ **4** | **Cross-Validation** | Intelligently negates standard OTPs if embedded directly inside a verification link. |
+|  Stage   | Name                      | Operations Performed                                                                          |
+| :------: | ------------------------- | --------------------------------------------------------------------------------------------- |
+| 🔍 **1** | **Provider Detection**    | Determines contextual brand sender (e.g. Google, GitHub, Amazon).                             |
+| 🧩 **2** | **OTP Extraction**        | Deploys multi-strategy regex, adjacent-label parsing, & ML position heuristics.               |
+| 🔗 **3** | **Link Extraction**       | Scrapes for activation/verification URLs with call-to-action (CTA) confidence scoring.        |
+| ⚖️ **4** | **Cross-Validation**      | Intelligently negates standard OTPs if embedded directly inside a verification link.          |
 | 🎯 **5** | **Intent Classification** | Emits a final normalized verdict (`otp` / `link` / `both` / `none`) with accuracy confidence. |
 
-*Results are instantly cached directly into `chrome.storage.session` and hardware-encrypted using **AES-256-GCM** to ensure zero performance lag during repeat checks.*
+_Results are instantly cached directly into `chrome.storage.session` and hardware-encrypted using **AES-256-GCM** to ensure zero performance lag during repeat checks._
 
 ---
 
@@ -152,20 +160,21 @@ GhostFill’s complex workflow is highly modular, split between background servi
 │  └──────────────┘                                                    │
 └──────────────────────────────────────────────────────────────────────┘
 ```
+
 </details>
 
 <details>
 <summary><b>Key Source Files</b></summary>
 <br>
 
-| Path Focus | Primary Responsibility |
-|---|---|
-| `src/background/pollingManager.ts` | Handles multi-speed polling modes, smart dedup caching, and alarm scheduling. |
-| `src/services/smartDetectionService.ts` | The brains of the 5-layer pipeline; utilizes AES-encrypted local cache logic. |
-| `src/services/linkService.ts` | Securely manages hidden background tabs for silent, seamless email activation. |
-| `src/services/emailServices/index.ts` | Aggregates and maintains our heavy 7-provider email strategy. |
-| `src/content/otpPageDetector.ts` | Listens for inputs needing OTP codes. |
-| `src/offscreen/inferenceEngine.ts` | Local execution environment for ONNX AI models to find forms & OTP intents! |
+| Path Focus                              | Primary Responsibility                                                         |
+| --------------------------------------- | ------------------------------------------------------------------------------ |
+| `src/background/pollingManager.ts`      | Handles multi-speed polling modes, smart dedup caching, and alarm scheduling.  |
+| `src/services/smartDetectionService.ts` | The brains of the 5-layer pipeline; utilizes AES-encrypted local cache logic.  |
+| `src/services/linkService.ts`           | Securely manages hidden background tabs for silent, seamless email activation. |
+| `src/services/emailServices/index.ts`   | Aggregates and maintains our heavy 7-provider email strategy.                  |
+| `src/content/otpPageDetector.ts`        | Listens for inputs needing OTP codes.                                          |
+| `src/offscreen/inferenceEngine.ts`      | Local execution environment for ONNX AI models to find forms & OTP intents!    |
 
 </details>
 
@@ -180,7 +189,7 @@ We care about your data so much that **we don't want it.** GhostFill handles sec
 ✅ **Rotating Session Keys**: Fresh cryptographic keys are spun up each time your browser restarts. Your master key sits fully encrypted at rest. <br>
 ✅ **Hardened Execution**: DOMPurify vigorously scrubs all email HTML bodies against XSS attacks before reading them. <br>
 ✅ **Safeguarded Zones**: Over 30 major financial domain platforms are heavily walled-off (`exclude_matches`) out-of-the-box. <br>
-✅ **The URL Gatekeeper**: Refuses to launch links involving raw IP addresses, localhost injections, or spam domains (`.xyz`, `.top`, `.buzz`). 
+✅ **The URL Gatekeeper**: Refuses to launch links involving raw IP addresses, localhost injections, or spam domains (`.xyz`, `.top`, `.buzz`).
 
 ---
 
@@ -209,9 +218,10 @@ Ever wondered what happens under the hood when you hit "Send OTP"?
 
 ---
 
-## 🚀 Getting Started 
+## 🚀 Getting Started
 
 ### Prerequisites
+
 - **Node.js**: v18 or higher
 - **Browser**: Chrome v109+ (or any Chromium browser supporting Manifest V3)
 
@@ -222,22 +232,26 @@ Ever wondered what happens under the hood when you hit "Send OTP"?
 <br>
 
 1. **Clone the Source Code**
+
    ```bash
    git clone https://github.com/Xshya19/ghostfill-extension.git
    cd ghostfill-extension
    ```
 
 2. **Install all necessary Node modules**
+
    ```bash
    npm install
    ```
 
 3. **Spin up Development Watch Mode (Hot Reloading)**
+
    ```bash
    npm run dev
    ```
 
 4. **Build it for Production!**
+
    ```bash
    npm run build
    ```
@@ -263,11 +277,11 @@ Ever wondered what happens under the hood when you hit "Send OTP"?
 
 Speed up your workflow and never let your hands leave the keyboard!
 
-| Action | Windows / Linux | macOS |
-|---|---|---|
+| Action               | Windows / Linux                                   | macOS                                            |
+| -------------------- | ------------------------------------------------- | ------------------------------------------------ |
 | Open GhostFill Panel | <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd> | <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd> |
-| Blast a New Email | <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd> | <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd> |
-| Autofill Field! | <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd> | <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd> |
+| Blast a New Email    | <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd> | <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd> |
+| Autofill Field!      | <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd> | <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd> |
 
 ---
 

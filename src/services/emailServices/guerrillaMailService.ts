@@ -34,6 +34,7 @@ class GuerrillaMailService {
   private cooldownUntil = 0; // Timestamp until which no requests are allowed
   private backoffMs = 2000; // Start with 2s backoff
   private maxBackoffMs = 30000; // Max 30s backoff
+  private maxCooldownMs = 5 * 60 * 1000; // Max 5 minutes cooldown
   private consecutiveFailures = 0;
 
   // Request queue to serialize calls
@@ -51,27 +52,45 @@ class GuerrillaMailService {
   /**
    * Execute Guerrilla Mail API request with robust rate limiting
    */
-  private async executeRequest<T>(params: Record<string, string>, signal?: AbortSignal): Promise<T> {
+  private async executeRequest<T>(
+    params: Record<string, string>,
+    signal?: AbortSignal
+  ): Promise<T> {
     // Queue the request to prevent concurrent API calls
-    return new Promise((resolve, reject) => {
-      this.requestQueue = this.requestQueue.then(async () => {
-        try {
-          const result = await this.doRequest<T>(params, signal);
-          resolve(result);
-        } catch (error) {
-          reject(error);
-        }
-      });
+    const previous = this.requestQueue;
+    let capturedError: unknown;
+    let capturedResult: T;
+
+    this.requestQueue = previous.then(async () => {
+      try {
+        capturedResult = await this.doRequest<T>(params, signal);
+      } catch (error) {
+        capturedError = error;
+      }
     });
+
+    await this.requestQueue;
+
+    if (capturedError) {
+      throw capturedError;
+    }
+    return capturedResult!;
   }
 
   private async doRequest<T>(params: Record<string, string>, signal?: AbortSignal): Promise<T> {
-    // Check if we're in cooldown
     const now = Date.now();
     if (now < this.cooldownUntil) {
-      const waitTime = this.cooldownUntil - now;
-      log.debug(`Rate limited. Waiting ${Math.round(waitTime / 1000)}s before retry...`);
-      await this.delay(waitTime);
+      const remainingTime = this.cooldownUntil - now;
+      const waitTime = Math.min(remainingTime, this.maxCooldownMs);
+      if (waitTime > 0) {
+        log.debug(`Rate limited. Waiting ${Math.round(waitTime / 1000)}s before retry...`);
+        await this.delay(waitTime);
+      }
+      // Always reset cooldown after waiting the max allowed time
+      if (remainingTime >= this.maxCooldownMs || Date.now() >= this.cooldownUntil) {
+        this.cooldownUntil = 0;
+        this.backoffMs = 2000;
+      }
     }
 
     // Enforce minimum interval between requests
@@ -88,7 +107,11 @@ class GuerrillaMailService {
         url.searchParams.append(key, value);
       });
 
-      const response = await fetch(url.toString(), { signal });
+      const fetchInit: RequestInit = {};
+      if (signal) {
+        fetchInit.signal = signal;
+      }
+      const response = await fetch(url.toString(), fetchInit);
 
       if (response.status === 429) {
         // Exponential backoff
@@ -136,18 +159,22 @@ class GuerrillaMailService {
       this.sessionId = data.sid_token;
       this.emailAddress = data.email_addr;
 
-      const [login, domain] = data.email_addr.split('@');
+      const parts = data.email_addr.split('@');
+      const login = parts[0]!;
+      const domain = parts[1]!;
       const now = Date.now();
 
-      return {
+      const account: EmailAccount = {
+        id: `guerrilla_${now}_${login}`, // Required for EmailAccount interface
         login,
         domain,
         fullEmail: data.email_addr,
         createdAt: now,
-        expiresAt: now + 60 * 60 * 1000, // 1 hour session
+        expiresAt: now + 60 * 60 * 1000,
         service: 'guerrilla',
         token: data.sid_token,
       };
+      return account;
     } catch (error) {
       log.error('Failed to create Guerrilla Mail account', error);
       throw error;
@@ -242,18 +269,25 @@ class GuerrillaMailService {
    * Convert Guerrilla Mail message to our Email type
    */
   private convertMessage(msg: GuerrillaEmail, includeBody: boolean = false): Email {
-    return {
+    const email: Email = {
       id: msg.mail_id,
       from: msg.mail_from,
-      to: this.emailAddress || undefined,
       subject: msg.mail_subject,
-      date: parseInt(msg.mail_timestamp, 10) * 1000, // Convert to milliseconds
+      date: parseInt(msg.mail_timestamp, 10) * 1000,
       body: includeBody ? msg.mail_body || msg.mail_excerpt : msg.mail_excerpt,
-      htmlBody: includeBody ? msg.mail_body : undefined,
-      textBody: msg.mail_body,
       attachments: [],
       read: msg.mail_read === 1,
     };
+    if (this.emailAddress) {
+      email.to = this.emailAddress;
+    }
+    if (includeBody && msg.mail_body) {
+      email.htmlBody = msg.mail_body;
+    }
+    if (msg.mail_body) {
+      email.textBody = msg.mail_body;
+    }
+    return email;
   }
 }
 

@@ -17,11 +17,7 @@ import type {
   ExtractedOTP,
   IntentResult,
 } from '../types/extraction.types';
-import {
-  decodeHtmlEntities,
-  getZoneForPosition,
-  getContextAround,
-} from './zoneAnalyzer';
+import { decodeHtmlEntities, getZoneForPosition, getContextAround } from './zoneAnalyzer';
 
 const log = createLogger('OTPExtractor');
 
@@ -101,6 +97,7 @@ const EXTENDED_ANTI_PATTERNS: Array<{
   name: string;
   test: (v: string, ctx: string) => boolean;
   severity: 'critical' | 'high' | 'medium' | 'low' | 'none';
+  reject?: boolean;
 }> = [
   {
     name: 'ip-address',
@@ -165,7 +162,7 @@ const EXTENDED_ANTI_PATTERNS: Array<{
       /(?:order|transaction|payment)\s*(?:#|number|no|id)/i.test(getContextAround(ctx, v, 50)),
     severity: 'high',
   },
-  { name: 'repeated', test: (v) => /^(\d)\1{3,}$/.test(v), severity: 'medium' },
+  { name: 'repeated', test: (v) => /^(\d)\1{3,}$/.test(v), severity: 'critical', reject: true },
   {
     name: 'sequential',
     test: (v) => {
@@ -176,18 +173,19 @@ const EXTENDED_ANTI_PATTERNS: Array<{
       let asc = true;
       let desc = true;
       for (let i = 1; i < d.length; i++) {
-        if (parseInt(d[i], 10) !== (parseInt(d[i - 1], 10) + 1) % 10) {
+        if (parseInt(d[i]!, 10) !== (parseInt(d[i - 1]!, 10) + 1) % 10) {
           asc = false;
         }
-        if (parseInt(d[i], 10) !== (parseInt(d[i - 1], 10) - 1 + 10) % 10) {
+        if (parseInt(d[i]!, 10) !== (parseInt(d[i - 1]!, 10) - 1 + 10) % 10) {
           desc = false;
         }
       }
       return asc || desc;
     },
-    severity: 'medium',
+    severity: 'critical',
+    reject: true,
   },
-  { name: 'all-zeros', test: (v) => /^0+$/.test(v), severity: 'medium' },
+  { name: 'all-zeros', test: (v) => /^0+$/.test(v), severity: 'critical', reject: true },
   {
     name: 'account',
     test: (v, ctx) => /(?:account|acct|a\/c)\s*(?:#|number|no)/i.test(getContextAround(ctx, v, 50)),
@@ -241,9 +239,9 @@ export function checkAntiPatterns(value: string, fullText: string): AntiPatternR
   // Check extended patterns
   for (const anti of EXTENDED_ANTI_PATTERNS) {
     if (anti.test(value, fullText)) {
-      const reject = anti.severity === 'critical' || anti.severity === 'high';
+      const shouldReject = anti.reject === true || anti.severity === 'critical';
       return {
-        isRejected: reject,
+        isRejected: shouldReject,
         reason: anti.name,
         severity: anti.severity,
         pattern: anti.name,
@@ -287,7 +285,7 @@ export function validateContext(
       ? KnowledgeBase.contextKeywords.otp
       : KnowledgeBase.contextKeywords.activation;
 
-  for (const { keyword, weight, strength } of keywords) {
+  for (const { keyword, weight, strength } of keywords ?? []) {
     if (nearCtx.includes(keyword)) {
       score += weight;
       matched.push({ keyword, weight, strength });
@@ -439,8 +437,8 @@ export function calculateIsolationScore(
   }
 
   // Whitespace isolation
-  const before = pos > 0 ? text[pos - 1] : ' ';
-  const after = pos + code.length < text.length ? text[pos + code.length] : ' ';
+  const before = pos > 0 ? (text[pos - 1] ?? ' ') : ' ';
+  const after = pos + code.length < text.length ? (text[pos + code.length] ?? ' ') : ' ';
   if (/\s/.test(before) && /\s/.test(after)) {
     score += 15;
   }
@@ -574,11 +572,11 @@ export function extractOTP(
       rx.lastIndex = 0;
       let m;
       while ((m = rx.exec(decoded)) !== null) {
-        const code = m[1].replace(/[\s-]/g, '').trim();
+        const code = m[1]!.replace(/[\s-]/g, '').trim();
         if (!/\d/.test(code)) {
           continue;
         }
-        addCandidate(code, m[1].trim(), 'styled-code', 68, m.index);
+        addCandidate(code, m[1]!.trim(), 'styled-code', 68, m.index);
       }
     }
   }
@@ -599,7 +597,7 @@ export function extractOTP(
     rx.lastIndex = 0;
     let m;
     while ((m = rx.exec(fullText)) !== null) {
-      addCandidate(m[1].trim(), m[0], 'label-adjacent', 72, m.index);
+      addCandidate(m[1]?.trim() ?? '', m[0], 'label-adjacent', 72, m.index);
     }
   }
 
@@ -625,10 +623,10 @@ export function extractOTP(
     let m;
     tokenRegex.lastIndex = 0;
     while ((m = tokenRegex.exec(fullText)) !== null) {
-      const text = m[1].toLowerCase();
+      const text = m[1]?.toLowerCase() ?? '';
       tokens.push({
-        text: m[1],
-        isNumeric: /^\d{4,10}$/.test(text) || /^[A-Z0-9]{5,8}$/.test(m[1]), // Allow alphanumeric like Epic Games
+        text: m[1] ?? '',
+        isNumeric: /^\d{4,10}$/.test(text) || /^[A-Z0-9]{5,8}$/.test(m[1] ?? ''), // Allow alphanumeric like Epic Games
         isAnchor: intentAnchors.has(text),
         pos: m.index,
       });
@@ -637,7 +635,7 @@ export function extractOTP(
     // Score numeric tokens by semantic proximity
     for (let i = 0; i < tokens.length; i++) {
       const tok = tokens[i];
-      if (!tok.isNumeric) {
+      if (!tok?.isNumeric) {
         continue;
       }
 
@@ -652,7 +650,7 @@ export function extractOTP(
           continue;
         }
         const neighbor = tokens[j];
-        if (neighbor.isAnchor) {
+        if (neighbor?.isAnchor) {
           // Inverse distance algorithm (closer = exponentially higher gravity)
           const distance = Math.abs(i - j);
           const gravity = 100 / (distance * 1.5);
@@ -664,7 +662,7 @@ export function extractOTP(
       if (highestGravity > 30) {
         // Determine confidence dynamically based on gravity density
         const semanticConfidence = Math.min(65 + highestGravity, 95);
-        addCandidate(tok.text, tok.text, 'semantic-proximity', semanticConfidence, tok.pos);
+        addCandidate(tok.text, tok.text, 'semantic-proximity', semanticConfidence, tok.pos ?? 0);
       }
     }
   }
@@ -731,6 +729,9 @@ export function extractOTP(
 
   candidates.sort((a, b) => b.confidence - a.confidence);
   const best = candidates[0];
+  if (!best) {
+    return null;
+  }
 
   log.info(
     `OTP: ${best.code} (${best.confidence.toFixed(0)}%) via ${best.patternName} in ${best.zone}`

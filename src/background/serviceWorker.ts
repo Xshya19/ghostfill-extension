@@ -18,9 +18,9 @@ import { setupPollingManager as pollingManagerSetup } from '../background/pollin
 import { emailService } from '../services/emailServices/index';
 import { otpService } from '../services/otpService';
 import { storageService } from '../services/storageService';
-import { sleep } from '../utils/helpers';
 import { createLogger } from '../utils/logger';
 import { setupMessageHandler } from './messageHandler';
+import { sleep } from '../utils/helpers';
 import { registerMLMessageHandler } from './mlMessageHandler';
 
 const log = createLogger('ServiceWorker');
@@ -93,9 +93,10 @@ const CONFIG = {
   TASK_TIMEOUT_MS: 10_000, // per-task hard timeout
   BOOT_TIMEOUT_MS: 30_000, // entire boot hard timeout
 
-  // Keep-alive
+  // Keep-alive — increased from 1min to reduce power consumption while
+  // still keeping the service worker alive during active use
   KEEPALIVE_ALARM_NAME: 'ghostfill-keepalive',
-  KEEPALIVE_INTERVAL_MIN: 1, // 1 minute (MV3 minimum for alarms)
+  KEEPALIVE_INTERVAL_MIN: 5, // 5 minutes (reduces power drain)
 
   // Deferred warm-up
   IDLE_DELAY_MS: 2_000, // wait before deferred phase
@@ -116,8 +117,6 @@ let bootState: BootState = 'cold';
 let bootPromise: Promise<void> | null = null;
 let lastInitTime = 0;
 let reinitAttemptCount = 0; // Track re-init attempts for exponential backoff
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-let keepAliveListenerInstalled = false;
 
 const serviceRegistry = new Map<string, ServiceRecord>();
 const MAX_BOOT_ERRORS = 50;
@@ -358,8 +357,8 @@ async function initContextMenu(): Promise<void> {
 async function initMessageRouter(): Promise<void> {
   try {
     log.debug('📡 Initializing message router...');
-    // Register the message handlers (idempotent calls)
-    setupMessageHandler();
+    // setupMessageHandler() is already called synchronously at module load in index.ts.
+    // Only register the ML handler here to avoid double-registration.
     registerMLMessageHandler();
     log.info('✅ Message router ready - extension can now receive messages');
   } catch (error) {
@@ -387,16 +386,15 @@ async function installKeepAlive(): Promise<void> {
   }
 
   // Clear any stale alarm
-  await chrome.alarms.clear(CONFIG.KEEPALIVE_ALARM_NAME).catch((e) => log.debug('Keepalive alarm clear failed', e));
+  await chrome.alarms
+    .clear(CONFIG.KEEPALIVE_ALARM_NAME)
+    .catch((e) => log.debug('Keepalive alarm clear failed', e));
 
   // Create periodic alarm
   await chrome.alarms.create(CONFIG.KEEPALIVE_ALARM_NAME, {
     delayInMinutes: CONFIG.KEEPALIVE_INTERVAL_MIN,
     periodInMinutes: CONFIG.KEEPALIVE_INTERVAL_MIN,
   });
-
-  // Mark as installed for idempotency guard
-  keepAliveListenerInstalled = true;
 
   log.debug('✅ Keep-alive alarm registered', {
     intervalMin: CONFIG.KEEPALIVE_INTERVAL_MIN,
@@ -643,13 +641,12 @@ async function executeBootSequence(): Promise<void> {
           `[${i + 1}] ${e.service} (phase ${e.phase}): ${e.error}${e.fatal ? ' [FATAL]' : ''}`
       )
       .join('\n');
-    console.error('[ServiceWorker] Boot Error Summary:\n' + errorSummary);
+    log.error('Boot Error Summary', { errors: errorSummary });
   }
 
   // Final status report
   if (bootState === 'failed') {
-    console.error('[ServiceWorker] ⚠️ CRITICAL: Service worker failed to initialize!');
-    console.error('[ServiceWorker] Check Chrome console for detailed error logs.');
+    log.error('⚠️ CRITICAL: Service worker failed to initialize!');
   }
 }
 
@@ -667,10 +664,10 @@ async function executePhase(phase: PhaseDefinition): Promise<void> {
   const ms = Math.round(performance.now() - t0);
   metrics.phaseDurations[phase.name] = ms;
 
-  // Check if all critical tasks in this phase failed
+  // Check if ANY critical task in this phase failed
   const criticalFailed = phase.tasks
     .filter((t) => t.critical)
-    .every((t) => {
+    .some((t) => {
       const record = serviceRegistry.get(t.name);
       return record?.health === 'down';
     });
@@ -707,10 +704,7 @@ async function executeTask(task: TaskDefinition, phase: number): Promise<void> {
         CONFIG.TASK_TIMEOUT_MS,
         `Task "${task.name}" timed out after ${CONFIG.TASK_TIMEOUT_MS}ms`
       );
-      await Promise.race([
-        task.fn(),
-        timeout.promise,
-      ]);
+      await Promise.race([task.fn(), timeout.promise]);
       timeout.cancel();
 
       record.health = 'up';
@@ -773,7 +767,8 @@ function scheduleDeferredPhase(phase: PhaseDefinition): void {
 
   // Cancel existing timer if re-scheduled
   if (deferredPhaseTimers.has(phase.name)) {
-    clearTimeout(deferredPhaseTimers.get(phase.name));
+    clearTimeout(deferredPhaseTimers.get(phase.name)!);
+    deferredPhaseTimers.delete(phase.name);
   }
 
   // Schedule after a brief delay to let the critical path finish
@@ -783,8 +778,19 @@ function scheduleDeferredPhase(phase: PhaseDefinition): void {
       log.warn(`Deferred phase "${phase.name}" error`, serializeError(e))
     );
   }, CONFIG.IDLE_DELAY_MS);
-  
+
   deferredPhaseTimers.set(phase.name, timerId);
+}
+
+/**
+ * Clear all deferred phase timers (called on SW suspend to prevent stale state)
+ */
+export function clearDeferredTimers(): void {
+  for (const [name, timerId] of deferredPhaseTimers) {
+    clearTimeout(timerId);
+    log.debug(`Cleared deferred timer for phase: ${name}`);
+  }
+  deferredPhaseTimers.clear();
 }
 
 async function executeDeferredPhase(phase: PhaseDefinition): Promise<void> {
@@ -1023,8 +1029,6 @@ self.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
 //  UTILITIES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// function sleep removed in favor of import
-
 function rejectAfter(ms: number, message: string): { promise: Promise<never>; cancel: () => void } {
   let timer: ReturnType<typeof setTimeout>;
   const promise = new Promise<never>((_, reject) => {
@@ -1055,7 +1059,9 @@ function generateBootId(): string {
   const ts = Date.now().toString(36);
   const bytes = new Uint8Array(4);
   crypto.getRandomValues(bytes);
-  const rnd = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+  const rnd = Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
   return `${ts}-${rnd}`;
 }
 

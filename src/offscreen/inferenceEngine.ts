@@ -8,7 +8,10 @@ import {
 import { PageContext } from '../types/form.types';
 
 // eslint-disable-next-line no-console
-const mlLog = { info: (...a: unknown[]) => console.info('[GhostFill ML]', ...a), error: (...a: unknown[]) => console.error('[GhostFill ML]', ...a) };
+const mlLog = {
+  info: (...a: unknown[]) => console.info('[GhostFill ML]', ...a),
+  error: (...a: unknown[]) => console.error('[GhostFill ML]', ...a),
+};
 
 // Tell ONNX where to find the WebAssembly binaries.
 // In the offscreen document, these are served relative to the root of the extension.
@@ -28,23 +31,26 @@ export interface MLPrediction {
   probabilities: Record<string, number>;
 }
 
-// Suppress ONNX Runtime internal errors about image inputs
+// Suppress ONNX Runtime internal errors about image inputs — scoped to init only
 const originalConsoleError = console.error;
-console.error = function (...args: unknown[]) {
+let suppressingErrors = false;
+
+function scopedConsoleError(...args: unknown[]) {
   const msg = args.map((a) => String(a)).join(' ');
-  // Suppress ONNX internal image input errors - these are expected for non-image models
-  if (msg.includes('image.png') && msg.includes('does not support image input')) {
+  if (suppressingErrors && msg.includes('image.png') && msg.includes('does not support image input')) {
     console.warn('[GhostFill ML] ONNX model type check (expected for non-image models):', msg);
     return;
   }
   originalConsoleError.apply(console, args);
-};
+}
 
 export async function initInferenceEngine(): Promise<void> {
   if (session || initializing) {
     return;
   }
   initializing = true;
+  suppressingErrors = true;
+  console.error = scopedConsoleError;
   try {
     const modelUrl = chrome.runtime.getURL('models/sentinel_brain_v2.onnx');
     const dataUrl = chrome.runtime.getURL('models/sentinel_brain_v2.onnx.data');
@@ -53,21 +59,26 @@ export async function initInferenceEngine(): Promise<void> {
     mlLog.info('Model URL:', modelUrl);
 
     // Fetch model and external data in parallel to ensure complete initialization
-    const [modelResp, dataResp] = await Promise.all([
-      fetch(modelUrl),
-      fetch(dataUrl)
-    ]);
+    const [modelResp, dataResp] = await Promise.all([fetch(modelUrl), fetch(dataUrl)]);
 
     if (!modelResp.ok || !dataResp.ok) {
-      throw new Error(`Failed to fetch model files: Model=${modelResp.status}, Data=${dataResp.status}`);
+      throw new Error(
+        `Failed to fetch model files: Model=${modelResp.status}, Data=${dataResp.status}`
+      );
     }
 
     const [modelBuffer, dataBuffer] = await Promise.all([
       modelResp.arrayBuffer(),
-      dataResp.arrayBuffer()
+      dataResp.arrayBuffer(),
     ]);
 
-    mlLog.info('Model files fetched. Model:', modelBuffer.byteLength, 'bytes, Data:', dataBuffer.byteLength, 'bytes');
+    mlLog.info(
+      'Model files fetched. Model:',
+      modelBuffer.byteLength,
+      'bytes, Data:',
+      dataBuffer.byteLength,
+      'bytes'
+    );
 
     // Create session while explicitly providing the external data weights
     session = await ort.InferenceSession.create(modelBuffer, {
@@ -77,9 +88,9 @@ export async function initInferenceEngine(): Promise<void> {
       externalData: [
         {
           path: 'sentinel_brain_v2.onnx.data',
-          data: new Uint8Array(dataBuffer)
-        }
-      ]
+          data: new Uint8Array(dataBuffer),
+        },
+      ],
     });
 
     mlLog.info('Engine initialized successfully.');
@@ -91,6 +102,8 @@ export async function initInferenceEngine(): Promise<void> {
     }
     session = null;
   } finally {
+    suppressingErrors = false;
+    console.error = originalConsoleError;
     initializing = false;
   }
 }
@@ -130,15 +143,7 @@ export async function classifyField(
   try {
     // 1. Prepare Text Channels Tensor — shape [1, 8, 80]
     // The ONNX model expects int64 (BigInt64Array) for token IDs.
-    new BigInt64Array(NUM_TEXT_CHANNELS * MAX_TEXT_LEN); // shape placeholder, unused by model
     // This model does not use text channels, but the features object still contains them.
-    // const flatText = new BigInt64Array(NUM_TEXT_CHANNELS * MAX_TEXT_LEN);
-    // for (let i = 0; i < NUM_TEXT_CHANNELS; i++) {
-    //   const channel = features.textChannels[i];
-    //   for (let j = 0; j < MAX_TEXT_LEN; j++) {
-    //     flatText[i * MAX_TEXT_LEN + j] = BigInt(channel[j] ?? 0);
-    //   }
-    // }
     // const textTensor = new ort.Tensor('int64', flatText, [1, NUM_TEXT_CHANNELS, MAX_TEXT_LEN]);
 
     // 2. Prepare Structural Features Tensor — shape [1, 128]
@@ -163,16 +168,16 @@ export async function classifyField(
     // 4. Softmax
     let maxLogit = -Infinity;
     for (let i = 0; i < logits.length; i++) {
-      if (logits[i] > maxLogit) {
-        maxLogit = logits[i];
+      if (logits[i]! > maxLogit) {
+        maxLogit = logits[i]!;
       }
     }
 
     let sumExp = 0;
     const expScores = new Float32Array(logits.length);
     for (let i = 0; i < logits.length; i++) {
-      expScores[i] = Math.exp(logits[i] - maxLogit);
-      sumExp += expScores[i];
+      expScores[i] = Math.exp(logits[i]! - maxLogit);
+      sumExp += expScores[i]!;
     }
 
     const probabilities: Record<string, number> = {};
@@ -180,8 +185,8 @@ export async function classifyField(
     let bestConf = 0;
 
     for (let i = 0; i < FIELD_CLASSES.length; i++) {
-      const prob = expScores[i] / sumExp;
-      probabilities[FIELD_CLASSES[i]] = prob;
+      const prob = expScores[i]! / sumExp;
+      probabilities[FIELD_CLASSES[i]!] = prob;
       if (prob > bestConf) {
         bestConf = prob;
         bestIdx = i;
@@ -190,7 +195,7 @@ export async function classifyField(
 
     // Cleanup input tensors to prevent memory leaks in offscreen document
     structuralTensor.dispose();
-    // note: 'results' own data will be cleaned up by JS GC, 
+    // note: 'results' own data will be cleaned up by JS GC,
     // but the underlying ONNX buffers are best managed via dispose if the API supports it.
     // In current onnxruntime-web, input disposal is most critical.
 
@@ -200,7 +205,7 @@ export async function classifyField(
       if (context.isVerificationPage || context.is2FAPage) {
         threshold = 0.35; // Lower bar for high-confidence pages
       } else if (!context.isLoginPage && !context.isSignupPage) {
-        threshold = 0.50; // More conservative on random pages
+        threshold = 0.5; // More conservative on random pages
       }
     }
 
@@ -209,7 +214,7 @@ export async function classifyField(
     }
 
     return {
-      label: FIELD_CLASSES[bestIdx],
+      label: FIELD_CLASSES[bestIdx]!,
       confidence: bestConf,
       probabilities,
     };

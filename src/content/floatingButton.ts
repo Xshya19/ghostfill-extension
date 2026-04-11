@@ -16,16 +16,7 @@
 // └────────────────────────────────────────────────────────────────────────┘
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import {
-  GenerateEmailResponse,
-  GeneratePasswordResponse,
-  GetLastOTPResponse,
-  DetectedField,
-  FieldType,
-  FormAnalysis,
-  FormType,
-  GhostContainer,
-} from '../types';
+import { GenerateEmailResponse, GeneratePasswordResponse, GetLastOTPResponse } from '../types';
 import { TIMING } from '../utils/constants';
 import { debounce } from '../utils/debounce';
 import { deepQuerySelectorAll } from '../utils/helpers';
@@ -437,7 +428,7 @@ class FieldContext {
 class SmartPositioner {
   static calculate(field: HTMLElement, buttonSize: number): PositionConfig {
     const rect = field.getBoundingClientRect();
-    
+
     // Use visualViewport for more accurate dimensions on zoomed/mobile pages
     const vv = window.visualViewport;
     const vw = vv ? vv.width : window.innerWidth;
@@ -505,7 +496,7 @@ class SmartPositioner {
 
     for (const [x, y] of points) {
       try {
-        const el = document.elementFromPoint(x, y);
+        const el = document.elementFromPoint(x!, y!);
         if (el) {
           // Ignore our own container
           if (el.closest('#ghostfill-fab') || el.closest('.gf-fab')) {
@@ -535,7 +526,7 @@ class SmartPositioner {
   /** H10: Cached z-index to avoid 500-element scan on every position update */
   private static _cachedMaxZ = 0;
   private static _cachedMaxZTs = 0;
-  private static readonly Z_CACHE_TTL_MS = 5000;
+  private static readonly Z_CACHE_TTL_MS = 15000;
 
   static getMaxZIndex(): number {
     const now = Date.now();
@@ -628,7 +619,7 @@ class ContextualMenu {
 
     // Extract and sanitize context name from page title
     const siteTitleMatch = document.title.match(/^([^-|]+)/);
-    const rawName = siteTitleMatch ? siteTitleMatch[1].trim() : 'Account';
+    const rawName = siteTitleMatch ? siteTitleMatch[1]!.trim() : 'Account';
     const contextName = escapeHTML(rawName);
 
     const actions: MenuAction[] = [
@@ -741,7 +732,7 @@ class IconSystem {
 
   private static readonly ICONS: Readonly<Record<ButtonMode, string>> = {
     magic: `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <defs><linearGradient id="gfGG-fab" x1="0%" y1="0%" x2="100%" y2="100%">
+      <defs><linearGradient id="gfGG" x1="0%" y1="0%" x2="100%" y2="100%">
         <stop offset="0%" stop-color="#7c5cfc"/><stop offset="100%" stop-color="#a78bfa"/>
       </linearGradient></defs>
       <path d="M12 2C8.13 2 5 5.13 5 9v11l2-2 2 2 2-2 2 2 2-2 2 2V9c0-3.87-3.13-7-7-7z" fill="url(#gfGG)"/>
@@ -816,8 +807,13 @@ export class FloatingButton {
   private currentFieldRect: DOMRect | null = null;
   private isEnabled = true;
   private hasOTPReady = false;
+  private isWaitingForOTP = false;
   private pageAnalysis: PageAnalysis | null = null;
   private destroyed = false;
+
+  // ── OTP Waiting Indicator ────────────────────────────────
+  private otpWaitingIndicator: HTMLDivElement | null = null;
+  private otpWaitingInterval: ReturnType<typeof setInterval> | null = null;
 
   // ── Timers ───────────────────────────────────────────────
   private hideTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -835,6 +831,7 @@ export class FloatingButton {
   private readonly cleanupFns: Array<() => void> = [];
   private messageListener: ((msg: FloatingButtonRuntimeMessage) => void) | null = null;
   private listenerRegistered = false;
+  private menuKeyboardHandler: ((e: KeyboardEvent) => void) | null = null;
 
   // ── Dependencies ─────────────────────────────────────────
   private readonly autoFiller: AutoFiller;
@@ -988,10 +985,25 @@ export class FloatingButton {
       }
       if (msg.action === 'OTP_RECEIVED' && msg.otp) {
         this.hasOTPReady = true;
+        this.isWaitingForOTP = false;
+        this.hideOTPWaitingIndicator();
         this.updateBadge();
         if (this.isEnabled) {
           log.info('🚀 OTP received, triggering Auto-Fill Sentinel');
           void this.startAutoFillOTPSequence(msg.otp);
+        }
+      }
+
+      if (msg.action === 'OTP_PAGE_DETECTED') {
+        this.isWaitingForOTP = true;
+        this.showOTPWaitingIndicator();
+      }
+
+      if (msg.action === 'OTP_PAGE_LEFT') {
+        this.isWaitingForOTP = false;
+        this.hideOTPWaitingIndicator();
+        if (!this.hasOTPReady) {
+          this.updateBadge();
         }
       }
 
@@ -1008,7 +1020,6 @@ export class FloatingButton {
         }
         log.debug('🔄 FAB state reset on email change');
       }
-
     };
 
     try {
@@ -1237,7 +1248,7 @@ export class FloatingButton {
       if (this.state === 'loading') {
         return;
       }
-      
+
       // Intelligence 2.0: Trigger Intelligence Pulse on click
       const rect = this.button!.getBoundingClientRect();
       this.fieldAnalyzer.setAttentiveRegion(rect.left + rect.width / 2, rect.top + rect.height / 2);
@@ -1246,8 +1257,9 @@ export class FloatingButton {
         this.setState('idle');
         return;
       }
-      void this.handlePrimaryAction().catch(() => {
+      void this.handlePrimaryAction().catch((e) => {
         /* handled internally by handlePrimaryAction */
+        log.error('Unexpected error in primary action', e);
       });
     });
 
@@ -1302,6 +1314,22 @@ export class FloatingButton {
       if (this.state === 'hovering') {
         this.setState('idle');
       }
+      // Reset magnetic transform
+      this.button!.style.transform = '';
+    });
+
+    // Magnetic hover effect
+    this.button.addEventListener('mousemove', (e: MouseEvent) => {
+      if (!this.button) return;
+      const rect = this.button.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const deltaX = (e.clientX - centerX) / rect.width;
+      const deltaY = (e.clientY - centerY) / rect.height;
+      const magnetStrength = 4;
+      const moveX = deltaX * magnetStrength;
+      const moveY = deltaY * magnetStrength;
+      this.button.style.transform = `perspective(600px) translateY(-2px) translateZ(8px) scale(1.08) translate(${moveX}px, ${moveY}px)`;
     });
 
     // ── Keyboard Navigation ───────────────────────────────
@@ -1310,8 +1338,9 @@ export class FloatingButton {
         case 'Enter':
         case ' ':
           e.preventDefault();
-          void this.handlePrimaryAction().catch(() => {
+          void this.handlePrimaryAction().catch((e) => {
             /* handled internally by handlePrimaryAction */
+            log.error('Unexpected error in primary action', e);
           });
           break;
         case 'Escape':
@@ -1394,13 +1423,11 @@ export class FloatingButton {
 
     const analysis = this.getPageAnalysis();
     const useFullScreen =
-      analysis.pageType === 'verification' ||
-      analysis.pageType === '2fa' ||
-      analysis.hasOTPField;
+      analysis.pageType === 'verification' || analysis.pageType === '2fa' || analysis.hasOTPField;
 
     // 1. Show Premium Sentinel Overlay
     this.showAutoFillSentinel(useFullScreen);
-    
+
     // 2. Perform the fill with the full recovery pipeline.
     try {
       const result = await this.autoFiller.fillOTP(otp); // Use full OTP for discover, it handles cleaning
@@ -1414,9 +1441,9 @@ export class FloatingButton {
         this.setState('success');
         setTimeout(() => this.hideAutoFillSentinel(), 2000);
       } else {
-         this.setSentinelMessage('Something went wrong. Tap to try manually.');
-         this.setState('idle');
-         setTimeout(() => this.hideAutoFillSentinel(), 3000);
+        this.setSentinelMessage('Something went wrong. Tap to try manually.');
+        this.setState('idle');
+        setTimeout(() => this.hideAutoFillSentinel(), 3000);
       }
     } catch (err) {
       log.error('Sentinel fill failed', err);
@@ -1426,42 +1453,46 @@ export class FloatingButton {
 
   private sentinelOverlay: HTMLDivElement | null = null;
 
-  private showAutoFillSentinel(fullScreen: boolean): void {
+  private showAutoFillSentinel(_fullScreen: boolean): void {
     if (!this.shadowRoot || this.destroyed) {
       return;
     }
-    
-    // Create overlay if not exists
+
     if (!this.sentinelOverlay) {
       this.sentinelOverlay = document.createElement('div');
-      this.sentinelOverlay.className = 'gf-sentinel-overlay';
+      this.sentinelOverlay.className = 'gf-sentinel-toast';
       this.shadowRoot.appendChild(this.sentinelOverlay);
     }
 
     this.sentinelOverlay.innerHTML = `
-      <div class="gf-sentinel-content ${fullScreen ? 'gf-sentinel-full' : 'gf-sentinel-anchored'}">
-        <div class="gf-sentinel-spirit">
+      <div class="gf-sentinel-toast-inner">
+        <div class="gf-sentinel-toast-icon">
           ${IconSystem.get('otp')}
-          <div class="gf-sentinel-pulse"></div>
         </div>
-        <div class="gf-sentinel-text">
-          <div class="gf-sentinel-title">GhostFill is entering your code...</div>
-          <div class="gf-sentinel-subtitle">Wait while we secure your session</div>
+        <div class="gf-sentinel-toast-text">
+          <div class="gf-sentinel-toast-title">Filling code…</div>
+          <div class="gf-sentinel-toast-subtitle">GhostFill is securing your session</div>
         </div>
       </div>
     `;
 
+    if (this.button) {
+      const btnRect = this.button.getBoundingClientRect();
+      this.sentinelOverlay.style.left = `${btnRect.left - 180}px`;
+      this.sentinelOverlay.style.top = `${btnRect.top - 10}px`;
+    }
+
     requestAnimationFrame(() => {
-      this.sentinelOverlay?.classList.add('gf-sentinel-visible');
+      this.sentinelOverlay?.classList.add('gf-sentinel-toast-visible');
     });
   }
 
   private setSentinelMessage(msg: string): void {
-    const title = this.sentinelOverlay?.querySelector('.gf-sentinel-title');
+    const title = this.sentinelOverlay?.querySelector('.gf-sentinel-toast-title');
     if (title) {
       title.textContent = msg;
     }
-    const subtitle = this.sentinelOverlay?.querySelector('.gf-sentinel-subtitle');
+    const subtitle = this.sentinelOverlay?.querySelector('.gf-sentinel-toast-subtitle');
     if (subtitle) {
       (subtitle as HTMLElement).style.opacity = '0';
     }
@@ -1471,7 +1502,7 @@ export class FloatingButton {
     if (!this.sentinelOverlay) {
       return;
     }
-    this.sentinelOverlay.classList.remove('gf-sentinel-visible');
+    this.sentinelOverlay.classList.remove('gf-sentinel-toast-visible');
     setTimeout(() => {
       this.sentinelOverlay?.remove();
       this.sentinelOverlay = null;
@@ -1582,11 +1613,16 @@ export class FloatingButton {
       }
     };
 
+    this.menuKeyboardHandler = handler;
     this.menu.addEventListener('keydown', handler);
   }
 
   private closeMenuSilent(): void {
     if (this.menu) {
+      if (this.menuKeyboardHandler) {
+        this.menu.removeEventListener('keydown', this.menuKeyboardHandler);
+        this.menuKeyboardHandler = null;
+      }
       this.menu.classList.remove('gf-menu-open');
       clearHTML(this.menu);
     }
@@ -1657,7 +1693,20 @@ export class FloatingButton {
     const resp = (await safeSendMessage({ action: 'GET_LAST_OTP' })) as GetLastOTPResponse | null;
 
     if (resp?.lastOTP?.code) {
-      const filled = await this.autoFiller.fillOTP(resp.lastOTP.code);
+      const code = resp.lastOTP.code;
+      const isSuspicious = /^(\d)\1{3,}$/.test(code.replace(/[-\s]/g, ''));
+
+      if (isSuspicious) {
+        pageStatus.error('OTP looks invalid (repeated digits)', TIMING_MS.ERROR_DISPLAY);
+        this.setState('error', 'OTP looks invalid');
+        log.warn('FAB blocked suspicious OTP fill', { code: code.substring(0, 2) + '••••' });
+        return;
+      }
+
+      const masked = code.length > 2 ? code.substring(0, 2) + '•'.repeat(code.length - 2) : code;
+      this.showStatusTooltip(`Filling ${masked}`, 'var(--brand)');
+
+      const filled = await this.autoFiller.fillOTP(code);
       if (this.destroyed) {
         return;
       }
@@ -1839,10 +1888,61 @@ export class FloatingButton {
 
     if (this.hasOTPReady) {
       const badge = document.createElement('span');
-      badge.className = 'gf-badge';
+      badge.className = 'gf-badge gf-badge-otp-ready';
       badge.textContent = '!';
       badge.setAttribute('aria-label', 'OTP code ready');
       this.button.appendChild(badge);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  §7.8.1  O T P   W A I T I N G   I N D I C A T O R
+  // ═══════════════════════════════════════════════════════════
+
+  private showOTPWaitingIndicator(): void {
+    if (!this.button || !this.shadowRoot || this.destroyed) {
+      return;
+    }
+
+    if (!this.otpWaitingIndicator) {
+      this.otpWaitingIndicator = document.createElement('div');
+      this.otpWaitingIndicator.className = 'gf-otp-waiting-indicator';
+      this.button.appendChild(this.otpWaitingIndicator);
+    }
+
+    this.otpWaitingIndicator.classList.add('gf-otp-waiting-visible');
+
+    // Periodic re-discovery: scan for OTP fields every 2s while waiting
+    // This catches fields that appear after SPA transitions or lazy loading
+    if (!this.otpWaitingInterval) {
+      this.otpWaitingInterval = setInterval(() => {
+        if (this.destroyed || !this.isWaitingForOTP) {
+          return;
+        }
+        const analysis = this.getPageAnalysis();
+        if (
+          analysis.pageType === 'verification' ||
+          analysis.pageType === '2fa' ||
+          analysis.hasOTPField
+        ) {
+          void this.autoFiller.refreshContext();
+        }
+      }, 2000);
+    }
+  }
+
+  private hideOTPWaitingIndicator(): void {
+    if (this.otpWaitingIndicator) {
+      this.otpWaitingIndicator.classList.remove('gf-otp-waiting-visible');
+      setTimeout(() => {
+        this.otpWaitingIndicator?.remove();
+        this.otpWaitingIndicator = null;
+      }, 400);
+    }
+
+    if (this.otpWaitingInterval) {
+      clearInterval(this.otpWaitingInterval);
+      this.otpWaitingInterval = null;
     }
   }
 
@@ -2038,8 +2138,9 @@ export class FloatingButton {
         e.preventDefault();
         e.stopPropagation();
         log.info('⌨️ Keyboard shortcut triggered');
-        void this.handlePrimaryAction().catch(() => {
+        void this.handlePrimaryAction().catch((e) => {
           /* handled internally by handlePrimaryAction */
+          log.error('Unexpected error in primary action', e);
         });
       }
     };
@@ -2104,7 +2205,7 @@ export class FloatingButton {
     this.fieldIntersectionObserver = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
-        if (!this.destroyed && this.state !== 'hidden') {
+        if (!this.destroyed && this.state !== 'hidden' && entry) {
           if (!entry.isIntersecting || entry.intersectionRatio < 0.1) {
             this.container?.style.setProperty('visibility', 'hidden', 'important');
           } else {
@@ -2128,7 +2229,7 @@ export class FloatingButton {
    */
   private startContinuousTracking(): void {
     if (this.trackingRafId !== null) {
-      clearInterval(this.trackingRafId);
+      cancelAnimationFrame(this.trackingRafId);
       this.trackingRafId = null;
     }
 
@@ -2159,9 +2260,11 @@ export class FloatingButton {
         this.currentFieldRect = rect;
         this.positionNearField(field);
       }
+
+      this.trackingRafId = requestAnimationFrame(track);
     };
 
-    this.trackingRafId = window.setInterval(track, 100) as unknown as number;
+    this.trackingRafId = requestAnimationFrame(track);
   }
 
   private positionNearField(field: HTMLElement): void {
@@ -2469,7 +2572,7 @@ export class FloatingButton {
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   outline: none; position: relative; overflow: visible;
-  opacity: 0.8; /* Less intrusive idle state */
+  opacity: 0.8;
   transition:
     transform 0.25s var(--ease-out-expo),
     box-shadow 0.25s var(--ease-out-expo),
@@ -2480,12 +2583,31 @@ export class FloatingButton {
   transform: translate3d(0,0,0);
 }
 
+/* Idle breathing animation */
+.gf-fab:not(.gf-loading):not(.gf-success):not(.gf-error) {
+  animation: gf-fab-breathe 4s ease-in-out infinite;
+}
+
+@keyframes gf-fab-breathe {
+  0%, 100% {
+    transform: translate3d(0,0,0) scale(1);
+    box-shadow: var(--shadow-rest);
+    opacity: 0.8;
+  }
+  50% {
+    transform: translate3d(0,0,0) scale(1.04);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08), 0 4px 16px rgba(124, 92, 252, 0.1), inset 0 1px 0 rgba(255,255,255,0.6);
+    opacity: 0.9;
+  }
+}
+
 .gf-fab:hover {
+  animation: none;
   transform: perspective(var(--perspective)) translateY(-2px) translateZ(8px) scale(1.08);
   background: var(--glass-bg-hover);
   box-shadow: var(--shadow-hover);
   border-color: var(--glass-border-hover);
-  opacity: 1; /* Snap to full contrast */
+  opacity: 1;
 }
 
 .gf-fab:active {
@@ -2563,6 +2685,69 @@ export class FloatingButton {
   100% { transform: scale(1) rotate(0); opacity: 1; }
 }
 
+.gf-badge.gf-badge-otp-ready {
+  background: linear-gradient(135deg, var(--brand) 0%, var(--brand-light) 100%);
+  box-shadow: 0 2px 6px rgba(var(--brand-rgb),0.3), 0 4px 12px rgba(var(--brand-rgb),0.15);
+  animation: gfBadgePulse 2s ease-in-out infinite;
+}
+
+@keyframes gfBadgePulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 2px 6px rgba(var(--brand-rgb),0.3); }
+  50% { transform: scale(1.15); box-shadow: 0 2px 12px rgba(var(--brand-rgb),0.5); }
+}
+
+/* OTP Waiting Indicator */
+.gf-otp-waiting-indicator {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--brand);
+  opacity: 0;
+  transform: scale(0);
+  transition: opacity 0.4s ease, transform 0.4s var(--ease-spring);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.gf-otp-waiting-indicator.gf-otp-waiting-visible {
+  opacity: 1;
+  transform: scale(1);
+  animation: gfOTPWaitingPulse 1.5s ease-in-out infinite;
+}
+
+.gf-otp-waiting-indicator::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--brand);
+  opacity: 0;
+  animation: gfOTPWaitingRing 1.5s ease-out infinite;
+}
+
+.gf-otp-waiting-indicator::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 1px solid rgba(var(--brand-rgb), 0.3);
+  opacity: 0;
+  animation: gfOTPWaitingRing 1.5s ease-out 0.3s infinite;
+}
+
+@keyframes gfOTPWaitingPulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.2); opacity: 1; }
+}
+
+@keyframes gfOTPWaitingRing {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+
 /* Glister Pulse (Sentient UI) */
 .gf-glister-indicator {
   position: absolute; width: 8px; height: 8px; border-radius: 50%;
@@ -2633,6 +2818,13 @@ export class FloatingButton {
 .gf-menu-open {
   opacity: 1; visibility: visible;
   transform: perspective(var(--perspective)) translateY(0) rotateX(0) scale(1);
+  animation: gfMenuSpring 0.45s var(--ease-spring);
+}
+
+@keyframes gfMenuSpring {
+  0% { transform: perspective(var(--perspective)) translateY(-12px) rotateX(6deg) scale(0.9); opacity: 0; }
+  60% { transform: perspective(var(--perspective)) translateY(2px) rotateX(-1deg) scale(1.02); opacity: 1; }
+  100% { transform: perspective(var(--perspective)) translateY(0) rotateX(0) scale(1); opacity: 1; }
 }
 
 .gf-menu-item {
@@ -2643,12 +2835,13 @@ export class FloatingButton {
   color: var(--text); text-align: left; outline: none;
   position: relative; z-index: 2;
   transition: background 0.2s var(--ease-smooth), transform 0.2s var(--ease-out-expo);
+  transform-origin: center center;
 }
 .gf-menu-item:hover, .gf-menu-item:focus-visible {
   background: rgba(var(--brand-rgb),0.06); transform: translateX(3px);
 }
 .gf-menu-item:active {
-  transform: translateX(3px) scale(0.98);
+  transform: translateX(3px) scale(0.94) !important;
   background: rgba(var(--brand-rgb),0.1); transition-duration: 0.06s;
 }
 .gf-menu-item:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
@@ -2764,96 +2957,79 @@ export class FloatingButton {
   }
 }
 
-    /* ── Sentinel Overlay ─────────────────────────────── */
-    .gf-sentinel-overlay {
+    /* ── Sentinel Toast (Non-blocking, near FAB) ── */
+    .gf-sentinel-toast {
       position: fixed;
-      inset: 0;
-      background: rgba(15, 23, 42, 0.4);
-      backdrop-filter: blur(12px) saturate(180%);
-      -webkit-backdrop-filter: blur(12px) saturate(180%);
       z-index: 2147483647;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      opacity: 0;
       pointer-events: none;
-      transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+      opacity: 0;
+      transform: translateX(-10px) scale(0.95);
+      transition: opacity 0.4s var(--ease-out-expo), transform 0.4s var(--ease-spring);
+      will-change: opacity, transform;
     }
 
-    .gf-sentinel-visible {
+    .gf-sentinel-toast-visible {
       opacity: 1;
+      transform: translateX(0) scale(1);
       pointer-events: auto;
     }
 
-    .gf-sentinel-content {
-      background: rgba(var(--brand-rgb), 0.1);
-      backdrop-filter: blur(20px) saturate(200%);
-      -webkit-backdrop-filter: blur(20px) saturate(200%);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      border-radius: 24px;
-      padding: 32px 48px;
+    .gf-sentinel-toast-inner {
       display: flex;
-      flex-direction: column;
       align-items: center;
-      gap: 20px;
-      box-shadow: 0 32px 64px -12px rgba(0, 0, 0, 0.3), 0 0 60px rgba(var(--brand-rgb), 0.15);
-      transform: translateY(20px) scale(0.95);
-      transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+      gap: 12px;
+      padding: 12px 16px;
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 16px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3), 0 0 24px rgba(var(--brand-rgb), 0.15);
+      white-space: nowrap;
     }
 
-    .gf-sentinel-visible .gf-sentinel-content {
-      transform: translateY(0) scale(1);
+    .gf-sentinel-toast-icon {
+      width: 32px;
+      height: 32px;
+      flex-shrink: 0;
     }
 
-    .gf-sentinel-spirit {
-      position: relative;
-      width: 64px;
-      height: 64px;
-    }
-
-    .gf-sentinel-spirit svg {
+    .gf-sentinel-toast-icon svg {
       width: 100%;
       height: 100%;
-      filter: drop-shadow(0 0 16px var(--brand));
-      animation: gf-spirit-float 3s ease-in-out infinite;
+      filter: drop-shadow(0 0 8px var(--brand));
+      animation: gf-toast-icon-float 2s ease-in-out infinite;
     }
 
-    .gf-sentinel-pulse {
-      position: absolute;
-      inset: -20px;
-      border: 2px solid var(--brand);
-      border-radius: 50%;
-      opacity: 0;
-      animation: gf-sentinel-wave 2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+    @keyframes gf-toast-icon-float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-4px); }
     }
 
-    .gf-sentinel-text {
-      text-align: center;
-      color: white;
-      text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    .gf-sentinel-toast-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
     }
 
-    .gf-sentinel-title {
-      font-size: 20px;
+    .gf-sentinel-toast-title {
+      font-size: 13px;
       font-weight: 700;
-      letter-spacing: -0.02em;
-      margin-bottom: 4px;
+      color: white;
+      letter-spacing: -0.01em;
     }
 
-    .gf-sentinel-subtitle {
-      font-size: 14px;
-      opacity: 0.6;
-      transition: opacity 0.5s ease;
+    .gf-sentinel-toast-subtitle {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.55);
+      transition: opacity 0.4s ease;
     }
 
-    @keyframes gf-spirit-float {
-      0%, 100% { transform: translateY(0) rotate(0); }
-      50% { transform: translateY(-10px) rotate(5deg); }
-    }
-
-    @keyframes gf-sentinel-wave {
-      0% { transform: scale(0.5); opacity: 0.8; }
-      100% { transform: scale(1.5); opacity: 0; }
+    @media (prefers-color-scheme: dark) {
+      .gf-sentinel-toast-inner {
+        background: rgba(12, 18, 36, 0.95);
+        border-color: rgba(255, 255, 255, 0.06);
+      }
     }
     `;
   }

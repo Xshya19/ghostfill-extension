@@ -85,11 +85,18 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
         const merged: UserSettings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
         for (const key of Object.keys(DEFAULT_SETTINGS)) {
           const k = key as keyof UserSettings;
-          if (k in parsed && typeof parsed[k] === typeof DEFAULT_SETTINGS[k]) {
-            if (k === 'passwordDefaults' && typeof parsed[k] === 'object') {
-              merged[k] = { ...DEFAULT_SETTINGS.passwordDefaults, ...parsed[k] };
-            } else {
-              (merged as any)[k] = parsed[k];
+          if (k in parsed) {
+            const expectedType = typeof DEFAULT_SETTINGS[k];
+            const actualType = parsed[k] === null ? 'null' : Array.isArray(parsed[k]) ? 'array' : typeof parsed[k];
+            // Allow array-to-array and object-to-object matches
+            const typeMatches = actualType === expectedType ||
+              (expectedType === 'object' && (actualType === 'object' || actualType === 'array'));
+            if (typeMatches) {
+              if (k === 'passwordDefaults' && typeof parsed[k] === 'object') {
+                merged[k] = { ...DEFAULT_SETTINGS.passwordDefaults, ...parsed[k] };
+              } else {
+                (merged as any)[k] = parsed[k];
+              }
             }
           }
         }

@@ -67,7 +67,8 @@ export type ExtractionStrategy =
   | 'standalone-line' // Code on its own line
   | 'url-parameter' // ?code=482910
   | 'structured-container' // Inside a styled code box
-  | 'proximity-inference'; // Near verification language
+  | 'proximity-inference' // Near verification language
+  | 'emergency-regex'; // Last-resort regex fallback
 
 /** Link/Activation type classification */
 export type LinkType =
@@ -504,9 +505,9 @@ export interface ExtractionMeta {
 export interface ClassificationResult {
   type: EmailCategory;
   confidence: number; // 0-1
-  code?: string; // Extracted OTP code
-  link?: string; // Verification link URL
-  debug?: string; // Human-readable reasoning
+  code?: string | undefined; // Extracted OTP code
+  link?: string | undefined; // Verification link URL
+  debug?: string | undefined; // Human-readable reasoning
   engine: 'ghost-core';
 }
 

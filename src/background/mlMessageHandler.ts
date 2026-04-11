@@ -1,4 +1,3 @@
-import type { RawFieldFeatures } from '../content/extractor';
 import { createLogger } from '../utils/logger';
 import { ensureOffscreenDocument } from './offscreenManager';
 
@@ -31,11 +30,15 @@ export function registerMLMessageHandler(): void {
           const response: any = await chrome.runtime.sendMessage({
             target: 'offscreen-doc',
             type: msgType,
-            payload: { features, context }
+            payload: { features, context },
           });
 
           if (response?.success) {
-            sendResponse({ success: true, prediction: response.prediction, status: response.status });
+            sendResponse({
+              success: true,
+              prediction: response.prediction,
+              status: response.status,
+            });
           } else {
             log.error(`ML offscreen ${msgType} returned failure`, response?.error);
             sendResponse({ success: false, prediction: null, error: response?.error });

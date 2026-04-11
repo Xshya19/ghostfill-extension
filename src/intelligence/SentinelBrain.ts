@@ -6,19 +6,17 @@
  * ╚══════════════════════════════════════════════════════════════════╝
  */
 
-import { DOMFormSnapshot, DetectedField } from '../types/sentinel';
+import { DetectedField } from '../types/sentinel';
 import { createLogger } from '../utils/logger';
 import { ActiveLearningController } from './active-learning/ActiveLearningController';
 import { MultilingualKeywordEngine } from './heuristic/MultilingualKeywordEngine';
 import { VisualStateTracker } from './heuristic/VisualStateTracker';
-import { FuzzyFormFingerprint } from './history/FuzzyFormFingerprint';
 import { BayesianMetaLearner } from './meta/BayesianMetaLearner';
 import { FeatureExtractorV2 } from './ml/FeatureExtractorV2';
 import { MLService } from './ml/MLService';
 import { AuthSessionTracker } from './navigator/AuthSessionTracker';
 import { IFrameProxyV2 } from './navigator/IFrameProxyV2';
 import { LayoutPatternDetector } from './spatial/LayoutPatternDetector';
-
 
 const log = createLogger('SentinelBrain');
 
@@ -69,7 +67,7 @@ export class SentinelBrain {
       IFrameProxyV2.init();
 
       // 3. Initialize Session & Meta-Learning
-      AuthSessionTracker.resume();
+      await AuthSessionTracker.resume();
 
       this.setupMutationObserver();
       this.isInitialized = true;
@@ -96,22 +94,23 @@ export class SentinelBrain {
     const domain = window.location.hostname;
     const url = window.location.href;
     const language = MultilingualKeywordEngine.detectPageLanguage();
-    
+
     // ── Phase 1: Spatial & Context Scan ──
     const clusters = LayoutPatternDetector.detectClusters();
-    const fingerprint = FuzzyFormFingerprint.generate(elements);
-    
+
     // ── Phase 2: Per-Element Intelligence ──
     for (const el of elements) {
       const visual = this.visualTracker.getVisualState(el);
-      if (!visual.isVisible) {continue;}
+      if (!visual.isVisible) {
+        continue;
+      }
 
       // ML Inference
-      const features = this.extractor.extract(el, { 
-          domain, 
-          url,
-          isAuthPage: true,
-          totalVisibleInputs: elements.length 
+      const features = this.extractor.extract(el, {
+        domain,
+        url,
+        isAuthPage: true,
+        totalVisibleInputs: elements.length,
       });
       const mlResult = await MLService.predict(features);
 
@@ -123,7 +122,9 @@ export class SentinelBrain {
       const layerOutputs: any = {
         ml: { [mlResult.type]: mlResult.confidence },
         heuristic: keywordResult,
-        spatial: { [clusters.find(c => c.elements.includes(el))?.layoutPattern || 'unknown']: 0.8 },
+        spatial: {
+          [clusters.find((c) => c.elements.includes(el))?.layoutPattern || 'unknown']: 0.8,
+        },
       };
 
       const fused = await BayesianMetaLearner.fuse(domain, layerOutputs);
@@ -134,32 +135,55 @@ export class SentinelBrain {
           type: fused.type,
           confidence: fused.confidence,
           layer: 'ensemble',
-          disagreement: fused.disagreement
+          disagreement: fused.disagreement,
         });
       }
 
       // ── Phase 4: Active Learning ──
       if (fused.disagreement > 0.6) {
-        ActiveLearningController.captureConflict(el, [mlResult, { type: 'heuristic', scores: keywordResult }], fused.disagreement);
+        ActiveLearningController.captureConflict(
+          el,
+          [mlResult, { type: 'heuristic', scores: keywordResult }],
+          fused.disagreement
+        );
       }
     }
 
     return results;
   }
 
+  private static pulseTimeout: ReturnType<typeof setTimeout> | null = null;
+
   /**
    * Periodic re-scan triggered by DOM changes.
    */
   static async pulse(): Promise<void> {
-    log.info('Pulse triggered: Re-scanning DOM for changes...');
-    // In a real scenario, this would throttle and call analyze() on all inputs
+    if (this.pulseTimeout) {
+      clearTimeout(this.pulseTimeout);
+    }
+
+    this.pulseTimeout = setTimeout(async () => {
+      log.info('Pulse executing: Analyzing dynamic DOM changes...');
+      try {
+        const inputs = Array.from(document.querySelectorAll('input, select, textarea')) as HTMLElement[];
+        if (inputs.length > 0) {
+          await this.analyze(inputs);
+        }
+      } catch (e) {
+        log.error('Pulse analysis failed', e);
+      } finally {
+        this.pulseTimeout = null;
+      }
+    }, 1200); // Debounce for 1.2s to prevent thrashing
   }
 
   private static setupMutationObserver(): void {
-    if (this.observer) {return;}
+    if (this.observer) {
+      return;
+    }
 
     this.observer = new MutationObserver((mutations) => {
-      if (mutations.some(m => m.addedNodes.length > 0)) {
+      if (mutations.some((m) => m.addedNodes.length > 0)) {
         this.pulse();
       }
     });
@@ -167,7 +191,7 @@ export class SentinelBrain {
     this.observer.observe(document.body, {
       childList: true,
       subtree: true,
-      attributes: false
+      attributes: false,
     });
   }
 }

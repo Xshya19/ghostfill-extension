@@ -84,7 +84,7 @@ function initTrustedTypes(): void {
           // Passed through since `sanitizeHtml` already uses DOMPurify and calls this
           return input;
         },
-        createScriptURL: (input: string): string => {
+        createScriptURL: (_input: string): string => {
           // SECURITY: Block all script URLs
           log.warn('TrustedTypes blocked script URL (redacted)');
           return 'about:blank';
@@ -122,7 +122,6 @@ function sanitizeHtmlInternal(dirty: string, options?: SanitizerConfig): string 
       'b',
       'i',
       'a',
-      'href',
       'title',
       'ul',
       'ol',
@@ -139,8 +138,6 @@ function sanitizeHtmlInternal(dirty: string, options?: SanitizerConfig): string 
       'pre',
       'code',
       'img',
-      'src',
-      'alt',
       'table',
       'thead',
       'tbody',
@@ -198,7 +195,6 @@ export function sanitizeHtml(dirty: string, options?: SanitizerConfig): string {
       'b',
       'i',
       'a',
-      'href',
       'title',
       'ul',
       'ol',
@@ -215,8 +211,6 @@ export function sanitizeHtml(dirty: string, options?: SanitizerConfig): string {
       'pre',
       'code',
       'img',
-      'src',
-      'alt',
       'table',
       'thead',
       'tbody',
@@ -364,7 +358,6 @@ export function sanitizeEmailBody(htmlBody: string, textBody?: string): string {
         'b',
         'i',
         'a',
-        'href',
         'title',
         'ul',
         'ol',
@@ -381,8 +374,6 @@ export function sanitizeEmailBody(htmlBody: string, textBody?: string): string {
         'pre',
         'code',
         'img',
-        'src',
-        'alt',
         'table',
         'thead',
         'tbody',

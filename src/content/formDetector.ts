@@ -47,12 +47,6 @@ const HIGHLIGHT_DURATION_MS = 2000;
 const HIGHLIGHT_OUTLINE = '2px solid #6366F1';
 const HIGHLIGHT_BOX_SHADOW = '0 0 10px rgba(99, 102, 241, 0.5)';
 
-/** Maximum shadow DOM recursion depth */
-const MAX_SHADOW_DEPTH = 10;
-
-/** Maximum elements to scan for shadow roots */
-const MAX_SHADOW_SCAN_ELEMENTS = 5000;
-
 /** Classification confidence weights */
 const CLASSIFICATION_WEIGHTS = {
   REQUIRED_FIELDS: 0.4,
@@ -95,10 +89,7 @@ class FormClassifier {
   private static readonly SECONDARY_ACTION_PATTERN =
     /resend|back|cancel|close|skip|later|forgot|show|hide|copy|edit|change|google|github|apple|facebook/i;
 
-  static classify(
-    form: HTMLElement,
-    fields: DetectedField[]
-  ): ClassificationResult {
+  static classify(form: HTMLElement, fields: DetectedField[]): ClassificationResult {
     const fieldTypes = new Set(fields.map((f) => f.fieldType));
     let bestType: FormType = 'unknown';
     let bestConfidence = 0;
@@ -106,7 +97,9 @@ class FormClassifier {
     const formText = this.buildFormContext(form);
 
     for (const [fType, indicators] of Object.entries(FORM_INDICATORS)) {
-      if (fType === 'unknown') {continue;}
+      if (fType === 'unknown') {
+        continue;
+      }
 
       let confidence = 0;
 
@@ -139,9 +132,15 @@ class FormClassifier {
   private static buildFormContext(form: HTMLElement): string {
     const parts: string[] = [];
 
-    if (form.className && typeof form.className === 'string') {parts.push(form.className);}
-    if (form.id) {parts.push(form.id);}
-    if (form instanceof HTMLFormElement && form.action) {parts.push(form.action);}
+    if (form.className && typeof form.className === 'string') {
+      parts.push(form.className);
+    }
+    if (form.id) {
+      parts.push(form.id);
+    }
+    if (form instanceof HTMLFormElement && form.action) {
+      parts.push(form.action);
+    }
 
     const textContent = form.textContent;
     if (textContent) {
@@ -158,10 +157,7 @@ class FormClassifier {
     return parts.join(' ').toLowerCase();
   }
 
-  private static calculateFieldBonus(
-    formType: string,
-    fieldTypes: Set<FieldType>
-  ): number {
+  private static calculateFieldBonus(formType: string, fieldTypes: Set<FieldType>): number {
     switch (formType) {
       case 'login':
         if (fieldTypes.has('password') && !fieldTypes.has('confirm-password')) {
@@ -181,7 +177,7 @@ class FormClassifier {
         }
         return 0;
     }
-    
+
     return 0;
   }
 
@@ -208,7 +204,9 @@ class FormClassifier {
       }
     }
 
-    for (const input of form.querySelectorAll<HTMLInputElement>('input[type="submit"], input[type="button"]')) {
+    for (const input of form.querySelectorAll<HTMLInputElement>(
+      'input[type="submit"], input[type="button"]'
+    )) {
       if (VisibilityCheck.isVisible(input) && !input.disabled) {
         candidates.push(input);
       }
@@ -228,17 +226,24 @@ class FormClassifier {
     let bestScore = -Infinity;
 
     for (const candidate of candidates) {
-      const text = (
-        candidate instanceof HTMLInputElement
-          ? candidate.value
-          : candidate.textContent
-      )?.trim().toLowerCase() ?? '';
+      const text =
+        (candidate instanceof HTMLInputElement ? candidate.value : candidate.textContent)
+          ?.trim()
+          .toLowerCase() ?? '';
 
       let score = 0;
-      if (candidate instanceof HTMLButtonElement && candidate.type === 'submit') {score += 5;}
-      if (candidate instanceof HTMLInputElement && candidate.type === 'submit') {score += 5;}
-      if (this.SUBMIT_TEXT_PATTERN.test(text)) {score += 4;}
-      if (this.SECONDARY_ACTION_PATTERN.test(text)) {score -= 6;}
+      if (candidate instanceof HTMLButtonElement && candidate.type === 'submit') {
+        score += 5;
+      }
+      if (candidate instanceof HTMLInputElement && candidate.type === 'submit') {
+        score += 5;
+      }
+      if (this.SUBMIT_TEXT_PATTERN.test(text)) {
+        score += 4;
+      }
+      if (this.SECONDARY_ACTION_PATTERN.test(text)) {
+        score -= 6;
+      }
 
       if (score > bestScore) {
         bestScore = score;
@@ -256,10 +261,14 @@ class FormClassifier {
 
 class VisibilityCheck {
   static isVisible(element: HTMLElement): boolean {
-    if (!element.isConnected) {return false;}
+    if (!element.isConnected) {
+      return false;
+    }
 
     const rect = element.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) {return false;}
+    if (rect.width <= 0 || rect.height <= 0) {
+      return false;
+    }
 
     const style = window.getComputedStyle(element);
     return style.display !== 'none' && style.visibility !== 'hidden';
@@ -293,8 +302,8 @@ export class FormDetector {
     const virtualForms = this.detectVirtualForms(standaloneFields);
     for (const vForm of virtualForms) {
       forms.push(vForm);
-      const vFormFields = new Set(vForm.fields.map(f => f.element));
-      standaloneFields = standaloneFields.filter(sf => !vFormFields.has(sf.element));
+      const vFormFields = new Set(vForm.fields.map((f) => f.element));
+      standaloneFields = standaloneFields.filter((sf) => !vFormFields.has(sf.element));
     }
 
     this.lastAnalysis = Object.freeze({
@@ -315,14 +324,14 @@ export class FormDetector {
    * Analyze a single form element (or virtual form container) and return its classification.
    */
   analyzeForm(form: HTMLElement): DetectedForm {
-    const inputs = form.querySelectorAll<FormInputElement>(
-      FormDetector.INPUT_SELECTOR
-    );
+    const inputs = form.querySelectorAll<FormInputElement>(FormDetector.INPUT_SELECTOR);
 
     const fields: DetectedField[] = [];
 
     for (const input of inputs) {
-      if (!VisibilityCheck.isVisible(input)) {continue;}
+      if (!VisibilityCheck.isVisible(input)) {
+        continue;
+      }
 
       const field = this.fieldAnalyzer.analyzeField(input);
       if (field.confidence > MIN_FIELD_CONFIDENCE) {
@@ -347,10 +356,7 @@ export class FormDetector {
   /**
    * Classify a form based on its fields and contextual signals.
    */
-  classifyForm(
-    form: HTMLElement,
-    fields: DetectedField[]
-  ): ClassificationResult {
+  classifyForm(form: HTMLElement, fields: DetectedField[]): ClassificationResult {
     return FormClassifier.classify(form, fields);
   }
 
@@ -378,7 +384,9 @@ export class FormDetector {
     }
 
     const analysis = this.lastAnalysis;
-    if (!analysis) {return [];}
+    if (!analysis) {
+      return [];
+    }
 
     const fields: DetectedField[] = [];
 
@@ -407,7 +415,9 @@ export class FormDetector {
 
     for (const field of fields) {
       const element = field.element;
-      if (!element.isConnected) {continue;}
+      if (!element.isConnected) {
+        continue;
+      }
 
       const originalOutline = element.style.outline;
       const originalBoxShadow = element.style.boxShadow;
@@ -433,10 +443,14 @@ export class FormDetector {
    */
   getActiveForm(): DetectedForm | null {
     const activeElement = document.activeElement;
-    if (!(activeElement instanceof HTMLElement)) {return null;}
+    if (!(activeElement instanceof HTMLElement)) {
+      return null;
+    }
 
     const form = activeElement.closest('form');
-    if (!form) {return null;}
+    if (!form) {
+      return null;
+    }
 
     return this.lastAnalysis?.forms.find((f) => f.element === form) ?? null;
   }
@@ -454,11 +468,15 @@ export class FormDetector {
     }
 
     const analysis = this.lastAnalysis;
-    if (!analysis) {return null;}
+    if (!analysis) {
+      return null;
+    }
 
     for (const form of analysis.forms) {
       const field = form.fields.find((f) => f.element === activeElement);
-      if (field) {return field;}
+      if (field) {
+        return field;
+      }
     }
 
     return analysis.standaloneFields.find((f) => f.element === activeElement) ?? null;
@@ -489,60 +507,44 @@ export class FormDetector {
    * Group standalone fields into virtual forms if they belong together logically (e.g. SPAs without <form> tags).
    */
   private detectVirtualForms(standaloneFields: DetectedField[]): DetectedForm[] {
-    if (standaloneFields.length === 0) {return [];}
-    
-    const virtualForms: DetectedForm[] = [];
-    
-    // Group fields by their closest common ancestor up to 5 levels deep
-    // For simplicity, we can also just treat all standalone fields under a common 'div' or 'section' as a form
-    
-    // Let's create a map to cluster fields. 
-    // An easy heuristic is to group fields if they look like a login or signup together.
-    // If they share a common ancestor that is not the document body (e.g., a specific container div).
-    
-    const maxDepth = 6;
-    const containers = new Map<HTMLElement, DetectedField[]>();
-    
-    for (const field of standaloneFields) {
-      let current = field.element.parentElement;
-      const container: HTMLElement | null = null;
-      let depth = 0;
-      
-      while (current && current !== document.body && depth < maxDepth) {
-        // If it looks like a form container or has a bounding rect covering the fields
-        if (current.tagName === 'DIV' || current.tagName === 'SECTION' || current.tagName === 'MAIN') {
-           // We might just use the deepest container that holds multiple fields
-        }
-        current = current.parentElement;
-        depth++;
-      }
+    if (standaloneFields.length === 0) {
+      return [];
     }
 
+    const virtualForms: DetectedForm[] = [];
+
+    // Group fields by their closest common ancestor up to 5 levels deep
+    // For simplicity, we can also just treat all standalone fields under a common 'div' or 'section' as a form
+
+    // Let's create a map to cluster fields.
+    // An easy heuristic is to group fields if they look like a login or signup together.
+    // If they share a common ancestor that is not the document body (e.g., a specific container div).
+
     // ACTUALLY, an easier approach for Virtual Forms is to just lump all standalone fields pointing to a 'signup' or 'login' form into one huge virtual form, or cluster them by their bounding client rects.
-    
+
     // Let's group all standalone fields that are within the same general area, or simply fall back to grouping ALL of them into one body-level virtual form if we detect login/signup signals.
-    
+
     if (standaloneFields.length > 0) {
       // Create a virtual container (document.body works as a fallback)
       const container = document.body;
       const classification = FormClassifier.classify(container, standaloneFields);
-      
+
       // Only create a virtual form if we are fairly confident it is a recognizable form type
       // It prevents us from grouping unrelated random search bars and newsletters together
       if (classification.type !== 'unknown' && classification.confidence >= 0.4) {
-         const submitButton = FormClassifier.findSubmitButton(container);
-         virtualForms.push({
-           element: container,
-           selector: 'body', // representing the virtual nature
-           formType: classification.type,
-           confidence: classification.confidence,
-           fields: standaloneFields,
-           submitButton: submitButton ?? undefined,
-           actionUrl: undefined,
-         });
+        const submitButton = FormClassifier.findSubmitButton(container);
+        virtualForms.push({
+          element: container,
+          selector: 'body', // representing the virtual nature
+          formType: classification.type,
+          confidence: classification.confidence,
+          fields: standaloneFields,
+          submitButton: submitButton ?? undefined,
+          actionUrl: undefined,
+        });
       }
     }
-    
+
     return virtualForms;
   }
 
@@ -552,7 +554,7 @@ export class FormDetector {
   private detectStandaloneFields(forms: DetectedForm[]): DetectedField[] {
     // This correctly invokes FieldAnalyzer's shadow-piercing extraction!
     const allFields = this.fieldAnalyzer.getAllFields();
-    
+
     const formFieldElements = new Set<Element>();
     for (const form of forms) {
       for (const field of form.fields) {
@@ -563,7 +565,9 @@ export class FormDetector {
     const standaloneFields: DetectedField[] = [];
 
     for (const field of allFields) {
-      if (formFieldElements.has(field.element)) {continue;}
+      if (formFieldElements.has(field.element)) {
+        continue;
+      }
 
       if (field.confidence > MIN_STANDALONE_CONFIDENCE) {
         standaloneFields.push(field);

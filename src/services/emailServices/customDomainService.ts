@@ -31,7 +31,7 @@ export class CustomDomainService implements IEmailProvider {
     return {
       updateUrl: settings.customDomainUrl,
       domain: settings.customDomain,
-      apiKey: apiKey,
+      ...(apiKey && { apiKey }),
     };
   }
 
@@ -61,32 +61,40 @@ export class CustomDomainService implements IEmailProvider {
         if (config.apiKey) {
           headers['Authorization'] = `Bearer ${config.apiKey}`;
         }
-        
-        const response = await fetch(generationUrl.toString(), {
+
+        const fetchInit: RequestInit = {
           method: 'POST',
           headers,
           body: JSON.stringify({ action: 'create', prefix, domain: config.domain, fullEmail }),
-          signal,
-        });
-        
+        };
+        if (signal) {
+          fetchInit.signal = signal;
+        }
+        const response = await fetch(generationUrl.toString(), fetchInit);
+
         if (!response.ok) {
-          log.warn(`Failed to register prefix with custom domain API (${response.status}). Proceeding anyway (assuming catch-all fallback).`);
+          log.warn(
+            `Failed to register prefix with custom domain API (${response.status}). Proceeding anyway (assuming catch-all fallback).`
+          );
         }
       }
     } catch (error) {
-      log.warn('Error during custom domain API registration call, falling back to local creation:', error);
+      log.warn(
+        'Error during custom domain API registration call, falling back to local creation:',
+        error
+      );
     }
 
     return {
       fullEmail,
       domain: config.domain,
       username: prefix,
-      id: prefix, // use prefix as ID
-      service: 'custom',
+      id: prefix,
+      service: 'custom' as const,
       createdAt: Date.now(),
-      expiresAt: Date.now() + 24 * 60 * 60 * 1000 * 365, // 1 year "expiry" (persistent)
-      token: config.apiKey, // Store API key as token for authorizing checks
-    };
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000 * 365,
+      ...(config.apiKey && { token: config.apiKey }),
+    } as EmailAccount;
   }
 
   private requestTimestamps: number[] = [];
@@ -121,18 +129,21 @@ export class CustomDomainService implements IEmailProvider {
 
       const url = new URL(config.updateUrl);
       url.searchParams.set('email', account.fullEmail);
-      
+
       const headers: Record<string, string> = { Accept: 'application/json' };
       if (account.token) {
         headers['Authorization'] = `Bearer ${account.token}`;
       }
 
       const t0 = performance.now();
-      const response = await fetch(url.toString(), {
+      const fetchInit: RequestInit = {
         method: 'GET',
         headers,
-        signal,
-      });
+      };
+      if (signal) {
+        fetchInit.signal = signal;
+      }
+      const response = await fetch(url.toString(), fetchInit);
 
       if (!response.ok) {
         const error = new Error(`Custom API returned ${response.status}`);

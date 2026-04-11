@@ -568,7 +568,9 @@ function matchOTPProvider(
     const subjectMatch = provider.subjectPatterns.some((p) => p.test(subject));
     // SECURITY FIX: Bound bodyText length to prevent ReDoS when testing label patterns
     const boundedBody = bodyText.substring(0, 25000);
-    const bodyMatch = provider.labelPatterns ? provider.labelPatterns.some((p) => p.test(boundedBody)) : false;
+    const bodyMatch = provider.labelPatterns
+      ? provider.labelPatterns.some((p) => p.test(boundedBody))
+      : false;
 
     if (senderMatch || subjectMatch || bodyMatch) {
       const lengths = Array.isArray(provider.codeLength)
@@ -577,7 +579,7 @@ function matchOTPProvider(
 
       return {
         name: provider.name,
-        expectedLength: lengths[0],
+        expectedLength: lengths[0]!,
         expectedFormat: provider.codeFormat,
         confidence: senderMatch ? 0.95 : subjectMatch ? 0.85 : 0.6,
       };
@@ -725,12 +727,12 @@ function extractRawCandidates(
 
       // Try numeric code
       const numericMatch = afterLabel.match(/^(\d{4,8})\b/);
-      if (numericMatch && !seenValues.has(numericMatch[1])) {
-        seenValues.add(numericMatch[1]);
-        const ctx = getContextWindow(plainText, match.index, 80);
+      if (numericMatch && !seenValues.has(numericMatch[1]!)) {
+        seenValues.add(numericMatch[1]!);
+        const ctx = getContextWindow(plainText, match.index!, 80);
         candidates.push({
-          value: numericMatch[1],
-          rawValue: numericMatch[1],
+          value: numericMatch[1]!,
+          rawValue: numericMatch[1]!,
           matchIndex: match.index + match[0].length,
           strategy: 'explicit-label',
           strategyScore: labelPattern.weight,
@@ -746,15 +748,15 @@ function extractRawCandidates(
       const alphaMatch = afterLabel.match(/^([A-Z0-9]{3,5}[-\s]?[A-Z0-9]{3,5})\b/i);
       if (
         alphaMatch &&
-        /\d/.test(alphaMatch[1]) &&
-        /[A-Za-z]/.test(alphaMatch[1]) &&
-        !seenValues.has(alphaMatch[1])
+        /\d/.test(alphaMatch[1]!) &&
+        /[A-Za-z]/.test(alphaMatch[1]!) &&
+        !seenValues.has(alphaMatch[1]!)
       ) {
-        seenValues.add(alphaMatch[1]);
+        seenValues.add(alphaMatch[1]!);
         const ctx = getContextWindow(plainText, match.index, 80);
         candidates.push({
-          value: alphaMatch[1].replace(/[-\s]/g, ''),
-          rawValue: alphaMatch[1],
+          value: alphaMatch[1]!.replace(/[-\s]/g, ''),
+          rawValue: alphaMatch[1]!,
           matchIndex: match.index + match[0].length,
           strategy: 'explicit-label',
           strategyScore: labelPattern.weight,
@@ -768,14 +770,14 @@ function extractRawCandidates(
 
       // Try dash-separated (483-291)
       const dashMatch = afterLabel.match(/^(\d{3,4}[-\s]\d{3,4})\b/);
-      if (dashMatch && !seenValues.has(dashMatch[1].replace(/[-\s]/g, ''))) {
-        const cleaned = dashMatch[1].replace(/[-\s]/g, '');
+      if (dashMatch && !seenValues.has(dashMatch[1]!.replace(/[-\s]/g, ''))) {
+        const cleaned = dashMatch[1]!.replace(/[-\s]/g, '');
         seenValues.add(cleaned);
-        const ctx = getContextWindow(plainText, match.index, 80);
+        const ctx = getContextWindow(plainText, match.index!, 80);
         candidates.push({
           value: cleaned,
-          rawValue: dashMatch[1],
-          matchIndex: match.index + match[0].length,
+          rawValue: dashMatch[1]!,
+          matchIndex: match.index! + match[0].length,
           strategy: 'explicit-label',
           strategyScore: labelPattern.weight,
           label: match[0].trim(),
@@ -793,7 +795,7 @@ function extractRawCandidates(
     /(?:enter|use|type|input|paste|submit)\s+(\d{4,8})\s+(?:to|in|on|at|for|into|below|above|here)/gi;
   let actionMatch: RegExpExecArray | null;
   while ((actionMatch = actionRegex.exec(plainText)) !== null) {
-    const code = actionMatch[1];
+    const code = actionMatch[1]!;
     if (seenValues.has(code)) {
       continue;
     }
@@ -804,7 +806,7 @@ function extractRawCandidates(
       matchIndex: actionMatch.index,
       strategy: 'action-instruction',
       strategyScore: 40,
-      label: actionMatch[0].split(code)[0].trim(),
+      label: actionMatch[0].split(code)[0]!.trim(),
       context: getContextWindow(plainText, actionMatch.index, 80),
       fromHtml: false,
       htmlElement: null,
@@ -814,7 +816,7 @@ function extractRawCandidates(
   // ── Strategy 3: Postfix Pattern ("482910 is your code") ───
   const standaloneNumbers = plainText.matchAll(/\b(\d{4,8})\b/g);
   for (const numMatch of standaloneNumbers) {
-    const code = numMatch[1];
+    const code = numMatch[1]!;
     if (seenValues.has(code)) {
       continue;
     }
@@ -869,11 +871,11 @@ function extractRawCandidates(
 
         // Check for numeric code
         const numMatch = text.match(/^(\d{4,8})$/);
-        if (numMatch && !seenValues.has(numMatch[1])) {
-          seenValues.add(numMatch[1]);
+        if (numMatch && !seenValues.has(numMatch[1]!)) {
+          seenValues.add(numMatch[1]!);
           candidates.push({
-            value: numMatch[1],
-            rawValue: numMatch[1],
+            value: numMatch[1]!,
+            rawValue: numMatch[1]!,
             matchIndex: -1,
             strategy: 'html-prominent',
             strategyScore: 45,
@@ -889,14 +891,14 @@ function extractRawCandidates(
         const alphaMatch = text.match(/^([A-Z0-9]{3,5}[-\s]?[A-Z0-9]{3,5})$/i);
         if (
           alphaMatch &&
-          /\d/.test(alphaMatch[1]) &&
-          /[A-Za-z]/.test(alphaMatch[1]) &&
-          !seenValues.has(alphaMatch[1])
+          /\d/.test(alphaMatch[1]!) &&
+          /[A-Za-z]/.test(alphaMatch[1]!) &&
+          !seenValues.has(alphaMatch[1]!)
         ) {
-          seenValues.add(alphaMatch[1]);
+          seenValues.add(alphaMatch[1]!);
           candidates.push({
-            value: alphaMatch[1].replace(/[-\s]/g, ''),
-            rawValue: alphaMatch[1],
+            value: alphaMatch[1]!.replace(/[-\s]/g, ''),
+            rawValue: alphaMatch[1]!,
             matchIndex: -1,
             strategy: 'html-prominent',
             strategyScore: 45,
@@ -910,12 +912,12 @@ function extractRawCandidates(
 
         // Dash-separated
         const dashMatch = text.match(/^(\d{3,4}[-\s]\d{3,4})$/);
-        if (dashMatch && !seenValues.has(dashMatch[1].replace(/[-\s]/g, ''))) {
-          const cleaned = dashMatch[1].replace(/[-\s]/g, '');
+        if (dashMatch && !seenValues.has(dashMatch[1]!.replace(/[-\s]/g, ''))) {
+          const cleaned = dashMatch[1]!.replace(/[-\s]/g, '');
           seenValues.add(cleaned);
           candidates.push({
             value: cleaned,
-            rawValue: dashMatch[1],
+            rawValue: dashMatch[1]!,
             matchIndex: -1,
             strategy: 'html-prominent',
             strategyScore: 45,
@@ -928,11 +930,11 @@ function extractRawCandidates(
 
         // Code inside larger text (e.g., <strong>482910</strong> within a paragraph)
         const embeddedNum = text.match(/\b(\d{4,8})\b/);
-        if (embeddedNum && text.length < 30 && !seenValues.has(embeddedNum[1])) {
-          seenValues.add(embeddedNum[1]);
+        if (embeddedNum && text.length < 30 && !seenValues.has(embeddedNum[1]!)) {
+          seenValues.add(embeddedNum[1]!);
           candidates.push({
-            value: embeddedNum[1],
-            rawValue: embeddedNum[1],
+            value: embeddedNum[1]!,
+            rawValue: embeddedNum[1]!,
             matchIndex: -1,
             strategy: 'html-prominent',
             strategyScore: 35,
@@ -952,12 +954,12 @@ function extractRawCandidates(
   for (const line of lines) {
     const trimmed = line.trim();
     const numMatch = trimmed.match(/^(\d{4,8})$/);
-    if (numMatch && !seenValues.has(numMatch[1])) {
-      seenValues.add(numMatch[1]);
+    if (numMatch && !seenValues.has(numMatch[1]!)) {
+      seenValues.add(numMatch[1]!);
       const idx = plainText.indexOf(trimmed);
       candidates.push({
-        value: numMatch[1],
-        rawValue: numMatch[1],
+        value: numMatch[1]!,
+        rawValue: numMatch[1]!,
         matchIndex: idx >= 0 ? idx : -1,
         strategy: 'standalone-line',
         strategyScore: 30,
@@ -972,16 +974,16 @@ function extractRawCandidates(
     const alphaMatch = trimmed.match(/^([A-Z0-9]{3,5}[-\s][A-Z0-9]{3,5})$/i);
     if (
       alphaMatch &&
-      /\d/.test(alphaMatch[1]) &&
-      /[A-Za-z]/.test(alphaMatch[1]) &&
-      !seenValues.has(alphaMatch[1])
+      /\d/.test(alphaMatch[1]!) &&
+      /[A-Za-z]/.test(alphaMatch[1]!) &&
+      !seenValues.has(alphaMatch[1]!)
     ) {
-      const cleaned = alphaMatch[1].replace(/[-\s]/g, '');
+      const cleaned = alphaMatch[1]!.replace(/[-\s]/g, '');
       seenValues.add(cleaned);
       const idx = plainText.indexOf(trimmed);
       candidates.push({
         value: cleaned,
-        rawValue: alphaMatch[1],
+        rawValue: alphaMatch[1]!,
         matchIndex: idx >= 0 ? idx : -1,
         strategy: 'standalone-line',
         strategyScore: 30,
@@ -1072,7 +1074,7 @@ function extractRawCandidates(
   // Numbers near verification language but not caught by labels
   const allNumbers = plainText.matchAll(/\b(\d{4,8})\b/g);
   for (const numMatch of allNumbers) {
-    const code = numMatch[1];
+    const code = numMatch[1]!;
     if (seenValues.has(code)) {
       continue;
     }
@@ -1611,32 +1613,32 @@ function checkAntiPatterns(code: string, context: string, fullText: string): Ant
     return { isRejected: true, reason: `promo:${cleanCode}`, penaltyScore: -70, signals };
   }
 
-  // ── Repeated digits (unlikely to be real OTP) ────────────
-  if (/^(\d)\1+$/.test(cleanCode)) {
-    penalty -= 25;
+  // ── Repeated digits (hard rejection — never a real OTP) ────
+  if (/^(\d)\1{3,}$/.test(cleanCode)) {
     signals.push({
       name: 'anti:repeated-digits',
-      points: -25,
+      points: -999,
       layer: 'anti-pattern',
-      detail: `${cleanCode} is all the same digit`,
+      detail: `${cleanCode} is all the same digit — hard rejected`,
     });
+    return { isRejected: true, reason: `repeated:${cleanCode}`, penaltyScore: -999, signals };
   }
 
-  // ── Sequential digits (123456, 654321) ──────────────────
+  // ── Sequential digits (123456, 654321) — hard rejection ──
   const isSequential = cleanCode
     .split('')
-    .every((d, i, arr) => i === 0 || parseInt(d, 10) === parseInt(arr[i - 1], 10) + 1);
+    .every((d, i, arr) => i === 0 || parseInt(d, 10) === parseInt(arr[i - 1]!, 10) + 1);
   const isReverseSequential = cleanCode
     .split('')
-    .every((d, i, arr) => i === 0 || parseInt(d, 10) === parseInt(arr[i - 1], 10) - 1);
+    .every((d, i, arr) => i === 0 || parseInt(d, 10) === parseInt(arr[i - 1]!, 10) - 1);
   if (isSequential || isReverseSequential) {
-    penalty -= 15;
     signals.push({
       name: 'anti:sequential',
-      points: -15,
+      points: -999,
       layer: 'anti-pattern',
-      detail: `${cleanCode} is sequential(slightly suspicious)`,
+      detail: `${cleanCode} is sequential — hard rejected`,
     });
+    return { isRejected: true, reason: `sequential:${cleanCode}`, penaltyScore: -999, signals };
   }
 
   return {
@@ -1714,7 +1716,7 @@ function analyzeVisualProminence(
   // Font size
   const fontSizeMatch = style.match(/font-size\s*:\s*(\d+)/i);
   if (fontSizeMatch) {
-    const fontSize = parseInt(fontSizeMatch[1], 10);
+    const fontSize = parseInt(fontSizeMatch[1]!, 10);
     if (fontSize >= 24) {
       score += 25;
       signals.push({
@@ -1747,7 +1749,7 @@ function analyzeVisualProminence(
 
   // Letter spacing (common for OTP display)
   if (/letter-spacing\s*:\s*(\d+)/i.test(style)) {
-    const spacing = parseInt(style.match(/letter-spacing\\s*:\\s*(\\d+)/i)![1], 10);
+    const spacing = parseInt(style.match(/letter-spacing\\s*:\\s*(\\d+)/i)![1]!, 10);
     if (spacing >= 2) {
       score += 20;
       signals.push({
@@ -1787,7 +1789,7 @@ function analyzeVisualProminence(
   // Color (non-default colors often highlight codes)
   const colorMatch = style.match(/(?:^|;)\s*color\s*:\s*([^;]+)/i);
   if (colorMatch) {
-    const color = colorMatch[1].trim().toLowerCase();
+    const color = colorMatch[1]!.trim().toLowerCase();
     if (
       color !== 'black' &&
       color !== '#000' &&
@@ -2058,6 +2060,8 @@ function buildOTPReasoning(
     'url-parameter': `Found in URL parameter: ${candidate.label}`,
     'structured-container': 'Found inside a styled code container',
     'proximity-inference': 'Found near verification language (inferred)',
+    // FIX: Added missing key — ExtractionStrategy union includes 'emergency-regex'
+    'emergency-regex': 'Found via emergency last-resort regex fallback',
   };
 
   steps.push({
@@ -2178,7 +2182,10 @@ export function extractOTP(
   // ── Parse HTML ──────────────────────────────────────────
   // SECURITY FIX: Truncate massive emails to 50KB to prevent ReDoS and save CPU
   const MAX_PROCESSABLE_LENGTH = 50000;
-  const boundedHtml = emailHtml.length > MAX_PROCESSABLE_LENGTH ? emailHtml.substring(0, MAX_PROCESSABLE_LENGTH) : emailHtml;
+  const boundedHtml =
+    emailHtml.length > MAX_PROCESSABLE_LENGTH
+      ? emailHtml.substring(0, MAX_PROCESSABLE_LENGTH)
+      : emailHtml;
   let plainText = boundedHtml;
 
   // Use simple HTML stripping instead of DOMParser (not available in Service Workers)
@@ -2426,15 +2433,18 @@ export function extractOTP(
 
   // ── Post-Processing ─────────────────────────────────────
   // If only one candidate, boost it
-  if (candidates.length === 1 && candidates[0].score > 20) {
-    candidates[0].score += 15;
-    candidates[0].matchedSignals.push({
-      name: 'post:sole-candidate',
-      points: 15,
-      layer: 'post-processor',
-      detail: 'Only one viable code candidate — high confidence',
-    });
-    candidates[0].confidence = Math.min(candidates[0].confidence * 1.1, 1.0);
+  if (candidates.length === 1) {
+    const sole = candidates[0];
+    if (sole && sole.score > 20) {
+      sole.score += 15;
+      sole.matchedSignals.push({
+        name: 'post:sole-candidate',
+        points: 15,
+        layer: 'post-processor',
+        detail: 'Only one viable code candidate — high confidence',
+      });
+      sole.confidence = Math.min(sole.confidence * 1.1, 1.0);
+    }
   }
 
   // Deduplicate (same normalized code)
@@ -2467,11 +2477,11 @@ export function extractOTP(
   let estimatedCodeLength: number | null = null;
   const lengthHint = plainText.match(/(\d)[- ]?digit\s*(code|pin|otp|number)/i);
   if (lengthHint) {
-    estimatedCodeLength = parseInt(lengthHint[1], 10);
+    estimatedCodeLength = parseInt(lengthHint[1]!, 10);
   }
 
   return {
-    best: deduped.length > 0 ? deduped[0] : null,
+    best: deduped.length > 0 ? (deduped[0] ?? null) : null,
     allCandidates: deduped,
     rejected,
     emailAnalysis: {
@@ -2492,7 +2502,7 @@ export function extractOTP(
       rejectedCount: rejected.length,
       extractionTimeMs,
       layersExecuted,
-      dominantStrategy: deduped.length > 0 ? deduped[0].strategy : null,
+      dominantStrategy: deduped.length > 0 ? (deduped[0]?.strategy ?? null) : null,
     },
   };
 }
