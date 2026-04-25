@@ -1,338 +1,393 @@
 <div align="center">
 
-<img src="public/assets/icons/icon128.png" alt="GhostFill Logo" width="128" height="128" />
+<img src="public/assets/icons/icon128.png" alt="GhostFill logo" width="128" height="128" />
 
-# 👻 GhostFill
+# GhostFill
 
-**A privacy-focused helper for disposable email, passwords, and OTP workflows.** <br>
-_Generate disposable emails · Secure passwords · Automatic OTP fill · Local AI Inference · 100% Free_
+Disposable email, password generation, and OTP assistance for Chromium browsers.
 
-[![Version](https://img.shields.io/badge/version-1.1.0-blueviolet?style=for-the-badge&logo=semver)](https://github.com/Xshya19/ghostfill-extension/releases)
-[![Manifest V3](https://img.shields.io/badge/Manifest-V3-orange?style=for-the-badge&logo=googlechrome)](https://developer.chrome.com/docs/extensions/develop/migrate/what-is-mv3)
+<p>
+  GhostFill helps you move through sign-up and verification flows without juggling tabs, inboxes, and copy-paste steps.
+</p>
+
+[![Version](https://img.shields.io/badge/version-1.1.0-blueviolet?style=for-the-badge)](https://github.com/Xshya19/ghostfill-extension/releases)
+[![Manifest V3](https://img.shields.io/badge/Manifest-V3-orange?style=for-the-badge)](https://developer.chrome.com/docs/extensions/develop/migrate/what-is-mv3)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178c6?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-18-61dafb?style=for-the-badge&logo=react)](https://react.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)](LICENSE)
 
-[**Install GhostFill**](#-getting-started) • [**Report a Bug**](https://github.com/Xshya19/ghostfill-extension/issues) • [**Request Feature**](https://github.com/Xshya19/ghostfill-extension/issues)
+[Getting Started](#getting-started) - [Development](#development) - [Architecture](#architecture) - [Contributing](#contributing)
 
 </div>
 
 ---
 
-<details open>
-<summary><h2>📑 Table of Contents</h2></summary>
+## At a Glance
 
-- [🧩 What is GhostFill?](#-what-is-ghostfill)
-- [✨ Killer Features](#-killer-features)
-- [🧠 The 5-Layer Intelligence Engine](#-the-5-layer-intelligence-engine)
-- [🏗️ Architecture Deep Dive](#️-architecture-deep-dive)
-- [🔒 Privacy & Security Model](#-privacy--security-model)
-- [🧪 How It Works: The Magic Flow](#-how-it-works-the-magic-flow)
-- [🚀 Getting Started](#-getting-started)
-- [⌨️ Keyboard Shortcuts](#️-keyboard-shortcuts)
-- [❓ FAQ](#-faq)
-- [🤝 Contributing](#-contributing)
-- [📄 License](#-license)
+| Area         | Summary                                                   |
+| ------------ | --------------------------------------------------------- |
+| Email        | Generates disposable inboxes from supported providers     |
+| Passwords    | Creates secure passwords from saved defaults              |
+| Verification | Detects OTPs and activation links from incoming email     |
+| ML           | Runs local ONNX-based field classification in the browser |
+| UI           | Includes popup, options, and page-level assistive flows   |
 
-</details>
+## Contents
 
----
+- [Overview](#overview)
+- [What GhostFill Does](#what-ghostfill-does)
+- [Core Features](#core-features)
+- [Supported Providers](#supported-providers)
+- [Privacy and Security](#privacy-and-security)
+- [Permissions](#permissions)
+- [Architecture](#architecture)
+- [Project Structure](#project-structure)
+- [Getting Started](#getting-started)
+- [Packaging](#packaging)
+- [Development](#development)
+- [Keyboard Shortcuts](#keyboard-shortcuts)
+- [Known Boundaries](#known-boundaries)
+- [FAQ](#faq)
+- [Contributing](#contributing)
+- [License](#license)
 
-## 🧩 What is GhostFill?
+## Overview
 
-GhostFill is a Chrome extension that helps reduce email exposure during sign-up and verification flows. It can generate disposable email addresses, create strong passwords, and help detect OTP codes in incoming messages.
+GhostFill is a Chrome extension that helps with sign-up and verification flows by combining:
 
-GhostFill handles the entire sign-up lifecycle seamlessly:
+- disposable email generation
+- strong password generation
+- OTP and activation-link detection from incoming email
+- browser-side form assistance
+- local ML inference for field classification
 
-1. **Generates** a disposable email on the fly.
-2. **Creates** a cryptographically secure password.
-3. **Automatically detects** OTP codes and activation links in incoming emails.
-4. **Fills** them right into your browser without you breaking a sweat!
+The extension is designed to keep the workflow inside the browser. Instead of switching between tabs and inboxes, GhostFill can generate credentials, watch a temporary inbox, detect the verification artifact that matters, and help deliver it back into the page you are already using.
 
-> 🛡️ **Zero Tracking. No Telemetry. Open Source.** GhostFill processes everything locally in your browser — it connects only to the email provider APIs you choose.
+> GhostFill is designed to reduce friction in temporary email and verification workflows, not to guarantee full automation on every site.
 
----
+## What GhostFill Does
 
-## ✨ Killer Features
+GhostFill focuses on four main jobs:
 
-GhostFill isn't just a basic email generator. It's an intelligent AI-backed local assistant.
+1. Generate a temporary email address from a supported provider.
+2. Generate a secure password based on saved defaults.
+3. Monitor the temporary inbox for OTPs and verification links.
+4. Assist with filling supported fields on the current page.
 
-<table>
-<tr>
-<td width="50%">
+Depending on the email content and page context, GhostFill may:
 
-### 📬 Resilient Email Engine
+- surface the latest OTP for manual use
+- fill a detected OTP into a waiting field
+- open a verification link in a new tab when link confirmation is enabled
 
-Powered by 7 independent, highly-vetted providers running in parallel. GhostFill features **intelligent health scoring**, automatic fallback mechanisms with exponential backoff, and AES-encrypted session-aware cache resets. Never lose an inbox.
+## Core Features
 
-### Strong Passwords
+### Temporary email workflow
 
-Generate cryptographically strong passwords tailored to common site requirements. One-click copy, optional history, and form fill support are included.
+- Supports multiple disposable email providers with provider health checks and fallback behavior.
+- Saves the currently active temporary email for continued inbox polling.
+- Tracks inbox state and processed messages to reduce duplicate handling.
 
-### 🔗 Silent Activation Service
+### Password generation
 
-Say goodbye to "Click here to verify". Detected link activations are dynamically opened in a **silent background tab**—meaning you stay right exactly where you are. It ships with a powerful URL gatekeeper that blocks suspicious TLDs and bad schemes.
+- Generates passwords with configurable defaults.
+- Supports options such as length, uppercase, lowercase, numbers, symbols, and ambiguous-character exclusion.
+- Integrates with the extension popup and field-fill actions.
 
-</td>
-<td width="50%">
+### OTP and link detection
 
-### 👻 The Floating Ghost
+- Reads incoming email from supported temporary inbox providers.
+- Detects OTP codes and verification links from message content.
+- Uses cross-validation rules to avoid treating link tokens as standalone OTPs when a link is the better action.
 
-Your ever-present companion. Sits safely isolated within a **Shadow DOM** on every webpage. Watches for OTP requirements using aggressive multi-strategy heuristics and a Proactive Shadow Scanner custom-built for modern SPAs.
+### Local ML-assisted classification
 
-### 💎 Premium Fluid UI
+- Uses `onnxruntime-web` in an offscreen document.
+- Runs model inference locally in the extension package.
+- Helps classify form fields and verification intent without sending page data to a remote AI service.
 
-The entire frontend is powered by a custom **mass-spring-damper physics engine (Framer Motion)**. Enjoy liquid-smooth spatial routing, hardware-accelerated glassmorphism, and satisfying micro-interactions that feel natively integrated into your OS.
+### Browser integration
 
-### 📋 Smart Form Autofill
+- Popup UI for inbox, password, identity, and quick actions.
+- Options page for behavior, email, privacy, and advanced settings.
+- Content scripts for field detection, OTP page detection, and page-level autofill assistance.
 
-A framework-aware form scanner designed to handle React, Vue, Angular, and Vanilla JS forms cleanly. Automatically injects standard fields, usernames, and dynamic OTP boxes.
+## Feature Snapshot
 
-### 🔔 Lightning Fast Polling
+| Capability                  | Included |
+| --------------------------- | -------- |
+| Disposable inbox generation | Yes      |
+| Password generation         | Yes      |
+| OTP detection from email    | Yes      |
+| Activation link detection   | Yes      |
+| Local ML inference          | Yes      |
+| Popup and options UI        | Yes      |
+| Third-party analytics       | No       |
 
-No delayed emails. GhostFill rapidly polls your active inboxes (~5–10s cycle time), alerting you with non-intrusive toasts, and executing OTP injection quickly after the email hits your inbox!
+## Supported Providers
 
-</td>
-</tr>
-</table>
+GhostFill is currently configured to work with provider integrations for:
 
----
+- `mail.tm`
+- `mail.gw`
+- `1secmail`
+- `guerrillamail`
+- `tempmail`
+- `maildrop`
+- `dropmail`
 
-## 🧠 The 5-Layer Intelligence Engine
+Provider availability depends on the upstream services. GhostFill includes fallback and health-state handling, but it cannot guarantee uptime for third-party inbox providers.
 
-GhostFill's Crown Jewel is its deeply sophisticated intelligence engine. Every single email is processed through **Five Stages of Deep Analysis**:
+## Privacy and Security
 
-|  Stage   | Name                      | Operations Performed                                                                          |
-| :------: | ------------------------- | --------------------------------------------------------------------------------------------- |
-| 🔍 **1** | **Provider Detection**    | Determines contextual brand sender (e.g. Google, GitHub, Amazon).                             |
-| 🧩 **2** | **OTP Extraction**        | Deploys multi-strategy regex, adjacent-label parsing, & ML position heuristics.               |
-| 🔗 **3** | **Link Extraction**       | Scrapes for activation/verification URLs with call-to-action (CTA) confidence scoring.        |
-| ⚖️ **4** | **Cross-Validation**      | Intelligently negates standard OTPs if embedded directly inside a verification link.          |
-| 🎯 **5** | **Intent Classification** | Emits a final normalized verdict (`otp` / `link` / `both` / `none`) with accuracy confidence. |
+GhostFill is built to minimize unnecessary data exposure.
 
-_Results are instantly cached directly into `chrome.storage.session` and hardware-encrypted using **AES-256-GCM** to ensure zero performance lag during repeat checks._
+- No built-in analytics or tracking.
+- Sensitive data is stored with encrypted storage flows where applicable.
+- Session-only secrets are separated from persisted settings.
+- Email HTML is sanitized before downstream processing.
+- Local ML inference runs inside the extension package.
+- Sensitive site categories such as common banking and password-manager domains are excluded from the default content script.
 
----
+GhostFill still communicates with the disposable email providers you choose to use. That network access is required for inbox creation, polling, and message retrieval.
 
-## 🏗️ Architecture Deep Dive
+## Permissions
 
-GhostFill’s complex workflow is highly modular, split between background service workers, decoupled content scripts, and specialized offscreen AI documents.
+GhostFill uses the following main Chrome permissions:
 
-<details>
-<summary><b>Click to expand the Architecture Diagram</b></summary>
-<br>
+- `activeTab`
+- `storage`
+- `clipboardWrite`
+- `contextMenus`
+- `alarms`
+- `notifications`
+- `offscreen`
+
+It also requests host permissions for supported email-provider APIs and the Mail.tm Mercure SSE endpoint used for real-time inbox updates.
+
+## Architecture
+
+At a high level, the extension is split into four parts:
+
+### 1. Background service worker
+
+Responsible for:
+
+- message routing
+- inbox polling
+- provider health checks
+- OTP and link processing
+- notification and alarm coordination
+
+### 2. Content scripts
+
+Responsible for:
+
+- field detection
+- OTP page detection
+- page-level fill actions
+- in-page assistive UI
+
+### 3. Popup and options UIs
+
+Built with React and used for:
+
+- identity generation
+- inbox inspection
+- password generation
+- extension settings
+
+### 4. Offscreen ML runtime
+
+Responsible for:
+
+- loading the ONNX model
+- running local field classification inference
+- isolating ML execution from the visible UI surfaces
+
+### Key files
+
+| Path                               | Responsibility                                         |
+| ---------------------------------- | ------------------------------------------------------ |
+| `src/background/serviceWorker.ts`  | Background boot flow and phased initialization         |
+| `src/background/messageHandler.ts` | Main request routing between UI/content/background     |
+| `src/content/index.ts`             | Content-script bootstrap and page integration          |
+| `src/content/otpPageDetector.ts`   | OTP page detection and field targeting                 |
+| `src/offscreen/inferenceEngine.ts` | Local ONNX inference engine                            |
+| `src/intelligence/ml/MLService.ts` | ML service integration for classification              |
+| `src/utils/validation.ts`          | Runtime message validation                             |
+| `manifest.json`                    | Extension capabilities, permissions, commands, and CSP |
+
+## Project Structure
 
 ```text
-┌──────────────────────────────────────────────────────────────────────┐
-│                        CHROME EXTENSION (MV3)                        │
-│                                                                      │
-│  ┌──────────────┐  ┌──────────────────────────────────────────────┐  │
-│  │   Popup UI   │  │            Background Service Worker         │  │
-│  │  (React 18)  │  │                                              │  │
-│  │  • Identity  │  │  ┌─────────────────┐  ┌──────────────────┐   │  │
-│  │  • Email     │  │  │ PollingManager  │  │  MessageHandler  │   │  │
-│  │  • Inbox     │  │  │  Fast / Slow    │  │   (main router)  │   │  │
-│  │  • Password  │  │  │  AlarmScheduler │  └──────────────────┘   │  │
-│  └──────────────┘  │  └────────┬────────┘                         │  │
-│                    │           │                                  │  │
-│  ┌──────────────┐  │  ┌────────▼────────┐  ┌──────────────────┐   │  │
-│  │  Options UI  │  │  │ SmartDetection  │  │   LinkService    │   │  │
-│  │  (React 18)  │  │  │  5-Layer Engine │  │  (background tab │   │  │
-│  └──────────────┘  │  │  AES-256 cache  │  │   activation)    │   │  │
-│                    │  └─────────────────┘  └──────────────────┘   │  │
-│                    │                                              │  │
-│                    │  ┌─────────────────┐  ┌──────────────────┐   │  │
-│                    │  │  EmailService   │  │  StorageService  │   │  │
-│                    │  │  7 providers    │  │  AES-256 encrypt │   │  │
-│                    │  │  health scoring │  │  session / local │   │  │
-│                    │  └─────────────────┘  └──────────────────┘   │  │
-│                    └──────────────────────────────────────────────┘  │
-│                                                                      │
-│  ┌────────────────────────────────────────────────────────────────┐  │
-│  │                   Content Script (every page)                  │  │
-│  │   OTPPageDetector · FloatingButton · AutoFiller · FormDetector │  │
-│  │   ToastFeedback (Shadow DOM) · DOMObserver · FieldWatcher      │  │
-│  └────────────────────────────────────────────────────────────────┘  │
-│                                                                      │
-│  ┌──────────────┐                                                    │
-│  │   Offscreen  │  ONNX Runtime Web — Local ML inference             │
-│  │   Document   │  (never makes an external API call!)               │
-│  └──────────────┘                                                    │
-└──────────────────────────────────────────────────────────────────────┘
+ghostfill-extension-main/
+|-- public/                 # static assets and locales
+|-- scripts/                # build and packaging helpers
+|-- src/
+|   |-- background/         # service worker and background orchestration
+|   |-- content/            # content scripts, page detection, autofill
+|   |-- intelligence/       # ML and detection logic
+|   |-- offscreen/          # offscreen document runtime
+|   |-- options/            # settings UI
+|   |-- popup/              # popup UI
+|   |-- services/           # provider and workflow services
+|   |-- types/              # shared TypeScript types
+|   `-- utils/              # shared helpers
+|-- manifest.json
+|-- package.json
+`-- webpack.config.cjs
 ```
 
-</details>
+## Getting Started
 
-<details>
-<summary><b>Key Source Files</b></summary>
-<br>
+### Requirements
 
-| Path Focus                              | Primary Responsibility                                                         |
-| --------------------------------------- | ------------------------------------------------------------------------------ |
-| `src/background/pollingManager.ts`      | Handles multi-speed polling modes, smart dedup caching, and alarm scheduling.  |
-| `src/services/smartDetectionService.ts` | The brains of the 5-layer pipeline; utilizes AES-encrypted local cache logic.  |
-| `src/services/linkService.ts`           | Securely manages hidden background tabs for silent, seamless email activation. |
-| `src/services/emailServices/index.ts`   | Aggregates and maintains our heavy 7-provider email strategy.                  |
-| `src/content/otpPageDetector.ts`        | Listens for inputs needing OTP codes.                                          |
-| `src/offscreen/inferenceEngine.ts`      | Local execution environment for ONNX AI models to find forms & OTP intents!    |
+- Node.js 18 or newer
+- npm
+- Chrome 109+ or another Chromium browser with Manifest V3 support
 
-</details>
+### Install dependencies
 
----
-
-## 🔒 Privacy & Security Model
-
-GhostFill is designed to minimize data exposure while still supporting provider-backed disposable email workflows.
-
-- **No analytics by default**: No Google Analytics or tracking pixels are built into the extension. <br>
-- **Encrypted sensitive storage**: Sensitive local records use AES-GCM encryption. <br>
-- **Key separation**: Session-only secrets and persisted encrypted data use separate storage paths. <br>
-- **HTML sanitization**: DOMPurify sanitizes email HTML before rendering or parsing. <br>
-- **Sensitive-site exclusions**: Common financial and password-manager domains are excluded from the default content script. <br>
-- **URL checks**: Activation links are validated before opening, including scheme and suspicious-domain checks.
-
----
-
-## 🧪 How It Works: The Magic Flow
-
-Ever wondered what happens under the hood when you hit "Send OTP"?
-
-```text
-1️⃣  New Email Hits the Provider!
-        │
-2️⃣  Background PollingManager snags it instantly (skipping duplicates).
-        │
-3️⃣  SmartDetectionService rips the email apart locally:
-      ├── DOMPurify cleans dangerous markup.
-      ├── The ProviderDetector figures out who sent it.
-      ├── OTPExtractor pulls possible OTP numbers via Regex.
-      ├── LinkExtractor pulls the Activation button via CTA tags.
-      └── The engine makes a final verdict: (It's an OTP!).
-        │
-4️⃣  The GhostFill Ghost receives a background message via `AUTO_FILL_OTP`.
-        │
-5️⃣  The Ghost injects it directly into the input field you're staring at!
-        │
-6️⃣  🎉 BOOM! Success Toast shows! You didn't even leave the tab!
+```bash
+npm install
 ```
 
----
+### Development build
 
-## 🚀 Getting Started
+Watch mode:
 
-### Prerequisites
+```bash
+npm run dev
+```
 
-- **Node.js**: v18 or higher
-- **Browser**: Chrome v109+ (or any Chromium browser supporting Manifest V3)
+Production build:
 
-### 🛠️ Local Installation & Build
+```bash
+npm run build
+```
 
-<details>
-<summary><b>Show Step-by-Step Installation</b></summary>
-<br>
+### Load the extension locally
 
-1. **Clone the Source Code**
+1. Open `chrome://extensions/`
+2. Enable **Developer mode**
+3. Click **Load unpacked**
+4. Select the `dist/` folder
+
+## Packaging
+
+Build first:
+
+```bash
+npm run build
+```
+
+Then create the zip package:
+
+```bash
+npm run build:zip
+```
+
+Note: `build:zip` packages the existing `dist/` directory. It does not run the production build automatically.
+
+## Development
+
+### Scripts
+
+| Command                | Description                           |
+| ---------------------- | ------------------------------------- |
+| `npm run dev`          | Webpack watch build for development   |
+| `npm run build`        | Production build into `dist/`         |
+| `npm run build:dev`    | Development-mode build into `dist/`   |
+| `npm run clean`        | Remove `dist/`                        |
+| `npm run lint`         | Run ESLint                            |
+| `npm run lint:fix`     | Run ESLint with fixes                 |
+| `npm run type-check`   | Run TypeScript without emitting files |
+| `npm run test`         | Run Vitest test suite                 |
+| `npm run test:watch`   | Run Vitest in watch mode              |
+| `npm run test:ui`      | Open the Vitest UI                    |
+| `npm run format:check` | Run Prettier checks                   |
+| `npm run zip`          | Package the current `dist/` folder    |
+
+### Recommended local workflow
+
+```bash
+npm install
+npm run lint
+npm run type-check
+npm run test
+npm run build
+```
+
+## Keyboard Shortcuts
+
+Configured extension commands:
+
+| Action                  | Windows / Linux | macOS             |
+| ----------------------- | --------------- | ----------------- |
+| Open GhostFill          | `Ctrl+Shift+E`  | `Command+Shift+E` |
+| Generate new temp email | `Ctrl+Shift+M`  | `Command+Shift+M` |
+| Auto-fill current form  | `Ctrl+Shift+F`  | `Command+Shift+F` |
+
+The `generate-password` command exists in the manifest but does not currently define a suggested default key combination.
+
+## Known Boundaries
+
+- GhostFill depends on third-party temporary email services, so provider outages can affect inbox generation or retrieval.
+- Some sites use custom verification flows that may not expose fields in a way the content script can safely target.
+- Automatic activation-link handling depends on both email structure and the target page behavior.
+- The extension intentionally avoids running on a set of sensitive domains by default.
+
+## FAQ
+
+### Does GhostFill read my personal inbox?
+
+No. GhostFill is designed around temporary email accounts it creates through supported providers. It does not integrate with personal Gmail, Outlook, or work mailboxes.
+
+### Does GhostFill send form data to an AI API?
+
+No remote AI API is required for the local ML flow shown in this repository. Model inference is packaged into the extension and runs locally through `onnxruntime-web`.
+
+### Is every verification flow fully automatic?
+
+No. Some flows can be partially automated, and some require manual confirmation depending on the provider, target site, and field structure.
+
+## Contributing
+
+Contributions are welcome. A good default workflow is:
+
+1. Fork the repository
+2. Create a branch for your change
+3. Make the change with focused scope
+4. Run:
 
    ```bash
-   git clone https://github.com/Xshya19/ghostfill-extension.git
-   cd ghostfill-extension
-   ```
-
-2. **Install all necessary Node modules**
-
-   ```bash
-   npm install
-   ```
-
-3. **Spin up Development Watch Mode (Hot Reloading)**
-
-   ```bash
-   npm run dev
-   ```
-
-4. **Build it for Production!**
-
-   ```bash
+   npm run lint
+   npm run type-check
+   npm run test
    npm run build
    ```
 
-5. **Package into a Deployable Extension**
-   ```bash
-   npm run zip    # Generates a fresh distribute file from dist/
-   ```
+5. Open a pull request with a clear summary of the change
 
-</details>
+If you are reporting a bug, include:
 
-### 💻 Load it into your Browser
+- browser version
+- reproduction steps
+- expected behavior
+- actual behavior
+- relevant console or extension logs when available
 
-1. Open your browser and head to `chrome://extensions/`.
-2. Toggle the **Developer mode** switch (Usually top-right).
-3. Click the **Load unpacked** button.
-4. Select the inner `dist/` folder.
-5. Watch the ghost magically appear in your toolbar! 🎈
+## License
 
----
-
-## ⌨️ Keyboard Shortcuts
-
-Speed up your workflow and never let your hands leave the keyboard!
-
-| Action               | Windows / Linux                                   | macOS                                            |
-| -------------------- | ------------------------------------------------- | ------------------------------------------------ |
-| Open GhostFill Panel | <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd> | <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd> |
-| Blast a New Email    | <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd> | <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd> |
-| Autofill Field!      | <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd> | <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd> |
-
----
-
-## ❓ FAQ
-
-<details>
-<summary><b>Can it read my personal emails?</b></summary>
-No! GhostFill ONLY has access to the temporary disposable emails it dynamically generates for you. It never touches your actual personal or work inboxes.
-</details>
-
-<details>
-<summary><b>Why do you need an ONNX inference engine?</b></summary>
-GhostFill uses a local ML pipeline to classify form fields without sending page screenshots or form snapshots to a cloud AI API.
-</details>
-
-<details>
-<summary><b>Is GhostFill entirely free?</b></summary>
-Yes. The extension is open source and uses disposable-email providers that do not require user-supplied paid API keys by default. 
-</details>
-
----
-
-## 🤝 Contributing
-
-We love builders helping builders! If you see bugs or want some cool enhancements:
-
-1. Fork the repo!
-2. Create your own feature branch: `git checkout -b feat/your-awesome-feature`
-3. Make sure things pass! Run `npm run test` and `npm run type-check`.
-4. Commit your awesome work with a detailed message.
-5. Open up a PR and we'll take a look!
-
----
-
-## 📄 License
-
-GhostFill is protected and fully open-source under the MIT License — see [LICENSE](LICENSE) for the legal details.
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 
 <div align="center">
 
-<img src="public/assets/icons/icon48.png" alt="GhostFill Tiny Logo" width="48" height="48" />
+<img src="public/assets/icons/icon48.png" alt="GhostFill small logo" width="48" height="48" />
 
-**Built with 👻 and ☕ by [Xshya19](https://github.com/Xshya19)**  
-[Report an Issue](https://github.com/Xshya19/ghostfill-extension/issues) &nbsp;·&nbsp; [Leave a Star! ⭐](https://github.com/Xshya19/ghostfill-extension)
-
-<br>
-
-<p align="center">
-  <i>If you love GhostFill, consider leaving a star on the repository!</i>
-</p>
+Built by [Xshya19](https://github.com/Xshya19)
 
 </div>
