@@ -38,6 +38,10 @@ interface GhostFillDebugGlobal {
 
 (function initializeDebugConsole(): void {
   const global = window as unknown as GhostFillDebugGlobal;
+  const runtimeOrigin =
+    typeof chrome !== 'undefined' && chrome.runtime?.id
+      ? `chrome-extension://${chrome.runtime.id}`.toLowerCase()
+      : 'chrome-extension://';
 
   // Initialize error storage
   if (!global.__GHOSTFILL_ERRORS__) {
@@ -119,8 +123,37 @@ interface GhostFillDebugGlobal {
 
   // Don't capture log/info - only errors and warnings
 
+  function isExtensionOwnedText(text: string): boolean {
+    const lower = text.toLowerCase();
+    return (
+      lower.includes('ghostfill') ||
+      lower.includes(runtimeOrigin) ||
+      lower.includes('extension context invalidated') ||
+      lower.includes('receiving end does not exist') ||
+      lower.includes('could not establish connection')
+    );
+  }
+
+  function isExtensionOwnedReason(reason: unknown): boolean {
+    if (reason instanceof Error) {
+      return isExtensionOwnedText(`${reason.message}\n${reason.stack ?? ''}`);
+    }
+    if (typeof reason === 'string') {
+      return isExtensionOwnedText(reason);
+    }
+    if (reason && typeof reason === 'object') {
+      const maybeMessage = 'message' in reason ? String(reason.message ?? '') : '';
+      const maybeStack = 'stack' in reason ? String(reason.stack ?? '') : '';
+      return isExtensionOwnedText(`${maybeMessage}\n${maybeStack}`);
+    }
+    return false;
+  }
+
   // Catch unhandled errors
   window.addEventListener('error', (event: ErrorEvent) => {
+    if (!isExtensionOwnedText(`${event.message ?? ''}\n${event.filename ?? ''}`)) {
+      return;
+    }
     originalCaptureError(
       [event.message, event.filename + ':' + event.lineno + ':' + event.colno],
       'error',
@@ -129,6 +162,9 @@ interface GhostFillDebugGlobal {
   });
 
   window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
+    if (!isExtensionOwnedReason(event.reason)) {
+      return;
+    }
     originalCaptureError(
       ['Unhandled Promise Rejection:', event.reason],
       'error',

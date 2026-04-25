@@ -8,9 +8,11 @@ const mlLog = {
   error: (...a: unknown[]) => console.error('[GhostFill ML]', ...a),
 };
 
-// Tell ONNX where to find the WebAssembly binaries.
-// In the offscreen document, these are served relative to the root of the extension.
-ort.env.wasm.wasmPaths = '/';
+// Pin ONNX Runtime to the exact packaged module/wasm pair we ship.
+ort.env.wasm.wasmPaths = {
+  mjs: chrome.runtime.getURL('ort-wasm-simd-threaded.mjs'),
+  wasm: chrome.runtime.getURL('ort-wasm-simd-threaded.wasm'),
+};
 ort.env.wasm.numThreads = 1;
 // ort.env.wasm.proxy = true; // Offscreen document CAN use workers/proxy if multi-threading is enabled
 

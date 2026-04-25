@@ -415,22 +415,26 @@ async function warmupSmartDetection(): Promise<void> {
 }
 
 async function logStorageDiagnostics(): Promise<void> {
-  const usage = await storageService.getUsage();
-  log.info('💾 Storage diagnostics', {
-    used: `${(usage.used / 1024).toFixed(2)} KB`,
-    quota: `${((usage.total ?? 0) / 1024).toFixed(2)} KB`,
-    percentage: `${usage.percentage.toFixed(1)}%`,
-  });
+  try {
+    const usage = await storageService.getUsage();
+    log.info('💾 Storage diagnostics', {
+      used: `${(usage.used / 1024).toFixed(2)} KB`,
+      quota: `${((usage.total ?? 0) / 1024).toFixed(2)} KB`,
+      percentage: `${usage.percentage.toFixed(1)}%`,
+    });
+  } catch (e) {
+    log.debug('Storage diagnostics read failed', e);
+  }
 
-  // Persist boot state for crash recovery analysis
-  await storageService
+  // Persist boot state for crash recovery analysis, but do not block boot on it.
+  void storageService
     .set(CONFIG.BOOT_STATE_KEY, {
       state: bootState,
       bootId: metrics.bootId,
       completedAt: Date.now(),
       servicesUp: metrics.servicesUp,
     })
-    .catch((e) => log.debug('Alarm creation failed', e));
+    .catch((e) => log.debug('Boot state persistence failed', e));
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

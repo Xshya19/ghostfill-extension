@@ -114,10 +114,21 @@ export const savePasswordPayloadSchema = z.object({
   notes: safeString.max(1000).optional().nullable(),
 });
 
-export const extractOTPPayloadSchema = z.object({
-  text: z.string().max(100000),
-  source: safeString.optional().nullable(),
-});
+export const extractOTPPayloadSchema = z
+  .object({
+    text: z.string().max(100000).optional(),
+    textBody: z.string().max(100000).optional(),
+    htmlBody: z.string().max(500000).optional(),
+    subject: safeString.optional().nullable(),
+    source: safeString.optional().nullable(),
+  })
+  .refine((payload) => {
+    return (
+      typeof payload.text === 'string' ||
+      typeof payload.textBody === 'string' ||
+      typeof payload.htmlBody === 'string'
+    );
+  }, 'At least one of text, textBody, or htmlBody is required');
 
 export const fillOTPPayloadSchema = z.object({
   otp: safeString.min(4).max(12),

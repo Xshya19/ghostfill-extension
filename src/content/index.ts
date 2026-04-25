@@ -27,22 +27,70 @@ function isContextValid(): boolean {
   return typeof chrome !== 'undefined' && !!chrome.runtime?.id;
 }
 
+function isKnownLifecycleMessage(text: string): boolean {
+  return (
+    text.includes('extension context invalidated') ||
+    text.includes('context invalidated') ||
+    text.includes('could not establish connection') ||
+    text.includes('receiving end does not exist')
+  );
+}
+
+function isExtensionOwnedText(text: string): boolean {
+  const lower = text.toLowerCase();
+  const runtimeOrigin =
+    typeof chrome !== 'undefined' && chrome.runtime?.id
+      ? `chrome-extension://${chrome.runtime.id}`.toLowerCase()
+      : 'chrome-extension://';
+
+  return (
+    lower.includes('ghostfill') || lower.includes(runtimeOrigin) || isKnownLifecycleMessage(lower)
+  );
+}
+
+function isExtensionOwnedRejection(reason: unknown): boolean {
+  if (reason instanceof Error) {
+    return isExtensionOwnedText(`${reason.message}\n${reason.stack ?? ''}`);
+  }
+
+  if (typeof reason === 'string') {
+    return isExtensionOwnedText(reason);
+  }
+
+  if (reason && typeof reason === 'object') {
+    const maybeMessage = 'message' in reason ? String(reason.message ?? '') : '';
+    const maybeStack = 'stack' in reason ? String(reason.stack ?? '') : '';
+    return isExtensionOwnedText(`${maybeMessage}\n${maybeStack}`);
+  }
+
+  return false;
+}
+
+function runSafely(taskName: string, task: () => Promise<unknown> | void): void {
+  try {
+    const result = task();
+    if (result && typeof (result as Promise<unknown>).then === 'function') {
+      void (result as Promise<unknown>).catch((error) => {
+        log.warn(`Content task "${taskName}" failed`, error);
+      });
+    }
+  } catch (error) {
+    log.warn(`Content task "${taskName}" failed`, error);
+  }
+}
+
 // Global error boundary for content script
 window.addEventListener('error', (event) => {
   const msg = event.message?.toLowerCase() ?? '';
+  const filename = event.filename ?? '';
 
-  if (msg.includes('extension context invalidated') || msg.includes('context invalidated')) {
+  if (isKnownLifecycleMessage(msg)) {
     log.debug('GhostFill: Content script context invalidated (expected on reload)');
     event.preventDefault();
     return;
   }
 
-  if (
-    msg.includes('could not establish connection') ||
-    msg.includes('receiving end does not exist')
-  ) {
-    log.debug('GhostFill: Connection error (expected if extension unloaded)');
-    event.preventDefault();
+  if (!isExtensionOwnedText(`${msg}\n${filename}`)) {
     return;
   }
 
@@ -54,21 +102,13 @@ window.addEventListener('unhandledrejection', (event) => {
   const reasonStr = reason instanceof Error ? reason.message : String(reason);
   const reasonStrLower = reasonStr.toLowerCase();
 
-  if (
-    reasonStrLower.includes('extension context invalidated') ||
-    reasonStrLower.includes('context invalidated')
-  ) {
+  if (isKnownLifecycleMessage(reasonStrLower)) {
     log.debug('GhostFill: Extension context invalidated (expected on reload)');
     event.preventDefault();
     return;
   }
 
-  if (
-    reasonStrLower.includes('could not establish connection') ||
-    reasonStrLower.includes('receiving end does not exist')
-  ) {
-    log.debug('GhostFill: Connection error (expected if extension unloaded)');
-    event.preventDefault();
+  if (!isExtensionOwnedRejection(reason)) {
     return;
   }
 
@@ -196,16 +236,16 @@ function init(): void {
 
     // Detect forms on page load
     formDetector.detectForms();
-    void autoFiller.injectIcons();
+    runSafely('injectIcons:init', () => autoFiller.injectIcons());
 
     // Setup floating button
-    void floatingButton.init();
+    runSafely('floatingButton.init', () => floatingButton.init());
 
     // Start observing DOM changes
-    void domObserver.start();
+    runSafely('domObserver.start', () => domObserver.start());
 
     // Initialize OTP page detection for auto-fill
-    void otpPageDetector.init();
+    runSafely('otpPageDetector.init', () => otpPageDetector.init());
 
     // Listen for messages from background
     if (chrome?.runtime?.onMessage) {
@@ -449,6 +489,30 @@ async function handleMessage(message: {
 
 let isInitialized = false;
 
+function scheduleInit(): void {
+  const start = () => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        init();
+      });
+    });
+  };
+
+  if ('requestIdleCallback' in window) {
+    (
+      window as Window & {
+        requestIdleCallback?: (
+          callback: IdleRequestCallback,
+          options?: IdleRequestOptions
+        ) => number;
+      }
+    ).requestIdleCallback?.(() => start(), { timeout: 1200 });
+    return;
+  }
+
+  setTimeout(start, 50);
+}
+
 function safeInit() {
   if (isInitialized) {
     return;
@@ -471,15 +535,7 @@ function safeInit() {
   }
 
   isInitialized = true;
-
-  // Double requestAnimationFrame ensures initial CSS has been applied
-  // and the page has been painted at least once, preventing FOUC and
-  // ensuring correct dimension reads for UI injection.
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      init();
-    });
-  });
+  scheduleInit();
 }
 
 // Initialize safely preventing DOM node load hazards

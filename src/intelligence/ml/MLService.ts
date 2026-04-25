@@ -49,7 +49,10 @@ export class MLService {
           return;
         }
 
-        ort.env.wasm.wasmPaths = chrome.runtime.getURL('');
+        ort.env.wasm.wasmPaths = {
+          mjs: chrome.runtime.getURL('ort-wasm-simd-threaded.mjs'),
+          wasm: chrome.runtime.getURL('ort-wasm-simd-threaded.wasm'),
+        };
         ort.env.wasm.numThreads = 1;
 
         const modelUrl = chrome.runtime.getURL('models/sentinel_brain_v2.onnx');

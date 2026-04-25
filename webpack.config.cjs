@@ -272,7 +272,12 @@ module.exports = (env, argv) => {
           { from: 'public/_locales', to: '_locales' },
           // Copy ML model + class metadata to dist/models/
           { from: 'models', to: 'models', noErrorOnMissing: true },
-          // Copy only the WASM runtime used by the extension.
+          // Copy only the ONNX Runtime assets used by the extension.
+          {
+            from: 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs',
+            to: '[name][ext]',
+            noErrorOnMissing: true,
+          },
           {
             from: 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm',
             to: '[name][ext]',

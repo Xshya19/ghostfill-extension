@@ -24,6 +24,14 @@ import {
 import { sseManager } from './sseManager';
 
 const log = createLogger('MessageHandler');
+const ML_PREWARM_TTL_MS = 10000;
+const lastMlPrewarmBySender = new Map<string, number>();
+
+function getPrewarmSenderKey(sender: chrome.runtime.MessageSender): string {
+  const tabPart = sender.tab?.id ? `tab:${sender.tab.id}` : 'tab:none';
+  const urlPart = sender.url ?? sender.origin ?? 'origin:none';
+  return `${tabPart}|${urlPart}`;
+}
 
 /**
  * Main message router for the background script.
@@ -393,6 +401,15 @@ async function handleMessage(
 
     case 'PREWARM_ML': {
       try {
+        const senderKey = getPrewarmSenderKey(sender);
+        const now = Date.now();
+        const last = lastMlPrewarmBySender.get(senderKey) ?? 0;
+
+        if (now - last < ML_PREWARM_TTL_MS) {
+          return { success: true };
+        }
+
+        lastMlPrewarmBySender.set(senderKey, now);
         await ensureOffscreenDocument();
         // Fire and forget warm-up message to the offscreen model
         chrome.runtime.sendMessage({ target: 'offscreen-doc', type: 'WARM_UP_ML' }).catch(() => {});

@@ -42,7 +42,9 @@ export class DOMObserver {
       }
       log.debug('DOM changed, re-detecting forms and icons');
       this.formDetector.detectForms();
-      void this.autoFiller.injectIcons();
+      void this.autoFiller.injectIcons().catch((error) => {
+        log.warn('Icon injection failed during DOM update', error);
+      });
     }, 1500);
 
     this.debouncedHandler = debouncedUpdate as unknown as DebouncedMutationHandler;

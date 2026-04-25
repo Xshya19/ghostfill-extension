@@ -112,9 +112,13 @@
       "use_dynamic_url": true
     },
     {
-      "resources": ["models/*.onnx", "models/*.onnx.data", "ort-wasm-simd-threaded.wasm"],
-      "matches": ["https://*/*"],
-      "use_dynamic_url": true
+      "resources": [
+        "models/*.onnx",
+        "models/*.onnx.data",
+        "ort-wasm-simd-threaded.mjs",
+        "ort-wasm-simd-threaded.wasm"
+      ],
+      "matches": ["https://*/*"]
     }
   ],
   "commands": {

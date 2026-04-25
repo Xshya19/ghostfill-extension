@@ -48,7 +48,12 @@ export class AutoFiller {
       const next = this.latestPendingOTP;
       this.latestPendingOTP = null;
       log.info('🔓 Lock released, processing queued OTP request');
-      void this.fillOTP(next.otp, next.fieldSelectors, next.isBackgroundTab).then(next.resolve);
+      void this.fillOTP(next.otp, next.fieldSelectors, next.isBackgroundTab)
+        .then(next.resolve)
+        .catch((error) => {
+          log.warn('Queued OTP request failed', error);
+          next.resolve(false);
+        });
     }
   }
 
