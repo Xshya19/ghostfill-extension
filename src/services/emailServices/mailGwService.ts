@@ -3,7 +3,7 @@
 import { EmailAccount, Email, MailTmDomain, MailTmAccount, MailTmMessage } from '../../types';
 import { API } from '../../utils/constants';
 import { fetchWithTimeout } from '../../utils/core';
-import { getRandomString } from '../../utils/encryption';
+import { getRandomInt, getRandomString } from '../../utils/encryption';
 import { createLogger } from '../../utils/logger';
 
 const log = createLogger('MailGwService');
@@ -43,7 +43,7 @@ class MailGwService {
         // Exponential backoff: 2s, 4s, 8s...
         const baseDelay = 2000 * Math.pow(2, i);
         // Jitter: +/- 0-500ms to prevent thundering herd
-        const jitter = Math.random() * 500;
+        const jitter = getRandomInt(0, 499);
         const delay = baseDelay + jitter;
 
         log.warn(`API request failed (${response.status}), retrying in ${Math.round(delay)}ms...`, {
@@ -52,10 +52,14 @@ class MailGwService {
         await new Promise((resolve, reject) => {
           const timeoutId = setTimeout(resolve, delay);
           if (options?.signal) {
-            options.signal.addEventListener('abort', () => {
-              clearTimeout(timeoutId);
-              reject(new DOMException('Aborted', 'AbortError'));
-            }, { once: true });
+            options.signal.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(timeoutId);
+                reject(new DOMException('Aborted', 'AbortError'));
+              },
+              { once: true }
+            );
           }
         });
       } catch (error) {
@@ -70,10 +74,14 @@ class MailGwService {
         await new Promise((resolve, reject) => {
           const timeoutId = setTimeout(resolve, delay);
           if (options?.signal) {
-            options.signal.addEventListener('abort', () => {
-              clearTimeout(timeoutId);
-              reject(new DOMException('Aborted', 'AbortError'));
-            }, { once: true });
+            options.signal.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(timeoutId);
+                reject(new DOMException('Aborted', 'AbortError'));
+              },
+              { once: true }
+            );
           }
         });
       }
@@ -134,7 +142,7 @@ class MailGwService {
 
       // Generate random address if not provided
       // Pick a random domain to increase chance of bypassing blacklists
-      const domain = domains[Math.floor(Math.random() * domains.length)]!;
+      const domain = domains[getRandomInt(0, domains.length - 1)]!;
       const login = address || getRandomString(10, 'abcdefghijklmnopqrstuvwxyz0123456789');
       const fullEmail = `${login}@${domain}`;
       const pwd =

@@ -24,7 +24,7 @@ export const OTP_PATTERNS = {
     /auth[-_\s]?code/i,
     /pin/i,
   ],
-  
+
   // Page-level signals
   VERIFICATION_PAGE: [
     /verify|verification|confirm[\s._-]*email|activate[\s._-]*account/i,
@@ -32,17 +32,9 @@ export const OTP_PATTERNS = {
     /self[-_\s]?service[\s._-]*verification/i,
     /check[\s._-]*inbox|code[\s._-]*sent|we[\s._-]*sent[\s._-]*code/i,
   ],
-  
+
   // Negative patterns (exclude login/password fields from OTP discovery)
-  NEGATIVE: [
-    /password/i,
-    /passwd/i,
-    /username/i,
-    /login/i,
-    /signin/i,
-    /search/i,
-    /captcha/i,
-  ],
+  NEGATIVE: [/password/i, /passwd/i, /username/i, /login/i, /signin/i, /search/i, /captcha/i],
 
   PAGE_TYPES: [
     {
@@ -155,9 +147,17 @@ export class OTPDetectionCore {
    */
   static scoreElement(el: HTMLElement): number {
     let score = 0;
-    const text = (el.id + ' ' + (el.getAttribute('name') ?? '') + ' ' + (el.getAttribute('placeholder') ?? '') + ' ' + (el.getAttribute('autocomplete') ?? '')).toLowerCase();
+    const text = (
+      el.id +
+      ' ' +
+      (el.getAttribute('name') ?? '') +
+      ' ' +
+      (el.getAttribute('placeholder') ?? '') +
+      ' ' +
+      (el.getAttribute('autocomplete') ?? '')
+    ).toLowerCase();
     const aria = (el.getAttribute('aria-label') ?? '').toLowerCase();
-    
+
     // Positive signals
     for (const pattern of OTP_PATTERNS.FIELD_SIGNALS) {
       if (pattern.test(text) || pattern.test(aria)) {

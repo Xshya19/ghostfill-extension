@@ -5,7 +5,7 @@ import {
   verifyPassword,
   deriveKey,
   encrypt,
-  decrypt
+  decrypt,
 } from '../../utils/encryption';
 
 describe('Encryption Utilities (Additional Tests)', () => {

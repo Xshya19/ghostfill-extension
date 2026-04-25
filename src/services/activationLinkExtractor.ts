@@ -2410,7 +2410,9 @@ function postProcessCandidates(candidates: ActivationLink[]): void {
 
   for (let i = 0; i < candidates.length; i++) {
     const candidate = candidates[i];
-    if (!candidate) {continue;}
+    if (!candidate) {
+      continue;
+    }
     const normalized = normalizeUrl(candidate.url);
     const existingIdx = urlMap.get(normalized);
 

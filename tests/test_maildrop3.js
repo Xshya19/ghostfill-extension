@@ -1,12 +1,12 @@
 fetch('https://api.maildrop.cc/graphql', {
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/json',
-        'x-apollo-operation-name': 'GhostFillQuery',
-        'apollo-require-preflight': 'true'
-    },
-    body: JSON.stringify({
-        query: `
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'x-apollo-operation-name': 'GhostFillQuery',
+    'apollo-require-preflight': 'true',
+  },
+  body: JSON.stringify({
+    query: `
       query GetInbox($mailbox: String!) {
         inbox(mailbox: $mailbox) {
           id
@@ -14,26 +14,27 @@ fetch('https://api.maildrop.cc/graphql', {
         }
       }
     `,
-        variables: { mailbox: 'test' }
-    })
-}).then(async r => {
+    variables: { mailbox: 'test' },
+  }),
+})
+  .then(async (r) => {
     console.log(r.status);
     const data = await r.json();
     // console.log(JSON.stringify(data, null, 2));
 
     // Now try fetching the first message
     if (data.data?.inbox?.[0]?.id) {
-        const id = data.data.inbox[0].id;
-        console.log("Fetching message", id);
-        const msgRes = await fetch('https://api.maildrop.cc/graphql', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-apollo-operation-name': 'GhostFillQuery',
-                'apollo-require-preflight': 'true'
-            },
-            body: JSON.stringify({
-                query: `
+      const id = data.data.inbox[0].id;
+      console.log('Fetching message', id);
+      const msgRes = await fetch('https://api.maildrop.cc/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-apollo-operation-name': 'GhostFillQuery',
+          'apollo-require-preflight': 'true',
+        },
+        body: JSON.stringify({
+          query: `
           query GetMsg($mailbox: String!, $id: String!) {
             message(mailbox: $mailbox, id: $id) {
               id
@@ -43,12 +44,19 @@ fetch('https://api.maildrop.cc/graphql', {
             }
           }
         `,
-                variables: { mailbox: 'test', id: id }
-            })
-        });
+          variables: { mailbox: 'test', id: id },
+        }),
+      });
 
-        const msgData = await msgRes.json();
-        console.log("Msg response html:", JSON.stringify(msgData.data.message.html).substring(0, 500));
-        console.log("Msg response data:", JSON.stringify(msgData.data.message.data).substring(0, 500));
+      const msgData = await msgRes.json();
+      console.log(
+        'Msg response html:',
+        JSON.stringify(msgData.data.message.html).substring(0, 500)
+      );
+      console.log(
+        'Msg response data:',
+        JSON.stringify(msgData.data.message.data).substring(0, 500)
+      );
     }
-}).catch(console.error);
+  })
+  .catch(console.error);

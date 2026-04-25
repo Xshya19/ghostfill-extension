@@ -15,20 +15,12 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   §2  D E S I G N   T O K E N S   ( c u s t o m   p r o p e r t i e s )
-   Tokens are safe here — they only cascade inside #ghostfill-fab and the
-   three highlight classes which intentionally target host-page elements.
-   ───────────────────────────────────────────────────────────────────────────── */
-
 #ghostfill-fab {
-  /* ── Spatial Variables ── */
   --gf-brand: #7c5cfc;
   --gf-brand-rgb: 124, 92, 252;
   --gf-brand-dark: #6449d0;
   --gf-brand-glow: rgba(124, 92, 252, 0.28);
 
-  /* ── Semantic ── */
   --gf-success: #22c55e;
   --gf-success-rgb: 34, 197, 94;
   --gf-success-glow: rgba(34, 197, 94, 0.28);
@@ -38,63 +30,45 @@
   --gf-error: #ef4444;
   --gf-error-rgb: 239, 68, 68;
 
-  /* ── Highlight ring metrics ── */
   --gf-ring-width: 1.5px;
   --gf-ring-offset: 1px;
   --gf-ring-radius: 8px;
-  /* softens field corners */
+
   --gf-aura-spread: 4px;
-  /* outer glow size */
+
   --gf-transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   §3  F I E L D   H I G H L I G H T   —   A C T I V E   S T A T E
-   Applied while GhostFill is scanning / about to fill a field.
-   Uses !important to reliably override host-page focus / border styles.
-   ───────────────────────────────────────────────────────────────────────────── */
-
 .ghostfill-highlight {
-  /* Multi-layer ring: hairline brand border + soft aura */
   outline: var(--gf-ring-width, 1.5px) solid #7c5cfc !important;
   outline-offset: var(--gf-ring-offset, 1px) !important;
 
   box-shadow:
-    /* Inner halo — tight glow hugging the field */
     0 0 0 var(--gf-aura-spread, 4px) rgba(124, 92, 252, 0.08),
-    /* Mid-range depth ring */ 0 0 12px rgba(124, 92, 252, 0.12),
-    /* Far ambient bloom */ 0 0 24px rgba(124, 92, 252, 0.04) !important;
+    0 0 12px rgba(124, 92, 252, 0.12),
+    0 0 24px rgba(124, 92, 252, 0.04) !important;
 
-  /* Softly round sharp field corners without touching border-radius override */
   border-radius: var(--gf-ring-radius, 8px) !important;
 
-  /* Smooth enter + exit */
   transition: var(--gf-transition, all 0.35s cubic-bezier(0.16, 1, 0.3, 1)) !important;
 }
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   §4  F I L L   S U C C E S S   —   V I S U A L   C O N F I R M A T I O N
-   Applied immediately after a field is filled. Pulses green then fades.
-   ───────────────────────────────────────────────────────────────────────────── */
 
 .ghostfill-success {
   outline: var(--gf-ring-width, 1.5px) solid #22c55e !important;
   outline-offset: var(--gf-ring-offset, 1px) !important;
 
   box-shadow:
-    0 0 0 var(--gf-aura-spread, 4px) rgba(34, 197, 94, 0.10),
+    0 0 0 var(--gf-aura-spread, 4px) rgba(34, 197, 94, 0.1),
     0 0 16px rgba(34, 197, 94, 0.16),
     0 0 32px rgba(34, 197, 94, 0.06) !important;
 
   border-radius: var(--gf-ring-radius, 8px) !important;
   transition: var(--gf-transition) !important;
 
-  /* Spatial celebration pulse */
   animation: gf-success-spatial 0.55s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
 @keyframes gf-success-spatial {
-  /* Subtle 3-D press-and-spring micro-bounce */
   0% {
     transform: scale(1);
     box-shadow:
@@ -122,25 +96,18 @@
   }
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   §5  O T P   R E A D Y   —   P U R P L E   A M B I E N T   R I N G
-   Applied to OTP / verification-code fields when a code is available.
-   ───────────────────────────────────────────────────────────────────────────── */
-
 .ghostfill-otp-ready {
-  /* Thicker border signals urgency / time-sensitive code */
   outline: calc(var(--gf-ring-width, 1.5px) + 0.5px) solid #a855f7 !important;
   outline-offset: var(--gf-ring-offset, 1px) !important;
 
   box-shadow:
     0 0 0 var(--gf-aura-spread, 4px) rgba(168, 85, 247, 0.12),
-    0 0 16px rgba(168, 85, 247, 0.20),
+    0 0 16px rgba(168, 85, 247, 0.2),
     0 0 36px rgba(168, 85, 247, 0.08) !important;
 
   border-radius: var(--gf-ring-radius, 8px) !important;
   transition: var(--gf-transition) !important;
 
-  /* Gentle breathing loop to signal "tap to autofill" */
   animation: gf-otp-breathe 2.4s ease-in-out infinite !important;
 }
 
@@ -157,16 +124,11 @@
   50% {
     box-shadow:
       0 0 0 6px rgba(168, 85, 247, 0.15),
-      0 0 20px rgba(168, 85, 247, 0.20),
+      0 0 20px rgba(168, 85, 247, 0.2),
       0 0 40px rgba(168, 85, 247, 0.08);
     outline-color: #bb7efc;
   }
 }
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   §6  M O T I O N   S A F E G U A R D
-   Collapse all animations for users with vestibular / motion sensitivity.
-   ───────────────────────────────────────────────────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {
   .ghostfill-highlight,
@@ -176,7 +138,6 @@
     transition: none !important;
   }
 
-  /* Still apply visual ring — just no movement */
   .ghostfill-success {
     box-shadow:
       0 0 0 6px rgba(34, 197, 94, 0.18),

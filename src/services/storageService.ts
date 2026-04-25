@@ -517,7 +517,12 @@ class StorageService {
                 const secretKey = k.replace('ghostfill_secret_', '');
                 const v = allSession[k];
                 // Validate restored secrets to prevent injection
-                if ((secretKey === 'llmApiKey' || secretKey === 'customDomainKey') && typeof v === 'string' && v.length >= 10 && v.length <= 512) {
+                if (
+                  (secretKey === 'llmApiKey' || secretKey === 'customDomainKey') &&
+                  typeof v === 'string' &&
+                  v.length >= 10 &&
+                  v.length <= 512
+                ) {
                   secrets[secretKey] = v;
                 } else if (secretKey === 'keyRotatedAt' && typeof v === 'number') {
                   secrets[secretKey] = v;
@@ -894,7 +899,7 @@ class StorageService {
           } catch (error) {
             // Expected when data was encrypted with different key or corrupted
             // Clear the corrupted data to prevent repeated failures
-            log.debug(`Failed to decrypt ${key}, clearing corrupted data`);
+            log.debug(`Failed to decrypt ${key}, clearing corrupted data`, error);
             void chrome.storage.local.remove(key);
             finalValue = undefined;
           }

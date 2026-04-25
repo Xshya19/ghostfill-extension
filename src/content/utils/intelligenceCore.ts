@@ -16,8 +16,14 @@ export class HistoryManager {
     }
   }
 
-  static async saveTrustedSelector(domain: string, type: FieldType, selector: string): Promise<void> {
-    if (!domain || !type || !selector) {return;}
+  static async saveTrustedSelector(
+    domain: string,
+    type: FieldType,
+    selector: string
+  ): Promise<void> {
+    if (!domain || !type || !selector) {
+      return;
+    }
     try {
       const key = `${this.PREFIX}${domain}_${type}`;
       await chrome.storage.local.set({ [key]: selector });
@@ -49,7 +55,7 @@ export class EnsembleScorer {
       w_h = 0.25;
     }
 
-    const score = (heuristic * w_h) + (ml * w_ml) + (spatial * w_spatial) + (history * w_history);
+    const score = heuristic * w_h + ml * w_ml + spatial * w_spatial + history * w_history;
     return Math.min(1.0, Math.max(0.0, score));
   }
 }

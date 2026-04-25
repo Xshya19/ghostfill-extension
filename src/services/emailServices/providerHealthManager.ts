@@ -67,10 +67,15 @@ class ProviderHealthManager implements IProviderHealthManager {
         const data = await chrome.storage.session.get('phm_health');
         if (data.phm_health) {
           const parsed = JSON.parse(data.phm_health);
-          if (!Array.isArray(parsed)) return;
+          if (!Array.isArray(parsed)) {
+            return;
+          }
           for (const [provider, status] of parsed) {
             if (typeof provider === 'string' && typeof status === 'object' && status !== null) {
-              if (typeof status.successRate === 'number' && typeof status.cooldownUntil === 'number') {
+              if (
+                typeof status.successRate === 'number' &&
+                typeof status.cooldownUntil === 'number'
+              ) {
                 this.health.set(provider as EmailService, status as ProviderHealthStatus);
               }
             }

@@ -5,16 +5,28 @@
  */
 
 export type ButtonState =
-  | 'hidden' | 'idle' | 'hovering' | 'loading'
-  | 'success' | 'error' | 'dragging' | 'menu-open';
+  | 'hidden'
+  | 'idle'
+  | 'hovering'
+  | 'loading'
+  | 'success'
+  | 'error'
+  | 'dragging'
+  | 'menu-open';
 
 export type ButtonMode = 'magic' | 'email' | 'password' | 'otp' | 'user' | 'form';
 
 export type ButtonSize = 'mini' | 'normal' | 'expanded';
 
 export type PageType =
-  | 'login' | 'signup' | 'verification' | '2fa'
-  | 'password-reset' | 'checkout' | 'profile' | 'generic';
+  | 'login'
+  | 'signup'
+  | 'verification'
+  | '2fa'
+  | 'password-reset'
+  | 'checkout'
+  | 'profile'
+  | 'generic';
 
 export interface MenuAction {
   readonly id: string;

@@ -50,13 +50,13 @@ export function decodeHtmlEntities(html: string): string {
   // Hex entities
   result = result.replace(/&#x([0-9a-fA-F]+);/gi, (_, hex) => {
     const val = parseInt(hex, 16);
-    return (val >= 32 || val === 9 || val === 10 || val === 13) ? String.fromCharCode(val) : '';
+    return val >= 32 || val === 9 || val === 10 || val === 13 ? String.fromCharCode(val) : '';
   });
 
   // Decimal entities
   result = result.replace(/&#(\d+);/gi, (_, dec) => {
     const val = parseInt(dec, 10);
-    return (val >= 32 || val === 9 || val === 10 || val === 13) ? String.fromCharCode(val) : '';
+    return val >= 32 || val === 9 || val === 10 || val === 13 ? String.fromCharCode(val) : '';
   });
 
   // Strip zero-width characters
@@ -179,7 +179,6 @@ export function escapeRegex(str: string): string {
 }
 
 export { truncate };
-
 
 // ───────────────────────────────────────────────────────────────────────
 //  URL UTILITIES

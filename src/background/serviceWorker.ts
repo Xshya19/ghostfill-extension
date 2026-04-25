@@ -18,9 +18,8 @@ import { setupPollingManager as pollingManagerSetup } from '../background/pollin
 import { emailService } from '../services/emailServices/index';
 import { otpService } from '../services/otpService';
 import { storageService } from '../services/storageService';
-import { createLogger } from '../utils/logger';
-import { setupMessageHandler } from './messageHandler';
 import { sleep } from '../utils/helpers';
+import { createLogger } from '../utils/logger';
 import { registerMLMessageHandler } from './mlMessageHandler';
 
 const log = createLogger('ServiceWorker');

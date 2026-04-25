@@ -1320,7 +1320,9 @@ export class FloatingButton {
 
     // Magnetic hover effect
     this.button.addEventListener('mousemove', (e: MouseEvent) => {
-      if (!this.button) return;
+      if (!this.button) {
+        return;
+      }
       const rect = this.button.getBoundingClientRect();
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
@@ -1464,7 +1466,9 @@ export class FloatingButton {
       this.shadowRoot.appendChild(this.sentinelOverlay);
     }
 
-    this.sentinelOverlay.innerHTML = `
+    setHTML(
+      this.sentinelOverlay,
+      `
       <div class="gf-sentinel-toast-inner">
         <div class="gf-sentinel-toast-icon">
           ${IconSystem.get('otp')}
@@ -1474,7 +1478,8 @@ export class FloatingButton {
           <div class="gf-sentinel-toast-subtitle">GhostFill is securing your session</div>
         </div>
       </div>
-    `;
+    `
+    );
 
     if (this.button) {
       const btnRect = this.button.getBoundingClientRect();

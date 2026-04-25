@@ -2,10 +2,10 @@
 
 /**
  * Commit Message Validator
- * 
+ *
  * Enforces conventional commit format:
  * type(scope): description
- * 
+ *
  * Types: feat, fix, docs, style, refactor, test, chore, security, perf
  */
 
@@ -21,7 +21,8 @@ if (commitMessage.startsWith('Merge ')) {
 }
 
 // Conventional commit regex
-const commitPattern = /^(feat|fix|docs|style|refactor|test|chore|security|perf|ci|build|revert)(\([a-z0-9-]+\))?: .{1,100}$/;
+const commitPattern =
+  /^(feat|fix|docs|style|refactor|test|chore|security|perf|ci|build|revert)(\([a-z0-9-]+\))?: .{1,100}$/;
 
 // Security-related commits require more detail
 const securityPattern = /^security: .{20,}$/;

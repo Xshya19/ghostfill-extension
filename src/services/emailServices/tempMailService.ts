@@ -2,6 +2,7 @@
 
 import { EmailAccount, Email, TempMailMessage, TempMailFullMessage } from '../../types';
 import { API, TEMP_MAIL_DOMAINS } from '../../utils/constants';
+import { getRandomInt } from '../../utils/encryption';
 import { createLogger } from '../../utils/logger';
 
 const log = createLogger('TempMailService');
@@ -211,7 +212,8 @@ class TempMailService {
         emailDomain = domain;
       } else if (!emailDomain) {
         const domains = await this.getDomains(signal);
-        emailDomain = domains[Math.floor(Math.random() * domains.length)] ?? '';
+        emailDomain =
+          domains.length > 0 ? (domains[getRandomInt(0, domains.length - 1)] ?? '') : '';
       }
 
       const fullEmail = `${login}@${emailDomain}`;

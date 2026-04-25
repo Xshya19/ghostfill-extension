@@ -2,10 +2,6 @@
 // Every step, error, state change, and flow is logged with flow IDs
 // Access in SW console: window.ghostfill.exportLogs()
 
-import { createLogger } from './logger';
-
-const log = createLogger('DiagnosticLogger');
-
 // ── Types ───────────────────────────────────────────────────────────
 
 export type DiagLevel = 'step' | 'info' | 'warn' | 'error' | 'state' | 'perf';
@@ -207,10 +203,18 @@ export const diag = {
     lastN?: number;
   }): DiagEntry[] {
     let entries = buffer;
-    if (filter?.category) entries = entries.filter((e) => e.category === filter.category);
-    if (filter?.level) entries = entries.filter((e) => e.level === filter.level);
-    if (filter?.flowId) entries = entries.filter((e) => e.flowId === filter.flowId);
-    if (filter?.lastN) entries = entries.slice(-filter.lastN);
+    if (filter?.category) {
+      entries = entries.filter((e) => e.category === filter.category);
+    }
+    if (filter?.level) {
+      entries = entries.filter((e) => e.level === filter.level);
+    }
+    if (filter?.flowId) {
+      entries = entries.filter((e) => e.flowId === filter.flowId);
+    }
+    if (filter?.lastN) {
+      entries = entries.slice(-filter.lastN);
+    }
     return entries;
   },
 

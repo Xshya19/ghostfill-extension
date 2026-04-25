@@ -49,6 +49,7 @@
 // ─────────────────────────────────────────────────────────────────────
 
 import { storageService } from '../services/storageService';
+import { getRandomString } from '../utils/encryption';
 import { sleep } from '../utils/helpers';
 import { createLogger } from '../utils/logger';
 
@@ -139,7 +140,7 @@ interface NotificationMetrics {
 
 // ━━━ Configuration ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-const DEFAULT_ICON_PATH = 'assets/icons/icon.png';
+const DEFAULT_ICON_PATH = 'assets/icons/icon128.png';
 
 const DEFAULT_CATEGORY_SETTINGS: Record<NotificationCategory, CategorySettings> = {
   otp: { enabled: true, dedupTtlMs: 10_000, autoClearMs: null, maxPerMinute: 10 },
@@ -1047,7 +1048,7 @@ function maskOTP(otp: string): string {
 }
 
 function generateId(category: NotificationCategory): string {
-  return `gf-${category}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  return `gf-${category}-${Date.now()}-${getRandomString(4, 'abcdefghijklmnopqrstuvwxyz0123456789')}`;
 }
 
 function truncate(s: string | undefined, max: number): string {

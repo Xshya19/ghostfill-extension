@@ -9,9 +9,13 @@
 import { FormFingerprint } from '../history/FuzzyFormFingerprint';
 import { FieldType } from '../ml/FeatureExtractorV2';
 
-export type AuthFlowType = 
-  | 'single_page_login' | 'split_login' | 'login_with_mfa' 
-  | 'password_reset' | 'signup' | 'unknown';
+export type AuthFlowType =
+  | 'single_page_login'
+  | 'split_login'
+  | 'login_with_mfa'
+  | 'password_reset'
+  | 'signup'
+  | 'unknown';
 
 export interface AuthSession {
   domain: string;
@@ -49,7 +53,7 @@ export class AuthSessionTracker {
           }
         }
       }
-    } catch (e) {
+    } catch {
       // Storage might be unavailable in some contexts
     }
   }
@@ -61,7 +65,7 @@ export class AuthSessionTracker {
       }
       const sessionsObj = Object.fromEntries(this.activeSessions);
       await chrome.storage.local.set({ [this.STORAGE_KEY]: sessionsObj });
-    } catch (e) {
+    } catch {
       // Non-critical
     }
   }
@@ -69,7 +73,11 @@ export class AuthSessionTracker {
   /**
    * Record a new step in the authentication flow.
    */
-  public static async recordStep(domain: string, fingerprint: any, fields: Array<{ selector: string; type: string }>): Promise<AuthSession> {
+  public static async recordStep(
+    domain: string,
+    fingerprint: any,
+    fields: Array<{ selector: string; type: string }>
+  ): Promise<AuthSession> {
     let session = AuthSessionTracker.activeSessions.get(domain);
 
     if (!session || AuthSessionTracker.isSessionStale(session)) {
@@ -81,7 +89,7 @@ export class AuthSessionTracker {
       url: window.location.href,
       timestamp: Date.now(),
       formFingerprint: fingerprint,
-      detectedFields: fields as any
+      detectedFields: fields as any,
     });
 
     session.detectedFlow = AuthSessionTracker.classifyFlow(session);
@@ -95,16 +103,26 @@ export class AuthSessionTracker {
   }
 
   private static classifyFlow(session: AuthSession): AuthFlowType {
-    const allFields = session.steps.flatMap(s => s.detectedFields.map(f => f.type));
-    
-    // Logic for split login: email in step 1, password in step 2
-    const step1 = session.steps[0]?.detectedFields.map(f => f.type) || [];
-    const step2 = session.steps[1]?.detectedFields.map(f => f.type) || [];
+    const allFields = session.steps.flatMap((s) => s.detectedFields.map((f) => f.type));
 
-    if (step1.includes('email' as any) && step2.includes('password' as any)) {return 'split_login';}
-    if (allFields.includes('email' as any) && allFields.includes('password' as any) && allFields.includes('otp_digit' as any)) {return 'login_with_mfa';}
-    if (allFields.includes('email' as any) && allFields.includes('password' as any)) {return 'single_page_login';}
-    
+    // Logic for split login: email in step 1, password in step 2
+    const step1 = session.steps[0]?.detectedFields.map((f) => f.type) || [];
+    const step2 = session.steps[1]?.detectedFields.map((f) => f.type) || [];
+
+    if (step1.includes('email' as any) && step2.includes('password' as any)) {
+      return 'split_login';
+    }
+    if (
+      allFields.includes('email' as any) &&
+      allFields.includes('password' as any) &&
+      allFields.includes('otp_digit' as any)
+    ) {
+      return 'login_with_mfa';
+    }
+    if (allFields.includes('email' as any) && allFields.includes('password' as any)) {
+      return 'single_page_login';
+    }
+
     return 'unknown';
   }
 }

@@ -10,7 +10,10 @@
 export type DetectionLayer = 'heuristic' | 'ml' | 'spatial' | 'history';
 
 export const ALL_LAYERS: readonly DetectionLayer[] = [
-  'heuristic', 'ml', 'spatial', 'history'
+  'heuristic',
+  'ml',
+  'spatial',
+  'history',
 ] as const;
 
 // ─── Meta-Learner ───────────────────────────────────────────────
@@ -19,9 +22,9 @@ export interface LayerPerformance {
   readonly layer: DetectionLayer;
   correctPredictions: number;
   totalPredictions: number;
-  ema: number;                   // Exponential moving average accuracy
-  calibrationError: number;      // |predicted_conf - actual_accuracy|
-  hallucinationCount: number;    // High conf (>0.8) + wrong
+  ema: number; // Exponential moving average accuracy
+  calibrationError: number; // |predicted_conf - actual_accuracy|
+  hallucinationCount: number; // High conf (>0.8) + wrong
   lastUpdated: number;
 }
 
@@ -54,7 +57,7 @@ export interface WeightUpdate {
 // ─── Autonomous Navigation ─────────────────────────────────────
 
 export type AuthFlowStep =
-  | 'identifier'   // email or username
+  | 'identifier' // email or username
   | 'password'
   | 'otp'
   | 'totp'
@@ -82,8 +85,14 @@ export interface FlowTransition {
 }
 
 export type NavButtonType =
-  | 'submit' | 'next' | 'continue' | 'verify'
-  | 'confirm' | 'login' | 'signin' | 'send_code';
+  | 'submit'
+  | 'next'
+  | 'continue'
+  | 'verify'
+  | 'confirm'
+  | 'login'
+  | 'signin'
+  | 'send_code';
 
 export interface NavigationTarget {
   element: HTMLElement;
@@ -111,7 +120,14 @@ export type ObfuscationLevel = 0 | 1 | 2 | 3;
 export type CSSFramework = 'none' | 'tailwind' | 'bootstrap' | 'material' | 'shadcn' | 'custom';
 export type InputVariant = 'standard' | 'contenteditable' | 'div_input' | 'web_component';
 export type FormLayout = 'vertical' | 'horizontal' | 'grid' | 'modal' | 'inline';
-export type SimFormType = 'login' | 'otp' | 'signup' | 'mfa' | 'payment' | 'recovery' | 'multi_step';
+export type SimFormType =
+  | 'login'
+  | 'otp'
+  | 'signup'
+  | 'mfa'
+  | 'payment'
+  | 'recovery'
+  | 'multi_step';
 
 export interface SyntheticFormConfig {
   formType: SimFormType;
@@ -123,15 +139,15 @@ export interface SyntheticFormConfig {
   framework: CSSFramework;
   inputVariant: InputVariant;
   layout: FormLayout;
-  splitOTP: boolean;        // 4-6 individual digit inputs
+  splitOTP: boolean; // 4-6 individual digit inputs
   numDecoyFields: number;
   seed: number;
 }
 
 export interface SyntheticField {
   html: string;
-  label: string;            // Ground-truth FieldType
-  confidence: number;       // Expected detection confidence
+  label: string; // Ground-truth FieldType
+  confidence: number; // Expected detection confidence
   isHoneypot: boolean;
   isTrap: boolean;
   features: number[] | null;
@@ -154,8 +170,8 @@ export interface DetectedField {
 }
 
 export interface TrainingExample {
-  features: number[];       // 128-dim
-  textTensor: number[][];   // 8×80
+  features: number[]; // 128-dim
+  textTensor: number[][]; // 8×80
   label: string;
   confidence: number;
   meta: {
@@ -193,7 +209,7 @@ export interface IFrameFieldReport {
   frameSrc: string;
   depth: number;
   fields: Array<{
-    path: string;           // CSS path within iframe
+    path: string; // CSS path within iframe
     features: number[];
     textTensor: number[][];
     rect: { x: number; y: number; w: number; h: number };
@@ -221,7 +237,7 @@ export interface DOMFormSnapshot {
   sanitizedHTML: string;
   fields: Array<{
     path: string;
-    features: number[];     // 128-dim
+    features: number[]; // 128-dim
     textTensor: number[][];
     predicted: string;
     actual?: string;
@@ -230,7 +246,11 @@ export interface DOMFormSnapshot {
   topology: {
     bounds: { x: number; y: number; w: number; h: number };
     positions: Array<{ path: string; rect: { x: number; y: number; w: number; h: number } }>;
-    submitBtn?: { path: string; text: string; rect: { x: number; y: number; w: number; h: number } };
+    submitBtn?: {
+      path: string;
+      text: string;
+      rect: { x: number; y: number; w: number; h: number };
+    };
     headings: string[];
   };
 }

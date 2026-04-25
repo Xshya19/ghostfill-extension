@@ -9,6 +9,7 @@ import React from 'react';
  * @module utils/featureFlags
  */
 
+import { getRandomInt } from './encryption';
 import { createLogger } from './logger';
 
 const log = createLogger('FeatureFlags');
@@ -130,7 +131,7 @@ class FeatureFlagManager {
       if (stored.abUserHash !== undefined) {
         this.userHash = stored.abUserHash;
       } else {
-        this.userHash = Math.abs(Math.floor(Math.random() * 1000));
+        this.userHash = getRandomInt(0, 999);
         await chrome.storage.local.set({ abUserHash: this.userHash });
       }
 
@@ -139,7 +140,7 @@ class FeatureFlagManager {
         log.info('Loaded feature flags from storage');
       }
     } catch (error) {
-      this.userHash = Math.abs(Math.floor(Math.random() * 1000));
+      this.userHash = getRandomInt(0, 999);
       log.warn('Failed to load feature flags from storage', error);
     }
 

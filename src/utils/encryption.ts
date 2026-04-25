@@ -437,34 +437,28 @@ export async function initializeSecureEncryption(): Promise<void> {
       typeof chrome !== 'undefined' ? chrome.runtime.getManifest().version : 'unknown';
 
     // 1. Initialize PERSISTENT MASTER KEY (for storage.local)
-    // SECURITY FIX: Master key seed is stored in chrome.storage.session (memory-only),
-    // NOT chrome.storage.local. This means "encrypted at rest" actually protects data
+    // The persisted seed is required so encrypted records survive expected restarts.
     // — an attacker who reads raw disk storage gets only ciphertext with no key material.
     if (!masterKey && typeof chrome !== 'undefined' && chrome.storage?.local) {
       let masterSeed: Uint8Array | null = null;
 
-      // Try session storage first (survives service worker restarts, cleared on extension reload)
-      if (chrome.storage?.session) {
-        try {
-          const sessionData = await chrome.storage.session.get(['masterKeySeed']);
-          if (sessionData.masterKeySeed) {
-            masterSeed = Uint8Array.from(atob(sessionData.masterKeySeed), (c) => c.charCodeAt(0));
-          }
-        } catch {
-          // Session storage may not be available; fall through to generation
+      try {
+        const localData = await chrome.storage.local.get(['masterKeySeed']);
+        if (typeof localData.masterKeySeed === 'string') {
+          masterSeed = Uint8Array.from(atob(localData.masterKeySeed), (c) => c.charCodeAt(0));
         }
+      } catch {
+        // Fall through to generation if persisted key material is unavailable.
       }
 
       if (!masterSeed) {
         masterSeed = crypto.getRandomValues(new Uint8Array(32));
-        if (chrome.storage?.session) {
-          try {
-            await chrome.storage.session.set({
-              masterKeySeed: btoa(String.fromCharCode(...masterSeed)),
-            });
-          } catch {
-            // Best-effort persistence; the key still works in-memory for this session
-          }
+        try {
+          await chrome.storage.local.set({
+            masterKeySeed: btoa(String.fromCharCode(...masterSeed)),
+          });
+        } catch {
+          throw new Error('Critical: Failed to persist master encryption seed');
         }
       }
 

@@ -9,6 +9,8 @@
  * and imports from here.
  */
 
+import { getRandomString } from '../../utils/encryption';
+
 // ── Types (inlined for zero-import-overhead) ──────────────────────────────────
 
 export interface OTPGroupInfo {
@@ -143,7 +145,7 @@ export function safeQuerySelector<T extends Element>(root: ParentNode, selector:
 }
 
 export function generateGroupId(prefix: string, hint?: string): string {
-  const suffix = hint ?? Math.random().toString(36).slice(2, 8);
+  const suffix = hint ?? getRandomString(6, 'abcdefghijklmnopqrstuvwxyz0123456789');
   return `${prefix}-${suffix}`;
 }
 

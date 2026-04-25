@@ -92,9 +92,6 @@ const MIN_ALARM_PERIOD_MINUTES = 1;
 /** EMA smoothing factor */
 const EMA_ALPHA = 0.2;
 
-/** Storage keys */
-const STORAGE_KEY_PROCESSED = 'processedEmails';
-
 // ═══════════════════════════════════════════════════════════════
 //  §1  TYPES
 // ═══════════════════════════════════════════════════════════════
@@ -107,14 +104,6 @@ interface TabRegistration {
   readonly registeredAt: number;
   readonly priority: number;
   deliveryAttempts: number;
-}
-
-interface ProcessedEmailRecord {
-  readonly id: string;
-  readonly processedAt: number;
-  readonly hadOTP: boolean;
-  readonly hadLink: boolean;
-  readonly ttlExpiresAt: number;
 }
 
 type CircuitState = 'closed' | 'open' | 'half-open';
@@ -450,7 +439,8 @@ class DomainMatcher {
 
     // M6: Expanded ccTLD list — covers co.uk, com.au, co.jp, net.au, org.uk, etc.
     // Source: https://publicsuffix.org/list/public_suffix_list.dat (common patterns)
-    const compoundSuffixes = /^(co|com|org|net|edu|gov|ac|ne|or|gen|ltd|plc|me|firm|info|mod|sch|police|nhs|id|my|on|in|biz|tv|web|name|pro|health|go|mil|asn|conf|oz|act|nsw|qld|sa|tas|vic|wa)$/;
+    const compoundSuffixes =
+      /^(co|com|org|net|edu|gov|ac|ne|or|gen|ltd|plc|me|firm|info|mod|sch|police|nhs|id|my|on|in|biz|tv|web|name|pro|health|go|mil|asn|conf|oz|act|nsw|qld|sa|tas|vic|wa)$/;
     if (secondLevel && compoundSuffixes.test(secondLevel)) {
       return parts.slice(-3).join('.');
     }
@@ -511,7 +501,7 @@ class OTPDeliveryEngine {
           {
             timeout: OTP_DELIVERY_MESSAGE_TIMEOUT_MS,
             retries: 0,
-            ...(frameId !== undefined ? { frameId } : {})
+            ...(frameId !== undefined ? { frameId } : {}),
           }
         );
 
@@ -612,9 +602,7 @@ class OTPCodeExtractor {
       // - Excludes years 2000-2099
       // - Excludes 9+ digit sequences (phone numbers, account IDs, ZIP+4)
       // - Requires exactly 6-8 digit sequences bounded by word boundaries
-      const standaloneMatch = emailText.match(
-        /\b(?!(?:20[0-9]{2})\b)(?!\d{9,})(\d{6,8})(?!\d)\b/
-      );
+      const standaloneMatch = emailText.match(/\b(?!(?:20[0-9]{2})\b)(?!\d{9,})(\d{6,8})(?!\d)\b/);
       if (standaloneMatch?.[1]) {
         log.info('🚨 OTP from short email');
         return standaloneMatch[1];
@@ -806,10 +794,15 @@ async function performCheck(mode: CheckMode): Promise<void> {
 
     if (newEmails.length > 0) {
       log.info(`📬 ${newEmails.length} new email(s)`, { mode });
-      
+
       // Broadcast to UI that we are actively analyzing a new email
       for (const tabId of otpWaitingTabs.keys()) {
-        chrome.tabs.sendMessage(tabId, { action: 'POLLING_STATE_CHANGE', payload: { state: 'ANALYZING_EMAIL' } }).catch(() => {});
+        chrome.tabs
+          .sendMessage(tabId, {
+            action: 'POLLING_STATE_CHANGE',
+            payload: { state: 'ANALYZING_EMAIL' },
+          })
+          .catch(() => {});
       }
 
       const batches = chunk(newEmails, 3);
@@ -893,7 +886,7 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
           from: fullEmail.from,
           subject: fullEmail.subject,
           ...(detection.provider !== undefined ? { provider: detection.provider } : {}),
-          ...(detection.link !== undefined ? { linkUrl: detection.link } : {})
+          ...(detection.link !== undefined ? { linkUrl: detection.link } : {}),
         });
 
         if (otpDelivered) {
@@ -923,7 +916,7 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
       from: fullEmail.from,
       subject: fullEmail.subject,
       ...(detection.provider !== undefined ? { provider: detection.provider } : {}),
-      ...(detection.link !== undefined ? { linkUrl: detection.link } : {})
+      ...(detection.link !== undefined ? { linkUrl: detection.link } : {}),
     });
   }
 
@@ -931,10 +924,15 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
   if (hasLink && detection.link && !otpDelivered) {
     log.info('🔗 Link detected, deferring to linkService');
     metrics.linksProcessed++;
-    
+
     // Broadcast to UI
     for (const tabId of otpWaitingTabs.keys()) {
-      chrome.tabs.sendMessage(tabId, { action: 'POLLING_STATE_CHANGE', payload: { state: 'LINK_ACTIVATION_STARTED' } }).catch(() => {});
+      chrome.tabs
+        .sendMessage(tabId, {
+          action: 'POLLING_STATE_CHANGE',
+          payload: { state: 'LINK_ACTIVATION_STARTED' },
+        })
+        .catch(() => {});
     }
 
     await linkService
@@ -945,9 +943,9 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
   // ── FINAL STEP: SINGLE NOTIFICATION ──
   // Consolidate findings and notify exactly once
   void notifyNewEmail(
-    fullEmail.from, 
-    fullEmail.subject, 
-    extractedOTPCode || undefined, 
+    fullEmail.from,
+    fullEmail.subject,
+    extractedOTPCode || undefined,
     hasLink ? detection.link : undefined
   );
 }
@@ -1008,7 +1006,7 @@ async function deliverOTP(code: string, confidence: number, email: EmailContext)
   // Deliver to all matching tabs concurrently instead of sequentially
   // ───────────────────────────────────────────────────────────────────
   const deliveryPromises = sorted
-    .filter(([tabId, reg]: [number, TabRegistration]) => {
+    .filter(([, reg]: [number, TabRegistration]) => {
       if (!DomainMatcher.matches(email.from, reg.url, email.provider, email.linkUrl)) {
         log.info(`⛔ Domain mismatch: tab ${reg.hostname} ≠ ${email.from}`);
         return false;

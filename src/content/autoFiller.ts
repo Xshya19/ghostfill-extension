@@ -713,10 +713,14 @@ export class AutoFiller {
   ): Promise<OTPFieldGroup | null> {
     // First attempt: immediate discovery
     let group = OTPFieldDiscovery.discover(context);
-    if (group) return group;
+    if (group) {
+      return group;
+    }
 
     // SPA retry: wait for dynamically injected fields
-    if (isBackgroundTab) return null; // Don't retry in background tabs
+    if (isBackgroundTab) {
+      return null;
+    } // Don't retry in background tabs
 
     const maxRetries = 5;
     const retryDelay = 200;

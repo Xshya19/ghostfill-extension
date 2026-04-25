@@ -30,18 +30,15 @@ export async function ensureOffscreenDocument(): Promise<void> {
 
       await chrome.offscreen.createDocument({
         url: 'offscreen.html',
-        reasons: [
-          chrome.offscreen.Reason.CLIPBOARD,
-          chrome.offscreen.Reason.DOM_PARSER,
-        ],
-        justification: 'To run local AI inference and handle clipboard operations without Service Worker restrictions',
+        reasons: [chrome.offscreen.Reason.CLIPBOARD, chrome.offscreen.Reason.DOM_PARSER],
+        justification:
+          'To run local AI inference and handle clipboard operations without Service Worker restrictions',
       });
-      
+
       log.debug('Offscreen document created successfully');
-      
+
       // Wait a moment for the document to initialize and register listeners
       await verifyOffscreenReady();
-      
     } catch (error) {
       const msg = (error as Error).message;
       if (msg.includes('Only a single offscreen') || msg.includes('already exists')) {
@@ -65,9 +62,11 @@ async function hasOffscreenDocument(): Promise<boolean> {
   if (typeof chrome.offscreen?.hasDocument === 'function') {
     return chrome.offscreen.hasDocument();
   }
-  
+
   // Fallback: search for it in clients
-  interface RuntimeContext { contextType: string }
+  interface RuntimeContext {
+    contextType: string;
+  }
   interface RuntimeWithContexts {
     getContexts(opts: { contextTypes: string[] }): Promise<RuntimeContext[]>;
     ContextType: { OFFSCREEN_DOCUMENT: string };
@@ -85,9 +84,9 @@ async function hasOffscreenDocument(): Promise<boolean> {
 async function verifyOffscreenReady(retries = 5): Promise<void> {
   for (let i = 0; i < retries; i++) {
     try {
-      const response = await chrome.runtime.sendMessage({ 
-        target: 'offscreen-doc', 
-        type: 'HEALTH_PING' 
+      const response = await chrome.runtime.sendMessage({
+        target: 'offscreen-doc',
+        type: 'HEALTH_PING',
       });
       if (response?.status === 'pong') {
         return;
@@ -95,7 +94,9 @@ async function verifyOffscreenReady(retries = 5): Promise<void> {
     } catch {
       // Ignore and retry
     }
-    await new Promise(r => { setTimeout(r, 100 * (i + 1)); });
+    await new Promise((r) => {
+      setTimeout(r, 100 * (i + 1));
+    });
   }
   throw new Error('Offscreen document created but not responding to pings');
 }

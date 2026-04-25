@@ -42,9 +42,13 @@ export class VisibilityEngine {
    * not be display:none, not be visibility:hidden, and not be opacity:0.
    */
   static isVisible(element: HTMLElement): boolean {
-    if (!element.isConnected) {return false;}
+    if (!element.isConnected) {
+      return false;
+    }
     const rect = element.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) {return false;}
+    if (rect.width <= 0 || rect.height <= 0) {
+      return false;
+    }
 
     const style = window.getComputedStyle(element);
     return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
@@ -54,7 +58,9 @@ export class VisibilityEngine {
    * Relaxed visibility: allows opacity:0 and tiny elements.
    */
   static isVisibleRelaxed(element: HTMLElement): boolean {
-    if (!element.isConnected) {return false;}
+    if (!element.isConnected) {
+      return false;
+    }
     const style = window.getComputedStyle(element);
     return style.display !== 'none';
   }

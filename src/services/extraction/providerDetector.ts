@@ -159,7 +159,9 @@ export function detectProvider(
   // Sort by score and return best match
   scores.sort((a, b) => b.score - a.score);
   const best = scores[0];
-  if (!best) {return { provider: null, confidence: 0, signals: [] };}
+  if (!best) {
+    return { provider: null, confidence: 0, signals: [] };
+  }
   const confidence = Math.min(best.score, 100);
 
   log.info(`Provider: ${best.provider.name} (${confidence}%) [${best.signals.join(', ')}]`);

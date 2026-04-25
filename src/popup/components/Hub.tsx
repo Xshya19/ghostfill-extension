@@ -14,11 +14,11 @@ import {
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { EmailAccount, Email } from '../../types';
 import { TIMING } from '../../utils/constants';
-import { formatRelativeTime, extractOTP } from '../../utils/formatters';
+import { formatRelativeTime } from '../../utils/formatters';
 import { copyToClipboard } from '../../utils/helpers';
 import { safeSendMessage } from '../../utils/messaging';
-import { useStorageSubscription } from '../hooks/useStorageSubscription';
 import { useOTPExtractor } from '../hooks/useOTPExtractor';
+import { useStorageSubscription } from '../hooks/useStorageSubscription';
 
 // i18n helper
 const t = (key: string): string => {
@@ -95,7 +95,10 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     };
 
     updateTimer();
-    const interval = setInterval(updateTimer, timeLeft.includes('h') || (timeLeft.includes('m') && !timeLeft.includes(':')) ? 60000 : 1000);
+    const interval = setInterval(
+      updateTimer,
+      timeLeft.includes('h') || (timeLeft.includes('m') && !timeLeft.includes(':')) ? 60000 : 1000
+    );
     return () => clearInterval(interval);
   }, [emailAccount, timeLeft]);
 
@@ -383,7 +386,9 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span className="identity-label">{t('emailLabel')}</span>
               {timeLeft && (
-                <span className={`expiry-badge ${timeLeft.includes(':') || timeLeft.includes('m') ? '' : 'expired'}`}>
+                <span
+                  className={`expiry-badge ${timeLeft.includes(':') || timeLeft.includes('m') ? '' : 'expired'}`}
+                >
                   {timeLeft}
                 </span>
               )}
@@ -541,26 +546,28 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
                         </span>
                       </div>
                       <div className="inbox-item-subject">{emailItem.subject}</div>
-                          {emailItem.otpCode && (
-                            <motion.button
-                              className="otp-badge"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (emailItem.otpCode) {
-                                  handleCopyOTP(emailItem.otpCode);
-                                }
-                              }}
-                              whileHover={{
-                                scale: 1.05,
-                                boxShadow: '0 0 15px rgba(99, 102, 241, 0.4)',
-                              }}
-                              whileTap={{ scale: 0.95 }}
-                              aria-label={`Copy verification code ${emailItem.otpCode}`}
-                            >
-                              <span className="otp-badge-code" aria-hidden="true">{emailItem.otpCode}</span>
-                              <Copy size={10} />
-                            </motion.button>
-                          )}
+                      {emailItem.otpCode && (
+                        <motion.button
+                          className="otp-badge"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (emailItem.otpCode) {
+                              handleCopyOTP(emailItem.otpCode);
+                            }
+                          }}
+                          whileHover={{
+                            scale: 1.05,
+                            boxShadow: '0 0 15px rgba(99, 102, 241, 0.4)',
+                          }}
+                          whileTap={{ scale: 0.95 }}
+                          aria-label={`Copy verification code ${emailItem.otpCode}`}
+                        >
+                          <span className="otp-badge-code" aria-hidden="true">
+                            {emailItem.otpCode}
+                          </span>
+                          <Copy size={10} />
+                        </motion.button>
+                      )}
                     </div>
                   </motion.div>
                 );

@@ -23,6 +23,7 @@
 // │               Listen for AUTO_FILL_OTP → fill → feedback        │
 // └──────────────────────────────────────────────────────────────────┘
 import { ExtensionMessage } from '../types';
+import { getRandomString } from '../utils/encryption';
 import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
 import { setHTML } from '../utils/setHTML';
@@ -329,7 +330,7 @@ function safeQuerySelector<T extends Element>(root: ParentNode, selector: string
 }
 
 function generateGroupId(prefix: string, hint?: string): string {
-  const suffix = hint || Math.random().toString(36).slice(2, 8);
+  const suffix = hint || getRandomString(6, 'abcdefghijklmnopqrstuvwxyz0123456789');
   return `${prefix}-${suffix}`;
 }
 
@@ -1725,7 +1726,9 @@ export class OTPPageDetector {
   private installFormSubmissionListener(): void {
     this.formSubmitHandler = (e: Event) => {
       const form = e.target as HTMLFormElement;
-      if (!form || form.tagName !== 'FORM') return;
+      if (!form || form.tagName !== 'FORM') {
+        return;
+      }
 
       // Check if this looks like a registration/signup form
       const isRegistrationForm = this.isRegistrationForm(form);
@@ -1798,10 +1801,7 @@ export class OTPPageDetector {
     inputs.forEach((input) => {
       const type = (input as HTMLInputElement).type.toLowerCase();
       const name = ((input as HTMLInputElement).name || '').toLowerCase();
-      const placeholder = ((input as HTMLInputElement).placeholder || '').toLowerCase();
       const autocomplete = ((input as HTMLInputElement).autocomplete || '').toLowerCase();
-      const fieldText = `${type} ${name} ${placeholder} ${autocomplete}`;
-
       if (type === 'email' || name.includes('email') || autocomplete.includes('email')) {
         hasEmail = true;
       }
@@ -1817,8 +1817,12 @@ export class OTPPageDetector {
       }
     });
 
-    if (hasEmail && hasPassword) score += 3;
-    if (hasUsername) score += 1;
+    if (hasEmail && hasPassword) {
+      score += 3;
+    }
+    if (hasUsername) {
+      score += 1;
+    }
 
     // Check for common registration button text
     const buttons = form.querySelectorAll('button, input[type="submit"]');

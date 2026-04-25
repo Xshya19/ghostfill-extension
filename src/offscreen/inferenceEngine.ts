@@ -1,10 +1,5 @@
 import * as ort from 'onnxruntime-web';
-import {
-  FIELD_CLASSES,
-  NUM_TEXT_CHANNELS,
-  MAX_TEXT_LEN,
-  RawFieldFeatures,
-} from '../content/extractor';
+import { FIELD_CLASSES, RawFieldFeatures } from '../content/extractor';
 import { PageContext } from '../types/form.types';
 
 // eslint-disable-next-line no-console
@@ -37,7 +32,11 @@ let suppressingErrors = false;
 
 function scopedConsoleError(...args: unknown[]) {
   const msg = args.map((a) => String(a)).join(' ');
-  if (suppressingErrors && msg.includes('image.png') && msg.includes('does not support image input')) {
+  if (
+    suppressingErrors &&
+    msg.includes('image.png') &&
+    msg.includes('does not support image input')
+  ) {
     console.warn('[GhostFill ML] ONNX model type check (expected for non-image models):', msg);
     return;
   }

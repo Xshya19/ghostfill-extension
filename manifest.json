@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "GhostFill",
+  "name": "__MSG_extensionName__",
   "version": "1.1.0",
-  "description": "GhostFill: Disposable emails, secure passwords, and automatic OTP detection & fill. Local AI engine — no API key required. 100% Free & Open Source.",
+  "description": "__MSG_extensionDescription__",
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; worker-src 'none'; child-src 'none'; frame-src 'none'; connect-src 'self' https://api.1secmail.com https://api.1secmail.net https://api.1secmail.org https://www.1secmail.com https://api.mail.tm https://api.mail.gw https://api.tmailor.com https://api.maildrop.cc https://api.dropmail.me https://api.guerrillamail.com https://api.tempmail.lol https://mercure.mail.tm https://fonts.googleapis.com https://fonts.gstatic.com;"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; worker-src 'none'; child-src 'none'; frame-src 'none'; connect-src 'self' https://api.1secmail.com https://api.1secmail.net https://api.1secmail.org https://www.1secmail.com https://api.mail.tm https://api.mail.gw https://api.tmailor.com https://api.maildrop.cc https://api.dropmail.me https://api.guerrillamail.com https://api.tempmail.lol https://mercure.mail.tm;"
   },
   "permissions": [
     "activeTab",
@@ -34,7 +34,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://*/*", "http://*/*"],
+      "matches": ["https://*/*"],
       "exclude_matches": [
         "*://*.chase.com/*",
         "*://*.bankofamerica.com/*",
@@ -108,12 +108,12 @@
   "web_accessible_resources": [
     {
       "resources": ["assets/icons/icon128.png"],
-      "matches": ["https://*/*", "http://*/*"],
+      "matches": ["https://*/*"],
       "use_dynamic_url": true
     },
     {
-      "resources": ["models/*.onnx", "models/*.json", "*.wasm", "*.mjs"],
-      "matches": ["<all_urls>"],
+      "resources": ["models/*.onnx", "models/*.onnx.data", "ort-wasm-simd-threaded.wasm"],
+      "matches": ["https://*/*"],
       "use_dynamic_url": true
     }
   ],

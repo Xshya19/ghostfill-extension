@@ -1,27 +1,27 @@
 import { emailService } from '../services/emailServices';
 import { identityService } from '../services/identityService';
+import { extractOTPStandalone, extractLinkStandalone } from '../services/intelligentExtractor';
 import { linkService } from '../services/linkService';
 import { otpService } from '../services/otpService';
 import { passwordService } from '../services/passwordService';
 import { storageService } from '../services/storageService';
-import { extractOTPStandalone, extractLinkStandalone } from '../services/intelligentExtractor';
 import { ExtensionMessage, ExtensionResponse, PasswordHistoryItem } from '../types';
+import { diag } from '../utils/diagnosticLogger';
 import { createLogger } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
-import { diag } from '../utils/diagnosticLogger';
+import { validateMessage } from '../utils/validation';
 import { notifySuccess, notifyError, resetNotificationSession } from './notifications';
 import { ensureOffscreenDocument } from './offscreenManager';
-import { sseManager } from './sseManager';
 import {
   startFastOTPPolling,
   stopFastOTPPolling,
-  startEmailPolling,
   triggerEventDrivenPolling,
   recordEmailReceived,
   isActivationTab,
   getOTPWaitingTabs,
   resetEmailSession,
 } from './pollingManager';
+import { sseManager } from './sseManager';
 
 const log = createLogger('MessageHandler');
 
@@ -54,6 +54,16 @@ export function setupMessageHandler(): void {
       // Use IIFE for async handling in listener
       void (async () => {
         try {
+          const validation = validateMessage(message);
+          if (!validation.valid) {
+            log.warn('Blocked invalid message', {
+              error: validation.error,
+              origin: sender.url,
+            });
+            sendResponse({ success: false, error: validation.error });
+            return;
+          }
+
           const response = await handleMessage(message, sender);
           sendResponse(response);
         } catch (error) {
@@ -290,16 +300,24 @@ async function handleMessage(
       const textBody = (payload?.textBody as string) || (payload?.text as string) || '';
       const htmlBody = (payload?.htmlBody as string) || '';
       const source = (payload?.source as string) || '';
-      
+
       log.info(`🧠 Requesting off-main-thread OTP/Link extraction for source: ${source}`);
-      
-      const otpExtraction = extractOTPStandalone(htmlBody || textBody, subject, 'noreply@ghostfill.ai');
-      const linkExtraction = extractLinkStandalone(htmlBody || textBody, subject, 'noreply@ghostfill.ai');
-      
-      return { 
-        success: true, 
+
+      const otpExtraction = extractOTPStandalone(
+        htmlBody || textBody,
+        subject,
+        'noreply@ghostfill.ai'
+      );
+      const linkExtraction = extractLinkStandalone(
+        htmlBody || textBody,
+        subject,
+        'noreply@ghostfill.ai'
+      );
+
+      return {
+        success: true,
         otp: otpExtraction?.best?.code ?? undefined,
-        link: linkExtraction?.best?.url ?? undefined 
+        link: linkExtraction?.best?.url ?? undefined,
       };
     }
 

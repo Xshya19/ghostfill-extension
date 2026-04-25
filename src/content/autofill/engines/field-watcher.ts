@@ -24,11 +24,7 @@ export class FieldWatcher {
    * Watch for dynamically-rendered OTP fields.
    * Resolves `true` if OTP was filled, `false` on timeout.
    */
-  async watch(
-    otp: string,
-    context: PageContext,
-    timeoutMs: number
-  ): Promise<boolean> {
+  async watch(otp: string, context: PageContext, timeoutMs: number): Promise<boolean> {
     return new Promise((resolve) => {
       if (this.isActive) {
         this.stop();
@@ -143,13 +139,13 @@ export class FieldWatcher {
       const shadow = (node as Element).shadowRoot;
       if (shadow && !this.knownShadowRoots.has(shadow)) {
         this.knownShadowRoots.add(shadow);
-        
+
         // Attach observer to the new shadow root
         const obs = new MutationObserver(() => this.onMutation());
         obs.observe(shadow, { childList: true, subtree: true, attributes: true });
         this.shadowObservers.push(obs);
-        
-        // We don't store individual observers in a map to keep it simple, 
+
+        // We don't store individual observers in a map to keep it simple,
         // they'll be cleaned up when the shadow root is detached or we stop()
       }
       node = walker.nextNode();
@@ -166,7 +162,7 @@ export class FieldWatcher {
     this.shadowObservers.forEach((observer) => observer.disconnect());
     this.shadowObservers = [];
     this.knownShadowRoots.clear();
-    
+
     if (this.debounceTimeout) {
       clearTimeout(this.debounceTimeout);
       this.debounceTimeout = null;

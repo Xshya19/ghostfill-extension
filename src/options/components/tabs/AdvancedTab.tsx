@@ -51,7 +51,9 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
       const data = res.ghostfill_training_data || [];
       if (data.length === 0) {
         // eslint-disable-next-line no-alert
-        alert('No training data collected yet. Right-click editable fields on any website and report misclassifications to collect data.');
+        alert(
+          'No training data collected yet. Right-click editable fields on any website and report misclassifications to collect data.'
+        );
         return;
       }
       try {
@@ -87,9 +89,11 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
           const k = key as keyof UserSettings;
           if (k in parsed) {
             const expectedType = typeof DEFAULT_SETTINGS[k];
-            const actualType = parsed[k] === null ? 'null' : Array.isArray(parsed[k]) ? 'array' : typeof parsed[k];
+            const actualType =
+              parsed[k] === null ? 'null' : Array.isArray(parsed[k]) ? 'array' : typeof parsed[k];
             // Allow array-to-array and object-to-object matches
-            const typeMatches = actualType === expectedType ||
+            const typeMatches =
+              actualType === expectedType ||
               (expectedType === 'object' && (actualType === 'object' || actualType === 'array'));
             if (typeMatches) {
               if (k === 'passwordDefaults' && typeof parsed[k] === 'object') {
@@ -143,7 +147,11 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
             <label>Export Settings</label>
             <p>Download your current settings as a JSON file</p>
           </div>
-          <button className="premium-btn premium-btn-secondary" type="button" onClick={handleExport}>
+          <button
+            className="premium-btn premium-btn-secondary"
+            type="button"
+            onClick={handleExport}
+          >
             Export
           </button>
         </div>
@@ -153,7 +161,11 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
             <label htmlFor="import-settings">Import Settings</label>
             <p>Load settings from a previously exported JSON file</p>
           </div>
-          <label className="premium-btn premium-btn-secondary import-btn" tabIndex={0} role="button">
+          <label
+            className="premium-btn premium-btn-secondary import-btn"
+            tabIndex={0}
+            role="button"
+          >
             Import
             <input
               ref={fileInputRef}
@@ -166,7 +178,7 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
           </label>
         </div>
       </SettingsSection>
-      
+
       <SettingsSection id="ai-machine-learning" title="AI & Machine Learning" icon="🤖">
         <div className="setting-item vertical-group">
           <div className="setting-info" style={{ width: '100%' }}>

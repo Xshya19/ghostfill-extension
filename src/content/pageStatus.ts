@@ -19,11 +19,13 @@ class PageStatusInjector {
   private isContextValid(): boolean {
     try {
       // chrome.runtime.id is undefined when the context has been invalidated
-      return typeof chrome !== 'undefined' &&
+      return (
+        typeof chrome !== 'undefined' &&
         typeof chrome.runtime !== 'undefined' &&
         !!chrome.runtime.id &&
         typeof document !== 'undefined' &&
-        document.body !== null;
+        document.body !== null
+      );
     } catch {
       return false;
     }

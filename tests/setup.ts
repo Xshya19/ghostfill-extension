@@ -27,7 +27,7 @@ const chromeMock = {
       addListener: vi.fn(),
       removeListener: vi.fn(),
       hasListener: vi.fn(),
-    }
+    },
   },
   alarms: {
     create: vi.fn(),
@@ -39,7 +39,7 @@ const chromeMock = {
       addListener: vi.fn(),
       removeListener: vi.fn(),
       hasListener: vi.fn(),
-    }
+    },
   },
   runtime: {
     sendMessage: vi.fn().mockResolvedValue({}),

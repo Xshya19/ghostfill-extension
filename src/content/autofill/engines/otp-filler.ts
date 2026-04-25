@@ -81,7 +81,9 @@ export class OTPFiller {
     // Strategy 3: Character-by-character filling
     for (let i = 0; i < fields.length; i++) {
       const field = fields[i];
-      if (!field) continue;
+      if (!field) {
+        continue;
+      }
 
       if (i < total) {
         const success = isBackgroundTab
@@ -128,7 +130,9 @@ export class OTPFiller {
 
     for (let i = 0; i < fields.length; i++) {
       const field = fields[i];
-      if (!field) continue;
+      if (!field) {
+        continue;
+      }
 
       if (i < total) {
         const char = digits[i]!;
@@ -178,12 +182,12 @@ export class OTPFiller {
    * Some sites (like Google, Microsoft) automatically move focus to the next field.
    */
   private static async detectAutoAdvance(field: HTMLInputElement | undefined): Promise<boolean> {
-    if (!field) return false;
+    if (!field) {
+      return false;
+    }
 
     try {
       field.focus({ preventScroll: true });
-      const initialActive = document.activeElement;
-
       // Simulate a single character input
       const nativeSetter = Object.getOwnPropertyDescriptor(
         HTMLInputElement.prototype,

@@ -15,11 +15,13 @@ export const ProviderHealthMeter: React.FC = () => {
 
   useEffect(() => {
     let isMounted = true;
-    
+
     const fetchHealth = () => {
       if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
         chrome.runtime.sendMessage({ action: 'GET_PROVIDER_HEALTH' }, (res) => {
-          if (!isMounted) {return;}
+          if (!isMounted) {
+            return;
+          }
           if (res && res.success && Array.isArray(res.health)) {
             setHealthData(res.health);
           }
@@ -31,7 +33,9 @@ export const ProviderHealthMeter: React.FC = () => {
     fetchHealth();
     // Refresh every 10 seconds while tab is open
     const interval = setInterval(() => {
-      if (document.hidden) { return; }
+      if (document.hidden) {
+        return;
+      }
       fetchHealth();
     }, 10000);
     return () => {
@@ -68,9 +72,7 @@ export const ProviderHealthMeter: React.FC = () => {
             <div key={h.name} className="health-pill-card">
               <span className="health-provider-name">{h.name}</span>
               <div className="health-status-group">
-                <span className="health-percent">
-                  {Math.round(h.successRate * 100)}%
-                </span>
+                <span className="health-percent">{Math.round(h.successRate * 100)}%</span>
                 <div
                   className={`health-dot ${statusClass}`}
                   title={`Response: ${Math.round(h.avgResponseTime)}ms | Failures: ${h.consecutiveFailures}`}

@@ -464,7 +464,9 @@ export function extractLink(
   });
 
   const best = candidates[0];
-  if (!best) {return null;}
+  if (!best) {
+    return null;
+  }
 
   log.info(
     `Link: ${best.url.substring(0, 70)}... (${best.confidence.toFixed(0)}%) [${best.type}] CTA=${best.isCTA}`

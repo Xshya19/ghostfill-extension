@@ -2,7 +2,7 @@
 
 /**
  * Build ZIP Script
- * 
+ *
  * Creates a distributable ZIP file of the extension
  */
 

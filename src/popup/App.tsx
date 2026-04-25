@@ -188,9 +188,9 @@ const App: React.FC = () => {
           isFirst = false;
         }
 
-        const currentEmail = await refreshCurrentEmail();
+        await refreshCurrentEmail();
 
-        // Removed aggressive auto-generation block. 
+        // Removed aggressive auto-generation block.
         // Generates identity ONLY upon explicit user onboarding dismiss or manual generation.
       } catch (e) {
         log.error('Failed to initialize app', e);
@@ -412,7 +412,7 @@ const App: React.FC = () => {
               className="app-view-container"
             >
               <Header onOpenSettings={handleOpenSettings} onOpenHelp={handleOpenHelp} />
-              <div className="ghost-dashboard" style={{ paddingTop: 0 }}>
+              <div className="ghost-dashboard ghost-dashboard-no-top-padding">
                 <EmailGenerator
                   emailAccount={emailAccount}
                   onGenerate={triggerGenerateIdentity}
@@ -480,10 +480,6 @@ const App: React.FC = () => {
               <button
                 className="ios-button button-primary help-btn"
                 onClick={() => setShowHelp(false)}
-                style={{ transition: 'transform 0.1s ease', cursor: 'pointer' }}
-                onPointerDown={(e) => (e.currentTarget.style.transform = 'scale(0.96)')}
-                onPointerUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}
-                onPointerOut={(e) => (e.currentTarget.style.transform = 'scale(1)')}
               >
                 {t('dismiss')}
               </button>

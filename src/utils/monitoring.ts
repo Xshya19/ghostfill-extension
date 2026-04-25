@@ -95,7 +95,9 @@ class PerformanceMonitor {
     const observer = new PerformanceObserver((entryList) => {
       const entries = entryList.getEntries();
       const lastEntry = entries[entries.length - 1];
-      if (!lastEntry) {return;}
+      if (!lastEntry) {
+        return;
+      }
 
       const metric: LocalMetric = {
         name: 'LCP',

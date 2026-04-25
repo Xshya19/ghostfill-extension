@@ -3,7 +3,7 @@
 import { EmailAccount, Email, MailTmDomain, MailTmAccount, MailTmMessage } from '../../types';
 import { API } from '../../utils/constants';
 import { fetchWithTimeout } from '../../utils/core';
-import { getRandomString } from '../../utils/encryption';
+import { getRandomInt, getRandomString } from '../../utils/encryption';
 import { createLogger } from '../../utils/logger';
 
 const log = createLogger('MailTmService');
@@ -127,10 +127,14 @@ export class MailTmService {
         await new Promise((resolve, reject) => {
           const timeoutId = setTimeout(resolve, 1000 * (i + 1));
           if (options?.signal) {
-            options.signal.addEventListener('abort', () => {
-              clearTimeout(timeoutId);
-              reject(new DOMException('Aborted', 'AbortError'));
-            }, { once: true });
+            options.signal.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(timeoutId);
+                reject(new DOMException('Aborted', 'AbortError'));
+              },
+              { once: true }
+            );
           }
         });
       } catch (error) {
@@ -143,10 +147,14 @@ export class MailTmService {
         await new Promise((resolve, reject) => {
           const timeoutId = setTimeout(resolve, 1000 * (i + 1));
           if (options?.signal) {
-            options.signal.addEventListener('abort', () => {
-              clearTimeout(timeoutId);
-              reject(new DOMException('Aborted', 'AbortError'));
-            }, { once: true });
+            options.signal.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(timeoutId);
+                reject(new DOMException('Aborted', 'AbortError'));
+              },
+              { once: true }
+            );
           }
         });
       }
@@ -175,7 +183,7 @@ export class MailTmService {
 
       // Generate random address if not provided
       // Pick a random domain to increase chance of bypassing blacklists
-      const domain = domains[Math.floor(Math.random() * domains.length)]!;
+      const domain = domains[getRandomInt(0, domains.length - 1)]!;
       const login = address || getRandomString(10, 'abcdefghijklmnopqrstuvwxyz0123456789');
       const fullEmail = `${login}@${domain}`;
       const pwd =

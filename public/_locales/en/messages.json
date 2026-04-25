@@ -4,7 +4,7 @@
     "description": "The name of the extension"
   },
   "extensionDescription": {
-    "message": "Disposable emails, secure passwords, and automatic OTP detection & fill. Local AI — no API key required.",
+    "message": "Disposable emails, secure passwords, and automatic OTP detection & fill. Local AI - no API key required.",
     "description": "Description of the extension"
   },
   "emailLabel": {
@@ -107,13 +107,13 @@
     "message": "Get Started"
   },
   "onboardingFooter": {
-    "message": "100% local · No API key · Open source"
+    "message": "Local AI - provider APIs - open source"
   },
   "appName": {
     "message": "GhostFill"
   },
   "appDescription": {
-    "message": "Disposable emails, secure passwords, and automatic OTP detection & fill — powered by a local AI engine."
+    "message": "Disposable emails, secure passwords, and automatic OTP detection & fill - powered by a local AI engine."
   },
   "confirmNewIdentity": {
     "message": "Are you sure you want to generate a new identity? Your current email and details will be replaced."

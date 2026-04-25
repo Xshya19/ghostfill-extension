@@ -90,10 +90,16 @@ export class OTPFieldDiscovery {
 
       if (strategy.name === 'S4:inputmode-numeric-short') {
         const filtered = fields.filter((f) => {
-          if (f.maxLength >= 4 && f.maxLength <= 8) return true;
+          if (f.maxLength >= 4 && f.maxLength <= 8) {
+            return true;
+          }
           const rect = f.getBoundingClientRect();
-          if (rect.width > 0 && rect.width < 120) return true;
-          if (f.type === 'tel' || f.type === 'number') return true;
+          if (rect.width > 0 && rect.width < 120) {
+            return true;
+          }
+          if (f.type === 'tel' || f.type === 'number') {
+            return true;
+          }
           return false;
         });
         if (filtered.length > 0 && filtered.length <= this.MAX_SPLIT_FIELDS) {
@@ -258,7 +264,9 @@ export class OTPFieldDiscovery {
     );
 
     for (const input of candidates) {
-      if (NegativePatternMatcher.isLikelyNotOTP(input)) continue;
+      if (NegativePatternMatcher.isLikelyNotOTP(input)) {
+        continue;
+      }
 
       const style = window.getComputedStyle(input);
       const hasSplitStyling =

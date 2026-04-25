@@ -165,7 +165,9 @@ export class SentinelBrain {
     this.pulseTimeout = setTimeout(async () => {
       log.info('Pulse executing: Analyzing dynamic DOM changes...');
       try {
-        const inputs = Array.from(document.querySelectorAll('input, select, textarea')) as HTMLElement[];
+        const inputs = Array.from(
+          document.querySelectorAll('input, select, textarea')
+        ) as HTMLElement[];
         if (inputs.length > 0) {
           await this.analyze(inputs);
         }

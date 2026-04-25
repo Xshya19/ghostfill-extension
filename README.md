@@ -4,7 +4,7 @@
 
 # 👻 GhostFill
 
-**The ultimate invisible privacy layer for your digital identity.** <br>
+**A privacy-focused helper for disposable email, passwords, and OTP workflows.** <br>
 _Generate disposable emails · Secure passwords · Automatic OTP fill · Local AI Inference · 100% Free_
 
 [![Version](https://img.shields.io/badge/version-1.1.0-blueviolet?style=for-the-badge&logo=semver)](https://github.com/Xshya19/ghostfill-extension/releases)
@@ -40,7 +40,7 @@ _Generate disposable emails · Secure passwords · Automatic OTP fill · Local A
 
 ## 🧩 What is GhostFill?
 
-GhostFill is a **Next-Gen Chrome Extension** that acts as your invisible privacy shield. Are you tired of giving away your personal email and switching tabs back and forth just to hunt for an OTP code?
+GhostFill is a Chrome extension that helps reduce email exposure during sign-up and verification flows. It can generate disposable email addresses, create strong passwords, and help detect OTP codes in incoming messages.
 
 GhostFill handles the entire sign-up lifecycle seamlessly:
 
@@ -65,9 +65,9 @@ GhostFill isn't just a basic email generator. It's an intelligent AI-backed loca
 
 Powered by 7 independent, highly-vetted providers running in parallel. GhostFill features **intelligent health scoring**, automatic fallback mechanisms with exponential backoff, and AES-encrypted session-aware cache resets. Never lose an inbox.
 
-### 🔐 Unhackable Passwords
+### Strong Passwords
 
-Generate cryptographically impregnable passwords tailored to standard requirements. One-click copy, history logs, and instant auto-injection into detected application password fields.
+Generate cryptographically strong passwords tailored to common site requirements. One-click copy, optional history, and form fill support are included.
 
 ### 🔗 Silent Activation Service
 
@@ -182,14 +182,14 @@ GhostFill’s complex workflow is highly modular, split between background servi
 
 ## 🔒 Privacy & Security Model
 
-We care about your data so much that **we don't want it.** GhostFill handles security at the architectural base level.
+GhostFill is designed to minimize data exposure while still supporting provider-backed disposable email workflows.
 
-✅ **Zero Telemetry**: No tracking pixels, Google Analytics, or shady logs. Your device is the only source of truth. <br>
-✅ **Military-Grade Encryption**: `AES-256-GCM` encryption wraps your settings, persistent data, and cache blocks. <br>
-✅ **Rotating Session Keys**: Fresh cryptographic keys are spun up each time your browser restarts. Your master key sits fully encrypted at rest. <br>
-✅ **Hardened Execution**: DOMPurify vigorously scrubs all email HTML bodies against XSS attacks before reading them. <br>
-✅ **Safeguarded Zones**: Over 30 major financial domain platforms are heavily walled-off (`exclude_matches`) out-of-the-box. <br>
-✅ **The URL Gatekeeper**: Refuses to launch links involving raw IP addresses, localhost injections, or spam domains (`.xyz`, `.top`, `.buzz`).
+- **No analytics by default**: No Google Analytics or tracking pixels are built into the extension. <br>
+- **Encrypted sensitive storage**: Sensitive local records use AES-GCM encryption. <br>
+- **Key separation**: Session-only secrets and persisted encrypted data use separate storage paths. <br>
+- **HTML sanitization**: DOMPurify sanitizes email HTML before rendering or parsing. <br>
+- **Sensitive-site exclusions**: Common financial and password-manager domains are excluded from the default content script. <br>
+- **URL checks**: Activation links are validated before opening, including scheme and suspicious-domain checks.
 
 ---
 
@@ -294,12 +294,12 @@ No! GhostFill ONLY has access to the temporary disposable emails it dynamically 
 
 <details>
 <summary><b>Why do you need an ONNX inference engine?</b></summary>
-To guarantee complete zero-trust privacy! GhostFill houses a local ML pipeline to intelligently find complex form fields instead of sending your screen data to a cloud API.
+GhostFill uses a local ML pipeline to classify form fields without sending page screenshots or form snapshots to a cloud AI API.
 </details>
 
 <details>
 <summary><b>Is GhostFill entirely free?</b></summary>
-Yes, 100% free and open-source! Our temporary email partners are fully integrated via open APIs without paid keys. 
+Yes. The extension is open source and uses disposable-email providers that do not require user-supplied paid API keys by default. 
 </details>
 
 ---

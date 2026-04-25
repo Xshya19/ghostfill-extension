@@ -288,7 +288,13 @@ export const messagePayloadSchemas: Record<string, z.ZodSchema> = {
 // ─── Validation function ──────────────────────────────────────────────────────
 export function validateMessage<T extends { action: string; payload?: unknown }>(
   message: T
-): { valid: true; data: T } | { valid: false; error: string } {
+): { valid: true; data: T } | { valid: false; error: string };
+export function validateMessage(
+  message: unknown
+): { valid: true; data: { action: string; payload?: unknown } } | { valid: false; error: string };
+export function validateMessage(
+  message: unknown
+): { valid: true; data: { action: string; payload?: unknown } } | { valid: false; error: string } {
   try {
     const messageSize = JSON.stringify(message).length;
     if (messageSize > MAX_MESSAGE_SIZE) {
@@ -298,7 +304,16 @@ export function validateMessage<T extends { action: string; payload?: unknown }>
       };
     }
 
-    const action = message.action.trim();
+    if (!message || typeof message !== 'object') {
+      return { valid: false, error: 'Message must be an object' };
+    }
+
+    const candidate = message as { action?: unknown; payload?: unknown };
+    if (typeof candidate.action !== 'string' || candidate.action.trim().length === 0) {
+      return { valid: false, error: 'Message action must be a non-empty string' };
+    }
+
+    const action = candidate.action.trim();
     const payloadSchema = messagePayloadSchemas[action];
 
     if (!payloadSchema) {
@@ -309,14 +324,17 @@ export function validateMessage<T extends { action: string; payload?: unknown }>
       };
     }
 
-    payloadSchema.parse(message.payload);
-    return { valid: true, data: message };
+    payloadSchema.parse(candidate.payload);
+    return {
+      valid: true,
+      data: { ...candidate, action } as { action: string; payload?: unknown },
+    };
   } catch (error) {
     if (error instanceof z.ZodError) {
       const errors = error.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join('; ');
       return {
         valid: false,
-        error: `Validation failed for ${message.action}: ${errors}`,
+        error: `Validation failed: ${errors}`,
       };
     }
     return {

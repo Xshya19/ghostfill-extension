@@ -1,7 +1,7 @@
 /**
  * Icon Generator Script for GhostFill Extension
  * Generates properly sized PNG icons from SVG source
- * 
+ *
  * Usage: npm run generate-icons
  */
 
@@ -47,7 +47,7 @@ const outputDir = path.join(__dirname, '..', 'src', 'assets', 'icons');
 
 // Ensure output directory exists
 if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
+  fs.mkdirSync(outputDir, { recursive: true });
 }
 
 // Save SVG icon (Chrome MV3 supports SVG directly)

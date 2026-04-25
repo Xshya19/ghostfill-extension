@@ -20,7 +20,7 @@ export function useOTP() {
         if (isMounted.current) {
           setLastOTP(otp || null);
         }
-      } catch (e) {
+      } catch {
         if (isMounted.current) {
           setError('Failed to load OTP');
         }
@@ -83,10 +83,6 @@ export function useOTP() {
           return;
         }
         setLastOTP(newOTP);
-        // Cache it securely
-        if (newOTP && typeof chrome !== 'undefined' && chrome.storage?.local) {
-          await chrome.storage.local.set({ lastOTP: newOTP });
-        }
       }
     } catch {
       if (isMounted.current) {

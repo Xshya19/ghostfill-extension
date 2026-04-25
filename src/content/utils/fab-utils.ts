@@ -31,7 +31,9 @@ export function safeQuerySelector<T extends Element>(root: ParentNode, selector:
 }
 
 export function isFormInputElement(el: unknown): el is HTMLElement {
-  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {return true;}
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    return true;
+  }
   if (el instanceof HTMLElement) {
     return el.isContentEditable || el.getAttribute('role') === 'textbox';
   }

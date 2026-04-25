@@ -118,7 +118,7 @@ export function sanitizeString(input: string, maxLength: number = 1000): string 
  * Sanitize HTML content
  */
 export function sanitizeHtml(html: string): string {
-  // Delegate to the fortified regex in sanitization.core.ts 
+  // Delegate to the fortified regex in sanitization.core.ts
   // (which is safe for service workers but still strict)
   return sanitizeHtmlCore(html);
 }

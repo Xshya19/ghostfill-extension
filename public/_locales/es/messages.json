@@ -4,7 +4,7 @@
     "description": "The name of the extension"
   },
   "extensionDescription": {
-    "message": "Correos temporales, contraseñas seguras y detección automática de OTP. IA local — sin clave API.",
+    "message": "Correos temporales, contrasenas seguras y deteccion automatica de OTP. IA local - sin clave API.",
     "description": "Description of the extension"
   },
   "emailLabel": {
@@ -14,7 +14,7 @@
     "message": "Sincronizando identidad..."
   },
   "passwordLabel": {
-    "message": "CONTRASEÑA"
+    "message": "CONTRASENA"
   },
   "generatingPassword": {
     "message": "Generando..."
@@ -23,10 +23,10 @@
     "message": "Correo copiado"
   },
   "passwordCopied": {
-    "message": "Contraseña copiada"
+    "message": "Contrasena copiada"
   },
   "codeCopied": {
-    "message": "Código copiado"
+    "message": "Codigo copiado"
   },
   "recentMessages": {
     "message": "Bandeja de entrada"
@@ -38,7 +38,7 @@
     "message": "Escaneando..."
   },
   "listening": {
-    "message": "Escuchando códigos..."
+    "message": "Escuchando codigos..."
   },
   "activeIdentity": {
     "message": "Identidad activa"
@@ -59,25 +59,25 @@
     "message": "Nueva identidad generada"
   },
   "generatedEmailInvalid": {
-    "message": "El correo generado no es válido"
+    "message": "El correo generado no es valido"
   },
   "generationFailed": {
-    "message": "La generación falló. Intenta de nuevo."
+    "message": "La generacion fallo. Intenta de nuevo."
   },
   "helpTitle": {
-    "message": "Cómo funciona GhostFill"
+    "message": "Como funciona GhostFill"
   },
   "helpDescription": {
-    "message": "GhostFill crea correos temporales y contraseñas seguras para proteger tu privacidad en línea."
+    "message": "GhostFill crea correos temporales y contrasenas seguras para proteger tu privacidad en linea."
   },
   "dismiss": {
     "message": "Entendido"
   },
   "vaultSettings": {
-    "message": "Bóveda de contraseñas"
+    "message": "Boveda de contrasenas"
   },
   "passcodeSync": {
-    "message": "Sincronización de códigos"
+    "message": "Sincronizacion de codigos"
   },
   "onboardingTitle": {
     "message": "Bienvenido a GhostFill"
@@ -92,30 +92,30 @@
     "message": "Crea direcciones de correo temporales al instante"
   },
   "onboardingFeature2": {
-    "message": "Contraseñas seguras"
+    "message": "Contrasenas seguras"
   },
   "onboardingFeature2Sub": {
-    "message": "Genera contraseñas criptográficamente seguras"
+    "message": "Genera contrasenas criptograficamente seguras"
   },
   "onboardingFeature3": {
     "message": "Autocompletado OTP"
   },
   "onboardingFeature3Sub": {
-    "message": "Detecta y rellena códigos de verificación automáticamente"
+    "message": "Detecta y rellena codigos de verificacion automaticamente"
   },
   "onboardingButton": {
     "message": "Comenzar"
   },
   "onboardingFooter": {
-    "message": "100% local · Sin clave API · Código abierto"
+    "message": "IA local - APIs de proveedores - codigo abierto"
   },
   "appName": {
     "message": "GhostFill"
   },
   "appDescription": {
-    "message": "Correos temporales, contraseñas seguras y detección automática de OTP — con IA local."
+    "message": "Correos temporales, contrasenas seguras y deteccion automatica de OTP - con IA local."
   },
   "confirmNewIdentity": {
-    "message": "¿Estás seguro de que quieres generar una nueva identidad? Tu correo y datos actuales se reemplazarán."
+    "message": "Estas seguro de que quieres generar una nueva identidad? Tu correo y datos actuales se reemplazaran."
   }
 }

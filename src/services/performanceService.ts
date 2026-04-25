@@ -130,8 +130,12 @@ class PerformanceService {
       success,
       confidence,
     };
-    if (error) {metric.errorType = error;}
-    if (fieldsDetected) {metric.details = JSON.stringify(fieldsDetected);}
+    if (error) {
+      metric.errorType = error;
+    }
+    if (fieldsDetected) {
+      metric.details = JSON.stringify(fieldsDetected);
+    }
 
     this.formMetrics.push(metric);
 
@@ -182,8 +186,12 @@ class PerformanceService {
       success,
       confidence,
     };
-    if (error) {metric.errorType = error;}
-    if (otp) {metric.details = `OTP: ${otp.length} chars, pattern: ${pattern}`;}
+    if (error) {
+      metric.errorType = error;
+    }
+    if (otp) {
+      metric.details = `OTP: ${otp.length} chars, pattern: ${pattern}`;
+    }
 
     this.otpMetrics.push(metric);
 
@@ -231,7 +239,9 @@ class PerformanceService {
       success,
       confidence,
     };
-    if (error) {metric.errorType = error;}
+    if (error) {
+      metric.errorType = error;
+    }
     metric.details = activated ? 'Link activated' : 'Link found but not activated';
 
     this.linkMetrics.push(metric);
@@ -275,8 +285,12 @@ class PerformanceService {
       success,
       confidence,
     };
-    if (error) {metric.errorType = error;}
-    if (result) {metric.details = `OTP: ${result.hasOtp}, Link: ${result.hasLink}`;}
+    if (error) {
+      metric.errorType = error;
+    }
+    if (result) {
+      metric.details = `OTP: ${result.hasOtp}, Link: ${result.hasLink}`;
+    }
 
     this.emailMetrics.push(metric);
 

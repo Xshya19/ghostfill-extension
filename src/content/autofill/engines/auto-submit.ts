@@ -21,12 +21,13 @@ export class AutoSubmitDetector {
     'a[class*="verify" i]',
   ];
 
-  private static readonly TEXT_PATTERN = /verify|confirm|submit|continue|next|send|done|log\s*in|sign\s*in/i;
+  private static readonly TEXT_PATTERN =
+    /verify|confirm|submit|continue|next|send|done|log\s*in|sign\s*in/i;
 
   static async checkAndHighlight(group: OTPFieldGroup): Promise<void> {
     const delayMs = Math.min(500 + group.fields.length * 100, 1500);
-    await delay(delayMs); 
-    
+    await delay(delayMs);
+
     const button = this.findButton(group);
     if (button) {
       log.info('Found submit button — highlighting');
@@ -40,20 +41,27 @@ export class AutoSubmitDetector {
 
   private static findButton(group: OTPFieldGroup): HTMLElement | null {
     const field = group.fields[0];
-    if (!field) {return null;}
+    if (!field) {
+      return null;
+    }
 
-    const container = field.closest('form') ?? 
-                      field.closest('[class*="otp"]') ?? 
-                      field.closest('[class*="verify"]') ??
-                      field.parentElement?.parentElement?.parentElement;
+    const container =
+      field.closest('form') ??
+      field.closest('[class*="otp"]') ??
+      field.closest('[class*="verify"]') ??
+      field.parentElement?.parentElement?.parentElement;
 
-    if (!container) {return null;}
+    if (!container) {
+      return null;
+    }
 
     for (const selector of this.SELECTORS) {
       const button = safeQuerySelector<HTMLElement>(container, selector);
       if (button && VisibilityEngine.isVisible(button)) {
         const text = (button.textContent ?? '').toLowerCase().trim();
-        if (this.TEXT_PATTERN.test(text)) {return button;}
+        if (this.TEXT_PATTERN.test(text)) {
+          return button;
+        }
       }
     }
     return null;
@@ -63,6 +71,8 @@ export class AutoSubmitDetector {
     const original = button.style.outline;
     button.style.outline = '2px solid #4CAF50';
     button.style.outlineOffset = '2px';
-    setTimeout(() => { button.style.outline = original; }, 3000);
+    setTimeout(() => {
+      button.style.outline = original;
+    }, 3000);
   }
 }

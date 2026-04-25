@@ -13,7 +13,7 @@ import {
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { EmailAccount, Email } from '../../types';
 import { TIMING } from '../../utils/constants';
-import { formatRelativeTime, extractOTP, extractActivationLink } from '../../utils/formatters';
+import { formatRelativeTime } from '../../utils/formatters';
 import { copyToClipboard } from '../../utils/helpers';
 import { safeSendMessage } from '../../utils/messaging';
 import { useOTPExtractor } from '../hooks/useOTPExtractor';
@@ -442,7 +442,8 @@ const EmailGenerator: React.FC<Props> = ({
                   {latestInbox.length > 0 ? (
                     latestInbox.map((item: Email, i: number) => {
                       // Use shared utility functions
-                      const verificationCode = emailOTPs[item.id] !== undefined ? emailOTPs[item.id] : undefined;
+                      const verificationCode =
+                        emailOTPs[item.id] !== undefined ? emailOTPs[item.id] : undefined;
                       const activationLink = emailLinks[item.id] || null;
 
                       return (

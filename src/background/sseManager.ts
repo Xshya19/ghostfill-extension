@@ -21,11 +21,10 @@
  * Fallback: If SSE fails, automatically switches to polling.
  */
 
-import { mailTmService } from '../services/emailServices';
-import { emailService } from '../services/emailServices';
+import { mailTmService, emailService } from '../services/emailServices';
 import { EmailAccount } from '../types';
-import { createLogger } from '../utils/logger';
 import { diag } from '../utils/diagnosticLogger';
+import { createLogger } from '../utils/logger';
 
 const log = createLogger('SSEManager');
 
@@ -266,7 +265,7 @@ class SSEManager {
       const decoder = new TextDecoder();
       let buffer = '';
 
-      while (true) {
+      while (!currentAbortController.signal.aborted) {
         const { done, value } = await reader.read();
         if (done) {
           log.info('SSE stream ended');

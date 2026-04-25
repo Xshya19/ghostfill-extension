@@ -884,8 +884,10 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
     if (!sharedResizeObserver) {
       sharedResizeObserver = new ResizeObserver((entries) => {
         for (const entry of entries) {
-           const updateFn = ghostLabelObserveMap.get(entry.target);
-           if (updateFn) { updateFn(); }
+          const updateFn = ghostLabelObserveMap.get(entry.target);
+          if (updateFn) {
+            updateFn();
+          }
         }
       });
     }

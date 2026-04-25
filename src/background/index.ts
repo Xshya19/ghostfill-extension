@@ -1,4 +1,5 @@
 import './polyfill'; // Keep this as the first import to polyfill setImmediate
+import { sleep } from '../utils/helpers';
 import { createLogger } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
 
@@ -9,7 +10,6 @@ import { setupMessageHandler } from './messageHandler';
 import { initNotifications, dumpNotificationStats } from './notifications';
 import { getPollingMetrics } from './pollingManager';
 import { initServiceWorker, getBootState, dumpBootReport } from './serviceWorker';
-import { sleep } from '../utils/helpers';
 
 // Boot timing — logged via structured logger once it's initialized
 const __BACKGROUND_LOAD_START_EARLY__ = Date.now();
@@ -500,9 +500,7 @@ function installListeners(): void {
     import('./offscreenManager')
       .then(({ closeOffscreenDocument }) => closeOffscreenDocument())
       .catch((e) => log.warn('Suspend cleanup failed', extractMsg(e)));
-    import('./pollingManager')
-      .then(({ stopEmailPolling }) => stopEmailPolling())
-      .catch(() => {});
+    import('./pollingManager').then(({ stopEmailPolling }) => stopEmailPolling()).catch(() => {});
     import('./serviceWorker')
       .then(({ clearDeferredTimers }) => clearDeferredTimers())
       .catch(() => {});

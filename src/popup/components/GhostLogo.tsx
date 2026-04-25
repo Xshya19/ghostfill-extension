@@ -1,6 +1,6 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import React from 'react';
-import iconLogo from '../../assets/icons/icon.png';
+import iconLogo from '../../assets/icons/icon48.png';
 
 interface GhostLogoProps {
   size?: number;
@@ -22,20 +22,24 @@ const GhostLogo: React.FC<GhostLogoProps> = React.memo(({ size = 24, className =
         position: 'relative',
       }}
       animate={
-        shouldReduceMotion ? {} : {
-          filter: [
-            'drop-shadow(0 0 2px rgba(124, 92, 252, 0.1))',
-            'drop-shadow(0 0 16px rgba(124, 92, 252, 0.7))',
-            'drop-shadow(0 0 2px rgba(124, 92, 252, 0.1))',
-          ],
-        }
+        shouldReduceMotion
+          ? {}
+          : {
+              filter: [
+                'drop-shadow(0 0 2px rgba(124, 92, 252, 0.1))',
+                'drop-shadow(0 0 16px rgba(124, 92, 252, 0.7))',
+                'drop-shadow(0 0 2px rgba(124, 92, 252, 0.1))',
+              ],
+            }
       }
       transition={
-        shouldReduceMotion ? { duration: 0 } : {
-          duration: 4,
-          ease: 'easeInOut',
-          repeat: Infinity,
-        }
+        shouldReduceMotion
+          ? { duration: 0 }
+          : {
+              duration: 4,
+              ease: 'easeInOut',
+              repeat: Infinity,
+            }
       }
       whileHover={shouldReduceMotion ? {} : { scale: 1.05 }}
       whileTap={shouldReduceMotion ? {} : { scale: 0.96 }}
@@ -47,16 +51,20 @@ const GhostLogo: React.FC<GhostLogoProps> = React.memo(({ size = 24, className =
         width={size}
         height={size}
         animate={
-          shouldReduceMotion ? {} : {
-            opacity: [0.85, 1, 0.85],
-          }
+          shouldReduceMotion
+            ? {}
+            : {
+                opacity: [0.85, 1, 0.85],
+              }
         }
         transition={
-          shouldReduceMotion ? { duration: 0 } : {
-            duration: 3,
-            ease: 'easeInOut',
-            repeat: Infinity,
-          }
+          shouldReduceMotion
+            ? { duration: 0 }
+            : {
+                duration: 3,
+                ease: 'easeInOut',
+                repeat: Infinity,
+              }
         }
       />
     </motion.div>

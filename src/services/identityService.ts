@@ -5,7 +5,7 @@ import { STORAGE_KEYS, IdentityProfile } from '../types';
 import { getRandomInt } from '../utils/encryption';
 import { createLogger } from '../utils/logger';
 
-import { firstNames, lastNames, emailDomains } from './data/identityData';
+import { firstNames, lastNames } from './data/identityData';
 import { passwordService } from './passwordService';
 import { storageService } from './storageService';
 

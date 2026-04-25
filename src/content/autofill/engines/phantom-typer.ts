@@ -21,6 +21,7 @@
 //   → change → pointerout → pointerleave → blur → focusout
 // ═══════════════════════════════════════════════════════════════════
 
+import { getRandomInt } from '../../../utils/encryption';
 import { createLogger } from '../../../utils/logger';
 
 const log = createLogger('PhantomTyper');
@@ -83,7 +84,7 @@ class KeyMapper {
     '\n': 'Enter',
     '@': 'Digit2', // Shift+2 on US layout
     '#': 'Digit3',
-    '$': 'Digit4',
+    $: 'Digit4',
     '%': 'Digit5',
     '^': 'Digit6',
     '&': 'Digit7',
@@ -91,7 +92,7 @@ class KeyMapper {
     '(': 'Digit9',
     ')': 'Digit0',
     '-': 'Minus',
-    '_': 'Minus',
+    _: 'Minus',
     '=': 'Equal',
     '+': 'Equal',
     '[': 'BracketLeft',
@@ -134,7 +135,7 @@ class KeyMapper {
     if (this.SPECIAL_CHARS[char]) {
       return this.SPECIAL_CHARS[char];
     }
-    
+
     // Fallback for international / untested characters
     if (char.charCodeAt(0) > 127) {
       return 'Unidentified';
@@ -146,7 +147,9 @@ class KeyMapper {
    * Determine if a character requires the Shift key.
    */
   static requiresShift(char: string): boolean {
-    if (/^[A-Z]$/.test(char)) {return true;}
+    if (/^[A-Z]$/.test(char)) {
+      return true;
+    }
     return '~!@#$%^&*()_+{}|:"<>?'.includes(char);
   }
 }
@@ -191,7 +194,7 @@ class EventFactory {
     options?: { cancelable?: boolean }
   ): KeyboardEvent {
     const code = KeyMapper.getCode(char);
-    
+
     // Improved keyCode calculation: use upper case ASCII for letters (standard behavior)
     let keyCode = char.charCodeAt(0);
     if (/^[a-z]$/.test(char)) {
@@ -199,14 +202,33 @@ class EventFactory {
     } else if (KeyMapper.requiresShift(char)) {
       // For shifted special chars, physical keyCode corresponds to the unshifted char
       const unshiftedMap: Record<string, string> = {
-        '~': '`', '!': '1', '@': '2', '#': '3', '$': '4', '%': '5', '^': '6', '&': '7', '*': '8', '(': '9', ')': '0',
-        '_': '-', '+': '=', '{': '[', '}': ']', '|': '\\', ':': ';', '"': "'", '<': ',', '>': '.', '?': '/'
+        '~': '`',
+        '!': '1',
+        '@': '2',
+        '#': '3',
+        $: '4',
+        '%': '5',
+        '^': '6',
+        '&': '7',
+        '*': '8',
+        '(': '9',
+        ')': '0',
+        _: '-',
+        '+': '=',
+        '{': '[',
+        '}': ']',
+        '|': '\\',
+        ':': ';',
+        '"': "'",
+        '<': ',',
+        '>': '.',
+        '?': '/',
       };
       if (unshiftedMap[char]) {
         keyCode = unshiftedMap[char].charCodeAt(0);
       }
     }
-    
+
     const shiftKey = KeyMapper.requiresShift(char);
 
     return new KeyboardEvent(type, {
@@ -271,10 +293,7 @@ class EventFactory {
   /**
    * Create a PointerEvent for mouse simulation.
    */
-  static pointer(
-    type: string,
-    options?: { buttons?: number }
-  ): PointerEvent {
+  static pointer(type: string, options?: { buttons?: number }): PointerEvent {
     return new PointerEvent(type, {
       bubbles: true,
       composed: true,
@@ -287,10 +306,7 @@ class EventFactory {
   /**
    * Create a MouseEvent for click simulation.
    */
-  static mouse(
-    type: string,
-    options?: { buttons?: number }
-  ): MouseEvent {
+  static mouse(type: string, options?: { buttons?: number }): MouseEvent {
     return new MouseEvent(type, {
       bubbles: true,
       composed: true,
@@ -331,10 +347,7 @@ export class PhantomTyper {
    * @param text - String to type
    * @throws Never — all errors are caught and logged
    */
-  static async typeSimulatedString(
-    element: FormInputElement,
-    text: string
-  ): Promise<void> {
+  static async typeSimulatedString(element: FormInputElement, text: string): Promise<void> {
     // ── Validation ──
     if (!element || !element.isConnected) {
       log.warn('PhantomTyper: element not connected to DOM');
@@ -354,23 +367,26 @@ export class PhantomTyper {
     this.sessionMap.set(element, sessionId);
 
     const isActive = (): boolean => {
-      return (
-        this.sessionMap.get(element) === sessionId &&
-        element.isConnected
-      );
+      return this.sessionMap.get(element) === sessionId && element.isConnected;
     };
 
     try {
       // ── Phase 1: Pointer engagement ──
-      if (!this.dispatchPointerEngagement(element, isActive)) {return;}
+      if (!this.dispatchPointerEngagement(element, isActive)) {
+        return;
+      }
 
       // ── Phase 2: Focus ──
-      if (!isActive()) {return;}
+      if (!isActive()) {
+        return;
+      }
       element.focus({ preventScroll: true });
       element.dispatchEvent(EventFactory.focus('focus'));
       element.dispatchEvent(EventFactory.focus('focusin'));
 
-      if (!isActive()) {return;}
+      if (!isActive()) {
+        return;
+      }
 
       // ── Phase 3: Clear existing value ──
       NativeValueWriter.setValue(element, '');
@@ -389,12 +405,14 @@ export class PhantomTyper {
         if (i < text.length - 1) {
           const isSensitive = /pass|pin|otp|code/i.test(element.name || element.id || element.type);
           const baseYield = isSensitive ? 15 : INTER_CHAR_YIELD_MS;
-          const jitter = Math.floor(Math.random() * JITTER_MS);
+          const jitter = getRandomInt(0, JITTER_MS - 1);
           await this.yield(baseYield + jitter);
         }
       }
 
-      if (!isActive()) {return;}
+      if (!isActive()) {
+        return;
+      }
 
       // ── Phase 5: Commitment ──
       element.dispatchEvent(EventFactory.generic('change', { bubbles: true }));
@@ -432,11 +450,15 @@ export class PhantomTyper {
     ];
 
     for (const [type, opts] of pointerEvents) {
-      if (!isActive()) {return false;}
+      if (!isActive()) {
+        return false;
+      }
       element.dispatchEvent(EventFactory.pointer(type, opts));
     }
 
-    if (!isActive()) {return false;}
+    if (!isActive()) {
+      return false;
+    }
     element.dispatchEvent(EventFactory.mouse('mousedown', { buttons: 1 }));
 
     return true;
@@ -444,10 +466,7 @@ export class PhantomTyper {
 
   // ── Phase 4: Single character typing ──
 
-  private static typeCharacter(
-    element: FormInputElement,
-    char: string
-  ): void {
+  private static typeCharacter(element: FormInputElement, char: string): void {
     // 1. keydown
     element.dispatchEvent(EventFactory.keyboard('keydown', char));
 
@@ -461,7 +480,7 @@ export class PhantomTyper {
     // If beforeinput was cancelled, log it but continue writing value
     // (some strict frameworks sync validation across canceled events but still expect state)
     if (!allowed) {
-       log.debug('PhantomTyper: beforeinput event was cancelled by host framework', { char });
+      log.debug('PhantomTyper: beforeinput event was cancelled by host framework', { char });
     }
 
     // 4. Set value via native setter

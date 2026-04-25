@@ -1,18 +1,11 @@
-/* ═══════════════════════════════════════════════════════════════════
-   GhostFill Options — Tabbed Dashboard Design System
-   Aligned with Popup Design System v3.0.1
-   ═══════════════════════════════════════════════════════════════════ */
-
 :root {
-  /* Brand Palette (Spectral & Secure) - Unified with Popup */
-  --brand-primary: #7c5cfc; /* Mystic Purple (Ghost Core) */
+  --brand-primary: #7c5cfc;
   --brand-primary-rgb: 124, 92, 252;
-  --brand-secondary: #38bdf8; /* Azure Blue (Security/Mail Accent) */
+  --brand-secondary: #38bdf8;
   --brand-secondary-rgb: 56, 189, 248;
   --brand-accent: #c084fc;
   --brand-accent-rgb: 192, 132, 252;
 
-  /* Spectral Gradients */
   --brand-gradient: linear-gradient(135deg, #7c5cfc 0%, #38bdf8 100%);
   --brand-gradient-spectral: linear-gradient(135deg, #7c5cfc 0%, #a78bfa 50%, #38bdf8 100%);
   --brand-gradient-mesh: linear-gradient(
@@ -24,7 +17,6 @@
   );
   --brand-glow: rgba(124, 92, 252, 0.4);
 
-  /* Status Colors */
   --success: #10b981;
   --success-rgb: 16, 185, 129;
   --success-light: #34d399;
@@ -37,7 +29,6 @@
   --error-light: #fb7185;
   --error-dark: #e11d48;
 
-  /* Neutrals - Light Mode */
   --bg-primary: #ffffff;
   --bg-secondary: #f8fafc;
   --bg-tertiary: #f1f5f9;
@@ -46,7 +37,6 @@
   --text-tertiary: #64748b;
   --text-quaternary: #94a3b8;
 
-  /* Ghost-Skin / Spatial Glass */
   --glass-bg: rgba(255, 255, 255, 0.45);
   --glass-bg-thick: rgba(252, 252, 252, 0.85);
   --glass-border: rgba(255, 255, 255, 0.75);
@@ -54,7 +44,6 @@
   --glass-shadow-inner:
     inset 0 1px 0 rgba(255, 255, 255, 0.8), inset 0 0 0 1px rgba(255, 255, 255, 0.2);
 
-  /* Shadow System */
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.03), 0 4px 8px rgba(0, 0, 0, 0.03);
   --shadow-md:
     0 2px 4px rgba(0, 0, 0, 0.02), 0 4px 12px rgba(0, 0, 0, 0.04), 0 12px 24px rgba(0, 0, 0, 0.04);
@@ -66,7 +55,6 @@
     0 4px 16px rgba(99, 102, 241, 0.2), 0 8px 32px rgba(99, 102, 241, 0.15),
     0 2px 8px rgba(99, 102, 241, 0.1);
 
-  /* Animation */
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
   --transition-fast:
@@ -80,10 +68,8 @@
     transform 350ms var(--ease-spring), opacity 350ms var(--ease-spring),
     box-shadow 350ms var(--ease-spring);
 
-  /* Typography */
   --font-primary: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
-  /* Spacing */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -93,7 +79,6 @@
   --space-8: 32px;
   --space-10: 40px;
 
-  /* Radius */
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
@@ -102,16 +87,10 @@
   --radius-3xl: 28px;
   --radius-full: 9999px;
 
-  /* Touch Target */
   --size-touch-min: 44px;
 
-  /* Sidebar */
   --sidebar-width: 240px;
 }
-
-/* ═══════════════════════════════════════════════════════════════════
-   Dark Mode
-   ═══════════════════════════════════════════════════════════════════ */
 
 @media (prefers-color-scheme: dark) {
   :root {
@@ -131,10 +110,6 @@
     --shadow-brand: 0 0 40px rgba(124, 92, 252, 0.4), 0 8px 30px rgba(124, 92, 252, 0.25);
   }
 }
-
-/* ═══════════════════════════════════════════════════════════════════
-   Reset & Base
-   ═══════════════════════════════════════════════════════════════════ */
 
 * {
   box-sizing: border-box;
@@ -167,10 +142,6 @@ body {
       radial-gradient(at 100% 100%, rgba(6, 182, 212, 0.1) 0px, transparent 50%);
   }
 }
-
-/* ═══════════════════════════════════════════════════════════════════
-   Aurora Animated Background
-   ═══════════════════════════════════════════════════════════════════ */
 
 .options-app {
   position: relative;
@@ -257,10 +228,6 @@ body {
   }
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   Spatial Ghost-Skin Dashboard Components
-   ───────────────────────────────────────────────────────────────────────────── */
-
 .ghost-card {
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
@@ -328,7 +295,6 @@ body {
   box-shadow: var(--shadow-md);
 }
 
-/* Noise Grain Overlay */
 .material-grain {
   position: fixed;
   inset: 0;
@@ -338,10 +304,6 @@ body {
   z-index: 1;
   mix-blend-mode: overlay;
 }
-
-/* ═══════════════════════════════════════════════════════════════════
-   Header Section
-   ═══════════════════════════════════════════════════════════════════ */
 
 .options-header {
   padding: var(--space-8) 0 var(--space-6);
@@ -409,10 +371,6 @@ body {
   flex-direction: column;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   Dashboard Layout — Sidebar + Content
-   ═══════════════════════════════════════════════════════════════════ */
-
 .dashboard-layout {
   max-width: 1120px;
   margin: 0 auto;
@@ -424,10 +382,6 @@ body {
   z-index: 10;
   align-items: start;
 }
-
-/* ═══════════════════════════════════════════════════════════════════
-   Sidebar Navigation
-   ═══════════════════════════════════════════════════════════════════ */
 
 .settings-sidebar {
   position: sticky;
@@ -493,10 +447,6 @@ body {
   white-space: nowrap;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   Main Content Area
-   ═══════════════════════════════════════════════════════════════════ */
-
 .options-main {
   min-height: 480px;
 }
@@ -507,10 +457,6 @@ body {
   gap: var(--space-5);
   width: 100%;
 }
-
-/* ═══════════════════════════════════════════════════════════════════
-   Settings Cards
-   ═══════════════════════════════════════════════════════════════════ */
 
 .settings-section {
   background: var(--glass-bg);
@@ -580,10 +526,6 @@ body {
   margin: 0;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   Form Elements
-   ═══════════════════════════════════════════════════════════════════ */
-
 select,
 input[type='number'],
 input[type='text'],
@@ -628,10 +570,6 @@ input[type='password']:hover,
 input[type='url']:hover {
   border-color: rgba(99, 102, 241, 0.3);
 }
-
-/* ═══════════════════════════════════════════════════════════════════
-   Toggle Switch
-   ═══════════════════════════════════════════════════════════════════ */
 
 .toggle {
   position: relative;
@@ -704,10 +642,6 @@ input[type='url']:hover {
   box-shadow: 0 0 0 5px rgba(99, 102, 241, 0.3);
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   Buttons
-   ═══════════════════════════════════════════════════════════════════ */
-
 .btn {
   padding: 10px var(--space-5);
   border-radius: var(--radius-md);
@@ -775,10 +709,6 @@ input[type='url']:hover {
   cursor: pointer;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   Custom Domain Container
-   ═══════════════════════════════════════════════════════════════════ */
-
 .custom-domain-container {
   background: var(--glass-bg-thick);
   padding: var(--space-4);
@@ -803,10 +733,6 @@ input[type='url']:hover {
 .setting-item.vertical-group select {
   width: 100%;
 }
-
-/* ═══════════════════════════════════════════════════════════════════
-   Keyboard Shortcuts Reference
-   ═══════════════════════════════════════════════════════════════════ */
 
 .shortcut-reference {
   padding: var(--space-4) 0 0;
@@ -884,10 +810,6 @@ input[type='url']:hover {
   color: var(--brand-primary);
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   Danger Zone Section
-   ═══════════════════════════════════════════════════════════════════ */
-
 .settings-section.danger {
   border-color: rgba(239, 68, 68, 0.15);
 }
@@ -895,10 +817,6 @@ input[type='url']:hover {
 .settings-section.danger::before {
   background: linear-gradient(180deg, rgba(239, 68, 68, 0.06) 0%, transparent 100%);
 }
-
-/* ═══════════════════════════════════════════════════════════════════
-   Footer
-   ═══════════════════════════════════════════════════════════════════ */
 
 .options-footer {
   position: relative;
@@ -914,10 +832,6 @@ input[type='url']:hover {
 .options-footer p {
   opacity: 0.7;
 }
-
-/* ═══════════════════════════════════════════════════════════════════
-   Toast Notification
-   ═══════════════════════════════════════════════════════════════════ */
 
 .options-toast {
   position: fixed;
@@ -945,10 +859,6 @@ input[type='url']:hover {
     transform: translateY(0);
   }
 }
-
-/* ═══════════════════════════════════════════════════════════════════
-   Confirmation Modal
-   ═══════════════════════════════════════════════════════════════════ */
 
 .modal-overlay {
   position: fixed;
@@ -1013,10 +923,6 @@ input[type='url']:hover {
   border-radius: var(--radius-lg);
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   Loading State
-   ═══════════════════════════════════════════════════════════════════ */
-
 .loading {
   display: flex;
   flex-direction: column;
@@ -1042,10 +948,6 @@ input[type='url']:hover {
     transform: rotate(360deg);
   }
 }
-
-/* ═══════════════════════════════════════════════════════════════════
-   Responsive Design
-   ═══════════════════════════════════════════════════════════════════ */
 
 @media (max-width: 868px) {
   .dashboard-layout {
@@ -1139,11 +1041,6 @@ input[type='url']:hover {
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   Accessibility - WCAG 2.1 AA Compliance
-   ═══════════════════════════════════════════════════════════════════ */
-
-/* Screen Reader Only */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -1156,7 +1053,6 @@ input[type='url']:hover {
   border: 0;
 }
 
-/* Field Error */
 .field-error {
   display: block;
   color: #ef4444;
@@ -1172,7 +1068,6 @@ input[type='url']:hover {
   }
 }
 
-/* Invalid Input */
 input[aria-invalid='true'],
 select[aria-invalid='true'],
 textarea[aria-invalid='true'] {
@@ -1189,7 +1084,6 @@ textarea[aria-invalid='true']:focus {
   outline-color: #ef4444;
 }
 
-/* Enhanced Focus */
 *:focus-visible {
   outline: 3px solid var(--brand-primary);
   outline-offset: 2px;
@@ -1213,7 +1107,6 @@ textarea:focus-visible {
   box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.2);
 }
 
-/* Reduced Motion */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -1230,7 +1123,6 @@ textarea:focus-visible {
   }
 }
 
-/* High Contrast Mode */
 @media (forced-colors: active) {
   .btn,
   input,
@@ -1269,17 +1161,12 @@ textarea:focus-visible {
   }
 }
 
-/* Increased Contrast */
 @media (prefers-contrast: more) {
   .setting-info p {
     color: var(--text-primary);
     opacity: 0.9;
   }
 }
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   Provider Health Meter (Spatial)
-   ───────────────────────────────────────────────────────────────────────────── */
 
 .provider-health-meter {
   margin-top: var(--space-4);
@@ -1358,10 +1245,6 @@ textarea:focus-visible {
   background: var(--error);
   box-shadow: 0 0 8px rgba(var(--error-rgb), 0.4);
 }
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   About & Tech Stack (Spectral)
-   ───────────────────────────────────────────────────────────────────────────── */
 
 .about-hero {
   text-align: center;
@@ -1468,10 +1351,6 @@ textarea:focus-visible {
   color: var(--text-tertiary);
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   §17  R E S P O N S I V E   L A Y O U T S
-   ───────────────────────────────────────────────────────────────────────────── */
-
 @media (max-width: 850px) {
   .header-content {
     padding: 0 var(--space-6);
@@ -1492,7 +1371,7 @@ textarea:focus-visible {
     gap: var(--space-2);
     margin-bottom: var(--space-2);
     -webkit-overflow-scrolling: touch;
-    scrollbar-width: none; /* Hide for clean look */
+    scrollbar-width: none;
     z-index: 100;
   }
 

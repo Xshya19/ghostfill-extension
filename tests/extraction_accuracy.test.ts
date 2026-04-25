@@ -5,7 +5,7 @@ import { extractAll } from '../src/services/intelligentExtractor';
 const datasetUrl = new URL('../ghostfill_dataset.json', import.meta.url);
 const hasDataset = existsSync(datasetUrl);
 const dataset = hasDataset
-  ? JSON.parse(readFileSync(datasetUrl, 'utf8')) as Array<Record<string, any>>
+  ? (JSON.parse(readFileSync(datasetUrl, 'utf8')) as Array<Record<string, any>>)
   : [];
 const accuracyIt = hasDataset ? it : it.skip;
 
@@ -23,7 +23,7 @@ describe('Email Extraction Accuracy - Validation Run', () => {
     let intentMatches = 0;
     let otpMatches = 0;
     let linkMatches = 0;
-    
+
     let otpFoundWhenNoneExpected = 0;
     let otpMissedWhenExpected = 0;
     let otpWrongValue = 0;
@@ -59,7 +59,10 @@ describe('Email Extraction Accuracy - Validation Run', () => {
       );
 
       // 1. Intent Accuracy
-      const normalizedExpectedIntent = sample.labeledGroundTruth.expectedIntent === 'otp' ? 'verification' : sample.labeledGroundTruth.expectedIntent;
+      const normalizedExpectedIntent =
+        sample.labeledGroundTruth.expectedIntent === 'otp'
+          ? 'verification'
+          : sample.labeledGroundTruth.expectedIntent;
       if (result.intent === normalizedExpectedIntent) {
         intentMatches++;
       }
@@ -73,9 +76,9 @@ describe('Email Extraction Accuracy - Validation Run', () => {
       } else if (!expectedOTP && extractedOTP) {
         otpFoundWhenNoneExpected++;
         if (otpFoundWhenNoneExpected <= 5) {
-            console.log(`OTP False Positive ${index}:`);
-            console.log(`  Extracted: ${extractedOTP}`);
-            console.log(`  Subject: ${sample.rawInput.subject}`);
+          console.log(`OTP False Positive ${index}:`);
+          console.log(`  Extracted: ${extractedOTP}`);
+          console.log(`  Subject: ${sample.rawInput.subject}`);
         }
       } else if (expectedOTP && !extractedOTP) {
         otpMissedWhenExpected++;
@@ -98,7 +101,7 @@ describe('Email Extraction Accuracy - Validation Run', () => {
       } else {
         const baseExpected = getBaseDomain(expectedLink);
         const baseExtracted = getBaseDomain(extractedLink);
-        
+
         // For benchmark purposes, if we found a link on the same base domain
         // and the intent matches what's expected, call it a match.
         if (baseExpected && baseExtracted && baseExpected === baseExtracted) {
@@ -118,7 +121,7 @@ describe('Email Extraction Accuracy - Validation Run', () => {
     console.log(`Intent Match: ${intentAcc.toFixed(2)}% (${intentMatches}/${total})`);
     console.log(`OTP Match:    ${otpAcc.toFixed(2)}% (${otpMatches}/${total})`);
     console.log(`Link Match:   ${linkAcc.toFixed(2)}% (${linkMatches}/${total})`);
-    
+
     console.log('\n--- Error Breakdown ---');
     console.log(`OTP False Positives: ${otpFoundWhenNoneExpected}`);
     console.log(`OTP False Negatives: ${otpMissedWhenExpected}`);

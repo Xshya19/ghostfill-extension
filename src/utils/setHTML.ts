@@ -30,13 +30,6 @@ export function setHTML(el: Element, markup: string): void {
     SANITIZE_DOM: true,
   });
 
-  // Use setHTMLUnsafe if the browser supports it (Chrome 124+).
-  // It accepts a plain string regardless of Trusted Types policy.
-  if (typeof el.setHTMLUnsafe === 'function') {
-    el.setHTMLUnsafe(sanitized);
-    return;
-  }
-
   // Fallback: parse via <template> — always allowed, even under strict TT.
   const template = document.createElement('template');
   // Assign to template.innerHTML is safe: the browser parses it as inert HTML,
