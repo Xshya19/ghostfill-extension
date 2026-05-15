@@ -5,11 +5,12 @@ import { linkService } from '../services/linkService';
 import { otpService } from '../services/otpService';
 import { passwordService } from '../services/passwordService';
 import { storageService } from '../services/storageService';
-import { ExtensionMessage, ExtensionResponse, PasswordHistoryItem } from '../types';
+import { ExtensionMessage, ExtensionResponse, LastOTP, PasswordHistoryItem } from '../types';
 import { diag } from '../utils/diagnosticLogger';
 import { createLogger } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
 import { validateMessage } from '../utils/validation';
+import { updateOTPMenuItem } from './contextMenu';
 import { notifySuccess, notifyError, resetNotificationSession } from './notifications';
 import { ensureOffscreenDocument } from './offscreenManager';
 import {
@@ -27,10 +28,83 @@ const log = createLogger('MessageHandler');
 const ML_PREWARM_TTL_MS = 10000;
 const lastMlPrewarmBySender = new Map<string, number>();
 
+type ExtractOTPPayloadWithMetadata = Record<string, unknown> & {
+  subject?: string;
+  source?: string;
+  emailFrom?: string;
+  emailDate?: number;
+  emailId?: string | number;
+  saveToLastOTP?: boolean;
+};
+
 function getPrewarmSenderKey(sender: chrome.runtime.MessageSender): string {
   const tabPart = sender.tab?.id ? `tab:${sender.tab.id}` : 'tab:none';
   const urlPart = sender.url ?? sender.origin ?? 'origin:none';
   return `${tabPart}|${urlPart}`;
+}
+
+function getPayloadTimestamp(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+async function saveExtractedOTPFromMessage(
+  code: string,
+  confidence: number,
+  payload: ExtractOTPPayloadWithMetadata
+): Promise<void> {
+  const emailDate = getPayloadTimestamp(payload.emailDate);
+  const existing = (await storageService.get('lastOTP')) as LastOTP | undefined;
+  const existingDate = existing?.emailDate ?? existing?.extractedAt;
+
+  if (
+    existing?.code === code &&
+    ((payload.emailId !== undefined && existing.emailId === payload.emailId) ||
+      (emailDate !== undefined && existing.emailDate === emailDate))
+  ) {
+    log.debug('Skipping duplicate popup-extracted OTP save');
+    return;
+  }
+
+  if (emailDate && existingDate && existingDate > emailDate) {
+    log.debug('Skipping older popup-extracted OTP so it cannot overwrite the latest code', {
+      emailDate,
+      existingDate,
+    });
+    return;
+  }
+
+  const metadata: { emailId?: string | number; emailDate?: number } = {};
+  if (payload.emailId !== undefined) {
+    metadata.emailId = payload.emailId;
+  }
+  if (emailDate !== undefined) {
+    metadata.emailDate = emailDate;
+  }
+
+  const result = await otpService.saveLastOTP(
+    code,
+    'email',
+    typeof payload.emailFrom === 'string' ? payload.emailFrom : undefined,
+    typeof payload.subject === 'string' ? payload.subject : undefined,
+    confidence,
+    metadata
+  );
+
+  if (result.saved) {
+    await updateOTPMenuItem().catch((error) => {
+      log.debug('OTP context menu update failed after popup extraction', error);
+    });
+    log.info('✅ Popup-extracted OTP saved for page fill');
+  }
 }
 
 /**
@@ -262,12 +336,18 @@ async function handleMessage(
     // ── OTP PAGE DETECTION (from content script) ─────────────────
     case 'OTP_PAGE_DETECTED': {
       if (message.action === 'OTP_PAGE_DETECTED' && message.payload) {
-        const { url, fieldSelectors, confidence } = message.payload as {
+        const { url, fieldSelectors, confidence, verdict } = message.payload as {
           url: string;
           fieldSelectors: string[];
           confidence: number;
+          verdict?: string;
         };
-        log.info('📱 OTP page detected', { url, fieldCount: fieldSelectors.length, confidence });
+        log.info('📱 OTP page detected', {
+          url,
+          fieldCount: fieldSelectors.length,
+          confidence,
+          verdict,
+        });
 
         if (sender.tab?.id) {
           // Skip registration for activation tabs - these are opened by linkService
@@ -280,7 +360,14 @@ async function handleMessage(
             });
             return { success: true };
           }
-          startFastOTPPolling(sender.tab.id, url, fieldSelectors, sender.frameId);
+          startFastOTPPolling(
+            sender.tab.id,
+            url,
+            fieldSelectors,
+            sender.frameId,
+            confidence,
+            verdict
+          );
         }
       }
       return { success: true };
@@ -303,7 +390,7 @@ async function handleMessage(
 
     // ── INTELLIGENCE LAYER ─────────────────────────────────────────
     case 'EXTRACT_OTP': {
-      const payload = message.payload as Record<string, unknown> | undefined;
+      const payload = message.payload as ExtractOTPPayloadWithMetadata | undefined;
       const subject = (payload?.subject as string) || '';
       const textBody = (payload?.textBody as string) || (payload?.text as string) || '';
       const htmlBody = (payload?.htmlBody as string) || '';
@@ -321,10 +408,20 @@ async function handleMessage(
         subject,
         'noreply@ghostfill.ai'
       );
+      const otpCode = otpExtraction?.best?.code;
+      const otpConfidence = otpExtraction?.best?.confidence ?? 0.8;
+
+      if (otpCode && payload && (payload.saveToLastOTP === true || source === 'popup-inbox')) {
+        await saveExtractedOTPFromMessage(otpCode, otpConfidence, {
+          ...payload,
+          subject,
+          source,
+        });
+      }
 
       return {
         success: true,
-        otp: otpExtraction?.best?.code ?? undefined,
+        otp: otpCode ?? undefined,
         link: linkExtraction?.best?.url ?? undefined,
       };
     }
@@ -400,24 +497,16 @@ async function handleMessage(
     }
 
     case 'PREWARM_ML': {
-      try {
-        const senderKey = getPrewarmSenderKey(sender);
-        const now = Date.now();
-        const last = lastMlPrewarmBySender.get(senderKey) ?? 0;
+      const senderKey = getPrewarmSenderKey(sender);
+      const now = Date.now();
+      const last = lastMlPrewarmBySender.get(senderKey) ?? 0;
 
-        if (now - last < ML_PREWARM_TTL_MS) {
-          return { success: true };
-        }
-
+      if (now - last >= ML_PREWARM_TTL_MS) {
         lastMlPrewarmBySender.set(senderKey, now);
-        await ensureOffscreenDocument();
-        // Fire and forget warm-up message to the offscreen model
-        chrome.runtime.sendMessage({ target: 'offscreen-doc', type: 'WARM_UP_ML' }).catch(() => {});
-        return { success: true };
-      } catch (err) {
-        log.warn('ML pre-warm failed', err);
-        return { success: false, error: 'ML pre-warm failed' };
+        log.debug('ML pre-warm skipped; inference loads on demand', { senderKey });
       }
+
+      return { success: true };
     }
 
     case 'REPORT_MISCLASSIFICATION': {

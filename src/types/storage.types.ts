@@ -92,8 +92,10 @@ export interface UserSettings {
 export interface LastOTP {
   code: string;
   source: 'email' | 'sms' | 'manual';
+  emailId?: string | number;
   emailFrom?: string;
   emailSubject?: string;
+  emailDate?: number;
   extractedAt: number;
   expiresAt?: number;
   usedAt?: number;

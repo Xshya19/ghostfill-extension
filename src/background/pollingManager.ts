@@ -78,6 +78,9 @@ const RATE = {
 /** OTP delivery retry schedule (geometric backoff) */
 const OTP_DELIVERY_DELAYS_MS: readonly number[] = [0, 500, 1000, 2000];
 const OTP_DELIVERY_MESSAGE_TIMEOUT_MS = 5_000;
+const OTP_FALLBACK_DELIVERY_MAX_AGE_MS = 2 * 60 * 1000;
+const OTP_FALLBACK_PAGE_CONFIDENCE_MIN = 0.6;
+const OTP_FALLBACK_VERDICTS = new Set(['otp-page', 'possible-otp']);
 
 /** Chrome alarm names */
 const ALARM_NAMES = {
@@ -101,6 +104,8 @@ interface TabRegistration {
   readonly hostname: string;
   readonly fieldSelectors: readonly string[];
   readonly frameId?: number;
+  readonly pageConfidence?: number;
+  readonly verdict?: string;
   readonly registeredAt: number;
   readonly priority: number;
   deliveryAttempts: number;
@@ -969,6 +974,44 @@ function findMatchingTab(
   return null;
 }
 
+function isSafeFallbackOTPRegistration(reg: TabRegistration): boolean {
+  const ageMs = Date.now() - reg.registeredAt;
+  if (ageMs > OTP_FALLBACK_DELIVERY_MAX_AGE_MS) {
+    return false;
+  }
+  if (reg.fieldSelectors.length === 0) {
+    return false;
+  }
+
+  const trustedVerdict = reg.verdict ? OTP_FALLBACK_VERDICTS.has(reg.verdict) : false;
+  const confidentPage =
+    typeof reg.pageConfidence === 'number' &&
+    reg.pageConfidence >= OTP_FALLBACK_PAGE_CONFIDENCE_MIN;
+
+  return trustedVerdict || confidentPage;
+}
+
+async function deliverToRegisteredTab(
+  tabId: number,
+  reg: TabRegistration,
+  code: string,
+  confidence: number
+): Promise<number | null> {
+  const ok = await OTPDeliveryEngine.deliverToTab(
+    tabId,
+    code,
+    confidence,
+    reg.fieldSelectors,
+    reg.frameId
+  );
+  if (ok) {
+    reg.deliveryAttempts++;
+    metrics.otpsDelivered++;
+    return tabId;
+  }
+  return null;
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  §13  OTP DELIVERY ORCHESTRATOR
 // ═══════════════════════════════════════════════════════════════
@@ -1005,29 +1048,53 @@ async function deliverOTP(code: string, confidence: number, email: EmailContext)
   // M3: Parallelize OTPDeliveryEngine retries to prevent blocking
   // Deliver to all matching tabs concurrently instead of sequentially
   // ───────────────────────────────────────────────────────────────────
-  const deliveryPromises = sorted
-    .filter(([, reg]: [number, TabRegistration]) => {
-      if (!DomainMatcher.matches(email.from, reg.url, email.provider, email.linkUrl)) {
-        log.info(`⛔ Domain mismatch: tab ${reg.hostname} ≠ ${email.from}`);
-        return false;
-      }
-      return true;
-    })
-    .map(async ([tabId, reg]: [number, TabRegistration]) => {
-      const ok = await OTPDeliveryEngine.deliverToTab(
-        tabId,
-        code,
-        confidence,
-        reg.fieldSelectors,
-        reg.frameId
-      );
-      if (ok) {
-        reg.deliveryAttempts++;
-        metrics.otpsDelivered++;
-        return tabId;
-      }
-      return null;
+  const domainMatched: Array<[number, TabRegistration]> = [];
+  const fallbackEligible: Array<[number, TabRegistration]> = [];
+
+  for (const entry of sorted) {
+    const [, reg] = entry;
+    if (DomainMatcher.matches(email.from, reg.url, email.provider, email.linkUrl)) {
+      domainMatched.push(entry);
+      continue;
+    }
+
+    const fallback = isSafeFallbackOTPRegistration(reg);
+    log.info(`⛔ Domain mismatch: tab ${reg.hostname} ≠ ${email.from}`, {
+      fallbackEligible: fallback,
+      fieldCount: reg.fieldSelectors.length,
+      pageConfidence: reg.pageConfidence,
+      verdict: reg.verdict,
     });
+    if (fallback) {
+      fallbackEligible.push(entry);
+    }
+  }
+
+  let targets = domainMatched;
+  if (targets.length === 0 && fallbackEligible.length > 0) {
+    const fallbackTarget = fallbackEligible[0]!;
+    targets = [fallbackTarget];
+    log.info('⚠️ Delivering OTP by verified-page fallback after domain mismatch', {
+      tabId: fallbackTarget[0],
+      hostname: fallbackTarget[1].hostname,
+      fieldCount: fallbackTarget[1].fieldSelectors.length,
+      pageConfidence: fallbackTarget[1].pageConfidence,
+      verdict: fallbackTarget[1].verdict,
+    });
+  }
+
+  const deliveryPromises = targets.map(async ([tabId, reg]: [number, TabRegistration]) => {
+    const deliveredTabId = await deliverToRegisteredTab(tabId, reg, code, confidence);
+    if (deliveredTabId === null && domainMatched.length === 0) {
+      log.debug('Fallback OTP delivery failed', {
+        tabId,
+        hostname: reg.hostname,
+        pageConfidence: reg.pageConfidence,
+        verdict: reg.verdict,
+      });
+    }
+    return deliveredTabId;
+  });
 
   const results = await Promise.all(deliveryPromises);
   const delivered = results.filter((id): id is number => id !== null);
@@ -1178,7 +1245,9 @@ export function startFastOTPPolling(
   tabId: number,
   url: string,
   fieldSelectors: string[],
-  frameId?: number
+  frameId?: number,
+  pageConfidence?: number,
+  verdict?: string
 ): void {
   let hostname = '';
   try {
@@ -1192,6 +1261,8 @@ export function startFastOTPPolling(
     hostname,
     fieldSelectors,
     ...(frameId !== undefined ? { frameId } : {}),
+    ...(pageConfidence !== undefined ? { pageConfidence } : {}),
+    ...(verdict !== undefined ? { verdict } : {}),
     registeredAt: Date.now(),
     priority: priorityCounter++,
     deliveryAttempts: 0,
@@ -1200,6 +1271,9 @@ export function startFastOTPPolling(
   log.info('⚡ Fast OTP registered', {
     tabId,
     hostname,
+    fieldCount: fieldSelectors.length,
+    confidence: pageConfidence,
+    verdict,
     totalWaiting: otpWaitingTabs.size,
   });
 

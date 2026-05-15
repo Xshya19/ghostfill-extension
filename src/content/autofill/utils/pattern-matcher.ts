@@ -17,6 +17,7 @@ export class NegativePatternMatcher {
     /date|month|year|day/i,
     /ssn|social|tax|national/i,
     /routing|account.*number|iban|swift|bic/i,
+    /captcha|recaptcha|hcaptcha|turnstile|anti[-_\s]?bot|bot[-_\s]?check|robot/i,
   ];
 
   static isLikelyNotOTP(input: HTMLInputElement): boolean {
@@ -33,6 +34,12 @@ export class NegativePatternMatcher {
     if (
       (/phone|tel|mobile/i.test(nameId) || type === 'tel') &&
       (input.maxLength > 4 || input.maxLength === -1)
+    ) {
+      return true;
+    }
+
+    if (
+      /captcha|recaptcha|hcaptcha|turnstile|anti[-_\s]?bot|bot[-_\s]?check|robot/i.test(combined)
     ) {
       return true;
     }

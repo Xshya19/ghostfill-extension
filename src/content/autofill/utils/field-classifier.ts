@@ -37,8 +37,19 @@ export class FieldClassifier {
     'otp',
     'otc',
     'one-time-code',
-    'oneTimeCode',
+    'one_time_code',
+    'onetimecode',
+    'authcode',
+    'auth-code',
+    'auth_code',
+    'passcode',
   ]);
+
+  private static readonly CAPTCHA_PATTERN =
+    /captcha|recaptcha|hcaptcha|turnstile|anti[-_\s]?bot|bot[-_\s]?check|robot/i;
+
+  private static readonly STRONG_OTP_PATTERN =
+    /otp|one[-_\s]?time|verification[-_\s]?code|verify[-_\s]?code|security[-_\s]?code|auth(?:entication)?[-_\s]?code|confirmation[-_\s]?code|passcode|2fa|mfa|totp/i;
 
   static classify(input: FormInputElement): FieldType {
     const type = (input.type ?? '').toLowerCase();
@@ -51,19 +62,21 @@ export class FieldClassifier {
 
     const all = `${type}|${name}|${id}|${placeholder}|${autocomplete}|${ariaLabel}|${label}`;
 
+    const isCaptchaLike = this.CAPTCHA_PATTERN.test(all);
+
     if (this.AUTOCOMPLETE_MAP.get(autocomplete) === 'otp') {
       return 'otp';
     }
-    if (/otp|one[-_]?time|verification[-\s_]?code|passcode|security[-_]?code/i.test(all)) {
-      return 'otp';
-    }
-    if (this.OTP_EXACT_NAMES.has(name) || this.OTP_EXACT_NAMES.has(id)) {
-      return 'otp';
-    }
-
     if (type === 'email') {
       return 'email';
     }
+    if (!isCaptchaLike && this.STRONG_OTP_PATTERN.test(all)) {
+      return 'otp';
+    }
+    if (!isCaptchaLike && (this.OTP_EXACT_NAMES.has(name) || this.OTP_EXACT_NAMES.has(id))) {
+      return 'otp';
+    }
+
     if (type === 'password') {
       return /confirm|repeat|retype|re-enter|again|match/i.test(all)
         ? 'confirm-password'
@@ -114,7 +127,7 @@ export class FieldClassifier {
     if (/username/i.test(placeholder)) {
       return 'username';
     }
-    if (/code|otp|pin|digit/i.test(placeholder)) {
+    if (!isCaptchaLike && /code|otp|pin|digit/i.test(placeholder)) {
       return 'otp';
     }
 
@@ -124,7 +137,7 @@ export class FieldClassifier {
   private static findLabelText(input: HTMLElement): string {
     // 1. Explicit labels via 'for' attribute
     if (input.id) {
-      const label = document.querySelector(`label[for="${CSS.escape(input.id)}"]`);
+      const label = document.querySelector(`label[for="${this.escapeCSS(input.id)}"]`);
       if (label?.textContent) {
         return label.textContent.trim();
       }
@@ -184,5 +197,13 @@ export class FieldClassifier {
     }
 
     return '';
+  }
+
+  private static escapeCSS(value: string): string {
+    try {
+      return CSS.escape(value);
+    } catch {
+      return value.replace(/([^\w-])/g, '\\$1');
+    }
   }
 }

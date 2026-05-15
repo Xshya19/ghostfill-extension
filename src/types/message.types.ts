@@ -224,6 +224,10 @@ export interface ExtractOTPMessage extends BaseMessage {
     htmlBody?: string;
     subject?: string;
     source?: string;
+    emailId?: string | number;
+    emailFrom?: string;
+    emailDate?: number;
+    saveToLastOTP?: boolean;
   };
 }
 

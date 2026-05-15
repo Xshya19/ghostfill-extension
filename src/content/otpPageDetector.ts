@@ -278,6 +278,9 @@ const SEARCH_INDICATORS: ReadonlySet<string> = new Set([
   'lookup',
 ]);
 
+const CAPTCHA_PATTERN =
+  /captcha|recaptcha|hcaptcha|turnstile|anti[-_\s]?bot|bot[-_\s]?check|robot/i;
+
 /** MutationObserver attribute filter */
 const OBSERVED_ATTRIBUTES: readonly string[] = [
   'type',
@@ -414,6 +417,20 @@ class KeywordMatcher {
 
     const tokens = combined.split(/[^a-z0-9]+/);
     return tokens.some((t) => t.length > 0 && SEARCH_INDICATORS.has(t));
+  }
+
+  static isCaptchaInput(input: HTMLInputElement): boolean {
+    const combined = [
+      input.name ?? '',
+      input.id ?? '',
+      input.placeholder ?? '',
+      input.getAttribute('aria-label') ?? '',
+      LabelResolver.getAssociatedLabelText(input),
+    ]
+      .join(' ')
+      .toLowerCase();
+
+    return CAPTCHA_PATTERN.test(combined);
   }
 }
 
@@ -1165,7 +1182,12 @@ class ScoringEngine {
       this.scoreInput(input, fields, signals);
     }
 
-    // ── 3. Split-digit group detection ────────────────────
+    // ── 3. Page-level context signals ─────────────────────
+    const titleMatch = cachedTitle ?? this.pageTitleHasKeyword();
+    const bodyMatch = cachedBody ?? this.pageBodyHasKeyword();
+    const urlMatch = cachedUrl ?? this.pageUrlHasKeyword();
+
+    // ── 4. Split-digit group detection ────────────────────
     const splitGroups = SplitDigitDetector.detect(visibleInputs);
     for (const group of splitGroups) {
       const groupId = generateGroupId('split', group[0]?.name || group[0]?.id);
@@ -1186,7 +1208,7 @@ class ScoringEngine {
       });
     }
 
-    // ── 4. Small-input cluster detection ──────────────────
+    // ── 5. Small-input cluster detection ──────────────────
     const clusters = SmallInputClusterDetector.detect(visibleInputs);
     for (const cluster of clusters) {
       // Don't double-count fields already found as split-digit
@@ -1212,10 +1234,14 @@ class ScoringEngine {
       });
     }
 
-    // ── 5. FormDetector agreement ─────────────────────────
-    this.scoreFormDetector(formDetector, fields, signals);
+    // ── 6. FormDetector agreement ─────────────────────────
+    // This is the expensive shadow-piercing path, so only run it when cheap
+    // signals suggest the page might actually be a verification flow.
+    if (fields.size > 0 || titleMatch || bodyMatch || urlMatch) {
+      this.scoreFormDetector(formDetector, fields, signals);
+    }
 
-    // ── 6. AI container analysis (local fallback) ─────────
+    // ── 7. AI container analysis (local fallback) ─────────
     if (fields.size === 0) {
       const aiResults = AIContainerAnalyzer.analyze(visibleInputs);
       for (const { input, groupId, groupIndex, groupSize } of aiResults) {
@@ -1227,11 +1253,6 @@ class ScoringEngine {
         });
       }
     }
-
-    // ── 7. Page-level context signals ─────────────────────
-    const titleMatch = cachedTitle ?? this.pageTitleHasKeyword();
-    const bodyMatch = cachedBody ?? this.pageBodyHasKeyword();
-    const urlMatch = cachedUrl ?? this.pageUrlHasKeyword();
 
     signals.push('page-title-keyword', SIGNAL_WEIGHTS.PAGE_TITLE_KEYWORD, titleMatch);
     signals.push('page-body-keyword', SIGNAL_WEIGHTS.BODY_TEXT_KEYWORD, bodyMatch);
@@ -1292,6 +1313,11 @@ class ScoringEngine {
     fields: FieldRegistry,
     signals: SignalCollector
   ): void {
+    if (KeywordMatcher.isCaptchaInput(input)) {
+      signals.push('captcha-field-negative', SIGNAL_WEIGHTS.SEARCH_BAR_LIKELY, true);
+      return;
+    }
+
     let inputScore = 0;
     let bestSource: DetectionSource = 'maxlength-heuristic';
 

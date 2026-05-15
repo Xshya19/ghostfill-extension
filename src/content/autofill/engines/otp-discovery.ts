@@ -9,6 +9,29 @@ export class OTPFieldDiscovery {
 
   private static readonly MIN_SPLIT_FIELDS = 4;
   private static readonly MAX_SPLIT_FIELDS = 8;
+  private static readonly OTP_EXACT_FIELD_NAMES = new Set([
+    'otp',
+    'otc',
+    'code',
+    'pin',
+    'token',
+    'passcode',
+    'verifycode',
+    'verify-code',
+    'verify_code',
+    'verificationcode',
+    'verification-code',
+    'verification_code',
+    'authcode',
+    'auth-code',
+    'auth_code',
+    'one-time-code',
+    'one_time_code',
+    'onetimecode',
+  ]);
+
+  private static readonly STRONG_OTP_DESCRIPTOR_PATTERN =
+    /otp|one[-_\s]?time|verification[-_\s]?code|verify[-_\s]?code|security[-_\s]?code|auth(?:entication)?[-_\s]?code|confirmation[-_\s]?code|passcode|2fa|mfa|totp/i;
 
   static discover(context: PageContext): OTPFieldGroup | null {
     const strategies = [
@@ -90,16 +113,30 @@ export class OTPFieldDiscovery {
 
       if (strategy.name === 'S4:inputmode-numeric-short') {
         const filtered = fields.filter((f) => {
+          if (this.hasStrongOTPSignal(f, context)) {
+            return true;
+          }
+
+          const hasVerificationContext =
+            context.isVerificationPage || context.is2FAPage || context.hasOTPLanguage;
+          if (!hasVerificationContext) {
+            return false;
+          }
+
           if (f.maxLength >= 4 && f.maxLength <= 8) {
             return true;
           }
+
           const rect = f.getBoundingClientRect();
-          if (rect.width > 0 && rect.width < 120) {
+          const numericish =
+            f.inputMode === 'numeric' ||
+            f.getAttribute('inputmode') === 'numeric' ||
+            f.type === 'number' ||
+            f.type === 'tel';
+          if (numericish && rect.width > 0 && rect.width < 140) {
             return true;
           }
-          if (f.type === 'tel' || f.type === 'number') {
-            return true;
-          }
+
           return false;
         });
         if (filtered.length > 0 && filtered.length <= this.MAX_SPLIT_FIELDS) {
@@ -292,6 +329,48 @@ export class OTPFieldDiscovery {
     }
 
     return null;
+  }
+
+  private static hasStrongOTPSignal(input: HTMLInputElement, context: PageContext): boolean {
+    const descriptor = [
+      input.type,
+      input.name,
+      input.id,
+      input.placeholder,
+      input.autocomplete,
+      input.inputMode,
+      input.getAttribute('aria-label'),
+      input.getAttribute('aria-describedby'),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    const name = input.name.toLowerCase();
+    const id = input.id.toLowerCase();
+
+    if (input.autocomplete.toLowerCase() === 'one-time-code') {
+      return true;
+    }
+    if (this.OTP_EXACT_FIELD_NAMES.has(name) || this.OTP_EXACT_FIELD_NAMES.has(id)) {
+      return true;
+    }
+    if (this.STRONG_OTP_DESCRIPTOR_PATTERN.test(descriptor)) {
+      return true;
+    }
+
+    const numericish =
+      input.inputMode === 'numeric' ||
+      input.getAttribute('inputmode') === 'numeric' ||
+      input.type === 'number' ||
+      input.type === 'tel' ||
+      input.type === 'password';
+
+    return (
+      numericish &&
+      input.maxLength >= 4 &&
+      input.maxLength <= 10 &&
+      (context.isVerificationPage || context.is2FAPage || context.hasOTPLanguage)
+    );
   }
 
   /**

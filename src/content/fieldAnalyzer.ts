@@ -15,7 +15,6 @@
 // └────────────────────────────────────────────────────────────────────────┘
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { SentinelBrain } from '../intelligence/SentinelBrain';
 import {
   FieldType,
   DetectedField,
@@ -237,6 +236,8 @@ class LabelResolver {
 class OTPDetector {
   private static readonly OTP_TEXT_PATTERN = /otp|code|verify|token|pin|2fa|mfa/i;
   private static readonly DIGIT_PATTERN_REGEX = /^\^?\\?d/;
+  private static readonly CAPTCHA_PATTERN =
+    /captcha|recaptcha|hcaptcha|turnstile|anti[-_\s]?bot|bot[-_\s]?check|robot/i;
 
   /**
    * Determines if a field is likely an OTP input.
@@ -252,6 +253,10 @@ class OTPDetector {
     );
 
     const hasExplicitSignal = this.OTP_TEXT_PATTERN.test(textToCheck);
+
+    if (this.CAPTCHA_PATTERN.test(textToCheck)) {
+      return false;
+    }
 
     // Single digit fields are only high-probability OTPs when they appear
     // as part of a clustered verification widget or carry explicit OTP hints.
@@ -328,6 +333,10 @@ class OTPDetector {
       getElementLabel(element),
       element.getAttribute('aria-label')
     );
+
+    if (this.CAPTCHA_PATTERN.test(textToCheck)) {
+      return 0;
+    }
 
     if (/otp/i.test(textToCheck)) {
       confidence += CONFIDENCE.OTP_NAME_OTP;
@@ -633,45 +642,18 @@ export class FieldAnalyzer {
   }
 
   /**
-   * Get all fields with heuristics first, augmented by Sentinel Brain (Grandmaster).
-   * Combines ensemble ML, Spatial Topology, and Multilingual Heuristics.
+   * Get all fields through the lightweight heuristic path.
    */
   async getAllFieldsWithAI(): Promise<FieldAnalysisResult> {
     if (!this.isContextValid()) {
       return { fields: [] };
     }
 
-    // 1. Get all fillable fields
-    const elements = deepQuerySelectorAll<FormInputElement>(
-      FieldAnalyzer.FILLABLE_INPUT_SELECTOR
-    ).filter((el) => VisibilityCheck.isVisible(el));
-
-    if (elements.length === 0) {
-      return { fields: [] };
-    }
-
-    // 2. Delegate to Sentinel Brain for Grandmaster Analysis
-    try {
-      const detections = await SentinelBrain.analyze(elements);
-
-      const fields: DetectedField[] = detections.map((d) => ({
-        element: d.element as FormInputElement,
-        selector: getUniqueSelector(d.element as HTMLElement),
-        fieldType: d.type as FieldType,
-        confidence: d.confidence,
-        label: getElementLabel(d.element as FormInputElement) || undefined,
-        placeholder: (d.element as HTMLInputElement).placeholder || undefined,
-        name: (d.element as HTMLInputElement).name || undefined,
-        id: d.element.id || undefined,
-        autocomplete: (d.element as HTMLInputElement).autocomplete || undefined,
-        rect: d.element.getBoundingClientRect(),
-      }));
-
-      return { fields };
-    } catch (e) {
-      log.debug('Sentinel Brain unavailable, falling back to heuristics', e);
-      return { fields: this.getAllFields() };
-    }
+    // Keep content-script startup lightweight. The previous static SentinelBrain
+    // import pulled ONNX runtime into every page, causing heavy install/startup
+    // stalls when many tabs were open. Heuristics are the hot path; ML can be
+    // reintroduced behind an explicit on-demand worker path.
+    return { fields: this.getAllFields() };
   }
 
   /**

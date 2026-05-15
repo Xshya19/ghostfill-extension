@@ -20,7 +20,6 @@ import { otpService } from '../services/otpService';
 import { storageService } from '../services/storageService';
 import { sleep } from '../utils/helpers';
 import { createLogger } from '../utils/logger';
-import { registerMLMessageHandler } from './mlMessageHandler';
 
 const log = createLogger('ServiceWorker');
 
@@ -198,7 +197,7 @@ function buildPhases(): PhaseDefinition[] {
       name: 'background',
       order: 2,
       critical: false,
-      deferred: false,
+      deferred: true,
       tasks: [
         {
           name: 'polling-manager',
@@ -357,8 +356,8 @@ async function initMessageRouter(): Promise<void> {
   try {
     log.debug('📡 Initializing message router...');
     // setupMessageHandler() is already called synchronously at module load in index.ts.
-    // Only register the ML handler here to avoid double-registration.
-    registerMLMessageHandler();
+    // Do not register a second CLASSIFY_FIELD listener here; duplicate async
+    // sendResponse handlers make Chrome message delivery nondeterministic.
     log.info('✅ Message router ready - extension can now receive messages');
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);

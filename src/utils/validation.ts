@@ -121,6 +121,10 @@ export const extractOTPPayloadSchema = z
     htmlBody: z.string().max(500000).optional(),
     subject: safeString.optional().nullable(),
     source: safeString.optional().nullable(),
+    emailId: z.union([safeString, safeNumber]).optional(),
+    emailFrom: safeString.optional().nullable(),
+    emailDate: safeNumber.optional(),
+    saveToLastOTP: safeBoolean.optional(),
   })
   .refine((payload) => {
     return (
@@ -197,10 +201,15 @@ export const analyzeDOMPayloadSchema = z.object({
   simplifiedDOM: z.string().max(MAX_MESSAGE_SIZE),
 });
 
+const mlFeaturePayloadSchema = z.object({
+  textChannels: z.array(z.array(z.number().int())).optional(),
+  structural: z.array(z.number()).min(1).max(256),
+  isVisible: safeBoolean.optional(),
+});
+
 export const classifyFieldPayloadSchema = z.object({
-  textChannels: z.array(z.array(z.number().int())),
-  structural: z.array(z.number()),
-  isVisible: safeBoolean,
+  features: mlFeaturePayloadSchema,
+  context: z.unknown().optional(),
 });
 
 export const reportMisclassificationPayloadSchema = z.object({

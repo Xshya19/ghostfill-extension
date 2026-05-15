@@ -51,6 +51,22 @@ describe('Message Validation Pipeline', () => {
       const result = validateMessage({ action: 'MARK_OTP_USED' });
       expect(result.valid).toBe(true);
     });
+
+    it('accepts EXTRACT_OTP with popup metadata used to persist lastOTP', () => {
+      const result = validateMessage({
+        action: 'EXTRACT_OTP',
+        payload: {
+          subject: 'Verify your email',
+          textBody: 'Your code is 654321',
+          source: 'popup-inbox',
+          emailId: 'msg-1',
+          emailFrom: 'noreply@example.com',
+          emailDate: Date.now(),
+          saveToLastOTP: true,
+        },
+      });
+      expect(result.valid).toBe(true);
+    });
   });
 
   describe('validateMessage — security boundary: unknown actions', () => {

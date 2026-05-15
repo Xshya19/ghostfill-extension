@@ -110,7 +110,8 @@ class OTPService {
     source: 'email' | 'sms' | 'manual',
     emailFrom?: string,
     emailSubject?: string,
-    confidence: number = 0.8
+    confidence: number = 0.8,
+    metadata: { emailId?: string | number; emailDate?: number } = {}
   ): Promise<{ saved: boolean; reason?: string; retryAfterMs?: number }> {
     const previousMutex = this.rateLimitMutex;
     let releaseMutex: () => void = () => {};
@@ -142,6 +143,12 @@ class OTPService {
         extractedAt: now,
         confidence,
       };
+      if (metadata.emailId !== undefined) {
+        lastOTP.emailId = metadata.emailId;
+      }
+      if (metadata.emailDate !== undefined) {
+        lastOTP.emailDate = metadata.emailDate;
+      }
       if (emailFrom) {
         lastOTP.emailFrom = emailFrom;
       }

@@ -37,6 +37,10 @@ export function useOTPExtractor(emails: Email[]): {
               textBody: email.textBody || email.body || '',
               htmlBody: email.htmlBody || (email.body.includes('<') ? email.body : ''),
               source: 'popup-inbox',
+              emailId: email.id,
+              emailFrom: email.from,
+              emailDate: email.date,
+              saveToLastOTP: true,
             },
           })) as { success: boolean; otp?: string; link?: string };
 

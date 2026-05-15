@@ -201,6 +201,8 @@ class FieldContext {
   private static readonly OTP_AUTOCOMPLETE = new Set(['one-time-code', 'one-time-password']);
   private static readonly OTP_COMBINED_PATTERN =
     /otp|one[-_\s]?time|verification[-_\s]?code|passcode|security[-_\s]?code|check[-_\s]?code|verify[-_\s]?code/i;
+  private static readonly CAPTCHA_PATTERN =
+    /captcha|recaptcha|hcaptcha|turnstile|anti[-_\s]?bot|bot[-_\s]?check|robot/i;
   private static readonly OTP_EXACT_NAMES = new Set([
     'code',
     'pin',
@@ -240,10 +242,13 @@ class FieldContext {
     if (this.OTP_AUTOCOMPLETE.has(autocomplete)) {
       return 'otp';
     }
-    if (this.OTP_COMBINED_PATTERN.test(combined)) {
+    if (!this.CAPTCHA_PATTERN.test(combined) && this.OTP_COMBINED_PATTERN.test(combined)) {
       return 'otp';
     }
-    if (this.OTP_EXACT_NAMES.has(name) || this.OTP_EXACT_NAMES.has(id)) {
+    if (
+      !this.CAPTCHA_PATTERN.test(combined) &&
+      (this.OTP_EXACT_NAMES.has(name) || this.OTP_EXACT_NAMES.has(id))
+    ) {
       return 'otp';
     }
     if (
@@ -1304,11 +1309,6 @@ export class FloatingButton {
       // Intelligence 2.0: Intelligence Pulse on hover
       const rect = this.button!.getBoundingClientRect();
       this.fieldAnalyzer.setAttentiveRegion(rect.left + rect.width / 2, rect.top + rect.height / 2);
-
-      // Sentient Pre-warming: Wake up the ML engine on hover to eliminate lag.
-      void safeSendMessage({ action: 'PREWARM_ML' }).catch(() => {
-        /* non-fatal */
-      });
     });
     this.button.addEventListener('mouseleave', () => {
       if (this.state === 'hovering') {
@@ -1366,9 +1366,15 @@ export class FloatingButton {
     }
 
     this.setState('loading');
-    pageStatus.show('Analysing form…', 'loading');
 
     try {
+      if (this.mode === 'otp') {
+        pageStatus.show('Filling verification code...', 'loading');
+        await this.actionPasteOTP();
+        return;
+      }
+
+      pageStatus.show('Analysing form…', 'loading');
       const result = await this.autoFiller.smartFill();
 
       if (this.destroyed) {
@@ -2106,12 +2112,6 @@ export class FloatingButton {
             for (const entry of entries) {
               if (entry.isIntersecting) {
                 log.info('✨ Ghost Container became visible! Re-scanning page.', ghost.selector);
-                // Proactively pre-warm ML if we think it's an auth form
-                if (ghost.predictedType === 'login' || ghost.predictedType === 'signup') {
-                  void safeSendMessage({ action: 'PREWARM_ML' }).catch(() => {
-                    /* non-fatal */
-                  });
-                }
                 // Force a full scan to attach the button immediately
                 this.handleFocusChange(ghost.element);
               }

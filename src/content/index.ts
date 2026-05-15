@@ -4,7 +4,6 @@
 import './debugConsole';
 import './errorReportGenerator';
 
-import { SentinelBrain } from '../intelligence/SentinelBrain';
 import { createLogger } from '../utils/logger';
 import { errorTracker, performanceMonitor } from '../utils/monitoring';
 import { initRemoteLogger } from '../utils/remoteLogger';
@@ -158,6 +157,206 @@ let floatingButton: FloatingButton;
 let domObserver: DOMObserver;
 let otpPageDetector: OTPPageDetector;
 let lastRightClickedElement: HTMLElement | null = null;
+let passiveActivationHandler: ((event: Event) => void) | null = null;
+let passiveRuntimeListenerInstalled = false;
+
+const ACTIVATION_MESSAGE_ACTIONS = new Set([
+  'DETECT_FORMS',
+  'FILL_FIELD',
+  'FILL_FORM',
+  'FILL_OTP',
+  'AUTO_FILL_OTP',
+  'SMART_AUTOFILL',
+  'HIGHLIGHT_FIELDS',
+  'SHOW_FLOATING_BUTTON',
+]);
+
+const PAGE_ACTIVATION_PATTERN =
+  /login|log[\s_-]?in|sign[\s_-]?in|sign[\s_-]?up|signup|register|create[\s_-]?account|verification|verify|otp|one[\s_-]?time|2fa|mfa|password[\s_-]?reset|email[\s_-]?address/i;
+
+const FIELD_ACTIVATION_PATTERN =
+  /email|e-mail|username|user[\s_-]?name|login|password|passcode|otp|one[\s_-]?time|verification|verify|security[\s_-]?code|auth[\s_-]?code|first[\s_-]?name|last[\s_-]?name|full[\s_-]?name|surname/i;
+
+const RELEVANT_FIELD_SELECTOR = [
+  'input[type="email"]',
+  'input[type="password"]',
+  'input[autocomplete="email"]',
+  'input[autocomplete="username"]',
+  'input[autocomplete="one-time-code"]',
+  'input[autocomplete="new-password"]',
+  'input[autocomplete="current-password"]',
+  'input[name*="email" i]',
+  'input[id*="email" i]',
+  'input[name*="otp" i]',
+  'input[id*="otp" i]',
+  'input[name*="code" i]',
+  'input[id*="code" i]',
+  'input[name*="password" i]',
+  'input[id*="password" i]',
+  'input[name*="username" i]',
+  'input[id*="username" i]',
+  'input[name*="first" i]',
+  'input[id*="first" i]',
+  'input[name*="last" i]',
+  'input[id*="last" i]',
+].join(',');
+
+function isIgnorableInput(input: HTMLInputElement | HTMLTextAreaElement): boolean {
+  if (input.disabled || input.readOnly) {
+    return true;
+  }
+  if (input instanceof HTMLTextAreaElement) {
+    return false;
+  }
+  return [
+    'hidden',
+    'submit',
+    'button',
+    'reset',
+    'checkbox',
+    'radio',
+    'file',
+    'image',
+    'range',
+    'color',
+    'search',
+  ].includes((input.type ?? '').toLowerCase());
+}
+
+function isLikelyRelevantInput(input: HTMLInputElement | HTMLTextAreaElement): boolean {
+  if (isIgnorableInput(input)) {
+    return false;
+  }
+
+  const descriptor = [
+    input instanceof HTMLInputElement ? input.type : '',
+    input.name,
+    input.id,
+    input.placeholder,
+    input.getAttribute('autocomplete'),
+    input.getAttribute('aria-label'),
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  if (input instanceof HTMLInputElement) {
+    const type = input.type.toLowerCase();
+    if (type === 'email' || type === 'password') {
+      return true;
+    }
+    if (
+      input.autocomplete === 'one-time-code' ||
+      (input.maxLength >= 4 && input.maxLength <= 10 && input.inputMode === 'numeric')
+    ) {
+      return true;
+    }
+  }
+
+  return FIELD_ACTIVATION_PATTERN.test(descriptor);
+}
+
+function hasRelevantField(): boolean {
+  try {
+    if (document.querySelector(RELEVANT_FIELD_SELECTOR)) {
+      return true;
+    }
+  } catch {
+    // Ignore selector support issues and fall back to direct inspection.
+  }
+
+  const inputs = Array.from(
+    document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea')
+  ).slice(0, 60);
+
+  return inputs.some((input) => isLikelyRelevantInput(input));
+}
+
+function hasPageActivationSignals(): boolean {
+  const bodyText = document.body?.textContent?.slice(0, 2000) ?? '';
+  return PAGE_ACTIVATION_PATTERN.test(`${location.href} ${document.title} ${bodyText}`);
+}
+
+function shouldActivateImmediately(): boolean {
+  if (hasRelevantField()) {
+    return true;
+  }
+
+  const hasAnyFormControl = Boolean(document.querySelector('form, input, textarea, select'));
+  return hasAnyFormControl && hasPageActivationSignals();
+}
+
+function removePassiveActivationHooks(): void {
+  if (!passiveActivationHandler) {
+    return;
+  }
+  document.removeEventListener('focusin', passiveActivationHandler, true);
+  document.removeEventListener('input', passiveActivationHandler, true);
+  passiveActivationHandler = null;
+}
+
+function installPassiveActivationHooks(): void {
+  if (passiveActivationHandler || isInitialized) {
+    return;
+  }
+
+  passiveActivationHandler = (event: Event) => {
+    const target = event.target;
+    if (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement
+    ) {
+      const inputRelevant =
+        target instanceof HTMLSelectElement
+          ? hasPageActivationSignals()
+          : isLikelyRelevantInput(target);
+      if (inputRelevant || hasPageActivationSignals()) {
+        safeInit(true);
+      }
+    }
+  };
+
+  document.addEventListener('focusin', passiveActivationHandler, true);
+  document.addEventListener('input', passiveActivationHandler, true);
+}
+
+function installPassiveMessageListener(): void {
+  if (passiveRuntimeListenerInstalled || !chrome?.runtime?.onMessage) {
+    return;
+  }
+
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    const action =
+      typeof message === 'object' && message !== null && 'action' in message
+        ? String((message as { action?: unknown }).action ?? '')
+        : '';
+
+    if (!action || isInitialized) {
+      return false;
+    }
+
+    if (action === 'PING') {
+      sendResponse({ success: true, alive: true, lazy: true, verdict: 'not-otp' });
+      return false;
+    }
+
+    if (!ACTIVATION_MESSAGE_ACTIONS.has(action)) {
+      return false;
+    }
+
+    safeInit(true);
+    handleMessage(message as { action: string; payload?: Record<string, unknown> })
+      .then(sendResponse)
+      .catch((error) => {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        sendResponse({ success: false, error: errorMessage });
+      });
+
+    return true;
+  });
+
+  passiveRuntimeListenerInstalled = true;
+}
 
 /**
  * Initialize content script
@@ -176,6 +375,8 @@ function init(): void {
   log.debug('Content script initializing...');
 
   try {
+    removePassiveActivationHooks();
+
     // Initialize Observability Plugins First
     errorTracker.init();
     performanceMonitor.init();
@@ -234,9 +435,29 @@ function init(): void {
       ) as unknown as OTPPageDetector;
     }
 
-    // Detect forms on page load
-    formDetector.detectForms();
-    runSafely('injectIcons:init', () => autoFiller.injectIcons());
+    // Keep install/startup light when Chrome injects the content script into
+    // many existing tabs. Field enhancement can wait for browser idle time.
+    if (document.querySelector('input, textarea, select')) {
+      const enhanceFields = () => {
+        runSafely('detectForms:init-idle', () => {
+          formDetector.detectForms();
+        });
+        runSafely('injectIcons:init-idle', () => autoFiller.injectIcons());
+      };
+
+      if ('requestIdleCallback' in window) {
+        (
+          window as Window & {
+            requestIdleCallback?: (
+              callback: IdleRequestCallback,
+              options?: IdleRequestOptions
+            ) => number;
+          }
+        ).requestIdleCallback?.(enhanceFields, { timeout: 2500 });
+      } else {
+        setTimeout(enhanceFields, 800);
+      }
+    }
 
     // Setup floating button
     runSafely('floatingButton.init', () => floatingButton.init());
@@ -489,7 +710,12 @@ async function handleMessage(message: {
 
 let isInitialized = false;
 
-function scheduleInit(): void {
+function scheduleInit(immediate: boolean = false): void {
+  if (immediate) {
+    init();
+    return;
+  }
+
   const start = () => {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -513,14 +739,14 @@ function scheduleInit(): void {
   setTimeout(start, 50);
 }
 
-function safeInit() {
+function safeInit(force: boolean = false) {
   if (isInitialized) {
     return;
   }
 
   // Cleanup event listeners to prevent memory leaking
-  document.removeEventListener('DOMContentLoaded', safeInit);
-  window.removeEventListener('load', safeInit);
+  document.removeEventListener('DOMContentLoaded', safeInitFromEvent);
+  window.removeEventListener('load', safeInitFromEvent);
 
   if (!document.body) {
     // Wait for body to be available
@@ -534,25 +760,29 @@ function safeInit() {
     return;
   }
 
+  if (!force && !shouldActivateImmediately()) {
+    installPassiveActivationHooks();
+    log.debug('GhostFill content script parked in lazy mode');
+    return;
+  }
+
   isInitialized = true;
-  scheduleInit();
+  scheduleInit(force);
 }
+
+function safeInitFromEvent(): void {
+  safeInit(false);
+}
+
+installPassiveMessageListener();
 
 // Initialize safely preventing DOM node load hazards
 if (document.readyState === 'complete') {
   safeInit();
 } else {
-  document.addEventListener('DOMContentLoaded', safeInit);
-  window.addEventListener('load', safeInit);
+  document.addEventListener('DOMContentLoaded', safeInitFromEvent);
+  window.addEventListener('load', safeInitFromEvent);
 }
 
 // Export for testing
-export {
-  formDetector,
-  fieldAnalyzer,
-  autoFiller,
-  floatingButton,
-  domObserver,
-  otpPageDetector,
-  SentinelBrain,
-};
+export { formDetector, fieldAnalyzer, autoFiller, floatingButton, domObserver, otpPageDetector };

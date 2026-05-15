@@ -144,7 +144,7 @@ const CONFIG = {
   // Install behavior
   CLEAR_STORAGE_ON_INSTALL: true,
   AUTO_GEN_EMAIL: true,
-  OPEN_WELCOME_PAGE: true,
+  OPEN_WELCOME_PAGE: false,
 
   // Dev mode
   DEV_MODE: false,
@@ -279,23 +279,10 @@ async function initialize(trigger: InitTrigger): Promise<void> {
       log.debug('▶️ Phase 2: Notifications');
       safeCall(() => initNotifications());
 
-      // Phase 2.5: ML Inference Engine warm-up (non-fatal, async)
-      log.debug('▶️ Phase 2.5: ML Inference Engine (offscreen warm-up)');
-      safeCall(() => {
-        import('./offscreenManager')
-          .then(({ ensureOffscreenDocument }) => {
-            ensureOffscreenDocument()
-              .then(() =>
-                chrome.runtime.sendMessage({ target: 'offscreen-doc', type: 'WARM_UP_ML' })
-              )
-              .catch(() => {
-                /* non-fatal */
-              });
-          })
-          .catch(() => {
-            /* non-fatal */
-          });
-      });
+      // ML is intentionally not warmed during startup/install. Loading the ONNX
+      // runtime while Chrome is injecting content scripts into existing tabs can
+      // freeze the browser on machines with many open tabs.
+      log.debug('▶️ Phase 2.5: ML warm-up skipped; inference is on-demand only');
 
       // Phase 3: Install-specific flows
       log.debug(`▶️ Phase 3: Install-specific flows (trigger: ${mainTrigger})`);
