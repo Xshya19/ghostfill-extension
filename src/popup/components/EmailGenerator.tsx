@@ -30,6 +30,21 @@ const t = (key: string): string => {
   }
 };
 
+/**
+ * Detects text direction (e.g. RTL for Arabic/Hebrew) and returns appropriate attributes.
+ */
+const getLangAttr = (text: string): { dir?: 'rtl' | 'ltr'; lang?: string } | undefined => {
+  if (!text) {
+    return undefined;
+  }
+  // Match RTL characters (Arabic, Hebrew, Syriac, etc.)
+  const rtlRegex = /[\u0590-\u05FF\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
+  if (rtlRegex.test(text)) {
+    return { dir: 'rtl' };
+  }
+  return undefined;
+};
+
 function getEmailTimestamp(email: Email): number {
   return typeof email.date === 'number' && Number.isFinite(email.date) && email.date > 0
     ? email.date
@@ -504,12 +519,12 @@ const EmailGenerator: React.FC<Props> = ({
                           </EmailAvatar>
                           <div className="inbox-item-content">
                             <div className="inbox-item-header">
-                              <span className="inbox-item-from">{item.from}</span>
+                              <span className="inbox-item-from" {...getLangAttr(item.from)}>{item.from}</span>
                               <span className="inbox-item-date">
                                 {formatRelativeTime(getEmailTimestamp(item))}
                               </span>
                             </div>
-                            <div className="inbox-item-subject">{item.subject}</div>
+                            <div className="inbox-item-subject" {...getLangAttr(item.subject)}>{item.subject}</div>
 
                             {/* Capsule Badges for OTP and Links */}
                             <div className="inbox-badges-row">
@@ -615,12 +630,12 @@ const EmailGenerator: React.FC<Props> = ({
                           {/* Content */}
                           <div className="inbox-content-default">
                             <div className="inbox-header-default">
-                              <div className="inbox-from-default truncate">{item.from}</div>
+                              <div className="inbox-from-default truncate" {...getLangAttr(item.from)}>{item.from}</div>
                               <div className="inbox-date-default">
                                 {formatRelativeTime(getEmailTimestamp(item))}
                               </div>
                             </div>
-                            <div className="inbox-subject-default truncate">{item.subject}</div>
+                            <div className="inbox-subject-default truncate" {...getLangAttr(item.subject)}>{item.subject}</div>
 
                             {/* Capsule Badges */}
                             <div className="inbox-badges-default">
