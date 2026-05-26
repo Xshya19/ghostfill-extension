@@ -159,10 +159,10 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
   return (
     <div className="generator-flow">
       {/* Main Display Card */}
-      <div className="ghost-card glass-card-default">
-        <div className="generator-card-header">
-          <div className="widget-label">
-            <Lock size={14} className="sf-icon" />
+      <div className="glass-card glass-card-default">
+        <div className="generator-card-header" style={{ alignItems: 'center' }}>
+          <div className="widget-label" style={{ marginBottom: 0 }}>
+            <Lock size={16} className="sf-icon" />
             {currentPassword ? 'Current Secret' : 'Secured Generator'}
           </div>
           <button
@@ -170,7 +170,7 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
             onClick={() => setShowPassword(!showPassword)}
             aria-label={showPassword ? 'Hide password' : 'Show password'}
           >
-            {showPassword ? <Eye size={16} /> : <EyeOff size={16} />}
+            {showPassword ? <Eye size={18} /> : <EyeOff size={18} />}
           </button>
         </div>
         {/* Terminal-style Password Display */}
@@ -231,24 +231,24 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
 
         <div className="generator-actions">
           <button
-            className={`premium-btn ${loading ? 'shimmer' : ''}`}
+            className={`ios-button button-primary ${loading ? 'shimmer' : ''}`}
             onClick={handleGeneratePassword}
             disabled={loading}
           >
-            {loading ? <span className="spinner-small" /> : <Zap size={16} fill="white" />}
+            {loading ? <span className="spinner-small" /> : <Zap size={18} fill="white" />}
             {loading ? 'Securing...' : 'Regenerate'}
           </button>
-          <button className="premium-btn premium-btn-secondary" onClick={handleCopyPassword}>
-            {copied ? <Check size={16} color="var(--success)" /> : <Copy size={16} />}
+          <button className="ios-button button-secondary" onClick={handleCopyPassword}>
+            {copied ? <Check size={18} color="var(--success)" /> : <Copy size={18} />}
             {copied ? 'Copied' : 'Copy'}
           </button>
         </div>
       </div>
 
       {/* Configuration Card */}
-      <div className="ghost-card glass-card-default glass-card-mt16">
-        <div className="widget-label config-label">
-          <Shield size={14} className="sf-icon" />
+      <div className="glass-card glass-card-default glass-card-mt16">
+        <div className="widget-label config-label" style={{ marginBottom: 8 }}>
+          <Shield size={16} className="sf-icon" />
           Complexity Settings
         </div>
 
@@ -289,6 +289,9 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
               >
                 <span className="pill-icon">{opt.icon}</span>
                 <span className="pill-label">{opt.label}</span>
+                <span className="pill-check">
+                  <Check size={10} strokeWidth={3} color="var(--gf-ink)" />
+                </span>
               </button>
             );
           })}

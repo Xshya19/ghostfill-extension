@@ -18,7 +18,7 @@ export class FieldWatcher {
   private pollingInterval: ReturnType<typeof setInterval> | null = null;
   private safetyTimeout: ReturnType<typeof setTimeout> | null = null;
   private knownShadowRoots = new Set<ShadowRoot>();
-  private isActive = false;
+  public isActive = false;
 
   /**
    * Watch for dynamically-rendered OTP fields.
@@ -155,6 +155,13 @@ export class FieldWatcher {
   stop(): void {
     this.isActive = false;
 
+    // Resolve any pending watch promise to prevent leaks/hangs
+    if (this.pendingResolve) {
+      const resolveFn = this.pendingResolve;
+      this.pendingResolve = null;
+      resolveFn(false);
+    }
+
     if (this.observer) {
       this.observer.disconnect();
       this.observer = null;
@@ -178,7 +185,6 @@ export class FieldWatcher {
 
     this.pendingOTP = null;
     this.pendingContext = null;
-    this.pendingResolve = null;
     log.debug('FieldWatcher stopped');
   }
 }

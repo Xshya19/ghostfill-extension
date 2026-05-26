@@ -8,6 +8,28 @@ import { createLogger } from '../../utils/logger';
 
 const log = createLogger('MailTmService');
 
+/**
+ * Detects transient network errors that should not be treated as bugs.
+ * These occur when: the service worker wakes from sleep, the network is
+ * temporarily unavailable, or Mail.tm is momentarily unreachable.
+ */
+function isTransientNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const msg = error.message.toLowerCase();
+  return (
+    msg.includes('failed to fetch') ||
+    msg.includes('networkerror') ||
+    msg.includes('network request failed') ||
+    msg.includes('fetch error') ||
+    msg.includes('timed out') ||
+    msg.includes('econnrefused') ||
+    msg.includes('econnreset') ||
+    error.name === 'TypeError' // fetch throws TypeError for network errors
+  );
+}
+
 export class MailTmService {
   private baseUrl = API.MAIL_TM.BASE_URL;
   private token: string | null = null;
@@ -463,13 +485,28 @@ export class MailTmService {
     } catch (error) {
       this.consecutiveErrors++;
       const now = Date.now();
-      if (now - this.lastErrorTime > 5000) {
+      const throttle = now - this.lastErrorTime > 30000; // Only log once per 30s
+
+      if (isTransientNetworkError(error)) {
+        // Transient network glitch (service worker wake-up, Mail.tm unavailable).
+        // Log at WARN level to avoid DevTools console noise during normal operation.
+        if (throttle) {
+          log.warn(
+            'Mail.tm inbox check failed (transient network error — will retry automatically)',
+            (error as Error).message
+          );
+          this.lastErrorTime = now;
+        }
+        // Return empty array instead of throwing so the polling loop continues
+        // cleanly. The circuit breaker in pollingManager will back off if needed.
+        return [];
+      }
+
+      // Non-network errors (auth failures, API changes, etc.) — log at ERROR
+      if (throttle) {
         log.error('Failed to get Mail.tm messages', error);
         this.lastErrorTime = now;
       }
-      // FIX: Removed providerHealth.recordFailure() — providerHealth was never
-      // imported into this service, causing a ReferenceError on every network
-      // failure that would crash the service worker's polling loop.
       throw error;
     }
   }

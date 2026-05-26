@@ -1,4 +1,4 @@
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import React from 'react';
 import iconLogo from '../../assets/icons/icon48.png';
 
@@ -8,7 +8,9 @@ interface GhostLogoProps {
 }
 
 const GhostLogo: React.FC<GhostLogoProps> = React.memo(({ size = 24, className = '' }) => {
-  const shouldReduceMotion = useReducedMotion();
+  // MotionConfig reducedMotion="never" in App.tsx handles this globally.
+  // Do NOT call useReducedMotion() here — it reads the OS media query directly
+  // and fires the "Reduced Motion enabled" DevTools warning every render.
 
   return (
     <motion.div
@@ -21,28 +23,21 @@ const GhostLogo: React.FC<GhostLogoProps> = React.memo(({ size = 24, className =
         justifyContent: 'center',
         position: 'relative',
       }}
-      animate={
-        shouldReduceMotion
-          ? {}
-          : {
-              filter: [
-                'drop-shadow(0 0 2px rgba(124, 92, 252, 0.1))',
-                'drop-shadow(0 0 16px rgba(124, 92, 252, 0.7))',
-                'drop-shadow(0 0 2px rgba(124, 92, 252, 0.1))',
-              ],
-            }
-      }
-      transition={
-        shouldReduceMotion
-          ? { duration: 0 }
-          : {
-              duration: 4,
-              ease: 'easeInOut',
-              repeat: Infinity,
-            }
-      }
-      whileHover={shouldReduceMotion ? {} : { scale: 1.05 }}
-      whileTap={shouldReduceMotion ? {} : { scale: 0.96 }}
+      animate={{
+        filter: [
+          // Memphis Neon: magenta glow
+          'drop-shadow(0 0 2px rgba(255, 59, 212, 0.1))',
+          'drop-shadow(0 0 14px rgba(255, 59, 212, 0.8))',
+          'drop-shadow(0 0 2px rgba(255, 59, 212, 0.1))',
+        ],
+      }}
+      transition={{
+        duration: 3.5,
+        ease: 'easeInOut',
+        repeat: Infinity,
+      }}
+      whileHover={{ scale: 1.08 }}
+      whileTap={{ scale: 0.94 }}
     >
       <motion.img
         src={iconLogo}
@@ -50,22 +45,14 @@ const GhostLogo: React.FC<GhostLogoProps> = React.memo(({ size = 24, className =
         className="ghost-logo-img"
         width={size}
         height={size}
-        animate={
-          shouldReduceMotion
-            ? {}
-            : {
-                opacity: [0.85, 1, 0.85],
-              }
-        }
-        transition={
-          shouldReduceMotion
-            ? { duration: 0 }
-            : {
-                duration: 3,
-                ease: 'easeInOut',
-                repeat: Infinity,
-              }
-        }
+        animate={{
+          opacity: [0.82, 1, 0.82],
+        }}
+        transition={{
+          duration: 2.8,
+          ease: 'easeInOut',
+          repeat: Infinity,
+        }}
       />
     </motion.div>
   );

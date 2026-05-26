@@ -1,4 +1,4 @@
-import { motion, AnimatePresence, Transition } from 'framer-motion';
+import { motion, AnimatePresence, Transition, MotionConfig } from 'framer-motion';
 import { ChevronLeft, Sparkles } from 'lucide-react';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { EmailAccount } from '../types';
@@ -262,9 +262,9 @@ const App: React.FC = () => {
 
   const springTransition: Transition = {
     type: 'spring',
-    stiffness: 260,
-    damping: 25,
-    mass: 0.8,
+    stiffness: 200,
+    damping: 28,
+    mass: 0.9,
   };
 
   return (
@@ -286,9 +286,9 @@ const App: React.FC = () => {
               aria-atomic="true"
               initial="hidden"
               animate="visible"
-              exit={{ opacity: 0, scale: 0.9, y: -20 }}
+              exit="hidden"
               variants={{
-                hidden: { opacity: 0, scale: 0.95, y: -20, x: '-50%' },
+                hidden: { opacity: 0, scale: 0.95, y: 20, x: '-50%' },
                 visible: { opacity: 1, scale: 1, y: 0, x: '-50%' },
               }}
               transition={springTransition}
@@ -316,7 +316,7 @@ const App: React.FC = () => {
                 transition={{ type: 'spring', stiffness: 200, damping: 20, delay: 0.05 }}
                 className="onboarding-logo"
               >
-                <Sparkles size={32} color="white" strokeWidth={2.5} />
+                <Sparkles size={36} color="white" strokeWidth={2.5} />
               </motion.div>
 
               <motion.h1
@@ -412,7 +412,7 @@ const App: React.FC = () => {
               className="app-view-container"
             >
               <Header onOpenSettings={handleOpenSettings} onOpenHelp={handleOpenHelp} />
-              <div className="ghost-dashboard ghost-dashboard-no-top-padding">
+              <div className="ghost-dashboard inbox-detailed-dashboard">
                 <EmailGenerator
                   emailAccount={emailAccount}
                   onGenerate={triggerGenerateIdentity}
@@ -441,7 +441,7 @@ const App: React.FC = () => {
                     onClick={() => setView('hub')}
                     aria-label="Go back to hub"
                   >
-                    <ChevronLeft size={20} className="sf-icon" />
+                    <ChevronLeft size={22} className="sf-icon" />
                   </button>
                   <span className="header-title detail-view-title">
                     {view === 'otp' ? t('passcodeSync') : t('vaultSettings')}
@@ -493,7 +493,9 @@ const App: React.FC = () => {
 
 const AppWithErrorBoundary: React.FC = () => (
   <ErrorBoundary>
-    <App />
+    <MotionConfig reducedMotion={process.env.NODE_ENV === 'production' ? 'user' : 'never'}>
+      <App />
+    </MotionConfig>
   </ErrorBoundary>
 );
 

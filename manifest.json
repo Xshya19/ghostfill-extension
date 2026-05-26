@@ -3,9 +3,9 @@
   "name": "__MSG_extensionName__",
   "version": "1.1.0",
   "description": "__MSG_extensionDescription__",
-  "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; worker-src 'none'; child-src 'none'; frame-src 'none'; connect-src 'self' https://api.1secmail.com https://api.1secmail.net https://api.1secmail.org https://www.1secmail.com https://api.mail.tm https://api.mail.gw https://api.tmailor.com https://api.maildrop.cc https://api.dropmail.me https://api.guerrillamail.com https://api.tempmail.lol https://mercure.mail.tm;"
-  },
+    "content_security_policy": {
+      "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: https://www.google.com/ https://t1.gstatic.com/; worker-src 'none'; child-src 'none'; frame-src 'none'; connect-src 'self' https://api.1secmail.com https://api.1secmail.net https://api.1secmail.org https://www.1secmail.com https://api.mail.tm https://api.mail.gw https://api.tmailor.com https://api.maildrop.cc https://api.dropmail.me https://api.guerrillamail.com https://api.tempmail.lol https://mercure.mail.tm;"
+    },
   "permissions": [
     "activeTab",
     "storage",

@@ -25,7 +25,7 @@ import { HistoryManager } from './utils/intelligenceCore';
 
 const log = createLogger('AutoFiller');
 
-const DYNAMIC_WATCH_TIMEOUT_MS = 15000;
+const DYNAMIC_WATCH_TIMEOUT_MS = 7000;
 const SMART_FILL_RETRY_DELAYS_MS = [0, 500, 1500, 3000];
 const OTP_EXACT_FIELD_NAMES = new Set([
   'otp',
@@ -141,6 +141,14 @@ export class AutoFiller {
       return false;
     }
     if (this.fillLock) {
+      // If the lock is held but only because the passive fieldWatcher is waiting for dynamically rendered fields,
+      // stop the watcher immediately. This resolves the watcher's promise, releasing the lock,
+      // and allows us to process the new OTP request without waiting for the full watcher timeout.
+      if (this.fieldWatcher.isActive) {
+        log.info('🔄 New OTP request received while passive FieldWatcher was active. Stopping current watcher to prioritize new request.');
+        this.fieldWatcher.stop();
+      }
+
       log.info('🔒 Fill lock active, queuing OTP request to process after current run completes');
       return new Promise<boolean>((resolve) => {
         if (this.latestPendingOTP) {

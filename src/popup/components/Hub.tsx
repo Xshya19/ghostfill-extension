@@ -19,6 +19,7 @@ import { copyToClipboard } from '../../utils/helpers';
 import { safeSendMessage } from '../../utils/messaging';
 import { useOTPExtractor } from '../hooks/useOTPExtractor';
 import { useStorageSubscription } from '../hooks/useStorageSubscription';
+import { EmailAvatar } from './EmailAvatar';
 
 // i18n helper
 const t = (key: string): string => {
@@ -60,11 +61,33 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && showConfirmEmail) {
         setShowConfirmEmail(false);
+        return;
+      }
+      if (e.key === 'Tab' && showConfirmEmail) {
+        const modal = document.querySelector('.confirmation-modal') as HTMLElement | null;
+        if (modal) {
+          const focusable = modal.querySelectorAll<HTMLElement>('button');
+          if (focusable.length >= 2) {
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (e.shiftKey) {
+              if (document.activeElement === first) {
+                e.preventDefault();
+                last?.focus();
+              }
+            } else {
+              if (document.activeElement === last) {
+                e.preventDefault();
+                first?.focus();
+              }
+            }
+          }
+        }
       }
     };
     if (showConfirmEmail) {
       window.addEventListener('keydown', handleKey);
-      setTimeout(() => cancelBtnRef.current?.focus(), 50);
+      cancelBtnRef.current?.focus();
     }
     return () => window.removeEventListener('keydown', handleKey);
   }, [showConfirmEmail]);
@@ -77,10 +100,14 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       return;
     }
 
+    // eslint-disable-next-line prefer-const
+    let intervalId: ReturnType<typeof setInterval>;
+
     const updateTimer = () => {
       const remaining = emailAccount.expiresAt - Date.now();
       if (remaining <= 0) {
         setTimeLeft(t('expiredLabel') || 'Expired');
+        clearInterval(intervalId);
         return;
       }
       const totalMins = Math.floor(remaining / 60000);
@@ -95,12 +122,9 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     };
 
     updateTimer();
-    const interval = setInterval(
-      updateTimer,
-      timeLeft.includes('h') || (timeLeft.includes('m') && !timeLeft.includes(':')) ? 60000 : 1000
-    );
-    return () => clearInterval(interval);
-  }, [emailAccount, timeLeft]);
+    intervalId = setInterval(updateTimer, 1000);
+    return () => clearInterval(intervalId);
+  }, [emailAccount]);
 
   // Switch to Push-State UI instead of polling
   const rawInbox = useStorageSubscription('inbox', []);
@@ -342,24 +366,24 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
   };
 
   const itemVariants = {
-    hidden: { opacity: 0, y: 20, scale: 0.95 },
+    hidden: { opacity: 0, y: 12, scale: 0.97 },
     visible: {
       opacity: 1,
       y: 0,
       scale: 1,
       transition: {
         type: 'spring' as const,
-        stiffness: 260,
-        damping: 25,
-        mass: 0.8,
+        stiffness: 200,
+        damping: 28,
+        mass: 0.9,
       },
     },
   };
 
-  const { otps: emailOTPs, links: emailLinks } = useOTPExtractor(inboxEmails.slice(0, 5));
+  const { otps: emailOTPs, links: emailLinks } = useOTPExtractor(inboxEmails.slice(0, 1));
 
   const displayedEmails = React.useMemo(() => {
-    return inboxEmails.slice(0, 5).map((email: Email) => ({
+    return inboxEmails.slice(0, 1).map((email: Email) => ({
       ...email,
       otpCode: emailOTPs[email.id] !== undefined ? emailOTPs[email.id] : undefined,
       activationLink: emailLinks[email.id] !== undefined ? emailLinks[email.id] : undefined,
@@ -376,7 +400,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       {/* ═══════════════════════════════════════════════════════════
                  🎴 IDENTITY CARD - Combined Email & Password
                ═══════════════════════════════════════════════════════════ */}
-      <motion.div className="ghost-card identity-card" variants={itemVariants}>
+      <motion.div className="glass-card identity-card" variants={itemVariants}>
         {/* Email Row */}
         <div className="identity-row">
           <div className="identity-icon">
@@ -408,7 +432,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
               title="Copy email"
               aria-label="Copy email address to clipboard"
             >
-              {emailCopied ? <Check size={16} /> : <Copy size={16} />}
+              {emailCopied ? <Check size={14} /> : <Copy size={14} />}
             </motion.button>
             <motion.button
               className={`action-icon ${isGeneratingEmail ? 'action-loading' : ''} ${emailCooldown ? 'opacity-50' : ''}`}
@@ -419,12 +443,10 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
               aria-label="Generate new temporary email"
               disabled={isGeneratingEmail || emailCooldown}
             >
-              <RefreshCw size={16} className={isGeneratingEmail ? 'spin' : ''} />
+              <RefreshCw size={14} className={isGeneratingEmail ? 'spin' : ''} />
             </motion.button>
           </div>
         </div>
-
-        <div className="identity-divider" />
 
         {/* Password Row */}
         <div className="identity-row">
@@ -433,12 +455,16 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
           </div>
           <div className="identity-content">
             <span className="identity-label">{t('passwordLabel')}</span>
-            <span className={`identity-value mono hub-val ${!password ? 'shimmer' : ''}`}>
+            <span
+              className={`identity-value mono hub-val ${!password ? 'shimmer' : ''} ${
+                !showPassword && password ? 'password-bullets' : ''
+              }`}
+            >
               {!password
                 ? t('generatingPassword')
                 : showPassword
                   ? password
-                  : password.replace(/./g, '•')}
+                  : '••••••••'}
             </span>
           </div>
           <div className="identity-actions">
@@ -450,7 +476,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
               title="Copy password"
               aria-label="Copy password to clipboard"
             >
-              {passwordCopied ? <Check size={16} /> : <Copy size={16} />}
+              {passwordCopied ? <Check size={14} /> : <Copy size={14} />}
             </motion.button>
             <motion.button
               className="action-icon"
@@ -460,7 +486,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
               title={showPassword ? 'Hide' : 'Show'}
               aria-label={showPassword ? 'Hide password' : 'Show password'}
             >
-              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
             </motion.button>
             <div className="action-separator" />
             <motion.button
@@ -472,7 +498,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
               aria-label="Generate new secure password"
               disabled={isGeneratingPassword || passwordCooldown}
             >
-              <RefreshCw size={16} className={isGeneratingPassword ? 'spin' : ''} />
+              <RefreshCw size={14} className={isGeneratingPassword ? 'spin' : ''} />
             </motion.button>
           </div>
         </div>
@@ -484,7 +510,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       <motion.div className="inbox-section" variants={itemVariants}>
         <div className="inbox-header-row">
           <div className="inbox-title-group">
-            <Inbox size={20} />
+            <Inbox size={22} />
             <span>{t('recentMessages')}</span>
             {inboxEmails.length > 0 && <span className="inbox-count">{inboxEmails.length}</span>}
           </div>
@@ -502,7 +528,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
           >
             {inboxEmails.length > 0 ? (
               <>
-                {t('fullInbox')} <ChevronRight size={14} />
+                {t('fullInbox')} <ChevronRight size={15} />
               </>
             ) : (
               t('scanning')
@@ -513,7 +539,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
         <div className="inbox-list">
           {inboxEmails.length === 0 ? (
             <div className="shimmer hub-empty-state">
-              <Mail size={16} strokeWidth={1.5} className="spin-slow" />
+              <Mail size={18} strokeWidth={1.5} className="spin-slow" color="var(--gf-cyan)" />
               <span>{t('listening')}</span>
             </div>
           ) : (
@@ -532,16 +558,14 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
                       damping: 25,
                       mass: 0.8,
                     }}
-                    whileHover={{ x: 4, background: 'var(--list-item-hover)' }}
+                    whileHover={{ x: 4 }}
                   >
-                    <div className="inbox-item-avatar">
-                      {emailItem.from.charAt(0).toUpperCase()}
-                    </div>
+                    <EmailAvatar from={emailItem.from} className="inbox-item-avatar" />
                     <div className="inbox-item-content">
                       <div className="inbox-item-header">
                         <span className="inbox-item-from">{emailItem.from}</span>
                         <span className="inbox-item-date">
-                          <Clock size={10} />
+                          <Clock size={12} />
                           {formatRelativeTime(new Date(emailItem.date).getTime())}
                         </span>
                       </div>
@@ -565,7 +589,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
                           <span className="otp-badge-code" aria-hidden="true">
                             {emailItem.otpCode}
                           </span>
-                          <Copy size={10} />
+                          <Copy size={12} />
                         </motion.button>
                       )}
                     </div>
@@ -586,7 +610,6 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            style={{ zIndex: 9999, padding: '0 20px', display: 'flex' }}
           >
             <motion.div
               className="glass-card confirmation-modal"
@@ -594,36 +617,14 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              style={{
-                margin: 'auto',
-                background: 'var(--bg-primary)',
-                width: '100%',
-                maxWidth: '320px',
-                padding: '24px',
-              }}
               role="dialog"
               aria-modal="true"
               aria-labelledby="hub-modal-title"
             >
-              <h3
-                id="hub-modal-title"
-                style={{
-                  marginTop: 0,
-                  marginBottom: '8px',
-                  fontSize: '18px',
-                  color: 'var(--text-primary)',
-                }}
-              >
+              <h3 id="hub-modal-title">
                 Generate New Email?
               </h3>
-              <p
-                style={{
-                  color: 'var(--text-secondary)',
-                  fontSize: '14px',
-                  lineHeight: 1.5,
-                  margin: 0,
-                }}
-              >
+              <p>
                 Your current temporary email and its inbox will be permanently lost.
               </p>
               <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>

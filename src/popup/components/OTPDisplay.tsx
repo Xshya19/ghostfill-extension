@@ -1,4 +1,4 @@
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { Hash, Copy, Zap, Info, ShieldCheck, Check, Inbox } from 'lucide-react';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { copyToClipboard } from '../../utils/helpers';
@@ -9,10 +9,8 @@ interface Props {
   onToast: (message: string) => void;
 }
 
-const OTPTimerBar: React.FC<{ lastOTP: any; shouldReduceMotion: boolean | null | undefined }> = ({
-  lastOTP,
-  shouldReduceMotion,
-}) => {
+const OTPTimerBar: React.FC<{ lastOTP: any }> = ({ lastOTP }) => {
+  // MotionConfig reducedMotion="never" in App.tsx handles motion globally.
   const [timePercentage, setTimePercentage] = useState<number>(100);
   const [timeText, setTimeText] = useState<string>('');
 
@@ -59,7 +57,7 @@ const OTPTimerBar: React.FC<{ lastOTP: any; shouldReduceMotion: boolean | null |
       >
         <motion.div
           animate={{ width: `${timePercentage}%` }}
-          transition={{ duration: shouldReduceMotion ? 0 : 1, ease: [0.16, 1, 0.3, 1] }}
+          transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
           className="otp-timer-fill"
           style={{
             background:
@@ -90,7 +88,7 @@ const OTPTimerBar: React.FC<{ lastOTP: any; shouldReduceMotion: boolean | null |
 };
 
 const OTPDisplay: React.FC<Props> = ({ onToast }) => {
-  const shouldReduceMotion = useReducedMotion();
+  // MotionConfig reducedMotion="never" in App.tsx handles motion globally — no useReducedMotion needed.
   const lastOTP = useStorageSubscription('lastOTP', null);
   const [copied, setCopied] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -158,13 +156,13 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
 
   return (
     <div className="generator-flow">
-      <div className="ghost-card otp-card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-          <div className="widget-label">
-            <Hash size={14} className="sf-icon" />
+      <div className="glass-card otp-glass-card-padded">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div className="widget-label" style={{ marginBottom: 0 }}>
+            <Hash size={16} className="sf-icon" />
             Verification Code
           </div>
-          <ShieldCheck size={18} color="var(--ios-success)" />
+          <ShieldCheck size={22} color="var(--gf-mint)" />
         </div>
 
         {lastOTP ? (
@@ -172,20 +170,16 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
             <motion.div
               className="otp-box"
               onClick={handleCopyOTP}
-              whileHover={shouldReduceMotion ? {} : { y: -2, background: 'var(--list-item-hover)' }}
-              whileTap={shouldReduceMotion ? {} : { scale: 0.98 }}
+              whileHover={{ y: -2 }}
+              whileTap={{ scale: 0.98 }}
             >
               {lastOTP.code.split('').map((char: string, i: number) => (
                 <motion.span
                   key={i}
-                  initial={{
-                    opacity: 0,
-                    scale: shouldReduceMotion ? 1 : 0.8,
-                    y: shouldReduceMotion ? 0 : 5,
-                  }}
+                  initial={{ opacity: 0, scale: 0.8, y: 5 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   transition={{
-                    delay: shouldReduceMotion ? 0 : i * 0.04,
+                    delay: i * 0.04,
                     type: 'spring',
                     stiffness: 300,
                     damping: 15,
@@ -197,7 +191,7 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
               ))}
             </motion.div>
 
-            <OTPTimerBar lastOTP={lastOTP} shouldReduceMotion={shouldReduceMotion} />
+            <OTPTimerBar lastOTP={lastOTP} />
 
             {lastOTP.confidence && (
               <div className="otp-confidence-row">
@@ -223,15 +217,15 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
             )}
 
             <div className="otp-actions">
-              <button className="premium-btn otp-action-primary" onClick={handleFillOTP}>
-                <Zap size={16} fill="white" />
+              <button className="ios-button button-primary otp-action-primary" onClick={handleFillOTP}>
+                <Zap size={18} fill="white" />
                 Auto-Fill
               </button>
               <button
-                className="premium-btn premium-btn-secondary otp-action-secondary"
+                className="ios-button button-secondary otp-action-secondary"
                 onClick={handleCopyOTP}
               >
-                {copied ? <Check size={16} color="var(--success)" /> : <Copy size={16} />}
+                {copied ? <Check size={18} color="var(--success)" /> : <Copy size={18} />}
                 {copied ? 'Copied' : 'Copy'}
               </button>
             </div>
@@ -241,33 +235,14 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
             {/* Animated Loading Container */}
             <motion.div
               className="otp-loading-container"
-              animate={
-                shouldReduceMotion
-                  ? {}
-                  : {
-                      scale: [1, 1.05, 1],
-                      opacity: [0.75, 1, 0.75],
-                    }
-              }
-              transition={
-                shouldReduceMotion
-                  ? { duration: 0 }
-                  : {
-                      duration: 2,
-                      repeat: Infinity,
-                      ease: 'easeInOut',
-                    }
-              }
+              animate={{ scale: [1, 1.05, 1], opacity: [0.75, 1, 0.75] }}
+              transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
             >
               <motion.div
-                animate={shouldReduceMotion ? {} : { rotate: 360 }}
-                transition={
-                  shouldReduceMotion
-                    ? { duration: 0 }
-                    : { duration: 2, repeat: Infinity, ease: 'linear' }
-                }
+                animate={{ rotate: 360 }}
+                transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
               >
-                <Inbox size={36} color="var(--brand-primary)" strokeWidth={1.5} />
+                <Inbox size={40} color="var(--brand-primary)" strokeWidth={1.5} />
               </motion.div>
             </motion.div>
 
@@ -279,9 +254,9 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
         )}
       </div>
 
-      <div className="ghost-card efficiency-tip-card">
-        <div className="widget-label">
-          <Info size={14} className="sf-icon" />
+      <div className="glass-card efficiency-tip-card">
+        <div className="widget-label" style={{ marginBottom: 0 }}>
+          <Info size={16} className="sf-icon" />
           Efficiency Tip
         </div>
         <div className="efficiency-tip-text">

@@ -19,6 +19,7 @@ import { safeSendMessage } from '../../utils/messaging';
 import { useOTPExtractor } from '../hooks/useOTPExtractor';
 
 import { useStorageSubscription } from '../hooks/useStorageSubscription';
+import { EmailAvatar } from './EmailAvatar';
 
 // i18n helper
 const t = (key: string): string => {
@@ -73,12 +74,33 @@ const EmailGenerator: React.FC<Props> = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && showConfirm) {
         setShowConfirm(false);
+        return;
+      }
+      if (e.key === 'Tab' && showConfirm) {
+        const modal = document.querySelector('.confirmation-modal') as HTMLElement | null;
+        if (modal) {
+          const focusable = modal.querySelectorAll<HTMLElement>('button');
+          if (focusable.length >= 2) {
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (e.shiftKey) {
+              if (document.activeElement === first) {
+                e.preventDefault();
+                last?.focus();
+              }
+            } else {
+              if (document.activeElement === last) {
+                e.preventDefault();
+                first?.focus();
+              }
+            }
+          }
+        }
       }
     };
     if (showConfirm) {
       window.addEventListener('keydown', handleKeyDown);
-      // Auto-focus the cancel button when modal opens
-      setTimeout(() => confirmCancelBtnRef.current?.focus(), 50);
+      confirmCancelBtnRef.current?.focus();
     }
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showConfirm]);
@@ -240,7 +262,7 @@ const EmailGenerator: React.FC<Props> = ({
   );
 
   return (
-    <div className="generator-flow">
+    <div className="generator-flow" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {emailAccount ? (
         <>
           {/* Active Identity Card - HIDE IN INBOX VARIANT */}
@@ -252,7 +274,7 @@ const EmailGenerator: React.FC<Props> = ({
               <div className="identity-header">
                 <div className="widget-label" style={{ margin: 0 }}>
                   <div className="identity-label-icon">
-                    <Mail size={12} strokeWidth={2.5} />
+                    <Mail size={14} strokeWidth={2.5} />
                   </div>
                   {t('activeIdentity')}
                 </div>
@@ -265,7 +287,7 @@ const EmailGenerator: React.FC<Props> = ({
                       exit={{ opacity: 0, y: -5 }}
                       className="identity-sync-text"
                     >
-                      <RefreshCw size={10} className={checking || syncing ? 'spin' : ''} />
+                      <RefreshCw size={12} className={checking || syncing ? 'spin' : ''} />
                       {checking
                         ? 'Checking...'
                         : syncing
@@ -294,7 +316,7 @@ const EmailGenerator: React.FC<Props> = ({
                       <div
                         className={`identity-status-time ${timeLeft === 'Expired' ? 'identity-status-expired' : ''}`}
                       >
-                        <Clock size={10} strokeWidth={2.5} />
+                        <Clock size={12} strokeWidth={2.5} />
                         {timeLeft}
                       </div>
                     )}
@@ -312,9 +334,9 @@ const EmailGenerator: React.FC<Props> = ({
                   aria-label="Copy email to clipboard"
                 >
                   {copied ? (
-                    <Check size={20} strokeWidth={2.5} />
+                    <Check size={22} strokeWidth={2.5} />
                   ) : (
-                    <Copy size={20} strokeWidth={2} />
+                    <Copy size={22} strokeWidth={2} />
                   )}
                 </motion.button>
               </div>
@@ -327,7 +349,7 @@ const EmailGenerator: React.FC<Props> = ({
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.96 }}
                 >
-                  <RefreshCw size={16} className={syncing ? 'spin' : ''} />
+                  <RefreshCw size={18} className={syncing ? 'spin' : ''} />
                   New Email
                 </motion.button>
                 <motion.button
@@ -339,11 +361,11 @@ const EmailGenerator: React.FC<Props> = ({
                 >
                   {timeLeft === 'Expired' ? (
                     <>
-                      <Clock size={16} /> Expired
+                      <Clock size={18} /> Expired
                     </>
                   ) : (
                     <>
-                      <Inbox size={16} />
+                      <Inbox size={18} />
                       {checking ? 'Syncing...' : 'Sync Inbox'}
                     </>
                   )}
@@ -360,6 +382,7 @@ const EmailGenerator: React.FC<Props> = ({
               flex: variant === 'inbox' ? 1 : 'none',
               display: 'flex',
               flexDirection: 'column',
+              minHeight: 0,
             }}
           >
             {syncError && (
@@ -389,6 +412,8 @@ const EmailGenerator: React.FC<Props> = ({
                   flexDirection: 'column',
                   flex: 1,
                   overflow: 'hidden',
+                  maxHeight: 'none',
+                  minHeight: 0,
                 }}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -412,15 +437,11 @@ const EmailGenerator: React.FC<Props> = ({
                       aria-label="Go back to dashboard"
                       style={{
                         marginRight: 8,
-                        borderRadius: '50%',
-                        width: 32,
-                        height: 32,
                       }}
                     >
-                      <ChevronLeft size={16} style={{ marginRight: 2 }} />{' '}
-                      {/* Optically center arrow */}
+                      <ChevronLeft size={18} />
                     </motion.button>
-                    <Inbox size={20} />
+                    <Inbox size={22} />
                     <span>Inbox</span>
                     {inbox.length > 0 && <span className="inbox-count">{inbox.length}</span>}
                   </div>
@@ -433,7 +454,7 @@ const EmailGenerator: React.FC<Props> = ({
                     title={checking ? 'Syncing...' : 'Refresh inbox'}
                     aria-label="Refresh inbox"
                   >
-                    <RefreshCw size={14} className={checking ? 'spin' : ''} />
+                    <RefreshCw size={16} className={checking ? 'spin' : ''} />
                   </motion.button>
                 </div>
 
@@ -460,8 +481,11 @@ const EmailGenerator: React.FC<Props> = ({
                             mass: 0.8,
                           }}
                         >
-                          <div className="inbox-item-avatar" style={{ position: 'relative' }}>
-                            {item.from?.charAt(0)?.toUpperCase() ?? '?'}
+                          <EmailAvatar 
+                            from={item.from} 
+                            className="inbox-item-avatar" 
+                            style={{ position: 'relative' }}
+                          >
                             {!item.read && (
                               <div
                                 style={{
@@ -477,7 +501,7 @@ const EmailGenerator: React.FC<Props> = ({
                                 title="Unread"
                               />
                             )}
-                          </div>
+                          </EmailAvatar>
                           <div className="inbox-item-content">
                             <div className="inbox-item-header">
                               <span className="inbox-item-from">{item.from}</span>
@@ -506,7 +530,7 @@ const EmailGenerator: React.FC<Props> = ({
                                   whileTap={{ scale: 0.95 }}
                                 >
                                   <span className="otp-badge-code">🔢 {verificationCode}</span>
-                                  <Copy size={10} />
+                                  <Copy size={12} />
                                 </motion.button>
                               )}
                               {activationLink && (
@@ -517,7 +541,7 @@ const EmailGenerator: React.FC<Props> = ({
                                   whileTap={{ scale: 0.95 }}
                                 >
                                   <span className="otp-badge-code">🔗 Verify Link</span>
-                                  <ChevronRight size={10} />
+                                  <ChevronRight size={12} />
                                 </motion.button>
                               )}
                             </div>
@@ -528,7 +552,7 @@ const EmailGenerator: React.FC<Props> = ({
                   ) : (
                     <div className="inbox-empty inbox-empty-large shimmer">
                       <div className="inbox-empty-icon-wrapper">
-                        <Mail size={26} color="var(--brand-primary)" strokeWidth={1.5} />
+                        <Mail size={30} color="var(--brand-primary)" strokeWidth={1.5} />
                       </div>
                       <span className="inbox-empty-text-main">Listening for messages</span>
                       <span className="inbox-empty-text-sub">
@@ -563,11 +587,14 @@ const EmailGenerator: React.FC<Props> = ({
                             damping: 25,
                             mass: 0.8,
                           }}
-                          className="glass-card inbox-item-default"
+                          className="inbox-item-default"
                         >
                           {/* Avatar */}
-                          <div className="inbox-avatar-default" style={{ position: 'relative' }}>
-                            {item.from?.charAt(0)?.toUpperCase() ?? '?'}
+                          <EmailAvatar 
+                            from={item.from} 
+                            className="inbox-avatar-default" 
+                            style={{ position: 'relative' }}
+                          >
                             {!item.read && (
                               <div
                                 style={{
@@ -583,7 +610,7 @@ const EmailGenerator: React.FC<Props> = ({
                                 title="Unread"
                               />
                             )}
-                          </div>
+                          </EmailAvatar>
 
                           {/* Content */}
                           <div className="inbox-content-default">
@@ -614,7 +641,7 @@ const EmailGenerator: React.FC<Props> = ({
                                   whileTap={{ scale: 0.98 }}
                                 >
                                   🔢 {verificationCode}
-                                  <Copy size={10} />
+                                  <Copy size={12} />
                                 </motion.button>
                               )}
                               {activationLink && (
@@ -625,13 +652,13 @@ const EmailGenerator: React.FC<Props> = ({
                                   whileTap={{ scale: 0.98 }}
                                 >
                                   🔗 Verify Link
-                                  <ChevronRight size={10} />
+                                  <ChevronRight size={12} />
                                 </motion.button>
                               )}
                             </div>
                           </div>
 
-                          <ChevronRight size={16} color="var(--text-tertiary)" strokeWidth={2.5} />
+                          <ChevronRight size={18} color="var(--text-tertiary)" strokeWidth={2.5} />
                         </motion.div>
                       );
                     })
@@ -644,7 +671,7 @@ const EmailGenerator: React.FC<Props> = ({
                       >
                         <div className="inbox-empty-icon">
                           <Inbox
-                            size={28}
+                            size={32}
                             color="var(--brand-primary)"
                             strokeWidth={1.5}
                             style={{ opacity: 0.6 }}
@@ -671,7 +698,7 @@ const EmailGenerator: React.FC<Props> = ({
             className="shimmer-icon-container"
             style={{ margin: '0 auto 16px', display: 'flex', justifyContent: 'center' }}
           >
-            <Mail size={48} color="var(--brand-primary)" style={{ opacity: 0.8 }} />
+            <Mail size={52} color="var(--brand-primary)" style={{ opacity: 0.8 }} />
           </div>
           <h3 style={{ fontSize: 18, marginBottom: 8, color: 'var(--text-primary)' }}>
             {t('identityRequired')}
@@ -694,7 +721,7 @@ const EmailGenerator: React.FC<Props> = ({
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.96 }}
           >
-            {syncing ? <span className="spinner-small" /> : <Zap size={16} fill="white" />}
+            {syncing ? <span className="spinner-small" /> : <Zap size={18} fill="white" />}
             {syncing ? t('syncingIdentity') : t('generateIdentity')}
           </motion.button>
         </div>
@@ -709,7 +736,6 @@ const EmailGenerator: React.FC<Props> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            style={{ zIndex: 9999, padding: '0 20px', display: 'flex' }}
           >
             <motion.div
               className="glass-card confirmation-modal"
@@ -717,36 +743,14 @@ const EmailGenerator: React.FC<Props> = ({
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              style={{
-                margin: 'auto',
-                background: 'var(--bg-primary)',
-                width: '100%',
-                maxWidth: '320px',
-                padding: '24px',
-              }}
               role="dialog"
               aria-modal="true"
               aria-labelledby="modal-title"
             >
-              <h3
-                id="modal-title"
-                style={{
-                  marginTop: 0,
-                  marginBottom: '8px',
-                  fontSize: '18px',
-                  color: 'var(--text-primary)',
-                }}
-              >
+              <h3 id="modal-title">
                 Generate New Email?
               </h3>
-              <p
-                style={{
-                  color: 'var(--text-secondary)',
-                  fontSize: '14px',
-                  lineHeight: 1.5,
-                  margin: 0,
-                }}
-              >
+              <p>
                 Your current temporary email and its inbox will be permanently lost. Are you sure
                 you want to generate a new one?
               </p>

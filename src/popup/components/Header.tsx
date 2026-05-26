@@ -12,13 +12,15 @@ const Header: React.FC<Props> = React.memo(({ onOpenSettings, onOpenHelp }) => {
     <header className="header">
       <div className="header-left">
         <div className="logo-circle">
-          <GhostLogo size={44} />
+          <GhostLogo size={38} />
         </div>
         <div className="header-title-container">
           <span className="header-title">GhostFill</span>
+          <span className="header-tagline">Privacy Archive</span>
         </div>
       </div>
       <div className="header-actions">
+        <span className="header-protected-badge">Protected</span>
         <button
           className="icon-button"
           onClick={onOpenHelp}
@@ -33,7 +35,7 @@ const Header: React.FC<Props> = React.memo(({ onOpenSettings, onOpenHelp }) => {
           title="Settings"
           aria-label="Open settings"
         >
-          <Settings size={18} strokeWidth={2.5} />
+          <Settings size={19} strokeWidth={2.2} />
         </button>
       </div>
     </header>
