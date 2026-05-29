@@ -108,6 +108,18 @@
   --neon-red-rgb: var(--gf-coral-rgb);
 
   --brand-primary: var(--gf-magenta);
+  /* ── Brand Semantic Aliases ── */
+  --brand: var(--gf-magenta);              /* Primary brand colour */
+  --brand-rgb: var(--gf-magenta-rgb);      /* For rgba() usage */
+  --brand-dark: #D41FA7;                   /* Pressed/active brand state */
+  --brand-secondary: var(--gf-violet);     /* Secondary accent (OTP timer gradient) */
+  --brand-glow: rgba(var(--gf-magenta-rgb), 0.25);
+  --success: var(--gf-mint);               /* Copy confirm, strength meter good */
+  --success-rgb: var(--gf-mint-rgb);
+  --success-glow: rgba(var(--gf-mint-rgb), 0.25);
+  --error-rgb: var(--gf-coral-rgb);
+  --error-glow: rgba(var(--gf-coral-rgb), 0.25);
+  --glass-card-bg: var(--gf-card);         /* Unread dot ring background */
   --error: var(--gf-coral);
   --warning: var(--gf-yellow);
   --warning-light: #FFE380;
@@ -209,7 +221,7 @@
 }
 
 /* Hide ALL scrollbars by default — only show on specific elements */
-::-webkit-scrollbar { width: 0; display: none; }
+::-webkit-scrollbar { width: 0; height: 0; }
 
 /* ═══════════════════════════════════════════════════════════
    POPUP SHELL — FIXED 380 × 400
@@ -566,15 +578,15 @@ span {
 .ghost-dashboard {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4) var(--space-4) var(--space-4);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4) var(--space-3) var(--space-4);
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: none;
 }
-.ghost-dashboard::-webkit-scrollbar { display: none; }
+.ghost-dashboard::-webkit-scrollbar { width: 0; height: 0; }
 .ghost-dashboard-no-top-padding { padding-top: 0; }
 
 .inbox-detailed-dashboard {
@@ -806,6 +818,7 @@ span {
 
 /* Action icons — dark square buttons matching reference design */
 .action-icon {
+  position: relative;
   width: var(--space-8);
   height: var(--space-8);
   border-radius: var(--radius-xs);
@@ -819,6 +832,15 @@ span {
   transition: background 0.12s, color 0.12s, box-shadow 0.12s, transform 0.06s;
   box-shadow: 2px 2px 0 var(--gf-ink);
   flex-shrink: 0;
+}
+
+.action-icon::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  right: -6px;
+  bottom: -6px;
 }
 
 .action-icon:hover {
@@ -862,7 +884,6 @@ span {
   opacity: 1;
 }
 
-.identity-divider { display: none; }
 
 /* ═══════════════════════════════════════════════════════════
    MAGIC FILL HERO BUTTON
@@ -1029,7 +1050,7 @@ span {
 }
 
 .ghost-dashboard > .inbox-section {
-  max-height: 155px; /* Restrict height only on main dashboard to fit exactly 1 message cleanly */
+  max-height: 140px; /* Fits exactly 1 email card cleanly in 380×400 popup */
 }
 
 .inbox-header-row {
@@ -1099,7 +1120,7 @@ span {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  max-height: auto;
+  max-height: none;
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 2px;
@@ -1109,7 +1130,7 @@ span {
 
 .hub-inbox-scroll::-webkit-scrollbar {
   width: 3px;
-  display: block !important;
+  /* Setting width > 0 makes scrollbar visible — display property is invalid here */
 }
 
 .hub-inbox-scroll::-webkit-scrollbar-track {
@@ -1752,7 +1773,7 @@ input[type='range']::-moz-range-track {
   background: var(--gf-card);
   border: 2px solid var(--gf-ink);
   position: relative;
-  overflow: hidden;
+  overflow: visible; /* Allow .email-glow to extend outside card boundary */
 }
 
 .email-glow {
@@ -2776,7 +2797,10 @@ input[type='range']::-moz-range-track {
 
 .password-display-hidden {
   letter-spacing: 0.4em;
-  filter: blur(4px);
+  color: var(--gf-text-muted);
+  user-select: none;
+  /* Removed filter:blur — forces GPU compositing layer on low-end devices.
+     Letter-spacing obfuscation is equally effective and zero GPU cost. */
 }
 
 /* ── Strength Meter ── */
@@ -3380,7 +3404,7 @@ input[type='range']::-moz-range-track {
   justify-content: center;
   border: 2px solid var(--gf-ink);
   box-shadow: 2px 2px 0 var(--gf-ink);
-  overflow: hidden;
+  overflow: visible; /* Allow GhostLogo drop-shadow glow to render outside bounds */
   flex-shrink: 0;
 }
 
@@ -3465,7 +3489,6 @@ input[type='range']::-moz-range-track {
 .hub-layout::-webkit-scrollbar,
 .detail-content-scroll::-webkit-scrollbar {
   width: 3px;
-  display: block;
 }
 
 .detail-view-content::-webkit-scrollbar-track,
@@ -3479,6 +3502,61 @@ input[type='range']::-moz-range-track {
 .detail-content-scroll::-webkit-scrollbar-thumb {
   background: rgba(var(--gf-magenta-rgb), 0.25);
   border-radius: 2px;
+}
+
+/* ── Missing UI helper classes ── */
+.copy-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--gf-ink);
+  box-shadow: 2px 2px 0 var(--gf-ink);
+  cursor: pointer;
+  transition: var(--transition-fast);
+  flex-shrink: 0;
+}
+.copy-button:hover {
+  box-shadow: 3px 3px 0 var(--gf-ink);
+  transform: translate(-1px, -1px);
+}
+.copy-button:active {
+  box-shadow: 0 0 0 var(--gf-ink);
+  transform: translate(2px, 2px);
+}
+
+.missing-identity-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--gf-card);
+  border: 2px solid var(--gf-ink);
+  box-shadow: var(--shadow-raised);
+  border-radius: var(--radius-md);
+}
+
+.sync-error-banner {
+  border: 2px solid var(--gf-ink) !important;
+  box-shadow: var(--shadow-hard-sm);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--gf-coral) !important;
+  background: rgba(var(--gf-coral-rgb), 0.08) !important;
+}
+
+.inbox-header-separator {
+  height: 2px;
+  background: var(--gf-ink);
+  margin: var(--space-2) 0;
+  width: 100%;
+}
+
+.otp-timer-critical {
+  background: var(--gf-coral) !important;
+  box-shadow: 0 0 8px rgba(var(--gf-coral-rgb), 0.4);
 }
 
 /* ═══════════════════════════════════════════════════════════

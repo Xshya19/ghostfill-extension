@@ -33,6 +33,13 @@ const t = (key: string): string => {
   }
 };
 
+const SPRING_TRANSITION: Transition = {
+  type: 'spring',
+  stiffness: 200,
+  damping: 28,
+  mass: 0.9,
+};
+
 const App: React.FC = () => {
   const view = useAppStore((s) => s.view);
   const setView = useAppStore((s) => s.setView);
@@ -50,6 +57,24 @@ const App: React.FC = () => {
 
   // Track toast timeout to prevent race conditions
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup toast timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Cleanup toast timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const showToast = useCallback(
     (message: string) => {
@@ -260,12 +285,7 @@ const App: React.FC = () => {
 
   const dismissOnboarding = handleDismissOnboarding;
 
-  const springTransition: Transition = {
-    type: 'spring',
-    stiffness: 200,
-    damping: 28,
-    mass: 0.9,
-  };
+
 
   return (
     <div className="app">
@@ -291,7 +311,7 @@ const App: React.FC = () => {
                 hidden: { opacity: 0, scale: 0.95, y: 20, x: '-50%' },
                 visible: { opacity: 1, scale: 1, y: 0, x: '-50%' },
               }}
-              transition={springTransition}
+              transition={SPRING_TRANSITION}
             >
               {toast}
             </motion.div>
@@ -307,7 +327,7 @@ const App: React.FC = () => {
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 1.02 }}
-              transition={springTransition}
+              transition={SPRING_TRANSITION}
               className="onboarding-overlay"
             >
               <motion.div
@@ -389,7 +409,7 @@ const App: React.FC = () => {
               initial={{ opacity: 0, scale: 0.98, x: -16 }}
               animate={{ opacity: 1, scale: 1, x: 0 }}
               exit={{ opacity: 0, scale: 1.02, x: 16 }}
-              transition={springTransition}
+              transition={SPRING_TRANSITION}
               className="app-view-container"
             >
               <Header onOpenSettings={handleOpenSettings} onOpenHelp={handleOpenHelp} />
@@ -408,7 +428,7 @@ const App: React.FC = () => {
               initial={{ opacity: 0, scale: 0.98, x: 16 }}
               animate={{ opacity: 1, scale: 1, x: 0 }}
               exit={{ opacity: 0, scale: 1.02, x: -16 }}
-              transition={springTransition}
+              transition={SPRING_TRANSITION}
               className="app-view-container"
             >
               <Header onOpenSettings={handleOpenSettings} onOpenHelp={handleOpenHelp} />
@@ -432,7 +452,7 @@ const App: React.FC = () => {
               initial={{ opacity: 0, scale: 1.02, x: 16 }}
               animate={{ opacity: 1, scale: 1, x: 0 }}
               exit={{ opacity: 0, scale: 0.98, x: -16 }}
-              transition={springTransition}
+              transition={SPRING_TRANSITION}
             >
               <div className="header detail-view-header">
                 <div className="header-left detail-view-header-left">
@@ -462,30 +482,40 @@ const App: React.FC = () => {
           )}
         </AnimatePresence>
 
-        {showHelp && (
-          <div className="modal-overlay help-modal-overlay" onClick={() => setShowHelp(false)}>
+        <AnimatePresence>
+          {showHelp && (
             <motion.div
-              className="glass-card help-card"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="help-modal-title"
-              onClick={(e) => e.stopPropagation()}
-              initial={{ opacity: 0, y: 100 }}
-              animate={{ opacity: 1, y: 0 }}
+              className="modal-overlay help-modal-overlay"
+              onClick={() => setShowHelp(false)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
             >
-              <h2 id="help-modal-title" className="help-title">
-                {t('helpTitle')}
-              </h2>
-              <p className="help-desc">{t('helpDescription')}</p>
-              <button
-                className="ios-button button-primary help-btn"
-                onClick={() => setShowHelp(false)}
+              <motion.div
+                className="glass-card help-card"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="help-modal-title"
+                onClick={(e) => e.stopPropagation()}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={SPRING_TRANSITION}
               >
-                {t('dismiss')}
-              </button>
+                <h2 id="help-modal-title" className="help-title">
+                  {t('helpTitle')}
+                </h2>
+                <p className="help-desc">{t('helpDescription')}</p>
+                <button
+                  className="ios-button button-primary help-btn"
+                  onClick={() => setShowHelp(false)}
+                >
+                  {t('dismiss')}
+                </button>
+              </motion.div>
             </motion.div>
-          </div>
-        )}
+          )}
+        </AnimatePresence>
       </main>
     </div>
   );

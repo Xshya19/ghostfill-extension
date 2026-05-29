@@ -19,6 +19,7 @@ import { safeSendMessage } from '../../utils/messaging';
 import { useOTPExtractor } from '../hooks/useOTPExtractor';
 
 import { useStorageSubscription } from '../hooks/useStorageSubscription';
+import { ConfirmModal } from './ConfirmModal';
 import { EmailAvatar } from './EmailAvatar';
 
 // i18n helper
@@ -50,6 +51,13 @@ function getEmailTimestamp(email: Email): number {
     ? email.date
     : Date.now();
 }
+
+const SPRING_TRANSITION: Transition = {
+  type: 'spring',
+  stiffness: 260,
+  damping: 25,
+  mass: 0.8,
+};
 
 interface Props {
   onToast: (message: string) => void;
@@ -83,50 +91,9 @@ const EmailGenerator: React.FC<Props> = ({
   const latestInbox = React.useMemo(() => inbox.slice(0, 50), [inbox]);
   const { otps: emailOTPs, links: emailLinks } = useOTPExtractor(latestInbox);
 
-  // Focus trap sub-refs and escape key listener for modal accessibility (H7)
-  const confirmCancelBtnRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && showConfirm) {
-        setShowConfirm(false);
-        return;
-      }
-      if (e.key === 'Tab' && showConfirm) {
-        const modal = document.querySelector('.confirmation-modal') as HTMLElement | null;
-        if (modal) {
-          const focusable = modal.querySelectorAll<HTMLElement>('button');
-          if (focusable.length >= 2) {
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            if (e.shiftKey) {
-              if (document.activeElement === first) {
-                e.preventDefault();
-                last?.focus();
-              }
-            } else {
-              if (document.activeElement === last) {
-                e.preventDefault();
-                first?.focus();
-              }
-            }
-          }
-        }
-      }
-    };
-    if (showConfirm) {
-      window.addEventListener('keydown', handleKeyDown);
-      confirmCancelBtnRef.current?.focus();
-    }
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showConfirm]);
 
-  // iOS Spring Transition Config
-  const springTransition: Transition = {
-    type: 'spring',
-    stiffness: 260,
-    damping: 25,
-    mass: 0.8,
-  };
+
+
 
   const checkInbox = useCallback(
     async (showToast = true): Promise<boolean> => {
@@ -282,7 +249,7 @@ const EmailGenerator: React.FC<Props> = ({
         <>
           {/* Active Identity Card - HIDE IN INBOX VARIANT */}
           {variant === 'default' && (
-            <motion.div className="glass-card email-generator-card" transition={springTransition}>
+            <motion.div className="glass-card email-generator-card" transition={SPRING_TRANSITION}>
               {/* Decorative glow */}
               <div className="email-glow" />
 
@@ -489,7 +456,7 @@ const EmailGenerator: React.FC<Props> = ({
                           initial={{ opacity: 0, y: 16 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{
-                            delay: i * 0.05,
+                            delay: Math.min(i * 0.03, 0.3),
                             type: 'spring',
                             stiffness: 260,
                             damping: 25,
@@ -596,7 +563,7 @@ const EmailGenerator: React.FC<Props> = ({
                           initial={{ opacity: 0, y: 16 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{
-                            delay: i * 0.05,
+                            delay: Math.min(i * 0.03, 0.3),
                             type: 'spring',
                             stiffness: 260,
                             damping: 25,
@@ -742,61 +709,19 @@ const EmailGenerator: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Confirmation Modal overlay */}
-      <AnimatePresence>
-        {showConfirm && (
-          <motion.div
-            className="modal-overlay"
-            onClick={() => setShowConfirm(false)}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <motion.div
-              className="glass-card confirmation-modal"
-              onClick={(e) => e.stopPropagation()}
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="modal-title"
-            >
-              <h3 id="modal-title">
-                Generate New Email?
-              </h3>
-              <p>
-                Your current temporary email and its inbox will be permanently lost. Are you sure
-                you want to generate a new one?
-              </p>
-              <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
-                <motion.button
-                  ref={confirmCancelBtnRef}
-                  className="ios-button button-secondary"
-                  style={{ flex: 1 }}
-                  onClick={() => setShowConfirm(false)}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.96 }}
-                >
-                  Cancel
-                </motion.button>
-                <motion.button
-                  className="ios-button button-primary"
-                  style={{ flex: 1, background: 'var(--error)' }}
-                  onClick={() => {
-                    setShowConfirm(false);
-                    onGenerate();
-                  }}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.96 }}
-                >
-                  Generate
-                </motion.button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <ConfirmModal
+        isOpen={showConfirm}
+        title="Generate New Email?"
+        message="Your current temporary email and its inbox will be permanently lost. This action cannot be undone."
+        confirmText="Generate"
+        cancelText="Cancel"
+        onConfirm={() => {
+          setShowConfirm(false);
+          onGenerate();
+        }}
+        onCancel={() => setShowConfirm(false)}
+        isDestructive={true}
+      />
     </div>
   );
 };

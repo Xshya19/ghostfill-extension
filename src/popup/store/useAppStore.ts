@@ -24,11 +24,3 @@ export const useAppStore = create<AppState>((set) => ({
   setIsFirstTime: (isFirstTime) => set({ isFirstTime }),
 }));
 
-export const selectView = (state: AppState) => state.view;
-export const selectSetView = (state: AppState) => state.setView;
-export const selectLoading = (state: AppState) => state.loading;
-export const selectSetLoading = (state: AppState) => state.setLoading;
-export const selectToast = (state: AppState) => state.toast;
-export const selectSetToast = (state: AppState) => state.setToast;
-export const selectIsFirstTime = (state: AppState) => state.isFirstTime;
-export const selectSetIsFirstTime = (state: AppState) => state.setIsFirstTime;

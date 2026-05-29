@@ -16,6 +16,8 @@
 // └────────────────────────────────────────────────────────────────────────┘
 // ═══════════════════════════════════════════════════════════════════════════════
 
+import { classifyField, shouldDecorateField, getFieldTooltip, PageContext, FieldType } from '../shared/fieldClassifier';
+import { generateHostTokens } from '../shared/tokens';
 import { GenerateEmailResponse, GeneratePasswordResponse, GetLastOTPResponse } from '../types';
 import { TIMING } from '../utils/constants';
 import { debounce } from '../utils/debounce';
@@ -27,7 +29,7 @@ import { AutoFiller } from './autoFiller';
 import { FieldAnalyzer } from './fieldAnalyzer';
 import { pageStatus } from './pageStatus';
 import { IconSystem } from './utils/fab-icons';
-import { PageAnalyzer, PageType, PageAnalysis, safeQuerySelector } from './utils/pageAnalyzer';
+import { PageAnalyzer, PageType, PageAnalysis } from './utils/pageAnalyzer';
 
 const log = createLogger('FloatingButton');
 
@@ -59,15 +61,8 @@ const BUTTON_SIZE_PX: Readonly<Record<ButtonSize, number>> = {
 /** Viewport margin to prevent edge clipping */
 const VIEWPORT_MARGIN = 8;
 
-/** Minimum field dimensions to show button */
-const MIN_FIELD_WIDTH = 30;
-const MIN_FIELD_HEIGHT = 15;
-
 /** Off-screen sentinel position */
 const OFF_SCREEN = -9999;
-
-/** Maximum label text length to scan from proximity */
-const MAX_LABEL_SCAN_LENGTH = 60;
 
 /** z-index safety margin */
 const Z_INDEX_BOOST = 100;
@@ -173,259 +168,7 @@ function isFormInputElement(el: unknown): el is HTMLElement {
 //  §3  F I E L D   C O N T E X T   A N A L Y Z E R
 // ═══════════════════════════════════════════════════════════════
 
-class FieldContext {
-  private static readonly EXCLUDED_TYPES = new Set([
-    'hidden',
-    'submit',
-    'button',
-    'reset',
-    'checkbox',
-    'radio',
-    'file',
-    'image',
-    'range',
-    'color',
-  ]);
-
-  private static readonly SEARCH_PATTERNS = /search|query|q$|filter|find/i;
-
-  private static readonly TOOLTIPS: Readonly<Record<ButtonMode, string>> = {
-    magic: 'GhostFill — Auto-fill this form',
-    email: 'Fill email address',
-    password: 'Fill password',
-    otp: 'Paste verification code',
-    user: 'Fill name',
-    form: 'Auto-fill entire form',
-  };
-
-  // ── Mode classification patterns ────────────────────────
-  private static readonly OTP_AUTOCOMPLETE = new Set(['one-time-code', 'one-time-password']);
-  private static readonly OTP_COMBINED_PATTERN =
-    /otp|one[-_\s]?time|verification[-_\s]?code|passcode|security[-_\s]?code|check[-_\s]?code|verify[-_\s]?code/i;
-  private static readonly CAPTCHA_PATTERN =
-    /captcha|recaptcha|hcaptcha|turnstile|anti[-_\s]?bot|bot[-_\s]?check|robot/i;
-  private static readonly OTP_EXACT_NAMES = new Set([
-    'code',
-    'pin',
-    'token',
-    'checkcode',
-    'verifycode',
-  ]);
-  private static readonly EMAIL_NAME_PATTERN = /e[-_]?mail/i;
-  private static readonly PASSWORD_NAME_PATTERN = /password|passwd|pwd/i;
-  private static readonly USERNAME_NAME_PATTERN = /user[-_]?name|login[-_]?name|login[-_]?id/i;
-  private static readonly NAME_FIELD_PATTERN =
-    /first[-_]?name|last[-_]?name|full[-_]?name|given[-_]?name|family[-_]?name|surname|display[-_]?name/i;
-  private static readonly CREDIT_CARD_PATTERN = /card[-_]?number|cvc|cvv|ccv|expiration|expiry/i;
-  private static readonly CREDIT_CARD_AUTOCOMPLETE = new Set(['cc-number', 'cc-csc']);
-  private static readonly ADDRESS_PATTERN = /street|address|city|country|state|zip|postal/i;
-
-  static getMode(field: HTMLElement, pageType?: PageType): ButtonMode {
-    if (!isFormInputElement(field)) {
-      return 'magic';
-    }
-
-    const input = field as HTMLInputElement;
-    const type = (input.type ?? '').toLowerCase();
-    const name = (input.name ?? '').toLowerCase();
-    const id = (input.id ?? '').toLowerCase();
-    const placeholder = (input.placeholder ?? '').toLowerCase();
-    const autocomplete = (input.autocomplete ?? '').toLowerCase();
-    const ariaLabel = (input.getAttribute('aria-label') ?? '').toLowerCase();
-    const label = this.findLabelText(input).toLowerCase();
-    const combined = `${type} ${name} ${id} ${placeholder} ${autocomplete} ${ariaLabel} ${label}`;
-    const nameId = name + id;
-
-    const isVerificationPage =
-      pageType === 'verification' || pageType === '2fa' || pageType === 'password-reset';
-
-    // 1. OTP / Code (Highest Priority)
-    if (this.OTP_AUTOCOMPLETE.has(autocomplete)) {
-      return 'otp';
-    }
-    if (!this.CAPTCHA_PATTERN.test(combined) && this.OTP_COMBINED_PATTERN.test(combined)) {
-      return 'otp';
-    }
-    if (
-      !this.CAPTCHA_PATTERN.test(combined) &&
-      (this.OTP_EXACT_NAMES.has(name) || this.OTP_EXACT_NAMES.has(id))
-    ) {
-      return 'otp';
-    }
-    if (
-      isVerificationPage &&
-      (input.inputMode === 'numeric' || (input.maxLength >= 4 && input.maxLength <= 10))
-    ) {
-      return 'otp';
-    }
-
-    // 2. Email
-    if (type === 'email') {
-      return 'email';
-    }
-    if (isVerificationPage) {
-      if (/@/.test(placeholder) || /enter[\s._-]*email/i.test(label)) {
-        return 'email';
-      }
-    } else {
-      if (this.EMAIL_NAME_PATTERN.test(nameId) || /email/i.test(label) || /@/.test(placeholder)) {
-        return 'email';
-      }
-    }
-
-    // 3. Password
-    if (type === 'password' || this.PASSWORD_NAME_PATTERN.test(nameId)) {
-      return 'password';
-    }
-
-    // 4. Username → email mode (unless verification page)
-    if (!isVerificationPage) {
-      if (this.USERNAME_NAME_PATTERN.test(nameId) || autocomplete === 'username') {
-        return 'email';
-      }
-    }
-
-    // 5. Credit Card Fields → generic magic
-    if (
-      this.CREDIT_CARD_PATTERN.test(combined) ||
-      this.CREDIT_CARD_AUTOCOMPLETE.has(autocomplete)
-    ) {
-      return 'magic';
-    }
-
-    // 6. Search Fields → generic magic
-    if (type === 'search' || this.SEARCH_PATTERNS.test(combined)) {
-      return 'magic';
-    }
-
-    // 7. Name fields
-    if (this.NAME_FIELD_PATTERN.test(nameId)) {
-      return 'user';
-    }
-    if (/name/i.test(nameId) && !/user/i.test(nameId) && !/company/i.test(nameId)) {
-      return 'user';
-    }
-
-    // 8. Address fields → generic magic
-    if (this.ADDRESS_PATTERN.test(combined)) {
-      return 'magic';
-    }
-
-    // 9. ML Fallback (New Intelligence)
-    // If we're still 'magic' but have a strong signal from field analyzer, use it.
-    // (In a real scenario, we'd pass the label to IntentClassifier.predict)
-    if (pageType === 'signup' && /user|name|profile/i.test(label)) {
-      return 'user';
-    }
-
-    return 'magic';
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  static getTooltip(mode: ButtonMode, _pageType: PageType): string {
-    return this.TOOLTIPS[mode] ?? this.TOOLTIPS.magic;
-  }
-
-  static shouldShowButton(field: HTMLElement): boolean {
-    if (!isFormInputElement(field)) {
-      return false;
-    }
-
-    const input = field as HTMLInputElement;
-
-    // Type exclusions
-    if (field instanceof HTMLInputElement && this.EXCLUDED_TYPES.has(field.type)) {
-      return false;
-    }
-    if (field instanceof HTMLInputElement && field.type === 'search') {
-      return false;
-    }
-
-    // Name-based search exclusion
-    const name = (input.name || input.id || input.placeholder || '').toLowerCase();
-    if (this.SEARCH_PATTERNS.test(name)) {
-      return false;
-    }
-
-    // Single-char split OTP fields — handled by GhostLabel, not FAB
-    if (input.maxLength === 1) {
-      return false;
-    }
-
-    // Disabled or readonly
-    if (input.disabled || input.readOnly) {
-      return false;
-    }
-
-    // Too small to be a real input
-    const rect = field.getBoundingClientRect();
-    if (rect.width < MIN_FIELD_WIDTH || rect.height < MIN_FIELD_HEIGHT) {
-      return false;
-    }
-
-    // Hidden via CSS
-    const style = window.getComputedStyle(field);
-    if (style.display === 'none' || style.visibility === 'hidden') {
-      return false;
-    }
-
-    return true;
-  }
-
-  static findLabelText(input: HTMLElement): string {
-    // 1. Explicit label via `for` attribute
-    if (input.id) {
-      const label = safeQuerySelector<HTMLLabelElement>(
-        document,
-        `label[for="${escapeCSS(input.id)}"]`
-      );
-      if (label?.textContent) {
-        return label.textContent.trim();
-      }
-    }
-
-    // 2. Ancestor label
-    const parentLabel = input.closest('label');
-    if (parentLabel?.textContent) {
-      return parentLabel.textContent.trim();
-    }
-
-    // 3. aria-label
-    const ariaLabel = input.getAttribute('aria-label');
-    if (ariaLabel) {
-      return ariaLabel.trim();
-    }
-
-    // 4. aria-labelledby
-    const labelledBy = input.getAttribute('aria-labelledby');
-    if (labelledBy) {
-      const labelEl = document.getElementById(labelledBy);
-      if (labelEl?.textContent) {
-        return labelEl.textContent.trim();
-      }
-    }
-
-    // 5. Proximity: previous sibling or parent's previous sibling
-    try {
-      const prev = input.previousElementSibling;
-      if (prev?.textContent && prev.textContent.length < MAX_LABEL_SCAN_LENGTH) {
-        return prev.textContent.trim();
-      }
-
-      const parent = input.parentElement;
-      if (parent) {
-        const pPrev = parent.previousElementSibling;
-        if (pPrev?.textContent && pPrev.textContent.length < MAX_LABEL_SCAN_LENGTH) {
-          return pPrev.textContent.trim();
-        }
-      }
-    } catch {
-      /* ignore */
-    }
-
-    return '';
-  }
-}
+// FieldContext removed and unified into src/shared/fieldClassifier.ts
 
 // ═══════════════════════════════════════════════════════════════
 //  §4  S M A R T   P O S I T I O N E R
@@ -1051,7 +794,8 @@ export class FloatingButton {
     this.container.style.setProperty('display', 'block', 'important');
     setHTML(this.button, IconSystem.get(this.mode));
     this.button.classList.remove('gf-loading', 'gf-success', 'gf-error');
-    this.button.setAttribute('aria-label', FieldContext.getTooltip(this.mode, this.getPageType()));
+    const tooltipMode = this.mode === 'magic' ? 'generic' : (this.mode as FieldType);
+    this.button.setAttribute('aria-label', getFieldTooltip(tooltipMode));
     this.updateBadge();
     this.scheduleAutoHide();
   }
@@ -1775,7 +1519,8 @@ export class FloatingButton {
     if (!this.tooltip) {
       return;
     }
-    this.tooltip.textContent = FieldContext.getTooltip(this.mode, this.getPageType());
+    const tooltipMode = this.mode === 'magic' ? 'generic' : (this.mode as FieldType);
+    this.tooltip.textContent = getFieldTooltip(tooltipMode);
     this.tooltipTimeout = setTimeout(() => {
       if (!this.destroyed) {
         this.tooltip?.classList.add('gf-tooltip-visible');
@@ -1975,7 +1720,7 @@ export class FloatingButton {
     // Invalidate page analysis cache on focus to detect SPA changes
     this.pageAnalysis = null;
 
-    if (isFormInputElement(target) && FieldContext.shouldShowButton(target)) {
+    if (isFormInputElement(target) && shouldDecorateField(target as HTMLInputElement)) {
       this.showNearField(target);
     }
   }, TIMING_MS.FOCUS_DEBOUNCE) as any;
@@ -2113,7 +1858,14 @@ export class FloatingButton {
     this.currentField = field;
     this.currentFieldRef = new WeakRef(field);
     this.currentFieldRect = null;
-    this.mode = FieldContext.getMode(field, analysis.pageType);
+    let pageContext: PageContext = 'default';
+    if (analysis.pageType === 'signup') {pageContext = 'signup';}
+    else if (analysis.pageType === 'login') {pageContext = 'login';}
+    else if (analysis.pageType === 'verification') {pageContext = 'verification';}
+    else if (analysis.pageType === '2fa') {pageContext = '2fa';}
+    else if (analysis.pageType === 'password-reset') {pageContext = 'password-reset';}
+    const classified = classifyField(field as HTMLInputElement, pageContext);
+    this.mode = classified === 'generic' ? 'magic' : classified;
 
     // Observe field resize
     if (this.fieldResizeObserver) {
@@ -2402,7 +2154,7 @@ export class FloatingButton {
       if (!(el instanceof HTMLElement)) {
         return false;
       }
-      return FieldContext.shouldShowButton(el);
+      return shouldDecorateField(el as HTMLInputElement);
     });
 
     for (const field of targets.slice(0, 3)) {
@@ -2454,23 +2206,7 @@ export class FloatingButton {
   font-family: "Space Grotesk", "Inter", sans-serif;
 
   /* Memphis Neon Palette mapped to FAB */
-  --gf-bg: #10101C;
-  --gf-surface: #18152A;
-  --gf-card: #211B3D;
-  --gf-ink: #000000;
-  --gf-cream: #FFF3D6;
-  --gf-magenta: #FF3BD4;
-  --gf-cyan: #20F4FF;
-  --gf-mint: #62F2B3;
-  --gf-coral: #FF6A4D;
-  --gf-yellow: #FFD84D;
-  --gf-violet: #8B5CFF;
-
-  --gf-cyan-rgb: 32, 244, 255;
-  --gf-magenta-rgb: 255, 59, 212;
-  --gf-violet-rgb: 139, 92, 255;
-  --gf-mint-rgb: 98, 242, 179;
-  --gf-coral-rgb: 255, 106, 77;
+  ${generateHostTokens()}
 
   --brand: var(--gf-magenta);
   --brand-dark: #D41FA7;

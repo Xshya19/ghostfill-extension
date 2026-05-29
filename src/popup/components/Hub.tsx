@@ -1,4 +1,4 @@
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   Mail,
   Lock,
@@ -19,6 +19,8 @@ import { copyToClipboard } from '../../utils/helpers';
 import { safeSendMessage } from '../../utils/messaging';
 import { useOTPExtractor } from '../hooks/useOTPExtractor';
 import { useStorageSubscription } from '../hooks/useStorageSubscription';
+import { ConfirmModal } from './ConfirmModal';
+import { CountdownTimer } from './CountdownTimer';
 import { EmailAvatar } from './EmailAvatar';
 
 // i18n helper
@@ -44,6 +46,32 @@ interface Props {
   onToast: (message: string) => void;
 }
 
+const CONTAINER_VARIANTS = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.1,
+      delayChildren: 0.1,
+    },
+  },
+};
+
+const ITEM_VARIANTS = {
+  hidden: { opacity: 0, y: 12, scale: 0.97 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: {
+      type: 'spring' as const,
+      stiffness: 200,
+      damping: 28,
+      mass: 0.9,
+    },
+  },
+};
+
 const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast }) => {
   // State
   const [emailCopied, setEmailCopied] = useState(false);
@@ -55,76 +83,11 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
   const [emailCooldown, setEmailCooldown] = useState(false);
   const [passwordCooldown, setPasswordCooldown] = useState(false);
   const [showConfirmEmail, setShowConfirmEmail] = useState(false);
-  const cancelBtnRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && showConfirmEmail) {
-        setShowConfirmEmail(false);
-        return;
-      }
-      if (e.key === 'Tab' && showConfirmEmail) {
-        const modal = document.querySelector('.confirmation-modal') as HTMLElement | null;
-        if (modal) {
-          const focusable = modal.querySelectorAll<HTMLElement>('button');
-          if (focusable.length >= 2) {
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            if (e.shiftKey) {
-              if (document.activeElement === first) {
-                e.preventDefault();
-                last?.focus();
-              }
-            } else {
-              if (document.activeElement === last) {
-                e.preventDefault();
-                first?.focus();
-              }
-            }
-          }
-        }
-      }
-    };
-    if (showConfirmEmail) {
-      window.addEventListener('keydown', handleKey);
-      cancelBtnRef.current?.focus();
-    }
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [showConfirmEmail]);
 
-  // Expiry Timer Logic
-  const [timeLeft, setTimeLeft] = useState<string>('');
-  useEffect(() => {
-    if (!emailAccount || !emailAccount.expiresAt) {
-      setTimeLeft('');
-      return;
-    }
 
-    // eslint-disable-next-line prefer-const
-    let intervalId: ReturnType<typeof setInterval>;
 
-    const updateTimer = () => {
-      const remaining = emailAccount.expiresAt - Date.now();
-      if (remaining <= 0) {
-        setTimeLeft(t('expiredLabel') || 'Expired');
-        clearInterval(intervalId);
-        return;
-      }
-      const totalMins = Math.floor(remaining / 60000);
-      if (totalMins >= 60) {
-        const hours = Math.floor(totalMins / 60);
-        const mins = totalMins % 60;
-        setTimeLeft(`${hours}h ${mins}m`);
-      } else {
-        const secs = Math.floor((remaining % 60000) / 1000);
-        setTimeLeft(`${totalMins}:${secs < 10 ? '0' : ''}${secs}`);
-      }
-    };
 
-    updateTimer();
-    intervalId = setInterval(updateTimer, 1000);
-    return () => clearInterval(intervalId);
-  }, [emailAccount]);
 
   // Switch to Push-State UI instead of polling
   const rawInbox = useStorageSubscription('inbox', []);
@@ -333,7 +296,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
         if (generatingEmailTimeoutRef.current) {
           clearTimeout(generatingEmailTimeoutRef.current);
         }
-        generatingEmailTimeoutRef.current = setTimeout(() => setIsGeneratingEmail(false), 2000);
+        generatingEmailTimeoutRef.current = setTimeout(() => setIsGeneratingEmail(false), 5000);
       } catch {
         onToast('Failed to generate email. Please try again.');
       }
@@ -353,32 +316,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
 
   // formatRelativeTime and extractOTP imported from utils/formatters
 
-  // Animation Variants
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.1,
-        delayChildren: 0.1,
-      },
-    },
-  };
 
-  const itemVariants = {
-    hidden: { opacity: 0, y: 12, scale: 0.97 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      scale: 1,
-      transition: {
-        type: 'spring' as const,
-        stiffness: 200,
-        damping: 28,
-        mass: 0.9,
-      },
-    },
-  };
 
   const { otps: emailOTPs, links: emailLinks } = useOTPExtractor(inboxEmails.slice(0, 1));
 
@@ -393,14 +331,14 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
   return (
     <motion.div
       className="ghost-dashboard"
-      variants={containerVariants}
+      variants={CONTAINER_VARIANTS}
       initial="hidden"
       animate="visible"
     >
       {/* ═══════════════════════════════════════════════════════════
                  🎴 IDENTITY CARD - Combined Email & Password
                ═══════════════════════════════════════════════════════════ */}
-      <motion.div className="glass-card identity-card" variants={itemVariants}>
+      <motion.div className="glass-card identity-card" variants={ITEM_VARIANTS}>
         {/* Email Row */}
         <div className="identity-row">
           <div className="identity-icon">
@@ -409,16 +347,10 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
           <div className="identity-content">
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span className="identity-label">{t('emailLabel')}</span>
-              {timeLeft && (
-                <span
-                  className={`expiry-badge ${timeLeft.includes(':') || timeLeft.includes('m') ? '' : 'expired'}`}
-                >
-                  {timeLeft}
-                </span>
-              )}
+              <CountdownTimer expiresAt={emailAccount?.expiresAt} expiredLabel={t('expiredLabel') || 'Expired'} />
             </div>
             <span
-              className={`identity-value hub-val hub-val-email ${!emailAccount ? 'shimmer' : ''} ${timeLeft.toLowerCase().includes('expired') ? 'text-dimmed' : ''}`}
+              className={`identity-value hub-val hub-val-email ${!emailAccount ? 'shimmer' : ''}`}
             >
               {emailAccount?.fullEmail || t('syncingIdentity')}
             </span>
@@ -507,7 +439,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       {/* ═══════════════════════════════════════════════════════════
                  📥 INBOX WITH EMAIL LIST
                ═══════════════════════════════════════════════════════════ */}
-      <motion.div className="inbox-section" variants={itemVariants}>
+      <motion.div className="inbox-section" variants={ITEM_VARIANTS}>
         <div className="inbox-header-row">
           <div className="inbox-title-group">
             <Inbox size={22} />
@@ -601,57 +533,16 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
         </div>
       </motion.div>
 
-      {/* Confirmation Modal overlay (Replaces window.confirm H4) */}
-      <AnimatePresence>
-        {showConfirmEmail && (
-          <motion.div
-            className="modal-overlay"
-            onClick={() => setShowConfirmEmail(false)}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <motion.div
-              className="glass-card confirmation-modal"
-              onClick={(e) => e.stopPropagation()}
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="hub-modal-title"
-            >
-              <h3 id="hub-modal-title">
-                Generate New Email?
-              </h3>
-              <p>
-                Your current temporary email and its inbox will be permanently lost.
-              </p>
-              <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
-                <motion.button
-                  ref={cancelBtnRef}
-                  className="ios-button button-secondary"
-                  style={{ flex: 1 }}
-                  onClick={() => setShowConfirmEmail(false)}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.96 }}
-                >
-                  Cancel
-                </motion.button>
-                <motion.button
-                  className="ios-button button-primary"
-                  style={{ flex: 1, background: 'var(--error)' }}
-                  onClick={executeGenerateEmail}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.96 }}
-                >
-                  Generate
-                </motion.button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <ConfirmModal
+        isOpen={showConfirmEmail}
+        title="Generate New Email?"
+        message="Your current temporary email and its inbox will be permanently lost. This action cannot be undone."
+        confirmText="Generate"
+        cancelText="Cancel"
+        onConfirm={executeGenerateEmail}
+        onCancel={() => setShowConfirmEmail(false)}
+        isDestructive={true}
+      />
     </motion.div>
   );
 };
