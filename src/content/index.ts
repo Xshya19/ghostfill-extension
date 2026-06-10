@@ -588,6 +588,11 @@ function init(): void {
     // Initialize OTP page detection for auto-fill
     runSafely('otpPageDetector.init', () => otpPageDetector.init());
 
+    // Warm up the ONNX model in the offscreen document so it's ready when
+    // the user clicks to fill. Fire-and-forget — never blocks startup.
+    runSafely('fieldAnalyzer.prewarmML', () => fieldAnalyzer.prewarmML());
+
+
     // Listen for messages from background
     if (chrome?.runtime?.onMessage) {
       chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
