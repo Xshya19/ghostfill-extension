@@ -5,12 +5,9 @@
  * Used by both the FAB (floatingButton.ts) and GhostLabel (ghostLabel.ts)
  * to ensure consistent behaviour across all content-script UI layers.
  *
- * Previously these two components had diverging logic:
- *   - FAB checked CAPTCHA patterns; GhostLabel did not.
- *   - FAB was page-context-aware; GhostLabel was not.
- *   - OTP `maxLength` heuristic was applied unconditionally in GhostLabel.
- *
- * This module unifies all classification into a single, tested function.
+ * Classification is deterministic and side-effect free, so it can be unit tested
+ * in isolation. DOM access is confined to label discovery and visibility checks,
+ * each guarded against cross-origin / detached-node exceptions.
  */
 
 export type FieldType = 'email' | 'password' | 'otp' | 'user' | 'generic';
@@ -23,8 +20,7 @@ export type PageContext =
   | '2fa'
   | 'password-reset';
 
-// ── Exclusion Patterns ──────────────────────────────────────────
-
+// ── Exclusion Patterns ─────────────────────────────────
 const EXCLUDED_INPUT_TYPES = new Set([
   'hidden',
   'submit',
@@ -39,43 +35,48 @@ const EXCLUDED_INPUT_TYPES = new Set([
   'search',
 ]);
 
-const SEARCH_PATTERN = /search|query|q$|filter|find/i;
-
+// Standalone search-intent tokens. The bare "q" field name is handled separately
+// (exact match) rather than via an anchored alternative, which never worked
+// reliably inside a multi-token descriptor string.
+const SEARCH_PATTERN = /search|query|filter|find/i;
 const CAPTCHA_PATTERN =
   /captcha|recaptcha|hcaptcha|turnstile|anti[-_\s]?bot|bot[-_\s]?check|robot/i;
 
-// ── Detection Patterns ──────────────────────────────────────────
-
-const OTP_AUTOCOMPLETE = new Set(['one-time-code', 'one-time-password']);
-
+// ── Detection Patterns ────────────────────────────────
 const OTP_COMBINED =
   /otp|one[-_\s]?time|verification[-_\s]?code|passcode|security[-_\s]?code|check[-_\s]?code|verify[-_\s]?code/i;
-
-const OTP_EXACT_NAMES = new Set([
-  'code',
-  'pin',
-  'token',
-  'checkcode',
-  'verifycode',
-]);
-
+const OTP_EXACT_NAMES = new Set(['code', 'pin', 'token', 'checkcode', 'verifycode']);
 const EMAIL_NAME = /e[-_]?mail/i;
 const PASSWORD_NAME = /password|passwd|pwd/i;
 const USERNAME_NAME = /user[-_]?name|login[-_]?name|login[-_]?id/i;
 const NAME_FIELD =
-  /first[-_]?name|last[-_]?name|full[-_]?name|given[-_]?name|family[-_]?name|surname|display[-_]?name/i;
-
+  /first[-_]?name|last[-_]?name|full[-_]?name|given[-_]?name|family[-_]?name|surname|display[-_]?name|^first$|^last$|fname|lname/i;
 const CREDIT_CARD = /card[-_]?number|cvc|cvv|ccv|expiration|expiry/i;
-const CREDIT_CARD_AUTOCOMPLETE = new Set(['cc-number', 'cc-csc']);
 const ADDRESS = /street|address|city|country|state|zip|postal/i;
+// "name" catch-all should never fire for these clearly non-person fields.
+const NON_PERSON_NAME = /user|company|file|host|domain|nick|brand|product|folder/i;
 
-// ── Public API ──────────────────────────────────────────────────
+// Autocomplete is a space-separated token list (e.g. "section-foo billing email").
+// Match against individual tokens rather than the whole attribute string.
+const OTP_AUTOCOMPLETE_TOKENS = new Set(['one-time-code', 'one-time-password']);
+const EMAIL_AUTOCOMPLETE_TOKENS = new Set(['email']);
+const USERNAME_AUTOCOMPLETE_TOKENS = new Set(['username']);
+const PASSWORD_AUTOCOMPLETE_TOKENS = new Set(['current-password', 'new-password']);
+const CREDIT_CARD_AUTOCOMPLETE_TOKENS = new Set([
+  'cc-number',
+  'cc-csc',
+  'cc-exp',
+  'cc-exp-month',
+  'cc-exp-year',
+  'cc-name',
+]);
 
+// ── Public API ──────────────────────────────────────
 /**
  * Classify an HTML input element into a GhostFill field type.
  *
- * The classification uses a priority stack:
- * 1. OTP / Verification codes (highest — verified by autocomplete or page context)
+ * Priority stack:
+ * 1. OTP / Verification codes (highest — autocomplete, name/label, or page context)
  * 2. Email addresses
  * 3. Passwords
  * 4. Usernames (mapped to email fill mode)
@@ -95,71 +96,96 @@ export function classifyField(
   const name = (input.name ?? '').toLowerCase();
   const id = (input.id ?? '').toLowerCase();
   const placeholder = (input.placeholder ?? '').toLowerCase();
-  const autocomplete = (input.autocomplete ?? '').toLowerCase();
+  const autocompleteRaw = (input.autocomplete ?? '').toLowerCase();
+  const autocompleteTokens = tokenize(autocompleteRaw);
   const ariaLabel = (input.getAttribute('aria-label') ?? '').toLowerCase();
   const label = findLabelText(input).toLowerCase();
-  const combined = `${type} ${name} ${id} ${placeholder} ${autocomplete} ${ariaLabel} ${label}`;
-  const nameId = name + id;
 
+  const combined = `${type} ${name} ${id} ${placeholder} ${autocompleteRaw} ${ariaLabel} ${label}`;
+  const nameId = name + id;
+  const isCaptcha = CAPTCHA_PATTERN.test(combined);
   const isVerificationPage =
-    pageContext === 'verification' ||
-    pageContext === '2fa' ||
-    pageContext === 'password-reset';
+    pageContext === 'verification' || pageContext === '2fa' || pageContext === 'password-reset';
 
   // ── 1. OTP / Verification Code (Highest Priority) ────────────
-  if (OTP_AUTOCOMPLETE.has(autocomplete)) {return 'otp';}
-  if (!CAPTCHA_PATTERN.test(combined) && OTP_COMBINED.test(combined)) {return 'otp';}
-  if (
-    !CAPTCHA_PATTERN.test(combined) &&
-    (OTP_EXACT_NAMES.has(name) || OTP_EXACT_NAMES.has(id))
-  )
-    {return 'otp';}
+  if (hasAnyToken(autocompleteTokens, OTP_AUTOCOMPLETE_TOKENS)) {
+    return 'otp';
+  }
+  if (!isCaptcha && OTP_COMBINED.test(combined)) {
+    return 'otp';
+  }
+  if (!isCaptcha && (OTP_EXACT_NAMES.has(name) || OTP_EXACT_NAMES.has(id))) {
+    return 'otp';
+  }
   if (
     isVerificationPage &&
+    !isCaptcha &&
     (input.inputMode === 'numeric' ||
+      isShortNumericPattern(input) ||
       (input.maxLength >= 4 && input.maxLength <= 10))
-  )
-    {return 'otp';}
-
-  // ── 2. Email ─────────────────────────────────────────────────
-  if (type === 'email') {return 'email';}
-  if (isVerificationPage) {
-    if (/@/.test(placeholder) || /enter[\s._-]*email/i.test(label)) {return 'email';}
-  } else {
-    if (
-      EMAIL_NAME.test(nameId) ||
-      /email/i.test(label) ||
-      /@/.test(placeholder)
-    )
-      {return 'email';}
+  ) {
+    return 'otp';
   }
 
-  // ── 3. Password ───────────────────────────────────────────────
-  if (type === 'password' || PASSWORD_NAME.test(nameId)) {return 'password';}
-  if (/password|passwd/.test(combined)) {return 'password';}
+  // ── 2. Email ───────────────────────────────────
+  if (type === 'email' || hasAnyToken(autocompleteTokens, EMAIL_AUTOCOMPLETE_TOKENS)) {
+    return 'email';
+  }
+  if (isVerificationPage) {
+    // On code-entry pages, only trust strong email signals to avoid hijacking the OTP box.
+    if (/@/.test(placeholder) || EMAIL_NAME.test(label)) {
+      return 'email';
+    }
+  } else if (EMAIL_NAME.test(nameId) || EMAIL_NAME.test(label) || /@/.test(placeholder)) {
+    return 'email';
+  }
+
+  // ── 3. Password ─────────────────────────────────
+  if (
+    type === 'password' ||
+    PASSWORD_NAME.test(nameId) ||
+    hasAnyToken(autocompleteTokens, PASSWORD_AUTOCOMPLETE_TOKENS) ||
+    /password|passwd/.test(combined)
+  ) {
+    return 'password';
+  }
 
   // ── 4. Username → email fill mode (not on verification pages) ─
   if (!isVerificationPage) {
-    if (USERNAME_NAME.test(nameId) || autocomplete === 'username') {return 'email';}
+    if (
+      USERNAME_NAME.test(nameId) ||
+      hasAnyToken(autocompleteTokens, USERNAME_AUTOCOMPLETE_TOKENS)
+    ) {
+      return 'email';
+    }
   }
 
-  // ── 5. Excluded → generic ─────────────────────────────────────
-  if (CREDIT_CARD.test(combined) || CREDIT_CARD_AUTOCOMPLETE.has(autocomplete))
-    {return 'generic';}
-  if (type === 'search' || SEARCH_PATTERN.test(combined)) {return 'generic';}
-  if (ADDRESS.test(combined)) {return 'generic';}
-
-  // ── 6. Name fields ────────────────────────────────────────────
-  if (NAME_FIELD.test(nameId)) {return 'user';}
+  // ── 5. Excluded → generic ───────────────────────────
   if (
-    /name/i.test(nameId) &&
-    !/user/i.test(nameId) &&
-    !/company/i.test(nameId)
-  )
-    {return 'user';}
+    CREDIT_CARD.test(combined) ||
+    hasAnyToken(autocompleteTokens, CREDIT_CARD_AUTOCOMPLETE_TOKENS)
+  ) {
+    return 'generic';
+  }
+  if (type === 'search' || SEARCH_PATTERN.test(combined) || name === 'q' || id === 'q') {
+    return 'generic';
+  }
+  if (ADDRESS.test(combined)) {
+    return 'generic';
+  }
 
-  // ── 7. Signup context boost ───────────────────────────────────
-  if (pageContext === 'signup' && /user|name|profile/i.test(label)) {return 'user';}
+  // ── 6. Name fields ────────────────────────────────
+  if (NAME_FIELD.test(nameId)) {
+    return 'user';
+  }
+  if (/name/i.test(nameId) && !NON_PERSON_NAME.test(nameId)) {
+    return 'user';
+  }
+
+  // ── 7. Signup context boost ──────────────────────────
+  if (pageContext === 'signup' && /user|name|profile/i.test(label)) {
+    return 'user';
+  }
 
   return 'generic';
 }
@@ -175,36 +201,50 @@ export function classifyField(
  * - Visually hidden or zero-size fields
  */
 export function shouldDecorateField(input: HTMLInputElement): boolean {
-  if (!input) {return false;}
+  if (!input) {
+    return false;
+  }
 
   const type = (input.type ?? '').toLowerCase();
+  if (EXCLUDED_INPUT_TYPES.has(type)) {
+    return false;
+  }
 
-  if (EXCLUDED_INPUT_TYPES.has(type)) {return false;}
-  if (type === 'search') {return false;}
-
-  const nameIdPlaceholder = (
-    (input.name || '') +
-    (input.id || '') +
-    (input.placeholder || '')
-  ).toLowerCase();
-  if (SEARCH_PATTERN.test(nameIdPlaceholder)) {return false;}
+  const name = (input.name ?? '').toLowerCase();
+  const id = (input.id ?? '').toLowerCase();
+  const nameIdPlaceholder = name + id + (input.placeholder ?? '').toLowerCase();
+  if (SEARCH_PATTERN.test(nameIdPlaceholder) || name === 'q' || id === 'q') {
+    return false;
+  }
 
   // Single-char OTP digit boxes — handled by the content script aggregate handler
-  if (input.maxLength === 1) {return false;}
+  if (input.maxLength === 1) {
+    return false;
+  }
 
-  if (input.disabled || input.readOnly) {return false;}
+  if (input.disabled || input.readOnly) {
+    return false;
+  }
 
   try {
     const rect = input.getBoundingClientRect();
-    if (rect.width < 30 || rect.height < 15) {return false;}
+    if (rect.width < 30 || rect.height < 15) {
+      return false;
+    }
   } catch {
     return false;
   }
 
   try {
     const style = window.getComputedStyle(input);
-    if (style.display === 'none' || style.visibility === 'hidden') {return false;}
-    if (style.opacity === '0') {return false;}
+    if (
+      style.display === 'none' ||
+      style.visibility === 'hidden' ||
+      style.visibility === 'collapse' ||
+      parseFloat(style.opacity || '1') === 0
+    ) {
+      return false;
+    }
   } catch {
     return false;
   }
@@ -223,10 +263,26 @@ export function getFieldTooltip(fieldType: FieldType): string {
     user: 'Fill name',
     generic: 'GhostFill — Auto-fill',
   };
-  return tooltips[fieldType];
+  return tooltips[fieldType] ?? tooltips.generic;
 }
 
-// ── Internal Helpers ────────────────────────────────────────────
+// ── Internal Helpers ────────────────────────────────
+function tokenize(value: string): string[] {
+  return value.split(/\s+/).filter(Boolean);
+}
+
+function hasAnyToken(tokens: string[], set: Set<string>): boolean {
+  return tokens.some((token) => set.has(token));
+}
+
+/** True when the input constrains entry to a short numeric code (e.g. pattern="[0-9]{6}"). */
+function isShortNumericPattern(input: HTMLInputElement): boolean {
+  const pattern = input.getAttribute('pattern');
+  if (!pattern) {
+    return false;
+  }
+  return /^\^?\\?d|\[0-9\]/.test(pattern);
+}
 
 /**
  * Find the visible text label associated with an input element.
@@ -243,7 +299,9 @@ function findLabelText(input: HTMLInputElement): string {
       const label = document.querySelector<HTMLLabelElement>(
         `label[for="${CSS.escape(input.id)}"]`
       );
-      if (label?.textContent) {return label.textContent.trim();}
+      if (label?.textContent) {
+        return normalizeWhitespace(label.textContent);
+      }
     } catch {
       /* skip on cross-origin or restricted DOM */
     }
@@ -260,17 +318,25 @@ function findLabelText(input: HTMLInputElement): string {
       }
     });
     const text = parts.filter(Boolean).join(' ');
-    if (text) {return text;}
+    if (text) {
+      return normalizeWhitespace(text);
+    }
   }
 
   // 3. Ancestor label wrapping
   try {
     const parent = input.closest('label');
-    if (parent?.textContent) {return parent.textContent.trim();}
+    if (parent?.textContent) {
+      return normalizeWhitespace(parent.textContent);
+    }
   } catch {
     /* skip */
   }
 
   // 4. aria-label attribute fallback
   return input.getAttribute('aria-label') || '';
+}
+
+function normalizeWhitespace(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
 }

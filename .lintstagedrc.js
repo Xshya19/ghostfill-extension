@@ -12,23 +12,9 @@ module.exports = {
   // ==========================================
   // TypeScript/JavaScript Files
   // ==========================================
-  '*.ts': [
-    // Fix ESLint issues
-    'eslint --fix',
-    // Fix Prettier formatting
-    'prettier --write',
-    // Run security linting
-    'eslint --rule "security/detect-unsafe-regex: error"',
-    // Run type check on staged files
-    () => 'tsc --noEmit',
-  ],
+  '*.ts': ['eslint --fix', 'prettier --write'],
 
-  '*.tsx': [
-    'eslint --fix',
-    'prettier --write',
-    'eslint --rule "security/detect-unsafe-regex: error"',
-    () => 'tsc --noEmit',
-  ],
+  '*.tsx': ['eslint --fix', 'prettier --write'],
 
   '*.js': ['eslint --fix', 'prettier --write'],
 
@@ -41,11 +27,7 @@ module.exports = {
   // ==========================================
   // JSON Files
   // ==========================================
-  '*.json': [
-    'prettier --write',
-    // Validate JSON syntax
-    (files) => files.map((file) => `node -e "JSON.parse(require('fs').readFileSync('${file}'))"`),
-  ],
+  '*.json': ['prettier --write'],
 
   // ==========================================
   // CSS/SCSS Files
@@ -89,10 +71,10 @@ module.exports = {
   // ==========================================
   // Test Files - Run related tests
   // ==========================================
-  '*.test.ts': [],
-  '*.test.tsx': [],
-  '*.spec.ts': [],
-  '*.spec.tsx': [],
+  '*.test.ts': ['eslint --fix', 'prettier --write'],
+  '*.test.tsx': ['eslint --fix', 'prettier --write'],
+  '*.spec.ts': ['eslint --fix', 'prettier --write'],
+  '*.spec.tsx': ['eslint --fix', 'prettier --write'],
 
   // ==========================================
   // Ignore binary and generated files

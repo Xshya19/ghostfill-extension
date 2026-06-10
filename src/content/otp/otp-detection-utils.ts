@@ -225,9 +225,10 @@ export class KeywordMatcher {
  */
 export class LabelResolver {
   static getAssociatedLabelText(input: HTMLInputElement): string {
+    const root = input.getRootNode() as Document | ShadowRoot;
     if (input.id) {
       const label = safeQuerySelector<HTMLLabelElement>(
-        document,
+        root,
         `label[for="${escapeCSS(input.id)}"]`
       );
       if (label?.textContent) {
@@ -250,7 +251,9 @@ export class LabelResolver {
     if (labelledBy) {
       const texts: string[] = [];
       for (const id of labelledBy.split(/\s+/)) {
-        const el = document.getElementById(id.trim());
+        const el =
+          (root as Document | ShadowRoot).getElementById?.(id.trim()) ??
+          document.getElementById(id.trim());
         if (el?.textContent) {
           texts.push(el.textContent.trim());
         }

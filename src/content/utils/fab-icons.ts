@@ -12,16 +12,17 @@ import type { ButtonMode } from './fab-types';
 // Source: popup.css :root — DO NOT DEVIATE
 // ═══════════════════════════════════════════════════════════
 const TOKENS = {
-  cyan: '#20F4FF',      // --gf-cyan
-  magenta: '#FF3BD4',   // --gf-magenta  
-  violet: '#8B5CFF',    // --gf-violet
-  yellow: '#FFD84D',    // --gf-yellow
-  coral: '#FF6A4D',     // --gf-coral
-  mint: '#62F2B3',      // --gf-mint
-  ink: '#000000',       // --gf-ink
-  cream: '#FFF3D6',     // --gf-cream
-  surface: '#18152A',   // --gf-surface
-  card: '#211B3D',      // --gf-card
+  cyan: '#79F7FF',
+  magenta: '#FA8CEF',
+  violet: '#918EFA',
+  yellow: '#FFE500',
+  coral: '#FA7A7A',
+  mint: '#9DFC7C',
+  teal: '#53F2FC',
+  ink: '#181818',
+  cream: '#FFFDF6',
+  surface: '#FFFDF6',
+  card: '#FFF066',
   glowSubtle: '0.15',
   glowMedium: '0.35',
   glowStrong: '0.65',
@@ -42,7 +43,7 @@ const STROKE = {
 export const SHARED_SVG_DEFS = '';
 
 // ═══════════════════════════════════════════════════════════
-// ICONS — ULTRA-DETAILED MEMPHIS NEON ARCHIVE
+// ICONS — ULTRA-DETAILED MEMPHIS NEON ARCHIVE (NO OVERHEAD FILTERS)
 // ═══════════════════════════════════════════════════════════
 const ICONS: Readonly<Record<ButtonMode, string>> = {
   /**
@@ -56,16 +57,9 @@ const ICONS: Readonly<Record<ButtonMode, string>> = {
         <stop offset="0%" stop-color="${TOKENS.violet}"/>
         <stop offset="100%" stop-color="${TOKENS.magenta}"/>
       </linearGradient>
-      <filter id="gf-magic-glow" x="-30%" y="-30%" width="160%" height="160%">
-        <feGaussianBlur stdDeviation="0.8" result="blur"/>
-        <feMerge>
-          <feMergeNode in="blur"/>
-          <feMergeNode in="SourceGraphic"/>
-        </feMerge>
-      </filter>
     </defs>
     <!-- Background Sparkle (Top-Center) -->
-    <path d="M12 2 L12.5 3.5 L14 4 L12.5 4.5 L12 6 L11.5 4.5 L10 4 L11.5 3.5 Z" fill="${TOKENS.yellow}" filter="url(#gf-magic-glow)"/>
+    <path d="M12 2 L12.5 3.5 L14 4 L12.5 4.5 L12 6 L11.5 4.5 L10 4 L11.5 3.5 Z" fill="${TOKENS.yellow}"/>
     <!-- Left Tiny Sparkle -->
     <circle cx="3.5" cy="14" r="1" fill="${TOKENS.cyan}"/>
     
@@ -74,8 +68,7 @@ const ICONS: Readonly<Record<ButtonMode, string>> = {
           fill="url(#gf-magic-grad)" 
           stroke="${TOKENS.ink}" 
           stroke-width="${STROKE.primary}" 
-          stroke-linejoin="round"
-          filter="url(#gf-magic-glow)"/>
+          stroke-linejoin="round"/>
     <!-- Tech scanlines on body -->
     <line x1="8" y1="7.5" x2="16" y2="7.5" stroke="${TOKENS.cream}" stroke-width="${STROKE.detail}" opacity="0.25" stroke-dasharray="1 1"/>
     <line x1="12" y1="5" x2="12" y2="10" stroke="${TOKENS.cream}" stroke-width="${STROKE.detail}" opacity="0.25" stroke-dasharray="1 1"/>
@@ -92,7 +85,7 @@ const ICONS: Readonly<Record<ButtonMode, string>> = {
     <path d="M11 14.5 Q12 15.5 13 14.5" stroke="${TOKENS.ink}" stroke-width="${STROKE.primary}" stroke-linecap="round"/>
     
     <!-- Right Tiny Sparkle -->
-    <path d="M21 7.5 L21.4 8.3 L22.2 8.5 L21.4 8.7 L21 9.5 L20.6 8.7 L19.8 8.5 L20.6 8.3 Z" fill="${TOKENS.magenta}"/>
+    <path d="M21 7.5 L21.4 8.3 L22.2 8.5 L21.4 8.7 L21 9.5 L20.6 8.7 L19.8 8.5 L20.6 8.3 Z" fill="${TOKENS.yellow}"/>
   </svg>`,
 
   /**
@@ -103,25 +96,17 @@ const ICONS: Readonly<Record<ButtonMode, string>> = {
     <defs>
       <linearGradient id="gf-email-grad" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stop-color="${TOKENS.cyan}"/>
-        <stop offset="100%" stop-color="#005B7F"/>
+        <stop offset="100%" stop-color="${TOKENS.teal}"/>
       </linearGradient>
-      <filter id="gf-email-glow" x="-30%" y="-30%" width="160%" height="160%">
-        <feGaussianBlur stdDeviation="0.6" result="blur"/>
-        <feMerge>
-          <feMergeNode in="blur"/>
-          <feMergeNode in="SourceGraphic"/>
-        </feMerge>
-      </filter>
     </defs>
     <!-- Background accent sparkle -->
-    <path d="M21 5 L21.3 5.8 L22.1 6 L21.3 6.2 L21 7 L20.7 6.2 L19.9 6 L20.7 5.8 Z" fill="${TOKENS.yellow}" filter="url(#gf-email-glow)"/>
+    <path d="M21 5 L21.3 5.8 L22.1 6 L21.3 6.2 L21 7 L20.7 6.2 L19.9 6 L20.7 5.8 Z" fill="${TOKENS.yellow}"/>
     <circle cx="3.5" cy="16.5" r="1.5" stroke="${TOKENS.magenta}" stroke-width="${STROKE.detail}"/>
     <!-- Envelope Body -->
     <rect x="3.5" y="5.5" width="17" height="13" rx="2" 
           fill="url(#gf-email-grad)" 
           stroke="${TOKENS.ink}" 
-          stroke-width="${STROKE.primary}"
-          filter="url(#gf-email-glow)"/>
+          stroke-width="${STROKE.primary}"/>
     <!-- Fold Lines -->
     <path d="M3.5 7.5 L12 12.5 L20.5 7.5" stroke="${TOKENS.ink}" stroke-width="${STROKE.primary}" stroke-linecap="round" stroke-linejoin="round"/>
     <!-- Domain Badge -->
@@ -142,20 +127,12 @@ const ICONS: Readonly<Record<ButtonMode, string>> = {
         <stop offset="0%" stop-color="${TOKENS.magenta}"/>
         <stop offset="100%" stop-color="${TOKENS.cyan}"/>
       </linearGradient>
-      <filter id="gf-pass-glow" x="-30%" y="-30%" width="160%" height="160%">
-        <feGaussianBlur stdDeviation="0.6" result="blur"/>
-        <feMerge>
-          <feMergeNode in="blur"/>
-          <feMergeNode in="SourceGraphic"/>
-        </feMerge>
-      </filter>
     </defs>
     <!-- Key Ring Core -->
     <circle cx="8.5" cy="15.5" r="5" 
             fill="url(#gf-pass-grad)" 
             stroke="${TOKENS.ink}" 
-            stroke-width="${STROKE.primary}"
-            filter="url(#gf-pass-glow)"/>
+            stroke-width="${STROKE.primary}"/>
     <circle cx="8.5" cy="15.5" r="1.5" fill="${TOKENS.ink}"/>
     <!-- Gear teeth detail -->
     <path d="M8.5 9 L8.5 10.5 M8.5 20.5 L8.5 22 M3 15.5 L4.5 15.5 M12.5 15.5 L14 15.5" stroke="${TOKENS.ink}" stroke-width="${STROKE.primary}" stroke-linecap="round"/>
@@ -164,7 +141,7 @@ const ICONS: Readonly<Record<ButtonMode, string>> = {
     <!-- Teeth -->
     <path d="M15.5 8.5 L18 11 M17.5 6.5 L20 9" stroke="${TOKENS.ink}" stroke-width="${STROKE.primary}" stroke-linecap="round"/>
     <!-- Memphis Sparkle (Top-Left) -->
-    <path d="M4 6 L4.4 6.8 L5.2 7 L4.4 7.2 L4 8 L3.6 7.2 L2.8 7 L3.6 6.8 Z" fill="${TOKENS.yellow}" filter="url(#gf-pass-glow)"/>
+    <path d="M4 6 L4.4 6.8 L5.2 7 L4.4 7.2 L4 8 L3.6 7.2 L2.8 7 L3.6 6.8 Z" fill="${TOKENS.yellow}"/>
     <!-- Accent Dots -->
     <circle cx="21" cy="15" r="1.2" fill="${TOKENS.magenta}"/>
   </svg>`,
@@ -179,13 +156,6 @@ const ICONS: Readonly<Record<ButtonMode, string>> = {
         <stop offset="0%" stop-color="${TOKENS.yellow}"/>
         <stop offset="100%" stop-color="${TOKENS.coral}"/>
       </linearGradient>
-      <filter id="gf-otp-glow" x="-30%" y="-30%" width="160%" height="160%">
-        <feGaussianBlur stdDeviation="0.6" result="blur"/>
-        <feMerge>
-          <feMergeNode in="blur"/>
-          <feMergeNode in="SourceGraphic"/>
-        </feMerge>
-      </filter>
     </defs>
     <!-- Shackle -->
     <path d="M7.5 10.5 V6.5 C7.5 4.01 9.51 2 12 2 C14.49 2 16.5 4.01 16.5 6.5 V10.5" stroke="${TOKENS.ink}" stroke-width="${STROKE.primary}" stroke-linecap="round" fill="none"/>
@@ -194,8 +164,7 @@ const ICONS: Readonly<Record<ButtonMode, string>> = {
           fill="url(#gf-otp-grad)" 
           stroke="${TOKENS.ink}" 
           stroke-width="${STROKE.primary}" 
-          stroke-linejoin="round"
-          filter="url(#gf-otp-glow)"/>
+          stroke-linejoin="round"/>
     <!-- Tech Grid Lines -->
     <line x1="8" y1="12.5" x2="16" y2="12.5" stroke="${TOKENS.ink}" stroke-width="${STROKE.detail}" opacity="0.3"/>
     <line x1="8" y1="18.5" x2="16" y2="18.5" stroke="${TOKENS.ink}" stroke-width="${STROKE.detail}" opacity="0.3"/>
@@ -212,15 +181,8 @@ const ICONS: Readonly<Record<ButtonMode, string>> = {
     <defs>
       <linearGradient id="gf-user-grad" x1="0" y1="0" x2="1" y2="1">
         <stop offset="0%" stop-color="${TOKENS.violet}"/>
-        <stop offset="100%" stop-color="#7B2FBE"/>
+        <stop offset="100%" stop-color="${TOKENS.magenta}"/>
       </linearGradient>
-      <filter id="gf-user-glow" x="-30%" y="-30%" width="160%" height="160%">
-        <feGaussianBlur stdDeviation="0.6" result="blur"/>
-        <feMerge>
-          <feMergeNode in="blur"/>
-          <feMergeNode in="SourceGraphic"/>
-        </feMerge>
-      </filter>
     </defs>
     <!-- HUD Ring -->
     <circle cx="12" cy="12" r="10" stroke="${TOKENS.violet}" stroke-width="${STROKE.detail}" opacity="0.3" stroke-dasharray="2 2"/>
@@ -229,14 +191,12 @@ const ICONS: Readonly<Record<ButtonMode, string>> = {
     <circle cx="12" cy="8.5" r="3.5" 
             fill="url(#gf-user-grad)" 
             stroke="${TOKENS.ink}" 
-            stroke-width="${STROKE.primary}"
-            filter="url(#gf-user-glow)"/>
+            stroke-width="${STROKE.primary}"/>
     <!-- Body -->
     <path d="M5.5 19.5 C5.5 16.2 8.41 13.5 12 13.5 C15.59 13.5 18.5 16.2 18.5 19.5 Z" 
           fill="url(#gf-user-grad)" 
           stroke="${TOKENS.ink}" 
-          stroke-width="${STROKE.primary}"
-          filter="url(#gf-user-glow)"/>
+          stroke-width="${STROKE.primary}"/>
     <!-- Crosshairs -->
     <path d="M12 1.5 V3.5 M12 20.5 V22.5 M1.5 12 H3.5 M20.5 12 H22.5" stroke="${TOKENS.magenta}" stroke-width="${STROKE.detail}"/>
     <!-- Memphis Sparkles -->
@@ -252,22 +212,14 @@ const ICONS: Readonly<Record<ButtonMode, string>> = {
     <defs>
       <linearGradient id="gf-form-grad" x1="0" y1="0" x2="1" y2="1">
         <stop offset="0%" stop-color="${TOKENS.cyan}"/>
-        <stop offset="100%" stop-color="#00B8D4"/>
+        <stop offset="100%" stop-color="${TOKENS.teal}"/>
       </linearGradient>
-      <filter id="gf-form-glow" x="-30%" y="-30%" width="160%" height="160%">
-        <feGaussianBlur stdDeviation="0.6" result="blur"/>
-        <feMerge>
-          <feMergeNode in="blur"/>
-          <feMergeNode in="SourceGraphic"/>
-        </feMerge>
-      </filter>
     </defs>
     <!-- Paper Sheet -->
     <rect x="5.5" y="3.5" width="13" height="17" rx="1.5" 
           fill="url(#gf-form-grad)" 
           stroke="${TOKENS.ink}" 
-          stroke-width="${STROKE.primary}"
-          filter="url(#gf-form-glow)"/>
+          stroke-width="${STROKE.primary}"/>
     <!-- Writing Lines -->
     <line x1="8" y1="8" x2="13" y2="8" stroke="${TOKENS.ink}" stroke-width="${STROKE.primary}" stroke-linecap="round"/>
     <line x1="8" y1="12" x2="16" y2="12" stroke="${TOKENS.ink}" stroke-width="${STROKE.primary}" stroke-linecap="round"/>
@@ -286,7 +238,7 @@ const ICONS: Readonly<Record<ButtonMode, string>> = {
 export class IconSystem {
   static get(mode: ButtonMode): string {
     const icon = ICONS[mode] ?? ICONS.magic;
-    return icon.replace('<svg ', '<svg role="presentation" ');
+    return icon.includes(' role=') ? icon : icon.replace('<svg ', '<svg role="presentation" ');
   }
 
   static getSpinner(): string {

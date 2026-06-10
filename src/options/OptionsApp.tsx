@@ -151,7 +151,7 @@ function useModalFocusTrap(
 const LoadingSpinner: React.FC = () => (
   <div className="loading" role="status" aria-live="polite">
     <div className="spinner" aria-hidden="true" />
-    <p>Loading settings…</p>
+    <p>Loading settings...</p>
   </div>
 );
 
@@ -169,7 +169,7 @@ const AmbientBackground: React.FC = () => (
 /** Saved-state toast notification. */
 const SavedToast: React.FC = () => (
   <div className="options-toast" role="alert" aria-live="assertive">
-    ✓ Changes Saved
+    Changes saved
   </div>
 );
 
@@ -318,40 +318,79 @@ const OptionsApp: React.FC = () => {
     settingsRef.current = settings;
   }, [settings]);
 
-  const saveSettings = useCallback(async (): Promise<boolean> => {
-    const currentSettings = settingsRef.current;
-    const errors = validateSettings(currentSettings);
-    setFormErrors(errors);
-    setTouchedFields(ALL_VALIDATED_FIELDS);
+  const isSavingRef = useRef(false);
+  const pendingSaveRef = useRef(false);
 
-    if (Object.keys(errors).length > 0) {
-      log.error('Validation failed', errors);
+  const saveSettings = useCallback(async (settingsOverride?: UserSettings): Promise<boolean> => {
+    if (isSavingRef.current) {
+      pendingSaveRef.current = true;
       return false;
     }
-
+    isSavingRef.current = true;
     try {
-      const response = await chrome.runtime.sendMessage({
-        action: 'UPDATE_SETTINGS',
-        payload: currentSettings,
-      });
+      const currentSettings = settingsOverride ?? settingsRef.current;
+      const errors = validateSettings(currentSettings);
+      setFormErrors(errors);
+      setTouchedFields(ALL_VALIDATED_FIELDS);
 
-      if (!response || !response.success) {
-        log.error('Failed to save settings: backend rejected');
+      if (Object.keys(errors).length > 0) {
+        log.error('Validation failed', errors);
         return false;
       }
 
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
-      previousSettingsRef.current = { ...currentSettings };
-      return true;
-    } catch (error) {
-      log.error('Failed to save settings', error);
-      return false;
+      try {
+        const response = await chrome.runtime.sendMessage({
+          action: 'UPDATE_SETTINGS',
+          payload: currentSettings,
+        });
+
+        if (!response || !response.success) {
+          log.error('Failed to save settings: backend rejected');
+          return false;
+        }
+
+        setSaved(true);
+        if (savedToastTimerRef.current) {
+          clearTimeout(savedToastTimerRef.current);
+        }
+        savedToastTimerRef.current = setTimeout(() => setSaved(false), 2500);
+        previousSettingsRef.current = { ...currentSettings };
+        return true;
+      } catch (error) {
+        log.error('Failed to save settings', error);
+        return false;
+      }
+    } finally {
+      isSavingRef.current = false;
+      if (pendingSaveRef.current) {
+        pendingSaveRef.current = false;
+        setTimeout(() => void saveSettings(), 100);
+      }
     }
   }, []);
 
   // Auto-save when settings change (skip first load)
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const secretSaveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  useEffect(() => {
+    return () => {
+      if (savedToastTimerRef.current) {
+        clearTimeout(savedToastTimerRef.current);
+      }
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      const timers = secretSaveTimersRef.current;
+      for (const k in timers) {
+        if (timers[k]) {
+          clearTimeout(timers[k]);
+        }
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (isFirstLoad.current) {
@@ -396,19 +435,26 @@ const OptionsApp: React.FC = () => {
   const handleSessionSecretChange = useCallback(
     (key: 'customDomainKey' | 'llmApiKey', value: string) => {
       setSessionSecrets((prev) => ({ ...prev, [key]: value }));
-      try {
-        if (key === 'customDomainKey') {
-          void (value
-            ? storageService.setCustomDomainKey(value)
-            : storageService.clearSessionSecret(key));
-        } else {
-          void (value
-            ? storageService.setLLMApiKey(value)
-            : storageService.clearSessionSecret(key));
-        }
-      } catch (error) {
-        log.error('Failed to set session secret', error);
+
+      if (secretSaveTimersRef.current[key]) {
+        clearTimeout(secretSaveTimersRef.current[key]);
       }
+
+      secretSaveTimersRef.current[key] = setTimeout(() => {
+        try {
+          if (key === 'customDomainKey') {
+            void (value
+              ? storageService.setCustomDomainKey(value)
+              : storageService.clearSessionSecret(key));
+          } else {
+            void (value
+              ? storageService.setLLMApiKey(value)
+              : storageService.clearSessionSecret(key));
+          }
+        } catch (error) {
+          log.error('Failed to set session secret', error);
+        }
+      }, 500);
     },
     []
   );
@@ -433,11 +479,14 @@ const OptionsApp: React.FC = () => {
     []
   );
 
-  const handleSettingsImport = useCallback((imported: UserSettings) => {
-    setSettings(imported);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
-  }, []);
+  const handleSettingsImport = useCallback(
+    (imported: UserSettings) => {
+      settingsRef.current = imported;
+      setSettings(imported);
+      void saveSettings(imported);
+    },
+    [saveSettings]
+  );
 
   // ═══════════════════════════════════════════════════════════
   //  §5.5  M O D A L   &   A C T I O N S
@@ -457,12 +506,13 @@ const OptionsApp: React.FC = () => {
         'This will restore all settings to their default values. Your saved data will not be deleted.',
       type: 'warning',
       action: () => {
+        settingsRef.current = DEFAULT_SETTINGS;
         setSettings(DEFAULT_SETTINGS);
         setFormErrors({});
         setTouchedFields(new Set());
         setSaved(true);
         // Persist immediately instead of relying on auto-save debounce
-        void saveSettings();
+        void saveSettings(DEFAULT_SETTINGS);
         setTimeout(() => setSaved(false), 2000);
       },
     });
@@ -589,12 +639,12 @@ const OptionsApp: React.FC = () => {
       {/* ── Header ── */}
       <header className="options-header" role="banner">
         <div className="header-content">
-          <div className="ghost-card logo-box" style={{ padding: 0 }}>
+          <div className="ghost-card logo-box logo-box--no-padding">
             <GhostLogo size={56} />
           </div>
           <div className="header-text-group">
             <h1 className="spectral-title">GhostFill Settings</h1>
-            <p className="spectral-subtitle">The Ethereal Security Experience</p>
+            <p className="spectral-subtitle">Neo-Brutalist control center</p>
           </div>
         </div>
       </header>

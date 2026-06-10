@@ -18,13 +18,17 @@ class MailGwService {
    */
   private async fetchWithRetry(
     url: string,
-    options: RequestInit = {},
+    options: RequestInit & { timeout?: number } = {},
     retries = 3
   ): Promise<Response> {
     let lastError: Error | unknown = null;
     let lastStatus = 0;
 
     for (let i = 0; i < retries; i++) {
+      if (options.signal?.aborted) {
+        throw new DOMException('The user aborted a request.', 'AbortError');
+      }
+
       try {
         const response = await fetchWithTimeout(url, options);
         lastStatus = response.status;
@@ -49,7 +53,10 @@ class MailGwService {
         log.warn(`API request failed (${response.status}), retrying in ${Math.round(delay)}ms...`, {
           attempt: i + 1,
         });
-        await new Promise((resolve, reject) => {
+        await new Promise<void>((resolve, reject) => {
+          if (options?.signal?.aborted) {
+            return reject(new DOMException('Aborted', 'AbortError'));
+          }
           const timeoutId = setTimeout(resolve, delay);
           if (options?.signal) {
             options.signal.addEventListener(
@@ -64,6 +71,15 @@ class MailGwService {
         });
       } catch (error) {
         lastError = error;
+
+        if (
+          options.signal?.aborted ||
+          (error as Error).name === 'AbortError' ||
+          (error as Error).message === 'AbortError'
+        ) {
+          throw error;
+        }
+
         if (i === retries - 1) {
           throw typeof error === 'object' && error instanceof Error
             ? error
@@ -71,7 +87,10 @@ class MailGwService {
         }
         const delay = 2000 * Math.pow(2, i);
         log.warn(`Network error, retrying in ${Math.round(delay)}ms...`, error);
-        await new Promise((resolve, reject) => {
+        await new Promise<void>((resolve, reject) => {
+          if (options?.signal?.aborted) {
+            return reject(new DOMException('Aborted', 'AbortError'));
+          }
           const timeoutId = setTimeout(resolve, delay);
           if (options?.signal) {
             options.signal.addEventListener(
@@ -99,13 +118,16 @@ class MailGwService {
   async getDomains(signal?: AbortSignal): Promise<string[]> {
     const fallbackDomains = ['exdonuts.com'];
     try {
-      const options: RequestInit = {};
+      const options: RequestInit & { timeout?: number } = {
+        timeout: 4000,
+      };
       if (signal) {
         options.signal = signal;
       }
       const response = await this.fetchWithRetry(
         `${this.baseUrl}${API.MAIL_GW.ENDPOINTS.DOMAINS}`,
-        options
+        options,
+        1 // Only 1 attempt for domains fetch
       );
 
       if (!response.ok) {
@@ -120,7 +142,16 @@ class MailGwService {
 
       return activeDomains.length > 0 ? activeDomains : fallbackDomains;
     } catch (error) {
-      log.warn('Failed to fetch Mail.gw domains, using fallback', error);
+      if (
+        error instanceof Error &&
+        (error.name === 'AbortError' ||
+          error.message.includes('Aborted') ||
+          error.message.includes('timed out'))
+      ) {
+        log.warn('Failed to fetch Mail.gw domains due to abort/timeout, using fallback');
+      } else {
+        log.warn('Failed to fetch Mail.gw domains, using fallback', error);
+      }
       return fallbackDomains;
     }
   }

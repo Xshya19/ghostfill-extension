@@ -28,6 +28,7 @@ export interface DifficultCase {
 
 export class ActiveLearningController {
   private static readonly DISAGREEMENT_THRESHOLD = 0.7;
+  private static readonly MAX_CAPTURED_CASES = 500;
   private static capturedCases: DifficultCase[] = [];
 
   /**
@@ -66,6 +67,9 @@ export class ActiveLearningController {
       disagreementScore: disagreement,
     };
 
+    if (this.capturedCases.length >= this.MAX_CAPTURED_CASES) {
+      this.capturedCases.shift();
+    }
     this.capturedCases.push(difficultCase);
     this.saveToStorage();
   }

@@ -1,171 +1,213 @@
 /* ═══════════════════════════════════════════════════════════
-   GhostFill — Content Script Styles
-   Memphis Neon Archive Theme (Unified Tokens aligned)
+   GhostFill — Content Script Styles · Halcyon Theme
+   Warm Paper field highlights · Hard ink shadows
    ═══════════════════════════════════════════════════════════ */
 
 #ghostfill-fab,
 #ghostfill-fab * {
-  all: initial;
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
   font-family:
-    'Inter',
+    'Hanken Grotesk',
+    'Space Grotesk',
     -apple-system,
     BlinkMacSystemFont,
-    'SF Pro Display',
-    'Segoe UI',
-    Roboto,
-    'Helvetica Neue',
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 #ghostfill-fab {
-  /* ── Auto-generated from shared/tokens.ts ── */
-  --gf-bg: #10101C;
-  --gf-bg-rgb: 16, 16, 28;
-  --gf-surface: #18152A;
-  --gf-surface-rgb: 24, 21, 42;
-  --gf-card: #211B3D;
-  --gf-card-rgb: 33, 27, 61;
-  --gf-ink: #000000;
-  --gf-cream: #FFF3D6;
-  --gf-text-muted: #B8A8D9;
-  --gf-text-dim: #7B6CA3;
-  --gf-magenta: #FF3BD4;
-  --gf-magenta-rgb: 255, 59, 212;
-  --gf-cyan: #20F4FF;
-  --gf-cyan-rgb: 32, 244, 255;
-  --gf-violet: #8B5CFF;
-  --gf-violet-rgb: 139, 92, 255;
-  --gf-yellow: #FFD84D;
-  --gf-yellow-rgb: 255, 216, 77;
-  --gf-coral: #FF6A4D;
-  --gf-coral-rgb: 255, 106, 77;
-  --gf-mint: #62F2B3;
-  --gf-mint-rgb: 98, 242, 179;
+  /* ── Halcyon tokens (shadow DOM scope) ── */
+  --gf-bg: #f6efe0;
+  --gf-bg-rgb: 246, 239, 224;
+  --gf-surface: #fffdf6;
+  --gf-card: #fff6cf;
+  --gf-card-rgb: 255, 246, 207;
+  --gf-card-elevated: #ffe97a;
+  --gf-sunken: #e6f7f4;
+  --gf-ink: #181818;
+  --gf-ink-rgb: 24, 24, 24;
+  --gf-ink-soft: #2f2f2f;
+  --gf-cream: #181818;
+  --gf-text-muted: #555047;
+  --gf-line: #181818;
 
-  --gf-ring-width: 1.5px;
-  --gf-ring-offset: 1px;
-  --gf-ring-radius: 4px;
+  --gf-mustard: #ffe500;
+  --gf-mustard-rgb: 255, 229, 0;
+  --gf-teal: #53f2fc;
+  --gf-teal-rgb: 83, 242, 252;
+  --gf-sienna: #ff965b;
+  --gf-sienna-rgb: 255, 150, 91;
+  --gf-coral-warm: #fa8cef;
+  --gf-coral-warm-rgb: 250, 140, 239;
 
-  --gf-aura-spread: 4px;
+  /* Legacy aliases */
+  --gf-magenta: #fa8cef;
+  --gf-magenta-rgb: 250, 140, 239;
+  --gf-cyan: #79f7ff;
+  --gf-cyan-rgb: 121, 247, 255;
+  --gf-violet: #918efa;
+  --gf-violet-rgb: 145, 142, 250;
+  --gf-mint: #9dfc7c;
+  --gf-mint-rgb: 157, 252, 124;
+  --gf-coral: #fa7a7a;
+  --gf-yellow: #ffe500;
+  --gf-yellow-rgb: 255, 229, 0;
 
-  --gf-transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  --gf-ring-width: 2.5px;
+  --gf-ring-offset: 2px;
+  --gf-ring-radius: 7px;
+  --gf-transition: all 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* ── Active Field Highlight ── */
+/* ─────────────────────────────────────────────────────────
+   ACTIVE FIELD — 'The Mustard Stamp'
+   Field lifts off the page, mustard outline + hard ink shadow
+   ───────────────────────────────────────────────────────── */
 .ghostfill-highlight {
-  outline: var(--gf-ring-width, 1.5px) solid var(--gf-magenta) !important;
-  outline-offset: var(--gf-ring-offset, 1px) !important;
-
-  box-shadow:
-    0 0 0 var(--gf-aura-spread, 4px) rgba(var(--gf-magenta-rgb), 0.08),
-    0 0 12px rgba(var(--gf-magenta-rgb), 0.25),
-    0 0 24px rgba(var(--gf-magenta-rgb), 0.06) !important;
-
-  border-radius: var(--gf-ring-radius, 4px) !important;
-
-  transition: var(--gf-transition, all 0.35s cubic-bezier(0.16, 1, 0.3, 1)) !important;
+  outline: 2.5px solid #ffe500 !important;
+  outline-offset: 2px !important;
+  box-shadow: 3px 3px 0 #181818 !important;
+  border-radius: 7px !important;
+  transform: translate(-2px, -2px) !important;
+  transition: transform 0.15s cubic-bezier(0.22, 1, 0.36, 1) !important;
 }
 
-/* ── Success State ── */
+/* ─────────────────────────────────────────────────────────
+   SUCCESS STATE — 'The Teal Seal'
+   Field bounces with a teal stamp, ink shadow pops
+   ───────────────────────────────────────────────────────── */
 .ghostfill-success {
-  outline: var(--gf-ring-width, 1.5px) solid var(--gf-mint) !important;
-  outline-offset: var(--gf-ring-offset, 1px) !important;
-
-  box-shadow:
-    0 0 0 var(--gf-aura-spread, 4px) rgba(var(--gf-mint-rgb), 0.1),
-    0 0 16px rgba(var(--gf-mint-rgb), 0.3),
-    0 0 32px rgba(var(--gf-mint-rgb), 0.08) !important;
-
-  border-radius: var(--gf-ring-radius, 4px) !important;
-  transition: var(--gf-transition) !important;
-
-  animation: gf-success-neon 0.55s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  outline: 2.5px solid #9dfc7c !important;
+  outline-offset: 2px !important;
+  box-shadow: 3px 3px 0 #181818 !important;
+  border-radius: 7px !important;
+  animation: gf-teal-seal 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
 }
 
-@keyframes gf-success-neon {
+@keyframes gf-teal-seal {
   0% {
-    transform: scale(1);
-    box-shadow:
-      0 0 0 0 rgba(var(--gf-mint-rgb), 0),
-      0 0 0 rgba(var(--gf-mint-rgb), 0);
+    transform: translate(-2px, -2px) scale(1);
+    box-shadow: 3px 3px 0 #181818;
   }
-
-  30% {
-    transform: scale(1.012);
-    box-shadow:
-      0 0 0 8px rgba(var(--gf-mint-rgb), 0.15),
-      0 0 28px rgba(var(--gf-mint-rgb), 0.25);
+  35% {
+    transform: translate(-4px, -4px) scale(1.03);
+    box-shadow: 5px 5px 0 #181818;
   }
-
   65% {
-    transform: scale(0.996);
+    transform: translate(-1px, -1px) scale(0.99);
   }
-
   100% {
-    transform: scale(1);
-    box-shadow:
-      0 0 0 var(--gf-aura-spread, 6px) rgba(var(--gf-mint-rgb), 0.12),
-      0 0 20px rgba(var(--gf-mint-rgb), 0.3),
-      0 0 40px rgba(var(--gf-mint-rgb), 0.08);
+    transform: translate(-2px, -2px) scale(1);
+    box-shadow: 3px 3px 0 #181818;
   }
 }
 
-/* ── OTP Ready State ── */
+/* ─────────────────────────────────────────────────────────
+   OTP READY — 'The Sienna Pulse'
+   Alternates sienna <-> mustard like a vintage signal lamp
+   ───────────────────────────────────────────────────────── */
 .ghostfill-otp-ready {
-  outline: calc(var(--gf-ring-width, 1.5px) + 0.5px) solid var(--gf-violet) !important;
-  outline-offset: var(--gf-ring-offset, 1px) !important;
-
-  box-shadow:
-    0 0 0 var(--gf-aura-spread, 4px) rgba(var(--gf-violet-rgb), 0.12),
-    0 0 16px rgba(var(--gf-violet-rgb), 0.25),
-    0 0 36px rgba(var(--gf-violet-rgb), 0.08) !important;
-
-  border-radius: var(--gf-ring-radius, 4px) !important;
-  transition: var(--gf-transition) !important;
-
-  animation: gf-otp-neon-breathe 2.4s ease-in-out infinite !important;
+  outline: 2.5px solid #ff965b !important;
+  outline-offset: 2px !important;
+  box-shadow: 3px 3px 0 #181818 !important;
+  border-radius: 7px !important;
+  animation: gf-sienna-lamp 1.8s ease-in-out infinite !important;
 }
 
-@keyframes gf-otp-neon-breathe {
+@keyframes gf-sienna-lamp {
   0%,
   100% {
-    box-shadow:
-      0 0 0 4px rgba(var(--gf-violet-rgb), 0.08),
-      0 0 16px rgba(var(--gf-violet-rgb), 0.15),
-      0 0 36px rgba(var(--gf-violet-rgb), 0.04);
-    outline-color: var(--gf-violet);
+    outline-color: #ff965b;
+    box-shadow: 3px 3px 0 #181818;
   }
-
   50% {
-    box-shadow:
-      0 0 0 6px rgba(var(--gf-violet-rgb), 0.15),
-      0 0 24px rgba(var(--gf-violet-rgb), 0.25),
-      0 0 48px rgba(var(--gf-violet-rgb), 0.1);
-    outline-color: #A57CFF;
+    outline-color: #ffe500;
+    box-shadow: 4px 4px 0 #181818;
   }
 }
 
-/* ── Reduced Motion ── */
+/* ─────────────────────────────────────────────────────────
+   BLOCKED FIELD — subtle red cross-hatch
+   ───────────────────────────────────────────────────────── */
+.ghostfill-blocked {
+  outline: 2px dashed #fa7a7a !important;
+  outline-offset: 2px !important;
+  opacity: 0.7 !important;
+}
+
+/* ─────────────────────────────────────────────────────────
+   REDUCED MOTION
+   ───────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .ghostfill-highlight,
   .ghostfill-success,
-  .ghostfill-otp-ready {
+  .ghostfill-otp-ready,
+  .ghostfill-blocked {
     animation: none !important;
     transition: none !important;
+    transform: none !important;
   }
+}
 
-  .ghostfill-success {
-    box-shadow:
-      0 0 0 6px rgba(var(--gf-mint-rgb), 0.15),
-      0 0 20px rgba(var(--gf-mint-rgb), 0.2) !important;
-  }
+/* NeoBrutalismCSS palette bridge for content-script surfaces */
+#ghostfill-fab {
+  --xxx-violet-200: #a8a6ff;
+  --xxx-violet-300: #918efa;
+  --xxx-violet-400: #807dfa;
+  --xxx-pink-200: #ffa6f6;
+  --xxx-pink-300: #fa8cef;
+  --xxx-pink-400: #fa7fee;
+  --xxx-red-200: #ff9f9f;
+  --xxx-red-300: #fa7a7a;
+  --xxx-red-400: #f76363;
+  --xxx-orange-200: #ffc29f;
+  --xxx-orange-300: #ff965b;
+  --xxx-orange-400: #fa8543;
+  --xxx-yellow-200: #fff066;
+  --xxx-yellow-300: #ffe500;
+  --xxx-yellow-400: #ffe500;
+  --xxx-lime-200: #b8ff9f;
+  --xxx-lime-300: #9dfc7c;
+  --xxx-lime-400: #7df752;
+  --xxx-cyan-200: #a6faff;
+  --xxx-cyan-300: #79f7ff;
+  --xxx-cyan-400: #53f2fc;
+  --gf-bg: #fffdf6;
+  --gf-surface: #fffdf6;
+  --gf-card: var(--xxx-yellow-200);
+  --gf-card-elevated: var(--xxx-yellow-300);
+  --gf-sunken: var(--xxx-cyan-200);
+  --gf-mustard: var(--xxx-yellow-300);
+  --gf-teal: var(--xxx-cyan-400);
+  --gf-sienna: var(--xxx-orange-300);
+  --gf-coral-warm: var(--xxx-pink-300);
+  --gf-magenta: var(--xxx-pink-300);
+  --gf-cyan: var(--xxx-cyan-300);
+  --gf-violet: var(--xxx-violet-300);
+  --gf-mint: var(--xxx-lime-300);
+  --gf-coral: var(--xxx-red-300);
+  --gf-yellow: var(--xxx-yellow-300);
+}
 
-  .ghostfill-otp-ready {
-    box-shadow:
-      0 0 0 6px rgba(var(--gf-violet-rgb), 0.12),
-      0 0 20px rgba(var(--gf-violet-rgb), 0.22) !important;
-  }
+.ghostfill-highlight {
+  outline-color: #ffe500 !important;
+  box-shadow: 3px 3px 0 #181818 !important;
+}
+
+.ghostfill-success {
+  outline-color: #9dfc7c !important;
+  box-shadow: 3px 3px 0 #181818 !important;
+}
+
+.ghostfill-otp-ready {
+  outline-color: #ff965b !important;
+}
+
+.ghostfill-blocked {
+  outline-color: #fa7a7a !important;
 }

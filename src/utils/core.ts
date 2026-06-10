@@ -206,13 +206,13 @@ export function formatDateTime(timestamp: number | string | Date): string {
  * Format file size
  */
 export function formatFileSize(bytes: number): string {
-  if (bytes === 0) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
     return '0 B';
   }
 
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
 
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
@@ -249,7 +249,7 @@ export async function fetchWithTimeout(
   if (options.signal) {
     if (options.signal.aborted) {
       clearTimeout(id);
-      throw new Error('AbortError');
+      throw new DOMException('The user aborted a request.', 'AbortError');
     }
     options.signal.addEventListener('abort', onExternalAbort);
   }
@@ -261,6 +261,9 @@ export async function fetchWithTimeout(
     });
     return response;
   } catch (error) {
+    if (options.signal?.aborted) {
+      throw new DOMException('The user aborted a request.', 'AbortError');
+    }
     if ((error as Error).name === 'AbortError') {
       throw new Error(`Request timed out after ${timeout}ms`);
     }

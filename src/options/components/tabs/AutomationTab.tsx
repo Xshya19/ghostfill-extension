@@ -1,3 +1,4 @@
+import { Zap, Keyboard } from 'lucide-react';
 import React from 'react';
 
 import { UserSettings } from '../../../types/storage.types';
@@ -12,7 +13,7 @@ interface AutomationTabProps {
 const AutomationTab: React.FC<AutomationTabProps> = ({ settings, onSettingChange }) => {
   return (
     <div role="tabpanel" id="tabpanel-automation" aria-labelledby="tab-automation">
-      <SettingsSection id="auto-fill" title="Auto-fill" icon="⚡">
+      <SettingsSection id="auto-fill" title="Auto-fill" icon={<Zap size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
             <label id="auto-fill-otp-label">Auto-fill OTP</label>
@@ -40,7 +41,7 @@ const AutomationTab: React.FC<AutomationTabProps> = ({ settings, onSettingChange
         </div>
       </SettingsSection>
 
-      <SettingsSection id="shortcuts" title="Keyboard Shortcuts" icon="⌨️">
+      <SettingsSection id="shortcuts" title="Keyboard Shortcuts" icon={<Keyboard size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
             <label id="keyboard-shortcuts-label">Enable Shortcuts</label>

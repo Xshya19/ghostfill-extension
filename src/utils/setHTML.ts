@@ -28,7 +28,8 @@ export function setHTML(el: Element, markup: string): void {
   const sanitized = DOMPurify.sanitize(markup, {
     FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'style', 'link', 'meta'],
     SANITIZE_DOM: true,
-  });
+    RETURN_TRUSTED_TYPE: true,
+  }) as unknown as string;
 
   // Fallback: parse via <template> — always allowed, even under strict TT.
   const template = document.createElement('template');

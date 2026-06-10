@@ -10,6 +10,60 @@ import { safeSendMessage } from '../../utils/messaging';
 
 const log = createLogger('PasswordGenerator');
 
+// Strength score (0-4) -> fill percentage shown in the meter.
+const STRENGTH_PERCENTS = [8, 20, 45, 75, 100] as const;
+const strengthPercent = (score: number): number => STRENGTH_PERCENTS[score] ?? 8;
+
+// Map raw Shannon entropy (bits) to a 0-4 strength score.
+const entropyToScore = (entropy: number): number => {
+  if (entropy >= 100) {
+    return 4;
+  }
+  if (entropy >= 60) {
+    return 3;
+  }
+  if (entropy >= 36) {
+    return 2;
+  }
+  if (entropy >= 28) {
+    return 1;
+  }
+  return 0;
+};
+
+// Estimate the strength of a pre-existing password from its character set.
+const describeExistingPassword = (pw: string): GeneratedPassword => {
+  let pool = 0;
+  if (/[a-z]/.test(pw)) {
+    pool += 26;
+  }
+  if (/[A-Z]/.test(pw)) {
+    pool += 26;
+  }
+  if (/\d/.test(pw)) {
+    pool += 10;
+  }
+  if (/[^a-zA-Z0-9]/.test(pw)) {
+    pool += 32;
+  }
+
+  const entropy = pool === 0 ? 0 : Math.floor(pw.length * Math.log2(pool));
+  const score = entropyToScore(entropy);
+
+  return {
+    password: pw,
+    strength: {
+      score,
+      level: score >= 3 ? 'good' : 'weak',
+      crackTime: score >= 3 ? 'Secure' : 'Vulnerable',
+      entropy,
+      suggestions: [],
+    },
+    options: DEFAULT_PASSWORD_OPTIONS,
+    generatedAt: Date.now(),
+  };
+};
+
 interface Props {
   onToast: (message: string) => void;
   currentPassword?: string;
@@ -54,51 +108,12 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
 
   useEffect(() => {
     if (currentPassword) {
-      let pool = 0;
-      if (/[a-z]/.test(currentPassword)) {
-        pool += 26;
-      }
-      if (/[A-Z]/.test(currentPassword)) {
-        pool += 26;
-      }
-      if (/\d/.test(currentPassword)) {
-        pool += 10;
-      }
-      if (/[^a-zA-Z0-9]/.test(currentPassword)) {
-        pool += 32;
-      }
-
-      const entropy = pool === 0 ? 0 : Math.floor(currentPassword.length * Math.log2(pool));
-      let score = 0;
-      if (entropy >= 28) {
-        score = 1;
-      }
-      if (entropy >= 36) {
-        score = 2;
-      }
-      if (entropy >= 60) {
-        score = 3;
-      }
-      if (entropy >= 100) {
-        score = 4;
-      }
-
-      setPassword({
-        password: currentPassword,
-        strength: {
-          score,
-          level: score >= 3 ? 'good' : 'weak',
-          crackTime: score >= 3 ? 'Secure' : 'Vulnerable',
-          entropy,
-          suggestions: [],
-        },
-        options: DEFAULT_PASSWORD_OPTIONS,
-        generatedAt: Date.now(),
-      });
-    } else {
+      setPassword(describeExistingPassword(currentPassword));
+    } else if (!password) {
       void generatePassword();
     }
-  }, [generatePassword, currentPassword]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPassword]);
 
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -159,9 +174,9 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
   return (
     <div className="generator-flow">
       {/* Main Display Card */}
-      <div className="glass-card glass-card-default">
-        <div className="generator-card-header" style={{ alignItems: 'center' }}>
-          <div className="widget-label" style={{ marginBottom: 0 }}>
+      <div className="memphis-card memphis-card-default">
+        <div className="generator-card-header generator-card-header-center">
+          <div className="widget-label widget-label-no-margin">
             <Lock size={16} className="sf-icon" />
             {currentPassword ? 'Current Secret' : 'Secured Generator'}
           </div>
@@ -176,7 +191,7 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
         {/* Terminal-style Password Display */}
         <motion.div
           className={`password-terminal ${loading ? 'shimmer' : ''}`}
-          whileTap={{ scale: 0.98 }}
+          whileTap={{ x: 2, y: 2 }}
           onClick={handleCopyPassword}
           role="button"
           tabIndex={0}
@@ -203,15 +218,15 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
             <div className="strength-meter-header">
               <span
                 className="strength-level-label"
-                style={{ color: getStrengthColor(password.strength.score) }}
+                style={{ '--strength-color': getStrengthColor(password.strength.score) }}
               >
                 {password.strength.level}
               </span>
               <span
                 className="strength-level-percent"
-                style={{ color: getStrengthColor(password.strength.score) }}
+                style={{ '--strength-color': getStrengthColor(password.strength.score) }}
               >
-                {[8, 20, 45, 75, 100][password.strength.score] || 8}%
+                {strengthPercent(password.strength.score)}%
               </span>
             </div>
             {/* Gradient Strength Bar */}
@@ -219,10 +234,12 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
               <div
                 className="strength-bar-fill"
                 style={{
-                  width: `${[8, 20, 45, 75, 100][password.strength.score] || 8}%`,
-                  background: `linear-gradient(90deg, ${getStrengthColor(password.strength.score)} 0%, ${password.strength.score >= 4 ? 'var(--success-light)' : getStrengthColor(password.strength.score)} 100%)`,
-                  boxShadow:
-                    password.strength.score >= 4 ? '0 0 12px rgba(16, 185, 129, 0.5)' : 'none',
+                  '--strength-width': `${strengthPercent(password.strength.score)}%`,
+                  '--strength-color': getStrengthColor(password.strength.score),
+                  '--strength-color-end':
+                    password.strength.score >= 4
+                      ? 'var(--gf-mint)'
+                      : getStrengthColor(password.strength.score),
                 }}
               />
             </div>
@@ -246,8 +263,8 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
       </div>
 
       {/* Configuration Card */}
-      <div className="glass-card glass-card-default glass-card-mt16">
-        <div className="widget-label config-label" style={{ marginBottom: 8 }}>
+      <div className="memphis-card memphis-card-default memphis-card-mt16">
+        <div className="widget-label config-label config-label-spaced">
           <Shield size={16} className="sf-icon" />
           Complexity Settings
         </div>
@@ -260,7 +277,7 @@ const PasswordGenerator: React.FC<Props> = ({ onToast, currentPassword }) => {
           </div>
           <input
             type="range"
-            style={{ width: '100%' }}
+            className="strength-range-input"
             min="8"
             max="64"
             value={localLength}

@@ -37,6 +37,41 @@ export const LINK_PATTERN_DATABASE: LinkPattern[] = [
     type: 'activation',
     description: 'Signup verification',
   },
+  {
+    pattern: /\/(?:email[-_]?verification|verify[-_]?email|confirm[-_]?email|email\/confirm)/i,
+    name: 'email-confirmation-path',
+    baseConfidence: 94,
+    type: 'activation',
+    description: 'Email confirmation path',
+  },
+  {
+    pattern: /\/(?:invite|invitation|invitations)\/?(?:accept|join)?/i,
+    name: 'invite-path',
+    baseConfidence: 92,
+    type: 'activation',
+    description: 'Invite or invitation path',
+  },
+  {
+    pattern: /\/(?:accept[-_]?invite|join[-_]?workspace|join[-_]?team|join[-_]?organization)/i,
+    name: 'invite-action-path',
+    baseConfidence: 94,
+    type: 'activation',
+    description: 'Invite acceptance action',
+  },
+  {
+    pattern: /\/(?:magic[-_]?link|passwordless|email[-_]?login|signin[-_]?link|login[-_]?link)/i,
+    name: 'magic-login-path',
+    baseConfidence: 92,
+    type: 'activation',
+    description: 'Magic or passwordless login path',
+  },
+  {
+    pattern: /\/(?:authorize|approve|authenticate|device[-_]?confirm|trust[-_]?device)/i,
+    name: 'authorization-path',
+    baseConfidence: 90,
+    type: 'activation',
+    description: 'Authorization or device confirmation path',
+  },
 
   // Password Reset Links
   {
@@ -62,6 +97,21 @@ export const LINK_PATTERN_DATABASE: LinkPattern[] = [
   },
 
   // Token/Code Parameters
+  {
+    pattern: /[?&](?:invite(?:_token)?|invitation(?:_token)?|accept_invite)=[a-zA-Z0-9._-]{8,}/i,
+    name: 'invite-token-param',
+    baseConfidence: 92,
+    type: 'activation',
+    description: 'Invite token parameter',
+  },
+  {
+    pattern:
+      /[?&](?:confirmation_token|confirm_token|verification_token|activation_token|magic_token|login_token)=[a-zA-Z0-9._-]{8,}/i,
+    name: 'activation-token-param',
+    baseConfidence: 92,
+    type: 'activation',
+    description: 'Activation token parameter',
+  },
   {
     pattern: /[?&]token=[a-zA-Z0-9_-]{20,}/i,
     name: 'token-param',

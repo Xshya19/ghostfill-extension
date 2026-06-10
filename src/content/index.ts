@@ -1,9 +1,11 @@
 // Content Script Entry Point
 
+// Safe getComputedStyle override to prevent Chrome/Brave crashing on invalid pattern attributes (Chromium bug)
 // Initialize debug console FIRST to capture all errors
 import './debugConsole';
-import './errorReportGenerator';
 
+import { FieldType } from '../types/form.types';
+import { deepQuerySelectorAll } from '../utils/helpers';
 import { createLogger } from '../utils/logger';
 import { errorTracker, performanceMonitor } from '../utils/monitoring';
 import { initRemoteLogger } from '../utils/remoteLogger';
@@ -15,8 +17,126 @@ import { FloatingButton } from './floatingButton';
 import { FormDetector } from './formDetector';
 import { OTPPageDetector } from './otpPageDetector';
 import { pageStatus } from './pageStatus';
+import { collectTrainingData } from './utils/trainingDataHarvester';
 import './styles/content.css';
-import './ui/GhostLabel'; // Register web component
+import './ui/GhostLabel';
+
+if (process.env.NODE_ENV !== 'production' && typeof window !== 'undefined') {
+  const originalGetComputedStyle = window.getComputedStyle;
+
+  const createFallbackStyle = () => {
+    return new Proxy(
+      {
+        getPropertyValue: (prop: string) => {
+          if (prop === 'display') {
+            return 'none';
+          }
+          if (prop === 'visibility') {
+            return 'hidden';
+          }
+          if (prop === 'opacity') {
+            return '0';
+          }
+          if (prop === 'z-index' || prop === 'zIndex') {
+            return '0';
+          }
+          return '';
+        },
+      },
+      {
+        get: (target, prop) => {
+          if (prop === 'getPropertyValue') {
+            return target.getPropertyValue;
+          }
+          const propStr = String(prop);
+          if (propStr === 'display') {
+            return 'none';
+          }
+          if (propStr === 'visibility') {
+            return 'hidden';
+          }
+          if (propStr === 'opacity') {
+            return '0';
+          }
+          if (propStr === 'zIndex' || propStr === 'z-index') {
+            return '0';
+          }
+          return '';
+        },
+      }
+    ) as unknown as CSSStyleDeclaration;
+  };
+
+  window.getComputedStyle = function (el: Element, pseudoElt?: string | null): CSSStyleDeclaration {
+    let style: CSSStyleDeclaration;
+    try {
+      style = originalGetComputedStyle(el, pseudoElt);
+    } catch (e) {
+      console.warn(
+        '[GhostFill] window.getComputedStyle failed to call original function, using fallback:',
+        e
+      );
+      return createFallbackStyle();
+    }
+
+    return new Proxy(style, {
+      get(target, prop) {
+        try {
+          const val = Reflect.get(target, prop, target);
+          if (typeof val === 'function') {
+            return function (this: any, ...args: any[]) {
+              try {
+                return val.apply(target, args);
+              } catch (err) {
+                console.warn(
+                  `[GhostFill] CSSStyleDeclaration method call for "${String(prop)}" failed:`,
+                  err
+                );
+                if (prop === 'getPropertyValue') {
+                  const propName = args[0];
+                  if (propName === 'display') {
+                    return 'none';
+                  }
+                  if (propName === 'visibility') {
+                    return 'hidden';
+                  }
+                  if (propName === 'opacity') {
+                    return '0';
+                  }
+                  if (propName === 'z-index' || propName === 'zIndex') {
+                    return '0';
+                  }
+                  return '';
+                }
+                return '';
+              }
+            };
+          }
+          return val;
+        } catch (e) {
+          console.warn(
+            `[GhostFill] CSSStyleDeclaration property access for "${String(prop)}" failed:`,
+            e
+          );
+          const propStr = String(prop);
+          if (propStr === 'display') {
+            return 'none';
+          }
+          if (propStr === 'visibility') {
+            return 'hidden';
+          }
+          if (propStr === 'opacity') {
+            return '0';
+          }
+          if (propStr === 'zIndex' || propStr === 'z-index') {
+            return '0';
+          }
+          return '';
+        }
+      },
+    });
+  };
+} // Register web component
 
 const log = createLogger('ContentScript');
 initRemoteLogger('Content');
@@ -257,15 +377,15 @@ function isLikelyRelevantInput(input: HTMLInputElement | HTMLTextAreaElement): b
 
 function hasRelevantField(): boolean {
   try {
-    if (document.querySelector(RELEVANT_FIELD_SELECTOR)) {
+    if (deepQuerySelectorAll(RELEVANT_FIELD_SELECTOR).length > 0) {
       return true;
     }
   } catch {
     // Ignore selector support issues and fall back to direct inspection.
   }
 
-  const inputs = Array.from(
-    document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea')
+  const inputs = deepQuerySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+    'input, textarea'
   ).slice(0, 60);
 
   return inputs.some((input) => isLikelyRelevantInput(input));
@@ -281,7 +401,7 @@ function shouldActivateImmediately(): boolean {
     return true;
   }
 
-  const hasAnyFormControl = Boolean(document.querySelector('form, input, textarea, select'));
+  const hasAnyFormControl = deepQuerySelectorAll('form, input, textarea, select').length > 0;
   return hasAnyFormControl && hasPageActivationSignals();
 }
 
@@ -437,7 +557,7 @@ function init(): void {
 
     // Keep install/startup light when Chrome injects the content script into
     // many existing tabs. Field enhancement can wait for browser idle time.
-    if (document.querySelector('input, textarea, select')) {
+    if (deepQuerySelectorAll('input, textarea, select').length > 0) {
       const enhanceFields = () => {
         runSafely('detectForms:init-idle', () => {
           formDetector.detectForms();
@@ -600,7 +720,7 @@ async function handleMessage(message: {
       if (message.payload) {
         const { value, fieldType, selector } = message.payload as {
           value: string;
-          fieldType?: string;
+          fieldType?: FieldType;
           selector?: string;
         };
 
@@ -775,6 +895,20 @@ function safeInitFromEvent(): void {
 }
 
 installPassiveMessageListener();
+
+// Listen for developer keyboard shortcut (Alt+Shift+H) to collect training data
+document.addEventListener(
+  'keydown',
+  (event: KeyboardEvent) => {
+    if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'h') {
+      event.preventDefault();
+      event.stopPropagation();
+      log.info('⌨️ Dev shortcut Alt+Shift+H triggered: Collecting training data');
+      void collectTrainingData();
+    }
+  },
+  true
+);
 
 // Initialize safely preventing DOM node load hazards
 if (document.readyState === 'complete') {

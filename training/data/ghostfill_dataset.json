@@ -1,0 +1,93 @@
+[
+  {
+    "rawInput": {
+      "subject": "Your Amazon.com security code",
+      "textBody": "Here is your security code: 482910. Do not share it.",
+      "htmlBody": "<p>Here is your security code: <strong>482910</strong>. Do not share it.</p>",
+      "sender": "Amazon.com <account-update@amazon.com>"
+    },
+    "labeledGroundTruth": {
+      "expectedIntent": "verification",
+      "expectedCode": "482910",
+      "expectedLink": null
+    }
+  },
+  {
+    "rawInput": {
+      "subject": "[GitHub] Please verify your device",
+      "textBody": "Your verification code is: 938102",
+      "htmlBody": "<p>Your verification code is: <strong>938102</strong></p>",
+      "sender": "GitHub <noreply@github.com>"
+    },
+    "labeledGroundTruth": {
+      "expectedIntent": "activation",
+      "expectedCode": "938102",
+      "expectedLink": null
+    }
+  },
+  {
+    "rawInput": {
+      "subject": "qwen.ai active mail.",
+      "textBody": "Click to activate: https://chat.qwen.ai/verify?token=abc123xyz789. © 2025 Qwen.",
+      "htmlBody": "<p>Click to activate: <a href=\"https://chat.qwen.ai/verify?token=abc123xyz789\">Verify Email</a>. © 2025 Qwen.</p>",
+      "sender": "noreply@qwen.ai"
+    },
+    "labeledGroundTruth": {
+      "expectedIntent": "activation",
+      "expectedCode": null,
+      "expectedLink": "https://chat.qwen.ai/verify?token=abc123xyz789"
+    }
+  },
+  {
+    "rawInput": {
+      "subject": "Stripe verification code",
+      "textBody": "Your Stripe verification code is 881273. Or verify by clicking: https://dashboard.stripe.com/verify?code=881273",
+      "htmlBody": "<p>Your Stripe verification code is 881273. Or verify by clicking: <a href=\"https://dashboard.stripe.com/verify?code=881273\">Verify</a></p>",
+      "sender": "Stripe <no-reply@stripe.com>"
+    },
+    "labeledGroundTruth": {
+      "expectedIntent": "verification",
+      "expectedCode": "881273",
+      "expectedLink": "https://dashboard.stripe.com/verify?code=881273"
+    }
+  },
+  {
+    "rawInput": {
+      "subject": "Weekly newsletter from TechCorp",
+      "textBody": "Check out our latest blog posts here: https://techcorp.com/blog. Unsubscribe at: https://techcorp.com/unsubscribe.",
+      "htmlBody": "<p>Check out our latest blog posts here: <a href=\"https://techcorp.com/blog\">Blog</a>. Unsubscribe at: <a href=\"https://techcorp.com/unsubscribe\">Unsubscribe</a>.</p>",
+      "sender": "TechCorp <newsletter@techcorp.com>"
+    },
+    "labeledGroundTruth": {
+      "expectedIntent": "activation",
+      "expectedCode": null,
+      "expectedLink": "https://techcorp.com/blog"
+    }
+  },
+  {
+    "rawInput": {
+      "subject": "Google Verification Code",
+      "textBody": "Your code is 192834. Google Inc © 2026",
+      "htmlBody": "<p>Your code is <strong>192834</strong>. Google Inc © 2026</p>",
+      "sender": "Google <noreply@google.com>"
+    },
+    "labeledGroundTruth": {
+      "expectedIntent": "verification",
+      "expectedCode": "192834",
+      "expectedLink": null
+    }
+  },
+  {
+    "rawInput": {
+      "subject": "Verify your email",
+      "textBody": "Confirm your email by clicking: https://vercel.com/verify/token123. Copyright 2026 Vercel.",
+      "htmlBody": "<p>Confirm your email by clicking: <a href=\"https://vercel.com/verify/token123\">Confirm Email</a>. Copyright 2026 Vercel.</p>",
+      "sender": "Vercel <noreply@vercel.com>"
+    },
+    "labeledGroundTruth": {
+      "expectedIntent": "activation",
+      "expectedCode": null,
+      "expectedLink": "https://vercel.com/verify/token123"
+    }
+  }
+]

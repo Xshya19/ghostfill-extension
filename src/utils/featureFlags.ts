@@ -212,7 +212,13 @@ class FeatureFlagManager {
    */
   async reset(): Promise<void> {
     this.flags = { ...DEFAULT_FLAGS };
-    await chrome.storage.local.remove('featureFlags');
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      try {
+        await chrome.storage.local.remove('featureFlags');
+      } catch (error) {
+        log.warn('Failed to remove feature flags from storage', error);
+      }
+    }
     this.notifyListeners();
     log.info('Flags reset to defaults');
   }

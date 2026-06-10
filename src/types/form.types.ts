@@ -98,6 +98,7 @@ export interface IdentityWithCredentials {
   email?: string;
   username?: string;
   password?: string;
+  phone?: string;
 }
 
 export interface DetectedForm {

@@ -1,11 +1,15 @@
+import { classifyField } from '../intelligence/classifier/classify';
+import { extractFieldRecord } from '../intelligence/featureExtractor';
+import { FieldClass } from '../intelligence/types';
 import {
   PageContext,
   FormInputElement,
   FillResult,
   FillDetail,
   IdentityWithCredentials,
-  FieldType as FormFieldType,
+  FieldType,
 } from '../types/form.types';
+import { deepQuerySelectorAll } from '../utils/helpers';
 import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
 import {
@@ -17,17 +21,82 @@ import {
   FieldSetter,
   PhantomTyper,
   OTPFieldGroup,
-  FieldClassifier,
-  FieldType,
 } from './autofill/index';
-import { FieldAnalyzer } from './fieldAnalyzer';
 import { HistoryManager } from './utils/intelligenceCore';
 
 const log = createLogger('AutoFiller');
 
-const DYNAMIC_WATCH_TIMEOUT_MS = 7000;
-const SMART_FILL_RETRY_DELAYS_MS = [0, 500, 1500, 3000];
-const OTP_EXACT_FIELD_NAMES = new Set([
+/**
+ * Maps a classifier `FieldClass` to the canonical `FieldType` used throughout
+ * the filler. This is exhaustive: adding a new `FieldClass` without handling it
+ * here is a compile-time error (see the `never` assertion in the default case).
+ */
+function mapFieldClassToFieldType(cls: FieldClass): FieldType {
+  switch (cls) {
+    case 'Email':
+      return 'email';
+    case 'Username':
+      return 'username';
+    case 'Password':
+      return 'password';
+    case 'Target_Password_Confirm':
+      return 'confirm-password';
+    case 'First_Name':
+      return 'first-name';
+    case 'Last_Name':
+      return 'last-name';
+    case 'Full_Name':
+      return 'full-name';
+    case 'Phone':
+      return 'phone';
+    case 'OTP':
+      return 'otp';
+    case 'Unknown':
+      return 'unknown';
+    default: {
+      // Exhaustiveness guard: if a new FieldClass is added and not handled
+      // above, TypeScript will flag this line.
+      const _exhaustive: never = cls;
+      void _exhaustive;
+      return 'unknown';
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+//  Constants
+// ─────────────────────────────────────────────────────────────
+
+const DYNAMIC_WATCH_TIMEOUT_MS = 7_000;
+const SMART_FILL_RETRY_DELAYS_MS = [0, 500, 1_500, 3_000] as const;
+const OTP_DISCOVERY_RETRIES = 5;
+const OTP_DISCOVERY_RETRY_DELAY_MS = 200;
+
+/** Minimum number of single-character boxes for a valid split-OTP layout. */
+const MIN_SPLIT_OTP_FIELDS = 4;
+/** Maximum number of single-character boxes we will treat as one OTP group. */
+const MAX_SPLIT_OTP_FIELDS = 8;
+/** Pixel width below which a text input looks like a single-digit OTP box. */
+const SPLIT_OTP_BOX_MAX_WIDTH = 90;
+
+/** Input element `type` values that can legitimately hold an OTP value. */
+const OTP_COMPATIBLE_INPUT_TYPES: ReadonlySet<string> = new Set([
+  'text',
+  'tel',
+  'number',
+  'password',
+  '',
+]);
+
+/** Hosts whose auth flows use legitimate hidden fields; skip icon injection. */
+const INJECTION_EXCLUDED_HOSTS: ReadonlyArray<string> = [
+  'accounts.google.com',
+  'login.microsoftonline.com',
+  'appleid.apple.com',
+  'auth0.com',
+];
+
+const OTP_EXACT_FIELD_NAMES: ReadonlySet<string> = new Set([
   'otp',
   'otc',
   'code',
@@ -54,40 +123,35 @@ const STRONG_OTP_DESCRIPTOR_PATTERN =
 const CAPTCHA_DESCRIPTOR_PATTERN =
   /captcha|recaptcha|hcaptcha|turnstile|anti[-_\s]?bot|bot[-_\s]?check|robot/i;
 
-const NON_OTP_FIELD_TYPES = new Set([
-  'email',
-  'username',
-  'first-name',
-  'last-name',
-  'full-name',
-  'phone',
-  'text',
-]);
-
-const TRUSTED_SELECTOR_FIELD_TYPES: ReadonlySet<FormFieldType> = new Set([
+const TRUSTED_SELECTOR_FIELD_TYPES: ReadonlySet<FieldType> = new Set<FieldType>([
   'email',
   'password',
   'confirm-password',
   'otp',
   'username',
-  'name',
   'first-name',
   'last-name',
-  'middle-name',
   'full-name',
   'phone',
-  'address',
-  'city',
-  'zip',
-  'country',
-  'credit-card',
-  'cvv',
-  'expiry',
   'unknown',
 ]);
 
+/** Field types that should never be overwritten if they already have a value. */
+function isOverwritableWhenFilled(type: FieldType): boolean {
+  // OTP codes rotate, and 'unknown' fields are filled opportunistically, so
+  // both may be (re)written even if they currently hold a value.
+  return type === 'otp' || type === 'unknown';
+}
+
 interface GhostLabelElement extends HTMLElement {
   attachToAttribute?: (input: HTMLElement, onClick: () => void) => void;
+}
+
+interface PendingOTPRequest {
+  readonly otp: string;
+  readonly fieldSelectors?: string[];
+  readonly isBackgroundTab: boolean;
+  readonly resolve: (val: boolean) => void;
 }
 
 export class AutoFiller {
@@ -95,26 +159,12 @@ export class AutoFiller {
   private pageContext: PageContext | null = null;
   private destroyed = false;
   private fillLock = false;
-  private latestPendingOTP: {
-    otp: string;
-    fieldSelectors?: string[];
-    isBackgroundTab: boolean;
-    resolve: (val: boolean) => void;
-  } | null = null;
+  /** The most recent OTP request received while a fill was already running. */
+  private latestPendingOTP: PendingOTPRequest | null = null;
 
-  private processNextOTPInQueue(): void {
-    if (this.latestPendingOTP && !this.destroyed) {
-      const next = this.latestPendingOTP;
-      this.latestPendingOTP = null;
-      log.info('🔓 Lock released, processing queued OTP request');
-      void this.fillOTP(next.otp, next.fieldSelectors, next.isBackgroundTab)
-        .then(next.resolve)
-        .catch((error) => {
-          log.warn('Queued OTP request failed', error);
-          next.resolve(false);
-        });
-    }
-  }
+  // ═══════════════════════════════════════════════════════════
+  //  CONTEXT
+  // ═══════════════════════════════════════════════════════════
 
   private getContext(): PageContext {
     if (!this.pageContext) {
@@ -128,35 +178,50 @@ export class AutoFiller {
     this.pageContext = null;
   }
 
+  private processNextOTPInQueue(): void {
+    if (!this.latestPendingOTP || this.destroyed) {
+      return;
+    }
+    const next = this.latestPendingOTP;
+    this.latestPendingOTP = null;
+    log.info('🔓 Lock released, processing queued OTP request');
+    void this.fillOTP(next.otp, next.fieldSelectors, next.isBackgroundTab)
+      .then(next.resolve)
+      .catch((error) => {
+        log.warn('Queued OTP request failed', error);
+        next.resolve(false);
+      });
+  }
+
   // ═══════════════════════════════════════════════════════════
   //  CORE: OTP FILLING
   // ═══════════════════════════════════════════════════════════
 
-  async fillOTP(
-    otp: string,
-    fieldSelectors?: string[],
-    isBackgroundTab: boolean = false
-  ): Promise<boolean> {
+  async fillOTP(otp: string, fieldSelectors?: string[], isBackgroundTab = false): Promise<boolean> {
     if (this.destroyed) {
       return false;
     }
+
     if (this.fillLock) {
-      // If the lock is held but only because the passive fieldWatcher is waiting for dynamically rendered fields,
-      // stop the watcher immediately. This resolves the watcher's promise, releasing the lock,
-      // and allows us to process the new OTP request without waiting for the full watcher timeout.
+      // If the lock is held only because the passive fieldWatcher is waiting
+      // for dynamically rendered fields, stop the watcher immediately. This
+      // resolves the watcher's promise, releasing the lock, and lets us handle
+      // the new request without waiting out the full watcher timeout.
       if (this.fieldWatcher.isActive) {
-        log.info('🔄 New OTP request received while passive FieldWatcher was active. Stopping current watcher to prioritize new request.');
+        log.info(
+          '🔄 New OTP request received while passive FieldWatcher was active. Stopping current watcher to prioritize new request.'
+        );
         this.fieldWatcher.stop();
       }
-
-      log.info('🔒 Fill lock active, queuing OTP request to process after current run completes');
+      log.info('🔒 Fill lock active, queuing OTP request to run after the current one completes');
       return new Promise<boolean>((resolve) => {
+        // Only the newest queued request matters; supersede any older one.
         if (this.latestPendingOTP) {
           this.latestPendingOTP.resolve(false);
         }
         this.latestPendingOTP = {
           otp,
-          ...(fieldSelectors && { fieldSelectors }),
+          ...(fieldSelectors ? { fieldSelectors } : {}),
           isBackgroundTab,
           resolve,
         };
@@ -164,26 +229,24 @@ export class AutoFiller {
     }
 
     this.fillLock = true;
-
     try {
       const context = this.getContext();
-      // Keep original for single fields, clean for split fields
+      // `cleanOTP` strips separators for split fields / numeric inputs.
       const cleanOTP = otp.replace(/[-\s]/g, '');
       if (cleanOTP.length === 0) {
+        log.debug('fillOTP called with an empty code, skipping');
         return false;
       }
 
-      log.info('🔑 OTP Fill Pipeline Started', { length: cleanOTP.length, original: otp.length });
+      log.info('🔑 OTP Fill Pipeline Started', {
+        length: cleanOTP.length,
+        originalLength: otp.length,
+      });
 
       if (fieldSelectors?.length) {
-        const result = await this.fillOTPWithSelectors(
-          otp,
-          cleanOTP,
-          fieldSelectors,
-          context,
-          isBackgroundTab
-        );
-        if (result) {
+        if (
+          await this.fillOTPWithSelectors(otp, cleanOTP, fieldSelectors, context, isBackgroundTab)
+        ) {
           return true;
         }
       }
@@ -199,12 +262,7 @@ export class AutoFiller {
           return this.tryFallbackOTPFill(otp, cleanOTP, context, isBackgroundTab);
         }
 
-        // Use cleanOTP for split fields, original OTP for single fields (unless single field is type=number)
-        let finalOtp = safeGroup.isSplit ? cleanOTP : otp;
-        if (!safeGroup.isSplit && safeGroup.fields[0]?.type === 'number') {
-          finalOtp = cleanOTP; // number fields can't handle hyphens
-        }
-
+        const finalOtp = this.resolveOtpValueForGroup(safeGroup, otp, cleanOTP);
         const result = await OTPFiller.fill(
           finalOtp,
           safeGroup,
@@ -214,18 +272,7 @@ export class AutoFiller {
         if (result.success) {
           void AutoSubmitDetector.checkAndHighlight(safeGroup);
           this.markOTPUsed();
-          // Intelligence 2.0: Save trusted OTP selector (first field of group)
-          if (safeGroup.fields[0]) {
-            void HistoryManager.saveTrustedSelector(
-              window.location.hostname,
-              'otp',
-              safeGroup.fields[0].id
-                ? `#${safeGroup.fields[0].id}`
-                : safeGroup.fields[0].name
-                  ? `input[name="${safeGroup.fields[0].name}"]`
-                  : 'input'
-            );
-          }
+          this.saveTrustedSelector('otp', this.buildFieldSelector(safeGroup.fields[0]));
           return true;
         }
       }
@@ -237,6 +284,23 @@ export class AutoFiller {
     }
   }
 
+  /**
+   * Decides which form of the code to send to a group: the cleaned (separator-
+   * free) code for split fields and numeric single fields, otherwise the
+   * original (which may contain a human-friendly separator).
+   */
+  private resolveOtpValueForGroup(
+    group: OTPFieldGroup,
+    originalOtp: string,
+    cleanOtp: string
+  ): string {
+    if (group.isSplit) {
+      return cleanOtp;
+    }
+    // number inputs reject hyphens/spaces.
+    return group.fields[0]?.type === 'number' ? cleanOtp : originalOtp;
+  }
+
   private async tryFallbackOTPFill(
     otp: string,
     cleanOTP: string,
@@ -244,27 +308,23 @@ export class AutoFiller {
     isBackgroundTab: boolean
   ): Promise<boolean> {
     const focusedField =
-      this.getFocusedOTPField(cleanOTP.length) ?? this.findControllerOTPField([], cleanOTP.length);
+      this.getFocusedOTPField(cleanOTP.length, context) ??
+      this.findControllerOTPField([], cleanOTP.length, context);
+
     if (focusedField) {
       const focusedValue = focusedField.type === 'number' ? cleanOTP : otp;
-      const focusedResult = await this.fillFocusedOTPField(
-        focusedField,
-        focusedValue,
-        context,
-        isBackgroundTab
-      );
-      if (focusedResult) {
+      if (await this.fillFocusedOTPField(focusedField, focusedValue, context, isBackgroundTab)) {
         this.markOTPUsed();
+        this.saveTrustedSelector('otp', this.buildFieldSelector(focusedField));
         return true;
       }
     }
 
     // ── Background tab guard ──
-    // In background tabs, we can't rely on DOM focus events or fieldWatcher.
-    // If no OTP fields accepted the code after direct and controller recovery,
-    // bail gracefully instead of spinning on retries that need active focus.
+    // In background tabs we can't rely on DOM focus events or the fieldWatcher,
+    // so bail gracefully instead of spinning on retries that need active focus.
     if (isBackgroundTab) {
-      log.info('🔇 Background tab: no OTP fields accepted the code, skipping fieldWatcher retry');
+      log.info('🔇 Background tab: no OTP field accepted the code, skipping fieldWatcher retry');
       return false;
     }
 
@@ -276,11 +336,13 @@ export class AutoFiller {
     cleanOtp: string,
     selectors: string[],
     context: PageContext,
-    isBackgroundTab: boolean = false
+    isBackgroundTab = false
   ): Promise<boolean> {
     const rawFields = selectors
-      .map((s) => document.querySelector(s) as HTMLInputElement)
-      .filter((f) => f && !f.disabled && !f.readOnly);
+      .map((selector) => deepQuerySelectorAll<HTMLInputElement>(selector)[0] ?? null)
+      .filter(
+        (field): field is HTMLInputElement => field !== null && !field.disabled && !field.readOnly
+      );
 
     if (rawFields.length === 0) {
       return false;
@@ -290,44 +352,33 @@ export class AutoFiller {
       fields: rawFields,
       score: 100,
       strategy: 'provided-selectors',
-      isSplit: rawFields.length > 1, // Fix: don't strictly require maxLength=1
+      isSplit: rawFields.length > 1,
       expectedLength: rawFields.length,
       signals: ['provided'],
     };
+
     const group = this.normalizeOTPGroup(initialGroup, cleanOtp.length, context);
     if (!group) {
       return false;
     }
-    const fields = group.fields;
 
-    // For selectors, we assume cleanOTP if it's split
-    const finalOtp = group.isSplit
-      ? cleanOtp
-      : fields[0]?.type === 'number'
-        ? cleanOtp
-        : originalOtp;
+    const finalOtp = this.resolveOtpValueForGroup(group, originalOtp, cleanOtp);
     const result = await OTPFiller.fill(finalOtp, group, context.framework, isBackgroundTab);
     if (result.success) {
       void AutoSubmitDetector.checkAndHighlight(group);
       this.markOTPUsed();
-      // Intelligence 2.0: Save trusted OTP selector
-      if (fields[0]) {
-        void HistoryManager.saveTrustedSelector(window.location.hostname, 'otp', selectors[0]!);
-      }
+      this.saveTrustedSelector('otp', selectors[0] ?? this.buildFieldSelector(group.fields[0]));
       return true;
     }
 
-    const controllerField = this.findControllerOTPField(fields, cleanOtp.length);
+    const controllerField = this.findControllerOTPField(group.fields, cleanOtp.length, context);
     if (controllerField) {
       const controllerValue = controllerField.type === 'number' ? cleanOtp : originalOtp;
-      const controllerResult = await this.fillFocusedOTPField(
-        controllerField,
-        controllerValue,
-        context,
-        isBackgroundTab
-      );
-      if (controllerResult) {
+      if (
+        await this.fillFocusedOTPField(controllerField, controllerValue, context, isBackgroundTab)
+      ) {
         this.markOTPUsed();
+        this.saveTrustedSelector('otp', this.buildFieldSelector(controllerField));
         return true;
       }
     }
@@ -336,40 +387,47 @@ export class AutoFiller {
   }
 
   // ═══════════════════════════════════════════════════════════
-  //  CORE: SMART FILL
+  //  OTP FIELD DETECTION
   // ═══════════════════════════════════════════════════════════
 
-  private getFocusedOTPField(expectedLength: number): HTMLInputElement | null {
+  private getFocusedOTPField(
+    expectedLength: number,
+    context: PageContext
+  ): HTMLInputElement | null {
     const active = document.activeElement;
     if (!(active instanceof HTMLInputElement) || active.disabled || active.readOnly) {
       return null;
     }
-
-    return this.isOTPFillCandidate(active, expectedLength, this.getContext()) ? active : null;
+    return this.isOTPFillCandidate(active, expectedLength, context) ? active : null;
   }
 
   private findControllerOTPField(
     ignoreFields: HTMLInputElement[],
-    expectedLength: number
+    expectedLength: number,
+    context: PageContext
   ): HTMLInputElement | null {
     const ignored = new Set(ignoreFields);
     const active =
       document.activeElement instanceof HTMLInputElement ? document.activeElement : null;
 
-    const candidates = Array.from(document.querySelectorAll<HTMLInputElement>('input'))
+    const candidates = deepQuerySelectorAll<HTMLInputElement>('input')
       .filter((field) => !ignored.has(field))
       .filter((field) => field.isConnected && !field.disabled && !field.readOnly)
-      .filter((field) => ['text', 'tel', 'number', 'password', ''].includes(field.type));
+      .filter((field) => this.isOTPCompatibleInput(field));
 
     let bestField: HTMLInputElement | null = null;
     let bestScore = -1;
 
     for (const field of candidates) {
+      if (!this.isOTPFillCandidate(field, expectedLength, context)) {
+        continue;
+      }
+
       let score = 0;
       if (field === active) {
         score += 5;
       }
-      if (field.autocomplete === 'one-time-code') {
+      if (field.autocomplete.toLowerCase() === 'one-time-code') {
         score += 4;
       }
       if (
@@ -379,14 +437,12 @@ export class AutoFiller {
       ) {
         score += 2;
       }
-      if (this.hasStrongOTPSignal(field, expectedLength, this.getContext())) {
+      if (this.hasStrongOTPSignal(field, expectedLength, context)) {
         score += 3;
       }
-      if (field.maxLength === expectedLength || field.maxLength > expectedLength) {
+      // maxLength is -1 when unset, so this only rewards explicit, fitting limits.
+      if (field.maxLength >= expectedLength) {
         score += 2;
-      }
-      if (!this.isOTPFillCandidate(field, expectedLength, this.getContext())) {
-        score = -1;
       }
 
       if (score > bestScore) {
@@ -410,45 +466,44 @@ export class AutoFiller {
     const fillableFields = group.fields.filter(
       (field) => field?.isConnected && !field.disabled && !field.readOnly
     );
-
     if (fillableFields.length === 0) {
       return null;
     }
 
-    const splitLike =
-      fillableFields.length >= 4 &&
-      fillableFields.length <= 8 &&
+    const looksLikeSplit =
+      fillableFields.length >= MIN_SPLIT_OTP_FIELDS &&
+      fillableFields.length <= MAX_SPLIT_OTP_FIELDS &&
       fillableFields.every((field) => {
         const rect = field.getBoundingClientRect();
-        return field.maxLength === 1 || rect.width <= 90;
+        return field.maxLength === 1 || rect.width <= SPLIT_OTP_BOX_MAX_WIDTH;
       });
 
-    if (group.isSplit || splitLike) {
+    if (group.isSplit || looksLikeSplit) {
       const compatibleSplitFields = fillableFields.filter((field) =>
         this.isOTPCompatibleInput(field)
       );
-      if (compatibleSplitFields.length < 4) {
+      if (compatibleSplitFields.length < MIN_SPLIT_OTP_FIELDS) {
         return null;
       }
+      const fields = compatibleSplitFields.slice(0, MAX_SPLIT_OTP_FIELDS);
       return {
         ...group,
-        fields: compatibleSplitFields.slice(0, Math.min(compatibleSplitFields.length, 8)),
+        fields,
         isSplit: true,
-        expectedLength: compatibleSplitFields.length,
+        expectedLength: fields.length,
       };
     }
 
-    const safeFields = fillableFields.filter((field) =>
+    const safeField = fillableFields.find((field) =>
       this.isOTPFillCandidate(field, expectedLength, context)
     );
-
-    if (safeFields.length === 0) {
+    if (!safeField) {
       return null;
     }
 
     return {
       ...group,
-      fields: [safeFields[0]!],
+      fields: [safeField],
       isSplit: false,
       expectedLength,
     };
@@ -463,28 +518,32 @@ export class AutoFiller {
       return false;
     }
 
-    const descriptor = this.getFieldDescriptor(field);
     const hasAutocompleteOTP = field.autocomplete.toLowerCase() === 'one-time-code';
+    const descriptor = this.getFieldDescriptor(field);
     if (CAPTCHA_DESCRIPTOR_PATTERN.test(descriptor) && !hasAutocompleteOTP) {
       return false;
     }
 
-    const classified = FieldClassifier.classify(field);
-    const strongOTP = this.hasStrongOTPSignal(field, expectedLength, context);
+    const { decision } = classifyField(extractFieldRecord(field));
+    if (decision.action === 'BLOCK') {
+      log.warn(`Field fill blocked by safety gate: ${decision.safety ?? ''}`);
+      return false;
+    }
+    if (decision.action === 'ABSTAIN') {
+      return false;
+    }
 
+    const classified = mapFieldClassToFieldType(decision.class);
     if (classified === 'otp') {
       return true;
     }
-
-    if (NON_OTP_FIELD_TYPES.has(classified)) {
-      return strongOTP;
-    }
-
-    return strongOTP;
+    // A field classified as something else (or unknown) is only an OTP target
+    // when accompanied by a strong, independent OTP signal.
+    return this.hasStrongOTPSignal(field, expectedLength, context);
   }
 
   private isOTPCompatibleInput(field: HTMLInputElement): boolean {
-    return ['text', 'tel', 'number', 'password', ''].includes(field.type);
+    return OTP_COMPATIBLE_INPUT_TYPES.has(field.type);
   }
 
   private hasStrongOTPSignal(
@@ -492,17 +551,17 @@ export class AutoFiller {
     expectedLength: number,
     context: PageContext
   ): boolean {
-    const descriptor = this.getFieldDescriptor(field);
-    const name = field.name.toLowerCase();
-    const id = field.id.toLowerCase();
-
     if (field.autocomplete.toLowerCase() === 'one-time-code') {
       return true;
     }
+
+    const name = field.name.toLowerCase();
+    const id = field.id.toLowerCase();
     if (OTP_EXACT_FIELD_NAMES.has(name) || OTP_EXACT_FIELD_NAMES.has(id)) {
       return true;
     }
-    if (STRONG_OTP_DESCRIPTOR_PATTERN.test(descriptor)) {
+
+    if (STRONG_OTP_DESCRIPTOR_PATTERN.test(this.getFieldDescriptor(field))) {
       return true;
     }
 
@@ -510,6 +569,7 @@ export class AutoFiller {
     const hasExpectedLength =
       (maxLength >= 4 && maxLength <= 10) ||
       (expectedLength >= 4 && expectedLength <= 10 && maxLength === expectedLength);
+
     const isNumericish =
       field.inputMode === 'numeric' ||
       field.inputMode === 'decimal' ||
@@ -526,7 +586,7 @@ export class AutoFiller {
   }
 
   private getFieldDescriptor(field: HTMLInputElement): string {
-    const labels = field.labels ? Array.from(field.labels).map((label) => label.textContent) : [];
+    const labels = field.labels ? Array.from(field.labels, (label) => label.textContent ?? '') : [];
     const ariaLabelledBy = field
       .getAttribute('aria-labelledby')
       ?.split(/\s+/)
@@ -556,11 +616,11 @@ export class AutoFiller {
     context: PageContext,
     isBackgroundTab: boolean
   ): Promise<boolean> {
-    const setResult = await FieldSetter.setValue(field, value, context.framework, isBackgroundTab);
-    if (setResult) {
+    if (await FieldSetter.setValue(field, value, context.framework, isBackgroundTab)) {
       return true;
     }
 
+    // PhantomTyper relies on real focus, which background tabs cannot provide.
     if (isBackgroundTab) {
       return false;
     }
@@ -568,30 +628,73 @@ export class AutoFiller {
     field.focus({ preventScroll: true });
     field.click();
     await PhantomTyper.typeSimulatedString(field, value);
-    return (
-      field.value === value || field.value.replace(/[-\s]/g, '') === value.replace(/[-\s]/g, '')
-    );
+
+    const stripSeparators = (input: string) => input.replace(/[-\s]/g, '');
+    return field.value === value || stripSeparators(field.value) === stripSeparators(value);
   }
 
-  async smartFill(): Promise<FillResult> {
-    if (this.destroyed) {
-      return { success: false, filledCount: 0, message: 'Destroyed', details: [], timingMs: 0 };
+  /**
+   * Discover OTP fields with retry for SPA-injected fields.
+   * Some frameworks (React, Vue, Angular) inject OTP inputs after page load, so
+   * we retry discovery a few times, refreshing the page context each attempt.
+   */
+  private async discoverOTPFieldWithRetry(
+    context: PageContext,
+    isBackgroundTab: boolean
+  ): Promise<OTPFieldGroup | null> {
+    const initial = OTPFieldDiscovery.discover(context);
+    if (initial) {
+      return initial;
     }
 
+    // Background tabs don't render reliably, so retrying wastes time.
+    if (isBackgroundTab) {
+      return null;
+    }
+
+    for (let attempt = 1; attempt <= OTP_DISCOVERY_RETRIES; attempt++) {
+      log.debug(
+        `OTP field discovery attempt ${attempt}/${OTP_DISCOVERY_RETRIES} — waiting for DOM to settle`
+      );
+      await this.delay(OTP_DISCOVERY_RETRY_DELAY_MS);
+
+      this.refreshContext();
+      const group = OTPFieldDiscovery.discover(this.getContext());
+      if (group) {
+        log.info(`✅ OTP field found on retry attempt ${attempt}/${OTP_DISCOVERY_RETRIES}`);
+        return group;
+      }
+    }
+
+    log.debug('OTP field not found after all retry attempts');
+    return null;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  CORE: SMART FILL
+  // ═══════════════════════════════════════════════════════════
+
+  async smartFill(): Promise<FillResult> {
     const startTime = performance.now();
-    const context = this.getContext();
     const details: FillDetail[] = [];
 
+    if (this.destroyed) {
+      return { success: false, filledCount: 0, message: 'Destroyed', details, timingMs: 0 };
+    }
+
+    const context = this.getContext();
     const group = OTPFieldDiscovery.discover(context);
 
-    if (
+    const isPureLoginPage =
       context.isLoginPage &&
       !context.isVerificationPage &&
       !context.is2FAPage &&
       !context.isSignupPage &&
-      !context.isPasswordResetPage
-    ) {
-      // Only block if we haven't found a strong OTP field group during discovery
+      !context.isPasswordResetPage;
+
+    if (isPureLoginPage) {
+      // Only proceed on a pure login page if discovery found a high-conviction
+      // OTP field group; otherwise avoid touching credential fields.
       if (!group || group.score < 0.5) {
         log.warn('🚫 Smart Fill blocked on pure login page without visible OTP fields');
         return {
@@ -601,24 +704,24 @@ export class AutoFiller {
           details,
           timingMs: performance.now() - startTime,
         };
-      } else {
-        log.info('🛡️ Bypassing login block due to high-conviction OTP field discovery');
-        // Skipping block, context stays same but we proceed.
       }
+      log.info('🛡️ Bypassing login block due to high-conviction OTP field discovery');
     }
 
     for (const waitMs of SMART_FILL_RETRY_DELAYS_MS) {
-      if (waitMs > 0) {
-        await new Promise<void>((resolve) => {
-          setTimeout(resolve, waitMs);
-        });
+      if (this.destroyed) {
+        break;
       }
+      if (waitMs > 0) {
+        await this.delay(waitMs);
+      }
+
       const filledCount = await this.performSmartFillAttempt(context, details);
       if (filledCount > 0) {
         return {
           success: true,
           filledCount,
-          message: `Filled ${filledCount} fields`,
+          message: `Filled ${filledCount} field${filledCount === 1 ? '' : 's'}`,
           details,
           timingMs: performance.now() - startTime,
         };
@@ -643,65 +746,37 @@ export class AutoFiller {
       return 0;
     }
 
+    const inputs = deepQuerySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+      'input, textarea'
+    ).filter((field) => !field.disabled && !field.readOnly);
+
     const filledElements = new Set<HTMLElement>();
-
-    // AI Detection
-    try {
-      const analyzer = FieldAnalyzer.getInstance();
-      const aiResult = await analyzer.getAllFieldsWithAI();
-      for (const field of aiResult.fields || []) {
-        if (filledElements.has(field.element)) {
-          continue;
-        }
-        const fieldType = this.normalizeSmartFillFieldType(field.fieldType);
-        if (this.shouldPreserveExistingValue(field.element, fieldType)) {
-          continue;
-        }
-        const value = this.getValueForFieldType(
-          fieldType,
-          identity,
-          otpCode,
-          field.element,
-          context
-        );
-        if (
-          value &&
-          (await FieldSetter.setValue(field.element as HTMLInputElement, value, context.framework))
-        ) {
-          filledElements.add(field.element);
-          details.push({
-            fieldType,
-            selector: field.selector,
-            strategy: 'ai-detected',
-            success: true,
-          });
-          // Intelligence 2.0: Self-Healing
-          this.saveTrustedSelector(fieldType, field.selector);
-        }
-      }
-    } catch {
-      // AI-assisted field detection is opportunistic; continue with fallback heuristics.
-    }
-
-    // Direct Classification
-    const inputs = Array.from(
-      document.querySelectorAll<HTMLInputElement>('input, textarea')
-    ).filter((f) => !filledElements.has(f) && !f.disabled && !f.readOnly);
-
     for (const input of inputs) {
-      const type = this.normalizeSmartFillFieldType(FieldClassifier.classify(input));
+      const { decision } = classifyField(extractFieldRecord(input));
+      if (decision.action === 'BLOCK') {
+        log.warn(`Field fill blocked by safety gate: ${decision.safety ?? ''}`);
+        continue;
+      }
+      if (decision.action === 'ABSTAIN') {
+        continue;
+      }
+
+      const type = mapFieldClassToFieldType(decision.class);
       if (type === 'unknown') {
         continue;
       }
       if (this.shouldPreserveExistingValue(input, type)) {
         continue;
       }
+
       const value = this.getValueForFieldType(type, identity, otpCode, input, context);
       if (value && (await FieldSetter.setValue(input, value, context.framework))) {
         filledElements.add(input);
+        const selector = this.buildFieldSelector(input as HTMLInputElement);
+        this.saveTrustedSelector(type, selector);
         details.push({
           fieldType: type,
-          selector: input.id || input.name || 'input',
+          selector,
           strategy: 'classification',
           success: true,
         });
@@ -719,34 +794,47 @@ export class AutoFiller {
     if (this.destroyed) {
       return false;
     }
+
     const form = formSelector
-      ? document.querySelector<HTMLFormElement>(formSelector)
-      : document.querySelector('form');
+      ? (deepQuerySelectorAll<HTMLFormElement>(formSelector)[0] ?? null)
+      : (deepQuerySelectorAll<HTMLFormElement>('form')[0] ?? null);
     if (!form) {
       return false;
     }
 
-    if (data) {
-      const framework = this.getContext().framework;
-      for (const [field, value] of Object.entries(data)) {
-        const input = form.querySelector<HTMLInputElement>(
-          `input[name="${CSS.escape(field)}"], input[id="${CSS.escape(field)}"]`
-        );
-        if (input) {
-          await FieldSetter.setValue(input, value, framework);
+    if (!data) {
+      return (await this.smartFill()).success;
+    }
+
+    const framework = this.getContext().framework;
+    let filledAny = false;
+    for (const [field, value] of Object.entries(data)) {
+      const input =
+        deepQuerySelectorAll<HTMLInputElement>(
+          `input[name="${CSS.escape(field)}"], input[id="${CSS.escape(field)}"]`,
+          form
+        )[0] ?? null;
+      if (input && !input.disabled && !input.readOnly) {
+        if (await FieldSetter.setValue(input, value, framework)) {
+          filledAny = true;
         }
       }
-      return true;
     }
-    return (await this.smartFill()).success;
+    return filledAny;
   }
 
   async injectIcons(): Promise<void> {
-    if (this.destroyed || document.body.hasAttribute('data-ghost-injected')) {
+    if (this.destroyed) {
       return;
     }
-    const inputs = document.querySelectorAll<HTMLInputElement>('input');
-    const relevantTypes = new Set([
+
+    // Skip injection on authentication provider pages where hidden fields are
+    // legitimate and would trigger false-positive honeypot warnings.
+    if (this.isInjectionExcludedHost(window.location.hostname)) {
+      return;
+    }
+
+    const relevantTypes: ReadonlySet<FieldType> = new Set<FieldType>([
       'email',
       'password',
       'username',
@@ -755,52 +843,139 @@ export class AutoFiller {
       'full-name',
     ]);
 
+    const inputs = deepQuerySelectorAll<HTMLInputElement>('input');
     for (const input of inputs) {
       if (input.hasAttribute('data-ghost-attached')) {
         continue;
       }
-      const type = FieldClassifier.classify(input);
-      if (
-        relevantTypes.has(type) ||
-        (type === 'unknown' &&
-          /user|login|name|email/i.test(input.name + input.id + input.placeholder))
-      ) {
+
+      const { decision } = classifyField(extractFieldRecord(input));
+      if (decision.action === 'BLOCK') {
+        log.debug('Skipping field icon injection after safety check', {
+          reason: decision.safety ?? 'blocked',
+        });
+        continue;
+      }
+      if (decision.action === 'ABSTAIN') {
+        continue;
+      }
+
+      const type = mapFieldClassToFieldType(decision.class);
+      const looksLikeIdentifier =
+        type === 'unknown' &&
+        /user|login|name|email/i.test(`${input.name} ${input.id} ${input.placeholder}`);
+
+      if (relevantTypes.has(type) || looksLikeIdentifier) {
         this.attachGhostIcon(input, type);
       }
     }
+
     document.body.setAttribute('data-ghost-injected', 'true');
+  }
+
+  private isInjectionExcludedHost(hostname: string): boolean {
+    return INJECTION_EXCLUDED_HOSTS.some(
+      (host) => hostname === host || hostname.endsWith(`.${host}`)
+    );
   }
 
   private attachGhostIcon(input: HTMLInputElement, type: FieldType): void {
     const ghost = document.createElement('ghost-label') as GhostLabelElement;
-    document.body.appendChild(ghost);
-    if (ghost.attachToAttribute) {
-      ghost.attachToAttribute(input, () => {
-        void this.handleIconClick(input, type);
-      });
+    // Only commit the element to the DOM if it can actually attach; otherwise we
+    // would leak an orphaned, non-functional <ghost-label> node.
+    if (typeof ghost.attachToAttribute !== 'function') {
+      return;
     }
+    document.body.appendChild(ghost);
+    ghost.attachToAttribute(input, () => {
+      void this.handleIconClick(input, type);
+    });
     input.setAttribute('data-ghost-attached', 'true');
   }
 
   private async handleIconClick(input: HTMLInputElement, type: FieldType): Promise<void> {
     const { identity, otpCode } = await this.fetchIdentityAndOTP();
-    const fieldType = this.normalizeSmartFillFieldType(type);
-    if (this.shouldPreserveExistingValue(input, fieldType)) {
-      log.debug('Skipping icon fill because field already has a value', { fieldType });
+    const context = this.getContext();
+    if (this.shouldPreserveExistingValue(input, type)) {
+      log.debug('Skipping icon fill because field already has a value', { fieldType: type });
       return;
     }
-    const value = this.getValueForFieldType(fieldType, identity, otpCode, input, this.getContext());
-    if (value) {
-      await FieldSetter.setValue(input, value, this.getContext().framework);
+
+    const value = this.getValueForFieldType(type, identity, otpCode, input, context);
+    if (value && (await FieldSetter.setValue(input, value, context.framework))) {
+      this.saveTrustedSelector(type, this.buildFieldSelector(input));
     }
   }
 
   async clearForm(): Promise<void> {
-    const inputs = document.querySelectorAll<HTMLInputElement>('input:not([type="hidden"])');
     const framework = this.getContext().framework;
-    for (const input of Array.from(inputs)) {
-      await FieldSetter.setValue(input, '', framework);
+    // Only clear value-bearing text inputs; never touch buttons, checkboxes,
+    // radios, hidden fields, etc.
+    const inputs = deepQuerySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+      'input, textarea'
+    ).filter((el) => el instanceof HTMLTextAreaElement || this.isClearableInput(el));
+    for (const input of inputs) {
+      if (!input.disabled && !input.readOnly) {
+        await FieldSetter.setValue(input, '', framework);
+      }
     }
+  }
+
+  private isClearableInput(el: HTMLInputElement): boolean {
+    const nonText = new Set([
+      'hidden',
+      'submit',
+      'button',
+      'reset',
+      'checkbox',
+      'radio',
+      'file',
+      'image',
+      'range',
+      'color',
+    ]);
+    return !nonText.has(el.type);
+  }
+
+  async fillField(selector: string, value: string): Promise<boolean> {
+    const el = deepQuerySelectorAll<FormInputElement>(selector)[0] ?? null;
+    return el ? FieldSetter.setValue(el, value, this.getContext().framework) : false;
+  }
+
+  async fillElement(
+    element: HTMLInputElement | HTMLTextAreaElement,
+    value: string
+  ): Promise<boolean> {
+    return FieldSetter.setValue(element, value, this.getContext().framework);
+  }
+
+  async fillCurrentField(value: string, fieldType?: FieldType): Promise<boolean> {
+    const el = document.activeElement;
+    if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
+      return false;
+    }
+
+    // If a fieldType is specified, verify the active element matches before filling.
+    if (fieldType && fieldType !== 'unknown') {
+      const { decision } = classifyField(extractFieldRecord(el));
+      if (decision.action === 'BLOCK') {
+        log.warn(`Field fill blocked by safety gate: ${decision.safety ?? ''}`);
+        return false;
+      }
+      if (decision.action === 'ABSTAIN') {
+        return false;
+      }
+      const classified = mapFieldClassToFieldType(decision.class);
+      if (classified !== fieldType && classified !== 'unknown') {
+        log.debug('fillCurrentField: active element type mismatch, skipping', {
+          expected: fieldType,
+          got: classified,
+        });
+        return false;
+      }
+    }
+
+    return FieldSetter.setValue(el, value, this.getContext().framework);
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -811,22 +986,25 @@ export class AutoFiller {
     identity: IdentityWithCredentials | null;
     otpCode: string | null;
   }> {
-    const idRes = (await safeSendMessage({ action: 'GET_IDENTITY' })) as {
-      success?: boolean;
-      identity?: IdentityWithCredentials;
-    } | null;
-    const otpRes = (await safeSendMessage({ action: 'GET_LAST_OTP' })) as {
-      lastOTP?: { code?: string };
-    } | null;
+    const [idRes, otpRes] = await Promise.all([
+      safeSendMessage({ action: 'GET_IDENTITY' }) as Promise<{
+        success?: boolean;
+        identity?: IdentityWithCredentials;
+      } | null>,
+      safeSendMessage({ action: 'GET_LAST_OTP' }) as Promise<{
+        lastOTP?: { code?: string };
+      } | null>,
+    ]);
+
     return {
       identity: idRes?.success ? (idRes.identity ?? null) : null,
-      otpCode: otpRes?.lastOTP?.code || null,
+      otpCode: otpRes?.lastOTP?.code ?? null,
     };
   }
 
   private getValueForFieldType(
-    type: string,
-    id: IdentityWithCredentials | null,
+    type: FieldType,
+    identity: IdentityWithCredentials | null,
     otp: string | null,
     element?: FormInputElement,
     context?: PageContext
@@ -834,55 +1012,57 @@ export class AutoFiller {
     if (type === 'otp') {
       return otp;
     }
-    if (!id) {
+    if (!identity) {
       return null;
     }
 
-    if (type === 'username') {
-      const preferredIdentifier = this.getPreferredIdentifierValue(id, element, context);
-      if (preferredIdentifier) {
-        return preferredIdentifier;
-      }
+    switch (type) {
+      case 'email':
+        return identity.email ?? identity.username ?? null;
+      case 'username':
+        return this.getPreferredIdentifierValue(identity, element, context);
+      case 'password':
+      case 'confirm-password':
+        return identity.password ?? null;
+      case 'first-name':
+        return identity.firstName ?? null;
+      case 'last-name':
+        return identity.lastName ?? null;
+      case 'full-name':
+        return identity.fullName ?? null;
+      case 'phone':
+        return identity.phone ?? null;
+      default:
+        return null;
     }
-
-    const map: Record<string, string | undefined> = {
-      email: id.email ?? id.username ?? '',
-      password: id.password ?? '',
-      'confirm-password': id.password ?? '',
-      username: id.username,
-      'first-name': id.firstName,
-      'last-name': id.lastName,
-      'full-name': id.fullName,
-    };
-    return map[type] ?? null;
   }
 
-  private normalizeSmartFillFieldType(type: string): string {
-    if (type === 'name') {
-      return 'full-name';
-    }
-    if (type === 'confirm_password') {
-      return 'confirm-password';
-    }
-    return type;
-  }
-
-  private shouldPreserveExistingValue(element: FormInputElement, type: string): boolean {
-    if (type === 'otp' || type === 'unknown') {
+  private shouldPreserveExistingValue(element: FormInputElement, type: FieldType): boolean {
+    if (isOverwritableWhenFilled(type)) {
       return false;
     }
     return element.value.length > 0;
   }
 
-  private saveTrustedSelector(fieldType: string, selector: string): void {
-    if (!TRUSTED_SELECTOR_FIELD_TYPES.has(fieldType as FormFieldType)) {
+  /** Builds a reasonably stable CSS selector for a field, preferring id > name. */
+  private buildFieldSelector(field: HTMLInputElement | null | undefined): string {
+    if (!field) {
+      return 'input';
+    }
+    if (field.id) {
+      return `#${CSS.escape(field.id)}`;
+    }
+    if (field.name) {
+      return `input[name="${CSS.escape(field.name)}"]`;
+    }
+    return 'input';
+  }
+
+  private saveTrustedSelector(fieldType: FieldType, selector: string): void {
+    if (!TRUSTED_SELECTOR_FIELD_TYPES.has(fieldType)) {
       return;
     }
-    void HistoryManager.saveTrustedSelector(
-      window.location.hostname,
-      fieldType as FormFieldType,
-      selector
-    );
+    void HistoryManager.saveTrustedSelector(window.location.hostname, fieldType, selector);
   }
 
   private getPreferredIdentifierValue(
@@ -900,18 +1080,18 @@ export class AutoFiller {
       element?.placeholder,
       element?.getAttribute('aria-label'),
       element?.getAttribute('autocomplete'),
-      element instanceof HTMLInputElement ? element.labels?.[0]?.textContent : '',
+      element instanceof HTMLInputElement ? (element.labels?.[0]?.textContent ?? '') : '',
     ]
       .filter(Boolean)
       .join(' ')
       .toLowerCase();
 
-    const emailLikePattern = /email|e-mail|mail|identifier|login|sign in|account|@/i;
-    const explicitUsernamePattern =
-      /username|user.?name|user.?id|handle|nickname|screen.?name|alias|member.?id|uid|uname/i;
+    const isEmailLike = /email|e-mail|mail|identifier|login|sign in|account|@/i.test(descriptor);
+    const isExplicitUsername =
+      /username|user.?name|user.?id|handle|nickname|screen.?name|alias|member.?id|uid|uname/i.test(
+        descriptor
+      );
 
-    const isEmailLike = emailLikePattern.test(descriptor);
-    const isExplicitUsername = explicitUsernamePattern.test(descriptor);
     const authContext =
       Boolean(context?.isLoginPage) ||
       Boolean(context?.isSignupPage) ||
@@ -930,86 +1110,24 @@ export class AutoFiller {
   }
 
   markOTPUsed(): void {
-    safeSendMessage({ action: 'MARK_OTP_USED' }).catch(() => {});
+    void safeSendMessage({ action: 'MARK_OTP_USED' }).catch(() => {});
   }
 
-  async fillField(selector: string, value: string): Promise<boolean> {
-    const el = document.querySelector<FormInputElement>(selector);
-    return el ? FieldSetter.setValue(el, value, this.getContext().framework) : false;
-  }
-
-  async fillElement(
-    element: HTMLInputElement | HTMLTextAreaElement,
-    value: string
-  ): Promise<boolean> {
-    return FieldSetter.setValue(element, value, this.getContext().framework);
-  }
-
-  async fillCurrentField(value: string, fieldType?: string): Promise<boolean> {
-    const el = document.activeElement;
-    if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
-      return false;
-    }
-    // If a fieldType is specified, verify the active element actually matches before filling
-    if (fieldType && fieldType !== 'unknown') {
-      const classified = FieldClassifier.classify(el as HTMLInputElement);
-      if (classified !== fieldType && classified !== 'unknown') {
-        log.debug('fillCurrentField: active element type mismatch, skipping', {
-          expected: fieldType,
-          got: classified,
-        });
-        return false;
-      }
-    }
-    return FieldSetter.setValue(el, value, this.getContext().framework);
-  }
-
-  /**
-   * Discover OTP fields with retry for SPA-injected fields.
-   * Some frameworks (React, Vue, Angular) inject OTP inputs after page load.
-   * This method retries discovery up to 5 times with 200ms intervals.
-   */
-  private async discoverOTPFieldWithRetry(
-    context: PageContext,
-    isBackgroundTab: boolean
-  ): Promise<OTPFieldGroup | null> {
-    // First attempt: immediate discovery
-    let group = OTPFieldDiscovery.discover(context);
-    if (group) {
-      return group;
-    }
-
-    // SPA retry: wait for dynamically injected fields
-    if (isBackgroundTab) {
-      return null;
-    } // Don't retry in background tabs
-
-    const maxRetries = 5;
-    const retryDelay = 200;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      log.debug(`OTP field discovery attempt ${attempt}/${maxRetries} — waiting for DOM to settle`);
-      await new Promise((resolve) => setTimeout(resolve, retryDelay));
-
-      // Refresh context to pick up new DOM elements
-      this.refreshContext();
-      const freshContext = this.getContext();
-      group = OTPFieldDiscovery.discover(freshContext);
-
-      if (group) {
-        log.info(`✅ OTP field found on retry attempt ${attempt}/${maxRetries}`);
-        return group;
-      }
-    }
-
-    log.debug('OTP field not found after all retry attempts');
-    return null;
+  private delay(ms: number): Promise<void> {
+    return new Promise<void>((resolve) => {
+      setTimeout(resolve, ms);
+    });
   }
 
   destroy(): void {
     this.destroyed = true;
     this.fieldWatcher.stop();
-    document.querySelectorAll('ghost-label').forEach((e) => e.remove());
+    // Reject any queued OTP request so callers don't hang forever.
+    if (this.latestPendingOTP) {
+      this.latestPendingOTP.resolve(false);
+      this.latestPendingOTP = null;
+    }
+    deepQuerySelectorAll('ghost-label').forEach((el) => el.remove());
     document.body.removeAttribute('data-ghost-injected');
   }
 }

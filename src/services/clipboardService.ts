@@ -28,52 +28,72 @@ class ClipboardService {
     type: 'password' | 'otp' | 'email' | 'default' = 'default',
     autoClearMs?: number
   ): Promise<boolean> {
+    // Clear any existing timer
+    if (this.clearTimer) {
+      clearTimeout(this.clearTimer);
+      this.clearTimer = null;
+    }
+
     try {
-      // Clear any existing timer
-      if (this.clearTimer) {
-        clearTimeout(this.clearTimer);
-        this.clearTimer = null;
+      const success =
+        typeof document === 'undefined'
+          ? await this.copyOffscreen(text)
+          : await this.copyInDocument(text, type);
+
+      if (!success) {
+        return false;
       }
 
-      // Check if we are in a Service Worker (no document)
-      if (typeof document === 'undefined') {
-        return this.copyOffscreen(text);
+      this.scheduleAutoClear(type, autoClearMs);
+      return true;
+    } catch (error) {
+      log.warn('Clipboard copy failed', error);
+      return false;
+    }
+  }
+
+  private async copyInDocument(
+    text: string,
+    type: 'password' | 'otp' | 'email' | 'default'
+  ): Promise<boolean> {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard API not available');
       }
 
-      // Standard context (popup, content script)
       await navigator.clipboard.writeText(text);
       log.debug('Copied to clipboard', { type, length: text.length });
-
-      // SECURITY FIX: Auto-clear sensitive data after timeout
-      const clearTime =
-        autoClearMs ??
-        (type === 'password'
-          ? CLIPBOARD_CLEAR_TIMEOUTS.PASSWORD
-          : type === 'otp'
-            ? CLIPBOARD_CLEAR_TIMEOUTS.OTP
-            : CLIPBOARD_CLEAR_TIMEOUTS.EMAIL);
-
-      if (clearTime > 0) {
-        // Cancel any previously scheduled auto-clear to prevent race condition
-        if (this.clearTimer) {
-          clearTimeout(this.clearTimer);
-        }
-        this.clearTimer = setTimeout(() => {
-          void this.clearClipboard().then((success) => {
-            if (success) {
-              log.info('Clipboard auto-cleared for security', { type });
-            } else {
-              log.warn('Clipboard auto-clear failed', { type });
-            }
-          });
-        }, clearTime);
-      }
-
       return true;
     } catch {
-      // Fallback for content scripts or older browsers
       return this.copyFallback(text);
     }
+  }
+
+  private scheduleAutoClear(
+    type: 'password' | 'otp' | 'email' | 'default',
+    autoClearMs?: number
+  ): void {
+    const clearTime =
+      autoClearMs ??
+      (type === 'password'
+        ? CLIPBOARD_CLEAR_TIMEOUTS.PASSWORD
+        : type === 'otp'
+          ? CLIPBOARD_CLEAR_TIMEOUTS.OTP
+          : CLIPBOARD_CLEAR_TIMEOUTS.EMAIL);
+
+    if (clearTime <= 0) {
+      return;
+    }
+
+    this.clearTimer = setTimeout(() => {
+      void this.clearClipboard().then((success) => {
+        if (success) {
+          log.info('Clipboard auto-cleared for security', { type });
+        } else {
+          log.warn('Clipboard auto-clear failed', { type });
+        }
+      });
+    }, clearTime);
   }
 
   /**
@@ -119,11 +139,11 @@ class ClipboardService {
         log.debug('Copied to clipboard (offscreen)');
         return true;
       } else {
-        log.error('Offscreen copy failed reported by doc', response?.error);
+        log.warn('Offscreen copy unavailable', response?.error);
         return false;
       }
     } catch (error) {
-      log.error('Offscreen copy failed', error);
+      log.warn('Offscreen copy failed', error);
       return false;
     }
   }

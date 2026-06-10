@@ -231,6 +231,18 @@ export function getProviderOtpConfig(provider: ProviderKnowledge | null): {
 
 // ─── Helpers ───
 
+const COMMON_SECOND_LEVEL_TLDS = new Set([
+  'ac',
+  'co',
+  'com',
+  'edu',
+  'gov',
+  'mil',
+  'net',
+  'nom',
+  'org',
+]);
+
 /**
  * Extracts root domain (e.g. mail.google.com -> google.com)
  */
@@ -238,6 +250,10 @@ function getRootDomain(hostname: string): string {
   const parts = hostname.split('.');
   if (parts.length <= 2) {
     return hostname;
+  }
+  const secondLevel = parts[parts.length - 2];
+  if (secondLevel && COMMON_SECOND_LEVEL_TLDS.has(secondLevel) && parts.length >= 3) {
+    return parts.slice(-3).join('.');
   }
   return parts.slice(-2).join('.');
 }

@@ -19,7 +19,13 @@
   if (typeof g.trustedTypes !== 'undefined') {
     try {
       g.trustedTypes.createPolicy('default', {
-        createHTML: (s: string) => s.replace(/</g, '&lt;').replace(/>/g, '&gt;'),
+        createHTML: (s: string) =>
+          s
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;'),
         createScriptURL: (s: string) => {
           if (s.startsWith('chrome-extension://') || s.startsWith('/')) {
             return s;

@@ -1,3 +1,4 @@
+import { Info, Database, Code } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 
 import SettingsSection from '../SettingsSection';
@@ -32,7 +33,7 @@ const AboutTab: React.FC = () => {
 
   return (
     <div role="tabpanel" id="tabpanel-about" aria-labelledby="tab-about">
-      <SettingsSection id="extension-info" title="GhostFill" icon="👻">
+      <SettingsSection id="extension-info" title="GhostFill" icon={<Info size={18} />}>
         <div className="about-hero">
           <div className="about-version">
             <span className="version-badge">v{version}</span>
@@ -51,7 +52,7 @@ const AboutTab: React.FC = () => {
             rel="noopener noreferrer"
             className="about-link"
           >
-            ⭐ GitHub Repository
+            GitHub Repository
           </a>
           <a
             href="https://github.com/Xshya19/ghostfill-extension/issues"
@@ -72,13 +73,13 @@ const AboutTab: React.FC = () => {
         </div>
       </SettingsSection>
 
-      <SettingsSection id="storage-usage" title="Storage Usage" icon="💿">
+      <SettingsSection id="storage-usage" title="Storage Usage" icon={<Database size={18} />}>
         {storageUsage ? (
           <div className="storage-monitor">
             <div className="storage-bar-wrapper">
               <div
                 className="storage-bar-fill"
-                style={{ width: `${usagePercent}%` }}
+                style={{ '--storage-width': `${usagePercent}%` } as any}
                 role="progressbar"
                 aria-valuenow={Math.round(usagePercent)}
                 aria-valuemin={0}
@@ -92,11 +93,11 @@ const AboutTab: React.FC = () => {
             </div>
           </div>
         ) : (
-          <p style={{ opacity: 0.6 }}>Loading storage info…</p>
+          <p className="text-dimmed">Loading storage info...</p>
         )}
       </SettingsSection>
 
-      <SettingsSection id="tech-stack" title="Built With" icon="🏗️">
+      <SettingsSection id="tech-stack" title="Built With" icon={<Code size={18} />}>
         <div className="tech-pill-container" role="list" aria-label="Technologies used">
           <span className="tech-pill tech-pill-primary" role="listitem">
             React

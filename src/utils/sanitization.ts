@@ -24,6 +24,7 @@ const log = createLogger('Sanitization');
 export {
   sanitizeText,
   sanitizeEmailSubject,
+  sanitizeEmailFrom,
   sanitizeEmail,
   sanitizeOTP,
   sanitizeUrl,
@@ -137,7 +138,6 @@ function sanitizeHtmlInternal(dirty: string, options?: SanitizerConfig): string 
       'blockquote',
       'pre',
       'code',
-      'img',
       'table',
       'thead',
       'tbody',
@@ -145,7 +145,7 @@ function sanitizeHtmlInternal(dirty: string, options?: SanitizerConfig): string 
       'th',
       'td',
     ],
-    ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'class', 'id', 'style', 'target', 'rel'],
+    ALLOWED_ATTR: ['href', 'alt', 'title', 'target', 'rel'],
     ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/i,
     ADD_ATTR: ['rel'],
     ADD_DATA_URI_TAGS: [],
@@ -210,7 +210,6 @@ export function sanitizeHtml(dirty: string, options?: SanitizerConfig): string {
       'blockquote',
       'pre',
       'code',
-      'img',
       'table',
       'thead',
       'tbody',
@@ -219,7 +218,7 @@ export function sanitizeHtml(dirty: string, options?: SanitizerConfig): string {
       'td',
     ],
     // Allowed attributes
-    ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'class', 'id', 'style', 'target', 'rel'],
+    ALLOWED_ATTR: ['href', 'alt', 'title', 'target', 'rel'],
     // Force safe protocols
     ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/i,
     // Add rel="noopener" to links
@@ -373,7 +372,6 @@ export function sanitizeEmailBody(htmlBody: string, textBody?: string): string {
         'blockquote',
         'pre',
         'code',
-        'img',
         'table',
         'thead',
         'tbody',

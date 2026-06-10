@@ -35,6 +35,7 @@ export interface DiagEntry {
 
 const MAX_ENTRIES = 3000;
 const buffer: DiagEntry[] = [];
+const SHOULD_PRINT_TO_CONSOLE = process.env.NODE_ENV !== 'production';
 
 function push(entry: DiagEntry): void {
   buffer.push(entry);
@@ -115,18 +116,20 @@ export const diag = {
     const catTag = `[${category.toUpperCase()}]`;
     const msg = `${levelIcon} ${prefix} ${catTag} ${action} — ${detail}`;
 
-    switch (level) {
-      case 'error':
-        console.error(`[GhostFill-DIAG] ${msg}`, data);
-        break;
-      case 'warn':
-        console.warn(`[GhostFill-DIAG] ${msg}`, data);
-        break;
-      case 'perf':
-        console.info(`[GhostFill-DIAG] ${msg}`, data);
-        break;
-      default:
-        console.log(`[GhostFill-DIAG] ${msg}`, data ?? '');
+    if (SHOULD_PRINT_TO_CONSOLE || level === 'error') {
+      switch (level) {
+        case 'error':
+          console.error(`[GhostFill-DIAG] ${msg}`, data);
+          break;
+        case 'warn':
+          console.warn(`[GhostFill-DIAG] ${msg}`, data);
+          break;
+        case 'perf':
+          console.info(`[GhostFill-DIAG] ${msg}`, data);
+          break;
+        default:
+          console.log(`[GhostFill-DIAG] ${msg}`, data ?? '');
+      }
     }
 
     return flow || '';
@@ -148,9 +151,22 @@ export const diag = {
     detail?: string,
     data?: Record<string, unknown>
   ): void {
-    const lastEntry = buffer.filter((e) => e.flowId === flowId).pop();
+    let firstEntry: DiagEntry | undefined;
+    let lastEntry: DiagEntry | undefined;
+    for (let i = buffer.length - 1; i >= 0; i--) {
+      if (buffer[i]!.flowId === flowId) {
+        lastEntry = buffer[i];
+        break;
+      }
+    }
+    for (const entry of buffer) {
+      if (entry.flowId === flowId) {
+        firstEntry = entry;
+        break;
+      }
+    }
     const stepNum = lastEntry ? (lastEntry.step ?? 0) + 1 : 1;
-    const duration = lastEntry ? Date.now() - lastEntry.ts : 0;
+    const duration = firstEntry ? Date.now() - firstEntry.ts : 0;
     diag.log(
       success ? 'info' : 'error',
       category,
@@ -170,7 +186,13 @@ export const diag = {
     detail: string,
     data?: Record<string, unknown>
   ): void {
-    const lastEntry = buffer.filter((e) => e.flowId === flowId).pop();
+    let lastEntry: DiagEntry | undefined;
+    for (let i = buffer.length - 1; i >= 0; i--) {
+      if (buffer[i]!.flowId === flowId) {
+        lastEntry = buffer[i];
+        break;
+      }
+    }
     const stepNum = lastEntry ? (lastEntry.step ?? 0) + 1 : 1;
     diag.log('step', category, action, detail, data, flowId, stepNum);
   },

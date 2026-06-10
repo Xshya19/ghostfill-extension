@@ -1,3 +1,4 @@
+import { verifyFill } from '../../../intelligence/classifier/safetyGate';
 import { FrameworkType, OTPFillOutcome } from '../../../types/form.types';
 import { OTPFieldGroup } from '../types';
 import { delay } from '../utils/dom-utils';
@@ -55,7 +56,41 @@ export class OTPFiller {
     const valueToSet = field.type === 'number' ? cleanOTP : otp;
 
     const success = await FieldSetter.setValue(field, valueToSet, framework, isBackgroundTab);
-    return { success, filledCount: success ? 1 : 0, strategy: 'single-field' };
+
+    // Read back and verify the fill to handle dropped leading zeros in type=number fields
+    const actual = field.value;
+    const verification = verifyFill(valueToSet, actual, field.type);
+
+    if (!verification.ok && verification.reason.includes('leading zero') && !isBackgroundTab) {
+      field.focus({ preventScroll: true });
+      await PhantomTyper.typeSimulatedString(field, valueToSet);
+      const ok =
+        field.value === valueToSet ||
+        field.value.replace(/\D/g, '') === valueToSet ||
+        (field.type === 'number' &&
+          field.value.replace(/^0+/, '') === valueToSet.replace(/^0+/, ''));
+      return { success: ok, filledCount: ok ? 1 : 0, strategy: 'single-field-keystroke' };
+    }
+
+    if (success) {
+      return { success: true, filledCount: 1, strategy: 'single-field' };
+    }
+
+    // type=number normalizes its value and DROPS leading zeros
+    // (e.g. "012345" -> "12345"). When the assignment-based setter failed on a
+    // number field, fall back to per-character keystroke insertion, which
+    // dispatches insertText events that preserve leading zeros on most sites.
+    if (!isBackgroundTab && field.type === 'number' && /^0/.test(cleanOTP)) {
+      field.focus({ preventScroll: true });
+      await PhantomTyper.typeSimulatedString(field, cleanOTP);
+      const ok =
+        field.value === cleanOTP ||
+        field.value.replace(/\D/g, '') === cleanOTP ||
+        (field.type === 'number' && field.value.replace(/^0+/, '') === cleanOTP.replace(/^0+/, ''));
+      return { success: ok, filledCount: ok ? 1 : 0, strategy: 'single-field-keystroke' };
+    }
+
+    return { success: false, filledCount: 0, strategy: 'single-field' };
   }
 
   private static async fillSplit(
@@ -187,17 +222,15 @@ export class OTPFiller {
     }
 
     try {
-      field.focus({ preventScroll: true });
-      // Simulate a single character input
+      const originalValue = field.value;
       const nativeSetter = Object.getOwnPropertyDescriptor(
         HTMLInputElement.prototype,
         'value'
       )?.set;
-      if (nativeSetter) {
-        nativeSetter.call(field, '1');
-      } else {
-        field.value = '1';
-      }
+      const write = (v: string) => (nativeSetter ? nativeSetter.call(field, v) : (field.value = v));
+
+      field.focus({ preventScroll: true });
+      write('1');
       field.dispatchEvent(new InputEvent('input', { bubbles: true, data: '1' }));
 
       // Wait briefly for any auto-advance to occur
@@ -206,9 +239,12 @@ export class OTPFiller {
       // If focus moved away from our field, the site auto-advances
       const autoAdvances = document.activeElement !== field;
 
-      // Clean up the test character
-      field.value = '';
+      // Clean up the test character via the SAME native setter so controlled
+      // (React/Vue) components actually reset their state, then restore focus
+      // to the first box so character filling starts from index 0.
+      write(originalValue);
       field.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      field.focus({ preventScroll: true });
 
       return autoAdvances;
     } catch {

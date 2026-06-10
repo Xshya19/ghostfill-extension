@@ -1,62 +1,73 @@
 import { motion } from 'framer-motion';
 import React from 'react';
-import iconLogo from '../../assets/icons/icon48.png';
 
 interface GhostLogoProps {
   size?: number;
   className?: string;
 }
 
-const GhostLogo: React.FC<GhostLogoProps> = React.memo(({ size = 24, className = '' }) => {
-  // MotionConfig reducedMotion="never" in App.tsx handles this globally.
-  // Do NOT call useReducedMotion() here — it reads the OS media query directly
-  // and fires the "Reduced Motion enabled" DevTools warning every render.
+const wrapStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  flexShrink: 0,
+};
 
+const wobble = {
+  rotate: [0, -10, 10, -6, 4, 0],
+  transition: { duration: 0.55, ease: 'easeInOut' },
+};
+
+const press = { scale: 0.85 };
+
+/**
+ * GhostFill brand mark — inline SVG, Halcyon-themed.
+ * Uses CSS custom properties so it adapts to both popup and settings themes.
+ */
+const GhostLogo: React.FC<GhostLogoProps> = React.memo(({ size = 24, className = '' }) => {
   return (
     <motion.div
       className={`ghost-logo-container ${className}`}
-      style={{
-        width: size,
-        height: size,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        position: 'relative',
-      }}
-      animate={{
-        filter: [
-          // Memphis Neon: magenta glow
-          'drop-shadow(0 0 2px rgba(255, 59, 212, 0.1))',
-          'drop-shadow(0 0 14px rgba(255, 59, 212, 0.8))',
-          'drop-shadow(0 0 2px rgba(255, 59, 212, 0.1))',
-        ],
-      }}
-      transition={{
-        duration: 3.5,
-        ease: 'easeInOut',
-        repeat: Infinity,
-      }}
-      whileHover={{ scale: 1.08 }}
-      whileTap={{ scale: 0.94 }}
+      style={wrapStyle as any}
+      whileHover={wobble as any}
+      whileTap={press as any}
     >
-      <motion.img
-        src={iconLogo}
-        alt="GhostFill Logo"
-        className="ghost-logo-img"
+      <svg
         width={size}
         height={size}
-        animate={{
-          opacity: [0.82, 1, 0.82],
-        }}
-        transition={{
-          duration: 2.8,
-          ease: 'easeInOut',
-          repeat: Infinity,
-        }}
-      />
+        viewBox="0 0 32 32"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+        className="ghost-logo-svg"
+      >
+        {/* Body — filled with current mustard/sienna accent via CSS */}
+        <path
+          className="ghost-body"
+          d="M16 3C9.9 3 6 7.6 6 13v14l3.4-2.3 3.4 2.3 3.2-2.3 3.2 2.3 3.4-2.3L26 27V13C26 7.6 22.1 3 16 3z"
+          fill="var(--gf-mustard, #FFAC10)"
+          stroke="var(--gf-ink, #221A0F)"
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+        />
+        {/* Belly highlight — warm paper oval */}
+        <ellipse cx="16" cy="16" rx="5.5" ry="6" fill="var(--gf-bg, #FFF8E1)" opacity="0.35" />
+        {/* Left eye whites */}
+        <circle cx="12.5" cy="13.5" r="2.2" fill="var(--gf-bg, #FFF8E1)" />
+        {/* Left pupil */}
+        <circle cx="12.8" cy="14" r="1" fill="var(--gf-ink, #221A0F)" />
+        {/* Left eye glint */}
+        <circle cx="13.3" cy="13.2" r="0.4" fill="var(--gf-bg, #FFF8E1)" />
+        {/* Right eye whites */}
+        <circle cx="19.5" cy="13.5" r="2.2" fill="var(--gf-bg, #FFF8E1)" />
+        {/* Right pupil */}
+        <circle cx="19.8" cy="14" r="1" fill="var(--gf-ink, #221A0F)" />
+        {/* Right eye glint */}
+        <circle cx="20.3" cy="13.2" r="0.4" fill="var(--gf-bg, #FFF8E1)" />
+      </svg>
     </motion.div>
   );
 });
-GhostLogo.displayName = 'GhostLogo';
 
+GhostLogo.displayName = 'GhostLogo';
 export default GhostLogo;

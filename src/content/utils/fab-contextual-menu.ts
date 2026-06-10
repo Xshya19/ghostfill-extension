@@ -4,6 +4,7 @@
  * Extracted from floatingButton.ts §5. Builds the context-aware action
  * menu entries based on the current page analysis and button mode.
  */
+import { menuIcon } from './fab-menu-icons';
 import type { ButtonMode, MenuAction } from './fab-types';
 import { escapeHTML } from './fab-utils';
 import type { PageAnalysis } from './pageAnalyzer';
@@ -40,64 +41,76 @@ export class ContextualMenu {
     const actions: MenuAction[] = [
       {
         id: 'smart-fill',
-        icon: '✨',
-        label: `✨ Auto-fill ${contextName}`,
-        shortcut: '⌘⇧G',
+        icon: menuIcon('spark'),
+        label: `Auto-fill ${contextName}`,
+        shortcut: 'Ctrl+Shift+G',
         visible: true,
         handler: noop,
       },
       {
         id: 'paste-otp',
-        icon: '🔑',
+        icon: menuIcon('key'),
         label: hasOTPReady ? 'Paste Found Code' : 'Paste Code',
         visible: showOTP,
         handler: noop,
       },
       {
         id: 'generate-email',
-        icon: '📧',
+        icon: menuIcon('mail'),
         label: 'Use Hidden Email',
         visible: showEmail,
         handler: noop,
       },
       {
         id: 'generate-password',
-        icon: '🔐',
+        icon: menuIcon('lock'),
         label: 'Generate Secure Password',
         visible: showPassword,
         handler: noop,
       },
       {
         id: 'fill-firstname',
-        icon: '👤',
+        icon: menuIcon('user'),
         label: 'Inject First Name',
         visible: isIdentityCtx,
         handler: noop,
       },
       {
         id: 'fill-lastname',
-        icon: '👥',
+        icon: menuIcon('users'),
         label: 'Inject Last Name',
         visible: isIdentityCtx,
         handler: noop,
       },
       {
         id: 'fill-fullname',
-        icon: '📝',
+        icon: menuIcon('edit'),
         label: 'Inject Full Name',
         visible: isIdentityCtx,
         handler: noop,
       },
       {
         id: 'fill-username',
-        icon: '🎭',
+        icon: menuIcon('mask'),
         label: 'Inject Username',
         visible: isIdentityCtx,
         handler: noop,
       },
-      { id: 'clear-fields', icon: '🧹', label: 'Clear All Fields', visible: true, handler: noop },
+      {
+        id: 'clear-fields',
+        icon: menuIcon('clear'),
+        label: 'Clear All Fields',
+        visible: true,
+        handler: noop,
+      },
       { id: 'divider', icon: '', label: '', visible: true, handler: noop },
-      { id: 'settings', icon: '⚙️', label: 'GhostFill Settings', visible: true, handler: noop },
+      {
+        id: 'settings',
+        icon: menuIcon('settings'),
+        label: 'GhostFill Settings',
+        visible: true,
+        handler: noop,
+      },
     ];
 
     return actions.filter((a) => a.visible);

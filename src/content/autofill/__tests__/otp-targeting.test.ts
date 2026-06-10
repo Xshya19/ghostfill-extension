@@ -3,7 +3,8 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { validateMessage } from '../../../utils/validation';
 import { AutoFiller } from '../../autoFiller';
 import { OTPFieldDiscovery } from '../engines/otp-discovery';
-import { FieldClassifier } from '../utils/field-classifier';
+import { classifyField } from '../../../intelligence/classifier/classify';
+import { extractFieldRecord } from '../../../intelligence/featureExtractor';
 import { PageContext } from '../../../types/form.types';
 
 function visibleRect(width = 240, height = 40): DOMRect {
@@ -70,7 +71,7 @@ describe('OTP targeting safeguards', () => {
       'Email Address'
     );
 
-    expect(FieldClassifier.classify(input)).toBe('email');
+    expect(classifyField(extractFieldRecord(input)).decision.class).toBe('Email');
   });
 
   it('does not classify captcha code fields as OTP fields', () => {
@@ -84,7 +85,7 @@ describe('OTP targeting safeguards', () => {
       'Help us beat the bots'
     );
 
-    expect(FieldClassifier.classify(input)).not.toBe('otp');
+    expect(classifyField(extractFieldRecord(input)).decision.class).not.toBe('OTP');
     expect(OTPFieldDiscovery.discover(verificationContext)).toBeNull();
   });
 
@@ -101,7 +102,7 @@ describe('OTP targeting safeguards', () => {
       'Verification Code'
     );
 
-    expect(FieldClassifier.classify(input)).toBe('otp');
+    expect(classifyField(extractFieldRecord(input)).decision.class).toBe('OTP');
     expect(OTPFieldDiscovery.discover(verificationContext)?.fields[0]).toBe(input);
   });
 
@@ -189,5 +190,63 @@ describe('OTP targeting safeguards', () => {
     expect(username.value).toBe('existing-user');
     expect(password.value).toBe('ExistingPass123!');
     expect(otp.value).toBe('654321');
+  });
+
+  it('correctly handles verification codes with leading zeros in type=number fields', async () => {
+    vi.mocked(chrome.runtime.sendMessage).mockImplementation((message: unknown) => {
+      const action =
+        typeof message === 'object' && message !== null && 'action' in message
+          ? (message as { action?: string }).action
+          : undefined;
+
+      if (action === 'GET_IDENTITY') {
+        return Promise.resolve({ success: false });
+      }
+
+      if (action === 'GET_LAST_OTP') {
+        return Promise.resolve({ lastOTP: { code: '012345' } });
+      }
+
+      return Promise.resolve({ success: true });
+    });
+
+    document.body.innerHTML = `
+      <main>
+        <h1>Verification Code</h1>
+        <form>
+          <label for="verification_code">Verification Code</label>
+          <input
+            id="verification_code"
+            name="verification_code"
+            type="number"
+            inputmode="numeric"
+            maxlength="6"
+          />
+        </form>
+      </main>
+    `;
+
+    const otpField = document.querySelector<HTMLInputElement>('#verification_code')!;
+    Object.defineProperty(otpField, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => visibleRect(),
+    });
+
+    // Mock getter/setter to simulate native browser behavior for type=number
+    let val = '';
+    Object.defineProperty(otpField, 'value', {
+      configurable: true,
+      get: () => val,
+      set: (v: string) => {
+        val = v ? v.replace(/^0+/, '') : ''; // native type=number drops leading zeros
+      },
+    });
+
+    const result = await new AutoFiller().fillOTP('012345');
+
+    expect(result).toBe(true);
+    // In type=number fields, the browser's native value property strips leading zeros.
+    // So the actual value in the DOM will be '12345', but we should still mark the fill as successful.
+    expect(otpField.value).toBe('12345');
   });
 });

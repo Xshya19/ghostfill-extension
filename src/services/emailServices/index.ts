@@ -3,7 +3,15 @@
 
 import { EmailAccount, Email, EmailService } from '../../types';
 import { createLogger } from '../../utils/logger';
-import { sanitizeEmailSubject } from '../../utils/sanitization.core';
+import { sanitizeEmailFrom, sanitizeEmailSubject } from '../../utils/sanitization.core';
+import {
+  buildGmailAliasSearchQuery,
+  filterGmailMessagesForAliasSession,
+  getGmailAliasProcessingBaseline,
+  getGmailAliasSession,
+  getMostRecentGmailAliasSession,
+} from '../gmailAliasSessionService';
+import * as gmailApiService from '../gmailApiService';
 import { storageService } from '../storageService';
 import { IProviderHealthManager } from '../types/email-services.types';
 
@@ -132,9 +140,12 @@ class EmailServiceAggregator {
         return null;
       } // Skip unavailable providers
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
       try {
-        // Try to get domains as a lightweight "ping"
-        const domains = await this.getDomains(service);
+        // Try to get domains as a lightweight "ping" with a 5-second timeout
+        const domains = await this.getDomains(service, controller.signal);
+        clearTimeout(timeoutId);
         if (domains && domains.length > 0) {
           if (
             (service === 'tempmail' || service === '1secmail') &&
@@ -148,7 +159,8 @@ class EmailServiceAggregator {
           return service;
         }
       } catch (e) {
-        log.debug(`Health check failed for ${service}`, e);
+        clearTimeout(timeoutId);
+        log.debug(`Health check failed or timed out for ${service}`, e);
       }
       return null;
     });
@@ -371,6 +383,7 @@ class EmailServiceAggregator {
       email: account.fullEmail,
       hasId: Boolean(account.id),
     });
+    await storageService.set('disposableEmail', account);
     await storageService.set('currentEmail', account);
     log.info('✅ Email saved to storage');
 
@@ -406,12 +419,67 @@ class EmailServiceAggregator {
     }
 
     this.getCurrentEmailPromise = (async () => {
-      const email = (await storageService.get('currentEmail')) as EmailAccount | null;
+      // Check user preference first
+      let preferredEmailType = 'disposable';
+      try {
+        const prefRes = await storageService.get('preferredEmailType');
+        if (prefRes === 'gmail') {
+          preferredEmailType = 'gmail';
+        }
+      } catch {
+        /* Intentionally ignored */
+      }
+
+      if (preferredEmailType === 'gmail') {
+        try {
+          const gmailConnected = await storageService.get('gmailConnected');
+          const profile = await storageService.get('gmailProfile');
+          const gmailBase = await storageService.get('gmailBase');
+          const baseEmail =
+            (profile && typeof profile === 'object' && 'email' in profile
+              ? (profile as any).email
+              : null) || gmailBase;
+          if (
+            gmailConnected &&
+            baseEmail &&
+            typeof baseEmail === 'string' &&
+            baseEmail.includes('@')
+          ) {
+            const aliasSession = await getMostRecentGmailAliasSession();
+            const fullEmail = aliasSession?.alias || baseEmail;
+            return {
+              id: `gmail_${fullEmail.replace(/[@.+]/g, '_')}`,
+              fullEmail,
+              domain: 'gmail.com',
+              service: 'gmail',
+              createdAt: aliasSession?.startedAt ?? Date.now(),
+              expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
+              gmailBaseEmail: baseEmail,
+              ...(aliasSession?.startedAt
+                ? { gmailAliasSessionStartedAt: aliasSession.startedAt }
+                : {}),
+            };
+          }
+        } catch (e) {
+          log.warn('Failed to construct Gmail current email', e);
+        }
+      }
+
+      const disposableEmail = (await storageService.get('disposableEmail')) as EmailAccount | null;
+      const currentEmail = (await storageService.get('currentEmail')) as EmailAccount | null;
+      const email =
+        disposableEmail || (currentEmail && currentEmail.service !== 'gmail' ? currentEmail : null);
 
       // Ensure object is actually a valid EmailAccount (e.g. not an empty object or string)
-      if (email && (typeof email !== 'object' || !email.fullEmail)) {
-        log.warn('Found corrupted email object in storage, clearing it', { email });
-        await storageService.remove('currentEmail');
+      // And filter out Gmail accounts when in disposable mode.
+      if (email && (typeof email !== 'object' || !email.fullEmail || email.service === 'gmail')) {
+        log.warn(
+          'Found non-disposable or corrupted disposable email object in storage, clearing it',
+          {
+            email,
+          }
+        );
+        await storageService.remove('disposableEmail');
         return null;
       }
 
@@ -467,6 +535,63 @@ class EmailServiceAggregator {
       let emails: Email[];
 
       switch (account.service) {
+        case 'gmail': {
+          let gmailMessages: any[] = [];
+          try {
+            const aliasSession =
+              account.fullEmail && account.fullEmail !== account.gmailBaseEmail
+                ? await getGmailAliasSession(account.fullEmail)
+                : await getMostRecentGmailAliasSession();
+            if (await gmailApiService.ensureAuthenticated(false)) {
+              if (!aliasSession) {
+                await storageService.set('inbox', []);
+                return [];
+              }
+              const query = buildGmailAliasSearchQuery(
+                aliasSession.alias,
+                getGmailAliasProcessingBaseline(aliasSession)
+              );
+              gmailMessages = filterGmailMessagesForAliasSession(
+                (
+                  await gmailApiService.syncInbox(query, 5, {
+                    alias: aliasSession.alias,
+                    filterMessage: (msg) =>
+                      filterGmailMessagesForAliasSession([msg], aliasSession).length > 0,
+                  })
+                ).messages,
+                aliasSession
+              );
+            } else {
+              const authIssue = gmailApiService.getAuthIssue();
+              if (authIssue.silentAuthBlocked) {
+                log.debug('Gmail OAuth unavailable; skipping API inbox check', {
+                  reason: authIssue.reason,
+                  permanent: authIssue.permanent,
+                });
+              } else {
+                log.info('Gmail OAuth is not authenticated; skipping API inbox check');
+              }
+              return [];
+            }
+          } catch (err) {
+            log.warn('Gmail checkInbox failed', err);
+            return [];
+          }
+
+          // Map GmailMessage[] to Email[]
+          emails = gmailMessages.map((msg) => ({
+            id: msg.id,
+            from: msg.fromEmail || msg.from,
+            to: msg.to,
+            subject: msg.subject,
+            date: msg.date,
+            body: msg.body || msg.snippet,
+            htmlBody: msg.htmlBody || msg.body || msg.snippet,
+            attachments: [],
+            read: !msg.isUnread,
+          }));
+          break;
+        }
         case 'custom':
           emails = await customDomainService.getMessages(account, signal);
           break;
@@ -529,18 +654,16 @@ class EmailServiceAggregator {
       const safeEmails = emails.map((email) => ({
         ...email,
         subject: sanitizeEmailSubject(email.subject || '(No Subject)'),
-        from: sanitizeEmailSubject(email.from || 'Unknown Sender'),
+        from: sanitizeEmailFrom(email.from || 'Unknown Sender'),
       }));
 
-      // PERFORMANCE FIX: Only persist inbox if it actually changed.
-      // Skip storage write when inbox is identical to avoid unnecessary
-      // chrome.storage operations on every 10s poll cycle.
       // PERFORMANCE FIX: Efficient comparison using ID concatenation
+      const slicedSafeEmails = safeEmails.slice(0, 50);
       const cachedInbox = (await storageService.get('inbox')) || [];
       const inboxHash = (list: Email[]) => list.map((e) => `${e.id}:${e.read}`).join('|');
 
-      if (inboxHash(safeEmails) !== inboxHash(cachedInbox)) {
-        await storageService.set('inbox', safeEmails);
+      if (inboxHash(slicedSafeEmails) !== inboxHash(cachedInbox)) {
+        await storageService.set('inbox', slicedSafeEmails);
       }
 
       return safeEmails;
@@ -600,6 +723,35 @@ class EmailServiceAggregator {
       let email: Email;
 
       switch (account.service) {
+        case 'gmail': {
+          let emailDetail;
+          const aliasSession =
+            account.fullEmail && account.fullEmail !== account.gmailBaseEmail
+              ? await getGmailAliasSession(account.fullEmail)
+              : await getMostRecentGmailAliasSession();
+          if (await gmailApiService.ensureAuthenticated(false)) {
+            if (!aliasSession) {
+              throw new Error('No active Gmail alias session');
+            }
+            emailDetail = await gmailApiService.fetchMessage(emailId.toString());
+            if (emailDetail.date < getGmailAliasProcessingBaseline(aliasSession)) {
+              throw new Error('Gmail message predates the active alias session');
+            }
+          } else {
+            throw new Error('Gmail OAuth is not authenticated; reconnect Gmail to read via API');
+          }
+          email = {
+            id: emailDetail.id,
+            from: emailDetail.fromEmail || emailDetail.from,
+            subject: emailDetail.subject,
+            date: emailDetail.date,
+            body: emailDetail.body || emailDetail.snippet || '',
+            htmlBody: emailDetail.htmlBody || emailDetail.body || emailDetail.snippet || '',
+            attachments: [],
+            read: !emailDetail.isUnread,
+          };
+          break;
+        }
         case 'custom': {
           const customMessages = await customDomainService.getMessages(account, signal);
           const found = customMessages.find((m) => m.id === emailId || m.id === String(emailId));
@@ -647,7 +799,7 @@ class EmailServiceAggregator {
       const safeEmail: Email = {
         ...email,
         subject: sanitizeEmailSubject(email.subject || '(No Subject)'),
-        from: sanitizeEmailSubject(email.from || 'Unknown Sender'),
+        from: sanitizeEmailFrom(email.from || 'Unknown Sender'),
       };
 
       const inbox = await storageService.get('inbox');
@@ -720,6 +872,7 @@ class EmailServiceAggregator {
    */
   async clearData(): Promise<void> {
     await storageService.remove('currentEmail');
+    await storageService.remove('disposableEmail');
     await storageService.set('inbox', []);
     log.info('Email data cleared');
   }

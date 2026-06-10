@@ -75,18 +75,45 @@ class IdentityService {
     try {
       const identity = await this.getCurrentIdentity();
 
-      // Get current email account — require a real email, no fake fallbacks
+      // Get current email account based on user's preferred type (disposable vs gmail)
       let email: string;
       try {
-        const currentEmail = await storageService.get('currentEmail');
-        if (currentEmail?.fullEmail) {
-          email = currentEmail.fullEmail;
+        const preferredEmailType = (await storageService.get('preferredEmailType')) ?? 'disposable';
+        if (preferredEmailType === 'gmail') {
+          const gmailBase = await storageService.get('gmailBase');
+          email = gmailBase || '';
         } else {
-          log.warn('No email account configured — generate an email first');
-          email = '';
+          const disposableEmail = await storageService.get('disposableEmail');
+          email = disposableEmail?.fullEmail || '';
+        }
+
+        // Fallback to currentEmail if the preferred one is empty/not set
+        // BUT respect the preferredEmailType — don't cross-pollinate
+        if (!email) {
+          const currentEmail = await storageService.get('currentEmail');
+          if (currentEmail?.fullEmail) {
+            const isGmailAccount =
+              currentEmail.service === 'gmail' || currentEmail.domain === 'gmail.com';
+            if (
+              (preferredEmailType === 'disposable' && !isGmailAccount) ||
+              (preferredEmailType === 'gmail' && isGmailAccount)
+            ) {
+              email = currentEmail.fullEmail;
+            } else {
+              // currentEmail is the wrong type for the active tab — don't use it
+              log.info(
+                `Skipping currentEmail fallback (type mismatch: preferred=${preferredEmailType}, found=${currentEmail.service})`
+              );
+              email = '';
+            }
+          } else {
+            // Log as info to avoid raising an Error badge in chrome://extensions for unconfigured installs
+            log.info('No email account configured yet');
+            email = '';
+          }
         }
       } catch (e) {
-        log.warn('Failed to get currentEmail from storage', e);
+        log.warn('Failed to get current email from storage', e);
         email = '';
       }
 

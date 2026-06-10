@@ -52,6 +52,14 @@ describe('Message Validation Pipeline', () => {
       expect(result.valid).toBe(true);
     });
 
+    it('accepts DOWNLOAD_TRAINING_DATA with valid payload', () => {
+      const result = validateMessage({
+        action: 'DOWNLOAD_TRAINING_DATA',
+        payload: { data: 'line1\nline2' },
+      });
+      expect(result.valid).toBe(true);
+    });
+
     it('accepts EXTRACT_OTP with popup metadata used to persist lastOTP', () => {
       const result = validateMessage({
         action: 'EXTRACT_OTP',
@@ -66,6 +74,59 @@ describe('Message Validation Pipeline', () => {
         },
       });
       expect(result.valid).toBe(true);
+    });
+
+    it('accepts FILL_OTP and AUTO_FILL_OTP with standard and long URL-extracted codes', () => {
+      const fillShort = validateMessage({
+        action: 'FILL_OTP',
+        payload: { otp: '123456' },
+      });
+      expect(fillShort.valid).toBe(true);
+
+      const fillLong = validateMessage({
+        action: 'FILL_OTP',
+        payload: { otp: 'f1ca0ce1-92ec-48a8-97b2-0123456789ab' }, // 36 char UUID
+      });
+      expect(fillLong.valid).toBe(true);
+
+      const autofillShort = validateMessage({
+        action: 'AUTO_FILL_OTP',
+        payload: {
+          otp: '123456',
+          source: 'email',
+          confidence: 0.95,
+        },
+      });
+      expect(autofillShort.valid).toBe(true);
+
+      const autofillLong = validateMessage({
+        action: 'AUTO_FILL_OTP',
+        payload: {
+          otp: 'f1ca0ce1-92ec-48a8-97b2-0123456789ab',
+          source: 'url-extracted',
+          confidence: 1.0,
+        },
+      });
+      expect(autofillLong.valid).toBe(true);
+    });
+
+    it('accepts read-only Gmail actions and rejects write actions', () => {
+      expect(
+        validateMessage({ action: 'GMAIL_SEARCH', payload: { query: 'to:alias@gmail.com' } }).valid
+      ).toBe(true);
+      expect(validateMessage({ action: 'GMAIL_LIST_LABELS' }).valid).toBe(true);
+      expect(
+        validateMessage({
+          action: 'GMAIL_SEND',
+          payload: { to: 'a@example.com', subject: 'Hi', body: '' },
+        }).valid
+      ).toBe(false);
+      expect(
+        validateMessage({
+          action: 'GMAIL_MODIFY',
+          payload: { messageId: 'msg-1', removeLabels: ['UNREAD'] },
+        }).valid
+      ).toBe(false);
     });
   });
 

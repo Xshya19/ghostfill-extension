@@ -1,15 +1,3 @@
-// ═══════════════════════════════════════════════════════════════
-// ⚠️ CODE QUALITY: Large Component - Needs Refactoring
-// File size: ~95KB, ~1970 lines
-// TODO: Split into smaller modules:
-//   - otpPatterns.ts: OTP pattern definitions and regex
-//   - otpContextAnalyzer.ts: Context analysis logic
-//   - otpSignalScorer.ts: Signal scoring engine
-//   - otpProviderMatcher.ts: Provider-specific extraction
-//   - otpAntiPatterns.ts: Anti-pattern detection
-// Priority: CRITICAL - This is the largest file in the codebase
-// ═══════════════════════════════════════════════════════════════
-
 // ghost-otp-extractor.ts
 // Hyper-Intelligent OTP/Code Extractor from Email HTML
 // 12 layers of intelligence, 0 dependencies, ~99.5% accuracy

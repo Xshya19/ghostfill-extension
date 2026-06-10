@@ -10,7 +10,12 @@
 // §1  D E S I G N   T O K E N S   &   S T Y L E S
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { classifyField, shouldDecorateField, getFieldTooltip, FieldType } from '../../shared/fieldClassifier';
+import {
+  classifyField,
+  shouldDecorateField,
+  getFieldTooltip,
+  FieldType,
+} from '../../shared/fieldClassifier';
 import { generateHostTokens } from '../../shared/tokens';
 import { setHTML } from '../../utils/setHTML';
 
@@ -22,9 +27,10 @@ const STYLES = `
 :host {
   display: block;
   position: absolute;
-  z-index: 2147483647;
+  z-index: 2147483646;
+  isolation: isolate;
   cursor: pointer;
-  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: "Space Grotesk", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
   pointer-events: auto;
   width: 28px;
   height: 28px;
@@ -42,84 +48,41 @@ const STYLES = `
   --error:           var(--gf-coral);
   --error-rgb:       var(--gf-coral-rgb);
   
-  --glass-bg:        rgba(var(--gf-card-rgb), 0.45);
-  --glass-bg-hover:  rgba(var(--gf-card-rgb), 0.85);
-  --glass-border:    rgba(var(--gf-magenta-rgb), 0.2);
-  --perspective:     800px;
-  
-  --shadow-raised:   0 2px 8px rgba(0, 0, 0, 0.25), 0 4px 16px rgba(0, 0, 0, 0.15);
-  --shadow-hover:    0 8px 24px rgba(var(--gf-violet-rgb), 0.2), 0 0 0 1px rgba(var(--gf-magenta-rgb), 0.3);
+  --sticker-bg: var(--gf-card, #211B3D);
+  --sticker-bg-hover: var(--gf-surface, #18152A);
+  --shadow-hard: 3px 3px 0 var(--gf-ink, #000);
 
   --ease-out-expo:   cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring:     cubic-bezier(0.175, 0.885, 0.32, 1.275);
   --ease-bounce:     cubic-bezier(0.68, -0.55, 0.265, 1.55);
 }
 
-/* ── Container: Spatial Glass Pill ── */
 .ghost-icon-container {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
   height: 100%;
-  border-radius: 9px;
-
-  /* Liquid glass */
-  background: var(--glass-bg);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--shadow-raised);
-
+  border-radius: 6px;
+  background: var(--sticker-bg); /* SOLID. NO TRANSPARENCY. */
+  border: 2px solid var(--gf-ink, #000); /* Thick comic-ink border */
+  box-shadow: var(--shadow-hard); /* HARD OFFSET SHADOW */
   overflow: hidden;
-  opacity: 0.55;
+  opacity: 1; /* Always fully opaque */
   position: relative;
-
-  /* 3D spatial */
-  transform: perspective(var(--perspective)) translateZ(0);
-  transform-style: preserve-3d;
-  transition:
-    transform 0.35s var(--ease-out-expo),
-    opacity   0.3s  var(--ease-out-expo),
-    box-shadow 0.35s var(--ease-out-expo),
-    background 0.25s ease,
-    border-color 0.25s ease;
-  will-change: transform, opacity, box-shadow;
-}
-
-/* Top specular highlight */
-.ghost-icon-container::before {
-  content: "";
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 50%;
-  border-radius: 9px 9px 50% 50%;
-  background: linear-gradient(180deg,
-    rgba(255, 255, 255, 0.5) 0%,
-    rgba(255, 255, 255, 0.08) 60%,
-    transparent 100%);
-  pointer-events: none;
-  z-index: 1;
-  opacity: 0.7;
-  transition: opacity 0.3s ease;
+  transition: transform 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.1s;
 }
 
 .ghost-icon-container:hover {
-  opacity: 0.95;
-  background: var(--glass-bg-hover);
-  border-color: rgba(var(--brand-rgb), 0.45);
-  box-shadow: var(--shadow-hover);
-  transform: perspective(var(--perspective)) translateZ(2px) scale(1.05);
-}
-
-.ghost-icon-container:hover::before {
-  opacity: 0.95;
+  background: var(--sticker-bg-hover);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--gf-ink, #000);
+  border-color: var(--gf-cyan, #20F4FF);
 }
 
 .ghost-icon-container:active {
-  transform: perspective(var(--perspective)) translateZ(-1px) scale(0.96);
-  opacity: 0.85;
-  transition: transform 0.08s ease;
+  transform: translate(2px, 2px);
+  box-shadow: 0px 0px 0 var(--gf-ink, #000); /* Slams into the page */
 }
 
 /* ── SVG Icons ── */
@@ -206,45 +169,39 @@ const STYLES = `
   transform: translateX(-50%) translateY(-6px) scale(1);
 }
 
-/* State Modifiers */
+/* State Modifiers — MEMPHIS SOLID TINTS */
 .ghost-icon-container.gl-loading {
-  background: var(--glass-bg-hover);
-  border-color: rgba(var(--brand-rgb), 0.3);
+  background: var(--gf-surface);
+  border-color: var(--gf-cyan);
   cursor: wait;
 }
-
 .ghost-icon-container.gl-success {
-  background: rgba(var(--success-rgb), 0.15);
-  border-color: var(--success);
-  box-shadow: 0 0 12px rgba(var(--success-rgb), 0.35);
-  opacity: 0.95;
+  background: var(--gf-mint); /* SOLID MINT */
+  border-color: var(--gf-ink);
+  box-shadow: 3px 3px 0 var(--gf-ink); /* HARD SHADOW */
 }
-
 .ghost-icon-container.gl-error {
-  background: rgba(var(--error-rgb), 0.15);
-  border-color: var(--error);
-  box-shadow: 0 0 12px rgba(var(--error-rgb), 0.35);
-  opacity: 0.95;
-  animation: glShake 0.35s ease;
+  background: var(--gf-coral); /* SOLID CORAL */
+  border-color: var(--gf-ink);
+  box-shadow: 3px 3px 0 var(--gf-ink);
+  animation: glShake2D 0.35s ease; /* 2D Shake */
 }
-
 .ghost-icon-container.gl-otp-ready {
-  background: rgba(var(--brand-rgb), 0.18);
-  border-color: var(--brand);
-  box-shadow: 0 0 12px rgba(var(--brand-rgb), 0.35);
-  opacity: 0.95;
-  animation: glPulse 2s ease-in-out infinite;
+  background: var(--gf-violet); /* SOLID VIOLET */
+  border-color: var(--gf-ink);
+  box-shadow: 3px 3px 0 var(--gf-ink);
+  animation: glPulse2D 2s ease-in-out infinite;
 }
 
-@keyframes glPulse {
-  0%, 100% { transform: perspective(var(--perspective)) translateZ(0) scale(1); }
-  50% { transform: perspective(var(--perspective)) translateZ(1px) scale(1.05); }
+/* REMOVE ALL perspective() transforms */
+@keyframes glPulse2D {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--gf-ink); }
 }
-
-@keyframes glShake {
-  0%, 100% { transform: perspective(var(--perspective)) translateX(0); }
-  20%, 60% { transform: perspective(var(--perspective)) translateX(-3px); }
-  40%, 80% { transform: perspective(var(--perspective)) translateX(3px); }
+@keyframes glShake2D {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-3px); }
+  40%, 80% { transform: translateX(3px); }
 }
 
 /* ── Entrance/Exit ── */
@@ -719,7 +676,8 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
     this.ariaLiveEl.className = 'gl-aria-live';
     this.ariaLiveEl.setAttribute('aria-live', 'polite');
     this.ariaLiveEl.setAttribute('role', 'status');
-    this.ariaLiveEl.style.cssText = 'position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0;';
+    this.ariaLiveEl.style.cssText =
+      'position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0;';
     this.root.appendChild(this.ariaLiveEl);
   }
 
@@ -781,7 +739,7 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
 
     this.style.setProperty('display', 'block', 'important');
     this.style.setProperty('position', 'absolute', 'important');
-    this.style.setProperty('z-index', '2147483647', 'important');
+    this.style.setProperty('z-index', '2147483646', 'important');
     this.style.setProperty('top', `${pos.top}px`, 'important');
     this.style.setProperty('left', `${pos.left}px`, 'important');
 

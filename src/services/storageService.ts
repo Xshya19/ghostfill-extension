@@ -22,7 +22,7 @@ import {
   getSessionKey,
   getMasterKey,
   clearEncryptionKeys,
-} from '../utils/encryption'; // eslint-disable-line @typescript-eslint/no-unused-vars
+} from '../utils/encryption';
 import { createLogger } from '../utils/logger';
 
 /**
@@ -53,6 +53,7 @@ let sessionSecretsInitialized = false;
 const SENSITIVE_KEYS: Array<keyof StorageSchema> = [
   // User credentials and identities
   'currentEmail', // Current email account (contains credentials)
+  'disposableEmail', // Last disposable email account, kept separate from Gmail aliases
   'currentIdentity', // User identity information
 
   // OTP and verification codes
@@ -71,6 +72,16 @@ const SENSITIVE_KEYS: Array<keyof StorageSchema> = [
 
   // Settings (but NOT API keys - those are in sessionSecrets)
   'settings', // Contains configuration (API keys removed)
+
+  // Gmail profile and alias history are user-identifying.
+  'gmailProfile',
+  'gmailBase',
+  'gmailConnectedAt',
+  'aliasHistory',
+  'gmailAliasSessions',
+  'gmailInbox',
+  'gmailSyncState',
+  'gmailClientId',
 ];
 
 // PERFORMANCE: O(1) LRU Cache Configuration
@@ -120,9 +131,7 @@ class StorageService {
   private writeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingResolvers: Array<{ resolve: () => void; reject: (err: unknown) => void }> = [];
   private readonly WRITE_BATCH_DELAY = 500;
-  private isFlushing = false;
-  private flushRetryCount = 0;
-  private readonly MAX_FLUSH_RETRIES = 3;
+
   // ───────────────────────────────────────────────────────────────────
   // CRITICAL FIX #4: Mutex for Write Operations
   // Prevents race conditions during concurrent writes
@@ -138,7 +147,6 @@ class StorageService {
   // FIX: Added missing optimisticTimers — was referenced in setOptimistic() but
   // never declared, causing a TypeError crash on every optimistic UI update.
   private optimisticTimers: Map<keyof StorageSchema, ReturnType<typeof setTimeout>> = new Map();
-  private syncInProgress = false;
 
   // PERFORMANCE: Cache statistics
   private cacheHits = 0;
@@ -150,6 +158,11 @@ class StorageService {
       CACHE_CONFIG.TTL_MS
     );
     // Lazy cleanup is now triggered per-access via maybecleanupCache()
+
+    // FIX #2: Removed duplicate onChanged listener from constructor.
+    // Cache sync with external storage changes is handled by the `onChanged()` public
+    // method's internal listener, which also decrypts sensitive values correctly.
+    // Having two listeners caused double-decryption and performance overhead.
   }
 
   /**
@@ -304,6 +317,11 @@ class StorageService {
    * @param key - Storage key to cancel
    */
   cancelOptimisticUpdate(key: keyof StorageSchema): void {
+    const timer = this.optimisticTimers.get(key);
+    if (timer) {
+      clearTimeout(timer);
+      this.optimisticTimers.delete(key);
+    }
     this.optimisticUpdates.delete(key);
   }
 
@@ -311,14 +329,11 @@ class StorageService {
    * Clear all optimistic updates
    */
   clearOptimisticUpdates(): void {
+    for (const timer of this.optimisticTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.optimisticTimers.clear();
     this.optimisticUpdates.clear();
-  }
-
-  /**
-   * Check if sync is in progress
-   */
-  isSyncInProgress(): boolean {
-    return this.syncInProgress;
   }
 
   /**
@@ -464,7 +479,22 @@ class StorageService {
     }
     sessionSecrets = {};
     sessionSecretsInitialized = false;
-    log.info('Session secrets cleared from memory');
+
+    // FIX #30: Also clear secrets from chrome.storage.session to prevent
+    // persistence across service worker restarts
+    if (typeof chrome !== 'undefined' && chrome.storage?.session) {
+      chrome.storage.session
+        .get(null)
+        .then((all) => {
+          const secretKeys = Object.keys(all).filter((k) => k.startsWith('ghostfill_secret_'));
+          if (secretKeys.length > 0) {
+            chrome.storage.session.remove(secretKeys).catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }
+
+    log.info('Session secrets cleared from memory and session storage');
   }
 
   /**
@@ -596,6 +626,9 @@ class StorageService {
   async get<K extends keyof StorageSchema>(key: K): Promise<StorageSchema[K] | undefined> {
     await this.ensureInitialized();
 
+    // FIX #3: Trigger lazy cache cleanup on access
+    this.maybecleanupCache();
+
     // PERFORMANCE: O(1) cache check
     const cachedValue = this.cache.get(key);
     if (cachedValue !== undefined) {
@@ -605,7 +638,7 @@ class StorageService {
 
     this.cacheMisses++;
 
-    if (!chrome?.storage?.local) {
+    if (typeof chrome === 'undefined' || !chrome.storage?.local) {
       log.warn('Storage API unavailable', { key });
       return undefined;
     }
@@ -629,9 +662,11 @@ class StorageService {
             value = undefined;
           }
         } else {
-          // Sensitive key has non-string value — could be corrupted or stored before encryption
-          log.warn(`Sensitive key ${key} has non-string value, dropping to prevent data leak`);
-          value = undefined;
+          // Legacy plaintext from older builds. Return it once and rewrite encrypted.
+          log.warn(`Sensitive key ${key} was plaintext; migrating to encrypted storage`);
+          void this.setInternal(key, value).catch((error) =>
+            log.warn(`Failed to migrate sensitive key ${String(key)}`, error)
+          );
         }
       }
 
@@ -672,7 +707,8 @@ class StorageService {
 
       this.writeDebounceTimer = setTimeout(() => {
         this.writeDebounceTimer = null;
-        const resolvers = [...this.pendingResolvers];
+        // Atomically capture and clear to prevent race condition
+        const resolvers = this.pendingResolvers;
         this.pendingResolvers = [];
 
         this.flushPendingWrites()
@@ -758,9 +794,6 @@ class StorageService {
           });
         });
 
-        // Reset retry count on success
-        this.flushRetryCount = 0;
-
         log.debug(`Batch saved ${writes.size} keys`);
       } catch (error) {
         log.error('Failed to flush pending writes', error);
@@ -776,25 +809,6 @@ class StorageService {
         throw error;
       } finally {
         this.releaseWriteMutex();
-
-        // Directly schedule retry if there are pending writes (with max retry limit)
-        if (this.pendingWrites.size > 0) {
-          this.flushRetryCount++;
-          if (this.flushRetryCount <= this.MAX_FLUSH_RETRIES) {
-            log.warn(`Retrying flush (attempt ${this.flushRetryCount}/${this.MAX_FLUSH_RETRIES})`);
-            setTimeout(() => {
-              this.flushPendingWrites().catch((err) => {
-                log.error('Retry flush failed', err);
-              });
-            }, this.WRITE_BATCH_DELAY * this.flushRetryCount);
-          } else {
-            log.error(
-              `Max flush retries (${this.MAX_FLUSH_RETRIES}) reached, discarding pending writes`
-            );
-            this.pendingWrites.clear();
-            this.flushRetryCount = 0;
-          }
-        }
       }
     };
 
@@ -871,7 +885,7 @@ class StorageService {
 
   private async getAllInternal(): Promise<Partial<StorageSchema>> {
     try {
-      if (!chrome?.storage?.local) {
+      if (typeof chrome === 'undefined' || !chrome.storage?.local) {
         log.warn('Storage API unavailable (getAll)');
         return {};
       }
@@ -924,6 +938,11 @@ class StorageService {
   async clear(): Promise<void> {
     await this.ensureInitialized();
     try {
+      // FIX #16: Cancel pending write debounce timer to prevent stale flush after clear
+      if (this.writeDebounceTimer) {
+        clearTimeout(this.writeDebounceTimer);
+        this.writeDebounceTimer = null;
+      }
       // Preserve encryption bootstrap material so data written after a clear
       // remains readable across the next service worker restart.
       const preservedLocal = await chrome.storage.local.get([
@@ -1047,11 +1066,11 @@ class StorageService {
       }
 
       const inbox = await this.get('inbox');
-      if (inbox && Array.isArray(inbox) && inbox.length > 10) {
-        const pruned = inbox.slice(0, 10) as StorageSchema['inbox'];
+      if (inbox && Array.isArray(inbox) && inbox.length > 50) {
+        const pruned = inbox.slice(0, 50) as StorageSchema['inbox'];
         this.pendingWrites.set('inbox', pruned);
         this.cache.set('inbox', pruned);
-        log.info('Pruned inbox cache to 10 items');
+        log.info('Pruned inbox cache to 50 items');
       }
     } catch (e) {
       log.warn('Failed to prune old data', e);
@@ -1124,14 +1143,26 @@ class StorageService {
    * PERFORMANCE: Preload frequently accessed keys into cache
    */
   async preload(keys: (keyof StorageSchema)[]): Promise<void> {
-    if (!chrome?.storage?.local) {
+    if (typeof chrome === 'undefined' || !chrome.storage?.local) {
       return;
     }
 
     try {
       const result = await chrome.storage.local.get(keys as string[]);
+      // FIX #17: Decrypt sensitive keys before caching to prevent serving
+      // encrypted ciphertext from the cache
       for (const [key, value] of Object.entries(result)) {
-        this.cache.set(key as keyof StorageSchema, value);
+        const typedKey = key as keyof StorageSchema;
+        if (SENSITIVE_KEYS.includes(typedKey) && typeof value === 'string') {
+          try {
+            const decrypted = await decrypt(value, this.getEncryptionKey());
+            this.cache.set(typedKey, decrypted);
+          } catch {
+            log.debug(`Skipping corrupted preload key: ${key}`);
+          }
+        } else {
+          this.cache.set(typedKey, value);
+        }
       }
       log.debug(`Preloaded ${Object.keys(result).length} keys`);
     } catch (error) {

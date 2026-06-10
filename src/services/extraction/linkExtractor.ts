@@ -15,7 +15,12 @@ import type {
   IntentResult,
   ExtractedLink,
 } from '../types/extraction.types';
-import { normalizeUrl, analyzeUrlParams, calculateUrlComplexity } from './urlExtractor';
+import {
+  normalizeUrl,
+  analyzeUrlParams,
+  calculateUrlComplexity,
+  unwrapTrackingUrl,
+} from './urlExtractor';
 import {
   decodeHtmlEntities,
   stripHtml,
@@ -48,6 +53,91 @@ const CONFIG = {
   },
 } as const;
 
+const ACTIVATION_URL_KEYWORD =
+  /verify|verification|activate|activation|confirm|confirmation|registration|signup|sign[-_]?up|email[-_]?verify|verify[-_]?email|confirm[-_]?email|magic(?:[-_]?link)?|passwordless|signin[-_]?link|sign[-_]?in|login[-_]?link|accept[-_]?invite|invitation|invite|join|onboard|welcome|complete|finish|authorize|authorise|approve|authenticate|device/i;
+
+const PASSWORD_RESET_URL_KEYWORD = /reset|recover|password|forgot|change[-_]?password/i;
+
+const ACTIVATION_ANCHOR_KEYWORD =
+  /\b(?:verify|confirm|activate|active|complete|finish|get started|click here|tap here|continue|proceed|open|access|launch|start using|sign in|log in|login|magic link|secure link|passwordless|accept invite|accept invitation|join workspace|join team|join organization|join organisation|join|authorize|authorise|approve|authenticate|trust this device|confirm account|confirm email|verify email|verify account|activate account|active mail|active email|active account)\b/i;
+
+const PASSWORD_RESET_ANCHOR_KEYWORD =
+  /\b(?:reset|change|recover|restore|set(?: up)?(?: a)? new password|forgot password)\b/i;
+
+const ACTIVATION_CONTEXT_KEYWORDS = [
+  'verify',
+  'confirm',
+  'activate',
+  'activation',
+  'active your mail',
+  'active your email',
+  'active account',
+  'click here',
+  'click the button',
+  'click the link',
+  'tap here',
+  'tap the button',
+  'get started',
+  'complete registration',
+  'complete signup',
+  'finish setup',
+  'finish signing up',
+  'confirm email',
+  'confirm your email',
+  'verify email',
+  'verify your email',
+  'confirm account',
+  'verify account',
+  'activate account',
+  'sign in',
+  'sign in securely',
+  'log in',
+  'login',
+  'magic link',
+  'passwordless',
+  'open link',
+  'secure link',
+  'access account',
+  'continue',
+  'proceed',
+  'launch',
+  'start using',
+  'accept invite',
+  'accept invitation',
+  'join workspace',
+  'join team',
+  'join organization',
+  'join organisation',
+  'authorize',
+  'authorise',
+  'approve',
+  'authenticate',
+  'trust this device',
+  'email verified',
+  'account verification',
+  'please click',
+  'follow this link',
+  'use this link',
+] as const;
+
+function isActivationIntent(intent: EmailIntent): boolean {
+  return [
+    'activation',
+    'magic-link',
+    'magic-link-login',
+    'invitation',
+    'device-confirmation',
+    'account-update',
+  ].includes(intent);
+}
+
+function isGenericTokenPattern(patternName: string | null): boolean {
+  return Boolean(
+    patternName &&
+    ['token-param', 'code-param', 'action-verify-param', 'url-oauth-flow'].includes(patternName)
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  URL FILTER PATTERNS
 // ═══════════════════════════════════════════════════════════════════════
@@ -63,7 +153,8 @@ const NON_TARGET_URL_PATTERNS = [
   /privacy[-_]?(?:policy|notice|statement)/i,
   /terms[-_]?(?:of|and)[-_]?(?:service|use|conditions)/i,
   /legal/i,
-  /(?:facebook|twitter|instagram|linkedin|youtube|tiktok|pinterest)\.com/i,
+  /(?:facebook|twitter|x|linkedin|pinterest)\.com\/(?:share|sharer|intent|company|in\/|profile|pub|posts?)(?:\/|\?|$)/i,
+  /(?:youtube|tiktok|instagram)\.com\/(?:channel|user|watch|reel|p|shorts|@)(?:\/|\?|$)/i,
   /play\.google\.com/i,
   /apps\.apple\.com/i,
   /itunes\.apple\.com/i,
@@ -101,7 +192,17 @@ const NON_TARGET_URL_PATTERNS = [
  */
 export function isCTAButton(anchorHtml: string): boolean {
   const l = anchorHtml.toLowerCase();
+  if (/\brole\s*=\s*["']button["']/i.test(l)) {
+    return true;
+  }
   if (/class\s*=\s*["'][^"']*(?:btn|button|cta|action|primary)[^"']*["']/i.test(l)) {
+    return true;
+  }
+  if (
+    /\bdata-(?:testid|qa|role|cy)\s*=\s*["'][^"']*(?:button|cta|confirm|verify|activate|invite)[^"']*["']/i.test(
+      l
+    )
+  ) {
     return true;
   }
   if (/style\s*=\s*["'][^"']*background(?:-color)?\s*:/i.test(l) && /padding/i.test(l)) {
@@ -117,6 +218,73 @@ export function isCTAButton(anchorHtml: string): boolean {
     return true;
   }
   return false;
+}
+
+function extractAnchorHref(anchorHtml: string): string {
+  const quoted = anchorHtml.match(/\bhref\s*=\s*["']([^"']+)["']/i);
+  if (quoted?.[1]) {
+    return decodeHtmlEntities(quoted[1].trim());
+  }
+
+  const unquoted = anchorHtml.match(/\bhref\s*=\s*([^\s>]+)/i);
+  return decodeHtmlEntities(unquoted?.[1]?.trim() ?? '');
+}
+
+function urlsReferToSameTarget(anchorHref: string, targetUrl: string): boolean {
+  if (!anchorHref || !targetUrl) {
+    return false;
+  }
+
+  const variants = new Set<string>();
+  const addVariant = (value: string | null | undefined) => {
+    if (!value) {
+      return;
+    }
+    variants.add(value);
+    try {
+      variants.add(decodeURIComponent(value));
+    } catch {
+      // Keep the original value only.
+    }
+    try {
+      variants.add(normalizeUrl(value));
+    } catch {
+      // Invalid or relative URLs are ignored here.
+    }
+  };
+
+  addVariant(anchorHref);
+  addVariant(unwrapTrackingUrl(anchorHref));
+
+  for (const variant of variants) {
+    if (variant === targetUrl || variant.includes(targetUrl)) {
+      return true;
+    }
+    try {
+      if (normalizeUrl(variant) === normalizeUrl(targetUrl)) {
+        return true;
+      }
+    } catch {
+      // Compare best-effort variants only.
+    }
+  }
+
+  return false;
+}
+
+function getReadableAnchorText(anchorInnerHtml: string, anchorHtml: string): string {
+  const text = stripHtml(anchorInnerHtml).trim();
+  if (text) {
+    return text;
+  }
+
+  const labelled =
+    anchorHtml.match(/\baria-label\s*=\s*["']([^"']+)["']/i)?.[1] ??
+    anchorHtml.match(/\btitle\s*=\s*["']([^"']+)["']/i)?.[1] ??
+    anchorHtml.match(/\balt\s*=\s*["']([^"']+)["']/i)?.[1] ??
+    '';
+
+  return stripHtml(decodeHtmlEntities(labelled)).trim();
 }
 
 /**
@@ -141,7 +309,7 @@ export function getAnchorInfo(
   );
   if (strict) {
     return {
-      anchorText: stripHtml(strict[1] ?? '').trim(),
+      anchorText: getReadableAnchorText(strict[1] ?? '', strict[0]),
       anchorHtml: strict[0],
       isCTA: isCTAButton(strict[0]),
     };
@@ -151,9 +319,10 @@ export function getAnchorInfo(
   const loose = /<a([^>]*)>([\s\S]*?)<\/a>/gi;
   let m;
   while ((m = loose.exec(html)) !== null) {
-    if (m[0].includes(url) || (m[1] ?? '').includes(url)) {
+    const href = extractAnchorHref(m[0]);
+    if (m[0].includes(url) || (m[1] ?? '').includes(url) || urlsReferToSameTarget(href, url)) {
       return {
-        anchorText: stripHtml(m[2] ?? '').trim(),
+        anchorText: getReadableAnchorText(m[2] ?? '', m[0]),
         anchorHtml: m[0],
         isCTA: isCTAButton(m[0]),
       };
@@ -265,28 +434,25 @@ export function extractLink(
 
     // Strategy 2: URL keyword + OAuth/auth-flow detection
     if (!patternName) {
-      // Strong: verify/activate/confirm/signup in path
-      if (/verify|activate|confirm|registration|signup/i.test(url)) {
-        confidence = 75;
-        detectedType = 'activation';
-        patternName = 'url-kw-activation';
-      } else if (/reset|recover|password|forgot/i.test(url)) {
+      if (PASSWORD_RESET_URL_KEYWORD.test(url)) {
         confidence = 75;
         detectedType = 'password-reset';
         patternName = 'url-kw-reset';
-      } else if (/magic(?:-link)?|passwordless|signin[-_]?link/i.test(url)) {
-        confidence = 72;
+      } else if (ACTIVATION_URL_KEYWORD.test(url)) {
+        confidence = 76;
         detectedType = 'activation';
-        patternName = 'url-kw-magic';
+        patternName = 'url-kw-activation';
       } else {
         // OAuth / SSO / Auth-flow detection
-        // Catches: ?auth=...&flow=..., /oauth/..., /sso/..., /auth/...
+        // Catches: ?auth=...&flow=..., /oauth/..., /sso/..., /auth/..., /login/...
         const oauthFlow = /[?&](?:flow|state|nonce|grant_type|response_type)=/i.test(url);
         const authParam = /[?&](?:auth|token|access_token|id_token|code)=[A-Za-z0-9%._-]{8,}/i.test(
           url
         );
         const authPath =
-          /\/(?:auth|oauth|sso|login|signin|oidc|saml|callback|authorize)(?:\/|\?|$)/i.test(url);
+          /\/(?:auth|oauth|sso|login|signin|sign-in|magic|passwordless|email-login|oidc|saml|callback|authorize|approve|invite|invitation|join)(?:\/|\?|$)/i.test(
+            url
+          );
         const longPathToken = /\/[A-Za-z0-9_-]{20,}(?:\/|$|\?)/.test(url);
         const uuidInPath =
           /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\/|$)/i.test(url);
@@ -311,34 +477,36 @@ export function extractLink(
 
     // Strategy 3: Anchor analysis
     const { anchorText, anchorHtml, isCTA } = getAnchorInfo(decoded, url);
+    const anchorLooksActivation = ACTIVATION_ANCHOR_KEYWORD.test(anchorText);
+    const anchorLooksReset = PASSWORD_RESET_ANCHOR_KEYWORD.test(anchorText);
 
     if (isCTA) {
       confidence += CONFIG.scoring.linkCtaBonus;
-      const ctaLower = anchorText.toLowerCase();
-      if (
-        /verify|confirm|activate|complete|get started|click here|continue|proceed|open|access/i.test(
-          ctaLower
-        )
-      ) {
+      if (anchorLooksReset) {
         confidence += CONFIG.scoring.linkAnchorKeyword;
-        if (detectedType === 'other') {
+        if (detectedType === 'other' || isGenericTokenPattern(patternName)) {
+          detectedType = 'password-reset';
+        }
+      } else if (anchorLooksActivation) {
+        confidence += CONFIG.scoring.linkAnchorKeyword;
+        if (
+          detectedType === 'other' ||
+          detectedType === 'verification' ||
+          isGenericTokenPattern(patternName)
+        ) {
           detectedType = 'activation';
         }
       }
-      if (/reset|change|set.*password/i.test(ctaLower)) {
-        confidence += CONFIG.scoring.linkAnchorKeyword;
-        if (detectedType === 'other') {
-          detectedType = 'password-reset';
-        }
-      }
-    } else if (
-      anchorText &&
-      /verify|confirm|activate|click here|get started|complete|continue|open|access|proceed/i.test(
-        anchorText.toLowerCase()
-      )
-    ) {
+    } else if (anchorText && (anchorLooksActivation || anchorLooksReset)) {
       confidence += 12;
-      if (detectedType === 'other') {
+      if (anchorLooksReset && (detectedType === 'other' || isGenericTokenPattern(patternName))) {
+        detectedType = 'password-reset';
+      } else if (
+        anchorLooksActivation &&
+        (detectedType === 'other' ||
+          detectedType === 'verification' ||
+          isGenericTokenPattern(patternName))
+      ) {
         detectedType = 'activation';
       }
     }
@@ -367,28 +535,39 @@ export function extractLink(
     if (paramAn.hasToken && paramAn.hasUserId) {
       confidence += 8; /* token+user = auth flow */
     }
+    if (
+      (paramAn.hasToken || paramAn.hasCode) &&
+      (anchorLooksActivation || isActivationIntent(intent.intent)) &&
+      detectedType !== 'password-reset'
+    ) {
+      confidence += 10;
+      detectedType = 'activation';
+    }
 
     // Strategy 5: Intent alignment
-    if (detectedType === intent.intent) {
+    if (
+      detectedType === intent.intent ||
+      (detectedType === 'activation' && isActivationIntent(intent.intent))
+    ) {
       confidence += 18;
     } // was 15
     else if (
       detectedType === 'other' &&
-      intent.intent === 'activation' &&
+      isActivationIntent(intent.intent) &&
       (paramAn.hasToken || paramAn.hasCode)
     ) {
       confidence += 12;
       detectedType = 'activation';
     } else if (
       detectedType === 'other' &&
-      (intent.intent === 'activation' || intent.intent === 'verification')
+      (isActivationIntent(intent.intent) || intent.intent === 'verification')
     ) {
       // Email is clearly auth-intent but URL didn't match pattern — give small boost
       confidence += 5;
     }
 
     // Strategy 6: Context validation
-    const ctxResult = validateContext(url, plainText, 'activation', zones);
+    const ctxResult = validateContext(url, plainText, 'activation', zones, decoded);
     if (ctxResult.isValid) {
       confidence += Math.min(ctxResult.score / 4, CONFIG.scoring.linkContextBonusMax);
     }
@@ -500,7 +679,8 @@ function validateContext(
   url: string,
   fullText: string,
   category: 'activation',
-  zones: EmailZone[]
+  zones: EmailZone[],
+  decodedHtml?: string
 ): { isValid: boolean; score: number; semanticDistance: number } {
   const lower = fullText.toLowerCase();
   const urlIdx = lower.indexOf(url.toLowerCase());
@@ -508,30 +688,7 @@ function validateContext(
   let score = 0;
 
   // Check for activation keywords near URL
-  const activationKeywords = [
-    'verify',
-    'confirm',
-    'activate',
-    'click here',
-    'click the button',
-    'get started',
-    'complete registration',
-    'confirm email',
-    'sign in',
-    'log in',
-    'open link',
-    'access account',
-    'continue',
-    'proceed',
-    'enter',
-    'email verified',
-    'account verification',
-    'authentication',
-    'please click',
-    'tap here',
-    'follow this link',
-    'use this link',
-  ];
+  const activationKeywords = ACTIVATION_CONTEXT_KEYWORDS;
 
   const radius = 150;
   const start = Math.max(0, urlIdx - radius);
@@ -545,7 +702,23 @@ function validateContext(
   }
 
   // Semantic distance to action verbs
-  const actionTerms = ['click', 'tap', 'press', 'select', 'follow'];
+  const actionTerms = [
+    'click',
+    'tap',
+    'press',
+    'select',
+    'follow',
+    'verify',
+    'confirm',
+    'activate',
+    'accept',
+    'join',
+    'authorize',
+    'approve',
+    'authenticate',
+    'continue',
+    'launch',
+  ];
   let semanticDistance = Infinity;
   for (const term of actionTerms) {
     const tIdx = lower.indexOf(term);
@@ -564,8 +737,15 @@ function validateContext(
   }
 
   // Zone bonus
-  if (urlIdx !== -1) {
-    const zone = getZoneForPosition(zones, urlIdx);
+  let htmlUrlIdx = -1;
+  if (decodedHtml) {
+    htmlUrlIdx = decodedHtml.toLowerCase().indexOf(url.toLowerCase());
+  } else {
+    htmlUrlIdx = urlIdx;
+  }
+
+  if (htmlUrlIdx !== -1) {
+    const zone = getZoneForPosition(zones, htmlUrlIdx);
     if (zone?.zone === 'cta') {
       score += 15;
     } else if (zone?.zone === 'body-primary') {

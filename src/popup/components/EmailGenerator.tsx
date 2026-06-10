@@ -1,18 +1,7 @@
 import { motion, AnimatePresence, Transition } from 'framer-motion';
-import {
-  Mail,
-  Copy,
-  RefreshCw,
-  Inbox,
-  Clock,
-  Check,
-  ChevronRight,
-  ChevronLeft,
-  Zap,
-} from 'lucide-react';
+import { Mail, Copy, RefreshCw, Inbox, Clock, ChevronRight, ChevronLeft, Zap } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { EmailAccount, Email } from '../../types';
-import { TIMING } from '../../utils/constants';
 import { formatRelativeTime } from '../../utils/formatters';
 import { copyToClipboard } from '../../utils/helpers';
 import { safeSendMessage } from '../../utils/messaging';
@@ -39,7 +28,8 @@ const getLangAttr = (text: string): { dir?: 'rtl' | 'ltr'; lang?: string } | und
     return undefined;
   }
   // Match RTL characters (Arabic, Hebrew, Syriac, etc.)
-  const rtlRegex = /[\u0590-\u05FF\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
+  const rtlRegex =
+    /[\u0590-\u05FF\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
   if (rtlRegex.test(text)) {
     return { dir: 'rtl' };
   }
@@ -79,21 +69,16 @@ const EmailGenerator: React.FC<Props> = ({
   const rawInbox = useStorageSubscription('inbox', []);
   const inbox = Array.isArray(rawInbox) ? rawInbox : [];
   const [checking, setChecking] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(Date.now());
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [copySuccess, setCopySuccess] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState<number>(Date.now());
   const [timeLeft, setTimeLeft] = useState<string>('');
   const lastCheckedIdRef = useRef<string | null>(null);
-  const copyBtnRef = useRef<HTMLButtonElement>(null);
 
   // Memoize top 50 emails and asynchronously fetch their OTPs
   const latestInbox = React.useMemo(() => inbox.slice(0, 50), [inbox]);
   const { otps: emailOTPs, links: emailLinks } = useOTPExtractor(latestInbox);
-
-
-
-
 
   const checkInbox = useCallback(
     async (showToast = true): Promise<boolean> => {
@@ -102,7 +87,10 @@ const EmailGenerator: React.FC<Props> = ({
       }
       setChecking(true);
       try {
-        const response = await safeSendMessage({ action: 'CHECK_INBOX' });
+        const response = await safeSendMessage({
+          action: 'CHECK_INBOX',
+          payload: { email: emailAccount.fullEmail, service: emailAccount.service },
+        });
         if (response && response.success) {
           // We rely on useStorageSubscription to update the actual inbox array
           const emails =
@@ -189,34 +177,34 @@ const EmailGenerator: React.FC<Props> = ({
       return;
     }
     try {
-      // Create ripple effect
-      if (copyBtnRef.current) {
-        const btn = copyBtnRef.current;
-        const ripple = document.createElement('span');
-        ripple.className = 'copy-ripple';
-        const rect = btn.getBoundingClientRect();
-        const size = Math.max(rect.width, rect.height);
-        ripple.style.width = ripple.style.height = `${size}px`;
-        ripple.style.left = '0px';
-        ripple.style.top = '0px';
-        btn.style.position = 'relative';
-        btn.style.overflow = 'hidden';
-        btn.appendChild(ripple);
-        setTimeout(() => ripple.remove(), 600);
+      const copied = await copyToClipboard(emailAccount.fullEmail);
+      if (!copied) {
+        onToast('Copy failed');
+        setCopySuccess(false);
+        return;
       }
-
-      await copyToClipboard(emailAccount.fullEmail);
-      setCopied(true);
+      setCopySuccess(true);
       onToast('Email copied');
 
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
-      timeoutRef.current = setTimeout(() => setCopied(false), TIMING.COPY_CONFIRMATION_MS);
+      timeoutRef.current = setTimeout(() => {
+        setCopySuccess(false);
+      }, 1500);
     } catch {
       onToast('Copy failed');
+      setCopySuccess(false);
     }
   }, [emailAccount, onToast]);
+
+  const copyCode = useCallback(
+    async (code: string) => {
+      const ok = await copyToClipboard(code);
+      onToast(ok ? `Code ${code} copied` : 'Copy failed');
+    },
+    [onToast]
+  );
 
   const openActivationLink = useCallback(
     async (event: React.MouseEvent, activationLink: string) => {
@@ -244,17 +232,20 @@ const EmailGenerator: React.FC<Props> = ({
   );
 
   return (
-    <div className="generator-flow" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+    <div className="generator-flow email-generator-flow">
       {emailAccount ? (
         <>
           {/* Active Identity Card - HIDE IN INBOX VARIANT */}
           {variant === 'default' && (
-            <motion.div className="glass-card email-generator-card" transition={SPRING_TRANSITION}>
+            <motion.div
+              className="memphis-card email-generator-card"
+              transition={SPRING_TRANSITION}
+            >
               {/* Decorative glow */}
               <div className="email-glow" />
 
               <div className="identity-header">
-                <div className="widget-label" style={{ margin: 0 }}>
+                <div className="widget-label widget-label-no-margin">
                   <div className="identity-label-icon">
                     <Mail size={14} strokeWidth={2.5} />
                   </div>
@@ -306,20 +297,13 @@ const EmailGenerator: React.FC<Props> = ({
                 </div>
 
                 <motion.button
-                  className="copy-button"
+                  className={`copy-button ${copySuccess ? 'copy-success' : ''}`}
                   onClick={() => void copyEmail()}
-                  style={{
-                    background: copied ? 'var(--badge-success)' : 'var(--list-item-bg)',
-                    color: copied ? 'var(--success)' : 'var(--text-primary)',
-                  }}
-                  whileTap={{ scale: 0.9 }}
+                  whileHover={{ x: -1, y: -1 }}
+                  whileTap={{ x: 1, y: 1 }}
                   aria-label="Copy email to clipboard"
                 >
-                  {copied ? (
-                    <Check size={22} strokeWidth={2.5} />
-                  ) : (
-                    <Copy size={22} strokeWidth={2} />
-                  )}
+                  <Copy size={22} strokeWidth={2} />
                 </motion.button>
               </div>
               {/* Action Buttons */}
@@ -328,8 +312,8 @@ const EmailGenerator: React.FC<Props> = ({
                   className="ios-button button-secondary identity-action-btn"
                   onClick={() => setShowConfirm(true)}
                   disabled={syncing}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.96 }}
+                  whileHover={{ x: -1, y: -1 }}
+                  whileTap={{ x: 1, y: 1 }}
                 >
                   <RefreshCw size={18} className={syncing ? 'spin' : ''} />
                   New Email
@@ -338,8 +322,8 @@ const EmailGenerator: React.FC<Props> = ({
                   className="ios-button button-primary identity-action-btn"
                   onClick={() => void checkInbox()}
                   disabled={checking || timeLeft === 'Expired'}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.96 }}
+                  whileHover={{ x: -1, y: -1 }}
+                  whileTap={{ x: 1, y: 1 }}
                 >
                   {timeLeft === 'Expired' ? (
                     <>
@@ -358,68 +342,30 @@ const EmailGenerator: React.FC<Props> = ({
 
           {/* Inbox Section */}
           <div
-            className="inbox-section-wrapper"
-            style={{
-              marginTop: variant === 'inbox' ? 0 : 24,
-              flex: variant === 'inbox' ? 1 : 'none',
-              display: 'flex',
-              flexDirection: 'column',
-              minHeight: 0,
-            }}
+            className={`inbox-section-wrapper${variant === 'inbox' ? ' inbox-section-wrapper--inbox' : ''}`}
           >
             {syncError && (
-              <div
-                className="sync-error-banner"
-                style={{
-                  padding: '8px 12px',
-                  background: 'rgba(239, 68, 68, 0.1)',
-                  color: '#ef4444',
-                  borderRadius: '8px',
-                  fontSize: '13px',
-                  marginBottom: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  border: '1px solid rgba(239, 68, 68, 0.2)',
-                }}
-              >
+              <div className="inbox-error-banner">
                 <Zap size={14} /> {syncError}
               </div>
             )}
             {variant === 'inbox' ? (
               <motion.div
-                className="inbox-section"
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  flex: 1,
-                  overflow: 'hidden',
-                  maxHeight: 'none',
-                  minHeight: 0,
-                }}
+                className="inbox-section email-inbox-flex"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
               >
                 {/* Header Row - Matching Dashboard inbox-header-row */}
-                <div
-                  className="inbox-header-row"
-                  style={{
-                    marginBottom: 0,
-                    paddingBottom: 12,
-                    borderBottom: '1px solid var(--border-subtle)',
-                  }}
-                >
+                <div className="inbox-header-row email-inbox-header">
                   <div className="inbox-title-group">
                     {/* Back Button - Circular for Navigation */}
                     <motion.button
-                      className="action-icon"
+                      className="action-icon email-back-btn"
                       onClick={onBack}
-                      whileTap={{ scale: 0.85 }}
+                      whileHover={{ x: -1, y: -1 }}
+                      whileTap={{ x: 1, y: 1 }}
                       title="Go back"
                       aria-label="Go back to dashboard"
-                      style={{
-                        marginRight: 8,
-                      }}
                     >
                       <ChevronLeft size={18} />
                     </motion.button>
@@ -432,7 +378,8 @@ const EmailGenerator: React.FC<Props> = ({
                     className="action-icon"
                     onClick={() => void checkInbox()}
                     disabled={checking}
-                    whileTap={{ scale: 0.85 }}
+                    whileHover={{ x: -1, y: -1 }}
+                    whileTap={{ x: 1, y: 1 }}
                     title={checking ? 'Syncing...' : 'Refresh inbox'}
                     aria-label="Refresh inbox"
                   >
@@ -463,35 +410,21 @@ const EmailGenerator: React.FC<Props> = ({
                             mass: 0.8,
                           }}
                         >
-                          <EmailAvatar 
-                            from={item.from} 
-                            className="inbox-item-avatar" 
-                            style={{ position: 'relative' }}
-                          >
-                            {!item.read && (
-                              <div
-                                style={{
-                                  position: 'absolute',
-                                  top: -2,
-                                  right: -2,
-                                  width: 8,
-                                  height: 8,
-                                  background: 'var(--brand-primary)',
-                                  borderRadius: '50%',
-                                  boxShadow: '0 0 0 2px var(--glass-card-bg)',
-                                }}
-                                title="Unread"
-                              />
-                            )}
+                          <EmailAvatar from={item.from} className="inbox-item-avatar">
+                            {!item.read && <div className="unread-dot" title="Unread" />}
                           </EmailAvatar>
                           <div className="inbox-item-content">
                             <div className="inbox-item-header">
-                              <span className="inbox-item-from" {...getLangAttr(item.from)}>{item.from}</span>
+                              <span className="inbox-item-from" {...getLangAttr(item.from)}>
+                                {item.from}
+                              </span>
                               <span className="inbox-item-date">
                                 {formatRelativeTime(getEmailTimestamp(item))}
                               </span>
                             </div>
-                            <div className="inbox-item-subject" {...getLangAttr(item.subject)}>{item.subject}</div>
+                            <div className="inbox-item-subject" {...getLangAttr(item.subject)}>
+                              {item.subject}
+                            </div>
 
                             {/* Capsule Badges for OTP and Links */}
                             <div className="inbox-badges-row">
@@ -500,16 +433,10 @@ const EmailGenerator: React.FC<Props> = ({
                                   className="otp-badge"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    void copyToClipboard(verificationCode)
-                                      .then(() => {
-                                        onToast(`Code ${verificationCode} copied`);
-                                      })
-                                      .catch(() => {
-                                        onToast('Copy failed');
-                                      });
+                                    void copyCode(verificationCode);
                                   }}
-                                  whileHover={{ scale: 1.05 }}
-                                  whileTap={{ scale: 0.95 }}
+                                  whileHover={{ x: -1, y: -1 }}
+                                  whileTap={{ x: 1, y: 1 }}
                                 >
                                   <span className="otp-badge-code">🔢 {verificationCode}</span>
                                   <Copy size={12} />
@@ -519,10 +446,10 @@ const EmailGenerator: React.FC<Props> = ({
                                 <motion.button
                                   className="link-badge"
                                   onClick={(e) => void openActivationLink(e, activationLink)}
-                                  whileHover={{ scale: 1.05 }}
-                                  whileTap={{ scale: 0.95 }}
+                                  whileHover={{ x: -1, y: -1 }}
+                                  whileTap={{ x: 1, y: 1 }}
                                 >
-                                  <span className="otp-badge-code">🔗 Verify Link</span>
+                                  <span className="otp-badge-code">Verify Link</span>
                                   <ChevronRight size={12} />
                                 </motion.button>
                               )}
@@ -572,37 +499,29 @@ const EmailGenerator: React.FC<Props> = ({
                           className="inbox-item-default"
                         >
                           {/* Avatar */}
-                          <EmailAvatar 
-                            from={item.from} 
-                            className="inbox-avatar-default" 
-                            style={{ position: 'relative' }}
-                          >
-                            {!item.read && (
-                              <div
-                                style={{
-                                  position: 'absolute',
-                                  top: -1,
-                                  right: -1,
-                                  width: 8,
-                                  height: 8,
-                                  background: 'var(--brand-primary)',
-                                  borderRadius: '50%',
-                                  boxShadow: '0 0 0 2px var(--glass-card-bg)',
-                                }}
-                                title="Unread"
-                              />
-                            )}
+                          <EmailAvatar from={item.from} className="inbox-item-avatar">
+                            {!item.read && <div className="unread-dot" title="Unread" />}
                           </EmailAvatar>
 
                           {/* Content */}
                           <div className="inbox-content-default">
                             <div className="inbox-header-default">
-                              <div className="inbox-from-default truncate" {...getLangAttr(item.from)}>{item.from}</div>
+                              <div
+                                className="inbox-from-default truncate"
+                                {...getLangAttr(item.from)}
+                              >
+                                {item.from}
+                              </div>
                               <div className="inbox-date-default">
                                 {formatRelativeTime(getEmailTimestamp(item))}
                               </div>
                             </div>
-                            <div className="inbox-subject-default truncate" {...getLangAttr(item.subject)}>{item.subject}</div>
+                            <div
+                              className="inbox-subject-default truncate"
+                              {...getLangAttr(item.subject)}
+                            >
+                              {item.subject}
+                            </div>
 
                             {/* Capsule Badges */}
                             <div className="inbox-badges-default">
@@ -611,16 +530,10 @@ const EmailGenerator: React.FC<Props> = ({
                                   className="otp-badge"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    void copyToClipboard(verificationCode)
-                                      .then(() => {
-                                        onToast(`Code ${verificationCode} copied`);
-                                      })
-                                      .catch(() => {
-                                        onToast('Copy failed');
-                                      });
+                                    void copyCode(verificationCode);
                                   }}
-                                  whileHover={{ scale: 1.02 }}
-                                  whileTap={{ scale: 0.98 }}
+                                  whileHover={{ x: -1, y: -1 }}
+                                  whileTap={{ x: 1, y: 1 }}
                                 >
                                   🔢 {verificationCode}
                                   <Copy size={12} />
@@ -630,10 +543,10 @@ const EmailGenerator: React.FC<Props> = ({
                                 <motion.button
                                   className="link-badge"
                                   onClick={(e) => void openActivationLink(e, activationLink)}
-                                  whileHover={{ scale: 1.02 }}
-                                  whileTap={{ scale: 0.98 }}
+                                  whileHover={{ x: -1, y: -1 }}
+                                  whileTap={{ x: 1, y: 1 }}
                                 >
-                                  🔗 Verify Link
+                                  Verify Link
                                   <ChevronRight size={12} />
                                 </motion.button>
                               )}
@@ -656,7 +569,7 @@ const EmailGenerator: React.FC<Props> = ({
                             size={32}
                             color="var(--brand-primary)"
                             strokeWidth={1.5}
-                            style={{ opacity: 0.6 }}
+                            className="email-empty-icon"
                           />
                         </div>
                         <div className="inbox-empty-title">Inbox is Empty</div>
@@ -672,36 +585,18 @@ const EmailGenerator: React.FC<Props> = ({
           </div>
         </>
       ) : (
-        <div
-          className="glass-card missing-identity-card"
-          style={{ textAlign: 'center', padding: '32px 20px', marginTop: 16 }}
-        >
-          <div
-            className="shimmer-icon-container"
-            style={{ margin: '0 auto 16px', display: 'flex', justifyContent: 'center' }}
-          >
-            <Mail size={52} color="var(--brand-primary)" style={{ opacity: 0.8 }} />
+        <div className="memphis-card missing-identity-card">
+          <div className="shimmer-icon-container missing-identity-icon-box">
+            <Mail size={52} color="var(--brand-primary)" className="icon-faded" />
           </div>
-          <h3 style={{ fontSize: 18, marginBottom: 8, color: 'var(--text-primary)' }}>
-            {t('identityRequired')}
-          </h3>
-          <p
-            style={{
-              fontSize: 14,
-              color: 'var(--text-secondary)',
-              marginBottom: 24,
-              lineHeight: 1.5,
-            }}
-          >
-            {t('generateIdentityMessage')}
-          </p>
+          <h3 className="missing-identity-title">{t('identityRequired')}</h3>
+          <p className="no-identity-desc">{t('generateIdentityMessage')}</p>
           <motion.button
-            className="ios-button button-primary"
+            className="ios-button button-primary generate-identity-btn"
             onClick={onGenerate}
             disabled={syncing}
-            style={{ width: '100%', justifyContent: 'center' }}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.96 }}
+            whileHover={{ x: -1, y: -1 }}
+            whileTap={{ x: 1, y: 1 }}
           >
             {syncing ? <span className="spinner-small" /> : <Zap size={18} fill="white" />}
             {syncing ? t('syncingIdentity') : t('generateIdentity')}

@@ -6,10 +6,15 @@ import { safeSendTabMessage } from '../utils/messaging';
 import { errorTracker, performanceMonitor } from '../utils/monitoring';
 import { initRemoteLogger } from '../utils/remoteLogger';
 import { dumpMenuStats } from './contextMenu';
-import { setupMessageHandler } from './messageHandler';
+import { dumpRouterStats, setupMessageHandler } from './messageHandler';
 import { initNotifications, dumpNotificationStats } from './notifications';
-import { getPollingMetrics } from './pollingManager';
-import { initServiceWorker, getBootState, dumpBootReport } from './serviceWorker';
+import { getPollingMetrics, onPollingAlarm } from './pollingManager';
+import {
+  initServiceWorker,
+  getBootState,
+  dumpBootReport,
+  onServiceWorkerAlarm,
+} from './serviceWorker';
 
 // Boot timing — logged via structured logger once it's initialized
 const __BACKGROUND_LOAD_START_EARLY__ = Date.now();
@@ -39,20 +44,6 @@ const __BACKGROUND_LOAD_START_EARLY__ = Date.now();
 // │  │  health-monitor │──► periodic check + auto-restart           │
 // │  └─────────────────┘                                            │
 // └──────────────────────────────────────────────────────────────────┘
-//
-// ═══════════════════════════════════════════════════════════════════
-//  ARCHITECTURE TODOs (Issues #31-38)
-// ═══════════════════════════════════════════════════════════════════
-//  TODO #31: Consider migrating to TypeScript project references for
-//            better build isolation between background/content/popup
-//  TODO #32: Extract command handlers to separate module for testing
-//  TODO #33: Add structured logging with log levels (debug/info/warn/error)
-//  TODO #34: Implement proper error boundary for extension lifecycle
-//  TODO #35: Add metrics/telemetry for extension health monitoring
-//  TODO #36: Consider using MessageChannel for complex cross-context communication
-//  TODO #37: Add retry queue for failed API requests with exponential backoff
-//  TODO #38: Implement proper dependency injection for testability
-// ═══════════════════════════════════════════════════════════════════
 // ─────────────────────────────────────────────────────────────────────
 
 // ═══════════════════════════════════════════════════════════════════
@@ -407,8 +398,11 @@ function registerCommands(): void {
     const { notifySuccess } = await import('./notifications');
 
     const email = await emailService.generateEmail();
-    await clipboardService.copyEmail(email.fullEmail);
-    await notifySuccess('GhostFill: Email Generated', `${maskEmail(email.fullEmail)} copied!`);
+    const copied = await clipboardService.copyEmail(email.fullEmail);
+    await notifySuccess(
+      'GhostFill: Email Generated',
+      copied ? `${maskEmail(email.fullEmail)} copied!` : `${maskEmail(email.fullEmail)} generated`
+    );
   });
 
   register('generate-password', async () => {
@@ -417,8 +411,11 @@ function registerCommands(): void {
     const { notifySuccess } = await import('./notifications');
 
     const result = await passwordService.generate();
-    await clipboardService.copyPassword(result.password);
-    await notifySuccess('GhostFill: Password Generated', 'Secure password copied!');
+    const copied = await clipboardService.copyPassword(result.password);
+    await notifySuccess(
+      'GhostFill: Password Generated',
+      copied ? 'Secure password copied!' : 'Secure password generated'
+    );
   });
 
   register('auto-fill', async () => {
@@ -471,13 +468,8 @@ function installListeners(): void {
     }
     // Other system alarms
     else {
-      import('./serviceWorker')
-        .then((m) => m.onServiceWorkerAlarm && m.onServiceWorkerAlarm(alarm))
-        .catch((e) => log.debug('ServiceWorker alarm unhandled:', extractMsg(e)));
-
-      import('./pollingManager')
-        .then((m) => m.onPollingAlarm && m.onPollingAlarm(alarm))
-        .catch((e) => log.debug('Polling alarm unhandled:', extractMsg(e)));
+      onServiceWorkerAlarm(alarm);
+      onPollingAlarm(alarm);
     }
   });
 
@@ -580,7 +572,7 @@ function installDevTools(): void {
   g.dumpAllStats = () => {
     log.info('📊 GhostFill Stats');
     dumpBootReport();
-    // dumpRouterStats removed — messageHandler.ts is a pre-existing corrupted file
+    log.info('Router:', dumpRouterStats());
     dumpMenuStats();
     dumpNotificationStats();
     log.info('Polling:', getPollingMetrics());

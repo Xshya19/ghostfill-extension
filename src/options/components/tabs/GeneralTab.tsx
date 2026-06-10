@@ -1,3 +1,4 @@
+import { Palette, Bell, Save } from 'lucide-react';
 import React from 'react';
 
 import { UserSettings } from '../../../types/storage.types';
@@ -12,7 +13,7 @@ interface GeneralTabProps {
 const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChange }) => {
   return (
     <div role="tabpanel" id="tabpanel-general" aria-labelledby="tab-general">
-      <SettingsSection id="appearance" title="Appearance" icon="🎨">
+      <SettingsSection id="appearance" title="Appearance" icon={<Palette size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
             <label htmlFor="dark-mode">Dark Mode</label>
@@ -67,7 +68,7 @@ const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChange }) =>
         </div>
       </SettingsSection>
 
-      <SettingsSection id="notifications" title="Notifications & Sound" icon="🔔">
+      <SettingsSection id="notifications" title="Notifications & Sound" icon={<Bell size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
             <label id="notifications-label">Desktop Notifications</label>
@@ -84,7 +85,7 @@ const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChange }) =>
         <div className="setting-item">
           <div className="setting-info">
             <label id="sound-enabled-label">
-              Sound Effects <span style={{ fontSize: '0.75em', opacity: 0.6 }}>(Coming soon)</span>
+              Sound Effects <span className="coming-soon-label">(Coming soon)</span>
             </label>
             <p>Play sounds for actions like copy, OTP detection, etc.</p>
           </div>
@@ -97,12 +98,9 @@ const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChange }) =>
         </div>
       </SettingsSection>
 
-      <SettingsSection id="app-data" title="App State & Data" icon="💾">
-        <div
-          className="setting-item"
-          style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}
-        >
-          <div className="setting-info" style={{ marginBottom: '8px' }}>
+      <SettingsSection id="app-data" title="App State & Data" icon={<Save size={18} />}>
+        <div className="setting-item setting-item-col">
+          <div className="setting-info setting-info-mb-8">
             <label>Application Tutorial</label>
             <p>Replay the welcome onboarding tutorial to learn about GhostFill's features</p>
           </div>
@@ -110,8 +108,9 @@ const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChange }) =>
             className="premium-btn premium-btn-secondary"
             onClick={async () => {
               await chrome.storage.local.set({ hasSeenOnboarding: false });
-              // eslint-disable-next-line no-alert
-              alert('Onboarding reset! Please open the GhostFill popup to view the tutorial.');
+              console.warn(
+                'Onboarding reset! Please open the GhostFill popup to view the tutorial.'
+              );
             }}
           >
             Replay Onboarding

@@ -98,7 +98,8 @@ export class MailTmService {
     try {
       const response = await this.fetchWithRetry(
         `${this.baseUrl}${API.MAIL_TM.ENDPOINTS.DOMAINS}`,
-        { signal: signal ?? null }
+        { signal: signal ?? null, timeout: 4000 },
+        1 // Only 1 attempt for domains fetch
       );
 
       if (!response.ok) {
@@ -117,7 +118,16 @@ export class MailTmService {
       this.domainsCacheTime = Date.now();
       return result;
     } catch (error) {
-      log.error('Failed to fetch Mail.tm domains, using fallback', error);
+      if (
+        error instanceof Error &&
+        (error.name === 'AbortError' ||
+          error.message.includes('Aborted') ||
+          error.message.includes('timed out'))
+      ) {
+        log.warn('Failed to fetch Mail.tm domains due to abort/timeout, using fallback');
+      } else {
+        log.error('Failed to fetch Mail.tm domains, using fallback', error);
+      }
       return fallbackDomains;
     }
   }
@@ -127,13 +137,17 @@ export class MailTmService {
    */
   private async fetchWithRetry(
     url: string,
-    options: RequestInit = {},
+    options: RequestInit & { timeout?: number } = {},
     retries = 3
   ): Promise<Response> {
     let lastError: Error | unknown = null;
     let lastStatus = 0;
 
     for (let i = 0; i < retries; i++) {
+      if (options.signal?.aborted) {
+        throw new DOMException('The user aborted a request.', 'AbortError');
+      }
+
       try {
         const response = await fetchWithTimeout(url, options);
         lastStatus = response.status;
@@ -146,7 +160,10 @@ export class MailTmService {
         }
 
         // If 429 (Too Many Requests) or 5xx, wait and retry
-        await new Promise((resolve, reject) => {
+        await new Promise<void>((resolve, reject) => {
+          if (options?.signal?.aborted) {
+            return reject(new DOMException('Aborted', 'AbortError'));
+          }
           const timeoutId = setTimeout(resolve, 1000 * (i + 1));
           if (options?.signal) {
             options.signal.addEventListener(
@@ -161,12 +178,24 @@ export class MailTmService {
         });
       } catch (error) {
         lastError = error;
+
+        if (
+          options.signal?.aborted ||
+          (error as Error).name === 'AbortError' ||
+          (error as Error).message === 'AbortError'
+        ) {
+          throw error;
+        }
+
         if (i === retries - 1) {
           throw typeof error === 'object' && error instanceof Error
             ? error
             : new Error(String(error));
         }
-        await new Promise((resolve, reject) => {
+        await new Promise<void>((resolve, reject) => {
+          if (options?.signal?.aborted) {
+            return reject(new DOMException('Aborted', 'AbortError'));
+          }
           const timeoutId = setTimeout(resolve, 1000 * (i + 1));
           if (options?.signal) {
             options.signal.addEventListener(

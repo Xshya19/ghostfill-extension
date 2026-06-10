@@ -76,6 +76,7 @@ export const ProviderHealthMeter: React.FC = () => {
                 <div
                   className={`health-dot ${statusClass}`}
                   title={`Response: ${Math.round(h.avgResponseTime)}ms | Failures: ${h.consecutiveFailures}`}
+                  aria-label="Provider status"
                 />
               </div>
             </div>

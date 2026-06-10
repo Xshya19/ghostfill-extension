@@ -25,6 +25,9 @@ out/
 .env.production
 .env.development
 *.local
+*.pem
+key.pem
+
 
 # ───────────────────────────────────────────────────────────────────
 # IDE & Editors
@@ -162,9 +165,21 @@ env/
 __pycache__/
 *.pyc
 ml/venv/
+training/__pycache__/
 .tmp-script-run/
 tests/accuracy_log*.txt
 tests/accuracy_log*.jsonl
+
+# ───────────────────────────────────────────────────────────────────
+# AI IDE & Tool Artifacts
+# ───────────────────────────────────────────────────────────────────
+artifacts/
+.claude/
+
+# ───────────────────────────────────────────────────────────────────
+# Archived / Legacy (large files, not needed in git history)
+# ───────────────────────────────────────────────────────────────────
+docs/halcyon-archive/
 
 # ───────────────────────────────────────────────────────────────────
 # Diagnostic dump files
@@ -182,3 +197,4 @@ remaining-errors.txt
 current-errors.txt
 new_issues*.md
 *_FIXES_*.md
+*.pem

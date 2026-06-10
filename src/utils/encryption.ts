@@ -189,6 +189,7 @@ export function secureClearKeys(): void {
   sessionKey = null;
   masterKey = null;
   sessionKeyExpiration = null;
+  derivedKeyCache.clear();
 
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session) {
     chrome.storage.session

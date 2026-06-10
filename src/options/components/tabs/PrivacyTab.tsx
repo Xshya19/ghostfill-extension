@@ -1,3 +1,4 @@
+import { Lock, BarChart2, MailCheck } from 'lucide-react';
 import React from 'react';
 
 import { UserSettings } from '../../../types/storage.types';
@@ -21,7 +22,7 @@ const PrivacyTab: React.FC<PrivacyTabProps> = ({
 }) => {
   return (
     <div role="tabpanel" id="tabpanel-privacy" aria-labelledby="tab-privacy">
-      <SettingsSection id="history" title="History & Data" icon="🔒">
+      <SettingsSection id="history" title="History & Data" icon={<Lock size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
             <label id="save-history-label">Save History</label>
@@ -79,7 +80,22 @@ const PrivacyTab: React.FC<PrivacyTabProps> = ({
         </div>
       </SettingsSection>
 
-      <SettingsSection id="telemetry" title="Telemetry" icon="📊">
+      <SettingsSection id="gmail-privacy" title="Gmail Privacy" icon={<MailCheck size={18} />}>
+        <div className="setting-item">
+          <div className="setting-info">
+            <label id="gmail-session-fallback-label">Gmail Session Detection</label>
+            <p>Allow GhostFill to use an open Gmail session if Google sign-in is unavailable</p>
+          </div>
+          <ToggleSwitch
+            checked={settings.allowGmailSessionFallback}
+            onChange={(checked) => onSettingChange('allowGmailSessionFallback', checked)}
+            ariaLabel="Allow Gmail session detection"
+            ariaLabelledBy="gmail-session-fallback-label"
+          />
+        </div>
+      </SettingsSection>
+
+      <SettingsSection id="telemetry" title="Telemetry" icon={<BarChart2 size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
             <label id="analytics-label">Anonymous Analytics</label>

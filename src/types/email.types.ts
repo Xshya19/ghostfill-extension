@@ -12,6 +12,8 @@ export interface EmailAccount {
   password?: string; // For mail.tm accounts
   token?: string; // JWT token for mail.tm/tmailor
   originUrl?: string; // The website origin where this identity was generated
+  gmailBaseEmail?: string;
+  gmailAliasSessionStartedAt?: number;
 }
 
 // TMailor added - 500+ rotating domains to avoid blocklisting
@@ -23,7 +25,8 @@ export type EmailService =
   | 'mailgw'
   | 'guerrilla'
   | 'maildrop'
-  | 'custom';
+  | 'custom'
+  | 'gmail';
 
 export interface IEmailProvider {
   name: string;
@@ -40,6 +43,7 @@ export interface Email {
   subject: string;
   date: number;
   body: string;
+  snippet?: string;
   htmlBody?: string;
   textBody?: string;
   attachments: EmailAttachment[];

@@ -1,19 +1,43 @@
+import { getRandomizedGmailAlias } from '../services/aliasService';
 import { emailService } from '../services/emailServices';
+import {
+  buildGmailAliasSearchQuery,
+  clearGmailConnectedAt,
+  clearGmailAliasSessions,
+  filterGmailMessagesForAliasSession,
+  getGmailAliasProcessingBaseline,
+  getGmailAliasSession,
+  getMostRecentGmailAliasSession,
+  rememberGmailAliasSession,
+  setGmailConnectedAt,
+  getOrCreateGmailAliasSessionByDomain,
+  messageMatchesGmailAlias,
+} from '../services/gmailAliasSessionService';
+import * as gmailApiService from '../services/gmailApiService';
 import { identityService } from '../services/identityService';
-import { extractOTPStandalone, extractLinkStandalone } from '../services/intelligentExtractor';
+import { extractAll } from '../services/intelligentExtractor';
 import { linkService } from '../services/linkService';
 import { otpService } from '../services/otpService';
 import { passwordService } from '../services/passwordService';
 import { storageService } from '../services/storageService';
-import { ExtensionMessage, ExtensionResponse, LastOTP, PasswordHistoryItem } from '../types';
+import {
+  ExtensionMessage,
+  ExtensionResponse,
+  LastOTP,
+  PasswordHistoryItem,
+  GmailProfile,
+  GmailMessage,
+  EmailAccount,
+} from '../types';
 import { diag } from '../utils/diagnosticLogger';
 import { createLogger } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
 import { validateMessage } from '../utils/validation';
 import { updateOTPMenuItem } from './contextMenu';
+import { classifyFieldViaOffscreen } from './mlMessageHandler';
 import { notifySuccess, notifyError, resetNotificationSession } from './notifications';
-import { ensureOffscreenDocument } from './offscreenManager';
 import {
+  startEmailPolling,
   startFastOTPPolling,
   stopFastOTPPolling,
   triggerEventDrivenPolling,
@@ -21,12 +45,71 @@ import {
   isActivationTab,
   getOTPWaitingTabs,
   resetEmailSession,
+  suppressNextEmailTypeTransition,
+  startGmailAliasFastPolling,
+  onContentScriptReady,
 } from './pollingManager';
+import { extractEmailOnce } from './singleExtractionGuard';
 import { sseManager } from './sseManager';
 
 const log = createLogger('MessageHandler');
 const ML_PREWARM_TTL_MS = 10000;
 const lastMlPrewarmBySender = new Map<string, number>();
+let gmailInboxFetchSeq = 0;
+
+function invalidateGmailInboxFetches(): void {
+  gmailInboxFetchSeq += 1;
+}
+
+const HANDLED_MESSAGE_ACTIONS = [
+  'GET_CURRENT_EMAIL',
+  'GENERATE_EMAIL',
+  'GENERATE_GMAIL_ALIAS',
+  'CHECK_INBOX',
+  'READ_EMAIL',
+  'GET_EMAIL_HISTORY',
+  'GET_PROVIDER_HEALTH',
+  'GET_LAST_OTP',
+  'MARK_OTP_USED',
+  'CHECK_OTP_NOW',
+  'CHECK_OTP_FRESHNESS',
+  'WAIT_FOR_FRESH_OTP',
+  'OTP_PAGE_DETECTED',
+  'OTP_PAGE_LEFT',
+  'REGISTRATION_FORM_SUBMITTED',
+  'EXTRACT_OTP',
+  'GENERATE_PASSWORD',
+  'GET_PASSWORD_HISTORY',
+  'SAVE_PASSWORD',
+  'DELETE_PASSWORD',
+  'GET_IDENTITY',
+  'GENERATE_IDENTITY',
+  'REFRESH_IDENTITY',
+  'ANALYZE_DOM',
+  'CHECK_ML',
+  'CLASSIFY_FIELD',
+  'PREWARM_ML',
+  'REPORT_MISCLASSIFICATION',
+  'SHOW_NOTIFICATION',
+  'GET_SETTINGS',
+  'UPDATE_SETTINGS',
+  'CLEAR_DATA',
+  'OPEN_OPTIONS',
+  'DOWNLOAD_TRAINING_DATA',
+  'LINK_ACTIVATED',
+  'SHOW_FLOATING_BUTTON',
+  'HIDE_FLOATING_BUTTON',
+  'PING',
+  'FALLBACK_DOMAINS_USED',
+  'GET_DIAGNOSTIC_REPORT',
+  'GMAIL_GET_STATUS',
+  'GMAIL_SIGN_IN',
+  'GMAIL_SIGN_OUT',
+  'GMAIL_FETCH_INBOX',
+  'GMAIL_GET_MESSAGE',
+  'GMAIL_SEARCH',
+  'GMAIL_LIST_LABELS',
+] as const satisfies readonly ExtensionMessage['action'][];
 
 type ExtractOTPPayloadWithMetadata = Record<string, unknown> & {
   subject?: string;
@@ -54,6 +137,59 @@ function getPayloadTimestamp(value: unknown): number | undefined {
     }
   }
   return undefined;
+}
+
+function normalizeEmailOTP(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const clean = value.replace(/[-\s]/g, '').trim();
+  if (clean.length < 4 || clean.length > 10) {
+    return null;
+  }
+  if (!/\d/.test(clean) || !/^[A-Za-z0-9]+$/.test(clean)) {
+    return null;
+  }
+
+  return clean;
+}
+
+function isGmailOAuthSetupError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes('client id') ||
+    lower.includes('client_id') ||
+    lower.includes('invalid_client') ||
+    lower.includes('unauthorized_client') ||
+    lower.includes('oauth client')
+  );
+}
+
+function getGmailAuthSetupState(errorMessage = ''): {
+  authIssue: gmailApiService.GmailAuthIssue;
+  clientIdStatus: gmailApiService.GmailClientIdStatus;
+  setupRequired: boolean;
+} {
+  const authIssue = gmailApiService.getAuthIssue();
+  const clientIdStatus = gmailApiService.getClientIdStatus();
+  return {
+    authIssue,
+    clientIdStatus,
+    setupRequired:
+      clientIdStatus.blocked || authIssue.permanent || isGmailOAuthSetupError(errorMessage),
+  };
+}
+
+async function ensureGmailAuthenticated(): Promise<boolean> {
+  return gmailApiService.ensureAuthenticated(false);
+}
+
+function messagePredatesGmailSession(
+  messageDate: number,
+  session: Awaited<ReturnType<typeof getMostRecentGmailAliasSession>>
+): boolean {
+  return messageDate < getGmailAliasProcessingBaseline(session);
 }
 
 async function saveExtractedOTPFromMessage(
@@ -202,6 +338,9 @@ async function handleMessage(
 
       // 5. Clear inbox in storage so popup shows empty state immediately
       await storageService.set('inbox', []);
+      invalidateGmailInboxFetches();
+      await storageService.set('gmailInbox', []);
+      await storageService.set('gmailSyncState', {});
 
       // 6. Broadcast RESET_STATE to all content scripts so FAB badges clear
       chrome.tabs.query({}, (tabs) => {
@@ -222,6 +361,8 @@ async function handleMessage(
         ...emailPayload,
         prefix: identity.emailPrefix.substring(0, 30).replace(/[^a-z0-9.]/g, ''),
       });
+      suppressNextEmailTypeTransition('disposable');
+      await storageService.set('preferredEmailType', 'disposable');
 
       // 7. Always start polling immediately when email is generated.
       // SSE is a bonus push layer — polling is the reliable fallback.
@@ -251,8 +392,114 @@ async function handleMessage(
       return { success: true, email };
     }
 
+    case 'GENERATE_GMAIL_ALIAS': {
+      const payload = message.action === 'GENERATE_GMAIL_ALIAS' ? message.payload : undefined;
+      const domain = payload?.domain || 'general';
+
+      const profile = gmailApiService.getCachedProfile();
+      let baseEmail: string | null = null;
+      if (profile?.email) {
+        baseEmail = profile.email;
+      } else {
+        const [storedProfile, storedBase] = await Promise.all([
+          storageService.get('gmailProfile'),
+          storageService.get('gmailBase'),
+        ]);
+        baseEmail = storedProfile?.email || storedBase || null;
+      }
+
+      if (!baseEmail) {
+        return { success: false, error: 'Gmail not connected' };
+      }
+
+      log.info('🔄 Gmail alias change requested — performing full session reset');
+
+      // 1. Clear stale OTP so old codes can't fire on the new email session
+      await otpService.clearLastOTP();
+
+      // 2. Clear processed-email dedup cache so new inbox is scanned fresh
+      //    Also clears otpWaitingTabs + circuit breaker (see resetEmailSession)
+      resetEmailSession();
+
+      // 3. Clear notification dedup cache (separate module-level map)
+      resetNotificationSession();
+
+      // 4. Clear linkService activation history/queue so old links don't replay
+      linkService.clearHistory();
+
+      // 5. Clear inbox in storage so popup shows empty state immediately
+      await storageService.set('inbox', []);
+      invalidateGmailInboxFetches();
+      await storageService.set('gmailInbox', []);
+      await storageService.set('gmailSyncState', {});
+
+      // 6. Broadcast RESET_STATE to all content scripts so FAB badges clear
+      chrome.tabs.query({}, (tabs) => {
+        for (const tab of tabs) {
+          if (tab.id) {
+            chrome.tabs.sendMessage(tab.id, { action: 'RESET_STATE' }).catch(() => {
+              // Ignore — tab may not have content script (about:, chrome:, etc.)
+            });
+          }
+        }
+      });
+
+      const aliasEmail = getRandomizedGmailAlias(baseEmail, domain);
+      const aliasSession = await rememberGmailAliasSession(aliasEmail, baseEmail, domain);
+
+      // Save to history
+      const history = (await storageService.get('aliasHistory')) ?? [];
+      const exists = history.some((h: any) => h.alias === aliasEmail && h.website === domain);
+      if (!exists) {
+        const newItem = {
+          alias: aliasEmail,
+          originalEmail: baseEmail,
+          type: 'combined' as const,
+          website: domain,
+          createdAt: Date.now(),
+        };
+        await storageService.set('aliasHistory', [newItem, ...history].slice(0, 500));
+      }
+
+      // Sync active email to storage as well so currentEmail reflects this active alias
+      const currentEmailAcct: EmailAccount = {
+        id: `gmail_${aliasEmail.replace(/[@.+]/g, '_')}`,
+        fullEmail: aliasEmail,
+        domain: 'gmail.com',
+        service: 'gmail',
+        createdAt: aliasSession.startedAt,
+        expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
+        gmailBaseEmail: baseEmail,
+        gmailAliasSessionStartedAt: aliasSession.startedAt,
+      };
+
+      // 7. Update preferredEmailType and currentEmail in storage
+      sseManager.disconnect();
+      suppressNextEmailTypeTransition('gmail');
+      await storageService.set('preferredEmailType', 'gmail');
+      await storageService.set('currentEmail', currentEmailAcct);
+
+      // 8. Always start polling immediately
+      startEmailPolling();
+      triggerEventDrivenPolling('email_gen');
+
+      log.info('✅ New Gmail alias generated', { alias: aliasEmail });
+      return { success: true, email: currentEmailAcct };
+    }
+
     case 'CHECK_INBOX': {
-      const current = await emailService.getCurrentEmail();
+      const payload = message.action === 'CHECK_INBOX' ? message.payload : undefined;
+      const current =
+        payload?.email && payload?.service
+          ? {
+              id: payload.email,
+              fullEmail: payload.email,
+              domain: payload.email.split('@')[1] || '',
+              service: payload.service,
+              createdAt: Date.now(),
+              expiresAt: Date.now() + 60 * 60 * 1000,
+            }
+          : await emailService.getCurrentEmail();
       if (!current) {
         return { success: false, error: 'No active email account' };
       }
@@ -292,12 +539,15 @@ async function handleMessage(
 
     // ── OTP ACTIONS ───────────────────────────────────────────────
     case 'GET_LAST_OTP': {
+      const senderTabId = sender.tab?.id;
+      if (senderTabId) {
+        onContentScriptReady(senderTabId);
+      }
       const lastOTP = await otpService.getLastOTP();
 
-      const senderTabId = sender.tab?.id;
       if (senderTabId && lastOTP) {
         const reg = getOTPWaitingTabs().get(senderTabId);
-        if (reg && reg.registeredAt > lastOTP.extractedAt) {
+        if (reg && reg.registeredAt > lastOTP.extractedAt && !isActivationTab(senderTabId)) {
           log.warn('Refusing to provide stale OTP during active polling session', { senderTabId });
           return { success: false, error: 'Still waiting for new email...' };
         }
@@ -350,15 +600,11 @@ async function handleMessage(
         });
 
         if (sender.tab?.id) {
-          // Skip registration for activation tabs - these are opened by linkService
-          // for verification links, not for receiving OTP codes.
-          // Registration happens BEFORE the tab's content script sends OTP_PAGE_DETECTED,
-          // but in case of timing issues, double-check here.
           if (isActivationTab(sender.tab.id)) {
-            log.info('⛔ Skipping OTP tab registration for activation tab', {
+            log.info('Activation tab exposed OTP fields; registering it for code delivery', {
               tabId: sender.tab.id,
             });
-            return { success: true };
+            onContentScriptReady(sender.tab.id);
           }
           startFastOTPPolling(
             sender.tab.id,
@@ -385,6 +631,14 @@ async function handleMessage(
     case 'REGISTRATION_FORM_SUBMITTED': {
       log.info('⚡ Registration form submitted — triggering ultra polling');
       triggerEventDrivenPolling('form_submit');
+
+      const currentEmail = await storageService.get('currentEmail');
+      if (currentEmail && typeof currentEmail === 'object' && currentEmail.service === 'gmail') {
+        startGmailAliasFastPolling('registration_form_submitted', {
+          intervalMs: 2_000,
+          durationMs: 60_000,
+        });
+      }
       return { success: true };
     }
 
@@ -392,26 +646,64 @@ async function handleMessage(
     case 'EXTRACT_OTP': {
       const payload = message.payload as ExtractOTPPayloadWithMetadata | undefined;
       const subject = (payload?.subject as string) || '';
-      const textBody = (payload?.textBody as string) || (payload?.text as string) || '';
-      const htmlBody = (payload?.htmlBody as string) || '';
       const source = (payload?.source as string) || '';
 
       log.info(`🧠 Requesting off-main-thread OTP/Link extraction for source: ${source}`);
 
-      const otpExtraction = extractOTPStandalone(
-        htmlBody || textBody,
-        subject,
-        'noreply@ghostfill.ai'
-      );
-      const linkExtraction = extractLinkStandalone(
-        htmlBody || textBody,
-        subject,
-        'noreply@ghostfill.ai'
-      );
-      const otpCode = otpExtraction?.best?.code;
-      const otpConfidence = otpExtraction?.best?.confidence ?? 0.8;
+      const extractFn = async () => {
+        let textBody = (payload?.textBody as string) || (payload?.text as string) || '';
+        let htmlBody = (payload?.htmlBody as string) || '';
 
-      if (otpCode && payload && (payload.saveToLastOTP === true || source === 'popup-inbox')) {
+        // If the email lacks htmlBody or only contains snippet preview text (typical for list view snippets),
+        // fetch the full email body first to allow high-accuracy extraction.
+        const isSnippetOnly =
+          !htmlBody || htmlBody === textBody || (htmlBody.length < 300 && !htmlBody.includes('<'));
+        if (isSnippetOnly && payload?.emailId) {
+          try {
+            const currentAccount = await emailService.getCurrentEmail();
+            if (currentAccount) {
+              log.info(`Fetching full email body for inline extraction (ID: ${payload.emailId})`);
+              const fullEmail = await emailService.readEmail(
+                String(payload.emailId),
+                currentAccount
+              );
+              if (fullEmail.htmlBody) {
+                htmlBody = fullEmail.htmlBody;
+              }
+              if (fullEmail.body || fullEmail.textBody) {
+                textBody = fullEmail.body || fullEmail.textBody || '';
+              }
+            }
+          } catch (e) {
+            log.warn(`Failed to fetch full email body for inline extraction: ${e}`);
+          }
+        }
+
+        const senderEmail = payload?.emailFrom || 'noreply@ghostfill.ai';
+        const result = extractAll(subject, textBody, htmlBody, senderEmail);
+        return {
+          code: result.otp?.code ?? null,
+          link: result.link?.url ?? null,
+          otpConfidence: result.otp?.confidence ?? 0.8,
+        };
+      };
+
+      let extractionResult: {
+        code?: string | null | undefined;
+        link?: string | null | undefined;
+        otpConfidence?: number;
+      };
+      if (payload?.emailId) {
+        extractionResult = await extractEmailOnce(String(payload.emailId), extractFn);
+      } else {
+        extractionResult = await extractFn();
+      }
+
+      const otpCode = normalizeEmailOTP(extractionResult.code);
+      const otpConfidence = extractionResult.otpConfidence ?? 0.8;
+      const linkUrl = extractionResult.link;
+
+      if (otpCode && payload && payload.saveToLastOTP === true) {
         await saveExtractedOTPFromMessage(otpCode, otpConfidence, {
           ...payload,
           subject,
@@ -422,7 +714,7 @@ async function handleMessage(
       return {
         success: true,
         otp: otpCode ?? undefined,
-        link: linkExtraction?.best?.url ?? undefined,
+        link: linkUrl ?? undefined,
       };
     }
 
@@ -454,9 +746,158 @@ async function handleMessage(
       return { success: true };
     }
 
-    // ── IDENTITY ACTIONS ──────────────────────────────────────────
+    // ── IDENTITY ACTIONS ──────────────────────────────���───────────
     case 'GET_IDENTITY': {
       const identity = await identityService.getCompleteIdentity();
+
+      let baseEmail: string | null = null;
+      const profile = gmailApiService.getCachedProfile();
+      if (profile?.email) {
+        baseEmail = profile.email;
+      } else {
+        try {
+          const [storedProfile, storedBase, isManual, connected] = await Promise.all([
+            storageService.get('gmailProfile'),
+            storageService.get('gmailBase'),
+            storageService.get('gmailIsManual'),
+            storageService.get('gmailConnected'),
+          ]);
+          if (!isManual && connected === false) {
+            baseEmail = null;
+          } else if (storedProfile?.email) {
+            baseEmail = storedProfile.email;
+          } else if (storedBase) {
+            baseEmail = storedBase;
+          }
+        } catch (e) {
+          log.warn('Failed to retrieve gmail profile/base from storage', e);
+        }
+      }
+
+      // Check if user preferred Gmail over disposable email
+      let preferredEmailType = 'disposable';
+      try {
+        preferredEmailType = (await storageService.get('preferredEmailType')) ?? 'disposable';
+      } catch (e) {
+        log.warn('Failed to retrieve preferredEmailType', e);
+      }
+
+      if (preferredEmailType === 'gmail' && baseEmail) {
+        try {
+          let domain = 'general';
+          if (sender.url) {
+            try {
+              const urlObj = new URL(sender.url);
+              let hostname = urlObj.hostname;
+              if (hostname.startsWith('www.')) {
+                hostname = hostname.substring(4);
+              }
+              if (hostname) {
+                domain = hostname;
+              }
+            } catch {
+              /* Intentionally ignored */
+            }
+          }
+
+          const aliasSession = await getOrCreateGmailAliasSessionByDomain(
+            baseEmail,
+            domain,
+            getRandomizedGmailAlias
+          );
+          const aliasEmail = aliasSession.alias;
+          identity.email = aliasEmail;
+
+          // Check if this is a transition to a different active email alias
+          const currentEmail = await storageService.get('currentEmail');
+          const currentAlias =
+            currentEmail && typeof currentEmail === 'object' && currentEmail.service === 'gmail'
+              ? String(currentEmail.fullEmail || '').toLowerCase()
+              : '';
+          const isDifferentEmail = currentAlias !== aliasEmail.toLowerCase();
+
+          const currentEmailAcct: EmailAccount = {
+            id: `gmail_${aliasEmail.replace(/[@.+]/g, '_')}`,
+            fullEmail: aliasEmail,
+            domain: 'gmail.com',
+            service: 'gmail',
+            createdAt: aliasSession.startedAt,
+            expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
+            gmailBaseEmail: baseEmail,
+            gmailAliasSessionStartedAt: aliasSession.startedAt,
+          };
+
+          if (isDifferentEmail) {
+            log.info('🔄 Gmail alias transition in GET_IDENTITY — performing full session reset', {
+              old: currentEmail?.fullEmail,
+              new: aliasEmail,
+            });
+
+            // 1. Clear stale OTP so old codes can't fire on the new email session
+            await otpService.clearLastOTP();
+
+            // 2. Clear processed-email dedup cache so new inbox is scanned fresh
+            resetEmailSession();
+
+            // 3. Clear notification dedup cache
+            resetNotificationSession();
+
+            // 4. Clear linkService activation history/queue so old links don't replay
+            linkService.clearHistory();
+
+            // 5. Clear inbox in storage so popup shows empty state immediately
+            await storageService.set('inbox', []);
+            invalidateGmailInboxFetches();
+            await storageService.set('gmailInbox', []);
+            await storageService.set('gmailSyncState', {});
+
+            // 6. Broadcast RESET_STATE to all content scripts so FAB badges clear
+            chrome.tabs.query({}, (tabs) => {
+              for (const tab of tabs) {
+                if (tab.id) {
+                  chrome.tabs.sendMessage(tab.id, { action: 'RESET_STATE' }).catch(() => {});
+                }
+              }
+            });
+          }
+
+          // Save the currentEmail in storage in all cases (to ensure it matches the dynamic alias)
+          sseManager.disconnect();
+          await storageService.set('currentEmail', currentEmailAcct);
+
+          // Trigger polling if the email changed
+          if (isDifferentEmail) {
+            startEmailPolling();
+            triggerEventDrivenPolling('email_gen');
+          }
+
+          // Save to used alias history in chrome.storage.local
+          const history = (await storageService.get('aliasHistory')) ?? [];
+          const exists = history.some((h: any) => h.alias === aliasEmail && h.website === domain);
+          if (!exists) {
+            const newItem = {
+              alias: aliasEmail,
+              originalEmail: baseEmail,
+              type: 'combined' as const,
+              website: domain,
+              createdAt: Date.now(),
+            };
+            await storageService.set('aliasHistory', [newItem, ...history].slice(0, 500));
+          }
+          log.info('Dynamic Gmail Alias resolved and filled', {
+            aliasEmail,
+            domain,
+            isRandomized: true,
+            startedAt: aliasSession.startedAt,
+          });
+
+          // Trigger fast Gmail polling watch
+          startGmailAliasFastPolling('gmail_alias_resolved');
+        } catch (e) {
+          log.warn('Failed to generate Gmail alias for identity', e);
+        }
+      }
+
       return { success: true, identity };
     }
 
@@ -478,18 +919,14 @@ async function handleMessage(
       };
     }
 
+    case 'CHECK_ML':
     case 'CLASSIFY_FIELD': {
-      if (message.action !== 'CLASSIFY_FIELD' || !message.payload) {
+      if (!message.payload && message.action === 'CLASSIFY_FIELD') {
         return { success: false, error: 'Invalid message action or missing payload' };
       }
       try {
-        await ensureOffscreenDocument();
-        const response = await chrome.runtime.sendMessage({
-          target: 'offscreen-doc',
-          type: 'CLASSIFY_FIELD',
-          payload: message.payload,
-        });
-        return response || { success: false, error: 'No response from offscreen' };
+        const response = await classifyFieldViaOffscreen(message.action, message.payload as any);
+        return (response as any) || { success: false, error: 'No response from offscreen' };
       } catch (err) {
         log.error('ML proxy classification failed', err);
         return { success: false, error: 'ML proxy failed' };
@@ -536,7 +973,7 @@ async function handleMessage(
       return { success: true };
     }
 
-    // ── STORAGE/SETTINGS ──────────────────────────────────────────
+    // ── STORAGE/SETTINGS ───────────────────────────��──────────────
     case 'GET_SETTINGS': {
       const settings = await storageService.getSettings();
       return { success: true, settings };
@@ -561,6 +998,30 @@ async function handleMessage(
     case 'OPEN_OPTIONS': {
       chrome.runtime.openOptionsPage();
       return { success: true };
+    }
+
+    case 'DOWNLOAD_TRAINING_DATA': {
+      if (message.payload && typeof message.payload.data === 'string') {
+        try {
+          const data = message.payload.data;
+          const base64Data = btoa(unescape(encodeURIComponent(data)));
+          const dataUrl = `data:application/x-jsonlines;base64,${base64Data}`;
+
+          await chrome.downloads.download({
+            url: dataUrl,
+            filename: `ghostfill_training_data_${Date.now()}.jsonl`,
+            saveAs: true,
+          });
+          return { success: true };
+        } catch (downloadError) {
+          log.error('Failed to trigger training data download', downloadError);
+          return {
+            success: false,
+            error: downloadError instanceof Error ? downloadError.message : String(downloadError),
+          };
+        }
+      }
+      return { success: false, error: 'No data or invalid payload provided' };
     }
 
     case 'LINK_ACTIVATED': {
@@ -605,6 +1066,322 @@ async function handleMessage(
       return { success: true, report };
     }
 
+    // ── GMAIL API HANDLERS ────────────────────────────────────────
+    case 'GMAIL_GET_STATUS': {
+      // Returns current auth status without triggering a sign-in
+      const authState = getGmailAuthSetupState();
+      const profile = gmailApiService.getCachedProfile();
+      if (profile) {
+        return {
+          success: true,
+          connected: true,
+          profile,
+          authIssue: authState.authIssue,
+          clientIdStatus: authState.clientIdStatus,
+        };
+      }
+      if (authState.setupRequired) {
+        return {
+          success: true,
+          connected: false,
+          authIssue: authState.authIssue,
+          clientIdStatus: authState.clientIdStatus,
+        };
+      }
+      if (gmailApiService.isConfigured()) {
+        // Try silent auth restoration (SW restart recovery)
+        const silentProfile = await gmailApiService.checkSilentAuth();
+        if (silentProfile) {
+          await storageService.set('gmailProfile', silentProfile).catch(() => {});
+          await storageService.set('gmailBase', silentProfile.email).catch(() => {});
+          await storageService.set('gmailConnected', true).catch(() => {});
+          await setGmailConnectedAt().catch(() => {});
+          const nextAuthState = getGmailAuthSetupState();
+          return {
+            success: true,
+            connected: true,
+            profile: silentProfile,
+            authIssue: nextAuthState.authIssue,
+            clientIdStatus: nextAuthState.clientIdStatus,
+          };
+        }
+      }
+
+      const storedProfile = (await storageService.get('gmailProfile')) as GmailProfile | null;
+      const storedConnected = await storageService.get('gmailConnected');
+      if (storedProfile?.email && storedConnected) {
+        return {
+          success: true,
+          connected: true,
+          profile: storedProfile,
+          authIssue: authState.authIssue,
+          clientIdStatus: authState.clientIdStatus,
+        };
+      }
+
+      return {
+        success: true,
+        connected: false,
+        authIssue: authState.authIssue,
+        clientIdStatus: authState.clientIdStatus,
+      };
+    }
+
+    case 'GMAIL_SIGN_IN': {
+      try {
+        if (!gmailApiService.isConfigured()) {
+          throw new Error('GhostFill Gmail client_id is not configured.');
+        }
+        const profile = await gmailApiService.signIn();
+        // Persist profile so other parts of the extension can read it
+        await storageService.set('gmailProfile', profile).catch(() => {});
+        await storageService.set('gmailBase', profile.email).catch(() => {});
+        await storageService.set('gmailConnected', true).catch(() => {});
+        await setGmailConnectedAt().catch(() => {});
+        sseManager.disconnect();
+        await storageService.set('preferredEmailType', 'gmail').catch(() => {});
+        await storageService.set('inbox', []).catch(() => {});
+        invalidateGmailInboxFetches();
+        await storageService.set('gmailInbox', []).catch(() => {});
+        await storageService.set('gmailSyncState', {}).catch(() => {});
+        await clearGmailAliasSessions().catch(() => {});
+        log.info('Gmail sign-in completed', { email: profile.email });
+        return { success: true, profile };
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        const authState = getGmailAuthSetupState(msg);
+        if (authState.setupRequired) {
+          log.warn('Gmail sign-in needs OAuth client setup', { error: msg });
+        } else {
+          log.error('Gmail sign-in failed', e);
+        }
+        return {
+          success: false,
+          error: msg,
+          setupRequired: authState.setupRequired,
+          authIssue: authState.authIssue,
+          clientIdStatus: authState.clientIdStatus,
+        };
+      }
+    }
+
+    case 'GMAIL_SIGN_OUT': {
+      try {
+        if (gmailApiService.isConfigured()) {
+          await gmailApiService.signOut();
+        }
+        await storageService.set('gmailProfile', null).catch(() => {});
+        await storageService.set('gmailBase', null).catch(() => {});
+        await storageService.set('gmailConnected', false).catch(() => {});
+        await clearGmailConnectedAt().catch(() => {});
+        await storageService.set('gmailIsManual', false).catch(() => {});
+        await storageService.set('inbox', []).catch(() => {});
+        invalidateGmailInboxFetches();
+        await storageService.set('gmailInbox', []).catch(() => {});
+        await storageService.set('gmailSyncState', {}).catch(() => {});
+        await clearGmailAliasSessions().catch(() => {});
+        const disposableEmail = await storageService.get('disposableEmail').catch(() => null);
+        await storageService.set('preferredEmailType', 'disposable').catch(() => {});
+        if (disposableEmail?.fullEmail && disposableEmail.service !== 'gmail') {
+          await storageService.set('currentEmail', disposableEmail).catch(() => {});
+        }
+        log.info('Gmail signed out');
+        return { success: true };
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        log.error('Gmail sign-out failed', e);
+        return { success: false, error: msg };
+      }
+    }
+
+    case 'GMAIL_FETCH_INBOX': {
+      const inboxPayload = message.action === 'GMAIL_FETCH_INBOX' ? message.payload : undefined;
+      const maxResults = inboxPayload?.maxResults ?? 5;
+      const inboxRequestSeq = ++gmailInboxFetchSeq;
+      try {
+        let messages: GmailMessage[] = [];
+        let syncSource: 'cache' | 'full' | 'history' = 'cache';
+        let syncCached = false;
+        const aliasSession = inboxPayload?.alias
+          ? await getGmailAliasSession(inboxPayload.alias)
+          : await getMostRecentGmailAliasSession();
+
+        if (!aliasSession) {
+          return { success: false, error: 'No active Gmail alias session.' };
+        }
+
+        const gmailIsManual = !!(await storageService.get('gmailIsManual'));
+        if (
+          !gmailApiService.isConfigured() ||
+          gmailIsManual ||
+          !(await ensureGmailAuthenticated())
+        ) {
+          return {
+            success: false,
+            error: 'Not authenticated. Connect Gmail with Google OAuth to read messages via API.',
+          };
+        }
+
+        const query =
+          inboxPayload?.query ??
+          buildGmailAliasSearchQuery(
+            aliasSession.alias,
+            getGmailAliasProcessingBaseline(aliasSession)
+          );
+        const aliasFilter = (msg: GmailMessage) =>
+          filterGmailMessagesForAliasSession([msg], aliasSession).length > 0;
+
+        const syncResult = await gmailApiService.syncInbox(query, maxResults, {
+          alias: aliasSession.alias,
+          forceFull: Boolean(inboxPayload?.forceFull),
+          filterMessage: aliasFilter,
+        });
+        syncSource = syncResult.source;
+        syncCached = syncResult.cached;
+        messages = filterGmailMessagesForAliasSession(syncResult.messages, aliasSession);
+
+        if (inboxRequestSeq === gmailInboxFetchSeq) {
+          // Do not block the popup response on encrypted storage writes.
+          // The caller already receives `messages`; storage sync is best-effort UI hydration.
+          void (async () => {
+            const [preferredType, manual, activeCurrentEmail] = await Promise.all([
+              storageService.get('preferredEmailType').catch(() => null),
+              storageService.get('gmailIsManual').catch(() => false),
+              storageService.get('currentEmail').catch(() => null),
+            ]);
+            if (
+              (preferredType ?? 'disposable') === 'gmail' &&
+              !manual &&
+              activeCurrentEmail?.fullEmail === aliasSession.alias
+            ) {
+              await storageService.set('gmailInbox', messages).catch(() => {});
+            }
+          })();
+        }
+        return { success: true, messages, source: syncSource, cached: syncCached };
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg.includes('Not authenticated')) {
+          log.info('Gmail fetch inbox failed (not authenticated):', msg);
+        } else {
+          log.error('Gmail fetch inbox failed', e);
+        }
+        return { success: false, error: msg };
+      }
+    }
+
+    case 'GMAIL_GET_MESSAGE': {
+      if (message.action !== 'GMAIL_GET_MESSAGE' || !message.payload?.messageId) {
+        return { success: false, error: 'Missing messageId' };
+      }
+      try {
+        const requestedAlias =
+          typeof message.payload?.alias === 'string' ? message.payload.alias : undefined;
+        const aliasSession = requestedAlias
+          ? await getGmailAliasSession(requestedAlias)
+          : await getMostRecentGmailAliasSession();
+        if (!aliasSession) {
+          return { success: false, error: 'No active Gmail alias session.' };
+        }
+
+        const gmailIsManual = !!(await storageService.get('gmailIsManual'));
+        if (
+          !gmailApiService.isConfigured() ||
+          gmailIsManual ||
+          !(await ensureGmailAuthenticated())
+        ) {
+          return {
+            success: false,
+            error: 'Not authenticated. Connect Gmail with Google OAuth to read messages via API.',
+          };
+        }
+
+        const msg = await gmailApiService.fetchMessage(message.payload.messageId);
+        if (messagePredatesGmailSession(msg.date, aliasSession)) {
+          return { success: false, error: 'Message predates the active Gmail alias session.' };
+        }
+        if (!messageMatchesGmailAlias(msg, aliasSession.alias)) {
+          return { success: false, error: 'Message does not belong to the active Gmail alias.' };
+        }
+        return { success: true, message: msg };
+      } catch (e: unknown) {
+        const errMsg = e instanceof Error ? e.message : String(e);
+        if (errMsg.includes('Not authenticated')) {
+          log.info('Gmail get message failed (not authenticated):', errMsg);
+        } else {
+          log.error('Gmail get message failed', e);
+        }
+        return { success: false, error: errMsg };
+      }
+    }
+
+    // ── GMAIL MCP TOOLS (Claude AI / Manus AI style) ──────────────
+    case 'GMAIL_SEARCH': {
+      const p = message.action === 'GMAIL_SEARCH' ? message.payload : undefined;
+      const requestedAlias = typeof (p as any)?.alias === 'string' ? (p as any).alias : undefined;
+      const maxResults = (p as any)?.maxResults ?? 15;
+      try {
+        let messages: GmailMessage[] = [];
+        const aliasSession = requestedAlias
+          ? await getGmailAliasSession(requestedAlias)
+          : await getMostRecentGmailAliasSession();
+
+        const gmailIsManual = !!(await storageService.get('gmailIsManual'));
+        if (
+          !gmailApiService.isConfigured() ||
+          gmailIsManual ||
+          !(await ensureGmailAuthenticated())
+        ) {
+          return {
+            success: false,
+            error: 'Not authenticated. Connect Gmail with Google OAuth to search messages via API.',
+          };
+        }
+
+        if (aliasSession) {
+          const query =
+            (p as any)?.query ??
+            buildGmailAliasSearchQuery(
+              aliasSession.alias,
+              getGmailAliasProcessingBaseline(aliasSession)
+            );
+          messages = filterGmailMessagesForAliasSession(
+            (
+              await gmailApiService.syncInbox(query, maxResults, {
+                alias: aliasSession.alias,
+                filterMessage: (msg) =>
+                  filterGmailMessagesForAliasSession([msg], aliasSession).length > 0,
+              })
+            ).messages,
+            aliasSession
+          );
+        }
+        return { success: true, messages };
+      } catch (e: unknown) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+
+    case 'GMAIL_LIST_LABELS': {
+      try {
+        const gmailIsManual = !!(await storageService.get('gmailIsManual'));
+        if (
+          !gmailApiService.isConfigured() ||
+          gmailIsManual ||
+          !(await ensureGmailAuthenticated())
+        ) {
+          return {
+            success: false,
+            error: 'Not authenticated. Connect Gmail with Google OAuth to list labels via API.',
+          };
+        }
+        const labels = await gmailApiService.listLabels();
+        return { success: true, labels };
+      } catch (e: unknown) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+
     default:
       log.warn('Unhandled message action', {
         action: (message as unknown as Record<string, unknown>).action,
@@ -617,13 +1394,10 @@ async function handleMessage(
 }
 
 /**
- * Registry stats stub for backward compatibility.
- * FIX: Replaced undefined `handlerMap` reference with a static count derived
- * from the known number of handled cases in handleMessage().
+ * Registry stats adapter retained for backward compatibility.
  */
 export function dumpRouterStats(): { handlers: number; status: string } {
-  // Count is the number of explicitly handled `case` branches in handleMessage()
-  return { handlers: 42, status: 'functioning' };
+  return { handlers: HANDLED_MESSAGE_ACTIONS.length, status: 'functioning' };
 }
 
 function estimateOTPPageConfidence(simplifiedDOM: string): number {

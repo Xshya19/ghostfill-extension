@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { storageService } from '../../services/storageService';
 import { StorageSchema } from '../../types';
 
@@ -7,20 +7,22 @@ export function useStorageSubscription<K extends keyof StorageSchema>(
   initialValue: StorageSchema[K] | null
 ): StorageSchema[K] | null {
   const [value, setValue] = useState<StorageSchema[K] | null>(initialValue);
+  const initialValueRef = useRef(initialValue);
+  const refreshSeqRef = useRef(0);
 
   useEffect(() => {
     let isMounted = true;
     const refreshValue = async (): Promise<void> => {
+      const seq = ++refreshSeqRef.current;
       try {
         const data = await storageService.get(key);
-        if (!isMounted) {
+        if (!isMounted || seq !== refreshSeqRef.current) {
           return;
         }
         setValue((data ?? null) as StorageSchema[K] | null);
-      } catch (error) {
-        console.error(`[useStorageSubscription] Failed for key ${String(key)}:`, error);
-        if (isMounted) {
-          setValue(initialValue);
+      } catch {
+        if (isMounted && seq === refreshSeqRef.current) {
+          setValue(initialValueRef.current);
         }
       }
     };
@@ -34,20 +36,17 @@ export function useStorageSubscription<K extends keyof StorageSchema>(
       areaName: string
     ) => {
       if (areaName === 'local' && changes[key as string]) {
-        if (isMounted) {
-          const newValue = changes[key as string]?.newValue;
-          setValue((newValue ?? null) as StorageSchema[K] | null);
-        }
+        void refreshValue();
       }
     };
 
-    if (chrome?.storage?.onChanged) {
+    if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
       chrome.storage.onChanged.addListener(listener);
     }
 
     return () => {
       isMounted = false;
-      if (chrome?.storage?.onChanged) {
+      if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
         chrome.storage.onChanged.removeListener(listener);
       }
     };

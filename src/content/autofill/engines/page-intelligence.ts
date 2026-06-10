@@ -151,7 +151,7 @@ export class PageIntelligence {
 
       // ── Svelte ────────────────────────────────────────────────────────────
       if (safeQuerySelector(document, '[data-svelte-h]') || '__svelte' in window) {
-        return 'vue'; // treat Svelte like Vue for event purposes
+        return 'svelte'; // treat Svelte correctly as svelte
       }
     } catch {
       /* ignore */

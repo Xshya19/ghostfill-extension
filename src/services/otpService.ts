@@ -118,7 +118,10 @@ class OTPService {
     const nextMutex = new Promise<void>((res) => {
       releaseMutex = res;
     });
-    this.rateLimitMutex = previousMutex.then(() => nextMutex);
+    this.rateLimitMutex = previousMutex.then(
+      () => nextMutex,
+      () => nextMutex
+    );
     await previousMutex;
 
     try {
@@ -129,7 +132,7 @@ class OTPService {
         const msg = `OTP save rate limited - maximum ${RATE_LIMIT.MAX_SAVES_PER_MINUTE} requests per minute allowed`;
         const retryAfterMs = RATE_LIMIT.WINDOW_MS;
 
-        log.warn(msg, { otp, source, retryAfterMs });
+        log.warn(msg, { otpLength: otp.length, source, retryAfterMs });
 
         // Notify user about rate limiting
         await this.notifyRateLimitExceeded(retryAfterMs);
@@ -205,7 +208,7 @@ class OTPService {
   async getLastOTP(): Promise<LastOTP | null> {
     const lastOTP = await storageService.get('lastOTP');
 
-    if (lastOTP && Date.now() - lastOTP.extractedAt > 3 * 60 * 1000) {
+    if (lastOTP && Date.now() - lastOTP.extractedAt > 5 * 60 * 1000) {
       log.debug('Last OTP expired');
       return null;
     }
@@ -249,30 +252,34 @@ class OTPService {
     }
 
     return new Promise((resolve) => {
-      const _startTime = Date.now();
-
-      const listener = (changes: { [key: string]: chrome.storage.StorageChange }) => {
-        if (changes.lastOTP) {
-          const newOTP = changes.lastOTP.newValue as LastOTP;
+      // FIX #8: Use storageService.onChanged instead of raw chrome.storage.onChanged
+      // because lastOTP is a sensitive key stored encrypted. The raw listener would
+      // receive encrypted ciphertext, not the actual LastOTP object.
+      const unsubscribe = storageService.onChanged(async (changes) => {
+        if (!changes.lastOTP) {
+          return;
+        }
+        try {
+          const newOTP = await storageService.get('lastOTP');
           if (
             newOTP &&
             !newOTP.usedAt &&
             Date.now() - newOTP.extractedAt < OTP_FRESHNESS.FRESH_WINDOW_MS
           ) {
-            chrome.storage.onChanged.removeListener(listener);
+            unsubscribe();
             clearTimeout(timeoutId);
             resolve(newOTP);
           }
+        } catch {
+          // Ignore read errors during wait
         }
-      };
+      });
 
       const timeoutId = setTimeout(() => {
-        chrome.storage.onChanged.removeListener(listener);
+        unsubscribe();
         log.debug('Timeout waiting for fresh OTP');
         this.getLastOTP().then(resolve);
       }, maxWaitMs);
-
-      chrome.storage.onChanged.addListener(listener);
     });
   }
 

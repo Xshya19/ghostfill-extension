@@ -3,9 +3,10 @@
 // SECURITY HARDENED: Session-based storage for sensitive data
 // ═══════════════════════════════════════════════════════════════════
 
+import { AliasHistoryItem } from '../services/aliasService';
 import { EmailAccount, EmailHistoryItem, Email, EmailService } from './email.types';
 import { IdentityProfile } from './identity.types';
-
+import { GmailProfile } from './message.types';
 import { PasswordOptions, PasswordHistoryItem } from './password.types';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -71,6 +72,7 @@ export interface UserSettings {
   saveHistory: boolean;
   historyRetentionDays: number;
   clearOnClose: boolean;
+  allowGmailSessionFallback: boolean;
 
   // Advanced settings
   debugMode: boolean;
@@ -79,13 +81,13 @@ export interface UserSettings {
   // Custom Infrastructure
   // SECURITY FIX: API keys removed from persistent settings
   // Keys are now stored in session-only storage (chrome.storage.session)
-  customDomain?: string;
-  customDomainUrl?: string; // Endpoint URL (e.g. Cloudflare Worker)
+  customDomain?: string | undefined;
+  customDomainUrl?: string | undefined; // Endpoint URL (e.g. Cloudflare Worker)
   // customDomainKey is now in SessionSecrets (not persisted)
 
   // AI/LLM settings
   useLLMParser: boolean;
-  llmModel?: string;
+  llmModel?: string | undefined;
   // llmApiKey is now in SessionSecrets (not persisted)
 }
 
@@ -124,9 +126,27 @@ export interface UsagePattern {
   duration?: number;
 }
 
+export interface GmailAliasSession {
+  alias: string;
+  originalEmail: string;
+  website: string;
+  startedAt: number;
+  lastUsedAt: number;
+  inboxBaselineAt?: number;
+}
+
+export interface GmailSyncStateEntry {
+  query: string;
+  alias?: string;
+  historyId?: string;
+  messages: import('./message.types').GmailMessage[];
+  syncedAt: number;
+}
+
 export interface StorageSchema {
   // Current state
   currentEmail: EmailAccount | null;
+  disposableEmail?: EmailAccount | null;
   currentIdentity: IdentityProfile | null;
   lastOTP: LastOTP | null;
 
@@ -191,6 +211,21 @@ export interface StorageSchema {
 
   // Rate Limiting
   otpRateLimitTimestamps?: number[];
+
+  // Gmail integration
+  preferredEmailType?: 'disposable' | 'gmail';
+  gmailProfile?: GmailProfile | null;
+  gmailBase?: string | null;
+  gmailConnected?: boolean;
+  gmailConnectedAt?: number | null;
+  gmailIsManual?: boolean;
+  gmailAliasType?: 'combined';
+  aliasHistory?: AliasHistoryItem[];
+  gmailAliasSessions?: Record<string, GmailAliasSession>;
+  gmailInbox?: import('./message.types').GmailMessage[];
+  gmailSyncState?: Record<string, GmailSyncStateEntry>;
+  gmailClientId?: string;
+  performanceReport?: any;
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
@@ -217,6 +252,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   saveHistory: true,
   historyRetentionDays: 30,
   clearOnClose: false,
+  allowGmailSessionFallback: false,
   debugMode: false,
   analyticsEnabled: false,
   // Custom domain defaults
@@ -231,6 +267,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
 
 export const STORAGE_KEYS = {
   CURRENT_EMAIL: 'currentEmail',
+  DISPOSABLE_EMAIL: 'disposableEmail',
   CURRENT_IDENTITY: 'currentIdentity',
   LAST_OTP: 'lastOTP',
   EMAIL_HISTORY: 'emailHistory',
@@ -242,6 +279,19 @@ export const STORAGE_KEYS = {
   EXTENSION_VERSION: 'extensionVersion',
   INSTALL_DATE: 'installDate',
   LAST_UPDATED: 'lastUpdated',
+  PREFERRED_EMAIL_TYPE: 'preferredEmailType',
+  GMAIL_PROFILE: 'gmailProfile',
+  GMAIL_BASE: 'gmailBase',
+  GMAIL_CONNECTED: 'gmailConnected',
+  GMAIL_CONNECTED_AT: 'gmailConnectedAt',
+  GMAIL_IS_MANUAL: 'gmailIsManual',
+  GMAIL_ALIAS_TYPE: 'gmailAliasType',
+  GMAIL_ALIAS_SESSIONS: 'gmailAliasSessions',
+  ALIAS_HISTORY: 'aliasHistory',
+  GMAIL_INBOX: 'gmailInbox',
+  GMAIL_SYNC_STATE: 'gmailSyncState',
+  GMAIL_CLIENT_ID: 'gmailClientId',
+  PERFORMANCE_REPORT: 'performanceReport',
 } as const;
 
 export type StorageKey = keyof typeof STORAGE_KEYS;

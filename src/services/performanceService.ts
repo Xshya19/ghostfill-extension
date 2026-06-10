@@ -3,6 +3,7 @@
 // Tracks: AI vs Heuristics performance, latency, success rates, failures
 
 import { createLogger } from '../utils/logger';
+import { storageService } from './storageService';
 
 const log = createLogger('PerformanceService');
 
@@ -473,7 +474,7 @@ class PerformanceService {
   async saveReport(): Promise<void> {
     const report = this.generateReport();
     try {
-      await chrome.storage.local.set({ performanceReport: report });
+      await storageService.set('performanceReport', report);
       log.info('Performance report saved to storage');
     } catch (error) {
       log.warn('Failed to save performance report', error);

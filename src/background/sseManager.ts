@@ -325,6 +325,7 @@ class SSEManager {
         this.state.circuitBreakerUntil = 0;
         this.state.consecutiveServerErrors = 0;
         this.state.hasNotifiedOutage = false;
+        this.state.reconnectAttempts = 0; // allow fresh reconnect cycle
         log.info('Circuit breaker reset — attempting SSE reconnection');
       }
 
@@ -456,7 +457,7 @@ class SSEManager {
             if (account && account.service === 'mailtm' && account.id) {
               this.connect(account).catch((e) => log.error('SSE health reconnect failed', e));
             } else {
-              log.warn('Cannot health-reconnect SSE — account invalid or missing id', {
+              log.debug('SSE health reconnect skipped because active account is not Mail.tm', {
                 service: account?.service,
                 hasId: Boolean(account?.id),
               });

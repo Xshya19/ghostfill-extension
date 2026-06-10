@@ -8,11 +8,11 @@ export interface PasswordOptions {
   symbols: boolean;
   excludeAmbiguous: boolean;
   excludeSimilar: boolean;
-  customCharset?: string;
-  minUppercase?: number;
-  minLowercase?: number;
-  minNumbers?: number;
-  minSymbols?: number;
+  customCharset?: string | undefined;
+  minUppercase?: number | undefined;
+  minLowercase?: number | undefined;
+  minNumbers?: number | undefined;
+  minSymbols?: number | undefined;
 }
 
 export interface PasswordStrength {

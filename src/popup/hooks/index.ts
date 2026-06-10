@@ -1,4 +1,3 @@
 // Hooks exports
-export { usePassword } from './usePassword';
-export { useOTP } from './useOTP';
-export { useStorage } from './useStorage';
+export { useOTPExtractor } from './useOTPExtractor';
+export { useStorageSubscription } from './useStorageSubscription';

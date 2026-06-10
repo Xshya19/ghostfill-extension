@@ -43,34 +43,43 @@ export {
 
 /**
  * Copy text to clipboard using the modern Clipboard API
- * Fallback to execCommand('copy') for older browsers/environments
+ * Fallback to execCommand('copy') for older browsers/environments or visible contexts
  */
 export async function copyToClipboard(text: string): Promise<boolean> {
   if (!text) {
     return false;
   }
 
+  // In popup context, prefer execCommand because it's synchronous
+  // and won't be interrupted if the popup closes immediately.
+  if (document.visibilityState === 'visible' && typeof document.execCommand === 'function') {
+    try {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-9999px';
+      textArea.style.top = '-9999px';
+      textArea.style.opacity = '0';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      if (successful) {
+        return true;
+      }
+    } catch (e) {
+      log.warn('Fallback copy failed, trying async API', e);
+    }
+  }
+
   try {
-    // 1. Try modern API
+    // Try modern API
     if (navigator.clipboard && window.isSecureContext) {
       await navigator.clipboard.writeText(text);
       return true;
     }
-
-    // 2. Fallback to execCommand
-    const textArea = document.createElement('textarea');
-    textArea.value = text;
-    textArea.style.position = 'fixed';
-    textArea.style.left = '-9999px';
-    textArea.style.top = '-9999px';
-    textArea.style.opacity = '0';
-    document.body.appendChild(textArea);
-    textArea.focus();
-    textArea.select();
-
-    const successful = document.execCommand('copy');
-    document.body.removeChild(textArea);
-    return successful;
+    return false;
   } catch (err) {
     log.error('Failed to copy to clipboard', err);
     return false;
@@ -135,7 +144,7 @@ export function getUniqueSelector(element: Element): string {
     /^Mui/i, // Material UI
     /^ant-/i, // Ant Design
     /^el-/i, // Element UI
-    /^_? radix-/i, // Radix UI
+    /^_?radix-/i, // Radix UI
   ];
 
   const isDynamicClass = (className: string): boolean => {
@@ -286,6 +295,26 @@ const MAX_SHADOW_DEPTH = 10;
 /** Maximum elements to scan for shadow roots */
 const MAX_SHADOW_SCAN_ELEMENTS = 5000;
 
+const shadowRootCache = new WeakMap<Element, ShadowRoot>();
+let shadowObserver: MutationObserver | null = null;
+
+function initShadowObserver(): void {
+  if (shadowObserver || typeof MutationObserver === 'undefined' || !document.body) {
+    return;
+  }
+  shadowObserver = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      for (let i = 0; i < m.addedNodes.length; i++) {
+        const node = m.addedNodes[i];
+        if (node instanceof HTMLElement && node.shadowRoot) {
+          shadowRootCache.set(node, node.shadowRoot);
+        }
+      }
+    }
+  });
+  shadowObserver.observe(document.body, { childList: true, subtree: true });
+}
+
 /**
  * Deep query selector that pierces through shadow DOM boundaries.
  * Required for finding elements encapsulated entirely within web components.
@@ -298,24 +327,47 @@ export function deepQuerySelectorAll<T extends Element>(
   if (depth > MAX_SHADOW_DEPTH) {
     return [];
   }
+  initShadowObserver();
 
   const results: T[] = [];
 
   try {
     results.push(...Array.from(root.querySelectorAll<T>(selector)));
   } catch {
-    return results;
+    // Ignore invalid selector errors
   }
 
+  // ── Zero-allocation TreeWalker shadow root discovery ─────────────────────
+  // TreeWalker visits only nodes that pass the filter — unlike querySelectorAll('*')
+  // which allocates a full NodeList of EVERY element in the subtree before iteration.
+  // We filter to only accept elements that host a shadow root, so traversal is O(shadow-hosts).
   try {
-    const allElements = root.querySelectorAll('*');
-    const scanLimit = Math.min(allElements.length, MAX_SHADOW_SCAN_ELEMENTS);
+    const treeRoot =
+      root instanceof Document ? root.documentElement : (root as Element | ShadowRoot);
 
-    for (let i = 0; i < scanLimit; i++) {
-      const el = allElements[i];
-      if (el?.shadowRoot) {
+    if (!treeRoot) {
+      return results;
+    }
+
+    const walker = document.createTreeWalker(treeRoot, NodeFilter.SHOW_ELEMENT, {
+      acceptNode(node: Node): number {
+        return (node as Element).shadowRoot ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+      },
+    });
+
+    let node: Node | null;
+    let count = 0;
+    while ((node = walker.nextNode()) && count < MAX_SHADOW_SCAN_ELEMENTS) {
+      count++;
+      const el = node as Element;
+      let shadow = shadowRootCache.get(el);
+      if (!shadow && el.shadowRoot) {
+        shadow = el.shadowRoot;
+        shadowRootCache.set(el, shadow);
+      }
+      if (shadow) {
         try {
-          results.push(...deepQuerySelectorAll<T>(selector, el.shadowRoot, depth + 1));
+          results.push(...deepQuerySelectorAll<T>(selector, shadow, depth + 1));
         } catch {
           // Shadow root access denied or detached
         }
@@ -326,4 +378,48 @@ export function deepQuerySelectorAll<T extends Element>(
   }
 
   return results;
+}
+
+/**
+ * Wraps a promise with a timeout.
+ * Rejects with a TimeoutError if the promise takes too long.
+ */
+export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout>;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error('Timeout')), ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  });
+}
+
+/**
+ * Retries a function with exponential backoff.
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelay: number = 1000
+): Promise<T> {
+  let lastError: Error | undefined;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const res = await fn();
+      if (res === null) {
+        throw new Error('Operation returned null');
+      }
+      if (res && typeof res === 'object' && 'error' in res) {
+        throw new Error(String((res as any).error));
+      }
+      return res;
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+      const delay = baseDelay * Math.pow(2, i);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw lastError || new Error('Max retries reached');
 }

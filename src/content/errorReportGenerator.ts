@@ -19,7 +19,7 @@ interface CapturedError {
   context: string;
 }
 
-function generateReport(errors: CapturedError[]): string {
+export function generateErrorReport(errors: CapturedError[]): string {
   let report = `GHOSTFILL ERROR REPORT
 ${'='.repeat(50)}
 Generated: ${new Date().toISOString()}
@@ -51,57 +51,5 @@ ${'-'.repeat(50)}
   return report;
 }
 
-// Add to window for browser console access
-if (typeof window !== 'undefined') {
-  const ghostWindow = window as Window & {
-    generateGhostFillReport: typeof generateReport;
-    copyGhostFillReport: () => void;
-    __GHOSTFILL_ERRORS__?: CapturedError[];
-  };
-
-  ghostWindow.generateGhostFillReport = generateReport;
-
-  ghostWindow.copyGhostFillReport = function (): void {
-    const errors = ghostWindow.__GHOSTFILL_ERRORS__ || [];
-    const report = generateReport(errors);
-
-    if (navigator.clipboard) {
-      navigator.clipboard
-        .writeText(report)
-        .then(() => {
-          console.log(
-            '%c✅ GhostFill Error Report copied to clipboard!',
-            'color: #10B981; font-weight: bold; font-size: 14px'
-          );
-          console.log('%c📋 Paste it anywhere to share with developers.', 'color: #6366F1');
-        })
-        .catch(() => {
-          console.log(
-            '%c❌ Failed to copy. Please copy manually from above.',
-            'color: #EF4444; font-weight: bold'
-          );
-          console.log(report);
-        });
-    } else {
-      console.log(report);
-    }
-  };
-
-  console.log('%c╔════════════════════════════════════════════════════════════╗', 'color: #6366F1');
-  console.log(
-    '%c║  📋 GHOSTFILL REPORT GENERATOR                          ║',
-    'color: #6366F1; font-weight: bold'
-  );
-  console.log('%c╠════════════════════════════════════════════════════════════╣', 'color: #6366F1');
-  console.log('%c║                                                            ║', 'color: #6366F1');
-  console.log('%c║  To generate a shareable report, type:                  ║', 'color: #6366F1');
-  console.log('%c║                                                            ║', 'color: #6366F1');
-  console.log(
-    '%c║  📋 copyGhostFillReport()  - Copy report to clipboard   ║',
-    'color: #10B981; font-weight: bold'
-  );
-  console.log('%c║                                                            ║', 'color: #6366F1');
-  console.log('%c║  Then paste it in chat to share with developer!          ║', 'color: #10B981');
-  console.log('%c║                                                            ║', 'color: #6366F1');
-  console.log('%c╚════════════════════════════════════════════════════════════╝', 'color: #6366F1');
-}
+// Error report generation only — do NOT expose functions on window to prevent information disclosure
+// Use debugConsole.ts's __GHOSTFILL_ERRORS__ and ghostfillDebug API instead.

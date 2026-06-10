@@ -46,6 +46,44 @@ export function sanitizeEmailSubject(subject: string): string {
 }
 
 /**
+ * Sanitize the "from" field of an email for safe display and domain matching.
+ *
+ * Unlike sanitizeEmailSubject / sanitizeText, this function does NOT
+ * HTML-encode special characters. This preserves the `@` symbol so that
+ * downstream domain-matching logic (DomainMatcher.matches splitting on `@`)
+ * continues to work.
+ *
+ * Handles common "From" header formats:
+ *   "GitHub <noreply@github.com>"  →  "noreply@github.com"
+ *   "noreply@github.com"          →  "noreply@github.com"
+ *   "<noreply@github.com>"        →  "noreply@github.com"
+ *
+ * Use this instead of sanitizeEmailSubject when sanitizing `email.from`.
+ */
+export function sanitizeEmailFrom(from: string): string {
+  if (!from || typeof from !== 'string') {
+    return '';
+  }
+
+  // Try to extract email address from "Name <email@domain>" format
+  const angleMatch = from.match(/<([^>]+@[^>]+)>/);
+  if (angleMatch?.[1]) {
+    return angleMatch[1].trim().substring(0, 254);
+  }
+
+  // If the string already looks like a bare email, return it directly
+  // (just strip HTML tags that are NOT email-containing angle brackets)
+  const stripped = from
+    .replace(
+      /<\/?(?:script|style|div|span|p|br|a|b|i|em|strong|img|table|tr|td|th|ul|ol|li|h[1-6])[^>]*>/gi,
+      ''
+    )
+    .trim();
+
+  return stripped.substring(0, 254);
+}
+
+/**
  * Sanitize sender email address
  */
 export function sanitizeEmail(email: string): string {

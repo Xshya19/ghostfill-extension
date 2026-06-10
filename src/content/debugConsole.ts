@@ -37,6 +37,10 @@ interface GhostFillDebugGlobal {
 }
 
 (function initializeDebugConsole(): void {
+  if (process.env.NODE_ENV === 'production') {
+    return;
+  }
+
   const global = window as unknown as GhostFillDebugGlobal;
   const runtimeOrigin =
     typeof chrome !== 'undefined' && chrome.runtime?.id
@@ -109,17 +113,8 @@ interface GhostFillDebugGlobal {
     }
   }
 
-  // Override console methods to capture errors and warnings ONLY
+  // Do not override console methods to avoid side effects on host pages
   const originalCaptureError = captureError;
-  console.error = function (...args: unknown[]): void {
-    originalCaptureError(args, 'error');
-    originalError.apply(console, args);
-  };
-
-  console.warn = function (...args: unknown[]): void {
-    originalCaptureError(args, 'warn');
-    originalWarn.apply(console, args);
-  };
 
   // Don't capture log/info - only errors and warnings
 

@@ -521,6 +521,7 @@ export interface DetectionResult {
   debug?: string;
   provider?: string;
   providerConfidence?: number;
+  domain?: string;
 }
 
 // ───────────────────────────────────────────────────────────────────────
@@ -861,23 +862,7 @@ export interface LimitConfig {
 //  ADDITIONAL SERVICE TYPES (for compatibility)
 // ═══════════════════════════════════════════════════════════════════════
 
-/** Detection result for smart detection service */
-export interface DetectionResult {
-  type: 'otp' | 'link' | 'both' | 'none';
-  code?: string;
-  link?: string;
-  confidence: number;
-  engine: 'ghost-core' | 'intelligent' | 'ensemble-consensus';
-  provider?: string;
-  providerConfidence?: number;
+/** Extended detection result with domain info (merged into DetectionResult above) */
+export type DetectionResultExtended = DetectionResult & {
   domain?: string;
-  debug?: string;
-}
-
-/** Encrypted cache entry structure */
-export interface EncryptedCacheEntry {
-  encryptedData: string;
-  iv: string;
-  timestamp: number;
-  ttl: number;
-}
+};

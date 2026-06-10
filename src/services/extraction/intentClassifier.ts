@@ -23,7 +23,7 @@ export class IntentClassifier {
 
     for (const label in model.priors) {
       // Start with log of prior to avoid underflow
-      let logProb = Math.log(model.priors[label] ?? 0);
+      let logProb = Math.log(model.priors[label] || 1e-10);
 
       tokens.forEach((token) => {
         const likelihood = model.likelihoods[label]?.[token];
@@ -51,6 +51,9 @@ export class IntentClassifier {
     );
 
     const sorted = Object.entries(finalProbs).sort((a, b) => b[1] - a[1]);
+    if (sorted.length === 0) {
+      return { intent: 'unknown', confidence: 0 };
+    }
     const [bestIntent, confidence] = sorted[0]!;
 
     return {

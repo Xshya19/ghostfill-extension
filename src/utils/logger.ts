@@ -31,7 +31,7 @@ type LoggerGlobal = typeof globalThis & {
 // Check if we're in production mode
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
-// Allowlist for production logging - show ALL logs for debugging
+// Allowlist for production logging - kept all logs active for troubleshooting
 // Sensitive data is still redacted regardless of log level
 const PRODUCTION_LOG_ALLOWLIST: LogLevel[] = ['debug', 'info', 'warn', 'error'];
 const PERSISTED_LOG_KEY = 'ghostfill_debug_logs';
@@ -279,7 +279,8 @@ class Logger {
   private prefix: string = '[GhostFill]';
   private history: LogEntry[] = [];
   private maxHistory: number = 100;
-  private persistPromise: Promise<void> | null = null;
+  private isPersisting = false;
+  private hasPendingPersist = false;
 
   constructor() {
     this.installGlobalDebugHelpers();
@@ -445,12 +446,29 @@ class Logger {
       return;
     }
 
-    const snapshot = this.getHistory();
-    this.persistPromise = (this.persistPromise || Promise.resolve())
-      .catch(() => undefined)
-      .then(async () => {
-        await chrome.storage.session.set({ [PERSISTED_LOG_KEY]: snapshot }).catch(() => undefined);
-      });
+    if (this.isPersisting) {
+      this.hasPendingPersist = true;
+      return;
+    }
+
+    this.isPersisting = true;
+    this.hasPendingPersist = false;
+
+    const performPersist = async () => {
+      const snapshot = this.getHistory();
+      try {
+        await chrome.storage.session.set({ [PERSISTED_LOG_KEY]: snapshot });
+      } catch {
+        // Ignore
+      } finally {
+        this.isPersisting = false;
+        if (this.hasPendingPersist) {
+          this.persistHistory();
+        }
+      }
+    };
+
+    void performPersist();
   }
 
   private installGlobalDebugHelpers(): void {

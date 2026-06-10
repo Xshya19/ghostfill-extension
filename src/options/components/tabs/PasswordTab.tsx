@@ -1,3 +1,4 @@
+import { Lock } from 'lucide-react';
 import React from 'react';
 
 import { UserSettings } from '../../../types/storage.types';
@@ -24,7 +25,7 @@ const PasswordTab: React.FC<PasswordTabProps> = ({
 }) => {
   return (
     <div role="tabpanel" id="tabpanel-password" aria-labelledby="tab-password">
-      <SettingsSection id="password-defaults" title="Password Defaults" icon="🔐">
+      <SettingsSection id="password-defaults" title="Password Defaults" icon={<Lock size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
             <label htmlFor="password-length">Default Length</label>
@@ -97,7 +98,7 @@ const PasswordTab: React.FC<PasswordTabProps> = ({
         <div className="setting-item">
           <div className="setting-info">
             <label id="symbols-label">Symbols</label>
-            <p>Include special characters (!@#$%^&*…)</p>
+            <p>Include special characters (!@#$%^&*)</p>
           </div>
           <ToggleSwitch
             checked={settings.passwordDefaults.symbols}

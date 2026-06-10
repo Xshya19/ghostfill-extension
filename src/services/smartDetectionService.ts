@@ -167,11 +167,8 @@ class SmartDetectionService {
 
     if (intelligentResult.otp) {
       mergedResult.code = intelligentResult.otp.code;
-      // intelligentResult.otp.confidence is 0-100 (percentage), normalize to 0-1
-      mergedResult.confidence = Math.max(
-        mergedResult.confidence,
-        intelligentResult.otp.confidence / 100
-      );
+      // intelligentResult.otp.confidence is already 0-1 (normalized in otpExtractor)
+      mergedResult.confidence = Math.max(mergedResult.confidence, intelligentResult.otp.confidence);
     }
     if (intelligentResult.link) {
       mergedResult.link = intelligentResult.link.url;
@@ -197,6 +194,8 @@ class SmartDetectionService {
    *  1. We want ALL tags stripped — sanitizeText does exactly that.
    *  2. This service runs in the background service worker where DOM APIs
    *     (required by DOMPurify/JSDOM) are unavailable.
+   * @deprecated No external callers — analyzeForm() (sole consumer) is also unused.
+   *             Remove in next cleanup pass.
    */
   private cleanHTML(html: string): string {
     if (!html) {

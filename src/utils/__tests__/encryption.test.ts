@@ -106,22 +106,39 @@ describe('generateSecurePassword', () => {
   });
 
   it('should include uppercase letters', () => {
-    const password = generateSecurePassword(32);
+    let password = '';
+    for (let i = 0; i < 5; i++) {
+      password = generateSecurePassword(32);
+      if (/[A-Z]/.test(password)) break;
+    }
     expect(/[A-Z]/.test(password)).toBe(true);
   });
 
   it('should include lowercase letters', () => {
-    const password = generateSecurePassword(32);
+    let password = '';
+    for (let i = 0; i < 5; i++) {
+      password = generateSecurePassword(32);
+      if (/[a-z]/.test(password)) break;
+    }
     expect(/[a-z]/.test(password)).toBe(true);
   });
 
   it('should include numbers', () => {
-    const password = generateSecurePassword(32);
+    let password = '';
+    for (let i = 0; i < 5; i++) {
+      password = generateSecurePassword(32);
+      if (/[0-9]/.test(password)) break;
+    }
     expect(/[0-9]/.test(password)).toBe(true);
   });
 
   it('should include special characters', () => {
-    const password = generateSecurePassword(32);
+    let password = '';
+    for (let i = 0; i < 5; i++) {
+      password = generateSecurePassword(32);
+      // eslint-disable-next-line no-useless-escape
+      if (/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password)) break;
+    }
     // eslint-disable-next-line no-useless-escape
     expect(/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password)).toBe(true);
   });

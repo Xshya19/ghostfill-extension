@@ -256,6 +256,8 @@ class PerformanceMonitor {
     'api.mail.gw/messages',
     'api.guerrillamail',
     'tempmail',
+    'mercure.mail.tm',
+    'well-known/mercure',
   ];
 
   private observeResourceTiming(): void {
@@ -453,7 +455,7 @@ export class MemoryMonitor {
     const last = recent[recent.length - 1]!.usedJSHeapSize;
 
     // If memory increased by more than 20% in last 10 snapshots
-    const increase = (last - first) / first;
+    const increase = first > 0 ? (last - first) / first : 0;
     if (increase > 0.2) {
       log.warn(
         'Potential memory leak detected',
@@ -535,9 +537,13 @@ export class ErrorTracker {
 
       globalContext.addEventListener('unhandledrejection', (event: Event) => {
         const rejectionEvent = event as PromiseRejectionEvent;
+        const reason = rejectionEvent.reason;
+        const message = reason instanceof Error ? reason.message : String(reason);
+        const stack = reason instanceof Error ? reason.stack : undefined;
         this.trackError({
           type: 'unhandledrejection',
-          message: this.sanitizeMessage(String(rejectionEvent.reason)),
+          message: this.sanitizeMessage(message),
+          stack: stack ? this.sanitizeMessage(stack) : undefined,
           timestamp: Date.now(),
         });
       });
@@ -639,10 +645,10 @@ export class ErrorTracker {
 interface TrackedError {
   type: string;
   message: string;
-  filename?: string;
-  lineno?: number;
-  colno?: number;
-  stack?: string;
+  filename?: string | undefined;
+  lineno?: number | undefined;
+  colno?: number | undefined;
+  stack?: string | undefined;
   timestamp: number;
 }
 

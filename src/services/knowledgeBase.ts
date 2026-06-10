@@ -1,5 +1,11 @@
 /**
- * @deprecated Use imports from src/services/extraction/knowledge instead
+ * @deprecated This file is a compatibility shim. Prefer direct imports from
+ * 'src/services/extraction/knowledge' instead.
+ *
+ * Remaining consumers (migrate these to remove this file):
+ *   - extraction/otpExtractor.ts
+ *   - extraction/providerDetector.ts
+ *   - extraction/linkExtractor.ts
  */
 import { KnowledgeBase } from './extraction/knowledge';
 

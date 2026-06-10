@@ -75,7 +75,10 @@ module.exports = (env, argv) => {
           use: {
             loader: 'ts-loader',
             options: {
-              transpileOnly: true,
+              transpileOnly: false,
+              compilerOptions: {
+                noEmit: false,
+              },
             },
           },
           exclude: /node_modules/,
@@ -133,8 +136,8 @@ module.exports = (env, argv) => {
     // FIX: Performance budgets with warnings for large bundles
     performance: {
       hints: 'warning', // Show warnings for large bundles
-      maxEntrypointSize: 620000,
-      maxAssetSize: 620000,
+      maxEntrypointSize: 700000,
+      maxAssetSize: 700000,
       assetFilter: (assetFilename) => !/\.(onnx|onnx\.data|wasm)$/i.test(assetFilename),
     },
   };

@@ -20,11 +20,14 @@ import { otpService } from '../services/otpService';
 import { smartDetectionService } from '../services/smartDetectionService';
 import { storageService } from '../services/storageService';
 import { Email, EmailAccount } from '../types';
+import { diag } from '../utils/diagnosticLogger';
 import { createLogger } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
 
 import { updateOTPMenuItem } from './contextMenu';
+import { startGmailFastWatch, TriggerReason } from './gmailFastWatch';
 import { notifyNewEmail } from './notifications';
+import { extractEmailOnce } from './singleExtractionGuard';
 
 const log = createLogger('PollingEngine');
 
@@ -35,16 +38,16 @@ const log = createLogger('PollingEngine');
 /** Adaptive polling intervals */
 const TIMING = {
   // Fast OTP polling ladder
-  FAST_FLOOR_MS: 3_000,
-  FAST_AGGRESSIVE_MS: 4_000,
-  FAST_NORMAL_MS: 6_000,
-  FAST_RELAXED_MS: 12_000,
+  FAST_FLOOR_MS: 2_000,
+  FAST_AGGRESSIVE_MS: 2_500,
+  FAST_NORMAL_MS: 5_000,
+  FAST_RELAXED_MS: 10_000,
   FAST_CEILING_MS: 20_000,
 
   // Fast ladder time boundaries
-  FAST_AGGRESSIVE_UNTIL_MS: 15_000,
-  FAST_NORMAL_UNTIL_MS: 45_000,
-  FAST_RELAXED_UNTIL_MS: 90_000,
+  FAST_AGGRESSIVE_UNTIL_MS: 60_000,
+  FAST_NORMAL_UNTIL_MS: 120_000,
+  FAST_RELAXED_UNTIL_MS: 180_000,
 
   // General polling ladder
   GENERAL_ACTIVE_MS: 7_000,
@@ -71,7 +74,7 @@ const CIRCUIT = {
 
 /** Sliding window rate limiter */
 const RATE = {
-  MAX_PER_WINDOW: 20,
+  MAX_PER_WINDOW: 60,
   WINDOW_MS: 60_000,
 } as const;
 
@@ -153,7 +156,7 @@ interface SessionState {
 
 // ═══════════════════════════════════════════════════════════════
 //  §3  CIRCUIT BREAKER
-// ═══════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════��═
 
 class CircuitBreaker {
   private readonly state: CircuitBreakerState = {
@@ -620,7 +623,7 @@ class OTPCodeExtractor {
 
 // ═══════════════════════════════════════════════════════════════
 //  §10  MAIN POLLING ENGINE
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════���═══════════════════════════════════
 
 // ── Module state ──
 const otpWaitingTabs = new Map<number, TabRegistration>();
@@ -628,6 +631,7 @@ const circuitBreaker = new CircuitBreaker();
 const rateLimiter = new SlidingRateLimiter();
 const dedupCache = dedupService;
 const activationTabs = new Set<number>(); // Tabs opened for link activation - exclude from OTP delivery
+const activationCodesByTab = new Map<number, string>();
 
 const metrics: PollingMetrics = {
   startedAt: 0,
@@ -648,9 +652,13 @@ let pollingActive = false;
 let generalTimer: ReturnType<typeof setTimeout> | null = null;
 let lastGlobalCheckTime = 0;
 let initialized = false;
-let alarmListenerInstalled = false;
 let priorityCounter = 0;
 let checkInProgress = false;
+let pendingCheckMode: CheckMode | null = null;
+let pendingCheckTimer: ReturnType<typeof setTimeout> | null = null;
+let emailTypeTransitionPromise: Promise<void> | null = null;
+let pendingEmailTypeTransition: 'disposable' | 'gmail' | null = null;
+const suppressedEmailTypeTransitions = new Map<'disposable' | 'gmail', number>();
 
 // ── Alarm handler (must be stable reference for removeListener) ──
 export const onPollingAlarm = (alarm: chrome.alarms.Alarm): void => {
@@ -733,6 +741,26 @@ function checkPermitted(mode: CheckMode): boolean {
   return true;
 }
 
+function queuePendingCheck(mode: CheckMode): void {
+  pendingCheckMode = pendingCheckMode === 'fast' || mode === 'fast' ? 'fast' : mode;
+}
+
+function flushPendingCheck(): void {
+  if (!pendingCheckMode || pendingCheckTimer) {
+    return;
+  }
+
+  const mode = pendingCheckMode;
+  pendingCheckMode = null;
+  const delay =
+    mode === 'fast' ? Math.max(0, TIMING.FAST_FLOOR_MS - (Date.now() - lastGlobalCheckTime)) : 0;
+
+  pendingCheckTimer = setTimeout(() => {
+    pendingCheckTimer = null;
+    void performCheck(mode).catch((error) => log.warn('Pending poll error', error));
+  }, delay);
+}
+
 // ── Session state persistence ──
 function persistSessionState(): void {
   if (typeof chrome === 'undefined' || !chrome.storage?.session) {
@@ -754,13 +782,19 @@ function persistSessionState(): void {
 // ═══════════════════════════════════════════════════════════════
 
 async function performCheck(mode: CheckMode): Promise<void> {
+  const flowId = diag.startFlow('polling', 'inbox-check', `mode=${mode}`);
   // Coalescing: if already running, skip
   if (checkInProgress) {
+    queuePendingCheck(mode);
     log.debug('Check in progress, skipping', { mode });
+    diag.step(flowId, 'polling', 'skip', 'Check already in progress');
+    diag.endFlow(flowId, 'polling', 'inbox-check', true, 'Queued because check is already running');
     return;
   }
 
   if (!checkPermitted(mode)) {
+    diag.step(flowId, 'polling', 'gate-blocked', 'Circuit breaker or rate limiter blocked check');
+    diag.endFlow(flowId, 'polling', 'inbox-check', true, 'Blocked by gate');
     return;
   }
 
@@ -768,16 +802,29 @@ async function performCheck(mode: CheckMode): Promise<void> {
   const t0 = Date.now();
   metrics.totalChecks++;
   rateLimiter.stamp();
+  let checkSucceeded = false;
+  let finalDetail = 'Inbox check complete';
 
   try {
     const currentEmail = await emailService.getCurrentEmail();
     if (!currentEmail) {
       log.debug('No current email configured');
+      diag.step(flowId, 'polling', 'no-current-email', 'No active email account');
+      checkSucceeded = true;
+      finalDetail = 'No active email account';
       return;
     }
+    diag.step(flowId, 'polling', 'current-email', 'Resolved active email', {
+      service: currentEmail.service,
+      fullEmail: currentEmail.fullEmail,
+    });
 
     const cachedInbox = await emailService.getCachedInbox();
     const freshInbox = await emailService.checkInbox(currentEmail);
+    diag.step(flowId, 'polling', 'inbox-fetched', 'Inbox fetched', {
+      cachedCount: cachedInbox.length,
+      freshCount: freshInbox.length,
+    });
 
     const cachedIds = new Set(cachedInbox.map((e) => e.id));
     const cutoff = Date.now() - TIMING.MAX_EMAIL_AGE_MS;
@@ -799,6 +846,9 @@ async function performCheck(mode: CheckMode): Promise<void> {
 
     if (newEmails.length > 0) {
       log.info(`📬 ${newEmails.length} new email(s)`, { mode });
+      diag.step(flowId, 'polling', 'new-emails', 'New emails detected', {
+        count: newEmails.length,
+      });
 
       // Broadcast to UI that we are actively analyzing a new email
       for (const tabId of otpWaitingTabs.keys()) {
@@ -821,6 +871,7 @@ async function performCheck(mode: CheckMode): Promise<void> {
     circuitBreaker.recordSuccess();
     metrics.successfulChecks++;
     metrics.lastSuccessTime = Date.now();
+    checkSucceeded = true;
   } catch (error) {
     circuitBreaker.recordFailure(error);
     metrics.failedChecks++;
@@ -832,6 +883,11 @@ async function performCheck(mode: CheckMode): Promise<void> {
       circuit: circuitBreaker.currentState,
       failures: circuitBreaker.failures,
     });
+    diag.step(flowId, 'polling', 'error', 'Inbox check failed', {
+      error: metrics.lastErrorMessage,
+      mode,
+    });
+    finalDetail = 'Inbox check failed';
   } finally {
     checkInProgress = false;
 
@@ -843,6 +899,14 @@ async function performCheck(mode: CheckMode): Promise<void> {
 
     lastGlobalCheckTime = Date.now();
     persistSessionState();
+    diag.endFlow(flowId, 'polling', 'inbox-check', checkSucceeded, finalDetail, {
+      mode,
+      totalChecks: metrics.totalChecks,
+      emailsProcessed: metrics.emailsProcessed,
+      otpsFound: metrics.otpsFound,
+      linksProcessed: metrics.linksProcessed,
+    });
+    flushPendingCheck();
   }
 }
 
@@ -851,108 +915,152 @@ async function performCheck(mode: CheckMode): Promise<void> {
 // ═══════════════════════════════════════════════════════════════
 
 async function processEmail(emailId: string, currentEmail: EmailAccount): Promise<void> {
-  if (await dedupCache.isProcessed(emailId, currentEmail.fullEmail)) {
-    return;
-  }
-
-  const fullEmail = await emailService.readEmail(emailId, currentEmail);
-  metrics.emailsProcessed++;
-
-  // ── Detection ──
-  const expectedDomains = collectExpectedDomains();
-  const detection = await smartDetectionService.detect(
-    fullEmail.subject,
-    fullEmail.body,
-    fullEmail.htmlBody,
-    fullEmail.from,
-    expectedDomains.length > 0 ? expectedDomains : undefined
-  );
-
-  const extractedOTPCode = OTPCodeExtractor.extract(detection, fullEmail);
-
-  log.info('📊 Detection', {
-    type: detection.type,
-    hasCode: Boolean(detection.code),
-    hasLink: Boolean(detection.link),
-    waitingTabs: otpWaitingTabs.size,
-  });
-
-  let otpDelivered = false;
-
-  // ── PRIORITY 1: Inline OTP delivery to waiting tabs ──
-  if (otpWaitingTabs.size > 0) {
-    const matchingTabId = findMatchingTab(fullEmail.from, detection.provider, detection.link);
-
-    if (matchingTabId !== null) {
-      log.info('🎯 Matching tab found — inline OTP delivery');
-
-      if (extractedOTPCode) {
-        otpDelivered = await deliverOTP(extractedOTPCode, detection.confidence ?? 0.9, {
-          from: fullEmail.from,
-          subject: fullEmail.subject,
-          ...(detection.provider !== undefined ? { provider: detection.provider } : {}),
-          ...(detection.link !== undefined ? { linkUrl: detection.link } : {}),
-        });
-
-        if (otpDelivered) {
-          await dedupCache.markProcessed(emailId, currentEmail.fullEmail, true, false);
-          // Wait to notify at the end
-        }
-      } else {
-        log.warn('⚠️ Matching tab but no OTP extractable — falling through');
-      }
+  const flowId = diag.startFlow('email', 'process-email', emailId);
+  try {
+    if (await dedupCache.isProcessed(emailId, currentEmail.fullEmail)) {
+      diag.endFlow(flowId, 'email', 'process-email', true, 'Already processed');
+      return;
     }
-  }
 
-  // ── PRIORITY 2: Standard processing ──
-  const hasOTP = Boolean(extractedOTPCode);
-  const hasLink =
-    (detection.type === 'link' || detection.type === 'both') && Boolean(detection.link);
+    const extractionResult = await extractEmailOnce(emailId, async () => {
+      const fullEmail = await emailService.readEmail(emailId, currentEmail);
+      metrics.emailsProcessed++;
+      const expectedDomains = collectExpectedDomains();
+      const detection = await smartDetectionService.detect(
+        fullEmail.subject,
+        fullEmail.body,
+        fullEmail.htmlBody,
+        fullEmail.from,
+        expectedDomains.length > 0 ? expectedDomains : undefined
+      );
+      const code = OTPCodeExtractor.extract(detection, fullEmail);
+      return {
+        code,
+        link: detection.link ?? null,
+        fullEmail,
+        detection,
+      };
+    });
 
-  // Mark OTP-only emails as processed immediately
-  if (hasOTP && !hasLink && !otpDelivered) {
-    await dedupCache.markProcessed(emailId, currentEmail.fullEmail, hasOTP, false);
-  }
+    const fullEmail = extractionResult.fullEmail as Email;
+    const detection = extractionResult.detection as any;
+    const extractedOTPCode = extractionResult.code as string | null;
 
-  // For "both" emails, deliver OTP FIRST if not already done
-  if (hasOTP && extractedOTPCode && !otpDelivered) {
-    log.info('🔢 OTP detected — delivering to waiting tabs');
-    otpDelivered = await deliverOTP(extractedOTPCode, detection.confidence, {
+    diag.step(flowId, 'email', 'read', 'Email content loaded (cached or fetched)', {
       from: fullEmail.from,
       subject: fullEmail.subject,
-      ...(detection.provider !== undefined ? { provider: detection.provider } : {}),
-      ...(detection.link !== undefined ? { linkUrl: detection.link } : {}),
     });
-  }
 
-  // Handle Link Activation
-  if (hasLink && detection.link && !otpDelivered) {
-    log.info('🔗 Link detected, deferring to linkService');
-    metrics.linksProcessed++;
+    diag.step(flowId, 'email', 'detect', 'Detection completed', {
+      type: detection.type,
+      hasCode: Boolean(extractedOTPCode),
+      hasLink: Boolean(detection.link),
+    });
 
-    // Broadcast to UI
-    for (const tabId of otpWaitingTabs.keys()) {
-      chrome.tabs
-        .sendMessage(tabId, {
-          action: 'POLLING_STATE_CHANGE',
-          payload: { state: 'LINK_ACTIVATION_STARTED' },
-        })
-        .catch(() => {});
+    log.info('📊 Detection', {
+      type: detection.type,
+      hasCode: Boolean(detection.code),
+      hasLink: Boolean(detection.link),
+      waitingTabs: otpWaitingTabs.size,
+    });
+
+    let otpDelivered = false;
+
+    // ── PRIORITY 1: Inline OTP delivery to waiting tabs ──
+    if (otpWaitingTabs.size > 0) {
+      const matchingTabId = findMatchingTab(fullEmail.from, detection.provider, detection.link);
+
+      if (matchingTabId !== null) {
+        log.info('🎯 Matching tab found — inline OTP delivery');
+
+        if (extractedOTPCode) {
+          otpDelivered = await deliverOTP(extractedOTPCode, detection.confidence ?? 0.9, {
+            from: fullEmail.from,
+            subject: fullEmail.subject,
+            ...(detection.provider !== undefined ? { provider: detection.provider } : {}),
+            ...(detection.link !== undefined ? { linkUrl: detection.link } : {}),
+          });
+
+          if (otpDelivered) {
+            await dedupCache.markProcessed(emailId, currentEmail.fullEmail, true, false);
+            // Wait to notify at the end
+          }
+        } else {
+          log.warn('⚠️ Matching tab but no OTP extractable — falling through');
+        }
+      }
     }
 
-    await linkService
-      .handleNewEmail(fullEmail, currentEmail.fullEmail)
-      .catch((e) => log.warn('linkService error', e));
-  }
+    // ── PRIORITY 2: Standard processing ──
+    const hasOTP = Boolean(extractedOTPCode);
+    const hasLink =
+      (detection.type === 'link' || detection.type === 'both') && Boolean(detection.link);
 
-  // ── FINAL STEP: SINGLE NOTIFICATION ──
-  // Consolidate findings and notify exactly once
-  void notifyNewEmail(
-    fullEmail.from,
-    fullEmail.subject,
-    extractedOTPCode || undefined,
-    hasLink ? detection.link : undefined
-  );
+    // Mark OTP-only emails as processed immediately
+    if (hasOTP && !hasLink && !otpDelivered) {
+      await dedupCache.markProcessed(emailId, currentEmail.fullEmail, hasOTP, false);
+    }
+
+    // For "both" emails, deliver OTP FIRST if not already done
+    if (hasOTP && extractedOTPCode && !otpDelivered) {
+      log.info('🔢 OTP detected — delivering to waiting tabs');
+      otpDelivered = await deliverOTP(extractedOTPCode, detection.confidence ?? 0.9, {
+        from: fullEmail.from,
+        subject: fullEmail.subject,
+        ...(detection.provider !== undefined ? { provider: detection.provider } : {}),
+        ...(detection.link !== undefined ? { linkUrl: detection.link } : {}),
+      });
+    }
+
+    // Handle Link Activation
+    // NOTE: Links should be activated even when OTP was already delivered.
+    // For "both" type emails (OTP + link), we want BOTH actions to fire.
+    if (hasLink && detection.link) {
+      log.info('🔗 Link detected, deferring to linkService');
+      metrics.linksProcessed++;
+
+      // Broadcast to UI
+      for (const tabId of otpWaitingTabs.keys()) {
+        chrome.tabs
+          .sendMessage(tabId, {
+            action: 'POLLING_STATE_CHANGE',
+            payload: { state: 'LINK_ACTIVATION_STARTED' },
+          })
+          .catch(() => {});
+      }
+
+      await linkService
+        .handleDetectedLink(fullEmail, detection.link, currentEmail.fullEmail)
+        .catch((e) => log.warn('linkService error', e));
+      diag.step(flowId, 'email', 'link', 'Link handling delegated', {
+        link: detection.link,
+      });
+    }
+
+    // ── FINAL STEP: SINGLE NOTIFICATION ──
+    // Consolidate findings and notify exactly once
+    if (hasOTP || hasLink) {
+      void notifyNewEmail(
+        fullEmail.from,
+        fullEmail.subject,
+        extractedOTPCode || undefined,
+        hasLink ? detection.link : undefined
+      );
+    } else {
+      log.info('Ignoring email: no OTP or activation link found', { emailId });
+      await dedupCache.markProcessed(emailId, currentEmail.fullEmail, false, false);
+    }
+    diag.endFlow(flowId, 'email', 'process-email', true, 'Email decision complete', {
+      hasOTP: Boolean(extractedOTPCode),
+      hasLink,
+      otpDelivered,
+    });
+  } catch (error) {
+    diag.endFlow(flowId, 'email', 'process-email', false, 'Email processing failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 }
 
 // ── Find the highest-priority waiting tab that matches this email ──
@@ -1115,6 +1223,97 @@ async function deliverOTP(code: string, confidence: number, email: EmailContext)
 //  §14  PUBLIC API
 // ═══════════════════════════════════════════════════════════════
 
+function shouldSuppressEmailTypeTransition(newType: 'disposable' | 'gmail'): boolean {
+  const expiresAt = suppressedEmailTypeTransitions.get(newType);
+  if (!expiresAt) {
+    return false;
+  }
+
+  suppressedEmailTypeTransitions.delete(newType);
+  return Date.now() <= expiresAt;
+}
+
+function enqueueEmailTypeTransition(newType: 'disposable' | 'gmail'): void {
+  if (shouldSuppressEmailTypeTransition(newType)) {
+    log.debug('Skipping self-managed email type transition', { newType });
+    return;
+  }
+
+  if (emailTypeTransitionPromise) {
+    pendingEmailTypeTransition = newType;
+    log.debug('Queued email type transition behind active transition', { newType });
+    return;
+  }
+
+  emailTypeTransitionPromise = (async () => {
+    let nextType: 'disposable' | 'gmail' | null = newType;
+    while (nextType) {
+      const currentType = nextType;
+      pendingEmailTypeTransition = null;
+      await handleEmailTypeTransition(currentType);
+      nextType = pendingEmailTypeTransition;
+    }
+  })().finally(() => {
+    emailTypeTransitionPromise = null;
+  });
+
+  emailTypeTransitionPromise.catch((error) =>
+    log.warn('Email type transition failed', { newType, error })
+  );
+}
+
+export function suppressNextEmailTypeTransition(
+  newType: 'disposable' | 'gmail',
+  ttlMs = 5000
+): void {
+  suppressedEmailTypeTransitions.set(newType, Date.now() + ttlMs);
+}
+
+async function handleEmailTypeTransition(newType: 'disposable' | 'gmail'): Promise<void> {
+  log.info(`🔄 Handling email type transition to: ${newType}`);
+
+  // 1. Clear stale OTP so old codes can't fire on the new email session
+  await otpService.clearLastOTP();
+
+  // 2. Clear processed-email dedup cache so new inbox is scanned fresh
+  //    Also clears otpWaitingTabs + circuit breaker
+  resetEmailSession();
+
+  // 3. Clear linkService activation history/queue so old links don't replay
+  linkService.clearHistory();
+
+  // 4. Clear inbox in storage so popup shows empty state immediately
+  await storageService.set('inbox', []);
+  await storageService.set('gmailInbox', []);
+  await storageService.set('gmailSyncState', {});
+
+  // 5. Update currentEmail in storage to align with the new preference
+  const nextEmail = await emailService.getCurrentEmail();
+  if (nextEmail) {
+    await storageService.set('currentEmail', nextEmail);
+    log.info(`Sync currentEmail in storage to: ${nextEmail.fullEmail}`);
+  } else {
+    await storageService.remove('currentEmail');
+    log.info('Removed currentEmail from storage as no account was found');
+  }
+
+  // 6. Broadcast RESET_STATE to all content scripts so FAB badges clear
+  if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
+    chrome.tabs.query({}, (tabs) => {
+      for (const tab of tabs) {
+        if (tab.id) {
+          chrome.tabs.sendMessage(tab.id, { action: 'RESET_STATE' }).catch(() => {
+            // Ignore
+          });
+        }
+      }
+    });
+  }
+
+  // 7. Trigger event-driven polling immediately
+  triggerEventDrivenPolling('type_change');
+}
+
 export function setupPollingManager(): void {
   if (initialized) {
     log.warn('Already initialized');
@@ -1141,6 +1340,23 @@ export function setupPollingManager(): void {
       .catch((e) => log.warn('Failed to restore session state', e));
   }
 
+  // Listen for changes in preferredEmailType to reset session and restart polling
+  if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName === 'local' && changes.preferredEmailType) {
+        const newValue = changes.preferredEmailType.newValue;
+        const oldValue = changes.preferredEmailType.oldValue;
+        if (newValue === 'disposable' || newValue === 'gmail') {
+          if (oldValue === newValue) {
+            return;
+          }
+          log.info(`🔄 preferredEmailType changed to: ${newValue} — performing transition`);
+          enqueueEmailTypeTransition(newValue);
+        }
+      }
+    });
+  }
+
   // Chrome alarms for MV3 background
   Promise.resolve(chrome.alarms.create(ALARM_NAMES.EMAIL_SYNC, { periodInMinutes: 1 })).catch((e) =>
     log.debug('Alarm creation failed', e)
@@ -1155,10 +1371,6 @@ export function setupPollingManager(): void {
       periodInMinutes: getAlarmPeriodMinutes(TIMING.METRICS_TICK_MS),
     })
   ).catch((e) => log.debug('Alarm creation failed', e));
-
-  if (!alarmListenerInstalled) {
-    alarmListenerInstalled = true;
-  }
 
   // Auto-start if email exists
   emailService
@@ -1198,7 +1410,6 @@ export function stopEmailPolling(): void {
     generalTimer = null;
   }
 
-  dedupCache.clear();
   log.info('📧 General polling STOPPED');
 }
 
@@ -1279,7 +1490,6 @@ export function startFastOTPPolling(
 
   // Immediate first check
   if (checkPermitted('fast')) {
-    lastGlobalCheckTime = Date.now();
     performCheck('fast').catch((e) => log.warn('Initial fast check error', e));
   }
 
@@ -1299,9 +1509,42 @@ export function stopFastOTPPolling(tabId: number): void {
  * Register a tab as an activation tab (opened by linkService for verification links).
  * Activation tabs are excluded from OTP delivery to prevent wrong fills.
  */
-export function registerActivationTab(tabId: number): void {
+export function registerActivationTab(tabId: number, code?: string): void {
   activationTabs.add(tabId);
-  log.info('🔗 Activation tab registered', { tabId, totalActivationTabs: activationTabs.size });
+  log.info('🔗 Activation tab registered', {
+    tabId,
+    code: code ? 'provided' : 'none',
+    totalActivationTabs: activationTabs.size,
+  });
+  if (code) {
+    activationCodesByTab.set(tabId, code);
+
+    // First immediate attempt
+    void safeSendTabMessage(tabId, {
+      action: 'FILL_OTP',
+      payload: { otp: code },
+    });
+
+    // Short retry burst for SPAs where input appears after React hydration.
+    let attempts = 0;
+    const timer = setInterval(async () => {
+      attempts += 1;
+      if (!activationCodesByTab.has(tabId)) {
+        clearInterval(timer);
+        return;
+      }
+      const res = await safeSendTabMessage(tabId, {
+        action: 'FILL_OTP',
+        payload: { otp: code },
+      });
+      if (res?.success || attempts >= 20) {
+        clearInterval(timer);
+        if (res?.success) {
+          activationCodesByTab.delete(tabId);
+        }
+      }
+    }, 500);
+  }
 }
 
 /**
@@ -1309,6 +1552,7 @@ export function registerActivationTab(tabId: number): void {
  */
 export function unregisterActivationTab(tabId: number): void {
   if (activationTabs.delete(tabId)) {
+    activationCodesByTab.delete(tabId);
     log.info('🔗 Activation tab unregistered', {
       tabId,
       remainingActivationTabs: activationTabs.size,
@@ -1321,6 +1565,32 @@ export function unregisterActivationTab(tabId: number): void {
  */
 export function isActivationTab(tabId: number): boolean {
   return activationTabs.has(tabId);
+}
+
+/**
+ * Triggered when content script signals it is ready (via PING or OTP detection).
+ * Immediately attempts to fill the activation code if the tab is an activation tab.
+ */
+export function onContentScriptReady(tabId: number): void {
+  const code = activationCodesByTab.get(tabId);
+  if (!code) {
+    return;
+  }
+  log.info('🚀 Content script ready in activation tab — immediately sending FILL_OTP', { tabId });
+  void safeSendTabMessage(tabId, {
+    action: 'FILL_OTP',
+    payload: { otp: code },
+  });
+}
+
+/**
+ * Public wrapper to trigger fast Gmail polling.
+ */
+export function startGmailAliasFastPolling(
+  reason: TriggerReason,
+  options?: { intervalMs?: number; durationMs?: number }
+): void {
+  startGmailFastWatch(triggerEventDrivenPolling, reason, options);
 }
 
 // ───────────────────────────────────────────────────────────────────
@@ -1368,8 +1638,9 @@ export function destroyPollingManager(): void {
     .clear(ALARM_NAMES.METRICS_REPORT)
     .catch((e) => log.debug('Alarm clear failed', e));
 
-  if (alarmListenerInstalled) {
-    alarmListenerInstalled = false;
+  if (pendingCheckTimer) {
+    clearTimeout(pendingCheckTimer);
+    pendingCheckTimer = null;
   }
 
   otpWaitingTabs.clear();
@@ -1378,6 +1649,7 @@ export function destroyPollingManager(): void {
   initialized = false;
   priorityCounter = 0;
   checkInProgress = false;
+  pendingCheckMode = null;
 
   log.info('💣 Polling engine destroyed');
 }

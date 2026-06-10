@@ -1,9 +1,12 @@
 import { motion, AnimatePresence, Transition, MotionConfig } from 'framer-motion';
-import { ChevronLeft, Sparkles } from 'lucide-react';
+import { ChevronLeft, Sparkles, Mail, Zap, ShieldCheck } from 'lucide-react';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { storageService } from '../services/storageService';
 import { EmailAccount } from '../types';
+import { withTimeout, withRetry } from '../utils/helpers';
 import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
+import AliasPanel from './components/AliasPanel';
 import AppSkeleton from './components/AppSkeleton';
 import EmailGenerator from './components/EmailGenerator';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -40,6 +43,9 @@ const SPRING_TRANSITION: Transition = {
   mass: 0.9,
 };
 
+type AppView = 'hub' | 'email' | 'password' | 'otp' | 'aliases';
+type AliasPanelTab = 'generator' | 'inbox' | 'history';
+
 const App: React.FC = () => {
   const view = useAppStore((s) => s.view);
   const setView = useAppStore((s) => s.setView);
@@ -49,23 +55,25 @@ const App: React.FC = () => {
   const setToast = useAppStore((s) => s.setToast);
   const isFirstTime = useAppStore((s) => s.isFirstTime);
   const setIsFirstTime = useAppStore((s) => s.setIsFirstTime);
+  const emailAccount = useAppStore((s) => s.emailAccount);
+  const setEmailAccount = useAppStore((s) => s.setEmailAccount);
 
-  const [emailAccount, setEmailAccount] = useState<EmailAccount | null>(null);
+  // Gmail / Alias store hooks
+  const setGmailConnected = useAppStore((s) => s.setGmailConnected);
+  const setGmailProfile = useAppStore((s) => s.setGmailProfile);
+  const setGmailBase = useAppStore((s) => s.setGmailBase);
+  const setGmailIsManual = useAppStore((s) => s.setGmailIsManual);
+  const setPreferredEmailType = useAppStore((s) => s.setPreferredEmailType);
+  const setAliasHistory = useAppStore((s) => s.setAliasHistory);
+  const setGmailInbox = useAppStore((s) => s.setGmailInbox);
+
   const [isInitialized, setIsInitialized] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [aliasInitialTab, setAliasInitialTab] = useState<AliasPanelTab>('generator');
   const helpTriggerRef = useRef<HTMLElement | null>(null);
 
   // Track toast timeout to prevent race conditions
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Cleanup toast timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (toastTimeoutRef.current) {
-        clearTimeout(toastTimeoutRef.current);
-      }
-    };
-  }, []);
 
   // Cleanup toast timeout on unmount
   useEffect(() => {
@@ -141,23 +149,21 @@ const App: React.FC = () => {
     setShowHelp(true);
   }, []);
 
-  const refreshCurrentEmail = useCallback(async () => {
-    try {
-      const res = await safeSendMessage({ action: 'GET_CURRENT_EMAIL' });
-      const emailObj = res && 'email' in res ? res.email : null;
-      if (emailObj && typeof emailObj === 'object' && 'fullEmail' in emailObj) {
-        const email = emailObj as EmailAccount;
-        setEmailAccount(email);
-        return email;
+  const safeSetView = useCallback(
+    (newView: AppView, options?: { aliasTab?: AliasPanelTab }) => {
+      if (options?.aliasTab) {
+        setAliasInitialTab(options.aliasTab);
+      } else if (newView === 'aliases') {
+        setAliasInitialTab('generator');
       }
-
-      setEmailAccount(null);
-      return null;
-    } catch (e) {
-      log.warn('Failed to refresh current email from background', e);
-      return null;
-    }
-  }, [setEmailAccount]);
+      if (newView === 'email' && !emailAccount) {
+        setView('hub');
+        return;
+      }
+      setView(newView);
+    },
+    [setView, emailAccount]
+  );
 
   const generateIdentity = useCallback(async () => {
     if (!navigator.onLine) {
@@ -169,7 +175,10 @@ const App: React.FC = () => {
     setLoading(true);
     try {
       log.info('Generating new identity...');
-      const res = await safeSendMessage({ action: 'GENERATE_EMAIL' });
+      const res = await withTimeout(
+        withRetry(() => safeSendMessage({ action: 'GENERATE_EMAIL' }), 2, 1000),
+        20000 // 20 second absolute timeout
+      );
       if (
         res &&
         'email' in res &&
@@ -180,14 +189,16 @@ const App: React.FC = () => {
         const email = res.email as EmailAccount;
         setEmailAccount(email);
         showToast(t('newIdentityGenerated'));
-      } else if (res && 'error' in res) {
-        showToast(String(res.error));
       } else {
         showToast(t('generationFailed'));
       }
-    } catch (e) {
+    } catch (e: unknown) {
       log.error('Exception during identity generation:', e);
-      showToast(t('generationFailed'));
+      if ((e as any)?.message === 'Timeout') {
+        showToast('Server took too long. Try again.');
+      } else {
+        showToast(t('generationFailed'));
+      }
     } finally {
       setLoading(false);
     }
@@ -213,7 +224,71 @@ const App: React.FC = () => {
           isFirst = false;
         }
 
-        await refreshCurrentEmail();
+        // Hydrate Gmail-related state from storageService
+        try {
+          const [
+            storedConnected,
+            storedProfile,
+            storedBase,
+            storedIsManual,
+            storedPreferredType,
+            storedHistory,
+            storedGmailInbox,
+          ] = await Promise.all([
+            storageService.get('gmailConnected'),
+            storageService.get('gmailProfile'),
+            storageService.get('gmailBase'),
+            storageService.get('gmailIsManual'),
+            storageService.get('preferredEmailType'),
+            storageService.get('aliasHistory'),
+            storageService.get('gmailInbox'),
+          ]);
+
+          if (mounted) {
+            if (storedConnected !== undefined) {
+              setGmailConnected(Boolean(storedConnected));
+            }
+            if (storedProfile !== undefined) {
+              setGmailProfile(storedProfile as any);
+            }
+            if (storedBase !== undefined) {
+              setGmailBase(storedBase as string);
+            }
+            if (storedIsManual !== undefined) {
+              setGmailIsManual(Boolean(storedIsManual));
+            }
+            if (storedPreferredType !== undefined) {
+              setPreferredEmailType(storedPreferredType as 'disposable' | 'gmail');
+            }
+            if (Array.isArray(storedHistory)) {
+              setAliasHistory(storedHistory);
+            }
+            if (Array.isArray(storedGmailInbox)) {
+              setGmailInbox(storedGmailInbox);
+            }
+          }
+        } catch (e) {
+          log.warn('Failed to hydrate Gmail state from storageService', e);
+        }
+
+        try {
+          const [storedDisposableEmail, storedCurrentEmail] = await Promise.all([
+            storageService.get('disposableEmail'),
+            storageService.get('currentEmail'),
+          ]);
+          const storedEmail =
+            storedDisposableEmail ||
+            (storedCurrentEmail?.service !== 'gmail' ? storedCurrentEmail : null);
+          if (mounted) {
+            if (storedEmail && typeof storedEmail === 'object' && 'fullEmail' in storedEmail) {
+              setEmailAccount(storedEmail as EmailAccount);
+            } else {
+              setEmailAccount(null);
+            }
+          }
+        } catch (e) {
+          log.warn('Failed to sync initial email from storageService', e);
+        }
 
         // Removed aggressive auto-generation block.
         // Generates identity ONLY upon explicit user onboarding dismiss or manual generation.
@@ -231,28 +306,109 @@ const App: React.FC = () => {
     return () => {
       mounted = false;
     };
-  }, [refreshCurrentEmail, setIsFirstTime]);
+  }, [
+    setIsFirstTime,
+    setEmailAccount,
+    setGmailConnected,
+    setGmailProfile,
+    setGmailBase,
+    setGmailIsManual,
+    setPreferredEmailType,
+    setAliasHistory,
+    setGmailInbox,
+  ]);
 
   useEffect(() => {
-    const listener = (
-      changes: { [key: string]: chrome.storage.StorageChange },
-      areaName: string
-    ) => {
-      if (areaName === 'local' && changes.currentEmail) {
-        void refreshCurrentEmail();
-      }
-    };
+    let mounted = true;
 
-    if (chrome?.storage?.onChanged) {
-      chrome.storage.onChanged.addListener(listener);
-    }
+    const unsubscribe = storageService.onChanged((changes) => {
+      void (async () => {
+        try {
+          if (changes.gmailConnected) {
+            const val = await storageService.get('gmailConnected');
+            if (mounted) {
+              setGmailConnected(Boolean(val));
+            }
+          }
+          if (changes.gmailProfile) {
+            const val = await storageService.get('gmailProfile');
+            if (mounted) {
+              setGmailProfile(val as any);
+            }
+          }
+          if (changes.gmailBase) {
+            const val = await storageService.get('gmailBase');
+            if (mounted) {
+              setGmailBase(val as string);
+            }
+          }
+          if (changes.gmailIsManual) {
+            const val = await storageService.get('gmailIsManual');
+            if (mounted) {
+              setGmailIsManual(Boolean(val));
+            }
+          }
+          if (changes.preferredEmailType) {
+            const val = await storageService.get('preferredEmailType');
+            if (mounted) {
+              setPreferredEmailType(val as 'disposable' | 'gmail');
+            }
+          }
+          if (changes.aliasHistory) {
+            const val = await storageService.get('aliasHistory');
+            if (mounted && Array.isArray(val)) {
+              setAliasHistory(val);
+            }
+          }
+          if (changes.gmailInbox) {
+            const val = await storageService.get('gmailInbox');
+            if (mounted) {
+              setGmailInbox(Array.isArray(val) ? val : []);
+            }
+          }
+          if (changes.disposableEmail || changes.currentEmail) {
+            const [storedDisposableEmail, storedCurrentEmail] = await Promise.all([
+              storageService.get('disposableEmail'),
+              storageService.get('currentEmail'),
+            ]);
+            const storedEmail =
+              storedDisposableEmail ||
+              (storedCurrentEmail?.service !== 'gmail' ? storedCurrentEmail : null);
+            if (mounted) {
+              if (storedEmail && typeof storedEmail === 'object' && 'fullEmail' in storedEmail) {
+                setEmailAccount(storedEmail as EmailAccount);
+              } else {
+                setEmailAccount(null);
+              }
+            }
+          }
+        } catch (err) {
+          log.warn('Error in storage sync listener', err);
+        }
+      })();
+    });
 
     return () => {
-      if (chrome?.storage?.onChanged) {
-        chrome.storage.onChanged.removeListener(listener);
-      }
+      mounted = false;
+      unsubscribe();
     };
-  }, [refreshCurrentEmail]);
+  }, [
+    setGmailConnected,
+    setGmailProfile,
+    setGmailBase,
+    setGmailIsManual,
+    setPreferredEmailType,
+    setAliasHistory,
+    setGmailInbox,
+    setEmailAccount,
+  ]);
+
+  // Route guard effect
+  useEffect(() => {
+    if (isInitialized && view === 'email' && !emailAccount) {
+      setView('hub');
+    }
+  }, [isInitialized, view, emailAccount, setView]);
 
   const handleDismissOnboarding = useCallback(async () => {
     try {
@@ -285,21 +441,15 @@ const App: React.FC = () => {
 
   const dismissOnboarding = handleDismissOnboarding;
 
-
-
   return (
     <div className="app">
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
       <main className="main-content-area" id="main-content" role="main">
-        <div className="aurora-background" />
-        <div className="noise-overlay" />
-
         <AnimatePresence>
           {toast && (
             <motion.div
-              layout
               className="ios-toast"
               role="status"
               aria-live="polite"
@@ -364,9 +514,21 @@ const App: React.FC = () => {
                 className="onboarding-features"
               >
                 {[
-                  { icon: '📧', text: t('onboardingFeature1'), sub: t('onboardingFeature1Sub') },
-                  { icon: '⚡', text: t('onboardingFeature2'), sub: t('onboardingFeature2Sub') },
-                  { icon: '🔒', text: t('onboardingFeature3'), sub: t('onboardingFeature3Sub') },
+                  {
+                    icon: <Mail size={24} color="var(--gf-cyan)" />,
+                    text: t('onboardingFeature1'),
+                    sub: t('onboardingFeature1Sub'),
+                  },
+                  {
+                    icon: <Zap size={24} color="var(--gf-yellow)" />,
+                    text: t('onboardingFeature2'),
+                    sub: t('onboardingFeature2Sub'),
+                  },
+                  {
+                    icon: <ShieldCheck size={24} color="var(--gf-mint)" />,
+                    text: t('onboardingFeature3'),
+                    sub: t('onboardingFeature3Sub'),
+                  },
                 ].map((step, i) => (
                   <div key={i} className="onboarding-feature-item">
                     <span className="onboarding-feature-icon">{step.icon}</span>
@@ -384,8 +546,8 @@ const App: React.FC = () => {
                 transition={{ delay: 0.3 }}
                 onClick={dismissOnboarding}
                 className="ios-button button-primary onboarding-btn"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
+                whileHover={{ x: -1, y: -1 }}
+                whileTap={{ x: 1, y: 1 }}
               >
                 {t('onboardingButton')}
               </motion.button>
@@ -405,7 +567,6 @@ const App: React.FC = () => {
           {isInitialized && !isFirstTime && view === 'hub' && (
             <motion.div
               key="hub-view"
-              layout
               initial={{ opacity: 0, scale: 0.98, x: -16 }}
               animate={{ opacity: 1, scale: 1, x: 0 }}
               exit={{ opacity: 0, scale: 1.02, x: 16 }}
@@ -414,17 +575,16 @@ const App: React.FC = () => {
             >
               <Header onOpenSettings={handleOpenSettings} onOpenHelp={handleOpenHelp} />
               <Hub
-                onNavigate={(v) => setView(v)}
+                onNavigate={safeSetView}
                 emailAccount={emailAccount}
                 onGenerate={triggerGenerateIdentity}
                 onToast={showToast}
               />
             </motion.div>
           )}
-          {isInitialized && !isFirstTime && view === 'email' && (
+          {isInitialized && !isFirstTime && view === 'email' && emailAccount && (
             <motion.div
               key="email-view"
-              layout
               initial={{ opacity: 0, scale: 0.98, x: 16 }}
               animate={{ opacity: 1, scale: 1, x: 0 }}
               exit={{ opacity: 0, scale: 1.02, x: -16 }}
@@ -439,47 +599,59 @@ const App: React.FC = () => {
                   syncing={loading}
                   onToast={showToast}
                   variant="inbox"
-                  onBack={() => setView('hub')}
+                  onBack={() => safeSetView('hub')}
                 />
               </div>
             </motion.div>
           )}
-          {isInitialized && !isFirstTime && (view === 'password' || view === 'otp') && (
-            <motion.div
-              key="detail-view"
-              layout
-              className="detail-view app-view-container"
-              initial={{ opacity: 0, scale: 1.02, x: 16 }}
-              animate={{ opacity: 1, scale: 1, x: 0 }}
-              exit={{ opacity: 0, scale: 0.98, x: -16 }}
-              transition={SPRING_TRANSITION}
-            >
-              <div className="header detail-view-header">
-                <div className="header-left detail-view-header-left">
-                  <button
-                    className="back-button detail-view-back-btn"
-                    onClick={() => setView('hub')}
-                    aria-label="Go back to hub"
-                  >
-                    <ChevronLeft size={22} className="sf-icon" />
-                  </button>
-                  <span className="header-title detail-view-title">
-                    {view === 'otp' ? t('passcodeSync') : t('vaultSettings')}
-                  </span>
+          {isInitialized &&
+            !isFirstTime &&
+            (view === 'password' || view === 'otp' || view === 'aliases') && (
+              <motion.div
+                key="detail-view"
+                className="detail-view app-view-container"
+                initial={{ opacity: 0, scale: 1.02, x: 16 }}
+                animate={{ opacity: 1, scale: 1, x: 0 }}
+                exit={{ opacity: 0, scale: 0.98, x: -16 }}
+                transition={SPRING_TRANSITION}
+              >
+                <div className="header detail-view-header">
+                  <div className="header-left detail-view-header-left">
+                    <button
+                      className="back-button detail-view-back-btn"
+                      onClick={() => safeSetView('hub')}
+                      aria-label="Go back to hub"
+                    >
+                      <ChevronLeft size={22} className="sf-icon" />
+                    </button>
+                    <span className="header-title detail-view-title">
+                      {view === 'otp'
+                        ? t('passcodeSync')
+                        : view === 'aliases'
+                          ? 'Gmail Aliases'
+                          : t('vaultSettings')}
+                    </span>
+                  </div>
                 </div>
-              </div>
 
-              <div className="detail-content-scroll detail-view-content">
-                {view === 'password' && (
-                  <PasswordGenerator
-                    onToast={showToast}
-                    currentPassword={emailAccount?.password || ''}
-                  />
-                )}
-                {view === 'otp' && <OTPDisplay onToast={showToast} />}
-              </div>
-            </motion.div>
-          )}
+                <div className="detail-content-scroll detail-view-content">
+                  {view === 'password' && (
+                    <PasswordGenerator
+                      onToast={showToast}
+                      currentPassword={emailAccount?.password || ''}
+                    />
+                  )}
+                  {view === 'otp' && <OTPDisplay onToast={showToast} />}
+                  {view === 'aliases' && (
+                    <AliasPanel
+                      initialTab={aliasInitialTab}
+                      onToast={showToast}
+                      onBack={() => safeSetView('hub')}
+                    />
+                  )}
+                </div>
+              </motion.div>
+            )}
         </AnimatePresence>
 
         <AnimatePresence>
@@ -492,7 +664,7 @@ const App: React.FC = () => {
               exit={{ opacity: 0 }}
             >
               <motion.div
-                className="glass-card help-card"
+                className="memphis-card help-card"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="help-modal-title"
@@ -523,7 +695,11 @@ const App: React.FC = () => {
 
 const AppWithErrorBoundary: React.FC = () => (
   <ErrorBoundary>
-    <MotionConfig reducedMotion={process.env.NODE_ENV === 'production' ? 'user' : 'never'}>
+    <MotionConfig
+      reducedMotion={
+        typeof process !== 'undefined' && process.env?.NODE_ENV === 'production' ? 'user' : 'never'
+      }
+    >
       <App />
     </MotionConfig>
   </ErrorBoundary>

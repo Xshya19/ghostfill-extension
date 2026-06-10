@@ -103,7 +103,9 @@ export function classifyWithGhostCore(
     code = scores.codes[0] || scores.urlCodes[0]?.code;
     link = scores.links[0] || scores.urlCodes[0]?.url;
   } else if (hasUrlCode && hasLink) {
-    // Mistral/Clerk pattern: code embedded in the required URL
+    // FIX #11: This branch IS reachable when hasCode is false (codeScore < 30)
+    // but hasUrlCode is true (URL-embedded codes exist regardless of score).
+    // Covers the Mistral/Clerk pattern: code embedded in the verification URL.
     category = 'both';
     confidence = Math.min(scores.linkScore / 100, 1);
     code = scores.urlCodes[0]?.code;
@@ -301,5 +303,3 @@ function score(
     urlCodes,
   };
 }
-
-// ─── Helpers ───

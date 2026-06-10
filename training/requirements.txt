@@ -3,3 +3,4 @@ torch>=2.0.0
 onnx>=1.14.0
 onnxruntime>=1.15.0
 numpy<2.0.0
+onnxscript>=0.1.0

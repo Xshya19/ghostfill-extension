@@ -49,6 +49,24 @@ function isRecoverableError(errorMsg: string): boolean {
   return recoverablePatterns.some((pattern) => errorMsg.includes(pattern));
 }
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (error && typeof error === 'object') {
+    const candidate = error as Record<string, unknown>;
+    if (typeof candidate.message === 'string') {
+      return candidate.message;
+    }
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error);
+    }
+  }
+  return String(error);
+}
+
 /**
  * Send message to background script safely with retry logic
  *
@@ -113,7 +131,7 @@ export async function safeSendMessage(
 
         return response;
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
+        const errorMsg = getErrorMessage(error);
         lastError = error instanceof Error ? error : new Error(errorMsg);
 
         // Check if error is recoverable
@@ -227,7 +245,7 @@ export async function safeSendTabMessage(
 
         return response;
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
+        const errorMsg = getErrorMessage(error);
         lastError = error instanceof Error ? error : new Error(errorMsg);
 
         // Check if error is expected (content script not available)

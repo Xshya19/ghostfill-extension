@@ -21,11 +21,23 @@ export interface ProcessedEmailRecord {
 class DedupService {
   private readonly records = new Map<string, ProcessedEmailRecord>();
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
-  private cleanupInterval: ReturnType<typeof setInterval> | null = null;
+  // FIX #4: Replaced setInterval with lazy on-access pruning.
+  // setInterval is unreliable in MV3 service workers (killed on suspension).
+  private lastPruneAt = 0;
+  private readonly PRUNE_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
   private initialized = false;
 
-  constructor() {
-    this.cleanupInterval = setInterval(() => this.prune(), 60 * 60 * 1000);
+  constructor() {}
+
+  /**
+   * Trigger pruning lazily on access — safe for service workers.
+   */
+  private maybePrune(): void {
+    const now = Date.now();
+    if (now - this.lastPruneAt > this.PRUNE_INTERVAL_MS) {
+      this.lastPruneAt = now;
+      void this.prune();
+    }
   }
 
   async initialize(): Promise<void> {
@@ -55,20 +67,28 @@ class DedupService {
   }
 
   async isProcessed(emailId: string | number, accountId: string): Promise<boolean> {
+    return (await this.getRecord(emailId, accountId)) !== null;
+  }
+
+  async getRecord(
+    emailId: string | number,
+    accountId: string
+  ): Promise<ProcessedEmailRecord | null> {
+    this.maybePrune();
     const key = this.makeKey(emailId, accountId);
     const record = this.records.get(key);
 
     if (!record) {
-      return false;
+      return null;
     }
 
     if (Date.now() >= record.ttlExpiresAt) {
       this.records.delete(key);
       this.persist();
-      return false;
+      return null;
     }
 
-    return true;
+    return record;
   }
 
   async markProcessed(
@@ -77,14 +97,16 @@ class DedupService {
     hadOTP: boolean,
     hadLink: boolean
   ): Promise<void> {
+    this.maybePrune();
     const key = this.makeKey(emailId, accountId);
 
+    const existing = this.records.get(key);
     const record: ProcessedEmailRecord = {
       id: String(emailId),
       accountId,
       processedAt: Date.now(),
-      hadOTP,
-      hadLink,
+      hadOTP: Boolean(existing?.hadOTP || hadOTP),
+      hadLink: Boolean(existing?.hadLink || hadLink),
       ttlExpiresAt: Date.now() + CONFIG.DEDUP_TTL_MS,
     };
 
@@ -139,11 +161,6 @@ class DedupService {
     return `${accountId}:${emailId}`;
   }
 
-  private evict(key: string): void {
-    this.records.delete(key);
-    this.persist();
-  }
-
   private persist(): void {
     if (this.persistTimer) {
       clearTimeout(this.persistTimer);
@@ -160,9 +177,10 @@ class DedupService {
    * Stop the cleanup interval (important for testing/cleanup)
    */
   destroy(): void {
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-      this.cleanupInterval = null;
+    // FIX #15: Clear persistTimer to prevent stale writes after destroy
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
     }
   }
 }

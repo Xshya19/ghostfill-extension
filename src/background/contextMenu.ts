@@ -621,20 +621,21 @@ async function handleClick(
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async function processResult(result: ActionResult, ctx: ActionContext): Promise<void> {
+  let clipboardCopied: boolean | null = null;
   // ── Clipboard ──
   if (result.clipboardValue) {
     switch (result.clipboardType) {
       case 'email':
-        await clipboardService.copyEmail(result.clipboardValue);
+        clipboardCopied = await clipboardService.copyEmail(result.clipboardValue);
         break;
       case 'password':
-        await clipboardService.copyPassword(result.clipboardValue);
+        clipboardCopied = await clipboardService.copyPassword(result.clipboardValue);
         break;
       case 'otp':
-        await clipboardService.copyOTP(result.clipboardValue);
+        clipboardCopied = await clipboardService.copyOTP(result.clipboardValue);
         break;
       default:
-        await clipboardService.copyEmail(result.clipboardValue); // generic fallback
+        clipboardCopied = await clipboardService.copyEmail(result.clipboardValue); // generic fallback
     }
   }
 
@@ -658,6 +659,11 @@ async function processResult(result: ActionResult, ctx: ActionContext): Promise<
 
     if (result.notifyType === 'error') {
       await notifyError(result.notifyTitle, result.notifyMessage);
+    } else if (result.clipboardValue && clipboardCopied === false) {
+      await notifyError(
+        result.notifyTitle,
+        'Generated successfully, but the browser blocked clipboard access.'
+      );
     } else {
       await notifySuccess(result.notifyTitle, result.notifyMessage);
     }
@@ -787,7 +793,7 @@ function maskEmail(email: string): string {
   if (at <= 2) {
     return email;
   }
-  return email[0] + '•'.repeat(Math.min(at - 1, 6)) + email.slice(at);
+  return email[0] + '•'.repeat(Math.min(at - 1, 5)) + email.slice(at);
 }
 
 function trunc(s: string | undefined, max: number): string {

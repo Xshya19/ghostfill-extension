@@ -2,6 +2,6 @@
   "hooks": {
     "pre-commit": "lint-staged",
     "commit-msg": "node .husky/commit-msg.js",
-    "pre-push": "npm run test:unit -- --bail"
+    "pre-push": "npm run test -- --bail"
   }
 }

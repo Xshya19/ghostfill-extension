@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 
 interface ConfirmModalProps {
   readonly isOpen: boolean;
@@ -25,24 +25,28 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   const cancelBtnRef = useRef<HTMLButtonElement | null>(null);
   const modalRef = useRef<HTMLDivElement | null>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
+  const titleId = useId();
+  const descId = useId();
 
   // Store active element before modal opens
   useEffect(() => {
-    if (isOpen) {
-      previousActiveElementRef.current = document.activeElement as HTMLElement | null;
-      // Delay focus slightly to let entry animation begin
-      setTimeout(() => {
-        cancelBtnRef.current?.focus();
-      }, 50);
-    } else {
-      // Restore focus
+    if (!isOpen) {
+      // Restore focus to whatever was focused before the modal opened.
       previousActiveElementRef.current?.focus();
+      return;
     }
+
+    previousActiveElementRef.current = document.activeElement as HTMLElement | null;
+    // Delay focus slightly to let the entry animation begin.
+    const focusTimer = setTimeout(() => cancelBtnRef.current?.focus(), 50);
+    return () => clearTimeout(focusTimer);
   }, [isOpen]);
 
   // Trap focus and listen for Escape key
   useEffect(() => {
-    if (!isOpen) {return;}
+    if (!isOpen) {
+      return;
+    }
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -52,11 +56,15 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
       }
 
       if (e.key === 'Tab') {
-        if (!modalRef.current) {return;}
+        if (!modalRef.current) {
+          return;
+        }
         const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(
           'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
         );
-        if (focusableElements.length === 0) {return;}
+        if (focusableElements.length === 0) {
+          return;
+        }
 
         const first = focusableElements[0];
         const last = focusableElements[focusableElements.length - 1];
@@ -93,38 +101,33 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
         >
           <motion.div
             ref={modalRef}
-            className="glass-card confirmation-modal"
+            className="memphis-card confirmation-modal"
             onClick={(e) => e.stopPropagation()}
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0 }}
             role="dialog"
             aria-modal="true"
-            aria-labelledby="confirm-modal-title"
-            aria-describedby="confirm-modal-desc"
+            aria-labelledby={titleId}
+            aria-describedby={descId}
           >
-            <h3 id="confirm-modal-title">{title}</h3>
-            <p id="confirm-modal-desc">{message}</p>
-            <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+            <h3 id={titleId}>{title}</h3>
+            <p id={descId}>{message}</p>
+            <div className="confirm-modal-actions">
               <motion.button
                 ref={cancelBtnRef}
-                className="ios-button button-secondary"
-                style={{ flex: 1 }}
+                className="ios-button button-secondary confirm-modal-btn"
                 onClick={onCancel}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.96 }}
+                whileHover={{ x: -1, y: -1 }}
+                whileTap={{ x: 1, y: 1 }}
               >
                 {cancelText}
               </motion.button>
               <motion.button
-                className="ios-button button-primary"
-                style={{
-                  flex: 1,
-                  background: isDestructive ? 'var(--error)' : 'var(--brand)',
-                }}
+                className={`ios-button button-primary confirm-modal-btn${isDestructive ? ' button-primary--destructive' : ''}`}
                 onClick={onConfirm}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.96 }}
+                whileHover={{ x: -1, y: -1 }}
+                whileTap={{ x: 1, y: 1 }}
               >
                 {confirmText}
               </motion.button>

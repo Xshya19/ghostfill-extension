@@ -27,18 +27,39 @@ import { storageService } from './storageService';
 
 const log = createLogger('LinkEngine');
 
+// FIX #12: Hoisted to module level to avoid allocating a new Set on every isPlausibleCode() call
+const FALSE_POSITIVE_CODES = new Set([
+  'true',
+  'false',
+  'null',
+  'undefined',
+  'test',
+  'email',
+  'verify',
+  'token',
+  'auth',
+  'link',
+  'confirm',
+  'user',
+  'admin',
+  'page',
+  'next',
+]);
+
 // Lazy import to avoid circular dependency at module load time
 // Use Promise-based caching for ESM dynamic imports
 let pollingManagerExportsPromise: Promise<{
-  registerActivationTab: (tabId: number) => void;
+  registerActivationTab: (tabId: number, code?: string) => void;
   unregisterActivationTab: (tabId: number) => void;
   isActivationTab: (tabId: number) => boolean;
+  onContentScriptReady: (tabId: number) => void;
 }> | null = null;
 
 function getPollingManagerExports(): Promise<{
-  registerActivationTab: (tabId: number) => void;
+  registerActivationTab: (tabId: number, code?: string) => void;
   unregisterActivationTab: (tabId: number) => void;
   isActivationTab: (tabId: number) => boolean;
+  onContentScriptReady: (tabId: number) => void;
 }> {
   if (!pollingManagerExportsPromise) {
     pollingManagerExportsPromise = import('../background/pollingManager')
@@ -53,6 +74,7 @@ function getPollingManagerExports(): Promise<{
           registerActivationTab: () => {},
           unregisterActivationTab: () => {},
           isActivationTab: () => false,
+          onContentScriptReady: () => {},
         };
       });
   }
@@ -203,8 +225,100 @@ class LinkService {
   };
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  //  PUBLIC — entry point (called from polling manager)
+  //  PUBLIC — entry points (called from polling manager)
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  /**
+   * Handle a link that was already detected by the polling manager.
+   * Skips re-detection entirely to avoid the "both → skip" bug where
+   * emails containing both OTP + link would skip link activation.
+   */
+  async handleDetectedLink(email: Email, linkUrl: string, accountId?: string): Promise<void> {
+    const emailId = String(email.id);
+    const accId = accountId || email.to || 'unknown';
+
+    if (await this.isProcessed(emailId, accId)) {
+      log.debug('Email already processed for link', { emailId });
+      return;
+    }
+
+    if (this.isScanning(emailId)) {
+      return;
+    }
+    this.markScanning(emailId);
+    this.metrics.emailsScanned++;
+
+    await this.markProcessed(emailId, accId, true);
+
+    try {
+      this.metrics.linksDetected++;
+
+      // ── Security gate ──
+      const validation = this.validateUrl(linkUrl);
+      if (!validation.safe) {
+        this.metrics.linksBlocked++;
+        log.warn('⛔ Blocked unsafe link', {
+          url: maskUrl(linkUrl),
+          reason: validation.reason,
+        });
+        return;
+      }
+
+      log.info('🔗 Pre-detected link validated', {
+        url: maskUrl(linkUrl),
+      });
+
+      // ── Auto-confirm: Check user setting before opening link ──
+      const rawSettings = await storageService.get('settings');
+      const autoConfirm = rawSettings?.autoConfirmLinks ?? DEFAULT_SETTINGS.autoConfirmLinks;
+
+      if (!autoConfirm) {
+        log.info('⏭️ Skipping auto-confirm (user disabled)', {
+          url: maskUrl(linkUrl),
+          setting: 'autoConfirmLinks',
+        });
+        return;
+      }
+
+      log.info('🔓 Auto-confirming pre-detected link', {
+        url: maskUrl(linkUrl),
+      });
+
+      // ── Build activation record & enqueue ──
+      const extractedCode = this.extractCodeFromUrl(linkUrl);
+      if (extractedCode) {
+        this.metrics.codesExtracted++;
+        log.info('🔑 Code extracted from URL', {
+          code: maskCode(extractedCode),
+        });
+      }
+
+      const record: ActivationRecord = {
+        url: linkUrl,
+        emailId,
+        from: email.from || 'unknown',
+        subject: email.subject || '',
+        extractedCode,
+        detectedAt: Date.now(),
+        activatedAt: null,
+        completedAt: null,
+        tabId: null,
+        status: 'queued',
+        attempts: 0,
+        error: null,
+        durationMs: null,
+      };
+
+      this.enqueue(record);
+    } catch (error) {
+      log.error('Pre-detected link handling failed', {
+        emailId,
+        error: errorMessage(error),
+      });
+    } finally {
+      this.unmarkScanning(emailId);
+    }
+  }
 
   async handleNewEmail(email: Email, accountId?: string): Promise<void> {
     const emailId = String(email.id);
@@ -220,6 +334,10 @@ class LinkService {
     }
     this.markScanning(emailId);
     this.metrics.emailsScanned++;
+
+    // FIX #6: Create initial dedup record when first scanning an email.
+    // Previously only updateProcessed was called, which requires an existing record.
+    await this.markProcessed(emailId, accId, false);
 
     log.info('Scanning for activation links', {
       emailId,
@@ -454,7 +572,7 @@ class LinkService {
 
       // Register as activation tab to prevent OTP delivery to this tab
       const pmExports = await getPollingManagerExports();
-      pmExports.registerActivationTab(tab.id);
+      pmExports.registerActivationTab(tab.id, record.extractedCode ?? undefined);
 
       // Cleanup when tab is closed
       const tabId = tab.id;
@@ -839,24 +957,7 @@ class LinkService {
 
     // Reject dictionary words that slip through (case-insensitive)
     const lower = value.toLowerCase();
-    const falsePositives = new Set([
-      'true',
-      'false',
-      'null',
-      'undefined',
-      'test',
-      'email',
-      'verify',
-      'token',
-      'auth',
-      'link',
-      'confirm',
-      'user',
-      'admin',
-      'page',
-      'next',
-    ]);
-    if (falsePositives.has(lower)) {
+    if (FALSE_POSITIVE_CODES.has(lower)) {
       return false;
     }
 
@@ -868,7 +969,8 @@ class LinkService {
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   private async isProcessed(emailId: string, accountId: string): Promise<boolean> {
-    return dedupService.isProcessed(emailId, accountId);
+    const record = await dedupService.getRecord(emailId, accountId);
+    return Boolean(record?.hadLink);
   }
 
   private async markProcessed(emailId: string, accountId: string, hadLink: boolean): Promise<void> {

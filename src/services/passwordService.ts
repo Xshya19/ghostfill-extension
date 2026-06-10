@@ -297,7 +297,7 @@ class PasswordService {
   }
 
   private async ensureSessionStorage(): Promise<void> {
-    if (!chrome?.storage?.session) {
+    if (typeof chrome === 'undefined' || !chrome.storage?.session) {
       throw new Error('Session storage is unavailable');
     }
 
@@ -315,7 +315,7 @@ class PasswordService {
   }
 
   private async purgeLegacyPersistentHistory(): Promise<void> {
-    if (this.legacyHistoryPurged || !chrome?.storage?.local) {
+    if (this.legacyHistoryPurged || typeof chrome === 'undefined' || !chrome.storage?.local) {
       return;
     }
 
@@ -350,30 +350,30 @@ class PasswordService {
    */
   async saveToHistory(password: string, website: string): Promise<void> {
     const strength = this.calculateStrength(password);
-    const history = await this.getSessionHistory();
-
-    let storedPassword = password;
-    let isEncrypted = false;
+    let storedPassword: string;
 
     try {
       const sessionKey = await import('../utils/encryption').then((m) => m.getSessionKey());
-      if (sessionKey) {
-        storedPassword = await import('../utils/encryption').then((m) =>
-          m.encrypt(password, sessionKey)
-        );
-        isEncrypted = true;
+      if (!sessionKey) {
+        log.warn('Password history skipped because no encryption key is available');
+        return;
       }
+      storedPassword = await import('../utils/encryption').then((m) =>
+        m.encrypt(password, sessionKey)
+      );
     } catch (e) {
-      log.warn('Failed to encrypt password history item, storing fallback', e);
+      log.warn('Password history skipped because encryption failed', e);
+      return;
     }
 
+    const history = await this.getSessionHistory();
     const historyItem: PasswordHistoryItem = {
       id: generateId(),
       password: storedPassword,
       website,
       createdAt: Date.now(),
       strength: strength.score,
-      encrypted: isEncrypted,
+      encrypted: true,
     };
 
     history.unshift(historyItem);
@@ -385,7 +385,7 @@ class PasswordService {
     log.info('Password saved to session history', {
       website,
       persisted: false,
-      encrypted: isEncrypted,
+      encrypted: true,
     });
   }
 

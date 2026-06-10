@@ -51,12 +51,18 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
     };
   }, [expiresAt, expiredLabel]);
 
-  if (!timeLeft) {return null;}
+  if (!timeLeft) {
+    return null;
+  }
 
   const isExpired = timeLeft === expiredLabel;
 
   return (
-    <span className={`expiry-badge ${isExpired ? 'expired' : ''}`}>
+    <span
+      className={`expiry-badge ${isExpired ? 'expired' : ''}`}
+      role="timer"
+      aria-label={`Expires in ${timeLeft}`}
+    >
       {timeLeft}
     </span>
   );

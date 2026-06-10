@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { Hash, Copy, Zap, Info, ShieldCheck, Check, Inbox } from 'lucide-react';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { LastOTP } from '../../types/storage.types';
 import { copyToClipboard } from '../../utils/helpers';
 import { safeSendMessage, safeSendTabMessage } from '../../utils/messaging';
 import { useStorageSubscription } from '../hooks/useStorageSubscription';
@@ -9,7 +10,7 @@ interface Props {
   onToast: (message: string) => void;
 }
 
-const OTPTimerBar: React.FC<{ lastOTP: any }> = ({ lastOTP }) => {
+const OTPTimerBar: React.FC<{ lastOTP: LastOTP | null }> = ({ lastOTP }) => {
   // MotionConfig reducedMotion="never" in App.tsx handles motion globally.
   const [timePercentage, setTimePercentage] = useState<number>(100);
   const [timeText, setTimeText] = useState<string>('');
@@ -60,22 +61,14 @@ const OTPTimerBar: React.FC<{ lastOTP: any }> = ({ lastOTP }) => {
           transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
           className="otp-timer-fill"
           style={{
-            background:
-              timePercentage < 20
-                ? 'var(--error)'
-                : 'linear-gradient(90deg, var(--brand-primary) 0%, var(--brand-secondary) 100%)',
-            boxShadow: timePercentage < 20 ? 'none' : '0 0 10px rgba(99, 102, 241, 0.3)',
+            '--timer-color': timePercentage < 20 ? 'var(--gf-coral)' : 'var(--gf-magenta)',
           }}
         />
       </div>
       <div className="otp-timer-info" aria-live="polite">
         <span className="otp-timer-label">
           {lastOTP?.expiresAt ? 'Expiring in ' : 'Est. expiry in '}
-          <span
-            style={{
-              color: timePercentage < 20 ? 'var(--error)' : 'var(--text-secondary)',
-            }}
-          >
+          <span className={timePercentage < 20 ? 'otp-timer-expired' : 'otp-timer-active'}>
             {timeText}
           </span>
         </span>
@@ -110,7 +103,11 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
       return;
     }
     try {
-      await copyToClipboard(lastOTP.code);
+      const copiedToClipboard = await copyToClipboard(lastOTP.code);
+      if (!copiedToClipboard) {
+        onToast('Copy failed');
+        return;
+      }
       setCopied(true);
       onToast('OTP copied');
 
@@ -156,9 +153,9 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
 
   return (
     <div className="generator-flow">
-      <div className="glass-card otp-glass-card-padded">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <div className="widget-label" style={{ marginBottom: 0 }}>
+      <div className="memphis-card otp-memphis-card-padded">
+        <div className="identity-header-row">
+          <div className="widget-label widget-label-no-margin">
             <Hash size={16} className="sf-icon" />
             Verification Code
           </div>
@@ -170,8 +167,17 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
             <motion.div
               className="otp-box"
               onClick={handleCopyOTP}
-              whileHover={{ y: -2 }}
-              whileTap={{ scale: 0.98 }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  handleCopyOTP();
+                }
+              }}
+              whileHover={{ x: -2, y: -2 }}
+              whileTap={{ x: 2, y: 2 }}
+              role="button"
+              tabIndex={0}
+              aria-label="Copy OTP code"
             >
               {lastOTP.code.split('').map((char: string, i: number) => (
                 <motion.span
@@ -200,13 +206,13 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
                   <div
                     className="otp-confidence-fill"
                     style={{
-                      width: `${Math.round(lastOTP.confidence * 100)}%`,
-                      background:
+                      '--confidence-width': `${Math.round(lastOTP.confidence * 100)}%`,
+                      '--confidence-color':
                         lastOTP.confidence >= 0.9
-                          ? 'var(--success)'
+                          ? 'var(--gf-mint)'
                           : lastOTP.confidence >= 0.7
-                            ? 'var(--warning)'
-                            : 'var(--error)',
+                            ? 'var(--gf-yellow)'
+                            : 'var(--gf-coral)',
                     }}
                   />
                 </div>
@@ -217,7 +223,10 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
             )}
 
             <div className="otp-actions">
-              <button className="ios-button button-primary otp-action-primary" onClick={handleFillOTP}>
+              <button
+                className="ios-button button-primary otp-action-primary"
+                onClick={handleFillOTP}
+              >
                 <Zap size={18} fill="white" />
                 Auto-Fill
               </button>
@@ -254,8 +263,8 @@ const OTPDisplay: React.FC<Props> = ({ onToast }) => {
         )}
       </div>
 
-      <div className="glass-card efficiency-tip-card">
-        <div className="widget-label" style={{ marginBottom: 0 }}>
+      <div className="memphis-card efficiency-tip-card">
+        <div className="widget-label widget-label-no-margin">
           <Info size={16} className="sf-icon" />
           Efficiency Tip
         </div>

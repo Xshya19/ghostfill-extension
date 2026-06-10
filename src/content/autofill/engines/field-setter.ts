@@ -106,9 +106,9 @@ export class FieldSetter {
       // Dispatch every possible event that frameworks might listen to
       element.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
       element.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-      element.dispatchEvent(new Event('mousedown', { bubbles: true }));
-      element.dispatchEvent(new Event('mouseup', { bubbles: true }));
-      element.dispatchEvent(new Event('click', { bubbles: true }));
+      element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+      element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       element.dispatchEvent(
         new InputEvent('beforeinput', {
           bubbles: true,

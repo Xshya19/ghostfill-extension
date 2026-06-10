@@ -28,6 +28,12 @@
   "codeCopied": {
     "message": "Code copied to clipboard"
   },
+  "copyFailed": {
+    "message": "Copy failed"
+  },
+  "expiredLabel": {
+    "message": "Expired"
+  },
   "recentMessages": {
     "message": "Inbox"
   },

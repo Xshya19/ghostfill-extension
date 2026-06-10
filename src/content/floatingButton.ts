@@ -16,12 +16,17 @@
 // └────────────────────────────────────────────────────────────────────────┘
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { classifyField, shouldDecorateField, getFieldTooltip, PageContext, FieldType } from '../shared/fieldClassifier';
+import {
+  classifyField,
+  shouldDecorateField,
+  getFieldTooltip,
+  PageContext,
+  FieldType,
+} from '../shared/fieldClassifier';
 import { generateHostTokens } from '../shared/tokens';
 import { GenerateEmailResponse, GeneratePasswordResponse, GetLastOTPResponse } from '../types';
 import { TIMING } from '../utils/constants';
 import { debounce } from '../utils/debounce';
-import { deepQuerySelectorAll } from '../utils/helpers';
 import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
 import { setHTML, clearHTML } from '../utils/setHTML';
@@ -29,7 +34,9 @@ import { AutoFiller } from './autoFiller';
 import { FieldAnalyzer } from './fieldAnalyzer';
 import { pageStatus } from './pageStatus';
 import { IconSystem } from './utils/fab-icons';
+import { menuIcon } from './utils/fab-menu-icons';
 import { PageAnalyzer, PageType, PageAnalysis } from './utils/pageAnalyzer';
+import { collectTrainingData } from './utils/trainingDataHarvester';
 
 const log = createLogger('FloatingButton');
 
@@ -376,72 +383,80 @@ class ContextualMenu {
     const actions: MenuAction[] = [
       {
         id: 'smart-fill',
-        icon: '✨',
-        label: `✨ Auto-fill ${contextName}`,
-        shortcut: '⌘⇧G',
+        icon: menuIcon('spark'),
+        label: `Auto-fill ${contextName}`,
+        shortcut: 'Ctrl+Shift+G',
         visible: true,
         handler: noop,
       },
       {
         id: 'paste-otp',
-        icon: '🔑',
+        icon: menuIcon('key'),
         label: hasOTPReady ? 'Paste Found Code' : 'Paste Code',
         visible: showOTP,
         handler: noop,
       },
       {
         id: 'generate-email',
-        icon: '📧',
+        icon: menuIcon('mail'),
         label: 'Use Hidden Email',
         visible: showEmail,
         handler: noop,
       },
       {
         id: 'generate-password',
-        icon: '🔐',
+        icon: menuIcon('lock'),
         label: 'Generate Secure Password',
         visible: showPassword,
         handler: noop,
       },
       {
         id: 'fill-firstname',
-        icon: '👤',
+        icon: menuIcon('user'),
         label: 'Inject First Name',
         visible: isIdentityCtx,
         handler: noop,
       },
       {
         id: 'fill-lastname',
-        icon: '👥',
+        icon: menuIcon('users'),
         label: 'Inject Last Name',
         visible: isIdentityCtx,
         handler: noop,
       },
       {
         id: 'fill-fullname',
-        icon: '📝',
+        icon: menuIcon('edit'),
         label: 'Inject Full Name',
         visible: isIdentityCtx,
         handler: noop,
       },
       {
         id: 'fill-username',
-        icon: '🎭',
+        icon: menuIcon('mask'),
         label: 'Inject Username',
         visible: isIdentityCtx,
         handler: noop,
       },
       {
         id: 'clear-fields',
-        icon: '🧹',
+        icon: menuIcon('clear'),
         label: 'Clear All Fields',
+        visible: true,
+        handler: noop,
+      },
+      {
+        id: 'collect-training-data',
+        icon: menuIcon('chart'),
+        label: 'Collect Training Data',
+        shortcut: 'Alt+Shift+H',
         visible: true,
         handler: noop,
       },
       { id: 'divider', icon: '', label: '', visible: true, handler: noop },
       {
         id: 'settings',
-        icon: '⚙️',
+        icon: menuIcon('settings'),
         label: 'GhostFill Settings',
         visible: true,
         handler: noop,
@@ -498,7 +513,6 @@ export class FloatingButton {
 
   // ── Scroll & Resize ──────────────────────────────────────
   private scrollRafId: number | null = null;
-  private trackingRafId: number | null = null;
   private isScrolling = false;
   private fieldResizeObserver: ResizeObserver | null = null;
   private fieldIntersectionObserver: IntersectionObserver | null = null;
@@ -515,7 +529,6 @@ export class FloatingButton {
 
   // ── Ghost Scanning ───────────────────────────────────────
   private readonly ghostObservers = new Map<HTMLElement, IntersectionObserver>();
-  private scanTimeout: number | null = null;
 
   // ── Keyboard ─────────────────────────────────────────────
   private static readonly SHORTCUT_KEY = 'g';
@@ -539,7 +552,6 @@ export class FloatingButton {
     log.debug('FloatingButton initialised');
     void this.loadSettingsAsync();
     void this.checkOTPAvailability();
-    void this.scanAndGlister();
   }
 
   destroy(): void {
@@ -569,15 +581,6 @@ export class FloatingButton {
       }
     }
     this.cleanupFns.length = 0;
-
-    if (this.scanTimeout) {
-      if ('cancelIdleCallback' in window) {
-        (window as any).cancelIdleCallback(this.scanTimeout);
-      } else {
-        clearTimeout(this.scanTimeout);
-      }
-      this.scanTimeout = null;
-    }
 
     for (const obs of this.ghostObservers.values()) {
       obs.disconnect();
@@ -611,10 +614,6 @@ export class FloatingButton {
     if (this.scrollRafId !== null) {
       cancelAnimationFrame(this.scrollRafId);
       this.scrollRafId = null;
-    }
-    if (this.trackingRafId !== null) {
-      cancelAnimationFrame(this.trackingRafId);
-      this.trackingRafId = null;
     }
   }
 
@@ -774,12 +773,6 @@ export class FloatingButton {
     if (this.fieldResizeObserver) {
       this.fieldResizeObserver.disconnect();
       this.fieldResizeObserver = null;
-    }
-
-    // Stop continuous tracking
-    if (this.trackingRafId !== null) {
-      cancelAnimationFrame(this.trackingRafId);
-      this.trackingRafId = null;
     }
 
     this.currentField = null;
@@ -1003,7 +996,7 @@ export class FloatingButton {
       const magnetStrength = 4;
       const moveX = deltaX * magnetStrength;
       const moveY = deltaY * magnetStrength;
-      this.button.style.transform = `perspective(600px) translateY(-2px) translateZ(8px) scale(1.08) translate(${moveX}px, ${moveY}px)`;
+      this.button.style.transform = `translate(${-2 + moveX}px, ${-2 + moveY}px) scale(1.02)`;
     });
 
     // ── Keyboard Navigation ───────────────────────────────
@@ -1046,7 +1039,7 @@ export class FloatingButton {
         return;
       }
 
-      pageStatus.show('Analysing form…', 'loading');
+      pageStatus.show('Analyzing form...', 'loading');
       const result = await this.autoFiller.smartFill();
 
       if (this.destroyed) {
@@ -1152,7 +1145,7 @@ export class FloatingButton {
           ${IconSystem.get('otp')}
         </div>
         <div class="gf-sentinel-toast-text">
-          <div class="gf-sentinel-toast-title">Filling code…</div>
+          <div class="gf-sentinel-toast-title">Filling code...</div>
           <div class="gf-sentinel-toast-subtitle">GhostFill is securing your session</div>
         </div>
       </div>
@@ -1345,6 +1338,11 @@ export class FloatingButton {
         case 'clear-fields':
           await this.autoFiller.clearForm();
           pageStatus.success('Fields cleared', 1000);
+          this.setState('idle');
+          break;
+
+        case 'collect-training-data':
+          await collectTrainingData();
           this.setState('idle');
           break;
 
@@ -1704,8 +1702,6 @@ export class FloatingButton {
     }, TIMING_MS.RESIZE_DEBOUNCE);
     window.addEventListener('resize', onResize);
     this.cleanupFns.push(() => window.removeEventListener('resize', onResize));
-
-    this.startProactiveScanning();
   }
 
   private readonly handleFocusChange = debounce((...args: unknown[]): void => {
@@ -1724,80 +1720,6 @@ export class FloatingButton {
       this.showNearField(target);
     }
   }, TIMING_MS.FOCUS_DEBOUNCE) as any;
-
-  /**
-   * Periodically scans for hidden "Ghost Containers" to anticipate
-   * form appearances on SPAs.
-   */
-  private startProactiveScanning(): void {
-    if (this.scanTimeout && 'cancelIdleCallback' in window) {
-      (window as any).cancelIdleCallback(this.scanTimeout);
-    }
-
-    const scan = () => {
-      this.scanForGhostContainers();
-      // Scan every 5 seconds or during idle time
-      if ('requestIdleCallback' in window) {
-        this.scanTimeout = (window as any).requestIdleCallback(scan, { timeout: 5000 });
-      } else {
-        this.scanTimeout = (window as any).setTimeout(scan, 5000) as unknown as number;
-      }
-    };
-
-    if ('requestIdleCallback' in window) {
-      this.scanTimeout = (window as any).requestIdleCallback(scan, { timeout: 2000 });
-    } else {
-      this.scanTimeout = (window as any).setTimeout(scan, 2000) as unknown as number;
-    }
-  }
-
-  private scanForGhostContainers(): void {
-    // Only scan if we aren't already showing the button or busy
-    if (this.state !== 'hidden' && this.state !== 'idle') {
-      return;
-    }
-
-    // Prune unbound or disconnected ghost observers
-    for (const [el, obs] of this.ghostObservers.entries()) {
-      if (!el.isConnected) {
-        obs.disconnect();
-        this.ghostObservers.delete(el);
-      }
-    }
-
-    // Keep memory bounded to a reasonable max number of ghost containers waiting to appear
-    if (this.ghostObservers.size > 20) {
-      const firstKey = this.ghostObservers.keys().next().value;
-      if (firstKey) {
-        this.ghostObservers.get(firstKey)?.disconnect();
-        this.ghostObservers.delete(firstKey);
-      }
-    }
-
-    const ghosts = this.fieldAnalyzer.scanHiddenModals();
-
-    for (const ghost of ghosts) {
-      if (!this.ghostObservers.has(ghost.element)) {
-        log.debug('👻 Ghost Container detected, watching for visibility:', ghost.selector);
-
-        const observer = new IntersectionObserver(
-          (entries) => {
-            for (const entry of entries) {
-              if (entry.isIntersecting) {
-                log.info('✨ Ghost Container became visible! Re-scanning page.', ghost.selector);
-                // Force a full scan to attach the button immediately
-                this.handleFocusChange(ghost.element);
-              }
-            }
-          },
-          { threshold: 0.1 }
-        );
-
-        observer.observe(ghost.element);
-        this.ghostObservers.set(ghost.element, observer);
-      }
-    }
-  }
 
   // ═══════════════════════════════════════════════════════════
   //  §7.10  K E Y B O A R D   S H O R T C U T
@@ -1859,11 +1781,17 @@ export class FloatingButton {
     this.currentFieldRef = new WeakRef(field);
     this.currentFieldRect = null;
     let pageContext: PageContext = 'default';
-    if (analysis.pageType === 'signup') {pageContext = 'signup';}
-    else if (analysis.pageType === 'login') {pageContext = 'login';}
-    else if (analysis.pageType === 'verification') {pageContext = 'verification';}
-    else if (analysis.pageType === '2fa') {pageContext = '2fa';}
-    else if (analysis.pageType === 'password-reset') {pageContext = 'password-reset';}
+    if (analysis.pageType === 'signup') {
+      pageContext = 'signup';
+    } else if (analysis.pageType === 'login') {
+      pageContext = 'login';
+    } else if (analysis.pageType === 'verification') {
+      pageContext = 'verification';
+    } else if (analysis.pageType === '2fa') {
+      pageContext = '2fa';
+    } else if (analysis.pageType === 'password-reset') {
+      pageContext = 'password-reset';
+    }
     const classified = classifyField(field as HTMLInputElement, pageContext);
     this.mode = classified === 'generic' ? 'magic' : classified;
 
@@ -1905,51 +1833,6 @@ export class FloatingButton {
 
     this.positionNearField(field);
     this.setState('idle');
-    this.startContinuousTracking();
-  }
-
-  /**
-   * Continuous rAF tracking loop: detects field position drift
-   * from SPA transitions, animations, or layout shifts.
-   */
-  private startContinuousTracking(): void {
-    if (this.trackingRafId !== null) {
-      cancelAnimationFrame(this.trackingRafId);
-      this.trackingRafId = null;
-    }
-
-    const track = (): void => {
-      if (this.destroyed || this.state === 'hidden') {
-        this.trackingRafId = null;
-        return;
-      }
-
-      const field = this.currentFieldRef?.deref();
-      if (!field || !field.isConnected) {
-        this.setState('hidden');
-        this.trackingRafId = null;
-        return;
-      }
-
-      const rect = field.getBoundingClientRect();
-      const last = this.currentFieldRect;
-      const threshold = TIMING_MS.POSITION_DRIFT_THRESHOLD;
-
-      if (
-        !last ||
-        Math.abs(last.x - rect.x) > threshold ||
-        Math.abs(last.y - rect.y) > threshold ||
-        Math.abs(last.width - rect.width) > threshold ||
-        Math.abs(last.height - rect.height) > threshold
-      ) {
-        this.currentFieldRect = rect;
-        this.positionNearField(field);
-      }
-
-      this.trackingRafId = requestAnimationFrame(track);
-    };
-
-    this.trackingRafId = requestAnimationFrame(track);
   }
 
   private positionNearField(field: HTMLElement): void {
@@ -2089,7 +1972,7 @@ export class FloatingButton {
   private async fillResolvedField(
     field: HTMLElement,
     value: string,
-    fieldType?: string
+    fieldType?: FieldType
   ): Promise<boolean> {
     if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) {
       const directFill = await this.autoFiller.fillElement(field, value);
@@ -2111,7 +1994,7 @@ export class FloatingButton {
     }
 
     if (fieldType) {
-      const currentFieldFill = await this.autoFiller.fillCurrentField(value, fieldType);
+      const currentFieldFill = await this.autoFiller.fillCurrentField(value, fieldType as any);
       if (currentFieldFill) {
         return true;
       }
@@ -2136,60 +2019,6 @@ export class FloatingButton {
     return this.state !== 'hidden';
   }
 
-  /**
-   * Scans the page for high-value targets (Signup/OTP) and shows
-   * a subtle "Sentient UI" indicator to let the user know we're ready.
-   */
-  async scanAndGlister(): Promise<void> {
-    if (this.destroyed || !this.isEnabled) {
-      return;
-    }
-
-    const analysis = this.getPageAnalysis();
-    if (!analysis.isAuthRelated) {
-      return;
-    }
-
-    const targets = deepQuerySelectorAll('input:not([type="hidden"])').filter((el) => {
-      if (!(el instanceof HTMLElement)) {
-        return false;
-      }
-      return shouldDecorateField(el as HTMLInputElement);
-    });
-
-    for (const field of targets.slice(0, 3)) {
-      // Limit to top 3 fields for performance
-      if (!(field instanceof HTMLElement)) {
-        continue;
-      }
-      this.attachGlister(field);
-    }
-  }
-
-  private attachGlister(field: HTMLElement): void {
-    // Only if not already focused
-    if (document.activeElement === field) {
-      return;
-    }
-
-    const indicator = document.createElement('div');
-    indicator.className = 'gf-glister-indicator';
-    const rect = field.getBoundingClientRect();
-
-    // Position at top-right of the field
-    indicator.style.left = `${rect.right - 10}px`;
-    indicator.style.top = `${rect.top + 2}px`;
-
-    // Auto-remove on focus
-    field.addEventListener('focus', () => indicator.remove(), { once: true });
-
-    // Add to body
-    document.body.appendChild(indicator);
-
-    // Lifecycle: remove after 10s if not used
-    setTimeout(() => indicator.remove(), 10000);
-  }
-
   // ═══════════════════════════════════════════════════════════
   //  §7.15  S H A D O W - D O M   S T Y L E S
   // ═══════════════════════════════════════════════════════════
@@ -2204,14 +2033,15 @@ export class FloatingButton {
 :host {
   all: initial;
   font-family: "Space Grotesk", "Inter", sans-serif;
+  isolation: isolate;
 
   /* Memphis Neon Palette mapped to FAB */
   ${generateHostTokens()}
 
   --brand: var(--gf-magenta);
-  --brand-dark: #D41FA7;
-  --brand-rgb: 255, 59, 212;
-  --brand-glow: rgba(255, 59, 212, 0.25);
+  --brand-dark: var(--xxx-violet-400);
+  --brand-rgb: var(--gf-magenta-rgb);
+  --brand-glow: rgba(var(--gf-magenta-rgb), 0.24);
 
   --neon-cyan: var(--gf-cyan);
   --neon-cyan-rgb: var(--gf-cyan-rgb);
@@ -2223,17 +2053,17 @@ export class FloatingButton {
 
   --success: var(--gf-mint);
   --success-rgb: var(--gf-mint-rgb);
-  --success-glow: rgba(98, 242, 179, 0.25);
+  --success-glow: rgba(var(--gf-mint-rgb), 0.25);
   --error: var(--gf-coral);
   --error-rgb: var(--gf-coral-rgb);
-  --error-glow: rgba(255, 106, 77, 0.25);
+  --error-glow: rgba(var(--gf-coral-rgb), 0.25);
 
-  --fab-bg: var(--gf-card);
-  --fab-bg-hover: var(--gf-surface);
+  --fab-bg: var(--xxx-yellow-200);
+  --fab-bg-hover: var(--xxx-cyan-200);
   --fab-border: var(--gf-ink);
-  --text: var(--gf-cream);
-  --text-secondary: #B8A8D9;
-  --text-tertiary: #7B6CA3;
+  --text: var(--gf-ink);
+  --text-secondary: var(--gf-text-muted);
+  --text-tertiary: var(--gf-text-dim);
 
   /* Memphis Hard Shadows (No soft blurs!) */
   --shadow-rest: 3px 3px 0 var(--gf-ink);
@@ -2251,26 +2081,54 @@ export class FloatingButton {
 
 /* ── FAB Button — Memphis Sticker Physics ── */
 .gf-fab {
-  width: 36px; height: 36px; border-radius: 8px; /* Slightly larger for touch */
-  background: var(--fab-bg);
-  border: 2px solid var(--fab-border); /* Thick comic-ink border */
+  width: 38px; height: 38px; border-radius: 7px;
+  background:
+    linear-gradient(135deg, var(--xxx-yellow-300), var(--xxx-lime-300), var(--xxx-cyan-300)),
+    var(--fab-bg);
+  border: 2.5px solid var(--fab-border);
   box-shadow: var(--shadow-rest);
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   outline: none; position: relative; overflow: visible;
   transition: transform 0.15s var(--ease-spring), box-shadow 0.15s var(--ease-spring), border-color 0.15s var(--ease-smooth);
 }
+.gf-fab::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border: 1px dashed rgba(var(--gf-ink-rgb), 0.34);
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 1;
+}
+.gf-fab::after {
+  content: "";
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 12px;
+  height: 12px;
+  background: var(--xxx-violet-300);
+  border: 2px solid var(--gf-ink);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 2;
+}
 
 .gf-fab:hover {
-  transform: translate(-2px, -2px);
-  background: var(--fab-bg-hover);
-  box-shadow: var(--shadow-hover);
-  border-color: var(--gf-cyan); /* Neon cyan outline on hover */
+  /* 2D Memphis Lift: Moves Up/Left, Shadow grows Down/Right */
+  transform: translate(-2px, -2px) scale(1.02); 
+  background:
+    linear-gradient(135deg, var(--xxx-pink-300), var(--xxx-yellow-300), var(--xxx-cyan-300)),
+    var(--fab-bg-hover);
+  box-shadow: 5px 5px 0 var(--gf-ink); /* Hard shadow grows */
+  border-color: var(--gf-cyan);
 }
 
 .gf-fab:active {
-  transform: translate(3px, 3px);
-  box-shadow: var(--shadow-active);
+  /* 2D Memphis Slam: Slams Down/Right into the page, Shadow disappears */
+  transform: translate(3px, 3px) scale(0.98);
+  box-shadow: 0px 0px 0 var(--gf-ink);
   transition-duration: 0.05s;
 }
 
@@ -2307,7 +2165,7 @@ export class FloatingButton {
 .gf-fab.gf-success {
   animation: none;
   border-color: var(--gf-mint);
-  background: rgba(98, 242, 179, 0.15); /* Subtle mint tint, not solid fill */
+  background: var(--xxx-lime-200);
 }
 .gf-success-check {
   animation: gfCheckPop 0.4s var(--ease-spring);
@@ -2331,7 +2189,7 @@ export class FloatingButton {
 .gf-fab.gf-error {
   animation: gfShake 0.4s ease;
   border-color: var(--gf-coral);
-  background: var(--gf-coral);
+  background: var(--xxx-red-300);
 }
 @keyframes gfShake {
   0%,100% { transform: translateX(0); }
@@ -2437,10 +2295,10 @@ export class FloatingButton {
 /* Menu — Solid surface, neon top accent bar */
 .gf-menu {
   position: absolute; top: calc(100% + 10px); right: 0;
-  min-width: 232px;
+  min-width: 254px;
   background: var(--gf-card);
   border-radius: 8px;
-  border: 2px solid var(--gf-ink);
+  border: 2.5px solid var(--gf-ink);
   box-shadow: var(--panel-shadow);
   padding: 6px; z-index: 999; overflow: hidden;
   opacity: 0; visibility: hidden;
@@ -2452,9 +2310,21 @@ export class FloatingButton {
 }
 /* Neon top accent bar */
 .gf-menu::before {
-  content: ""; position: absolute; top: 0; left: 6px; right: 6px; height: 2px;
-  background: linear-gradient(90deg, var(--gf-magenta) 0%, var(--gf-cyan) 50%, var(--gf-violet) 100%);
-  border-radius: 0 0 2px 2px; z-index: 3;
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 5px;
+  background: linear-gradient(90deg, var(--gf-magenta) 0%, var(--gf-yellow) 36%, var(--gf-cyan) 70%, var(--gf-violet) 100%);
+  border-bottom: 2px solid var(--gf-ink);
+  border-radius: 0; z-index: 3;
+}
+.gf-menu::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(90deg, rgba(var(--gf-ink-rgb), 0.035) 1px, transparent 1px),
+    linear-gradient(rgba(var(--gf-ink-rgb), 0.035) 1px, transparent 1px);
+  background-size: 10px 10px;
+  pointer-events: none;
+  z-index: 1;
 }
 .gf-menu-open {
   opacity: 1; visibility: visible;
@@ -2470,38 +2340,57 @@ export class FloatingButton {
 
 .gf-menu-item {
   display: flex; align-items: center; gap: 11px;
-  padding: 10px 13px; width: 100%;
-  cursor: pointer; border-radius: 4px; border: none; background: transparent;
-  font: inherit; font-size: 13px; font-weight: 600; letter-spacing: -0.01em;
+  padding: 9px 11px; width: 100%;
+  cursor: pointer; border-radius: 5px; border: 2px solid transparent; background: transparent;
+  font: inherit; font-size: 12.5px; font-weight: 800; letter-spacing: 0;
   color: var(--text); text-align: left; outline: none;
   position: relative; z-index: 2;
   transition: background 0.15s var(--ease-smooth), transform 0.15s var(--ease-out-expo);
   transform-origin: center center;
 }
 .gf-menu-item:hover, .gf-menu-item:focus-visible {
-  background: rgba(var(--gf-magenta-rgb), 0.08); transform: translateX(3px);
-  color: var(--gf-cyan);
+  background: var(--gf-surface);
+  border-color: var(--gf-ink);
+  transform: translate(-2px, -2px);
+  box-shadow: 3px 3px 0 var(--gf-ink);
+  color: var(--gf-ink);
 }
 .gf-menu-item:active {
-  transform: translateX(3px) scale(0.95);
-  background: rgba(var(--gf-magenta-rgb), 0.12); transition-duration: 0.05s;
+  transform: translate(2px, 2px);
+  box-shadow: none;
+  background: rgba(var(--gf-yellow-rgb), 0.28); transition-duration: 0.05s;
 }
 .gf-menu-item:focus-visible { outline: 2px solid var(--gf-cyan); outline-offset: -2px; }
 
 .gf-menu-icon {
-  font-size: 16px; flex-shrink: 0; width: 24px; height: 24px;
+  flex-shrink: 0; width: 26px; height: 26px;
   display: flex; align-items: center; justify-content: center;
-  border-radius: 4px; background: rgba(var(--gf-magenta-rgb), 0.08);
-  transition: background 0.15s ease;
+  border-radius: 5px;
+  background: var(--gf-sunken);
+  border: 1.5px solid var(--gf-ink);
+  box-shadow: 2px 2px 0 var(--gf-ink);
+  transition: transform 0.15s var(--ease-spring), background 0.15s ease;
 }
-.gf-menu-item:hover .gf-menu-icon { background: rgba(var(--gf-magenta-rgb), 0.15); }
-.gf-menu-label { flex: 1; }
+.gf-menu-symbol {
+  width: 22px;
+  height: 22px;
+  display: block;
+}
+.gf-menu-item:hover .gf-menu-icon {
+  background: var(--gf-card-elevated);
+  transform: rotate(-2deg);
+}
+.gf-menu-label {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .gf-menu-shortcut {
   font-size: 10px; color: var(--text-tertiary); font-weight: 600;
-  letter-spacing: 0.02em; opacity: 0.7;
+  letter-spacing: 0; opacity: 0.85;
   display: inline-flex; align-items: center;
-  padding: 2px 5px; background: rgba(0,0,0,0.2);
-  border-radius: 2px; border: 1px solid var(--gf-ink);
+  padding: 2px 5px; background: var(--gf-bg);
+  border-radius: 3px; border: 1px solid var(--gf-ink);
   transition: opacity 0.15s ease;
 }
 .gf-menu-item:hover .gf-menu-shortcut { opacity: 1; }
@@ -2535,7 +2424,7 @@ export class FloatingButton {
 /* ── Sentinel Toast ── */
 .gf-sentinel-toast {
   position: fixed;
-  z-index: 2147483647;
+  z-index: 2147483645;
   pointer-events: none;
   opacity: 0;
   transform: translateX(-10px) scale(0.95);
@@ -2589,7 +2478,7 @@ export class FloatingButton {
   font-size: 13px;
   font-weight: 700;
   color: var(--gf-cream);
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 
 .gf-sentinel-toast-subtitle {

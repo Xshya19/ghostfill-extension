@@ -146,9 +146,17 @@ class FormClassifier {
     if (textContent) {
       if (form === document.body) {
         parts.push(document.title);
-        // Virtual form bodies are huge; keep the scan tighter so nearby marketing copy
-        // does not overpower the auth form we are trying to classify.
-        parts.push(textContent.substring(0, 1500));
+        // Zero-allocation TreeWalker stream
+        const walker = document.createTreeWalker(form, NodeFilter.SHOW_TEXT);
+        let node: Node | null;
+        let charCount = 0;
+        const textChunks: string[] = [];
+        while ((node = walker.nextNode()) && charCount < 1500) {
+          const val = node.nodeValue || '';
+          textChunks.push(val);
+          charCount += val.length;
+        }
+        parts.push(textChunks.join('').substring(0, 1500));
       } else {
         parts.push(textContent.substring(0, FORM_TEXT_SCAN_LIMIT));
       }
@@ -513,33 +521,35 @@ export class FormDetector {
 
     const virtualForms: DetectedForm[] = [];
 
-    // Group fields by their closest common ancestor up to 5 levels deep
-    // For simplicity, we can also just treat all standalone fields under a common 'div' or 'section' as a form
+    // Cluster fields by nearest common ancestor (up to 3 levels up)
+    const clusterMap = new Map<HTMLElement, DetectedField[]>();
+    for (const field of standaloneFields) {
+      let ancestor = field.element.parentElement;
+      let depth = 0;
+      while (ancestor && ancestor !== document.body && depth < 3) {
+        // If this ancestor contains at least 2 fields, it's a cluster
+        const fieldsInAncestor = standaloneFields.filter((f) => ancestor!.contains(f.element));
+        if (fieldsInAncestor.length >= 2) {
+          if (!clusterMap.has(ancestor)) {
+            clusterMap.set(ancestor, fieldsInAncestor);
+          }
+          break;
+        }
+        ancestor = ancestor.parentElement;
+        depth++;
+      }
+    }
 
-    // Let's create a map to cluster fields.
-    // An easy heuristic is to group fields if they look like a login or signup together.
-    // If they share a common ancestor that is not the document body (e.g., a specific container div).
-
-    // ACTUALLY, an easier approach for Virtual Forms is to just lump all standalone fields pointing to a 'signup' or 'login' form into one huge virtual form, or cluster them by their bounding client rects.
-
-    // Let's group all standalone fields that are within the same general area, or simply fall back to grouping ALL of them into one body-level virtual form if we detect login/signup signals.
-
-    if (standaloneFields.length > 0) {
-      // Create a virtual container (document.body works as a fallback)
-      const container = document.body;
-      const classification = FormClassifier.classify(container, standaloneFields);
-
-      // Only create a virtual form if we are fairly confident it is a recognizable form type
-      // It prevents us from grouping unrelated random search bars and newsletters together
+    for (const [container, fields] of clusterMap.entries()) {
+      const classification = FormClassifier.classify(container, fields);
       if (classification.type !== 'unknown' && classification.confidence >= 0.4) {
-        const submitButton = FormClassifier.findSubmitButton(container);
         virtualForms.push({
           element: container,
-          selector: 'body', // representing the virtual nature
+          selector: getUniqueSelector(container),
           formType: classification.type,
           confidence: classification.confidence,
-          fields: standaloneFields,
-          submitButton: submitButton ?? undefined,
+          fields,
+          submitButton: FormClassifier.findSubmitButton(container) ?? undefined,
           actionUrl: undefined,
         });
       }

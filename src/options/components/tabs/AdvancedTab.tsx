@@ -1,3 +1,4 @@
+import { Terminal, Save, Cpu, Brain, AlertTriangle } from 'lucide-react';
 import React, { useRef } from 'react';
 
 import { UserSettings, DEFAULT_SETTINGS } from '../../../types/storage.types';
@@ -50,8 +51,7 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
     chrome.storage.local.get(['ghostfill_training_data'], (res) => {
       const data = res.ghostfill_training_data || [];
       if (data.length === 0) {
-        // eslint-disable-next-line no-alert
-        alert(
+        console.warn(
           'No training data collected yet. Right-click editable fields on any website and report misclassifications to collect data.'
         );
         return;
@@ -111,8 +111,7 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
         if (onError) {
           onError('Invalid settings file. Please select a valid GhostFill settings JSON.');
         } else {
-          // eslint-disable-next-line no-alert
-          alert('Invalid settings file. Please select a valid GhostFill settings JSON.');
+          console.warn('Invalid settings file. Please select a valid GhostFill settings JSON.');
         }
       }
     };
@@ -126,7 +125,7 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
 
   return (
     <div role="tabpanel" id="tabpanel-advanced" aria-labelledby="tab-advanced">
-      <SettingsSection id="developer" title="Developer" icon="🛠️">
+      <SettingsSection id="developer" title="Developer" icon={<Terminal size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
             <label id="debug-mode-label">Debug Mode</label>
@@ -141,7 +140,7 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
         </div>
       </SettingsSection>
 
-      <SettingsSection id="backup" title="Backup & Restore" icon="💾">
+      <SettingsSection id="backup" title="Backup & Restore" icon={<Save size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
             <label>Export Settings</label>
@@ -179,9 +178,13 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
         </div>
       </SettingsSection>
 
-      <SettingsSection id="ai-machine-learning" title="AI & Machine Learning" icon="🤖">
+      <SettingsSection
+        id="ai-machine-learning"
+        title="AI & Machine Learning"
+        icon={<Cpu size={18} />}
+      >
         <div className="setting-item vertical-group">
-          <div className="setting-info" style={{ width: '100%' }}>
+          <div className="setting-info w-full">
             <label htmlFor="llm-api-key">OpenAI / Anthropic API Key (Optional)</label>
             <p>Used for enhanced field detection and smart form filling.</p>
           </div>
@@ -193,13 +196,11 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
             onChange={(e) => onSessionSecretChange('llmApiKey', e.target.value)}
             autoComplete="off"
           />
-          <p className="security-note" style={{ color: 'var(--warning)', marginTop: '4px' }}>
-            🔒 Stored in memory only (cleared on extension reload)
-          </p>
+          <p className="security-note">Stored in memory only (cleared on extension reload)</p>
         </div>
       </SettingsSection>
 
-      <SettingsSection id="ml-data" title="Continuous Learning" icon="🧠">
+      <SettingsSection id="ml-data" title="Continuous Learning" icon={<Brain size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
             <label>Export Training Data</label>
@@ -211,7 +212,12 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
         </div>
       </SettingsSection>
 
-      <SettingsSection id="danger-zone" title="Danger Zone" icon="⚠️" variant="danger">
+      <SettingsSection
+        id="danger-zone"
+        title="Danger Zone"
+        icon={<AlertTriangle size={18} />}
+        variant="danger"
+      >
         <div className="setting-item">
           <div className="setting-info">
             <label>Reset Settings</label>
@@ -233,8 +239,7 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
             <p>Delete all emails, passwords, and history</p>
           </div>
           <button
-            className="premium-btn"
-            style={{ background: 'var(--error)' }}
+            className="premium-btn btn-danger"
             onClick={onClearData}
             type="button"
             aria-label="Clear all stored data"

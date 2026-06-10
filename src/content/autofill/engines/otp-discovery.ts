@@ -276,7 +276,7 @@ export class OTPFieldDiscovery {
       isSplit,
       expectedLength: isSplit
         ? sorted.length
-        : (sorted[0]?.maxLength ?? 0 > 0)
+        : (sorted[0]?.maxLength ?? 0) > 0
           ? (sorted[0]?.maxLength ?? 6)
           : 6,
       signals: [`strategy:${strategy}`],

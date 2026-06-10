@@ -25,6 +25,7 @@ import os
 import sys
 import warnings
 
+import numpy as np
 import torch # type: ignore [import]
 import torch.nn as nn # type: ignore [import]
 from torch.utils.data import DataLoader, Dataset # type: ignore [import]
@@ -61,6 +62,10 @@ CLASS_NAMES: list[str] = [
     "OTP",
     "Unknown",
 ]
+
+MODEL_FILENAME = "ghostfill_v1_int8.onnx"
+FP32_FILENAME  = "ghostfill_v1_fp32.onnx"
+DEPLOY_DIR = os.path.join("public", "models")
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -723,39 +728,163 @@ class RealLabeledFormDataset(Dataset):
 # ═════════════════════════════════════════════════════════════════════════════
 
 
-def _dummy_inputs(batch: int = 2):
-    """Returns (text_channels, structural) dummy tensors on DEVICE."""
+def make_splits(dataset, val_frac=0.15, test_frac=0.15, seed=42):
+    """Deterministic train/val/test split (was: no split at all)."""
+    n_total = len(dataset)
+    n_test = int(n_total * test_frac)
+    n_val = int(n_total * val_frac)
+    n_train = n_total - n_val - n_test
+    gen = torch.Generator().manual_seed(seed)
+    return random_split(dataset, [n_train, n_val, n_test], generator=gen)
+
+
+def compute_class_weights(dataset, num_classes):
+    """Inverse-frequency class weights to counter imbalance (esp. Unknown)."""
+    counts = np.zeros(num_classes, dtype=np.float64)
+    for _, _, label in dataset:
+        counts[int(label)] += 1
+    counts = np.clip(counts, 1.0, None)
+    weights = counts.sum() / (num_classes * counts)
+    return torch.tensor(weights, dtype=torch.float32)
+
+
+@torch.no_grad()
+def evaluate(model, loader, device, class_names):
+    """Held-out evaluation: accuracy + per-class precision/recall + confusion."""
+    model.eval()
+    num_classes = len(class_names)
+    confusion = np.zeros((num_classes, num_classes), dtype=np.int64)
+    for text_channels, structural, labels in loader:
+        text_channels = text_channels.to(device)
+        structural = structural.to(device)
+        logits = model(text_channels, structural)
+        preds = logits.argmax(dim=1).cpu().numpy()
+        gold = labels.numpy()
+        for g, p in zip(gold, preds):
+            confusion[int(g), int(p)] += 1
+
+    total = confusion.sum()
+    correct = np.trace(confusion)
+    acc = correct / total if total else 0.0
+    print(f"\nHeld-out accuracy: {acc:.4f} ({correct}/{total})")
+    print(f"{'class':<26}{'prec':>8}{'recall':>8}{'support':>9}")
+    for i, name in enumerate(class_names):
+        tp = confusion[i, i]
+        support = confusion[i, :].sum()
+        predicted = confusion[:, i].sum()
+        precision = tp / predicted if predicted else 0.0
+        recall = tp / support if support else 0.0
+        print(f"{name:<26}{precision:>8.3f}{recall:>8.3f}{support:>9}")
+    return acc, confusion
+
+
+def export_and_quantize(model, sample_text, sample_struct, out_dir="."):
+    """Export FP32 ONNX, dynamic-quantize to INT8, verify parity, deploy."""
+    import onnx
+    from onnxruntime.quantization import QuantType, quantize_dynamic
+
+    fp32_path = os.path.join(out_dir, FP32_FILENAME)
+    int8_path = os.path.join(out_dir, MODEL_FILENAME)
+
+    model.eval()
+    torch.onnx.export(
+        model,
+        (sample_text, sample_struct),
+        fp32_path,
+        input_names=["text_channels", "structural"],
+        output_names=["logits"],
+        dynamic_axes={
+            "text_channels": {0: "batch"},
+            "structural": {0: "batch"},
+            "logits": {0: "batch"},
+        },
+        opset_version=17,
+        dynamo=False,
+    )
+    onnx.checker.check_model(onnx.load(fp32_path))
+
+    quantize_dynamic(
+        fp32_path,
+        int8_path,
+        weight_type=QuantType.QInt8,
+        per_channel=True,  # was False; per-channel recovers accuracy
+    )
+    onnx.checker.check_model(onnx.load(int8_path))
+
+    _parity_check(fp32_path, int8_path, sample_text, sample_struct)
+
+    os.makedirs(DEPLOY_DIR, exist_ok=True)
+    deploy_path = os.path.join(DEPLOY_DIR, MODEL_FILENAME)
+    import shutil
+
+    shutil.copyfile(int8_path, deploy_path)
+    print(f"Deployed INT8 model -> {deploy_path}")
+    return deploy_path
+
+
+def _parity_check(fp32_path, int8_path, sample_text, sample_struct, tol=0.15):
+    """Assert INT8 logits stay close to FP32 on a fixed batch."""
+    import onnxruntime as ort
+
+    feeds = {
+        "text_channels": sample_text.cpu().numpy().astype(np.int64),
+        "structural": sample_struct.cpu().numpy().astype(np.float32),
+    }
+    fp32 = ort.InferenceSession(fp32_path).run(["logits"], feeds)[0]
+    int8 = ort.InferenceSession(int8_path).run(["logits"], feeds)[0]
+    max_abs = float(np.max(np.abs(fp32 - int8)))
+    agree = float(np.mean(fp32.argmax(1) == int8.argmax(1)))
+    print(f"FP32 vs INT8: max|Δlogit|={max_abs:.4f}, argmax agreement={agree:.3f}")
+    if agree < 1.0 - tol:
+        print(f"WARNING: quantization changed {(1 - agree) * 100:.1f}% of predictions")
+
+
+def build_loaders(dataset, batch_size=64):
+    train_ds, val_ds, test_ds = make_splits(dataset)
     return (
-        torch.randint(1, CHAR_VOCAB_SIZE, (batch, NUM_TEXT_CHANNELS, MAX_TEXT_LEN),
-                      dtype=torch.long).to(DEVICE),
-        torch.rand(batch, NUM_STRUCTURAL, dtype=torch.float32).to(DEVICE),
+        DataLoader(train_ds, batch_size=batch_size, shuffle=True),
+        DataLoader(val_ds, batch_size=batch_size),
+        DataLoader(test_ds, batch_size=batch_size),
     )
 
 
-def train_model(model: GhostFillClassifier, epochs: int = 20) -> None:
-    """
-    Train on the real labeled dataset (RealLabeledFormDataset) with
-    realistic keyword-seeded DOM attribute strings per class.
-    500 samples/class × 10 classes = 5,000 samples total, balanced.
-    """
-    dataset = RealLabeledFormDataset(samples_per_class=500, seed=42)
-    loader = DataLoader(dataset, batch_size=32, shuffle=True)
-    opt = torch.optim.AdamW(model.parameters(), lr=5e-4, weight_decay=1e-4)
-    # Cosine annealing for smooth convergence
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs)
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.05)
-    model.train()
+if __name__ == "__main__":
+    device = DEVICE
+    epochs = 20
 
+    print(f"\n{'='*60}")
+    print("  GhostFill ML Training Pipeline")
+    print(f"  Device : {device}")
+    print(f"  Classes: {len(CLASS_NAMES)}")
+    print(f"{'='*60}\n")
+
+    # 1. Initialize dataset and model
+    dataset = RealLabeledFormDataset(samples_per_class=500, seed=42)
+    model = GhostFillClassifier().to(device)
+
+    # 2. Split dataset & Build loaders
+    train_ds, val_ds, test_ds = make_splits(dataset)
+    train_loader, val_loader, test_loader = build_loaders(dataset, batch_size=32)
+
+    # 3. Setup optimizer & weights
+    opt = torch.optim.AdamW(model.parameters(), lr=5e-4, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs)
+
+    class_weights = compute_class_weights(train_ds, num_classes=len(CLASS_NAMES)).to(device)
+    criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.05)
+
+    # 4. Training loop
+    model.train()
     for epoch in range(epochs):
         total_loss = 0.0
         correct = 0
         total = 0
-        for texts, structs, targets in loader:
-            texts = texts.to(DEVICE)       # (B, 8, 80) int64
-            structs = structs.to(DEVICE)   # (B, 64)   float32
-            targets = targets.to(DEVICE)   # (B,)      int64
+        for texts, structs, targets in train_loader:
+            texts = texts.to(device)       # (B, 8, 80) int64
+            structs = structs.to(device)   # (B, 64)   float32
+            targets = targets.to(device)   # (B,)      int64
             opt.zero_grad()
-            logits = model(texts, structs) # type: ignore [misc]
+            logits = model(texts, structs)
             loss = criterion(logits, targets)
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -765,104 +894,29 @@ def train_model(model: GhostFillClassifier, epochs: int = 20) -> None:
             correct += int(torch.eq(preds, targets).sum().item())
             total += targets.size(0)
         scheduler.step()
-        avg = total_loss / len(loader)
+        avg = total_loss / len(train_loader)
         acc = 100.0 * correct / total
         if (epoch + 1) % 5 == 0 or epoch == 0:
             print(f"  Epoch {epoch + 1:3d}/{epochs}  loss={avg:.4f}  acc={acc:.1f}%")
 
     print(f"\nFinal training accuracy: {100.0 * correct / total:.1f}% ({correct}/{total})")
-    print("NOTE: 90%+ training acc = model learned real field patterns correctly")
-    print("      To further improve: collect & annotate real form data from the web.\n")
 
+    # 5. Evaluation
+    print("\n=== Validation ===")
+    evaluate(model, val_loader, device, CLASS_NAMES)
+    print("\n=== Test (held-out) ===")
+    evaluate(model, test_loader, device, CLASS_NAMES)
 
-def export_onnx(model: GhostFillClassifier, path: str) -> None:
-    """
-    Exports the model to ONNX using the legacy TorchScript exporter
-    (torch.onnx.export with dynamo=False).  This is required to avoid
-    known Dynamo shape-inference issues with dynamic batch sizes.
-    """
-    model.eval()
-    dummy_text, dummy_struct = _dummy_inputs(batch=2)
+    # 6. Export and quantize
+    print("\n[Export & Quantize]")
+    sample_batch = next(iter(val_loader))
+    sample_text, sample_struct, _ = sample_batch
+    sample_text  = sample_text[:1].to(device)
+    sample_struct = sample_struct[:1].to(device)
+    export_and_quantize(model, sample_text, sample_struct, out_dir=".")
 
-    with torch.no_grad():
-        torch.onnx.export(
-            model,
-            (dummy_text, dummy_struct),
-            path,
-            dynamo=False,           # Force legacy TorchScript exporter
-            export_params=True,
-            opset_version=17,       # MHA support; compatible with modern ort-web
-            do_constant_folding=True,
-            input_names=["text_channels", "structural"],
-            output_names=["logits"],
-            dynamic_axes={
-                "text_channels": {0: "batch_size"},
-                "structural":    {0: "batch_size"},
-                "logits":        {0: "batch_size"},
-            },
-        )
-
-    # Validate the exported graph
-    onnx_model = onnx.load(path)
-    onnx.checker.check_model(onnx_model)
-    size_mb = os.path.getsize(path) / 1e6
-    print(f"  FP32 ONNX  →  {path}  ({size_mb:.2f} MB)  [graph validated]")
-
-
-def quantize_model(fp32_path: str, int8_path: str) -> None:
-    """Applies INT8 dynamic quantization (weights only) for browser inference."""
-    quantize_dynamic(
-        model_input=fp32_path,
-        model_output=int8_path,
-        weight_type=QuantType.QInt8,
-        per_channel=False,
-    )
-    size_mb = os.path.getsize(int8_path) / 1e6
-    print(f"  INT8 ONNX  →  {int8_path}  ({size_mb:.2f} MB)")
-
-
-def train_and_export(out_dir: str = ".") -> None:
-    """Entry point: train → export FP32 ONNX → quantise to INT8."""
-    fp32_path = os.path.join(out_dir, "ghostfill_v1_fp32.onnx")
-    int8_path = os.path.join(out_dir, "ghostfill_v1_int8.onnx")
-    classes_path = os.path.join(out_dir, "ghostfill_classes.json")
-
-    print(f"\n{'='*60}")
-    print("  GhostFill ML Training Pipeline")
-    print(f"  Device : {DEVICE}")
-    print(f"  Classes: {NUM_CLASSES}")
-    print(f"{'='*60}\n")
-
-    # ── 1. Initialise model ───────────────────────────────────────────────────
-    model = GhostFillClassifier().to(DEVICE)
-    total_params = sum(p.numel() for p in model.parameters())
-    print(f"[1/4] Model initialised  ({total_params:,} parameters)\n")
-
-    # ── 2. Real labeled training ──────────────────────────────────────────────
-    print("[2/4] Real labeled training (RealLabeledFormDataset, 500 samples/class)...")
-    train_model(model, epochs=20)
-    print()
-
-    # ── 3. Export FP32 ONNX ──────────────────────────────────────────────────
-    print("[3/4] Exporting FP32 ONNX model...")
-    export_onnx(model, fp32_path)
-    print()
-
-    # ── 4. INT8 Quantisation ─────────────────────────────────────────────────
-    print("[4/4] Applying INT8 dynamic quantisation...")
-    quantize_model(fp32_path, int8_path)
-    print()
-
-    # ── 5. Save class names ───────────────────────────────────────────────────
+    # 7. Save class names
+    classes_path = os.path.join(".", "ghostfill_classes.json")
     with open(classes_path, "w", encoding="utf-8") as f:
         json.dump(CLASS_NAMES, f, indent=2, ensure_ascii=False)
     print(f"  Classes    →  {classes_path}")
-
-    print(f"\n{'='*60}")
-    print("  Export complete. Place ghostfill_v1_int8.onnx in:")
-    print("  public/models/ghostfill_v1_int8.onnx")
-    print(f"{'='*60}\n")
-
-
-if __name__ == "__main__":
-    train_and_export()

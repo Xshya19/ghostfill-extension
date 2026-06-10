@@ -5,10 +5,10 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import type { EmailZone, ZoneType } from '../types/extraction.types';
-import { decodeHtmlEntities } from './urlExtractor';
+import { decodeHtmlEntities, stripHtml, stripHtmlPreserveStructure } from '../utils';
 
 // Re-export for use by other modules
-export { decodeHtmlEntities };
+export { decodeHtmlEntities, stripHtml, stripHtmlPreserveStructure };
 
 // ═══════════════════════════════════════════════════════════════════════
 //  ZONE WEIGHTS CONFIGURATION
@@ -81,60 +81,7 @@ const FOOTER_SIGNALS = [
 //  HTML STRIPPING UTILITIES
 // ═══════════════════════════════════════════════════════════════════════
 
-/**
- * Strips HTML tags and returns plain text with structure preserved
- * @param html - The HTML content to strip
- * @returns Plain text with newlines for structure
- */
-export function stripHtmlPreserveStructure(html: string): string {
-  if (!html) {
-    return '';
-  }
-
-  return html
-    .replace(/<style[^>]*>[\s\S]{0,50000}?<\/style>/gi, '')
-    .replace(/<script[^>]*>[\s\S]{0,50000}?<\/script>/gi, '')
-    .replace(/<head[^>]*>[\s\S]{0,50000}?<\/head>/gi, '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n\n')
-    .replace(/<\/div>/gi, '\n')
-    .replace(/<\/tr>/gi, '\n')
-    .replace(/<\/td>/gi, '  ')
-    .replace(/<\/li>/gi, '\n')
-    .replace(/<\/h[1-6]>/gi, '\n\n')
-    .replace(/<hr[^>]{0,50}>/gi, '\n---\n')
-    .replace(/<[^>]{1,500}>/g, ' ')
-    .replace(/[ \t]+/g, ' ')
-    .replace(/\n /g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
-/**
- * Strips HTML tags and returns compact plain text
- * @param html - The HTML content to strip
- * @returns Compact plain text
- */
-export function stripHtml(html: string): string {
-  if (!html) {
-    return '';
-  }
-
-  return html
-    .replace(/<style[^>]*>[\s\S]{0,50000}?<\/style>/gi, ' ')
-    .replace(/<script[^>]*>[\s\S]{0,50000}?<\/script>/gi, ' ')
-    .replace(/<head[^>]*>[\s\S]{0,50000}?<\/head>/gi, ' ')
-    .replace(/<noscript[^>]*>[\s\S]{0,50000}?<\/noscript>/gi, ' ')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<\/div>/gi, '\n')
-    .replace(/<\/tr>/gi, '\n')
-    .replace(/<\/li>/gi, '\n')
-    .replace(/<\/h[1-6]>/gi, '\n')
-    .replace(/<[^>]{1,500}>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+// HTML stripping utilities are imported from utils/extraction.utils.ts
 
 // ═══════════════════════════════════════════════════════════════════════
 //  ZONE ANALYSIS

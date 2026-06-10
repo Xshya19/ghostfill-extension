@@ -130,10 +130,9 @@ export class VisualStateTracker {
       return true;
     }
 
-    // If it's display:none but some script is about to change it (hard to tell without proxying)
-    // We can check attributes like "data-loading" or "hidden" which are often toggled
+    // Hidden elements are unlikely to become visible — don't waste resources on them
     if (el.hasAttribute('hidden') || el.classList.contains('hidden')) {
-      return true;
+      return false;
     }
 
     return false;

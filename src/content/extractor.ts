@@ -5,28 +5,34 @@
  * advanced keyword detection, and form context analysis.
  */
 
+import { deepQuerySelectorAll } from '../utils/helpers';
+
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 export const CHAR_VOCAB_SIZE = 256;
 export const MAX_TEXT_LEN = 80;
 export const NUM_TEXT_CHANNELS = 8;
-export const NUM_STRUCTURAL_FEATURES = 128;
+// Model contract: 64-dim structural vector. Indices 0–55 are populated below;
+// 56–63 are reserved/zero for forward compatibility.
+export const NUM_STRUCTURAL_FEATURES = 64;
 
+// Canonical 10-class label space used by the trained model.
 export const FIELD_CLASSES = [
-  'username',
-  'email',
-  'password',
-  'confirm_password',
-  'otp',
-  'phone',
-  'submit_button',
-  'honeypot',
-  'unknown',
+  'Email',
+  'Username',
+  'Password',
+  'Target_Password_Confirm',
+  'First_Name',
+  'Last_Name',
+  'Full_Name',
+  'Phone',
+  'OTP',
+  'Unknown',
 ];
 
 export interface RawFieldFeatures {
   textChannels: Int32Array[]; // 8 channels, each length 80
-  structural: Float32Array; // length 128
+  structural: Float32Array; // length 64
   element: HTMLInputElement | HTMLTextAreaElement;
   isVisible: boolean;
 }
@@ -700,7 +706,7 @@ export function extractContextualFeatures(
 ): ContextualFieldFeatures {
   const base = extractFeatures(el);
   const form = el.closest('form, [role="form"]');
-  const allInputs = Array.from(document.querySelectorAll('input, textarea'));
+  const allInputs = deepQuerySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea');
   const idx = allInputs.indexOf(el);
 
   return {

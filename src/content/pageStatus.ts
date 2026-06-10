@@ -51,30 +51,32 @@ class PageStatusInjector {
     const STYLES = `
             :host {
                 all: initial;
-                font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif;
+                font-family: "Space Grotesk", -apple-system, BlinkMacSystemFont, sans-serif;
+                position: fixed;
+                top: 0;
+                right: 0;
+                z-index: 2147483645;
+                isolation: isolate;
+                pointer-events: none;
             }
 
             .status-banner {
                 position: fixed;
                 top: 16px;
                 right: 16px;
-                z-index: 2147483647;
+                z-index: 2147483645;
                 display: flex;
                 align-items: center;
-                gap: 10px;
+                gap: 12px;
                 padding: 12px 18px;
-                background: linear-gradient(135deg, rgba(99, 102, 241, 0.95), rgba(139, 92, 246, 0.95));
-                backdrop-filter: blur(20px);
-                -webkit-backdrop-filter: blur(20px);
-                border: 1px solid rgba(255, 255, 255, 0.2);
-                border-radius: 14px;
-                box-shadow: 
-                    0 8px 32px rgba(99, 102, 241, 0.3),
-                    0 4px 16px rgba(0, 0, 0, 0.15),
-                    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+                background: var(--gf-card, #211B3D); /* SOLID SURFACE */
+                border: 2px solid var(--gf-ink, #000); /* THICK INK BORDER */
+                border-radius: 8px;
+                box-shadow: 4px 4px 0 var(--gf-ink, #000); /* HARD MEMPHIS SHADOW */
                 transform: translateX(120%);
-                transition: transform 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+                transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
                 pointer-events: auto;
+                font-family: "Space Grotesk", sans-serif;
             }
 
             .status-banner.visible {
@@ -82,24 +84,17 @@ class PageStatusInjector {
             }
 
             .status-banner.success {
-                background: linear-gradient(135deg, rgba(34, 197, 94, 0.95), rgba(16, 185, 129, 0.95));
-                box-shadow: 0 8px 32px rgba(34, 197, 94, 0.3), 0 4px 16px rgba(0, 0, 0, 0.15);
+                background: var(--gf-mint, #62F2B3);
             }
 
             .status-banner.error {
-                background: linear-gradient(135deg, rgba(30, 30, 30, 0.95), rgba(40, 40, 40, 0.95));
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), 0 4px 16px rgba(0, 0, 0, 0.15);
-                border-left: 3px solid #ff453a;
+                background: var(--gf-coral, #FF6A4D);
+                border-left: 4px solid var(--gf-ink, #000);
             }
 
             .ghost-icon {
                 font-size: 20px;
-                animation: float 2s ease-in-out infinite;
-            }
-
-            @keyframes float {
-                0%, 100% { transform: translateY(0); }
-                50% { transform: translateY(-3px); }
+                animation: none;
             }
 
             .spinner {
@@ -116,31 +111,33 @@ class PageStatusInjector {
             }
 
             .status-text {
-                color: white;
+                color: var(--gf-cream, #FFF3D6);
                 font-size: 13px;
-                font-weight: 600;
-                letter-spacing: -0.01em;
-                white-space: nowrap;
+                font-weight: 700;
+                letter-spacing: 0.02em;
+                text-transform: uppercase;
+                text-shadow: 1px 1px 0 var(--gf-ink, #000); /* INK TEXT OUTLINE */
             }
 
             .close-btn {
-                background: rgba(255, 255, 255, 0.2);
-                border: none;
-                border-radius: 50%;
+                background: var(--gf-ink, #000);
+                border: 2px solid var(--gf-ink, #000);
+                border-radius: 4px;
                 width: 20px;
                 height: 20px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 cursor: pointer;
-                color: white;
-                font-size: 12px;
+                color: var(--gf-cream, #FFF3D6);
+                font-size: 10px;
                 margin-left: 4px;
-                transition: background 0.2s;
+                font-weight: bold;
+                transition: transform 0.1s;
             }
 
             .close-btn:hover {
-                background: rgba(255, 255, 255, 0.3);
+                transform: translate(-1px, -1px);
             }
 
             @media (prefers-reduced-motion: reduce) {
@@ -162,7 +159,7 @@ class PageStatusInjector {
             <span class="ghost-icon">👻</span>
             <div class="spinner"></div>
             <span class="status-text">GhostFill Active</span>
-            <button class="close-btn">✕</button>
+            <button class="close-btn" role="button" aria-label="Dismiss">✕</button>
         `
     );
 

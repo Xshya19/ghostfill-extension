@@ -3,7 +3,7 @@ import React from 'react';
 interface SettingsSectionProps {
   id: string;
   title: string;
-  icon: string;
+  icon: React.ReactNode;
   children: React.ReactNode;
   variant?: 'default' | 'danger';
 }
@@ -21,7 +21,10 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({
       aria-labelledby={`${id}-title`}
     >
       <h2 id={`${id}-title`}>
-        {icon} {title}
+        <span className="section-icon" aria-hidden="true">
+          {icon}
+        </span>{' '}
+        {title}
       </h2>
       {children}
     </section>

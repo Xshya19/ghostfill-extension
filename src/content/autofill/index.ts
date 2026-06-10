@@ -11,7 +11,3 @@ export * from './engines/field-watcher';
 export * from './engines/otp-filler';
 export * from './engines/auto-submit';
 export * from './engines/phantom-typer';
-export * from './utils/field-classifier';
-
-export * from './engines/phantom-typer';
-export * from './utils/field-classifier';

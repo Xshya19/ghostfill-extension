@@ -4,7 +4,7 @@
 // ┌──────────────────────────────────────────────────────────────────┐
 // │  Pipeline                                                       │
 // │                                                                 │
-// │  notifyXXX()                                                    │
+// │  notify(type, payload)                                          │
 // │       │                                                         │
 // │       ▼                                                         │
 // │  ┌────────────┐                                                 │
@@ -213,7 +213,7 @@ export function initNotifications(): void {
   initialized = true;
 
   // Check if chrome.storage.session is available (MV3)
-  sessionStorageAvailable = Boolean(chrome?.storage?.session);
+  sessionStorageAvailable = typeof chrome !== 'undefined' && Boolean(chrome.storage?.session);
 
   // Restore dedup cache from session storage
   if (sessionStorageAvailable) {
@@ -1075,7 +1075,7 @@ async function copyToClipboard(text: string): Promise<void> {
     if (success) {
       await chrome.notifications.create(`gf-success-${Date.now()}`, {
         type: 'basic',
-        iconUrl: 'assets/icon-128.png',
+        iconUrl: DEFAULT_ICON_PATH,
         title: 'GhostFill',
         message: `OTP copied to clipboard`,
         priority: 1,

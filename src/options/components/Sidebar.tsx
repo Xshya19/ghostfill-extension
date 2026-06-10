@@ -1,3 +1,4 @@
+import { Settings, Mail, Lock, Zap, Shield, Brain, Info } from 'lucide-react';
 import React from 'react';
 
 export type TabId =
@@ -12,17 +13,17 @@ export type TabId =
 interface TabItem {
   id: TabId;
   label: string;
-  icon: string;
+  icon: React.ReactNode;
 }
 
 const TABS: TabItem[] = [
-  { id: 'general', label: 'General', icon: '🎨' },
-  { id: 'email', label: 'Email', icon: '📧' },
-  { id: 'password', label: 'Passwords', icon: '🔐' },
-  { id: 'automation', label: 'Automation', icon: '⚡' },
-  { id: 'privacy', label: 'Privacy', icon: '🔒' },
-  { id: 'advanced', label: 'Advanced', icon: '🧠' },
-  { id: 'about', label: 'About', icon: 'ℹ️' },
+  { id: 'general', label: 'General', icon: <Settings size={18} /> },
+  { id: 'email', label: 'Email', icon: <Mail size={18} /> },
+  { id: 'password', label: 'Passwords', icon: <Lock size={18} /> },
+  { id: 'automation', label: 'Automation', icon: <Zap size={18} /> },
+  { id: 'privacy', label: 'Privacy', icon: <Shield size={18} /> },
+  { id: 'advanced', label: 'Advanced', icon: <Brain size={18} /> },
+  { id: 'about', label: 'About', icon: <Info size={18} /> },
 ];
 
 interface SidebarProps {

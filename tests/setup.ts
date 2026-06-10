@@ -81,6 +81,9 @@ const chromeMock = {
   commands: {
     getAll: vi.fn().mockResolvedValue([]),
   },
+  downloads: {
+    download: vi.fn().mockResolvedValue(1),
+  },
 } as unknown as typeof chrome;
 
 globalThis.chrome = chromeMock;
@@ -124,6 +127,16 @@ if (!globalThis.navigator?.clipboard) {
 if (!globalThis.performance) {
   Object.defineProperty(globalThis, 'performance', {
     value: { now: vi.fn(() => Date.now()) },
+    configurable: true,
+  });
+}
+
+// Mock CSS.escape for JSDOM
+if (!globalThis.CSS) {
+  Object.defineProperty(globalThis, 'CSS', {
+    value: {
+      escape: (val: string) => val.replace(/([^\w-])/g, '\\$1'),
+    },
     configurable: true,
   });
 }

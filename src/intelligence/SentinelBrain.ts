@@ -6,13 +6,13 @@
  * ╚══════════════════════════════════════════════════════════════════╝
  */
 
+import { extractFeatures } from '../content/extractor';
 import { DetectedField } from '../types/sentinel';
 import { createLogger } from '../utils/logger';
 import { ActiveLearningController } from './active-learning/ActiveLearningController';
 import { MultilingualKeywordEngine } from './heuristic/MultilingualKeywordEngine';
 import { VisualStateTracker } from './heuristic/VisualStateTracker';
 import { BayesianMetaLearner } from './meta/BayesianMetaLearner';
-import { FeatureExtractorV2 } from './ml/FeatureExtractorV2';
 import { MLService } from './ml/MLService';
 import { AuthSessionTracker } from './navigator/AuthSessionTracker';
 import { IFrameProxyV2 } from './navigator/IFrameProxyV2';
@@ -25,7 +25,6 @@ export class SentinelBrain {
   private static disabled = false;
   private static initPromise: Promise<void> | null = null;
   private static observer: MutationObserver | null = null;
-  private static extractor = new FeatureExtractorV2();
   private static visualTracker = new VisualStateTracker();
   private static sprayDetector = new LayoutPatternDetector();
 
@@ -92,7 +91,6 @@ export class SentinelBrain {
 
     const results: DetectedField[] = [];
     const domain = window.location.hostname;
-    const url = window.location.href;
     const language = MultilingualKeywordEngine.detectPageLanguage();
 
     // ── Phase 1: Spatial & Context Scan ──
@@ -105,26 +103,31 @@ export class SentinelBrain {
         continue;
       }
 
-      // ML Inference
-      const features = this.extractor.extract(el, {
-        domain,
-        url,
-        isAuthPage: true,
-        totalVisibleInputs: elements.length,
-      });
-      const mlResult = await MLService.predict(features);
+      // ML Inference — use the DOM extractor that produces RawFieldFeatures
+      // (textChannels + structural + isVisible), matching MLService.predict()'s
+      // PredictFeatures = Omit<RawFieldFeatures, 'element'>.
+      const rawFeatures = extractFeatures(el as HTMLInputElement);
+      const mlResult = await MLService.predict(rawFeatures);
 
       // Heuristic Checks
       const keywordResult = MultilingualKeywordEngine.detect(el, language);
 
       // ── Phase 3: Bayesian Fusion ──
-      // Mapping to the ensemble structure expected by BayesianMetaLearner.fuse
-      const layerOutputs: any = {
-        ml: { [mlResult.type]: mlResult.confidence },
+      const mlScores: Record<string, number> = {};
+      if (mlResult) {
+        mlScores[mlResult.type] = mlResult.confidence;
+      }
+
+      const clusterMatch = clusters.find((c) => c.elements.includes(el));
+      const spatialScores: Record<string, number> = {};
+      if (clusterMatch) {
+        spatialScores[clusterMatch.layoutPattern] = 0.8;
+      }
+
+      const layerOutputs: Record<string, Record<string, number>> = {
+        ml: mlScores,
         heuristic: keywordResult,
-        spatial: {
-          [clusters.find((c) => c.elements.includes(el))?.layoutPattern || 'unknown']: 0.8,
-        },
+        spatial: spatialScores,
       };
 
       const fused = await BayesianMetaLearner.fuse(domain, layerOutputs);

@@ -9,6 +9,7 @@ import { UserSettings } from './storage.types';
 export type MessageAction =
   // Email actions
   | 'GENERATE_EMAIL'
+  | 'GENERATE_GMAIL_ALIAS'
   | 'GET_CURRENT_EMAIL'
   | 'CHECK_INBOX'
   | 'READ_EMAIL'
@@ -62,6 +63,7 @@ export type MessageAction =
   | 'PING'
   // ML Inference actions
   | 'CLASSIFY_FIELD'
+  | 'CHECK_ML'
   | 'PREWARM_ML'
   | 'REPORT_MISCLASSIFICATION'
   | 'LINK_ACTIVATED'
@@ -72,7 +74,16 @@ export type MessageAction =
   // Event-driven polling triggers
   | 'REGISTRATION_FORM_SUBMITTED'
   // Diagnostic export
-  | 'GET_DIAGNOSTIC_REPORT';
+  | 'GET_DIAGNOSTIC_REPORT'
+  // Gmail API actions
+  | 'GMAIL_SIGN_IN'
+  | 'GMAIL_SIGN_OUT'
+  | 'GMAIL_FETCH_INBOX'
+  | 'GMAIL_GET_MESSAGE'
+  | 'GMAIL_GET_STATUS'
+  | 'GMAIL_SEARCH'
+  | 'GMAIL_LIST_LABELS'
+  | 'DOWNLOAD_TRAINING_DATA';
 
 // Base message interface
 export interface BaseMessage {
@@ -113,6 +124,13 @@ export interface GenerateEmailMessage extends BaseMessage {
     prefix?: string;
     domain?: string;
     service?: EmailService;
+  };
+}
+
+export interface GenerateGmailAliasMessage extends BaseMessage {
+  action: 'GENERATE_GMAIL_ALIAS';
+  payload?: {
+    domain?: string;
   };
 }
 
@@ -457,6 +475,11 @@ export interface ClassifyFieldMessage extends BaseMessage {
   };
 }
 
+export interface CheckMLMessage extends BaseMessage {
+  action: 'CHECK_ML';
+  payload?: any;
+}
+
 export interface PrewarmMLMessage extends BaseMessage {
   action: 'PREWARM_ML';
 }
@@ -529,15 +552,167 @@ export interface GetDiagnosticReportMessage extends BaseMessage {
   action: 'GET_DIAGNOSTIC_REPORT';
 }
 
+export interface DownloadTrainingDataMessage extends BaseMessage {
+  action: 'DOWNLOAD_TRAINING_DATA';
+  payload: {
+    data: string;
+  };
+}
+
 export interface DiagnosticReportResponse {
   success: boolean;
   report?: unknown;
   error?: string;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Gmail API types
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface GmailProfile {
+  email: string;
+  name?: string;
+  picture?: string;
+  messagesTotal?: number;
+  historyId?: string;
+}
+
+export interface GmailMessageHeader {
+  name: string;
+  value: string;
+}
+
+export interface GmailMessagePayload {
+  headers: GmailMessageHeader[];
+  body?: { data?: string; size?: number };
+  parts?: GmailMessagePayload[];
+  mimeType?: string;
+}
+
+export interface GmailMessage {
+  id: string;
+  threadId: string;
+  snippet: string;
+  subject: string;
+  from: string;
+  fromEmail: string;
+  fromName: string;
+  to?: string;
+  cc?: string;
+  bcc?: string;
+  deliveredTo?: string;
+  xOriginalTo?: string;
+  headers?: Array<{ name: string; value: string }>;
+  date: number;
+  dateFormatted: string;
+  body?: string;
+  /** Separate HTML body for link detection — may differ from plain-text `body` */
+  htmlBody?: string;
+  isUnread: boolean;
+  labelIds: string[];
+}
+
+// Gmail sign-in message
+export interface GmailSignInMessage extends BaseMessage {
+  action: 'GMAIL_SIGN_IN';
+}
+
+export interface GmailAuthIssueResponse {
+  silentAuthBlocked: boolean;
+  reason: string | null;
+  retryAt: number | null;
+  permanent: boolean;
+}
+
+export interface GmailClientIdStatusResponse {
+  configured: boolean;
+  usingBundledClientId: boolean;
+  blocked: boolean;
+  reason: string | null;
+}
+
+export interface GmailSignInResponse {
+  success: boolean;
+  profile?: GmailProfile;
+  error?: string;
+  setupRequired?: boolean;
+  authIssue?: GmailAuthIssueResponse;
+  clientIdStatus?: GmailClientIdStatusResponse;
+}
+
+// Gmail sign-out message
+export interface GmailSignOutMessage extends BaseMessage {
+  action: 'GMAIL_SIGN_OUT';
+}
+
+// Gmail fetch inbox message
+export interface GmailFetchInboxMessage extends BaseMessage {
+  action: 'GMAIL_FETCH_INBOX';
+  payload?: {
+    query?: string;
+    maxResults?: number;
+    alias?: string;
+    forceFull?: boolean;
+  };
+}
+
+export interface GmailFetchInboxResponse {
+  success: boolean;
+  messages?: GmailMessage[];
+  source?: 'cache' | 'full' | 'history';
+  cached?: boolean;
+  error?: string;
+}
+
+// Gmail get single message
+export interface GmailGetMessageMessage extends BaseMessage {
+  action: 'GMAIL_GET_MESSAGE';
+  payload: { messageId: string; alias?: string };
+}
+
+export interface GmailGetMessageResponse {
+  success: boolean;
+  message?: GmailMessage;
+  error?: string;
+}
+
+// Gmail get auth status
+export interface GmailGetStatusMessage extends BaseMessage {
+  action: 'GMAIL_GET_STATUS';
+}
+
+export interface GmailGetStatusResponse {
+  success: boolean;
+  connected: boolean;
+  profile?: GmailProfile;
+  error?: string;
+  authIssue?: GmailAuthIssueResponse;
+  clientIdStatus?: GmailClientIdStatusResponse;
+}
+
+export interface GmailSearchMessage extends BaseMessage {
+  action: 'GMAIL_SEARCH';
+  payload?: {
+    query?: string;
+    maxResults?: number;
+    alias?: string;
+  };
+}
+
+export interface GmailListLabelsMessage extends BaseMessage {
+  action: 'GMAIL_LIST_LABELS';
+}
+
+export interface GmailListLabelsResponse {
+  success: boolean;
+  labels?: Array<{ id: string; name: string; type: string }>;
+  error?: string;
+}
+
 // Union type for all messages
 export type ExtensionMessage =
   | GenerateEmailMessage
+  | GenerateGmailAliasMessage
   | GetCurrentEmailMessage
   | CheckInboxMessage
   | ReadEmailMessage
@@ -578,6 +753,7 @@ export type ExtensionMessage =
   | CheckOTPNowMessage
   | MarkOTPUsedMessage
   | ClassifyFieldMessage
+  | CheckMLMessage
   | PingMessage
   | PrewarmMLMessage
   | ReportMisclassificationMessage
@@ -587,7 +763,15 @@ export type ExtensionMessage =
   | FallbackDomainsUsedMessage
   | ResetStateMessage
   | RegistrationFormSubmittedMessage
-  | GetDiagnosticReportMessage;
+  | GetDiagnosticReportMessage
+  | GmailSignInMessage
+  | GmailSignOutMessage
+  | GmailFetchInboxMessage
+  | GmailGetMessageMessage
+  | GmailGetStatusMessage
+  | GmailSearchMessage
+  | GmailListLabelsMessage
+  | DownloadTrainingDataMessage;
 
 // Response union type
 export type ExtensionResponse =
@@ -607,6 +791,11 @@ export type ExtensionResponse =
   | ClassifyFieldResponse
   | AnalyzeDOMResponse
   | DiagnosticReportResponse
+  | GmailSignInResponse
+  | GmailFetchInboxResponse
+  | GmailGetMessageResponse
+  | GmailGetStatusResponse
+  | GmailListLabelsResponse
   | { success: boolean; health?: unknown[]; error?: string }
   | { success: boolean; isFresh?: boolean; error?: string }
   | { success: boolean; error?: string };

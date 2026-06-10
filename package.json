@@ -15,9 +15,10 @@
     "test:ui": "vitest --ui",
     "test:watch": "vitest",
     "type-check": "tsc --noEmit",
+    "eval": "tsx src/intelligence/eval/runEval.ts",
     "clean": "rimraf dist",
     "zip": "node scripts/build-zip.js",
-    "build:zip": "npm run zip"
+    "build:zip": "npm run build && npm run zip"
   },
   "keywords": [
     "chrome-extension",
@@ -35,7 +36,7 @@
     "dompurify": "^3.3.3",
     "framer-motion": "^12.23.26",
     "lucide-react": "^0.562.0",
-    "onnxruntime-web": "^1.24.3",
+    "onnxruntime-web": "^1.26.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "zod": "^4.3.6",
@@ -48,16 +49,17 @@
     "@types/node": "^20.19.37",
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
-    "@typescript-eslint/eslint-plugin": "^8.0.0",
-    "@typescript-eslint/parser": "^8.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.60.1",
+    "@typescript-eslint/parser": "^8.60.1",
+    "@vitest/coverage-v8": "^4.1.8",
     "@vitest/ui": "^4.1.2",
     "archiver": "^7.0.1",
     "clean-css": "^5.3.3",
     "copy-webpack-plugin": "^14.0.0",
     "css-loader": "^6.8.1",
     "csv-parse": "^6.2.1",
-    "eslint": "^8.56.0",
-    "eslint-import-resolver-typescript": "^4.4.4",
+    "eslint": "^8.57.1",
+    "eslint-import-resolver-typescript": "3.5.5",
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react": "^7.33.2",
@@ -74,8 +76,18 @@
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
     "typescript": "^5.3.3",
-    "vitest": "^4.1.2",
+    "vitest": "^4.1.8",
     "webpack": "^5.89.0",
     "webpack-cli": "^5.1.4"
+  },
+  "overrides": {
+    "protobufjs": "^7.6.2",
+    "@protobufjs/utf8": "^1.1.1",
+    "brace-expansion": "^5.0.6",
+    "fast-uri": "^3.1.2"
+  },
+  "allowScripts": {
+    "esbuild@0.27.4": true,
+    "protobufjs@7.6.2": true
   }
 }

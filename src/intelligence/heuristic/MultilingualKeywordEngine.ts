@@ -1,20 +1,26 @@
 /**
- * ╔══════════════════════════════════════════════════════════════════╗
- * ║  MULTILINGUAL KEYWORD ENGINE — Global Semantic Detector        ║
- * ║  Provides domain-specific keyword profiles for 20+ languages.  ║
- * ║  Uses trigram analysis for zero-config language detection.     ║
- * ╚══════════════════════════════════════════════════════════════════╝
+ * MULTILINGUAL KEYWORD ENGINE — FIXED
+ *
+ * Corrections vs. original:
+ *  - Emits scores keyed by the CANONICAL FIELD_CLASSES (e.g. 'Email','Password',
+ *    'OTP') — NOT the lowercase FieldType union. This is the bug that made the
+ *    heuristic layer contribute ZERO to BayesianMetaLearner.fuse (its keys never
+ *    matched the fusedScores keys).
+ *  - Adds an `email` profile (was entirely missing) plus more languages.
+ *  - Label selector uses CSS.escape and guards empty id.
+ *  - Honest docstring (substring matching, 5 languages).
  */
 
 import { FIELD_CLASSES } from '../../content/extractor';
-import { FieldType } from '../ml/FeatureExtractorV2';
+
+/** Canonical class names produced by the model / extractor. */
+type CanonicalClass = (typeof FIELD_CLASSES)[number];
 
 export interface KeywordProfile {
   language: string; // ISO 639-1
-  field_type: FieldType;
+  field_class: CanonicalClass;
   exact_matches: string[];
   partial_patterns: string[];
-  semantic_stems: string[];
   negative_signals: string[];
 }
 
@@ -22,75 +28,130 @@ export class MultilingualKeywordEngine {
   private static profiles: Map<string, KeywordProfile[]> = new Map();
 
   static {
-    // EN - English
     this.addProfile('en', [
       {
         language: 'en',
-        field_type: 'username',
+        field_class: 'Email',
+        exact_matches: ['email', 'e-mail', 'mail'],
+        partial_patterns: ['email', 'e-mail'],
+        negative_signals: ['password', 'phone'],
+      },
+      {
+        language: 'en',
+        field_class: 'Username',
         exact_matches: ['username', 'user', 'login', 'userid', 'account'],
         partial_patterns: ['user', 'login'],
-        semantic_stems: ['user', 'login', 'name'],
         negative_signals: ['password', 'otp', 'email'],
       },
       {
         language: 'en',
-        field_type: 'password',
+        field_class: 'Password',
         exact_matches: ['password', 'passwd', 'pwd', 'secret'],
         partial_patterns: ['pass', 'pwd'],
-        semantic_stems: ['pass', 'pwd', 'secret'],
+        negative_signals: ['username', 'email', 'confirm'],
+      },
+      {
+        language: 'en',
+        field_class: 'Target_Password_Confirm',
+        exact_matches: ['confirm password', 'repeat password', 'retype password'],
+        partial_patterns: ['confirm', 'repeat', 'retype', 'again'],
         negative_signals: ['username', 'email'],
       },
       {
         language: 'en',
-        field_type: 'otp_digit',
-        exact_matches: ['otp', 'verification_code', 'code', 'pin', 'token'],
-        partial_patterns: ['otp', 'code', 'verify'],
-        semantic_stems: ['code', 'verify', 'auth'],
+        field_class: 'OTP',
+        exact_matches: ['otp', 'code', 'pin', 'token', 'passcode'],
+        partial_patterns: ['otp', 'code', 'verify', 'passcode', '2fa', 'mfa'],
         negative_signals: ['password', 'email'],
+      },
+      {
+        language: 'en',
+        field_class: 'Phone',
+        exact_matches: ['phone', 'mobile', 'tel', 'telephone', 'cell'],
+        partial_patterns: ['phone', 'mobile', 'tel'],
+        negative_signals: ['email', 'password'],
       },
     ]);
 
-    // ES - Spanish
     this.addProfile('es', [
       {
         language: 'es',
-        field_type: 'username',
+        field_class: 'Username',
         exact_matches: ['usuario', 'nombre_usuario', 'cuenta', 'identificador'],
         partial_patterns: ['usu', 'cuenta'],
-        semantic_stems: ['usu', 'nom', 'cuenta'],
         negative_signals: ['contraseña'],
       },
       {
         language: 'es',
-        field_type: 'password',
-        exact_matches: ['contraseña', 'clave', 'secreta', 'pass'],
-        partial_patterns: ['contrax', 'clave'],
-        semantic_stems: ['contra', 'clave'],
+        field_class: 'Email',
+        exact_matches: ['correo', 'correo electrónico', 'email'],
+        partial_patterns: ['correo', 'email'],
+        negative_signals: ['contraseña'],
+      },
+      {
+        language: 'es',
+        field_class: 'Password',
+        exact_matches: ['contraseña', 'clave', 'secreta'],
+        partial_patterns: ['contra', 'clave', 'contraseñ'],
         negative_signals: ['usuario'],
       },
     ]);
 
-    // FR - French
     this.addProfile('fr', [
       {
         language: 'fr',
-        field_type: 'password',
+        field_class: 'Email',
+        exact_matches: ['courriel', 'adresse e-mail', 'email'],
+        partial_patterns: ['courriel', 'mail'],
+        negative_signals: ['mot de passe'],
+      },
+      {
+        language: 'fr',
+        field_class: 'Password',
         exact_matches: ['mot_de_passe', 'mdp', 'passe', 'secret'],
         partial_patterns: ['passe', 'mdp'],
-        semantic_stems: ['pass', 'secret'],
         negative_signals: ['identifiant'],
+      },
+      {
+        language: 'fr',
+        field_class: 'Username',
+        exact_matches: ['identifiant', 'utilisateur'],
+        partial_patterns: ['identifiant', 'utilisateur'],
+        negative_signals: ['mot de passe'],
       },
     ]);
 
-    // JP - Japanese
+    this.addProfile('de', [
+      {
+        language: 'de',
+        field_class: 'Password',
+        exact_matches: ['passwort', 'kennwort'],
+        partial_patterns: ['passwort', 'kennwort'],
+        negative_signals: ['benutzername'],
+      },
+      {
+        language: 'de',
+        field_class: 'Username',
+        exact_matches: ['benutzername', 'benutzer'],
+        partial_patterns: ['benutzer'],
+        negative_signals: ['passwort'],
+      },
+    ]);
+
     this.addProfile('ja', [
       {
         language: 'ja',
-        field_type: 'password',
+        field_class: 'Password',
         exact_matches: ['パスワード', '暗証番号', '秘密'],
         partial_patterns: ['パスワ', 'パス', '暗証'],
-        semantic_stems: ['パス', '暗証'],
         negative_signals: ['ユーザー'],
+      },
+      {
+        language: 'ja',
+        field_class: 'Username',
+        exact_matches: ['ユーザー', 'ユーザー名', 'アカウント'],
+        partial_patterns: ['ユーザ'],
+        negative_signals: ['パスワード'],
       },
     ]);
   }
@@ -99,47 +160,44 @@ export class MultilingualKeywordEngine {
     this.profiles.set(lang, profs);
   }
 
-  /**
-   * Detect the page language using multiple strategies.
-   */
+  /** Detect the page language (html lang → meta → keyword sniff → 'en'). */
   public static detectPageLanguage(): string {
-    // 1. Check HTML lang
     const htmlLang = document.documentElement.lang?.substring(0, 2).toLowerCase();
-    if (htmlLang && MultilingualKeywordEngine.profiles.has(htmlLang)) {
+    if (htmlLang && this.profiles.has(htmlLang)) {
       return htmlLang;
     }
-
-    // 2. Check Meta tags
     const metaLang = document
       .querySelector('meta[http-equiv="Content-Language"]')
       ?.getAttribute('content')
       ?.substring(0, 2)
       .toLowerCase();
-    if (metaLang && MultilingualKeywordEngine.profiles.has(metaLang)) {
+    if (metaLang && this.profiles.has(metaLang)) {
       return metaLang;
     }
-
-    // 3. Simple trigram/frequency check on page text (simplified)
     const text = (
       document.title +
       ' ' +
       (document.body?.innerText?.slice(0, 200) || '')
     ).toLowerCase();
-    if (/usuario|contraseña/i.test(text)) {
+    if (/usuario|contraseña|correo/i.test(text)) {
       return 'es';
     }
-    if (/mot de passe|identifiant/i.test(text)) {
+    if (/mot de passe|identifiant|courriel/i.test(text)) {
       return 'fr';
+    }
+    if (/passwort|benutzername/i.test(text)) {
+      return 'de';
     }
     if (/パスワード|ユーザー/i.test(text)) {
       return 'ja';
     }
-
-    return 'en'; // Default
+    return 'en';
   }
 
   /**
    * Score an element against language-specific profiles.
+   * Returns a record keyed by the canonical FIELD_CLASSES (all initialized to 0),
+   * so it can be fused directly with the ML and spatial layers.
    */
   public static detect(el: HTMLElement, lang: string): Record<string, number> {
     const scores: Record<string, number> = {};
@@ -158,31 +216,52 @@ export class MultilingualKeywordEngine {
       .filter(Boolean)
       .map((h) => h!.toLowerCase());
 
-    const activeProfs =
-      MultilingualKeywordEngine.profiles.get(lang) || MultilingualKeywordEngine.profiles.get('en')!;
+    const activeProfs = this.profiles.get(lang) || this.profiles.get('en')!;
 
     for (const signal of textSignals) {
       for (const prof of activeProfs) {
-        // Exact matches
-        if (prof.exact_matches.some((m: string) => signal === m)) {
-          scores[prof.field_type]! += 1.0;
+        if (prof.exact_matches.some((m) => signal === m)) {
+          scores[prof.field_class]! += 1.0;
         }
-        // Partial matches
-        if (prof.partial_patterns.some((p: string) => signal.includes(p))) {
-          scores[prof.field_type]! += 0.5;
+        if (prof.partial_patterns.some((p) => signal.includes(p))) {
+          scores[prof.field_class]! += 0.5;
         }
-        // Negative signals
-        if (prof.negative_signals.some((n: string) => signal.includes(n))) {
-          scores[prof.field_type]! -= 0.8;
+        if (prof.negative_signals.some((n) => signal.includes(n))) {
+          scores[prof.field_class]! -= 0.8;
         }
       }
     }
 
+    // confirm-password disambiguation: when label/placeholder/name contains confirm/repeat/retype/verify and has password context
+    const type = (el as HTMLInputElement).type || '';
+    const combinedText = textSignals.join(' ');
+    const hasConfirmKeyword = /confirm|repeat|retype|verify/i.test(combinedText);
+    const hasPasswordContext = type.toLowerCase() === 'password' || /pass|pwd/i.test(combinedText);
+    if (hasConfirmKeyword && hasPasswordContext) {
+      scores.Target_Password_Confirm = (scores.Target_Password_Confirm ?? 0) + 2.0;
+      scores.Password = 0;
+    }
+
+    // Never emit negative scores into the fusion stage.
+    for (const cls of FIELD_CLASSES) {
+      if (scores[cls]! < 0) {
+        scores[cls] = 0;
+      }
+    }
     return scores;
   }
 
   private static getLabelText(el: HTMLElement): string {
-    const label = document.querySelector(`label[for="${el.id}"]`);
-    return label?.textContent || '';
+    if (!el.id) {
+      return '';
+    }
+    try {
+      const label = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+      return label?.textContent?.trim() || '';
+    } catch {
+      return '';
+    }
   }
 }
+
+export default MultilingualKeywordEngine;

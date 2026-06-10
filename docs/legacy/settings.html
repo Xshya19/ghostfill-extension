@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0'>
+<title>GhostFill · Settings</title>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,500&family=Staatliches&display=swap' rel='stylesheet'>
+<link href='../styles/halcyon.css' rel='stylesheet'>
+<link href='../styles/animations.css' rel='stylesheet'>
+<style>
+  body{margin:0;min-height:100vh}
+  .wrap{max-width:720px;margin:0 auto;padding:48px 26px 90px}
+  .head{display:flex;align-items:center;gap:13px;margin-bottom:6px}
+  .head .gf-mark{width:36px;height:36px;color:var(--gf-sienna)}
+  h1{font-family:var(--gf-font-display);font-weight:900;font-size:48px;margin:12px 0 4px;line-height:1;letter-spacing:-.02em}
+  h1 em{font-style:italic;font-weight:500;color:var(--gf-sienna)}
+  .sub{color:var(--gf-ink-soft);margin-bottom:30px;font-size:15.5px}
+  .gf-panel{margin-bottom:20px}
+  .set{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px 0;border-top:2px dotted var(--gf-line)}
+  .set:first-of-type{border-top:0}
+  .set .t{font-weight:700;font-size:14.5px}
+  .set .d{font-size:12.5px;color:var(--gf-ink-soft);margin-top:2px}
+  .save-row{display:flex;gap:10px;margin-top:10px}
+  /* decorative stamp in corner */
+  .corner-stamp{position:fixed;top:32px;right:32px;z-index:10}
+</style>
+</head>
+<body class='gf-halcyon gf-wash gf-texture'>
+<svg width='0' height='0' style='position:absolute'><defs>
+<symbol id='ghost' viewBox='0 0 32 32'><path d='M16 3c-6 0-10 4.4-10 10v14l3.2-2.2L12.4 27l3.6-2.2L19.6 27l3.2-2.2L26 27V13C26 7.4 22 3 16 3z'/><circle cx='12.5' cy='14' r='1.9'/><circle cx='19.5' cy='14' r='1.9'/></symbol>
+</defs></svg>
+
+<!-- decorative corner stamp -->
+<div class='corner-stamp gf-reveal' style='--i:6'>
+  <span class='gf-stamp gf-stamp--teal gf-stamp-wobble'>✓ Verified</span>
+</div>
+
+<div class='wrap'>
+  <div class='head gf-reveal' style='--i:0'>
+    <svg class='gf-mark'><use href='#ghost'/></svg>
+    <span class='gf-eyebrow'>GhostFill · Settings</span>
+  </div>
+  <h1 class='gf-reveal' style='--i:1'>Make it <em>yours</em>.</h1>
+  <p class='sub gf-reveal' style='--i:2'>Everything GhostFill does, under your control.</p>
+
+  <div class='gf-panel gf-reveal' style='--i:3'>
+    <span class='gf-eyebrow'>Masking</span>
+    <div class='set'>
+      <div><div class='t'>Auto-mask emails</div><div class='d'>Generate a fresh alias on every signup form.</div></div>
+      <input type='checkbox' class='gf-switch' checked>
+    </div>
+    <div class='set'>
+      <div><div class='t'>Auto-fill one-time codes</div><div class='d'>Read codes from the inbox and type them for you.</div></div>
+      <input type='checkbox' class='gf-switch' checked>
+    </div>
+    <div class='set'>
+      <div><div class='t'>Show field tags</div><div class='d'>Display the little ghost label on detected fields.</div></div>
+      <input type='checkbox' class='gf-switch'>
+    </div>
+  </div>
+
+  <div class='gf-panel gf-reveal' style='--i:4'>
+    <span class='gf-eyebrow'>Identity</span>
+    <div class='set'>
+      <div style='flex:1'><div class='t'>Forwarding address</div><div class='d'>Where masked mail lands.</div></div>
+      <div class='gf-field' style='flex:1'><input class='gf-input' value='you@realmail.com'></div>
+    </div>
+    <div class='set'>
+      <div style='flex:1'><div class='t'>Alias domain</div></div>
+      <div class='gf-field' style='flex:1'><input class='gf-input' value='ghostfill.io' readonly></div>
+    </div>
+  </div>
+
+  <div class='gf-panel gf-reveal' style='--i:5'>
+    <span class='gf-eyebrow' style='color:var(--gf-sienna)'>Danger zone</span>
+    <div class='set'>
+      <div><div class='t'>Clear local cache</div><div class='d'>Removes saved aliases from this device only.</div></div>
+      <button class='gf-btn gf-btn--danger gf-ripple'>Clear</button>
+    </div>
+    <div class='gf-divider'>
+      <svg class='gf-divider-icon' viewBox='0 0 32 32'><use href='#ghost'/></svg>
+    </div>
+    <div class='save-row'>
+      <button class='gf-btn gf-btn--primary gf-ripple' id='save'>Save changes</button>
+      <button class='gf-btn gf-btn--ghost gf-ripple'>Reset</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('.gf-ripple').forEach(function(btn){
+    btn.addEventListener('click', function(e){
+      var r=btn.getBoundingClientRect(),ink=document.createElement('span');
+      ink.className='gf-ripple-ink';var s=Math.max(r.width,r.height);
+      ink.style.width=ink.style.height=s+'px';ink.style.left=(e.clientX-r.left-s/2)+'px';ink.style.top=(e.clientY-r.top-s/2)+'px';
+      btn.appendChild(ink);setTimeout(function(){ink.remove();},560);
+    });
+  });
+  document.getElementById('save').addEventListener('click',function(){
+    var b=this,t=b.textContent;b.classList.add('is-busy');b.innerHTML="<span class='gf-spin'></span>";
+    setTimeout(function(){b.classList.remove('is-busy');b.textContent='Saved ✓';setTimeout(function(){b.textContent=t;},1400);},700);
+  });
+</script>
+</body>
+</html>

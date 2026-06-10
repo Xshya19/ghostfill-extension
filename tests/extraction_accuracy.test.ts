@@ -2,10 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { extractAll } from '../src/services/intelligentExtractor';
 
-const datasetUrl = new URL('../ghostfill_dataset.json', import.meta.url);
-const hasDataset = existsSync(datasetUrl);
+import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
+
+const datasetPath = resolve(fileURLToPath(import.meta.url), '../../ghostfill_dataset.json');
+const hasDataset = existsSync(datasetPath);
 const dataset = hasDataset
-  ? (JSON.parse(readFileSync(datasetUrl, 'utf8')) as Array<Record<string, any>>)
+  ? (JSON.parse(readFileSync(datasetPath, 'utf8')) as Array<Record<string, any>>)
   : [];
 const accuracyIt = hasDataset ? it : it.skip;
 

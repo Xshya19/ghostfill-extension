@@ -28,6 +28,12 @@
   "codeCopied": {
     "message": "Codigo copiado"
   },
+  "copyFailed": {
+    "message": "Error al copiar"
+  },
+  "expiredLabel": {
+    "message": "Expirado"
+  },
   "recentMessages": {
     "message": "Bandeja de entrada"
   },

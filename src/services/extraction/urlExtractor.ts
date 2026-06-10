@@ -5,8 +5,8 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { createLogger } from '../../utils/logger';
-
 import type { LimitConfig } from '../types/extraction.types';
+import { decodeHtmlEntities, isValidUrl, normalizeUrl } from '../utils';
 
 const log = createLogger('URLExtractor');
 
@@ -21,6 +21,10 @@ const CONFIG = {
     minBase64Length: 20,
   },
 } as const satisfies { limits: LimitConfig };
+
+// Hard cap on how many URLs we will collect from a single email. Protects
+// against adversarial/huge messages exploding memory and downstream work.
+const MAX_URLS = 500;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  URL PATTERN CONSTANTS
@@ -55,167 +59,48 @@ const TRACKING_DOMAIN_PATTERNS = [
 /** Common redirect parameter names */
 const REDIRECT_PARAMS = [
   'url',
+  'u',
+  'uri',
+  'href',
+  'link',
+  'to',
+  'r',
+  'next',
+  'continue',
+  'continueurl',
+  'continue_url',
+  'return',
+  'returnto',
+  'returnurl',
+  'return_to',
+  'return_url',
   'redirect',
+  'redirectto',
+  'redirect_to',
+  'redirecturl',
   'redirect_uri',
   'redirect_url',
   'target',
+  'target_url',
   'dest',
+  'destination',
 ] as const;
 
-/** Static resource extensions to exclude */
-const STATIC_RESOURCE_PATTERN =
-  /\.(png|jpg|jpeg|gif|svg|ico|woff2?|ttf|eot|css|webp|avif|bmp|tiff?|js)(\?|$)/i;
-
-/** Invalid URL schemes to exclude */
-const INVALID_URL_SCHEMES =
-  /^(mailto:|tel:|sms:|#|javascript:|data:|blob:|file:|chrome:|about:|cid:|ftp:)/i;
-
-/** HTML entity map for decoding */
-const HTML_ENTITY_MAP: Record<string, string> = {
-  '&amp;': '&',
-  '&lt;': '<',
-  '&gt;': '>',
-  '&quot;': '"',
-  '&#39;': "'",
-  '&apos;': "'",
-  '&nbsp;': ' ',
-  '&rsquo;': "'",
-  '&lsquo;': "'",
-  '&rdquo;': '"',
-  '&ldquo;': '"',
-  '&mdash;': '—',
-  '&ndash;': '–',
-  '&hellip;': '…',
-  '&trade;': '™',
-  '&copy;': '©',
-  '&reg;': '®',
-  '&bull;': '•',
-  '&middot;': '·',
-  '&shy;': '',
-} as const;
-
-/** Zero-width and invisible characters */
-const ZERO_WIDTH_CHARS = /[\u00AD\u200B-\u200D\uFEFF]/g;
-
-// ═══════════════════════════════════════════════════════════════════════
-//  HTML DECODING UTILITIES
-// ═══════════════════════════════════════════════════════════════════════
-
-/**
- * Decodes HTML entities in a string
- * @param html - The HTML string to decode
- * @returns The decoded plain text string
- */
-export function decodeHtmlEntities(html: string): string {
-  if (!html) {
-    return '';
-  }
-
-  let result = html;
-
-  // Named entities
-  for (const [entity, char] of Object.entries(HTML_ENTITY_MAP)) {
-    const regex = new RegExp(entity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-    result = result.replace(regex, char);
-  }
-
-  // Hex entities
-  result = result.replace(/&#x([0-9a-fA-F]+);/gi, (_, hex) =>
-    String.fromCharCode(parseInt(hex, 16))
-  );
-
-  // Decimal entities
-  result = result.replace(/&#(\d+);/gi, (_, dec) => String.fromCharCode(parseInt(dec, 10)));
-
-  // Strip zero-width characters
-  return result.replace(ZERO_WIDTH_CHARS, '');
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  URL VALIDATION
-// ═══════════════════════════════════════════════════════════════════════
-
-/**
- * Validates if a string is a valid HTTP(S) URL
- * @param url - The URL string to validate
- * @returns True if valid, false otherwise
- */
-export function isValidUrl(url: string): boolean {
-  if (!url || typeof url !== 'string') {
-    return false;
-  }
-  if (url.length < CONFIG.limits.minUrlLength) {
-    return false;
-  }
-  if (INVALID_URL_SCHEMES.test(url)) {
-    return false;
-  }
-  if (!/^https?:\/\//i.test(url)) {
-    return false;
-  }
-
-  try {
-    const parsed = new URL(url);
-    if (
-      parsed.hostname !== 'localhost' &&
-      (!parsed.hostname.includes('.') || parsed.hostname.split('.').pop()!.length < 2)
-    ) {
-      return false;
-    }
-    if (STATIC_RESOURCE_PATTERN.test(parsed.pathname)) {
-      return false;
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Normalizes a URL by removing tracking parameters
- * @param url - The URL to normalize
- * @returns The normalized URL
- */
-export function normalizeUrl(url: string): string {
-  const JUNK_PARAMS = [
-    'utm_source',
-    'utm_medium',
-    'utm_campaign',
-    'utm_content',
-    'utm_term',
-    'fbclid',
-    'gclid',
-    'mc_cid',
-    'mc_eid',
-    'ref',
-    '_hsenc',
-    '_hsmi',
-    'trk',
-    'trkCampaign',
-    'sc_channel',
-    'sc_campaign',
-    'sc_content',
-    'mkt_tok',
-    'vero_id',
-    'oly_enc_id',
-    'oly_anon_id',
-  ];
-
-  try {
-    const u = new URL(url);
-    JUNK_PARAMS.forEach((p) => u.searchParams.delete(p));
-    return u.toString();
-  } catch {
-    return url;
-  }
-}
+export { decodeHtmlEntities, isValidUrl, normalizeUrl };
 
 // ═══════════════════════════════════════════════════════════════════════
 //  TRACKING URL UNWRAPPING
 // ═══════════════════════════════════════════════════════════════════════
 
 /**
- * Unwraps tracking URLs to find the final destination
+ * Unwraps tracking URLs to find the final destination.
+ *
+ * IMPROVEMENT: now genuinely recursive. Previously this function accepted a
+ * `depth` parameter and `CONFIG.limits.maxRedirectDepth` existed, but it never
+ * called itself — so nested wrappers (e.g. click.x?url=redirect.y?target=final)
+ * were only unwrapped one hop and the depth guard was dead code. It now recurses
+ * up to maxRedirectDepth, returning the deepest resolved destination.
+ *
  * @param url - The tracking URL to unwrap
  * @param depth - Current recursion depth
  * @returns The unwrapped URL or null if not a tracking URL
@@ -226,20 +111,28 @@ export function unwrapTrackingUrl(url: string, depth: number = 0): string | null
     return null;
   }
 
+  let candidate: string | null = null;
+
   try {
     const u = new URL(url);
 
-    // Check redirect params
-    for (const param of REDIRECT_PARAMS) {
-      const value = u.searchParams.get(param);
+    // Check redirect params. URLSearchParams is case-sensitive, so compare
+    // lowercased keys to catch real-world variants such as redirectTo/returnUrl.
+    for (const [key, value] of u.searchParams) {
+      const normalizedKey = key.toLowerCase().replace(/[-\s]/g, '_');
+      if (!REDIRECT_PARAMS.some((param) => normalizedKey === param.toLowerCase())) {
+        continue;
+      }
       if (value) {
         if (/^https?:\/\//i.test(value)) {
-          return value;
+          candidate = value;
+          break;
         }
         try {
           const decoded = decodeURIComponent(value);
           if (/^https?:\/\//i.test(decoded)) {
-            return decoded;
+            candidate = decoded;
+            break;
           }
         } catch {
           // Skip invalid encoded values
@@ -248,23 +141,42 @@ export function unwrapTrackingUrl(url: string, depth: number = 0): string | null
     }
 
     // Check for base64-encoded URLs
-    for (const value of Array.from(u.searchParams.values())) {
-      if (/^[A-Za-z0-9+/=]{20,}$/.test(value)) {
-        try {
-          const decoded = atob(value);
-          if (/^https?:\/\//i.test(decoded) && isValidUrl(decoded)) {
-            return decoded;
+    if (!candidate) {
+      for (const value of Array.from(u.searchParams.values())) {
+        if (/^[A-Za-z0-9+/_=-]{20,}$/.test(value)) {
+          try {
+            const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+            const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+            const decoded = atob(padded);
+            if (/^https?:\/\//i.test(decoded) && isValidUrl(decoded)) {
+              candidate = decoded;
+              break;
+            }
+          } catch {
+            // Not base64
           }
-        } catch {
-          // Not base64
         }
       }
     }
   } catch {
     // Invalid URL
+    return null;
   }
 
-  return null;
+  if (!candidate) {
+    return null;
+  }
+
+  // Recursively unwrap nested tracking wrappers. Guard against self-reference
+  // so we never loop on a URL that "unwraps" to itself.
+  if (candidate !== url) {
+    const deeper = unwrapTrackingUrl(candidate, depth + 1);
+    if (deeper && deeper !== candidate) {
+      return deeper;
+    }
+  }
+
+  return candidate;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -344,17 +256,16 @@ export function extractUrls(html: string): string[] {
       if (TRACKING_DOMAIN_PATTERNS.some((p) => p.test(u.hostname))) {
         const inner = unwrapTrackingUrl(url, 0);
         if (inner && inner !== url) {
-          urls.add(inner);
+          // Route through processUrl so the inner URL is validated AND itself
+          // unwrapped (previously it was added raw via urls.add, bypassing both).
+          processUrl(inner, urls);
         }
-
         // Check path for encoded URLs
         const pathDecoded = decodeURIComponent(u.pathname + u.search);
         const found = pathDecoded.match(/https?:\/\/[^\s"']+/gi);
         if (found) {
           for (const f of found) {
-            if (isValidUrl(f)) {
-              urls.add(f);
-            }
+            processUrl(f, urls);
           }
         }
       }
@@ -390,12 +301,13 @@ export function extractUrls(html: string): string[] {
   }
 
   if (urls.size === 0) {
-    log.warn(
+    log.debug(
       'Extracted 0 unique URLs. RAW HTML START:\n' + html.substring(0, 1500) + '\nRAW HTML END'
     );
   } else {
     log.debug(`Extracted ${urls.size} unique URLs`);
   }
+
   return Array.from(urls);
 }
 
@@ -405,13 +317,15 @@ export function extractUrls(html: string): string[] {
  * @param set - The set to add the URL to
  */
 function processUrl(url: string, set: Set<string>): void {
+  if (set.size >= MAX_URLS) {
+    return;
+  }
   if (!isValidUrl(url)) {
     return;
   }
   set.add(url);
-
   const inner = unwrapTrackingUrl(url, 0);
-  if (inner && inner !== url && isValidUrl(inner)) {
+  if (inner && inner !== url && isValidUrl(inner) && set.size < MAX_URLS) {
     set.add(inner);
   }
 }
@@ -436,6 +350,7 @@ const TOKEN_PARAMS = [
   'state',
   'flow',
 ];
+
 const CODE_PARAMS = [
   'code',
   'confirmation_code',
@@ -446,6 +361,7 @@ const CODE_PARAMS = [
   'activation_code',
   'link_code',
 ];
+
 const EXPIRY_PARAMS = ['expires', 'expiry', 'exp', 'ttl', 'valid_until', 'timestamp'];
 const SIG_PARAMS = ['signature', 'sig', 'sign', 'hmac', 'hash', 'checksum', 'digest'];
 const USER_PARAMS = ['user', 'user_id', 'uid', 'email', 'account', 'username'];
@@ -535,9 +451,15 @@ export function calculateUrlComplexity(url: string): number {
   let complexity = 0;
   try {
     const u = new URL(url);
+    // IMPROVEMENT: count params via the iterator. Previously this used
+    // `u.searchParams.toString().split('&').length`, which returns 1 even when
+    // there are zero params (''.split('&') === ['']), over-counting complexity
+    // by 3 for every param-less URL.
+    const paramCount = [...u.searchParams].length;
+
     complexity += u.pathname.split('/').filter(Boolean).length * 5;
     complexity += Math.min(u.search.length / 5, 30);
-    complexity += u.searchParams.toString().split('&').length * 3;
+    complexity += paramCount * 3;
     for (const seg of u.pathname.split('/')) {
       if (/^[A-Za-z0-9_-]{15,}$/.test(seg)) {
         complexity += 15;

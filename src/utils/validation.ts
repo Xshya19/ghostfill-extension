@@ -31,13 +31,24 @@ const emailServiceSchema = z.enum([
   'custom',
 ]);
 
+const emailAccountServiceSchema = z.enum([
+  'mailgw',
+  'mailtm',
+  '1secmail',
+  'guerrilla',
+  'maildrop',
+  'tempmail',
+  'custom',
+  'gmail',
+]);
+
 // ─── Email Account schema ─────────────────────────────────────────────────────
 export const emailAccountSchema = z.object({
   id: safeString,
   fullEmail: safeString.email('Invalid email format'),
   login: safeString,
   domain: safeString,
-  service: emailServiceSchema,
+  service: emailAccountServiceSchema,
   createdAt: safeNumber,
   expiresAt: safeNumber,
 });
@@ -56,11 +67,18 @@ export const emailSchema = z.object({
 
 // ─── Password Options schema ──────────────────────────────────────────────────
 export const passwordOptionsSchema = z.object({
-  length: safeNumber.min(8).max(128).default(16),
+  length: safeNumber.min(4).max(128).default(16),
   uppercase: safeBoolean.default(true),
   lowercase: safeBoolean.default(true),
   numbers: safeBoolean.default(true),
   symbols: safeBoolean.default(true),
+  excludeAmbiguous: safeBoolean.default(false),
+  excludeSimilar: safeBoolean.default(false),
+  customCharset: safeString.optional(),
+  minUppercase: safeNumber.min(0).max(128).optional(),
+  minLowercase: safeNumber.min(0).max(128).optional(),
+  minNumbers: safeNumber.min(0).max(128).optional(),
+  minSymbols: safeNumber.min(0).max(128).optional(),
 });
 
 // ─── Generated Password schema ────────────────────────────────────────────────
@@ -72,15 +90,56 @@ export const generatedPasswordSchema = z.object({
 
 // ─── User Settings schema ─────────────────────────────────────────────────────
 export const userSettingsSchema = z.object({
+  // Password settings
+  passwordDefaults: passwordOptionsSchema.default({
+    length: 16,
+    uppercase: true,
+    lowercase: true,
+    numbers: true,
+    symbols: true,
+    excludeAmbiguous: false,
+    excludeSimilar: false,
+  }),
+
+  // Email settings
   preferredEmailService: emailServiceSchema.default('tempmail'),
   autoCheckInbox: safeBoolean.default(true),
   checkIntervalSeconds: safeNumber.min(3).max(60).default(10),
+
+  // UI settings
+  darkMode: z.union([safeBoolean, z.literal('system')]).default('system'),
+  showFloatingButton: safeBoolean.default(true),
+  floatingButtonPosition: z.enum(['right', 'left']).default('right'),
+
+  // Behavior settings
   autoFillOTP: safeBoolean.default(true),
-  notifyOnNewEmail: safeBoolean.default(true),
-  notifyOnOTP: safeBoolean.default(true),
-  darkMode: z.union([safeBoolean, z.literal('system')]).default(false),
-  enableAnimations: safeBoolean.default(true),
+  keyboardShortcuts: safeBoolean.default(true),
+  notifications: safeBoolean.default(true),
+  soundEnabled: safeBoolean.default(true),
   autoConfirmLinks: safeBoolean.default(true),
+
+  // Privacy settings
+  saveHistory: safeBoolean.default(true),
+  historyRetentionDays: safeNumber.min(1).max(365).default(30),
+  clearOnClose: safeBoolean.default(false),
+  allowGmailSessionFallback: safeBoolean.default(false),
+
+  // Advanced settings
+  debugMode: safeBoolean.default(false),
+  analyticsEnabled: safeBoolean.default(false),
+
+  // Custom Infrastructure
+  customDomain: safeString.optional(),
+  customDomainUrl: safeString.optional(),
+
+  // AI/LLM settings
+  useLLMParser: safeBoolean.default(true),
+  llmModel: safeString.optional(),
+
+  // Keep compatibility with legacy UI setting fields
+  enableAnimations: safeBoolean.default(true).optional(),
+  notifyOnNewEmail: safeBoolean.default(true).optional(),
+  notifyOnOTP: safeBoolean.default(true).optional(),
 });
 
 // ─── Message Payload Schemas ──────────────────────────────────────────────────
@@ -95,7 +154,7 @@ export const generateEmailPayloadSchema = z
 export const checkInboxPayloadSchema = z
   .object({
     email: safeString.email(),
-    service: emailServiceSchema,
+    service: emailAccountServiceSchema,
   })
   .optional();
 
@@ -135,7 +194,7 @@ export const extractOTPPayloadSchema = z
   }, 'At least one of text, textBody, or htmlBody is required');
 
 export const fillOTPPayloadSchema = z.object({
-  otp: safeString.min(4).max(12),
+  otp: safeString.min(4).max(64),
   fieldSelectors: z.array(safeString).max(MAX_ARRAY_LENGTH).optional(),
 });
 
@@ -148,7 +207,10 @@ export const otpPageDetectedPayloadSchema = z.object({
 });
 
 export const autoFillOTPPayloadSchema = z.object({
-  otp: safeString.regex(/^[A-Za-z0-9]{4,10}$/, 'OTP must be 4-10 alphanumeric characters'),
+  otp: safeString.regex(
+    /^[A-Za-z0-9\-_]{4,64}$/,
+    'OTP must be 4-64 alphanumeric characters, hyphens or underscores'
+  ),
   source: z.enum(['email', 'sms', 'manual', 'url-extracted']),
   confidence: safeNumber.min(0).max(1),
   fieldSelectors: z.array(safeString).max(MAX_ARRAY_LENGTH).optional(),
@@ -232,6 +294,18 @@ export const registrationFormSubmittedPayloadSchema = z.object({
   timestamp: safeNumber.optional(),
 });
 
+export const gmailFetchInboxPayloadSchema = z
+  .object({
+    query: safeString.optional(),
+    maxResults: safeNumber.optional(),
+    alias: safeString.optional(),
+  })
+  .optional();
+
+export const gmailGetMessagePayloadSchema = z.object({
+  messageId: safeString,
+});
+
 // ─── Base Message Schema ──────────────────────────────────────────────────────
 export const baseMessageSchema = z.object({
   action: z.string(),
@@ -242,6 +316,11 @@ export const baseMessageSchema = z.object({
 // ─── Message Action to Payload Schema mapping ─────────────────────────────────
 export const messagePayloadSchemas: Record<string, z.ZodSchema> = {
   GENERATE_EMAIL: generateEmailPayloadSchema,
+  GENERATE_GMAIL_ALIAS: z
+    .object({
+      domain: safeString.optional(),
+    })
+    .optional(),
   GET_CURRENT_EMAIL: z.undefined().optional(),
   CHECK_INBOX: checkInboxPayloadSchema,
   READ_EMAIL: readEmailPayloadSchema,
@@ -303,6 +382,16 @@ export const messagePayloadSchemas: Record<string, z.ZodSchema> = {
   RESET_STATE: z.undefined().optional(),
   REGISTRATION_FORM_SUBMITTED: registrationFormSubmittedPayloadSchema,
   GET_DIAGNOSTIC_REPORT: z.undefined().optional(),
+  GMAIL_SIGN_IN: z.undefined().optional(),
+  GMAIL_SIGN_OUT: z.undefined().optional(),
+  GMAIL_FETCH_INBOX: gmailFetchInboxPayloadSchema,
+  GMAIL_GET_MESSAGE: gmailGetMessagePayloadSchema,
+  GMAIL_GET_STATUS: z.undefined().optional(),
+  GMAIL_SEARCH: gmailFetchInboxPayloadSchema,
+  GMAIL_LIST_LABELS: z.undefined().optional(),
+  DOWNLOAD_TRAINING_DATA: z.object({
+    data: z.string(),
+  }),
 };
 
 // ─── Validation function ──────────────────────────────────────────────────────

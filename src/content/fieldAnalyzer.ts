@@ -15,18 +15,40 @@
 // └────────────────────────────────────────────────────────────────────────┘
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import {
-  FieldType,
-  DetectedField,
-  FIELD_HEURISTICS,
-  FormType,
-  GhostContainer,
-  FormInputElement,
-} from '../types';
+import { classifyField } from '../intelligence/classifier/classify';
+import { extractFieldRecord } from '../intelligence/featureExtractor';
+import { FieldClass } from '../intelligence/types';
+import { FieldType, DetectedField, FormType, GhostContainer, FormInputElement } from '../types';
 import { getUniqueSelector, getElementLabel, deepQuerySelectorAll } from '../utils/helpers';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('FieldAnalyzer');
+
+function mapFieldClassToFieldType(cls: FieldClass): FieldType {
+  switch (cls) {
+    case 'Email':
+      return 'email';
+    case 'Username':
+      return 'username';
+    case 'Password':
+      return 'password';
+    case 'Target_Password_Confirm':
+      return 'confirm-password';
+    case 'First_Name':
+      return 'first-name';
+    case 'Last_Name':
+      return 'last-name';
+    case 'Full_Name':
+      return 'full-name';
+    case 'Phone':
+      return 'phone';
+    case 'OTP':
+      return 'otp';
+    case 'Unknown':
+    default:
+      return 'unknown';
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════
 //  §0  C O N S T A N T S
@@ -41,9 +63,6 @@ const MAX_LABEL_TEXT_LENGTH = 120;
 /** OTP field length boundaries */
 const OTP_MIN_LENGTH = 4;
 const OTP_MAX_LENGTH = 8;
-
-/** Minimum confidence threshold for aggressive email fallback */
-const MIN_CONFIDENCE_THRESHOLD = 0.3;
 
 /** Confidence scores for heuristic signals */
 const CONFIDENCE = {
@@ -372,123 +391,6 @@ class OTPDetector {
 // (Removed duplicate DOMTraversal class)
 // ═══════════════════════════════════════════════════════════════
 
-class FieldClassifier {
-  /**
-   * Identity field types that should NOT match if the label
-   * mentions "code", "otp", or "#" (which indicate OTP/token fields).
-   */
-  private static readonly IDENTITY_FIELD_TYPES = new Set<string>([
-    'name',
-    'first-name',
-    'last-name',
-    'username',
-  ]);
-
-  private static readonly IDENTITY_NEGATION_PATTERN = /code|otp|#/i;
-
-  private static readonly CONFIRM_PASSWORD_PATTERN =
-    /confirm|repeat|retype|verify|re[-_\s]?enter|again/i;
-
-  /**
-   * Classify a single field using the heuristic scoring engine.
-   * Returns the best-matching FieldType and confidence score.
-   */
-  static classify(
-    element: FormInputElement,
-    _isFirstVisible: boolean
-  ): { fieldType: FieldType; confidence: number } {
-    const type = (element.type ?? 'text').toLowerCase();
-    const name = (element.name ?? '').toLowerCase();
-    const id = (element.id ?? '').toLowerCase();
-    const placeholder = (element.placeholder ?? '').toLowerCase();
-    const autocomplete = (element.autocomplete ?? '').toLowerCase();
-    const ariaLabel = (element.getAttribute('aria-label') ?? '').toLowerCase();
-    const ariaLabelledBy = (element.getAttribute('aria-labelledby') ?? '').toLowerCase();
-    const label = getElementLabel(element).toLowerCase();
-
-    const allText = combineTextSignals(name, id, placeholder, label, ariaLabel, ariaLabelledBy);
-
-    let bestType: FieldType = 'unknown';
-    let bestConfidence = 0;
-
-    // ── Phase 1: Heuristic scoring against FIELD_HEURISTICS ──
-    for (const [fType, heuristics] of Object.entries(FIELD_HEURISTICS)) {
-      if (fType === 'unknown') {
-        continue;
-      }
-
-      // Negation: identity fields should not match OTP-like labels
-      if (this.IDENTITY_FIELD_TYPES.has(fType) && this.IDENTITY_NEGATION_PATTERN.test(allText)) {
-        continue;
-      }
-
-      let confidence = 0;
-      let matchCount = 0;
-
-      // Type attribute
-      if (heuristics.types.includes(type)) {
-        confidence += CONFIDENCE.TYPE_MATCH;
-        matchCount++;
-      }
-
-      // Autocomplete attribute
-      if (heuristics.autocomplete.includes(autocomplete)) {
-        confidence += CONFIDENCE.AUTOCOMPLETE_MATCH;
-        matchCount++;
-      }
-
-      // Regex patterns
-      if (heuristics.patterns.some((p: RegExp) => p.test(allText))) {
-        confidence += CONFIDENCE.PATTERN_MATCH;
-        matchCount++;
-      }
-
-      // Keywords
-      if (heuristics.keywords.some((k: string) => allText.includes(k))) {
-        confidence += CONFIDENCE.KEYWORD_MATCH;
-        matchCount++;
-      }
-
-      // Must have at least one match to be considered
-      if (matchCount >= 1 && confidence > bestConfidence) {
-        bestConfidence = confidence;
-        bestType = fType as FieldType;
-      }
-    }
-
-    // ── Phase 2: Aggressive email fallback ────────────────
-    if (bestType === 'unknown' || bestConfidence < MIN_CONFIDENCE_THRESHOLD) {
-      if (type === 'email') {
-        bestType = 'email';
-        bestConfidence = CONFIDENCE.EMAIL_TYPE_ATTR;
-      } else if (placeholder.includes('@') || placeholder.includes('example.com')) {
-        bestType = 'email';
-        bestConfidence = CONFIDENCE.EMAIL_PLACEHOLDER_AT;
-      }
-    }
-
-    // ── Phase 3: OTP override ─────────────────────────────
-    const otpConfidence = OTPDetector.calculateConfidence(element);
-    if (OTPDetector.isLikelyOTP(element) && otpConfidence > bestConfidence) {
-      bestType = 'otp';
-      bestConfidence = otpConfidence;
-    }
-
-    // ── Phase 4: Confirm password detection ───────────────
-    if (bestType === 'password') {
-      const confirmText = combineTextSignals(name, id, placeholder, label);
-      if (this.CONFIRM_PASSWORD_PATTERN.test(confirmText)) {
-        bestType = 'confirm-password';
-      }
-    }
-
-    return {
-      fieldType: bestType,
-      confidence: clampConfidence(bestConfidence),
-    };
-  }
-}
-
 // ═══════════════════════════════════════════════════════════════
 //  §8  M A I N   F I E L D   A N A L Y Z E R   C L A S S
 // ═══════════════════════════════════════════════════════════════
@@ -561,17 +463,21 @@ export class FieldAnalyzer {
    * Analyze a single input field and return its classification.
    * Now incorporates Ensemble Scoring and Structural Signals.
    */
-  analyzeField(element: FormInputElement, allInputs?: FormInputElement[]): DetectedField {
-    const isFirstVisible = this.isFirstVisibleInput(element, allInputs);
-    const { fieldType, confidence: heuristicConf } = FieldClassifier.classify(
-      element,
-      isFirstVisible
-    );
+  analyzeField(element: FormInputElement, _allInputs?: FormInputElement[]): DetectedField {
+    const record = extractFieldRecord(element);
+    const { result, decision } = classifyField(record);
+
+    let fieldType = mapFieldClassToFieldType(result.top);
+    let confidence = result.topProb;
+
+    if (decision.action === 'BLOCK') {
+      fieldType = 'unknown';
+      confidence = 0;
+    }
 
     // Intelligence 2.0: Extract Spatial/Topology signals from Features
     let spatialConfidence = 0;
     try {
-      // We can't easily import from extractor here without async, so we use heuristic spatial clues
       const rect = element.getBoundingClientRect();
       const isSquare = Math.abs(rect.width - rect.height) < 10;
       const isCentered = Math.abs(window.innerWidth / 2 - (rect.left + rect.width / 2)) < 200;
@@ -592,7 +498,7 @@ export class FieldAnalyzer {
       element,
       selector: getUniqueSelector(element),
       fieldType,
-      confidence: clampConfidence(heuristicConf + spatialConfidence),
+      confidence: clampConfidence(confidence + spatialConfidence),
       label: getElementLabel(element) || undefined,
       placeholder: element.placeholder || undefined,
       name: element.name || undefined,

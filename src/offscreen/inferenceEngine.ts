@@ -2,24 +2,53 @@ import * as ort from 'onnxruntime-web';
 import { FIELD_CLASSES, RawFieldFeatures } from '../content/extractor';
 import { PageContext } from '../types/form.types';
 
-// eslint-disable-next-line no-console
+/**
+ * FIXED inference engine.
+ *
+ * Key corrections vs. the original:
+ *  - Feeds BOTH model inputs with the correct names/shapes/dtypes:
+ *      text_channels : int64  [1, 8, 80]  (BigInt64Array — required for int64 in ort-web)
+ *      structural    : float32[1, 64]
+ *    (The original sent a single tensor named "input" of shape [1,128]; the
+ *     exported model has no such input and its structural branch is 64-dim.)
+ *  - Reads the pinned output name `logits` (training exports exactly this).
+ *  - Standardizes the artifact on the single-file int8 model that training
+ *    actually produces (`ghostfill_v1_int8.onnx`) — no `.onnx.data` sidecar.
+ *  - Suppresses ORT's image-input warning via logSeverityLevel instead of
+ *    monkey-patching console.error.
+ */
+
 const mlLog = {
   info: (...a: unknown[]) => console.info('[GhostFill ML]', ...a),
   error: (...a: unknown[]) => console.error('[GhostFill ML]', ...a),
 };
 
-// Pin ONNX Runtime to the exact packaged module/wasm pair we ship.
+const MODEL_FILE = 'models/ghostfill_v1_int8.onnx';
+
+// Model I/O contract (must match train_ghostfill_model.py)
+const NUM_TEXT_CHANNELS = 8;
+const MAX_TEXT_LEN = 80;
+const NUM_STRUCTURAL = 64;
+const INPUT_TEXT = 'text_channels';
+const INPUT_STRUCT = 'structural';
+const OUTPUT_LOGITS = 'logits';
+
 ort.env.wasm.wasmPaths = {
   mjs: chrome.runtime.getURL('ort-wasm-simd-threaded.mjs'),
   wasm: chrome.runtime.getURL('ort-wasm-simd-threaded.wasm'),
 };
-ort.env.wasm.numThreads = 1;
-// ort.env.wasm.proxy = true; // Offscreen document CAN use workers/proxy if multi-threading is enabled
+// Enable threads only when the document is cross-origin isolated; otherwise 1.
+ort.env.wasm.numThreads =
+  typeof self !== 'undefined' &&
+  (self as unknown as { crossOriginIsolated?: boolean }).crossOriginIsolated
+    ? Math.min(4, navigator.hardwareConcurrency || 1)
+    : 1;
+// 0=verbose .. 4=fatal. 3 hides the benign "does not support image input" notice.
+ort.env.logLevel = 'error';
 
 let session: ort.InferenceSession | null = null;
-let initializing = false;
+let initPromise: Promise<void> | null = null;
 
-/** Minimum confidence to trust an ML prediction (below this we return null). */
 const MIN_ML_CONFIDENCE = 0.45;
 
 export interface MLPrediction {
@@ -28,106 +57,90 @@ export interface MLPrediction {
   probabilities: Record<string, number>;
 }
 
-// Suppress ONNX Runtime internal errors about image inputs — scoped to init only
-const originalConsoleError = console.error;
-let suppressingErrors = false;
-
-function scopedConsoleError(...args: unknown[]) {
-  const msg = args.map((a) => String(a)).join(' ');
-  if (
-    suppressingErrors &&
-    msg.includes('image.png') &&
-    msg.includes('does not support image input')
-  ) {
-    console.warn('[GhostFill ML] ONNX model type check (expected for non-image models):', msg);
-    return;
-  }
-  originalConsoleError.apply(console, args);
-}
-
 export async function initInferenceEngine(): Promise<void> {
-  if (session || initializing) {
+  if (session) {
     return;
   }
-  initializing = true;
-  suppressingErrors = true;
-  console.error = scopedConsoleError;
-  try {
-    const modelUrl = chrome.runtime.getURL('models/sentinel_brain_v2.onnx');
-    const dataUrl = chrome.runtime.getURL('models/sentinel_brain_v2.onnx.data');
-
-    mlLog.info('Initializing engine in offscreen document...');
-    mlLog.info('Model URL:', modelUrl);
-
-    // Fetch model and external data in parallel to ensure complete initialization
-    const [modelResp, dataResp] = await Promise.all([fetch(modelUrl), fetch(dataUrl)]);
-
-    if (!modelResp.ok || !dataResp.ok) {
-      throw new Error(
-        `Failed to fetch model files: Model=${modelResp.status}, Data=${dataResp.status}`
-      );
-    }
-
-    const [modelBuffer, dataBuffer] = await Promise.all([
-      modelResp.arrayBuffer(),
-      dataResp.arrayBuffer(),
-    ]);
-
-    mlLog.info(
-      'Model files fetched. Model:',
-      modelBuffer.byteLength,
-      'bytes, Data:',
-      dataBuffer.byteLength,
-      'bytes'
-    );
-
-    // Create session while explicitly providing the external data weights
-    session = await ort.InferenceSession.create(modelBuffer, {
-      executionProviders: ['wasm'],
-      graphOptimizationLevel: 'all',
-      // Explicitly provide external data to ensure ORT can find weights in extension environment
-      externalData: [
-        {
-          path: 'sentinel_brain_v2.onnx.data',
-          data: new Uint8Array(dataBuffer),
-        },
-      ],
-    });
-
-    mlLog.info('Engine initialized successfully.');
-  } catch (error) {
-    const err = error as Error;
-    mlLog.error('Failed to initialize inference engine:', err.message);
-    if (err.stack) {
-      mlLog.error('Stack:', err.stack);
-    }
-    session = null;
-  } finally {
-    suppressingErrors = false;
-    console.error = originalConsoleError;
-    initializing = false;
+  if (initPromise) {
+    return initPromise;
   }
+  initPromise = (async () => {
+    try {
+      const modelUrl = chrome.runtime.getURL(MODEL_FILE);
+      mlLog.info('Initializing engine in offscreen document...', modelUrl);
+
+      const modelResp = await fetch(modelUrl);
+      if (!modelResp.ok) {
+        throw new Error(`Failed to fetch model: ${modelResp.status}`);
+      }
+      const modelBuffer = await modelResp.arrayBuffer();
+
+      session = await ort.InferenceSession.create(modelBuffer, {
+        executionProviders: ['wasm'],
+        graphOptimizationLevel: 'all',
+      });
+
+      // Fail loudly if the artifact does not match the expected contract.
+      if (!session.inputNames.includes(INPUT_TEXT) || !session.inputNames.includes(INPUT_STRUCT)) {
+        const got = session.inputNames.join(', ');
+        session = null;
+        throw new Error(
+          `Model input contract mismatch. Expected [${INPUT_TEXT}, ${INPUT_STRUCT}], got [${got}]`
+        );
+      }
+      mlLog.info(
+        'Engine initialized. Inputs:',
+        session.inputNames,
+        'Outputs:',
+        session.outputNames
+      );
+    } catch (error) {
+      const err = error as Error;
+      mlLog.error('Failed to initialize inference engine:', err.message);
+      session = null;
+    } finally {
+      initPromise = null;
+    }
+  })();
+  return initPromise;
 }
 
-/**
- * Returns the current status of the inference engine for diagnostics.
- */
 export async function getEngineStatus(): Promise<{
   initialized: boolean;
-  initializing: boolean;
   hasSession: boolean;
   modelUrl: string;
 }> {
   return {
     initialized: !!session,
-    initializing,
     hasSession: !!session,
-    modelUrl: chrome.runtime.getURL('models/sentinel_brain_v2.onnx'),
+    modelUrl: chrome.runtime.getURL(MODEL_FILE),
   };
 }
 
+/** Build the int64 text tensor [1, 8, 80] from the extractor's 8 char-code channels. */
+function buildTextTensor(textChannels: ReadonlyArray<ArrayLike<number>>): ort.Tensor {
+  const data = new BigInt64Array(NUM_TEXT_CHANNELS * MAX_TEXT_LEN);
+  for (let c = 0; c < NUM_TEXT_CHANNELS; c++) {
+    const ch = textChannels[c];
+    for (let i = 0; i < MAX_TEXT_LEN; i++) {
+      const v = ch && i < ch.length ? ch[i]! | 0 : 0;
+      data[c * MAX_TEXT_LEN + i] = BigInt(v);
+    }
+  }
+  return new ort.Tensor('int64', data, [1, NUM_TEXT_CHANNELS, MAX_TEXT_LEN]);
+}
+
+function buildStructTensor(structural: ArrayLike<number>): ort.Tensor {
+  const data = new Float32Array(NUM_STRUCTURAL);
+  for (let i = 0; i < NUM_STRUCTURAL; i++) {
+    data[i] = structural && i < structural.length ? Number(structural[i]) || 0 : 0;
+  }
+  return new ort.Tensor('float32', data, [1, NUM_STRUCTURAL]);
+}
+
 /**
- * Classifies a set of field features extracted by extractor.ts.
+ * Classify a set of field features extracted by extractor.ts.
+ * `features` MUST contain both `textChannels` (8×80) and `structural` (64).
  */
 export async function classifyField(
   features: Omit<RawFieldFeatures, 'element'>,
@@ -136,55 +149,57 @@ export async function classifyField(
   if (!session) {
     await initInferenceEngine();
   }
-
   if (!session) {
     return null;
   }
 
+  if (!features || !features.textChannels || !features.structural) {
+    mlLog.error('classifyField called without textChannels/structural');
+    return null;
+  }
+
+  let textTensor: ort.Tensor | null = null;
+  let structTensor: ort.Tensor | null = null;
   try {
-    // 1. Prepare Text Channels Tensor — shape [1, 8, 80]
-    // The ONNX model expects int64 (BigInt64Array) for token IDs.
-    // This model does not use text channels, but the features object still contains them.
-    // const textTensor = new ort.Tensor('int64', flatText, [1, NUM_TEXT_CHANNELS, MAX_TEXT_LEN]);
+    textTensor = buildTextTensor(features.textChannels as ReadonlyArray<ArrayLike<number>>);
+    structTensor = buildStructTensor(features.structural as ArrayLike<number>);
 
-    // 2. Prepare Structural Features Tensor — shape [1, 128]
-    const flatStruct = new Float32Array(128);
-    for (let i = 0; i < 128; i++) {
-      flatStruct[i] = features.structural[i] ?? 0;
-    }
-    const structuralTensor = new ort.Tensor('float32', flatStruct, [1, 128]);
-
-    // 3. Run Inference - Grandmaster expects 'input' name
     const results = await session.run({
-      input: structuralTensor,
+      [INPUT_TEXT]: textTensor,
+      [INPUT_STRUCT]: structTensor,
     });
 
-    // Fix: Dynamic tensor discovery for both 'logits' and 'output' naming schemes
-    const outputTensor = results.logits || results.output || Object.values(results)[0];
+    const outputTensor = results[OUTPUT_LOGITS] ?? Object.values(results)[0];
     if (!outputTensor) {
-      throw new Error('No valid output tensor in session results');
+      throw new Error('No output tensor in session results');
     }
-    const logits = outputTensor.data as Float32Array;
+    const logitsData = outputTensor.data;
+    if (!(logitsData instanceof Float32Array)) {
+      throw new Error(`Unexpected output dtype: ${typeof logitsData}`);
+    }
+    if (logitsData.length < FIELD_CLASSES.length) {
+      throw new Error(
+        `Model output dim (${logitsData.length}) < FIELD_CLASSES (${FIELD_CLASSES.length})`
+      );
+    }
 
-    // 4. Softmax
+    // Numerically stable softmax
     let maxLogit = -Infinity;
-    for (let i = 0; i < logits.length; i++) {
-      if (logits[i]! > maxLogit) {
-        maxLogit = logits[i]!;
+    for (let i = 0; i < FIELD_CLASSES.length; i++) {
+      if (logitsData[i]! > maxLogit) {
+        maxLogit = logitsData[i]!;
       }
     }
-
     let sumExp = 0;
-    const expScores = new Float32Array(logits.length);
-    for (let i = 0; i < logits.length; i++) {
-      expScores[i] = Math.exp(logits[i]! - maxLogit);
+    const expScores = new Float32Array(FIELD_CLASSES.length);
+    for (let i = 0; i < FIELD_CLASSES.length; i++) {
+      expScores[i] = Math.exp(logitsData[i]! - maxLogit);
       sumExp += expScores[i]!;
     }
 
     const probabilities: Record<string, number> = {};
     let bestIdx = 0;
     let bestConf = 0;
-
     for (let i = 0; i < FIELD_CLASSES.length; i++) {
       const prob = expScores[i]! / sumExp;
       probabilities[FIELD_CLASSES[i]!] = prob;
@@ -194,33 +209,25 @@ export async function classifyField(
       }
     }
 
-    // Cleanup input tensors to prevent memory leaks in offscreen document
-    structuralTensor.dispose();
-    // note: 'results' own data will be cleaned up by JS GC,
-    // but the underlying ONNX buffers are best managed via dispose if the API supports it.
-    // In current onnxruntime-web, input disposal is most critical.
-
-    // ── Dynamic Threshold Logic ─────────────────────
+    // Adaptive threshold (now reachable because callers pass a real context).
     let threshold = MIN_ML_CONFIDENCE;
     if (context) {
       if (context.isVerificationPage || context.is2FAPage) {
-        threshold = 0.35; // Lower bar for high-confidence pages
+        threshold = 0.35;
       } else if (!context.isLoginPage && !context.isSignupPage) {
-        threshold = 0.5; // More conservative on random pages
+        threshold = 0.5;
       }
     }
-
     if (bestConf < threshold) {
       return null;
     }
 
-    return {
-      label: FIELD_CLASSES[bestIdx]!,
-      confidence: bestConf,
-      probabilities,
-    };
+    return { label: FIELD_CLASSES[bestIdx]!, confidence: bestConf, probabilities };
   } catch (err) {
     mlLog.error('Inference failed in offscreen doc:', err);
     return null;
+  } finally {
+    textTensor?.dispose();
+    structTensor?.dispose();
   }
 }

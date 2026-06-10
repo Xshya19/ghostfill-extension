@@ -18,10 +18,12 @@ import { setupPollingManager as pollingManagerSetup } from '../background/pollin
 import { emailService } from '../services/emailServices/index';
 import { otpService } from '../services/otpService';
 import { storageService } from '../services/storageService';
+import { diag } from '../utils/diagnosticLogger';
 import { sleep } from '../utils/helpers';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('ServiceWorker');
+let bootFlowId: string | null = null;
 
 // Log successful module load - all imports resolved at build time
 log.info('✅ All modules loaded statically at build time');
@@ -266,6 +268,19 @@ function buildPhases(): PhaseDefinition[] {
 async function initStorage(): Promise<void> {
   try {
     await storageService.init();
+
+    // CRITICAL FIX: Register a global onChanged listener so the service worker's
+    // in-memory LRU cache stays in sync when the popup (a separate JS context)
+    // writes to chrome.storage.local.  Without this, storageService.get() in the
+    // background can return stale cached values (e.g. preferredEmailType='gmail'
+    // after the user switched to 'disposable' in the popup).
+    storageService.onChanged(() => {
+      // The onChanged handler inside storageService already updates the cache
+      // for every changed key.  We don't need to do anything extra here — the
+      // callback registration itself is what matters, since it installs the
+      // internal chrome.storage.onChanged listener that syncs the cache.
+    });
+
     log.debug('✅ Storage initialized');
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
@@ -489,6 +504,7 @@ export async function initServiceWorker(): Promise<void> {
           `💥 Circuit breaker active. Halting resets. Auto-recovery in ${Math.ceil((FALLBACK_TIMEOUT_MS - timeSinceLastAttempt) / 60000)}m.`
         );
         bootState = 'failed';
+        bootPromise = null;
         return;
       }
     }
@@ -535,6 +551,8 @@ async function executeBootSequence(): Promise<void> {
   lastInitTime = Date.now();
 
   log.info('🚀 Service worker boot started', { bootId });
+  bootFlowId = diag.startFlow('system', 'service-worker-boot', 'Boot sequence started');
+  diag.step(bootFlowId, 'system', 'boot-start', 'Service worker boot entered', { bootId });
 
   const phases = buildPhases();
   let criticalFailure = false;
@@ -550,6 +568,11 @@ async function executeBootSequence(): Promise<void> {
       }
 
       log.debug(`▶️ Starting phase ${index}: ${phase.name}`);
+      if (bootFlowId) {
+        diag.step(bootFlowId, 'system', 'phase-start', `Starting phase ${phase.name}`, {
+          phaseIndex: index,
+        });
+      }
 
       // Skip deferred phases on the critical path
       if (phase.deferred) {
@@ -576,6 +599,12 @@ async function executeBootSequence(): Promise<void> {
       } else {
         const phaseDuration = Date.now() - phaseStart;
         log.debug(`✅ Phase ${index}: ${phase.name} completed in ${phaseDuration}ms`);
+        if (bootFlowId) {
+          diag.step(bootFlowId, 'system', 'phase-complete', `Completed phase ${phase.name}`, {
+            phaseIndex: index,
+            phaseDurationMs: phaseDuration,
+          });
+        }
       }
     }
   } catch (error) {
@@ -585,7 +614,7 @@ async function executeBootSequence(): Promise<void> {
     recordBootError({
       service: 'boot-sequence',
       phase: -1,
-      error: errorDetails instanceof Error ? errorDetails.message : String(error),
+      error: error instanceof Error ? error.message : String(errorDetails),
       timestamp: Date.now(),
       fatal: true,
     });
@@ -649,6 +678,25 @@ async function executeBootSequence(): Promise<void> {
   // Final status report
   if (bootState === 'failed') {
     log.error('⚠️ CRITICAL: Service worker failed to initialize!');
+  }
+
+  if (bootFlowId) {
+    diag.endFlow(
+      bootFlowId,
+      'system',
+      'service-worker-boot',
+      bootState === 'ready' || bootState === 'degraded',
+      `Final state: ${bootState}`,
+      {
+        bootState,
+        bootId,
+        durationMs: metrics.totalDurationMs,
+        servicesUp: upCount,
+        servicesDown: downCount,
+        servicesDegraded: degradedCount,
+      }
+    );
+    bootFlowId = null;
   }
 }
 

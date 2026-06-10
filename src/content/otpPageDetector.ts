@@ -1095,23 +1095,34 @@ class ToastFeedback {
     return `
       :host {
         position: fixed; top: 20px; right: 20px;
-        z-index: 2147483647;
+        z-index: 2147483645;
+        isolation: isolate;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         pointer-events: none;
       }
       .toast {
-        background: linear-gradient(135deg, #6366F1, #8B5CF6);
-        color: #fff; padding: 14px 20px; border-radius: 12px;
-        box-shadow: 0 10px 40px rgba(99, 102, 241, 0.4);
-        font-size: 14px; display: flex; align-items: center;
-        gap: 10px; max-width: 300px;
+        background: var(--gf-magenta, #FF3BD4);
+        color: var(--gf-ink, #000);
+        padding: 14px 20px;
+        border-radius: 8px;
+        border: 2px solid var(--gf-ink, #000);
+        box-shadow: 4px 4px 0 var(--gf-ink, #000); /* HARD MEMPHIS SHADOW */
+        font-size: 14px;
+        font-weight: 800;
+        font-family: "Space Grotesk", sans-serif;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        max-width: 300px;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
         animation: slideIn ${CONFIG.TOAST_ANIMATION_MS}ms cubic-bezier(0.22, 1, 0.36, 1);
       }
       .toast.out {
         animation: slideOut ${CONFIG.TOAST_ANIMATION_MS}ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
       }
-      .title { font-weight: 600; font-size: 13px; }
-      .sub { opacity: 0.85; font-size: 11px; font-family: monospace; margin-top: 2px; }
+      .title { font-weight: 800; font-size: 14px; color: var(--gf-ink, #000); }
+      .sub { opacity: 0.9; font-size: 12px; font-family: "IBM Plex Mono", monospace; margin-top: 2px; color: var(--gf-ink, #000); font-weight: 700; }
       svg { flex-shrink: 0; }
       @keyframes slideIn {
         from { transform: translateX(120%); opacity: 0; }
@@ -1120,7 +1131,7 @@ class ToastFeedback {
       @keyframes slideOut {
         from { transform: translateX(0); opacity: 1; }
         to {
-          transform: translateY(-10px) scale(0.95);
+          transform: translateY(10px);
           opacity: 0;
         }
       }
@@ -1264,7 +1275,7 @@ class ScoringEngine {
       signals.push('password-field-negative', SIGNAL_WEIGHTS.LOGIN_FORM_PRESENT, true);
     }
 
-    // ── 8. Composite confidence ───────────────────────────
+    // ── 8. Composite Confidence (Properly Blended) ───────────────────
     const fieldConfidence = clamp(fields.getMaxScore(), 0, 1);
 
     let contextScore = 0;
@@ -1282,7 +1293,15 @@ class ScoringEngine {
     }
     contextScore = clamp(contextScore, CONFIG.CONTEXT_SCORE_MIN, CONFIG.CONTEXT_SCORE_MAX);
 
-    const composite = clamp(fieldConfidence + contextScore, 0, 1);
+    // Normalize contextScore from its ±0.3 raw range to 0-1, then blend:
+    // Fields carry 70% weight (direct signal), context carries 30% (disambiguation).
+    const normalizedContext = clamp(
+      (contextScore - CONFIG.CONTEXT_SCORE_MIN) /
+        (CONFIG.CONTEXT_SCORE_MAX - CONFIG.CONTEXT_SCORE_MIN || 1),
+      0,
+      1
+    );
+    const composite = clamp(fieldConfidence * 0.7 + normalizedContext * 0.3, 0, 1);
 
     // ── Verdict ───────────────────────────────────────────
     const sortedFields = fields.getSorted();
@@ -1539,6 +1558,11 @@ export class OTPPageDetector {
   // ── Scheduling ──
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private lastRunTime = 0;
+  private initAbort: AbortController | null = null;
+
+  // ── AI inference cache ──
+  // Keyed by a structural DOM hash so identical form layouts skip re-inference.
+  private readonly aiSnapshotCache = new Map<string, boolean>();
 
   // ── Observers & listeners ──
   private mutationObserver: MutationObserver | null = null;
@@ -1548,10 +1572,9 @@ export class OTPPageDetector {
   private formSubmitHandler: ((e: Event) => void) | null = null;
   private formSubmittedRecently = false;
 
-  // ── History patch management ──
-  private originalPushState: typeof history.pushState | null = null;
-  private originalReplaceState: typeof history.replaceState | null = null;
-  private isHistoryPatched = false;
+  // ── Navigation watcher states ──
+  private urlPollInterval: ReturnType<typeof setInterval> | null = null;
+  private titleObserver: MutationObserver | null = null;
 
   // ── Metrics ──
   private readonly metrics: DetectionMetrics = {
@@ -1587,6 +1610,8 @@ export class OTPPageDetector {
     }
 
     this.lastUrl = location.href;
+    this.initAbort = new AbortController();
+    const { signal } = this.initAbort;
 
     this.installMutationObserver();
     this.installFocusListener();
@@ -1595,7 +1620,7 @@ export class OTPPageDetector {
 
     // Initial detection (slight delay for DOM hydration)
     setTimeout(() => {
-      if (!this.destroyed) {
+      if (!signal.aborted && !this.destroyed) {
         this.scheduleDetection('init');
       }
     }, CONFIG.INITIAL_DELAY_MS);
@@ -1608,6 +1633,10 @@ export class OTPPageDetector {
       return;
     }
     this.destroyed = true;
+
+    // Abort any in-flight init delay
+    this.initAbort?.abort();
+    this.initAbort = null;
 
     // Cancel pending detection
     if (this.debounceTimer !== null) {
@@ -1705,22 +1734,27 @@ export class OTPPageDetector {
   }
 
   private installNavigationWatcher(): void {
-    if (!this.isHistoryPatched) {
-      this.originalPushState = history.pushState.bind(history);
-      this.originalReplaceState = history.replaceState.bind(history);
+    let lastUrl = location.href;
 
-      history.pushState = (...args: Parameters<typeof history.pushState>) => {
-        this.originalPushState!(...args);
-        this.onNavigate();
-      };
-
-      history.replaceState = (...args: Parameters<typeof history.replaceState>) => {
-        this.originalReplaceState!(...args);
-        this.onNavigate();
-      };
-
-      this.isHistoryPatched = true;
+    // Observe title changes (catches most SPA transitions)
+    const titleEl = document.querySelector('title');
+    if (titleEl) {
+      this.titleObserver = new MutationObserver(() => {
+        if (location.href !== lastUrl) {
+          lastUrl = location.href;
+          this.onNavigate();
+        }
+      });
+      this.titleObserver.observe(titleEl, { childList: true });
     }
+
+    // Fallback: Poll URL every 500ms for pushState navigations that don't touch the title
+    this.urlPollInterval = setInterval(() => {
+      if (location.href !== lastUrl) {
+        lastUrl = location.href;
+        this.onNavigate();
+      }
+    }, 500);
 
     this.popstateHandler = () => this.onNavigate();
     window.addEventListener('popstate', this.popstateHandler);
@@ -1730,19 +1764,14 @@ export class OTPPageDetector {
   }
 
   private restoreHistoryMethods(): void {
-    if (!this.isHistoryPatched) {
-      return;
+    if (this.titleObserver) {
+      this.titleObserver.disconnect();
+      this.titleObserver = null;
     }
-
-    if (this.originalPushState) {
-      history.pushState = this.originalPushState;
-      this.originalPushState = null;
+    if (this.urlPollInterval) {
+      clearInterval(this.urlPollInterval);
+      this.urlPollInterval = null;
     }
-    if (this.originalReplaceState) {
-      history.replaceState = this.originalReplaceState;
-      this.originalReplaceState = null;
-    }
-    this.isHistoryPatched = false;
   }
 
   /**
@@ -1997,12 +2026,26 @@ export class OTPPageDetector {
     this.aiRequested = true;
     this.metrics.aiRequested = true;
 
-    log.info('🤖 Requesting AI OTP detection', {
-      confidence: pct(this.confidence),
-    });
-
     try {
       const snapshot = this.buildDOMSnapshot();
+
+      // ── DOM-hash cache ───────────────────────────────────────────────
+      // Hash is a fast, deterministic fingerprint of the current form structure.
+      // If the DOM hasn't changed since the last AI call, skip inference entirely.
+      const hash = this.getDOMHash();
+      if (this.aiSnapshotCache.has(hash)) {
+        log.debug('AI cache hit — skipping re-inference for identical DOM structure');
+        // If the cached verdict was positive, re-trigger detection
+        if (this.aiSnapshotCache.get(hash)) {
+          this.scheduleDetection('ai-cache-hit');
+        }
+        return;
+      }
+
+      log.info('🤖 Requesting AI OTP detection', {
+        confidence: pct(this.confidence),
+      });
+
       const response = (await safeSendMessage({
         action: 'ANALYZE_DOM',
         payload: { simplifiedDOM: snapshot },
@@ -2015,13 +2058,21 @@ export class OTPPageDetector {
       this.aiResponded = true;
       this.metrics.aiResponded = true;
 
-      if (
+      const confirmed = !!(
         response?.success &&
         response.result?.confidence !== undefined &&
         response.result.confidence !== null &&
         response.result.confidence >= AI_CONFIRM_THRESHOLD
-      ) {
-        log.info('✅ AI confirmed OTP page', { confidence: response.result.confidence });
+      );
+
+      // Persist result to cache (bounded to 15 entries)
+      if (this.aiSnapshotCache.size >= 15) {
+        this.aiSnapshotCache.delete(this.aiSnapshotCache.keys().next().value!);
+      }
+      this.aiSnapshotCache.set(hash, confirmed === true);
+
+      if (confirmed) {
+        log.info('✅ AI confirmed OTP page', { confidence: response!.result!.confidence });
         this.scheduleDetection('ai-response');
       } else {
         log.debug('AI did not confirm OTP page');
@@ -2031,18 +2082,28 @@ export class OTPPageDetector {
     }
   }
 
+  /** Fast deterministic fingerprint of current input structure (no DOM allocation). */
+  private getDOMHash(): string {
+    const inputs = document.querySelectorAll<HTMLInputElement>('input:not([type="hidden"])');
+    const parts: string[] = [];
+    for (const el of inputs) {
+      parts.push(`${el.type}|${el.name}|${el.id}|${el.autocomplete}`);
+    }
+    return parts.join('::');
+  }
+
   private buildDOMSnapshot(): string {
     const parts: string[] = [];
 
     const forms = document.querySelectorAll('form');
     for (const form of forms) {
-      parts.push(form.outerHTML.substring(0, CONFIG.MAX_FORM_SNAPSHOT_CHARS));
+      parts.push(this.buildSanitizedSnapshot(form).substring(0, CONFIG.MAX_FORM_SNAPSHOT_CHARS));
     }
 
     const orphanInputs = document.querySelectorAll<HTMLInputElement>('input:not([type="hidden"])');
     for (const input of orphanInputs) {
       if (!input.closest('form')) {
-        parts.push(input.outerHTML);
+        parts.push(this.buildSanitizedSnapshot(input));
       }
     }
 
@@ -2052,6 +2113,96 @@ export class OTPPageDetector {
   // ═══════════════════════════════════════════════════════════
   //  AUTO-FILL HANDLER
   // ═══════════════════════════════════════════════════════════
+
+  private buildSanitizedSnapshot(element: Element): string {
+    const clone = element.cloneNode(true) as Element;
+
+    clone.querySelectorAll('script, style, iframe, object, embed, link, meta').forEach((node) => {
+      node.remove();
+    });
+
+    const scrubElement = (node: Element) => {
+      if (node instanceof HTMLInputElement) {
+        const type = node.type.toLowerCase();
+        if (type === 'hidden' || type === 'password' || type === 'file') {
+          node.remove();
+          return;
+        }
+        node.removeAttribute('value');
+        node.removeAttribute('checked');
+      }
+
+      if (
+        node instanceof HTMLTextAreaElement ||
+        node instanceof HTMLSelectElement ||
+        node instanceof HTMLOptionElement
+      ) {
+        node.textContent = '';
+        node.removeAttribute('value');
+        node.removeAttribute('selected');
+      }
+
+      node.removeAttribute('href');
+      node.removeAttribute('src');
+      node.removeAttribute('srcset');
+      node.removeAttribute('style');
+
+      for (const attr of Array.from(node.attributes)) {
+        if (/^(data|on)/i.test(attr.name)) {
+          node.removeAttribute(attr.name);
+        }
+      }
+    };
+
+    scrubElement(clone);
+    clone.querySelectorAll('*').forEach(scrubElement);
+
+    return clone.outerHTML;
+  }
+
+  private async waitForOtpInput(timeoutMs = 10_000): Promise<boolean> {
+    const find = () =>
+      document.querySelector<HTMLInputElement>(
+        'input[autocomplete="one-time-code"], input[name*="otp" i], input[name*="code" i], input[type="tel"]'
+      );
+
+    const check = () => {
+      if (!find()) {
+        return false;
+      }
+      const { result } = ScoringEngine.score(
+        this.formDetector,
+        this.cachedTitleKeyword,
+        this.cachedBodyKeyword,
+        this.cachedUrlKeyword
+      );
+      return result.verdict !== 'not-otp' && result.fields.length > 0;
+    };
+
+    if (check()) {
+      return true;
+    }
+
+    return new Promise<boolean>((resolve) => {
+      const timeout = setTimeout(() => {
+        observer.disconnect();
+        resolve(false);
+      }, timeoutMs);
+
+      const observer = new MutationObserver(() => {
+        if (check()) {
+          clearTimeout(timeout);
+          observer.disconnect();
+          resolve(true);
+        }
+      });
+
+      observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+      });
+    });
+  }
 
   async handleAutoFill(payload: AutoFillPayload): Promise<boolean> {
     if (this.destroyed) {
@@ -2070,22 +2221,29 @@ export class OTPPageDetector {
 
     // Run detection with progressive retries if we were not given explicit selectors.
     if (selectors.length === 0 && this.fields.length === 0) {
-      const delays = [0, 700, 2000];
-      for (let i = 0; i < delays.length; i++) {
-        const delay = delays[i];
-        if (delay && delay > 0) {
-          log.info(
-            `⏳ No fields found, waiting ${delay}ms for DOM to settle (attempt ${i + 1}/${delays.length})...`
-          );
-          await new Promise((r) => {
-            setTimeout(r, delay);
-          });
-        }
+      log.info('⏳ No fields found initially, waiting for OTP input via MutationObserver...');
+      const foundInput = await this.waitForOtpInput(10000);
+      if (foundInput) {
+        log.info('✨ OTP input detected via MutationObserver');
+        this.runDetection('auto-fill-trigger-mutated');
+      } else {
+        const delays = [0, 700, 2000];
+        for (let i = 0; i < delays.length; i++) {
+          const delay = delays[i];
+          if (delay && delay > 0) {
+            log.info(
+              `⏳ No fields found, waiting ${delay}ms for DOM to settle (attempt ${i + 1}/${delays.length})...`
+            );
+            await new Promise((r) => {
+              setTimeout(r, delay);
+            });
+          }
 
-        this.runDetection(delay === 0 ? 'auto-fill-trigger' : 'auto-fill-trigger-retry');
+          this.runDetection(delay === 0 ? 'auto-fill-trigger' : 'auto-fill-trigger-retry');
 
-        if (this.fields.length > 0) {
-          break;
+          if (this.fields.length > 0) {
+            break;
+          }
         }
       }
 

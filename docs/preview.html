@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0'>
+<title>GhostFill · Halcyon — Live Frontend</title>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,500&family=Staatliches&display=swap' rel='stylesheet'>
+<link href='styles/halcyon.css' rel='stylesheet'>
+<link href='styles/animations.css' rel='stylesheet'>
+<style>
+  body{margin:0}
+  .page{max-width:1100px;margin:0 auto;padding:42px 26px 120px}
+  .hd{display:flex;align-items:center;gap:12px}
+  .hd .gf-mark{width:40px;height:40px;color:var(--gf-sienna)}
+  h1{font-family:var(--gf-font-display);font-weight:900;font-size:clamp(42px,7vw,78px);margin:14px 0 6px;line-height:.96;letter-spacing:-.02em}
+  h1 em{font-style:italic;font-weight:500;color:var(--gf-sienna)}
+  .sub{color:var(--gf-ink-soft);max-width:560px;font-size:17px;line-height:1.6}
+  .hint{font-family:var(--gf-font-mono);font-size:11px;color:var(--gf-ink-soft);margin-top:10px}
+  section{margin-top:48px}
+  section>.gf-eyebrow{display:block;margin-bottom:16px}
+  .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:20px}
+  .c5{grid-column:span 5}.c6{grid-column:span 6}.c7{grid-column:span 7}.c12{grid-column:span 12}
+  .row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+
+  /* stagebox — the rich retro showcase area */
+  .stagebox{
+    background:
+      radial-gradient(ellipse at 30% 20%, rgba(0,137,123,.12) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 80%, rgba(212,147,13,.1) 0%, transparent 50%),
+      linear-gradient(165deg, #0d8a6e 0%, #00897B 40%, #006B5E 100%);
+    border:3px solid var(--gf-ink);border-radius:22px;box-shadow:var(--gf-shadow-lg);
+    min-height:460px;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;
+  }
+  /* halftone overlay on stagebox */
+  .stagebox::before{
+    content:'';position:absolute;inset:0;
+    background-image:radial-gradient(circle,rgba(255,248,236,.12) .8px,transparent 1px);
+    background-size:10px 10px;opacity:.7;
+  }
+  /* cross-hatch pattern overlay */
+  .stagebox::after{
+    content:'';position:absolute;inset:0;
+    background-image:
+      repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(255,248,236,.04) 6px, rgba(255,248,236,.04) 7px),
+      repeating-linear-gradient(-45deg, transparent, transparent 6px, rgba(255,248,236,.04) 6px, rgba(255,248,236,.04) 7px);
+    pointer-events:none;
+  }
+  .demo-popup{position:relative;z-index:2}
+  /* decorative corner seal */
+  .stagebox-seal{
+    position:absolute;top:20px;left:20px;z-index:3;
+    display:flex;align-items:center;gap:6px;
+    font-family:var(--gf-font-sign);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+    color:rgba(255,248,236,.7);
+    border:2px double rgba(255,248,236,.35);border-radius:4px;padding:4px 10px;
+    transform:rotate(-4deg);
+  }
+  .stagebox-seal svg{width:14px;height:14px;fill:currentColor;stroke:none}
+
+  /* hero decoration */
+  .hero-row{display:flex;align-items:center;gap:16px;margin-top:18px;flex-wrap:wrap}
+
+  @media(max-width:880px){.grid{grid-template-columns:repeat(6,1fr)}.c5,.c6,.c7{grid-column:span 6}}
+</style>
+</head>
+<body class='gf-halcyon gf-wash gf-texture'>
+<svg width='0' height='0' style='position:absolute'><defs>
+<symbol id='ghost' viewBox='0 0 32 32'><path d='M16 3c-6 0-10 4.4-10 10v14l3.2-2.2L12.4 27l3.6-2.2L19.6 27l3.2-2.2L26 27V13C26 7.4 22 3 16 3z'/><circle cx='12.5' cy='14' r='1.9'/><circle cx='19.5' cy='14' r='1.9'/></symbol>
+<symbol id='check' viewBox='0 0 24 24'><path d='M5 13l4 4L19 7'/></symbol>
+<symbol id='copy' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='9' y='9' width='11' height='11' rx='2'/><path d='M5 15V5a2 2 0 0 1 2-2h10'/></symbol>
+<symbol id='refresh' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6'/></symbol>
+<symbol id='shield' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/></symbol>
+</defs></svg>
+
+<div class='page'>
+  <!-- HERO -->
+  <div class='hd gf-reveal' style='--i:0'><svg class='gf-mark'><use href='#ghost'/></svg><span class='gf-eyebrow'>GhostFill · Halcyon · Live Frontend</span></div>
+  <h1 class='gf-reveal' style='--i:1'>Everything, <em>moving</em>.</h1>
+  <p class='sub gf-reveal' style='--i:2'>Click anything. Every surface is real and animated — ripples, scramble, copy checkmarks, success bursts, toasts.</p>
+  <div class='hero-row gf-reveal' style='--i:3'>
+    <span class='gf-stamp gf-stamp--teal gf-stamp-wobble'>✓ Protected</span>
+    <span class='gf-stamp gf-stamp--mustard gf-stamp-wobble'>★ Premium</span>
+    <span class='gf-badge gf-badge--teal'>v3.0</span>
+    <span class='gf-badge gf-badge--coral'>NEW</span>
+  </div>
+
+  <!-- POPUP DEMO -->
+  <section>
+    <span class='gf-eyebrow gf-reveal' style='--i:4'>The popup (try every button)</span>
+    <div class='grid'>
+      <div class='c7'>
+        <div class='stagebox gf-reveal' style='--i:5'>
+          <!-- decorative seal in corner -->
+          <div class='stagebox-seal'>
+            <svg viewBox='0 0 32 32'><path d='M16 3c-6 0-10 4.4-10 10v14l3.2-2.2L12.4 27l3.6-2.2L19.6 27l3.2-2.2L26 27V13C26 7.4 22 3 16 3z'/></svg>
+            Live demo
+          </div>
+          <div class='gf-popup demo-popup' id='popup' style='width:340px;border:0;box-shadow:none;position:relative'>
+            <div class='gf-popup-head'>
+              <div class='gf-brand'><svg class='gf-mark'><use href='#ghost'/></svg><span class='gf-brand-name'>GhostFill</span></div>
+              <span class='gf-status'>Protected</span>
+            </div>
+            <div class='gf-card-dark' style='margin-bottom:13px;position:relative'>
+              <div class='gf-sun'></div>
+              <div class='gf-sunburst'></div>
+              <span class='gf-label' style='color:var(--gf-mustard-light)'>Active alias · amazon.com</span>
+              <div class='gf-data' id='email' style='font-size:17px;margin-top:7px;word-break:break-all;min-height:22px'>quiet.fox<span style='color:var(--gf-mustard-light)'>@</span>ghostfill.io</div>
+              <div class='row' style='gap:7px;margin-top:12px'>
+                <button class='gf-btn gf-btn--ghost' id='copy' style='padding:6px 11px;font-size:12px;box-shadow:2px 2px 0 var(--gf-ink)'>Copy</button>
+                <button class='gf-btn gf-btn--ghost' id='gen' style='padding:6px 11px;font-size:12px;box-shadow:2px 2px 0 var(--gf-ink)'>New alias</button>
+              </div>
+            </div>
+            <div class='row' style='gap:9px;margin-bottom:4px'>
+              <button class='gf-btn gf-btn--primary gf-ripple' id='fill' style='flex:1'>Fill &amp; mask</button>
+              <button class='gf-btn gf-btn--ghost gf-ripple' id='no' style='flex:1'>Not now</button>
+            </div>
+            <div class='gf-list'>
+              <div class='gf-row'><span class='gf-row-k'>Password</span><span class='gf-row-v'>••••••••••</span></div>
+              <div class='gf-row'><span class='gf-row-k'>One-time code</span><span class='gf-row-v gf-row-v--accent' id='otp' style='cursor:pointer'>408 921</span></div>
+              <div class='gf-row'><span class='gf-row-k'>Phone</span><span class='gf-row-v'>+91 ••• •• 21</span></div>
+            </div>
+            <div class='gf-burst' id='burst'><svg viewBox='0 0 24 24'><use href='#check' class='gf-check'/></svg><b>FILLED &amp; MASKED</b></div>
+          </div>
+        </div>
+        <div class='hint'>→ Fill &amp; mask = spinner + success burst · New alias = scramble · Copy = checkmark · tap the OTP = flip-in · Not now = shake</div>
+      </div>
+      <div class='c5'>
+        <div class='gf-panel' style='margin-bottom:20px'>
+          <span class='gf-label'>Floating button</span>
+          <div style='position:relative;height:96px;margin-top:10px'>
+            <button class='gf-fab gf-pulse' id='fab' style='position:absolute;right:18px;bottom:8px;animation:none'><svg class='gf-mark'><use href='#ghost'/></svg></button>
+          </div>
+          <div class='hint'>Pulses for attention · click = squash + toast</div>
+        </div>
+        <div class='gf-panel'>
+          <span class='gf-label'>Toasts</span>
+          <div class='row' style='margin-top:12px'>
+            <button class='gf-btn gf-btn--success gf-ripple' id='tOk' style='padding:8px 12px;font-size:12px'>Success</button>
+            <button class='gf-btn gf-btn--danger gf-ripple' id='tWarn' style='padding:8px 12px;font-size:12px'>Blocked</button>
+          </div>
+        </div>
+        <!-- decorative seal -->
+        <div style='margin-top:20px;display:flex;justify-content:center'>
+          <div class='gf-seal gf-reveal' style='--i:6'>
+            <div class='gf-seal-bg'></div>
+            <div class='gf-seal-tx'>GHOST<br>FILL<br>★</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DECORATIVE DIVIDER -->
+  <div class='gf-divider gf-reveal' style='--i:7;margin-top:48px'>
+    <svg class='gf-divider-icon' viewBox='0 0 32 32'><use href='#ghost'/></svg>
+  </div>
+
+  <!-- CONTEXT MENU & FIELD TAGS -->
+  <section>
+    <span class='gf-eyebrow'>Context menu &amp; field tags</span>
+    <div class='grid'>
+      <div class='c6'><div class='gf-panel'>
+        <span class='gf-label'>Context menu (staggered open)</span>
+        <div class='row' style='margin-top:14px;align-items:flex-start'>
+          <div class='gf-menu' id='menu'>
+            <div class='gf-menu-item gf-reveal' style='--i:0'><svg class='gf-mark'><use href='#ghost'/></svg> Fill &amp; mask email</div>
+            <div class='gf-menu-item gf-reveal' style='--i:1'><svg class='gf-mark'><use href='#ghost'/></svg> Generate new alias</div>
+            <div class='gf-menu-sep'></div>
+            <div class='gf-menu-item gf-reveal' style='--i:2'>Paste one-time code</div>
+          </div>
+          <button class='gf-btn gf-btn--ghost gf-ripple' id='replayMenu' style='padding:8px 12px;font-size:12px'>Replay open</button>
+        </div>
+      </div></div>
+      <div class='c6'><div class='gf-panel'>
+        <span class='gf-label'>Field tags</span>
+        <div class='row' style='margin-top:14px'>
+          <span class='gf-ghostlabel'><svg class='gf-mark'><use href='#ghost'/></svg> Masked</span>
+          <span class='gf-ghostlabel'><svg class='gf-mark'><use href='#ghost'/></svg> Fill</span>
+          <span class='gf-ghostlabel gf-ghostlabel--blocked'>Blocked</span>
+        </div>
+        <div class='hint'>These anchor to detected inputs on the page.</div>
+
+        <!-- stamp badges -->
+        <div class='row' style='margin-top:18px'>
+          <span class='gf-stamp gf-stamp-wobble'>⚡ Active</span>
+          <span class='gf-stamp gf-stamp--teal gf-stamp-wobble'>✓ Verified</span>
+        </div>
+      </div></div>
+    </div>
+  </section>
+
+  <!-- BADGES & COMPONENTS -->
+  <section>
+    <span class='gf-eyebrow'>Badges &amp; decoratives</span>
+    <div class='gf-panel gf-reveal' style='--i:8'>
+      <div class='row' style='gap:14px'>
+        <span class='gf-badge gf-badge--mustard'>PRO</span>
+        <span class='gf-badge gf-badge--sienna'>BLOCKED</span>
+        <span class='gf-badge gf-badge--teal'>ACTIVE</span>
+        <span class='gf-badge gf-badge--coral'>NEW</span>
+        <span class='gf-chip'><svg class='gf-mark' style='width:12px;height:12px'><use href='#ghost'/></svg> 142 aliases</span>
+        <span class='gf-status'>Protected</span>
+        <span class='gf-status gf-status--warn'>Exposed</span>
+      </div>
+    </div>
+  </section>
+
+  <div style='margin-top:40px'><a class='gf-btn gf-btn--primary' href='settings/settings.html' style='text-decoration:none'>Open the settings page →</a></div>
+</div>
+
+<div id='toasts' class='gf-halcyon' style='position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:10px;align-items:flex-end;z-index:9999'></div>
+
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id);};
+  var reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function ripple(btn){btn.addEventListener('click',function(e){if(reduced)return;var r=btn.getBoundingClientRect(),k=document.createElement('span');k.className='gf-ripple-ink';var s=Math.max(r.width,r.height);k.style.width=k.style.height=s+'px';k.style.left=(e.clientX-r.left-s/2)+'px';k.style.top=(e.clientY-r.top-s/2)+'px';btn.appendChild(k);setTimeout(function(){k.remove();},560);});}
+  document.querySelectorAll('.gf-ripple').forEach(ripple);
+
+  var ADJ=['quiet','amber','velvet','cobalt','silent','golden','dusty','brave','lunar','rapid'],AN=['fox','heron','otter','lynx','crane','marten','ibis','sable','wren','puma'],G='abcdefghijkmnpqrstuvwxyz0123456789';
+  function pick(a){return a[Math.floor(Math.random()*a.length)];}
+  function setEmail(l){$('email').innerHTML=l+"<span style='color:var(--gf-mustard-light)'>@</span>ghostfill.io";}
+  function scramble(t){if(reduced){setEmail(t);return;}var el=$('email');el.classList.add('gf-scrambling');var F=16,f=0,tm=setInterval(function(){var o='';for(var i=0;i<t.length;i++){o+= i<(f/F)*t.length ? t[i] : G[Math.floor(Math.random()*G.length)];}el.textContent=o;f++;if(f>F){clearInterval(tm);el.classList.remove('gf-scrambling');setEmail(t);}},26);}
+  $('gen').addEventListener('click',function(){var l=pick(ADJ)+'.'+pick(AN);scramble(l);toast('New alias ready',l+'@ghostfill.io','ok');});
+  $('copy').addEventListener('click',function(){var b=this;b.classList.add('is-done');b.style.background='var(--gf-teal)';b.style.color='var(--gf-cream)';b.textContent='Copied ✓';setTimeout(function(){b.classList.remove('is-done');b.style.background='';b.style.color='';b.textContent='Copy';},1500);});
+  $('otp').addEventListener('click',function(){if(reduced)return;var el=this,t=el.textContent;el.textContent='';for(var i=0;i<t.length;i++){var s=document.createElement('span');s.className='gf-flip-in';s.style.animationDelay=(i*45)+'ms';s.textContent=t[i];el.appendChild(s);} });
+  $('fill').addEventListener('click',function(){var b=this;if(b.classList.contains('is-busy'))return;var t=b.textContent;b.classList.add('is-busy');b.innerHTML="<span class='gf-spin'></span>";setTimeout(function(){var bu=$('burst');bu.classList.add('show');var u=bu.querySelector('use');u.classList.remove('gf-check');void bu.offsetWidth;u.classList.add('gf-check');setTimeout(function(){bu.classList.remove('show');b.classList.remove('is-busy');b.textContent=t;toast('Filled & masked',$('email').textContent,'ok');},1150);},720);});
+  $('no').addEventListener('click',function(){var p=$('popup');p.classList.remove('gf-shake');void p.offsetWidth;p.classList.add('gf-shake');});
+  $('fab').addEventListener('click',function(){this.animate([{transform:'scale(1)'},{transform:'scale(.86)'},{transform:'scale(1.05)'},{transform:'scale(1)'}],{duration:280,easing:'cubic-bezier(.22,1,.36,1)'});toast('GhostFill ready','1 form detected','ok');});
+  $('replayMenu').addEventListener('click',function(){var items=$('menu').querySelectorAll('.gf-reveal');items.forEach(function(el){el.style.animation='none';void el.offsetWidth;el.style.animation='';});$('menu').classList.remove('gf-pop');void $('menu').offsetWidth;$('menu').classList.add('gf-pop');});
+  $('tOk').addEventListener('click',function(){toast('Filled & masked','quiet.fox@ghostfill.io','ok');});
+  $('tWarn').addEventListener('click',function(){toast('Field blocked','looked like a card number','warn');});
+
+  function toast(title,detail,kind){var wrap=$('toasts');var el=document.createElement('div');el.className='gf-toast gf-toast--enter';el.style.cursor='pointer';el.innerHTML="<span class='gf-dot "+(kind==='warn'?'gf-dot--warn':'gf-dot--ok')+"'></span><div><b></b><br><small></small></div>";el.querySelector('b').textContent=title;el.querySelector('small').textContent=detail;wrap.appendChild(el);var go=function(){el.classList.add('gf-toast--exit');setTimeout(function(){el.remove();},280);};el.addEventListener('click',go);setTimeout(go,3200);}
+})();
+</script>
+</body>
+</html>

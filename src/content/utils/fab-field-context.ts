@@ -5,8 +5,8 @@
  * Determines which GhostFill mode (email/password/otp/user/form/magic)
  * applies to a given form field, and whether to show the FAB at all.
  */
-import type { ButtonMode, PageType } from '@/content/utils/fab-types';
-import { isFormInputElement, escapeCSS, safeQuerySelector } from '@/content/utils/fab-utils';
+import type { ButtonMode, PageType } from './fab-types';
+import { isFormInputElement, escapeCSS, safeQuerySelector } from './fab-utils';
 
 const MIN_FIELD_WIDTH = 30;
 const MIN_FIELD_HEIGHT = 15;
