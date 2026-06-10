@@ -700,7 +700,7 @@ export class AutoFiller {
         return {
           success: false,
           filledCount: 0,
-          message: 'Blocked on login page',
+          message: 'disabled on login pages',
           details,
           timingMs: performance.now() - startTime,
         };

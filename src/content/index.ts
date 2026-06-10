@@ -802,6 +802,11 @@ async function handleMessage(message: {
         const result = await autoFiller.smartFill();
         if (result.success && result.filledCount > 0) {
           pageStatus.success('Form filled!', 2500);
+        } else if (result.message?.includes('disabled on login pages')) {
+          pageStatus.error(
+            'Smart Fill blocked on login pages.\nTry the OTP button if you have a verification code.',
+            4000
+          );
         } else {
           pageStatus.hide();
         }

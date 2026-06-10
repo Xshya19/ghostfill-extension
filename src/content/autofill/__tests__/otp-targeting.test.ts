@@ -249,4 +249,57 @@ describe('OTP targeting safeguards', () => {
     // So the actual value in the DOM will be '12345', but we should still mark the fill as successful.
     expect(otpField.value).toBe('12345');
   });
+
+  it('blocks smartFill on a pure login page when no OTP fields are present', async () => {
+    vi.mocked(chrome.runtime.sendMessage).mockImplementation((message: unknown) => {
+      const action =
+        typeof message === 'object' && message !== null && 'action' in message
+          ? (message as { action?: string }).action
+          : undefined;
+
+      if (action === 'GET_IDENTITY') {
+        return Promise.resolve({
+          success: true,
+          identity: {
+            email: 'new@example.com',
+            username: 'new-user',
+            password: 'NewPass123!',
+          },
+        });
+      }
+
+      if (action === 'GET_LAST_OTP') {
+        return Promise.resolve({ lastOTP: null });
+      }
+
+      return Promise.resolve({ success: true });
+    });
+
+    const loginContext: PageContext = {
+      isLoginPage: true,
+      isVerificationPage: false,
+      is2FAPage: false,
+      isSignupPage: false,
+      isPasswordResetPage: false,
+      framework: 'unknown',
+      hasOTPLanguage: false,
+      expectedOTPLength: 6,
+      provider: null,
+      pageSignals: [],
+    };
+
+    const autoFiller = new AutoFiller();
+    vi.spyOn(autoFiller as any, 'getContext').mockReturnValue(loginContext);
+
+    document.body.innerHTML = `
+      <form>
+        <input name="username" type="text" />
+        <input name="password" type="password" />
+      </form>
+    `;
+
+    const result = await autoFiller.smartFill();
+    expect(result.success).toBe(false);
+    expect(result.message).toBe('disabled on login pages');
+  });
 });
