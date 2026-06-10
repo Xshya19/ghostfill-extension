@@ -121,28 +121,30 @@ The output files will compile into the `dist/` directory.
 
 ---
 
-## 📊 Model Training Pipeline
+## 📊 Model Training & Distillation Pipeline
 
-If you want to train or modify the underlying machine learning model:
+If you want to train, refine, or upgrade the underlying machine learning model:
 
 ```bash
 # Navigate to the training directory
 cd training
 
-# Install Python requirements
+# Install Python requirements (requires PyTorch, ONNX, and ONNX Runtime)
 pip install -r requirements.txt
 
-# Run the training, validation, and quantization script
+# Option A: Run the baseline training, validation, and quantization script
 python train_ghostfill_model.py
+
+# Option B: Run the advanced Knowledge Distillation pipeline (Teacher-Student Ensemble)
+python distill_ghostfill_model.py --teacher-epochs 50 --student-epochs 60
 ```
 
-### What happens during training?
+### What happens during distillation training?
 
-1. The script loads synthetic seed datasets alongside active learning logs (`ghostfill_dataset.json`).
-2. Splitting, balancing class weights, and training a PyTorch model.
-3. Held-out validation measures precision, recall, and accuracy.
-4. Exports weights to an FP32 ONNX model (`models/ghostfill_v1_fp32.onnx`).
-5. Quantizes parameters into `models/ghostfill_v1_int8.onnx` to ship with the extension.
+1. **Teacher Training**: The pipeline trains an ensemble of 3 distinct, heavily-regularized neural network architectures (high capacity).
+2. **Soft-Target Distillation**: The ensemble of teachers generates "soft labels" representing the relative probability distribution of each class (capturing subtle features/ambiguities).
+3. **Student Optimization**: A lightweight, fast student model is trained under a combined loss function (hard labels + soft temperature-scaled teacher logits).
+4. **Validation & Quantization**: Evaluates the distilled student model's accuracy, exports it to an FP32 ONNX format, and applies dynamic INT8 quantization (`models/ghostfill_v1_int8.onnx`) for direct use in the extension's offscreen engine.
 
 ---
 
