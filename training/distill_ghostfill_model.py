@@ -32,6 +32,8 @@ import random
 import sys
 import warnings
 from typing import List, Optional, Tuple
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
 import torch
@@ -118,7 +120,6 @@ class CharCNNEncoder(nn.Module):
             nn.GroupNorm(min(8, output_dim), output_dim),
             nn.GELU(),
         )
-        self.pool = nn.AdaptiveMaxPool1d(1)
         self.proj = nn.Linear(output_dim, output_dim)
         self.drop = nn.Dropout(dropout)
 
@@ -126,7 +127,7 @@ class CharCNNEncoder(nn.Module):
         emb = self.embedding(x)          # (B, L, E)
         emb = emb.transpose(1, 2)        # (B, E, L)
         h = self.conv_stack(emb)
-        h = self.pool(h).squeeze(-1)     # (B, output_dim)
+        h = torch.max(h, dim=-1)[0]      # (B, output_dim)
         return self.drop(self.proj(h))
 
 
@@ -153,9 +154,12 @@ class StructuralEncoder(nn.Module):
             nn.Linear(in_dim, hidden_dim),
             nn.LayerNorm(hidden_dim),
             nn.GELU(),
-            nn.Dropout(0.1),
+            nn.Dropout(0.15),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.GELU(),
+            nn.Dropout(0.15),
             nn.Linear(hidden_dim, out_dim),
-            nn.LayerNorm(out_dim),
             nn.GELU(),
         )
 
@@ -456,6 +460,7 @@ def make_dataset(samples_per_class: int = 500) -> list[dict]:
                 "text_channels": text_channels,
                 "structural": structural,
                 "label_idx": label_idx,
+                "seed": seed,
             })
     random.shuffle(records)
     return records
@@ -505,6 +510,7 @@ def load_real_data() -> list[dict]:
                     "text_channels": text_channels,
                     "structural": structural,
                     "label_idx": CLASS_NAMES.index(label),
+                    "seed": seed,
                 })
                 loaded += 1
             print(f"  [+] Loaded {loaded} real DOM samples from {data_file}")
@@ -707,7 +713,6 @@ def export_and_quantize(
         model,
         (dummy_text, dummy_struct),
         fp32_path,
-        opset_version=14,
         input_names=["text_channels", "structural"],
         output_names=["logits"],
         dynamic_axes={
@@ -715,13 +720,15 @@ def export_and_quantize(
             "structural": {0: "batch"},
             "logits": {0: "batch"},
         },
+        opset_version=17,
+        dynamo=False,
     )
 
     # Verify
     m = onnx.load(fp32_path)
     onnx.checker.check_model(m)
     size_mb = os.path.getsize(fp32_path) / 1024 / 1024
-    print(f"  ✓ FP32 ONNX exported ({size_mb:.1f} MB)")
+    print(f"  [OK] FP32 ONNX exported ({size_mb:.1f} MB)")
 
     # INT8 Quantization
     print(f"  Quantizing → {int8_path}")
@@ -729,9 +736,10 @@ def export_and_quantize(
         model_input=fp32_path,
         model_output=int8_path,
         weight_type=QuantType.QInt8,
+        per_channel=True,
     )
     size_mb_int8 = os.path.getsize(int8_path) / 1024 / 1024
-    print(f"  ✓ INT8 ONNX quantized ({size_mb_int8:.1f} MB)")
+    print(f"  [OK] INT8 ONNX quantized ({size_mb_int8:.1f} MB)")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -762,6 +770,132 @@ def evaluate(model: nn.Module, dataset: list[dict], label: str = "Model") -> flo
     return acc
 
 
+def format_seed_for_llm(seed: dict) -> str:
+    """Format seed attributes into a clean prompt string."""
+    parts = []
+    if seed.get("type"):
+        parts.append(f"- Type: {seed['type']}")
+    if seed.get("name"):
+        parts.append(f"- Name: {seed['name']}")
+    if seed.get("id"):
+        parts.append(f"- ID: {seed['id']}")
+    if seed.get("placeholder"):
+        parts.append(f"- Placeholder: {seed['placeholder']}")
+    if seed.get("autocomplete"):
+        parts.append(f"- Autocomplete: {seed['autocomplete']}")
+    if seed.get("label_text"):
+        parts.append(f"- Label text: {seed['label_text']}")
+    if seed.get("aria_label"):
+        parts.append(f"- Aria label: {seed['aria_label']}")
+    if seed.get("surrounding"):
+        parts.append(f"- Surrounding text: {seed['surrounding']}")
+    return "\n".join(parts)
+
+
+def query_cerebras_llm(prompt_payload: str, api_key: str, model: str = "gpt-oss-120b") -> dict:
+    """Send request to Cerebras completions endpoint using built-in urllib."""
+    url = "https://api.cerebras.ai/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    body = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are an expert web form analyzer. Your task is to estimate the probability "
+                    "that a given HTML input field belongs to each of the following 10 classes:\n"
+                    "- Email\n- Username\n- Password\n- Target_Password_Confirm\n"
+                    "- First_Name\n- Last_Name\n- Full_Name\n- Phone\n- OTP\n- Unknown\n\n"
+                    "Provide the output as a JSON object with a key 'probabilities', containing "
+                    "the 10 class names and their estimated probabilities (floats between 0.0 and 1.0, summing to 1.0). "
+                    "Do not include any reasoning, markdown formatting, or extra text. Only return the JSON."
+                )
+            },
+            {
+                "role": "user",
+                "content": f"Input Field Attributes:\n{prompt_payload}"
+            }
+        ],
+        "temperature": 0.1,
+        "response_format": {"type": "json_object"}
+    }
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode("utf-8"),
+        headers=headers,
+        method="POST"
+    )
+    with urllib.request.urlopen(req) as response:
+        res_body = response.read().decode("utf-8")
+        return json.loads(res_body)
+
+
+def generate_llm_soft_labels_parallel(
+    dataset: list[dict],
+    api_key: str,
+    model: str = "gpt-oss-120b",
+    limit: int = 300
+) -> list[dict]:
+    """Use Cerebras API to generate high-quality soft labels for a subset of the dataset."""
+    samples_to_label = dataset[:limit]
+    remaining_samples = dataset[limit:]
+
+    print(f"\n  [+] Querying Cerebras API ({model}) to distill {len(samples_to_label)} samples...")
+
+    def label_single_sample(r: dict) -> dict:
+        try:
+            prompt_payload = format_seed_for_llm(r.get("seed", {}))
+            res = query_cerebras_llm(prompt_payload, api_key, model)
+            content = res["choices"][0]["message"]["content"]
+            data = json.loads(content)
+            probs_dict = data.get("probabilities", {})
+            
+            prob_vector = [0.0] * 10
+            for class_name, prob in probs_dict.items():
+                if class_name in CLASS_NAMES:
+                    idx = CLASS_NAMES.index(class_name)
+                    prob_vector[idx] = float(prob)
+            
+            total = sum(prob_vector)
+            if total > 0:
+                prob_vector = [p / total for p in prob_vector]
+            else:
+                prob_vector = [0.0] * 10
+                prob_vector[r["label_idx"]] = 1.0
+                
+            r["soft_label"] = prob_vector
+        except Exception as e:
+            # Fallback to hard label on failure
+            prob_vector = [0.0] * 10
+            prob_vector[r["label_idx"]] = 1.0
+            r["soft_label"] = prob_vector
+        return r
+
+    labeled = []
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(label_single_sample, dict(r)): r for r in samples_to_label}
+        completed_count = 0
+        for future in as_completed(futures):
+            labeled.append(future.result())
+            completed_count += 1
+            if completed_count % 50 == 0 or completed_count == len(samples_to_label):
+                print(f"      Processed {completed_count}/{len(samples_to_label)} LLM requests...")
+
+    # Set hard-labels for remaining samples (to keep dataset balanced without excess API usage)
+    for r in remaining_samples:
+        r_copy = dict(r)
+        prob_vector = [0.0] * 10
+        prob_vector[r_copy["label_idx"]] = 1.0
+        r_copy["soft_label"] = prob_vector
+        labeled.append(r_copy)
+
+    print(f"  ✓ Finished LLM labeling. Total dataset: {len(labeled)}")
+    return labeled
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════════════════════════════════════════════
@@ -775,6 +909,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--temp", type=float, default=4.0, help="Distillation temperature")
     p.add_argument("--alpha", type=float, default=0.3, help="Hard label weight (0=all soft, 1=all hard)")
     p.add_argument("--skip-teacher", action="store_true", help="Skip teacher training (use cached soft labels)")
+    p.add_argument("--api-key", type=str, default="", help="Cerebras Cloud API Key for LLM Teacher")
+    p.add_argument("--model", type=str, default="gpt-oss-120b", help="Cerebras LLM Model ID to query")
+    p.add_argument("--llm-samples", type=int, default=300, help="Number of synthetic samples to label with LLM")
     return p.parse_args()
 
 
@@ -783,9 +920,9 @@ def main() -> None:
     os.makedirs(MODELS_DIR, exist_ok=True)
     os.makedirs(DATA_DIR, exist_ok=True)
 
-    print("\n" + "═" * 60)
+    print("\n" + "=" * 60)
     print("  GhostFill Knowledge Distillation Pipeline")
-    print("═" * 60)
+    print("=" * 60)
     print(f"  Device     : {DEVICE}")
     print(f"  Temperature: {args.temp}")
     print(f"  Alpha      : {args.alpha}")
@@ -799,28 +936,37 @@ def main() -> None:
     random.shuffle(all_data)
     print(f"  Total samples: {len(all_data)} (synthetic={len(synthetic)}, real={len(real_data)})")
 
-    # ── Step 2: Train teacher (3× size) ──────────────────────────────────────
+    # ── Step 2 & 3: Teacher Labeling (Local or Cerebras LLM) ─────────────────
+    api_key = args.api_key or os.environ.get("CEREBRAS_API_KEY")
+    
     if not args.skip_teacher or not os.path.exists(SOFT_LABELS_FILE):
-        print("\n[2/5] Training large teacher model...")
-        teacher = FieldClassifier(
-            embed_dim=96,       # 2× student embed_dim
-            struct_out=256,     # 2× student struct_out
-            num_heads=8,        # 2× student heads
-            head_hidden=768,    # 2.4× student head_hidden
-            dropout=0.15,
-        )
-        train_model(teacher, all_data, epochs=args.teacher_epochs, label="Teacher")
+        if api_key:
+            print(f"\n[2/5] Using Cerebras LLM ({args.model}) as Teacher for distillation...")
+            enriched_data = generate_llm_soft_labels_parallel(
+                all_data, api_key, model=args.model, limit=args.llm_samples
+            )
+            print("\n[3/5] Bypassing PyTorch teacher training (using LLM soft labels)...")
+        else:
+            print("\n[2/5] Training large teacher model...")
+            teacher = FieldClassifier(
+                embed_dim=96,       # 2× student embed_dim
+                struct_out=256,     # 2× student struct_out
+                num_heads=8,        # 2× student heads
+                head_hidden=768,    # 2.4× student head_hidden
+                dropout=0.15,
+            )
+            train_model(teacher, all_data, epochs=args.teacher_epochs, label="Teacher")
 
-        acc_teacher = evaluate(teacher, all_data, label="Teacher")
-        if acc_teacher < 70.0:
-            print("  ⚠  Teacher accuracy below 70% — consider more data or epochs")
+            acc_teacher = evaluate(teacher, all_data, label="Teacher")
+            if acc_teacher < 70.0:
+                print("  [WARN] Teacher accuracy below 70% -- consider more data or epochs")
 
-        # Export teacher for reference
-        export_and_quantize(teacher, TEACHER_FP32, TEACHER_FP32.replace(".onnx", "_int8.onnx"), "Teacher")
+            # Export teacher for reference
+            export_and_quantize(teacher, TEACHER_FP32, TEACHER_FP32.replace(".onnx", "_int8.onnx"), "Teacher")
 
-        # ── Step 3: Generate soft labels ───────────────────────────────────────
-        print("\n[3/5] Generating soft labels from teacher...")
-        enriched_data = generate_soft_labels(teacher, all_data, temperature=args.temp)
+            # ── Step 3: Generate soft labels ───────────────────────────────────────
+            print("\n[3/5] Generating soft labels from teacher...")
+            enriched_data = generate_soft_labels(teacher, all_data, temperature=args.temp)
 
         # Save for inspection / skip-teacher re-runs
         os.makedirs(DATA_DIR, exist_ok=True)
@@ -828,7 +974,7 @@ def main() -> None:
             json.dump(enriched_data, f)
         print(f"  Soft labels saved to {SOFT_LABELS_FILE}")
     else:
-        print("\n[2/5] Skipping teacher (loading cached soft labels)...")
+        print("\n[2/5] Skipping teacher / LLM labeling (loading cached soft labels)...")
         print(f"\n[3/5] Loading soft labels from {SOFT_LABELS_FILE}...")
         with open(SOFT_LABELS_FILE) as f:
             enriched_data = json.load(f)
@@ -855,12 +1001,12 @@ def main() -> None:
     print("\n[5/5] Exporting distilled student model...")
     export_and_quantize(student, STUDENT_FP32, STUDENT_INT8, "Student")
 
-    print("\n" + "═" * 60)
-    print("  ✅ Distillation complete!")
+    print("\n" + "=" * 60)
+    print("  [SUCCESS] Distillation complete!")
     print(f"     Student held-out accuracy : {acc_student:.1f}%")
     print(f"     Output INT8 model         : {STUDENT_INT8}")
     print(f"     Output FP32 model         : {STUDENT_FP32}")
-    print("═" * 60)
+    print("=" * 60)
     print("\n  Next steps:")
     print("  1. Build the extension: npm run build")
     print("  2. Load unpacked in Chrome and test on real forms")

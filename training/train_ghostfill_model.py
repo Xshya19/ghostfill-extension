@@ -109,7 +109,6 @@ class CharCNNEncoder(nn.Module):
             nn.GroupNorm(8, 192),
             nn.GELU(),
         )
-        self.pool = nn.AdaptiveMaxPool1d(1)   # → (B, 192, 1)
         self.proj = nn.Linear(192, output_dim)
         self.drop = nn.Dropout(dropout)
 
@@ -118,7 +117,7 @@ class CharCNNEncoder(nn.Module):
         emb = self.embedding(x)          # (B, L, E)
         emb = emb.transpose(1, 2)        # (B, E, L)
         h = self.conv_stack(emb)         # (B, 192, L')
-        h = self.pool(h).squeeze(-1)     # (B, 192)
+        h = torch.max(h, dim=-1)[0]      # (B, 192)
         return self.drop(self.proj(h))   # (B, output_dim)
 
 
