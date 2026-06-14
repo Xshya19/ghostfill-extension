@@ -4,7 +4,7 @@
   "version": "1.1.0",
   "description": "__MSG_extensionDescription__",
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.gstatic.com/ https://*.googleusercontent.com/; worker-src 'none'; child-src 'none'; frame-src 'none'; connect-src 'self' https://api.1secmail.com https://api.1secmail.net https://api.1secmail.org https://www.1secmail.com https://api.mail.tm https://api.mail.gw https://api.tmailor.com https://api.maildrop.cc https://api.dropmail.me https://api.guerrillamail.com https://api.tempmail.lol https://mercure.mail.tm https://www.googleapis.com/ https://oauth2.googleapis.com/ https://mail.google.com/ https://accounts.google.com/;"
+    "extension_pages": "script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.gstatic.com/ https://*.googleusercontent.com/; worker-src 'none'; child-src 'none'; frame-src 'none'; connect-src 'self' https://api.1secmail.com https://api.1secmail.net https://api.1secmail.org https://www.1secmail.com https://api.mail.tm https://api.mail.gw https://api.tmailor.com https://api.maildrop.cc https://api.dropmail.me https://api.guerrillamail.com https://api.tempmail.lol https://mercure.mail.tm https://www.googleapis.com/ https://oauth2.googleapis.com/ https://mail.google.com/ https://accounts.google.com/;"
   },
   "permissions": [
     "activeTab",
@@ -122,16 +122,6 @@
   "web_accessible_resources": [
     {
       "resources": ["assets/icons/icon128.png"],
-      "matches": ["https://*/*"],
-      "use_dynamic_url": true
-    },
-    {
-      "resources": [
-        "models/*.onnx",
-        "models/*.onnx.data",
-        "ort-wasm-simd-threaded.mjs",
-        "ort-wasm-simd-threaded.wasm"
-      ],
       "matches": ["https://*/*"],
       "use_dynamic_url": true
     }

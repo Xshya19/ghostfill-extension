@@ -11,6 +11,10 @@
 export type {
   // Core extraction types
   EmailIntent,
+  EmailDecision,
+  EmailDecisionAction,
+  EmailDecisionPurpose,
+  EmailDecisionRisk,
   EmailSection,
   ProviderKnowledge,
   ExtractedOTP,

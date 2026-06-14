@@ -26,6 +26,9 @@ class DedupService {
   private lastPruneAt = 0;
   private readonly PRUNE_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
   private initialized = false;
+  private initializePromise: Promise<void> | null = null;
+  private clearPromise: Promise<void> | null = null;
+  private persistGeneration = 0;
 
   constructor() {}
 
@@ -45,15 +48,40 @@ class DedupService {
       return;
     }
 
-    try {
-      const saved = await storageService.get(CONFIG.STORAGE_KEY);
-      if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
-        this.restoreState(saved as Record<string, ProcessedEmailRecord>);
+    if (this.initializePromise) {
+      return this.initializePromise;
+    }
+
+    const generationAtStart = this.persistGeneration;
+    this.initializePromise = (async () => {
+      try {
+        const saved = await storageService.get(CONFIG.STORAGE_KEY);
+        if (
+          generationAtStart === this.persistGeneration &&
+          saved &&
+          typeof saved === 'object' &&
+          !Array.isArray(saved)
+        ) {
+          this.restoreState(saved as Record<string, ProcessedEmailRecord>);
+        }
+        this.initialized = true;
+        log.info('DedupService initialized');
+      } catch (e) {
+        this.initialized = true;
+        log.warn('Failed to initialize DedupService; continuing with empty cache', e);
+      } finally {
+        this.initializePromise = null;
       }
-      this.initialized = true;
-      log.info('DedupService initialized');
-    } catch (e) {
-      log.warn('Failed to initialize DedupService', e);
+    })();
+
+    return this.initializePromise;
+  }
+
+  private async ensureReady(): Promise<void> {
+    await this.initialize();
+
+    if (this.clearPromise) {
+      await this.clearPromise;
     }
   }
 
@@ -74,6 +102,7 @@ class DedupService {
     emailId: string | number,
     accountId: string
   ): Promise<ProcessedEmailRecord | null> {
+    await this.ensureReady();
     this.maybePrune();
     const key = this.makeKey(emailId, accountId);
     const record = this.records.get(key);
@@ -97,17 +126,36 @@ class DedupService {
     hadOTP: boolean,
     hadLink: boolean
   ): Promise<void> {
+    await this.ensureReady();
     this.maybePrune();
     const key = this.makeKey(emailId, accountId);
 
     const existing = this.records.get(key);
+    if (existing) {
+      const nextHadOTP = Boolean(existing.hadOTP || hadOTP);
+      const nextHadLink = Boolean(existing.hadLink || hadLink);
+
+      if (existing.hadOTP === nextHadOTP && existing.hadLink === nextHadLink) {
+        return;
+      }
+
+      this.records.set(key, {
+        ...existing,
+        hadOTP: nextHadOTP,
+        hadLink: nextHadLink,
+      });
+      this.persist();
+      return;
+    }
+
+    const now = Date.now();
     const record: ProcessedEmailRecord = {
       id: String(emailId),
       accountId,
-      processedAt: Date.now(),
-      hadOTP: Boolean(existing?.hadOTP || hadOTP),
-      hadLink: Boolean(existing?.hadLink || hadLink),
-      ttlExpiresAt: Date.now() + CONFIG.DEDUP_TTL_MS,
+      processedAt: now,
+      hadOTP: Boolean(hadOTP),
+      hadLink: Boolean(hadLink),
+      ttlExpiresAt: now + CONFIG.DEDUP_TTL_MS,
     };
 
     this.records.set(key, record);
@@ -119,6 +167,7 @@ class DedupService {
     accountId: string,
     updates: Partial<Pick<ProcessedEmailRecord, 'hadOTP' | 'hadLink'>>
   ): Promise<void> {
+    await this.ensureReady();
     const key = this.makeKey(emailId, accountId);
     const existing = this.records.get(key);
     if (existing) {
@@ -129,6 +178,7 @@ class DedupService {
   }
 
   async prune(): Promise<number> {
+    await this.ensureReady();
     const now = Date.now();
     let pruned = 0;
 
@@ -147,9 +197,36 @@ class DedupService {
     return pruned;
   }
 
-  clear(): void {
+  clear(): Promise<void> {
+    if (this.clearPromise) {
+      return this.clearPromise;
+    }
+
+    const clearTask = this.performClear();
+    this.clearPromise = clearTask;
+
+    void clearTask.finally(() => {
+      if (this.clearPromise === clearTask) {
+        this.clearPromise = null;
+      }
+    });
+
+    return clearTask;
+  }
+
+  private async performClear(): Promise<void> {
+    this.persistGeneration++;
+    this.cancelPendingPersist();
     this.records.clear();
-    void storageService.remove(CONFIG.STORAGE_KEY);
+    await this.initialize();
+    this.records.clear();
+
+    try {
+      await storageService.remove(CONFIG.STORAGE_KEY);
+    } catch (e) {
+      log.warn('Failed to remove persisted dedup cache during clear', e);
+    }
+
     log.info('Dedup cache cleared');
   }
 
@@ -165,7 +242,13 @@ class DedupService {
     if (this.persistTimer) {
       clearTimeout(this.persistTimer);
     }
+    const generationAtSchedule = this.persistGeneration;
     this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      if (generationAtSchedule !== this.persistGeneration) {
+        return;
+      }
+
       const serializable = Object.fromEntries(this.records);
       storageService
         .set(CONFIG.STORAGE_KEY, serializable)
@@ -173,15 +256,19 @@ class DedupService {
     }, CONFIG.PERSIST_DELAY_MS);
   }
 
+  private cancelPendingPersist(): void {
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+    }
+  }
+
   /**
    * Stop the cleanup interval (important for testing/cleanup)
    */
   destroy(): void {
     // FIX #15: Clear persistTimer to prevent stale writes after destroy
-    if (this.persistTimer) {
-      clearTimeout(this.persistTimer);
-      this.persistTimer = null;
-    }
+    this.cancelPendingPersist();
   }
 }
 

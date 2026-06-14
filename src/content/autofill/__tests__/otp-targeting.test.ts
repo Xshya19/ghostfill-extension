@@ -106,14 +106,11 @@ describe('OTP targeting safeguards', () => {
     expect(OTPFieldDiscovery.discover(verificationContext)?.fields[0]).toBe(input);
   });
 
-  it('accepts the runtime shape used by CLASSIFY_FIELD messages', () => {
+  it('accepts the runtime shape used by local DOM analysis messages', () => {
     const result = validateMessage({
-      action: 'CLASSIFY_FIELD',
+      action: 'ANALYZE_DOM',
       payload: {
-        features: {
-          structural: Array.from({ length: 128 }, () => 0),
-        },
-        context: verificationContext,
+        simplifiedDOM: '<input autocomplete="one-time-code" inputmode="numeric" maxlength="6">',
       },
     });
 
@@ -192,7 +189,7 @@ describe('OTP targeting safeguards', () => {
     expect(otp.value).toBe('654321');
   });
 
-  it('correctly handles verification codes with leading zeros in type=number fields', async () => {
+  it('does not report success when type=number strips leading zeros from OTP fields', async () => {
     vi.mocked(chrome.runtime.sendMessage).mockImplementation((message: unknown) => {
       const action =
         typeof message === 'object' && message !== null && 'action' in message
@@ -244,9 +241,9 @@ describe('OTP targeting safeguards', () => {
 
     const result = await new AutoFiller().fillOTP('012345');
 
-    expect(result).toBe(true);
+    expect(result).toBe(false);
     // In type=number fields, the browser's native value property strips leading zeros.
-    // So the actual value in the DOM will be '12345', but we should still mark the fill as successful.
+    // GhostFill must surface that as unverified instead of pretending the code landed.
     expect(otpField.value).toBe('12345');
   });
 

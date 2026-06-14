@@ -32,7 +32,7 @@ export async function ensureOffscreenDocument(): Promise<void> {
         url: 'offscreen.html',
         reasons: [chrome.offscreen.Reason.CLIPBOARD, chrome.offscreen.Reason.DOM_PARSER],
         justification:
-          'To run local AI inference and handle clipboard operations without Service Worker restrictions',
+          'To handle clipboard and DOM parsing helpers without Service Worker restrictions',
       });
 
       log.debug('Offscreen document created successfully');

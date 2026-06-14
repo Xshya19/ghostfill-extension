@@ -566,6 +566,7 @@ function strategyLabel(patternName: string): ExtractionStrategy {
 interface ExtractedOTPCandidate extends OTPCandidate {
   rawScore: number;
   matchedKeywordCount: number;
+  ambiguous?: boolean;
 }
 
 // ══════════════════════════════════════════
@@ -651,6 +652,14 @@ export function extractOTP(
     if (!ctx.isValid && ctx.score < 8) {
       rejected.push({ code, reason: `low-context(${ctx.score})` });
       return;
+    }
+
+    if (
+      (patternName.startsWith('provider') || patternName === 'styled-code') &&
+      !ctx.relationshipGraph.hasInstructionVerb &&
+      !ctx.relationshipGraph.hasCodeLabel
+    ) {
+      baseConfidence = Math.min(baseConfidence, 58);
     }
 
     const zoneRefIndex = htmlIndex >= 0 ? htmlIndex : anchorIdx >= 0 ? anchorIdx : 0;
@@ -801,8 +810,13 @@ export function extractOTP(
           highestGravity = Math.max(highestGravity, 100 / (distance * 1.5));
         }
       }
-      if (highestGravity > 30) {
-        const semanticConfidence = Math.min(65 + highestGravity, 95);
+      if (highestGravity > 45) {
+        const nearby = sliceAround(fullText, tok.pos, tok.text.length, 30);
+        const hasExplicitLabel = /(?:code|otp|pin|passcode|password)\b/i.test(nearby);
+        if (!hasExplicitLabel) {
+          continue;
+        }
+        const semanticConfidence = Math.min(55 + highestGravity / 2, 70);
         addCandidate(tok.text, tok.text, 'semantic-proximity', semanticConfidence, tok.pos);
       }
     }
@@ -853,6 +867,21 @@ export function extractOTP(
   const best = candidates[0];
   if (!best) {
     return null;
+  }
+
+  const runnerUp = candidates[1];
+  if (runnerUp && best.code !== runnerUp.code) {
+    const margin = best.rawScore - runnerUp.rawScore;
+    if (margin < 12) {
+      best.ambiguous = true;
+      best.rawScore = Math.min(best.rawScore, 49);
+      best.confidence = Math.min(best.confidence, 49);
+      log.warn('OTP ambiguous; lowering confidence for review', {
+        best: `${best.code}(${best.rawScore.toFixed(1)})`,
+        runnerUp: `${runnerUp.code}(${runnerUp.rawScore.toFixed(1)})`,
+        margin: margin.toFixed(1),
+      });
+    }
   }
 
   const matchedSignals: OTPSignal[] = [];
@@ -960,6 +989,16 @@ export function extractOTP(
           conclusion: 'Overall context and visual isolation indicate a valid verification code.',
           impact: 'positive',
         },
+        ...(best.ambiguous
+          ? [
+              {
+                layer: 'ambiguity',
+                observation: 'Another distinct OTP candidate scored within the ambiguity margin.',
+                conclusion: 'Confidence lowered so automation can route this email to review.',
+                impact: 'negative' as const,
+              },
+            ]
+          : []),
         ...(antiSignals.length
           ? [
               {

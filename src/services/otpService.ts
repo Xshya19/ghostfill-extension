@@ -1,4 +1,4 @@
-// OTP Extraction Service — uses SmartDetectionService (local AI, no API key)
+// OTP Extraction Service — uses SmartDetectionService (local heuristics, no API key)
 
 import { PatternMatch, LastOTP } from '../types';
 import { createLogger } from '../utils/logger';
@@ -72,7 +72,7 @@ class OTPService {
     htmlBody?: string,
     subject: string = ''
   ): Promise<PatternMatch | null> {
-    log.info('🤖 Extracting OTP via Smart Detection (local AI)');
+    log.info('🤖 Extracting OTP via Smart Detection (local heuristics)');
 
     try {
       const result = await smartDetectionService.detect(subject, body || '', htmlBody || '');
@@ -84,7 +84,7 @@ class OTPService {
           confidence: result.confidence,
         });
         return {
-          pattern: `AI_${result.engine.toUpperCase().replace('-', '_')}`,
+          pattern: `SMART_${result.engine.toUpperCase().replace('-', '_')}`,
           confidence: result.confidence,
           extractedValue: result.code,
           startIndex: 0,

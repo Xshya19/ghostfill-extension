@@ -1,4 +1,4 @@
-import { Terminal, Save, Cpu, Brain, AlertTriangle } from 'lucide-react';
+import { Terminal, Save, AlertTriangle } from 'lucide-react';
 import React, { useRef } from 'react';
 
 import { UserSettings, DEFAULT_SETTINGS } from '../../../types/storage.types';
@@ -26,8 +26,6 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
   onClearData,
   onSettingsImport,
   onError,
-  sessionSecrets,
-  onSessionSecretChange,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -45,31 +43,6 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
     } catch (err) {
       log.error('Export failed:', err);
     }
-  };
-
-  const handleExportMLData = () => {
-    chrome.storage.local.get(['ghostfill_training_data'], (res) => {
-      const data = res.ghostfill_training_data || [];
-      if (data.length === 0) {
-        console.warn(
-          'No training data collected yet. Right-click editable fields on any website and report misclassifications to collect data.'
-        );
-        return;
-      }
-      try {
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `ghostfill_user_data.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      } catch (err) {
-        log.error('Export ML Data failed:', err);
-      }
-    });
   };
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -175,40 +148,6 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
               className="sr-only"
             />
           </label>
-        </div>
-      </SettingsSection>
-
-      <SettingsSection
-        id="ai-machine-learning"
-        title="AI & Machine Learning"
-        icon={<Cpu size={18} />}
-      >
-        <div className="setting-item vertical-group">
-          <div className="setting-info w-full">
-            <label htmlFor="llm-api-key">OpenAI / Anthropic API Key (Optional)</label>
-            <p>Used for enhanced field detection and smart form filling.</p>
-          </div>
-          <input
-            id="llm-api-key"
-            type="password"
-            placeholder="sk-..."
-            value={sessionSecrets.llmApiKey}
-            onChange={(e) => onSessionSecretChange('llmApiKey', e.target.value)}
-            autoComplete="off"
-          />
-          <p className="security-note">Stored in memory only (cleared on extension reload)</p>
-        </div>
-      </SettingsSection>
-
-      <SettingsSection id="ml-data" title="Continuous Learning" icon={<Brain size={18} />}>
-        <div className="setting-item">
-          <div className="setting-info">
-            <label>Export Training Data</label>
-            <p>Download your reported misclassifications to train the ML model</p>
-          </div>
-          <button className="premium-btn" type="button" onClick={handleExportMLData}>
-            Download Data
-          </button>
         </div>
       </SettingsSection>
 

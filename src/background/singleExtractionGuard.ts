@@ -15,7 +15,7 @@ export type ExtractionPayload = {
 const activeExtractionsByEmailId = new Map<string, Promise<ExtractionPayload>>();
 const extractionCacheByEmailId = new Map<string, { result: ExtractionPayload; savedAt: number }>();
 
-const EXTRACTION_CACHE_TTL_MS = 2 * 60_000;
+const EXTRACTION_CACHE_TTL_MS = 30_000;
 
 export async function extractEmailOnce(
   emailId: string,

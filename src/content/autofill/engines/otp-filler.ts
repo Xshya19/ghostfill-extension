@@ -58,36 +58,19 @@ export class OTPFiller {
     const success = await FieldSetter.setValue(field, valueToSet, framework, isBackgroundTab);
 
     // Read back and verify the fill to handle dropped leading zeros in type=number fields
-    const actual = field.value;
-    const verification = verifyFill(valueToSet, actual, field.type);
-
-    if (!verification.ok && verification.reason.includes('leading zero') && !isBackgroundTab) {
-      field.focus({ preventScroll: true });
-      await PhantomTyper.typeSimulatedString(field, valueToSet);
-      const ok =
-        field.value === valueToSet ||
-        field.value.replace(/\D/g, '') === valueToSet ||
-        (field.type === 'number' &&
-          field.value.replace(/^0+/, '') === valueToSet.replace(/^0+/, ''));
-      return { success: ok, filledCount: ok ? 1 : 0, strategy: 'single-field-keystroke' };
-    }
-
-    if (success) {
+    const verifyCurrentValue = () => verifyFill(valueToSet, field.value, field.type);
+    let verification = verifyCurrentValue();
+    if (success && verification.ok) {
       return { success: true, filledCount: 1, strategy: 'single-field' };
     }
 
-    // type=number normalizes its value and DROPS leading zeros
-    // (e.g. "012345" -> "12345"). When the assignment-based setter failed on a
-    // number field, fall back to per-character keystroke insertion, which
-    // dispatches insertText events that preserve leading zeros on most sites.
-    if (!isBackgroundTab && field.type === 'number' && /^0/.test(cleanOTP)) {
+    if (!verification.ok) {
       field.focus({ preventScroll: true });
-      await PhantomTyper.typeSimulatedString(field, cleanOTP);
-      const ok =
-        field.value === cleanOTP ||
-        field.value.replace(/\D/g, '') === cleanOTP ||
-        (field.type === 'number' && field.value.replace(/^0+/, '') === cleanOTP.replace(/^0+/, ''));
-      return { success: ok, filledCount: ok ? 1 : 0, strategy: 'single-field-keystroke' };
+      await PhantomTyper.typeSimulatedString(field, valueToSet);
+      verification = verifyCurrentValue();
+      if (verification.ok) {
+        return { success: true, filledCount: 1, strategy: 'single-field-keystroke' };
+      }
     }
 
     return { success: false, filledCount: 0, strategy: 'single-field' };

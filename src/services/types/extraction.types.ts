@@ -88,6 +88,42 @@ export type PatternStrength = 'strong' | 'medium' | 'weak';
 /** Email category for classification results */
 export type EmailCategory = 'otp' | 'link' | 'both' | 'none';
 
+/** High-level purpose inferred for an email after extraction. */
+export type EmailDecisionPurpose =
+  | 'verification'
+  | 'activation'
+  | 'password-reset'
+  | 'magic-login'
+  | 'two-factor'
+  | 'invitation'
+  | 'transactional'
+  | 'marketing'
+  | 'newsletter'
+  | 'social-notification'
+  | 'unknown';
+
+/** Action the background layer should prefer after understanding an email. */
+export type EmailDecisionAction =
+  | 'fill-otp'
+  | 'open-link'
+  | 'fill-otp-and-open-link'
+  | 'show-review'
+  | 'ignore';
+
+/** Security posture for any automated action suggested by the decision engine. */
+export type EmailDecisionRisk = 'low' | 'medium' | 'high';
+
+/** Explainable decision made from extraction signals, risk, and context. */
+export interface EmailDecision {
+  purpose: EmailDecisionPurpose;
+  action: EmailDecisionAction;
+  risk: EmailDecisionRisk;
+  confidence: number;
+  canAutoAct: boolean;
+  reasons: string[];
+  warnings: string[];
+}
+
 /** Email section for structural analysis */
 export type EmailSection =
   | 'preheader'
@@ -188,6 +224,7 @@ export interface ExtractedLink {
   anchorText: string;
   context: string;
   domainTrust: number;
+  originBound?: boolean;
   isShortened: boolean;
   redirectChain: string[];
 }
@@ -501,14 +538,14 @@ export interface ExtractionMeta {
 //  CLASSIFICATION INTERFACES
 // ───────────────────────────────────────────────────────────────────────
 
-/** GhostCore classification result */
+/** Legacy classification result shape retained for compatibility. */
 export interface ClassificationResult {
   type: EmailCategory;
   confidence: number; // 0-1
   code?: string | undefined; // Extracted OTP code
   link?: string | undefined; // Verification link URL
   debug?: string | undefined; // Human-readable reasoning
-  engine: 'ghost-core';
+  engine: 'intelligent';
 }
 
 /** Smart detection service result */
@@ -517,11 +554,12 @@ export interface DetectionResult {
   code?: string;
   link?: string;
   confidence: number;
-  engine: 'ghost-core' | 'intelligent' | 'ensemble-consensus';
+  engine: 'intelligent' | 'ensemble-consensus';
   debug?: string;
   provider?: string;
   providerConfidence?: number;
   domain?: string;
+  decision?: EmailDecision;
 }
 
 // ───────────────────────────────────────────────────────────────────────
@@ -579,6 +617,7 @@ export interface LinkCandidate {
   hasAuthToken: boolean;
   paramAnalysis: URLParamAnalysis;
   domainTrust: number;
+  originBound: boolean;
   surroundingText: string;
 }
 

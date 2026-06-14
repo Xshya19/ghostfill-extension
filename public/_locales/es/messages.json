@@ -4,7 +4,7 @@
     "description": "The name of the extension"
   },
   "extensionDescription": {
-    "message": "Correos temporales, contrasenas seguras y deteccion automatica de OTP. IA local - sin clave API.",
+    "message": "Correos temporales, contrasenas seguras y deteccion automatica de OTP. Local y privado - sin clave API.",
     "description": "Description of the extension"
   },
   "emailLabel": {
@@ -113,13 +113,13 @@
     "message": "Comenzar"
   },
   "onboardingFooter": {
-    "message": "IA local - APIs de proveedores - codigo abierto"
+    "message": "Deteccion local - APIs de proveedores - codigo abierto"
   },
   "appName": {
     "message": "GhostFill"
   },
   "appDescription": {
-    "message": "Correos temporales, contrasenas seguras y deteccion automatica de OTP - con IA local."
+    "message": "Correos temporales, contrasenas seguras y deteccion automatica de OTP - con heuristicas locales."
   },
   "confirmNewIdentity": {
     "message": "Estas seguro de que quieres generar una nueva identidad? Tu correo y datos actuales se reemplazaran."

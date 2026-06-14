@@ -34,7 +34,6 @@ import { createLogger } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
 import { validateMessage } from '../utils/validation';
 import { updateOTPMenuItem } from './contextMenu';
-import { classifyFieldViaOffscreen } from './mlMessageHandler';
 import { notifySuccess, notifyError, resetNotificationSession } from './notifications';
 import {
   startEmailPolling,
@@ -53,8 +52,6 @@ import { extractEmailOnce } from './singleExtractionGuard';
 import { sseManager } from './sseManager';
 
 const log = createLogger('MessageHandler');
-const ML_PREWARM_TTL_MS = 10000;
-const lastMlPrewarmBySender = new Map<string, number>();
 let gmailInboxFetchSeq = 0;
 
 function invalidateGmailInboxFetches(): void {
@@ -86,16 +83,11 @@ const HANDLED_MESSAGE_ACTIONS = [
   'GENERATE_IDENTITY',
   'REFRESH_IDENTITY',
   'ANALYZE_DOM',
-  'CHECK_ML',
-  'CLASSIFY_FIELD',
-  'PREWARM_ML',
-  'REPORT_MISCLASSIFICATION',
   'SHOW_NOTIFICATION',
   'GET_SETTINGS',
   'UPDATE_SETTINGS',
   'CLEAR_DATA',
   'OPEN_OPTIONS',
-  'DOWNLOAD_TRAINING_DATA',
   'LINK_ACTIVATED',
   'SHOW_FLOATING_BUTTON',
   'HIDE_FLOATING_BUTTON',
@@ -119,12 +111,6 @@ type ExtractOTPPayloadWithMetadata = Record<string, unknown> & {
   emailId?: string | number;
   saveToLastOTP?: boolean;
 };
-
-function getPrewarmSenderKey(sender: chrome.runtime.MessageSender): string {
-  const tabPart = sender.tab?.id ? `tab:${sender.tab.id}` : 'tab:none';
-  const urlPart = sender.url ?? sender.origin ?? 'origin:none';
-  return `${tabPart}|${urlPart}`;
-}
 
 function getPayloadTimestamp(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
@@ -322,6 +308,7 @@ async function handleMessage(
 
     case 'GENERATE_EMAIL': {
       log.info('🔄 Email change requested — performing full session reset');
+      suppressNextEmailTypeTransition('disposable');
 
       // 1. Clear stale OTP so old codes can't fire on the new email session
       await otpService.clearLastOTP();
@@ -361,7 +348,6 @@ async function handleMessage(
         ...emailPayload,
         prefix: identity.emailPrefix.substring(0, 30).replace(/[^a-z0-9.]/g, ''),
       });
-      suppressNextEmailTypeTransition('disposable');
       await storageService.set('preferredEmailType', 'disposable');
 
       // 7. Always start polling immediately when email is generated.
@@ -907,7 +893,7 @@ async function handleMessage(
       return { success: true, identity };
     }
 
-    // ── ML INFERENCE (Proxy to Offscreen) ────────────────────────
+    // ── Local DOM Heuristic Confidence ───────────────────────────
     case 'ANALYZE_DOM': {
       const simplifiedDOM =
         message.action === 'ANALYZE_DOM' ? (message.payload?.simplifiedDOM ?? '') : '';
@@ -917,41 +903,6 @@ async function handleMessage(
           confidence: estimateOTPPageConfidence(simplifiedDOM),
         },
       };
-    }
-
-    case 'CHECK_ML':
-    case 'CLASSIFY_FIELD': {
-      if (!message.payload && message.action === 'CLASSIFY_FIELD') {
-        return { success: false, error: 'Invalid message action or missing payload' };
-      }
-      try {
-        const response = await classifyFieldViaOffscreen(message.action, message.payload as any);
-        return (response as any) || { success: false, error: 'No response from offscreen' };
-      } catch (err) {
-        log.error('ML proxy classification failed', err);
-        return { success: false, error: 'ML proxy failed' };
-      }
-    }
-
-    case 'PREWARM_ML': {
-      const senderKey = getPrewarmSenderKey(sender);
-      const now = Date.now();
-      const last = lastMlPrewarmBySender.get(senderKey) ?? 0;
-
-      if (now - last >= ML_PREWARM_TTL_MS) {
-        lastMlPrewarmBySender.set(senderKey, now);
-        log.debug('ML pre-warm skipped; inference loads on demand', { senderKey });
-      }
-
-      return { success: true };
-    }
-
-    case 'REPORT_MISCLASSIFICATION': {
-      if (message.action !== 'REPORT_MISCLASSIFICATION') {
-        return { success: false, error: 'Invalid message action' };
-      }
-      log.info('Misclassification reported', message.payload);
-      return { success: true };
     }
 
     // ── NOTIFICATION ACTIONS ──────────────────────────────────────
@@ -998,30 +949,6 @@ async function handleMessage(
     case 'OPEN_OPTIONS': {
       chrome.runtime.openOptionsPage();
       return { success: true };
-    }
-
-    case 'DOWNLOAD_TRAINING_DATA': {
-      if (message.payload && typeof message.payload.data === 'string') {
-        try {
-          const data = message.payload.data;
-          const base64Data = btoa(unescape(encodeURIComponent(data)));
-          const dataUrl = `data:application/x-jsonlines;base64,${base64Data}`;
-
-          await chrome.downloads.download({
-            url: dataUrl,
-            filename: `ghostfill_training_data_${Date.now()}.jsonl`,
-            saveAs: true,
-          });
-          return { success: true };
-        } catch (downloadError) {
-          log.error('Failed to trigger training data download', downloadError);
-          return {
-            success: false,
-            error: downloadError instanceof Error ? downloadError.message : String(downloadError),
-          };
-        }
-      }
-      return { success: false, error: 'No data or invalid payload provided' };
     }
 
     case 'LINK_ACTIVATED': {

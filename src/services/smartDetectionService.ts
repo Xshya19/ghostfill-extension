@@ -3,9 +3,10 @@ import { createLogger } from '../utils/logger';
 import { sanitizeText } from '../utils/sanitization.core';
 
 // Import shared types from extraction module to prevent circular dependencies
+import { assessEmailDecision } from './emailDecisionEngine';
 import { extractAll } from './intelligentExtractor';
 import type { DetectionResult, EncryptedCacheEntry } from './types/extraction.types';
-// Removed GhostCore dependency for P2.1 architectural consolidation
+// Legacy classifier dependency removed for P2.1 architectural consolidation
 
 const log = createLogger('SmartDetection');
 
@@ -13,7 +14,7 @@ const log = createLogger('SmartDetection');
 export type { DetectionResult };
 
 class SmartDetectionService {
-  private readonly CACHE_TTL = 30 * 60 * 1000; // 30 min
+  private readonly CACHE_TTL = 2 * 60 * 1000; // Detection decisions are context-sensitive.
   private readonly CACHE_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
   private cacheKey: CryptoKey | null = null;
   private lastCacheCleanupAt = 0;
@@ -123,7 +124,11 @@ class SmartDetectionService {
     this.maybeCleanupExpiredCache();
 
     // Cache check - MV3 safe
-    const hashStr = await this.hash(`${sender}|${subject}|${body}`);
+    const contextKey = expectedDomains
+      .map((domain) => domain.toLowerCase())
+      .sort()
+      .join(',');
+    const hashStr = await this.hash(`${sender}|${subject}|${body}|ctx:${contextKey}`);
     const cacheKey = `det_${hashStr}`;
     const cachedResult = await this.getCachedResult(cacheKey);
     if (cachedResult) {
@@ -132,11 +137,16 @@ class SmartDetectionService {
     }
 
     // 🧠 [SmartDetection] Executing 5-Layer Intelligent Pipeline...
-    // GhostCore legacy classification removed in favor of consolidated IntelligentExtractor (P2.1)
+    // Legacy classification removed in favor of consolidated IntelligentExtractor (P2.1)
 
     // FIX: Pass raw htmlBody to extractAll so URLExtractor can find tags (a, href, etc.).
     // Internal sanitization for text-matching is handled inside the extractor.
     const intelligentResult = extractAll(subject, body, htmlBody, sender, expectedDomains);
+    const decision = assessEmailDecision({
+      extraction: intelligentResult,
+      sender,
+      expectedDomains,
+    });
 
     log.info(`📊 [SmartDetection] Intent: ${intelligentResult.intent}`);
     log.info(
@@ -152,6 +162,7 @@ class SmartDetectionService {
       confidence: 0,
       engine: 'intelligent',
       providerConfidence: intelligentResult.debugInfo.providerConfidence || 0,
+      decision,
     };
     if (intelligentResult.debugInfo.provider) {
       mergedResult.provider = intelligentResult.debugInfo.provider;
@@ -180,6 +191,9 @@ class SmartDetectionService {
 
     log.info(
       `✅ [SmartDetection] Final: ${mergedResult.type} (${(mergedResult.confidence * 100).toFixed(0)}%) via ${mergedResult.engine}`
+    );
+    log.info(
+      `[SmartDetection] Decision: ${decision.action} risk=${decision.risk} purpose=${decision.purpose} auto=${decision.canAutoAct}`
     );
 
     await this.cacheResult(cacheKey, mergedResult);

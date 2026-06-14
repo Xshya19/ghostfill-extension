@@ -7,6 +7,8 @@
  */
 
 // ─── Detection Layers ───────────────────────────────────────────
+export type { DetectedField } from './form.types';
+
 export type DetectionLayer = 'heuristic' | 'ml' | 'spatial' | 'history';
 
 export const ALL_LAYERS: readonly DetectionLayer[] = [
@@ -159,14 +161,6 @@ export interface SyntheticForm {
   fields: SyntheticField[];
   generatedAt: number;
   templateId: string;
-}
-
-export interface DetectedField {
-  element: HTMLElement;
-  type: string;
-  confidence: number;
-  layer?: string;
-  disagreement?: number;
 }
 
 export interface TrainingExample {

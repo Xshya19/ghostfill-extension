@@ -61,11 +61,6 @@ export type MessageAction =
   | 'CHECK_OTP_NOW'
   | 'MARK_OTP_USED'
   | 'PING'
-  // ML Inference actions
-  | 'CLASSIFY_FIELD'
-  | 'CHECK_ML'
-  | 'PREWARM_ML'
-  | 'REPORT_MISCLASSIFICATION'
   | 'LINK_ACTIVATED'
   | 'CHECK_OTP_FRESHNESS'
   | 'WAIT_FOR_FRESH_OTP'
@@ -82,8 +77,7 @@ export type MessageAction =
   | 'GMAIL_GET_MESSAGE'
   | 'GMAIL_GET_STATUS'
   | 'GMAIL_SEARCH'
-  | 'GMAIL_LIST_LABELS'
-  | 'DOWNLOAD_TRAINING_DATA';
+  | 'GMAIL_LIST_LABELS';
 
 // Base message interface
 export interface BaseMessage {
@@ -467,42 +461,12 @@ export interface HighlightFieldsMessage extends BaseMessage {
   };
 }
 
-export interface ClassifyFieldMessage extends BaseMessage {
-  action: 'CLASSIFY_FIELD';
-  payload: {
-    features: import('../content/extractor').RawFieldFeatures;
-    context?: import('./form.types').PageContext;
-  };
-}
-
-export interface CheckMLMessage extends BaseMessage {
-  action: 'CHECK_ML';
-  payload?: any;
-}
-
-export interface PrewarmMLMessage extends BaseMessage {
-  action: 'PREWARM_ML';
-}
-
-export interface ClassifyFieldResponse {
-  success: boolean;
-  prediction?: import('../offscreen/inferenceEngine').MLPrediction | null;
-  error?: string;
-}
-
 export interface AnalyzeDOMResponse {
   success: boolean;
   result?: {
     confidence?: number;
   };
   error?: string;
-}
-
-export interface ReportMisclassificationMessage extends BaseMessage {
-  action: 'REPORT_MISCLASSIFICATION';
-  payload: {
-    correctType: string;
-  };
 }
 
 export interface LinkActivatedMessage extends BaseMessage {
@@ -550,13 +514,6 @@ export interface RegistrationFormSubmittedMessage extends BaseMessage {
 
 export interface GetDiagnosticReportMessage extends BaseMessage {
   action: 'GET_DIAGNOSTIC_REPORT';
-}
-
-export interface DownloadTrainingDataMessage extends BaseMessage {
-  action: 'DOWNLOAD_TRAINING_DATA';
-  payload: {
-    data: string;
-  };
 }
 
 export interface DiagnosticReportResponse {
@@ -752,11 +709,7 @@ export type ExtensionMessage =
   | CaptureSiteContextMessage
   | CheckOTPNowMessage
   | MarkOTPUsedMessage
-  | ClassifyFieldMessage
-  | CheckMLMessage
   | PingMessage
-  | PrewarmMLMessage
-  | ReportMisclassificationMessage
   | LinkActivatedMessage
   | CheckOTPFreshnessMessage
   | WaitForFreshOTPMessage
@@ -770,8 +723,7 @@ export type ExtensionMessage =
   | GmailGetMessageMessage
   | GmailGetStatusMessage
   | GmailSearchMessage
-  | GmailListLabelsMessage
-  | DownloadTrainingDataMessage;
+  | GmailListLabelsMessage;
 
 // Response union type
 export type ExtensionResponse =
@@ -788,7 +740,6 @@ export type ExtensionResponse =
   | GetLastOTPResponse
   | DetectFormsResponse
   | GetSettingsResponse
-  | ClassifyFieldResponse
   | AnalyzeDOMResponse
   | DiagnosticReportResponse
   | GmailSignInResponse

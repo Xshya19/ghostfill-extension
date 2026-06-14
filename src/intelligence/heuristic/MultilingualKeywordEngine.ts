@@ -3,9 +3,8 @@
  *
  * Corrections vs. original:
  *  - Emits scores keyed by the CANONICAL FIELD_CLASSES (e.g. 'Email','Password',
- *    'OTP') — NOT the lowercase FieldType union. This is the bug that made the
- *    heuristic layer contribute ZERO to BayesianMetaLearner.fuse (its keys never
- *    matched the fusedScores keys).
+ *    'OTP') — NOT the lowercase FieldType union. This prevents keyword scores
+ *    from being dropped when merged with the rest of the heuristic classifier.
  *  - Adds an `email` profile (was entirely missing) plus more languages.
  *  - Label selector uses CSS.escape and guards empty id.
  *  - Honest docstring (substring matching, 5 languages).
@@ -13,7 +12,7 @@
 
 import { FIELD_CLASSES } from '../../content/extractor';
 
-/** Canonical class names produced by the model / extractor. */
+/** Canonical class names produced by the local field classifier. */
 type CanonicalClass = (typeof FIELD_CLASSES)[number];
 
 export interface KeywordProfile {

@@ -401,7 +401,36 @@ class LinkService {
         return;
       }
 
-      if (detection.type === 'both' && detection.code) {
+      const decision = detection.decision;
+      if (decision && !decision.canAutoAct) {
+        this.metrics.linksBlocked++;
+        log.info('Skipping auto-confirm (decision requires review)', {
+          url: maskUrl(detection.link),
+          action: decision.action,
+          risk: decision.risk,
+          warnings: decision.warnings,
+        });
+        return;
+      }
+
+      if (
+        decision &&
+        decision.action !== 'open-link' &&
+        decision.action !== 'fill-otp-and-open-link'
+      ) {
+        log.info('Skipping auto-confirm (decision prefers another action)', {
+          url: maskUrl(detection.link),
+          action: decision.action,
+          risk: decision.risk,
+        });
+        return;
+      }
+
+      if (
+        detection.type === 'both' &&
+        detection.code &&
+        decision?.action !== 'fill-otp-and-open-link'
+      ) {
         log.info('⏭️ Skipping auto-confirm (prefer OTP filling in current tab)', {
           url: maskUrl(detection.link),
           code: maskCode(detection.code),
@@ -553,14 +582,14 @@ class LinkService {
         });
       }
 
-      // ── Open the verification URL in a new foreground tab ──
+      // ── Open the verification URL in a background tab ──
       // URL safety is already enforced by validateUrl() above (blocks bad
       // schemes, localhost, raw IPs, suspicious TLDs, punycode domains).
-      log.info('🌐 Opening activation link in foreground tab', { url: maskUrl(record.url) });
+      log.info('🌐 Opening activation link in background tab', { url: maskUrl(record.url) });
 
       const tab = await chrome.tabs.create({
         url: record.url,
-        active: true, // foreground — show the tab to the user
+        active: false,
       });
 
       if (!tab.id) {
@@ -612,9 +641,9 @@ class LinkService {
       await sleep(1_000);
       log.info('✨ Tab is ready and waiting for user', { tabId: tab.id });
 
-      // Proactively clean up listener to prevent memory leak
+      // The polling manager keeps this tab excluded from generic OTP delivery
+      // until the tab closes. The global onRemoved cleanup handles unregistering.
       chrome.tabs.onRemoved.removeListener(cleanupOnClose);
-      pmExports.unregisterActivationTab(tab.id);
 
       this.metrics.linksActivated++;
       this.metrics.lastActivationAt = Date.now();

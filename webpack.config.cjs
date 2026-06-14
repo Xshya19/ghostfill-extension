@@ -36,16 +36,11 @@ class CssMinifyPlugin {
 
 module.exports = (env, argv) => {
   const isDev = argv.mode !== 'production';
+  const trustedTypesFallback = './src/utils/trustedTypesFallback.ts';
 
   const commonConfig = {
     mode: isDev ? 'development' : 'production',
     devtool: isDev ? 'source-map' : false,
-    ignoreWarnings: [
-      {
-        module: /onnxruntime-web[\\/]dist[\\/]ort\.wasm\.min\.js$/,
-        message: /Critical dependency: require function is used in a way/,
-      },
-    ],
     cache: {
       type: 'filesystem',
       buildDependencies: {
@@ -62,10 +57,6 @@ module.exports = (env, argv) => {
         '@services': path.resolve(__dirname, 'src/services'),
         '@utils': path.resolve(__dirname, 'src/utils'),
         '@types': path.resolve(__dirname, 'src/types'),
-        'onnxruntime-web': path.resolve(
-          __dirname,
-          'node_modules/onnxruntime-web/dist/ort.wasm.min.js'
-        ),
       },
     },
     module: {
@@ -138,7 +129,6 @@ module.exports = (env, argv) => {
       hints: 'warning', // Show warnings for large bundles
       maxEntrypointSize: 700000,
       maxAssetSize: 700000,
-      assetFilter: (assetFilename) => !/\.(onnx|onnx\.data|wasm)$/i.test(assetFilename),
     },
   };
 
@@ -191,10 +181,10 @@ module.exports = (env, argv) => {
     name: 'web',
     target: 'web', // Standard DOM environment
     entry: {
-      content: './src/content/index.ts',
-      popup: './src/popup/index.tsx',
-      options: './src/options/index.tsx',
-      offscreen: './src/offscreen/offscreen.ts',
+      content: [trustedTypesFallback, './src/content/index.ts'],
+      popup: [trustedTypesFallback, './src/popup/index.tsx'],
+      options: [trustedTypesFallback, './src/options/index.tsx'],
+      offscreen: [trustedTypesFallback, './src/offscreen/offscreen.ts'],
     },
     output: {
       path: path.resolve(__dirname, 'dist'),
@@ -273,19 +263,6 @@ module.exports = (env, argv) => {
           { from: 'manifest.json', to: 'manifest.json' },
           { from: 'public/assets', to: 'assets' },
           { from: 'public/_locales', to: '_locales' },
-          // Copy ML model + class metadata to dist/models/
-          { from: 'models', to: 'models', noErrorOnMissing: true },
-          // Copy only the ONNX Runtime assets used by the extension.
-          {
-            from: 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs',
-            to: '[name][ext]',
-            noErrorOnMissing: true,
-          },
-          {
-            from: 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm',
-            to: '[name][ext]',
-            noErrorOnMissing: true,
-          },
         ],
       }),
     ],

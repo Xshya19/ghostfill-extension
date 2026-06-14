@@ -2,7 +2,7 @@
  * extractor.ts — GhostFill DOM Feature Extractor
  * Produces an 8-channel text tensor & a 64-dimensional structural vector
  * per <input> element. Handles Shadow DOM, floating labels, split OTPs,
- * advanced keyword detection, and form context analysis.
+ * advanced keyword detection, local diagnostics, and form context analysis.
  */
 
 import { deepQuerySelectorAll } from '../utils/helpers';
@@ -12,11 +12,11 @@ import { deepQuerySelectorAll } from '../utils/helpers';
 export const CHAR_VOCAB_SIZE = 256;
 export const MAX_TEXT_LEN = 80;
 export const NUM_TEXT_CHANNELS = 8;
-// Model contract: 64-dim structural vector. Indices 0–55 are populated below;
+// Feature contract: 64-dim structural vector. Indices 0-55 are populated below;
 // 56–63 are reserved/zero for forward compatibility.
 export const NUM_STRUCTURAL_FEATURES = 64;
 
-// Canonical 10-class label space used by the trained model.
+// Canonical 10-class label space used by the local field classifier.
 export const FIELD_CLASSES = [
   'Email',
   'Username',
@@ -698,7 +698,7 @@ export interface ContextualFieldFeatures extends RawFieldFeatures {
 }
 
 /**
- * Enhanced extractor for Continuous Learning.
+ * Enhanced extractor for local field diagnostics.
  * Returns the field features PLUS contextual "topology" data (neighbors, form info).
  */
 export function extractContextualFeatures(

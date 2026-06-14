@@ -1,8 +1,4 @@
-// Removed console.error override previously used for ONNX warnings
-
-import { RawFieldFeatures } from '../content/extractor';
-import { PageContext } from '../types/form.types';
-import { classifyField, initInferenceEngine } from './inferenceEngine';
+// Offscreen document handles clipboard and DOM-parser helper messages.
 
 // Listen for messages from the background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -24,41 +20,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       handleClipboardCopy(message.data)
         .then(() => sendResponse({ success: true }))
         .catch((error) => sendResponse({ success: false, error: String(error) }));
-      return true;
-    }
-
-    // ---- ML Classification ----
-    if (message.target === 'offscreen-doc' && message.type === 'CLASSIFY_FIELD') {
-      if (!message.payload || typeof message.payload !== 'object') {
-        sendResponse({ success: false, error: 'Missing or invalid payload' });
-        return true;
-      }
-      const { features, context } = message.payload as {
-        features?: Omit<RawFieldFeatures, 'element'>;
-        context?: unknown;
-      };
-      // FIX: features was typed as unknown, causing TS2345. Cast after null check
-      // from the outer guard (typeof message.payload !== 'object') above.
-      classifyField(features as Omit<RawFieldFeatures, 'element'>, context as PageContext)
-        .then((prediction) => sendResponse({ success: true, prediction }))
-        .catch((error: Error) => sendResponse({ success: false, error: String(error) }));
-      return true;
-    }
-
-    // ---- Check ML Engine Health ----
-    if (message.target === 'offscreen-doc' && message.type === 'CHECK_ML') {
-      import('./inferenceEngine')
-        .then(({ getEngineStatus }) => getEngineStatus())
-        .then((status) => sendResponse({ success: true, status }))
-        .catch((error: Error) => sendResponse({ success: false, error: String(error) }));
-      return true;
-    }
-
-    // ---- Warm-up Inference Engine ----
-    if (message.target === 'offscreen-doc' && message.type === 'WARM_UP_ML') {
-      initInferenceEngine()
-        .then(() => sendResponse({ success: true }))
-        .catch((error: Error) => sendResponse({ success: false, error: String(error) }));
       return true;
     }
 

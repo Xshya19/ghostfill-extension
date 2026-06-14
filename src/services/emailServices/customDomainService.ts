@@ -73,16 +73,16 @@ export class CustomDomainService implements IEmailProvider {
         const response = await fetch(generationUrl.toString(), fetchInit);
 
         if (!response.ok) {
-          log.warn(
-            `Failed to register prefix with custom domain API (${response.status}). Proceeding anyway (assuming catch-all fallback).`
-          );
+          const details = await response.text().catch(() => '');
+          const suffix = details ? `: ${details.slice(0, 200)}` : '';
+          throw new Error(`Custom domain registration failed (${response.status})${suffix}`);
         }
       }
     } catch (error) {
-      log.warn(
-        'Error during custom domain API registration call, falling back to local creation:',
-        error
-      );
+      const registrationError = error instanceof Error ? error : new Error(String(error));
+      providerHealth.recordFailure('custom', registrationError);
+      log.warn('Custom domain API registration failed; account was not created', registrationError);
+      throw registrationError;
     }
 
     return {

@@ -74,6 +74,43 @@ describe('Qwen Email Extraction', () => {
 });
 
 describe('Activation Link Intelligence', () => {
+  it('prefers an expected-domain verification link over an unrelated styled button', () => {
+    const verifyUrl =
+      'https://app.targetsite.com/verify-email?token=target_1234567890abcdef1234567890';
+    const promoUrl = 'https://partner.example.net/dashboard?token=promo_1234567890abcdef';
+    const subject = 'Verify your TargetSite account';
+    const sender = 'noreply@targetsite.com';
+    const body = `Verify your email: ${verifyUrl}\nOpen your dashboard: ${promoUrl}`;
+    const htmlBody = `
+      <p>Please verify your TargetSite account.</p>
+      <a href="${promoUrl}" style="background:#111;padding:14px 18px;border-radius:4px;color:#fff">Open dashboard</a>
+      <a href="${verifyUrl}">Verify email</a>
+    `;
+
+    const result = extractAll(subject, body, htmlBody, sender, ['targetsite.com']);
+
+    expect(result.link?.url).toBe(verifyUrl);
+    expect(result.link?.originBound).toBe(true);
+  });
+
+  it('does not treat a generic styled marketing button as an activation CTA', () => {
+    const promoUrl = 'https://shop.example.com/sale?token=promo_1234567890abcdef';
+    const verifyUrl =
+      'https://accounts.example.com/email/verify?token=confirm_8cfa45677890abcdef1234567890';
+    const subject = 'Confirm your account';
+    const sender = 'accounts@example.com';
+    const body = `Confirm your account here: ${verifyUrl}\nShop now: ${promoUrl}`;
+    const htmlBody = `
+      <p>Confirm your account here: <a href="${verifyUrl}">Verify account</a></p>
+      <a href="${promoUrl}" style="background:#111;padding:14px 18px;border-radius:4px;color:#fff">Shop now</a>
+    `;
+
+    const result = extractAll(subject, body, htmlBody, sender, ['accounts.example.com']);
+
+    expect(result.link?.url).toBe(verifyUrl);
+    expect(result.link?.anchorText).toBe('Verify account');
+  });
+
   it('unwraps a tracked invite CTA and extracts the real activation URL', () => {
     const finalUrl =
       'https://app.example.com/invitations/accept?invite_token=inv_4f7dfc8b0f0a4b9892a6';

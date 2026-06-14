@@ -45,9 +45,6 @@ const CIRCUIT_BREAKER_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const MAX_SILENT_MS = 90_000;
 
-// Abort controller for closing stream
-let currentAbortController: AbortController | null = null;
-
 interface SSEState {
   connected: boolean;
   accountId: string | null;
@@ -65,6 +62,9 @@ interface SSEState {
 }
 
 class SSEManager {
+  private currentAbortController: AbortController | null = null;
+  private connectionGeneration = 0;
+
   private state: SSEState = {
     connected: false,
     accountId: null,
@@ -134,7 +134,8 @@ class SSEManager {
 
     // Disconnect existing connection
     diag.step(flowId, 'sse', 'Disconnecting existing', '');
-    this.disconnect();
+    const generation = ++this.connectionGeneration;
+    this.disconnect(false);
 
     this.state.accountId = account.id;
 
@@ -157,7 +158,12 @@ class SSEManager {
       diag.step(flowId, 'sse', 'Connecting', `Topic: ${topic}`, { url: sseUrl });
       log.info('🔌 Connecting to Mail.tm SSE stream', { accountId: account.id, topic });
 
-      await this.connectWithAuth(sseUrl, token);
+      await this.connectWithAuth(sseUrl, token, generation);
+
+      if (generation !== this.connectionGeneration) {
+        diag.endFlow(flowId, 'sse', 'SSE Connect', false, 'Connection superseded');
+        return false;
+      }
 
       diag.endFlow(flowId, 'sse', 'SSE Connect', true, 'Connected successfully');
       return true;
@@ -175,12 +181,13 @@ class SSEManager {
    * Connect to SSE with authentication using fetch + ReadableStream
    * (EventSource doesn't support custom headers)
    */
-  private async connectWithAuth(url: string, token: string): Promise<void> {
+  private async connectWithAuth(url: string, token: string, generation: number): Promise<void> {
     // Cancel any existing stream
-    if (currentAbortController) {
-      currentAbortController.abort();
+    if (this.currentAbortController) {
+      this.currentAbortController.abort();
     }
-    currentAbortController = new AbortController();
+    const abortController = new AbortController();
+    this.currentAbortController = abortController;
 
     try {
       const response = await fetch(url, {
@@ -189,7 +196,7 @@ class SSEManager {
           Accept: 'text/event-stream',
           'Cache-Control': 'no-cache',
         },
-        signal: currentAbortController.signal,
+        signal: abortController.signal,
       });
 
       if (!response.ok) {
@@ -238,6 +245,10 @@ class SSEManager {
         throw new Error('SSE response has no body');
       }
 
+      if (generation !== this.connectionGeneration) {
+        return;
+      }
+
       this.state.connected = true;
       this.state.reconnectAttempts = 0;
       this.state.lastEventTime = Date.now();
@@ -265,7 +276,7 @@ class SSEManager {
       const decoder = new TextDecoder();
       let buffer = '';
 
-      while (!currentAbortController.signal.aborted) {
+      while (!abortController.signal.aborted && generation === this.connectionGeneration) {
         const { done, value } = await reader.read();
         if (done) {
           log.info('SSE stream ended');
@@ -282,6 +293,10 @@ class SSEManager {
       }
 
       // Stream closed, attempt reconnection
+      if (generation !== this.connectionGeneration) {
+        return;
+      }
+
       this.state.connected = false;
       this.state.streamReader = null;
       log.warn('SSE stream closed, reconnecting...');
@@ -300,7 +315,16 @@ class SSEManager {
       this.state.streamReader = null;
 
       if ((error as Error).name === 'AbortError') {
-        log.debug('SSE connection aborted (intentional)');
+        log.debug(
+          generation === this.connectionGeneration
+            ? 'SSE connection aborted (intentional)'
+            : 'SSE connection superseded'
+        );
+        return;
+      }
+
+      if (generation !== this.connectionGeneration) {
+        log.debug('Ignoring stale SSE connection error after newer connection started');
         return;
       }
 
@@ -481,7 +505,11 @@ class SSEManager {
   /**
    * Disconnect SSE
    */
-  disconnect(): void {
+  disconnect(bumpGeneration = true): void {
+    if (bumpGeneration) {
+      this.connectionGeneration++;
+    }
+
     if (this.state.reconnectTimer) {
       clearTimeout(this.state.reconnectTimer);
       this.state.reconnectTimer = null;
@@ -490,9 +518,9 @@ class SSEManager {
     this.stopHealthCheck();
 
     // Abort the fetch stream
-    if (currentAbortController) {
-      currentAbortController.abort();
-      currentAbortController = null;
+    if (this.currentAbortController) {
+      this.currentAbortController.abort();
+      this.currentAbortController = null;
     }
 
     // Close stream reader

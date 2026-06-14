@@ -432,7 +432,8 @@ export function extractAll(
     intentResult,
     provider,
     zones,
-    allUrls
+    allUrls,
+    expectedDomains
   );
   if (link && link.url) {
     link.url = sanitizeActivationLink(link.url);

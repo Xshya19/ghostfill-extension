@@ -11,7 +11,8 @@ const log = createLogger('TempMailService');
 const RATE_LIMIT = {
   MAX_REQUESTS_PER_MINUTE: 30,
   WINDOW_MS: 60 * 1000,
-  RETRY_AFTER_MS: 2000,
+  MIN_RETRY_AFTER_MS: 500,
+  MAX_WAIT_MS: 10 * 1000,
 };
 
 const DOMAINS_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -30,7 +31,8 @@ class TempMailService {
    * @security Prevents API abuse and 429 errors
    */
   private async checkRateLimit(): Promise<void> {
-    // Use iterative loop instead of recursion to prevent potential call stack overflow
+    const waitStartedAt = Date.now();
+
     while (this.requestTimestamps.length >= RATE_LIMIT.MAX_REQUESTS_PER_MINUTE) {
       const now = Date.now();
       this.requestTimestamps = this.requestTimestamps.filter(
@@ -41,9 +43,22 @@ class TempMailService {
         break;
       }
 
-      log.warn('Rate limit exceeded, waiting', { waitTime: RATE_LIMIT.RETRY_AFTER_MS });
+      const oldestRequestAt = this.requestTimestamps[0] ?? now;
+      const naturalWaitMs = Math.max(
+        RATE_LIMIT.MIN_RETRY_AFTER_MS,
+        RATE_LIMIT.WINDOW_MS - (now - oldestRequestAt)
+      );
+      const elapsedWaitMs = now - waitStartedAt;
+      const remainingBudgetMs = RATE_LIMIT.MAX_WAIT_MS - elapsedWaitMs;
+
+      if (remainingBudgetMs <= 0) {
+        throw new Error('TempMail rate limit wait exceeded; retry shortly');
+      }
+
+      const waitTime = Math.min(naturalWaitMs, remainingBudgetMs);
+      log.warn('Rate limit exceeded, waiting briefly', { waitTime });
       await new Promise((resolve) => {
-        setTimeout(resolve, RATE_LIMIT.RETRY_AFTER_MS);
+        setTimeout(resolve, waitTime);
       });
     }
   }

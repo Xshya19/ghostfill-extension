@@ -54,7 +54,7 @@ export interface RawFieldRecord {
   offscreen?: boolean;
   tiny?: boolean;
   // Canonical structural feature vector (see contract.ts). Optional for eval
-  // rows; required when producing training data.
+  // rows; required when collecting diagnostics for labeling.
   structural?: number[] | undefined;
 }
 

@@ -51,7 +51,7 @@ export function detectProvider(
   const lowerSender = senderEmail.toLowerCase();
   const scores: Array<{ provider: ProviderKnowledge; score: number; signals: string[] }> = [];
 
-  // ── State A: Tab-Context Boosting (from GhostCore) ──
+  // ── State A: Tab-context boosting ──
   // If the provider matches one of the domains currently open in the user's tabs,
   // we apply a massive confidence boost because we are likely expecting this email.
 
@@ -141,7 +141,7 @@ export function detectProvider(
       }
 
       if (domainMatched) {
-        score += 45; // Applying GhostCore's State A boost
+        score += 45; // Apply tab-context boost.
         signals.push('context-boost');
       }
     }

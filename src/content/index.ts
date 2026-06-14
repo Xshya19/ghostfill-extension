@@ -11,13 +11,12 @@ import { errorTracker, performanceMonitor } from '../utils/monitoring';
 import { initRemoteLogger } from '../utils/remoteLogger';
 import { AutoFiller } from './autoFiller';
 import { DOMObserver } from './domObserver';
-import { extractContextualFeatures } from './extractor';
 import { FieldAnalyzer } from './fieldAnalyzer';
 import { FloatingButton } from './floatingButton';
 import { FormDetector } from './formDetector';
 import { OTPPageDetector } from './otpPageDetector';
 import { pageStatus } from './pageStatus';
-import { collectTrainingData } from './utils/trainingDataHarvester';
+import { collectFieldDiagnostics } from './utils/fieldDiagnosticsHarvester';
 import './styles/content.css';
 import './ui/GhostLabel';
 
@@ -276,8 +275,21 @@ let autoFiller: AutoFiller;
 let floatingButton: FloatingButton;
 let domObserver: DOMObserver;
 let otpPageDetector: OTPPageDetector;
-let lastRightClickedElement: HTMLElement | null = null;
 let passiveActivationHandler: ((event: Event) => void) | null = null;
+let passiveRuntimeListener:
+  | ((
+      message: unknown,
+      sender: chrome.runtime.MessageSender,
+      sendResponse: (response?: unknown) => void
+    ) => boolean)
+  | null = null;
+let mainRuntimeListener:
+  | ((
+      message: { action?: string },
+      sender: chrome.runtime.MessageSender,
+      sendResponse: (response?: unknown) => void
+    ) => boolean)
+  | null = null;
 let passiveRuntimeListenerInstalled = false;
 
 const ACTIVATION_MESSAGE_ACTIONS = new Set([
@@ -445,7 +457,7 @@ function installPassiveMessageListener(): void {
     return;
   }
 
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  passiveRuntimeListener = (message, _sender, sendResponse) => {
     const action =
       typeof message === 'object' && message !== null && 'action' in message
         ? String((message as { action?: unknown }).action ?? '')
@@ -473,9 +485,20 @@ function installPassiveMessageListener(): void {
       });
 
     return true;
-  });
+  };
 
+  chrome.runtime.onMessage.addListener(passiveRuntimeListener);
   passiveRuntimeListenerInstalled = true;
+}
+
+function removePassiveMessageListener(): void {
+  if (!passiveRuntimeListener || !chrome?.runtime?.onMessage) {
+    return;
+  }
+
+  chrome.runtime.onMessage.removeListener(passiveRuntimeListener);
+  passiveRuntimeListener = null;
+  passiveRuntimeListenerInstalled = false;
 }
 
 /**
@@ -588,38 +611,36 @@ function init(): void {
     // Initialize OTP page detection for auto-fill
     runSafely('otpPageDetector.init', () => otpPageDetector.init());
 
-    // Warm up the ONNX model in the offscreen document so it's ready when
-    // the user clicks to fill. Fire-and-forget — never blocks startup.
-    runSafely('fieldAnalyzer.prewarmML', () => fieldAnalyzer.prewarmML());
-
-
     // Listen for messages from background
     if (chrome?.runtime?.onMessage) {
-      chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-        log.debug('Message received', { action: message.action });
+      if (!mainRuntimeListener) {
+        mainRuntimeListener = (message, sender, sendResponse) => {
+          log.debug('Message received', { action: message.action });
 
-        handleMessage(message)
-          .then((result) => {
-            try {
-              sendResponse(result);
-            } catch (e) {
-              const err = e instanceof Error ? e.message : String(e);
-              log.warn('Failed to send response, context likely invalidated', err);
-            }
-          })
-          .catch((error) => {
-            log.error('Message handling failed', error);
-            try {
-              const err = error instanceof Error ? error.message : String(error);
-              sendResponse({ success: false, error: err });
-            } catch (e) {
-              const sendErr = e instanceof Error ? e.message : String(e);
-              log.warn('Failed to send error response, context likely invalidated', sendErr);
-            }
-          });
+          handleMessage(message as { action: string; payload?: Record<string, unknown> })
+            .then((result) => {
+              try {
+                sendResponse(result);
+              } catch (e) {
+                const err = e instanceof Error ? e.message : String(e);
+                log.warn('Failed to send response, context likely invalidated', err);
+              }
+            })
+            .catch((error) => {
+              log.error('Message handling failed', error);
+              try {
+                const err = error instanceof Error ? error.message : String(error);
+                sendResponse({ success: false, error: err });
+              } catch (e) {
+                const sendErr = e instanceof Error ? e.message : String(e);
+                log.warn('Failed to send error response, context likely invalidated', sendErr);
+              }
+            });
 
-        return true;
-      });
+          return true;
+        };
+        chrome.runtime.onMessage.addListener(mainRuntimeListener);
+      }
     } else {
       log.debug('chrome.runtime.onMessage not available in this frame; messaging features limited');
     }
@@ -629,16 +650,13 @@ function init(): void {
       domObserver.stop();
       floatingButton?.hide?.();
       void otpPageDetector?.destroy?.();
-      document.removeEventListener('contextmenu', contextMenuHandler, true);
+      if (mainRuntimeListener && chrome?.runtime?.onMessage) {
+        chrome.runtime.onMessage.removeListener(mainRuntimeListener);
+        mainRuntimeListener = null;
+      }
       window.removeEventListener('beforeunload', cleanupHandler);
     };
-    const contextMenuHandler = (e: MouseEvent) => {
-      lastRightClickedElement = e.target as HTMLElement;
-    };
     window.addEventListener('beforeunload', cleanupHandler);
-
-    // Track the last right-clicked element for Continuous Learning
-    document.addEventListener('contextmenu', contextMenuHandler, true);
 
     log.debug('Content script initialized');
   } catch (error) {
@@ -659,59 +677,6 @@ async function handleMessage(message: {
   }
 
   switch (message.action) {
-    case 'REPORT_MISCLASSIFICATION': {
-      if (message.payload && lastRightClickedElement) {
-        const { correctType } = message.payload as { correctType: string };
-        // Extract raw UI features of the field the user right-clicked
-        const isInput =
-          lastRightClickedElement.tagName === 'INPUT' ||
-          lastRightClickedElement.tagName === 'TEXTAREA';
-        if (isInput) {
-          const rawFeatures = extractContextualFeatures(
-            lastRightClickedElement as HTMLInputElement | HTMLTextAreaElement
-          );
-          if (rawFeatures) {
-            if (!isContextValid()) {
-              log.debug('[Continuous Learning] Context invalidated, cannot save training data');
-              return { success: false, error: 'Context invalidated' };
-            }
-
-            const MAX_TRAINING_SAMPLES = 500;
-            chrome.storage.local.get(['ghostfill_training_data'], (res) => {
-              // Re-check inside callback because storage calls are async
-              if (!isContextValid()) {
-                return;
-              }
-
-              const data = Array.isArray(res.ghostfill_training_data)
-                ? res.ghostfill_training_data
-                : [];
-              // Cap training data to prevent unbounded growth
-              if (data.length >= MAX_TRAINING_SAMPLES) {
-                data.splice(0, data.length - MAX_TRAINING_SAMPLES);
-              }
-              // We omit the DOM element itself and keep the text/structural numbers
-              const { element: _element, ...savableFeatures } = rawFeatures;
-              data.push({ features: savableFeatures, label: correctType, timestamp: Date.now() });
-
-              chrome.storage.local.set({ ghostfill_training_data: data }, () => {
-                if (isContextValid()) {
-                  log.info(
-                    `[Continuous Learning] Saved ${correctType} field to local training pool. Total items: ${data.length}`
-                  );
-                }
-              });
-            });
-          }
-        } else {
-          log.warn(
-            '[Continuous Learning] Right-clicked element is not an input or textarea. Cannot extract features.'
-          );
-        }
-      }
-      return { success: true };
-    }
-
     case 'PING': {
       return { success: true, alive: true, verdict: otpPageDetector.getStatus().verdict };
     }
@@ -897,6 +862,8 @@ function safeInit(force: boolean = false) {
   }
 
   isInitialized = true;
+  removePassiveActivationHooks();
+  removePassiveMessageListener();
   scheduleInit(force);
 }
 
@@ -906,15 +873,15 @@ function safeInitFromEvent(): void {
 
 installPassiveMessageListener();
 
-// Listen for developer keyboard shortcut (Alt+Shift+H) to collect training data
+// Listen for developer keyboard shortcut (Alt+Shift+H) to collect field diagnostics.
 document.addEventListener(
   'keydown',
   (event: KeyboardEvent) => {
     if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'h') {
       event.preventDefault();
       event.stopPropagation();
-      log.info('⌨️ Dev shortcut Alt+Shift+H triggered: Collecting training data');
-      void collectTrainingData();
+      log.info('Dev shortcut Alt+Shift+H triggered: collecting field diagnostics');
+      void collectFieldDiagnostics();
     }
   },
   true

@@ -263,21 +263,6 @@ export const analyzeDOMPayloadSchema = z.object({
   simplifiedDOM: z.string().max(MAX_MESSAGE_SIZE),
 });
 
-const mlFeaturePayloadSchema = z.object({
-  textChannels: z.array(z.array(z.number().int())).optional(),
-  structural: z.array(z.number()).min(1).max(256),
-  isVisible: safeBoolean.optional(),
-});
-
-export const classifyFieldPayloadSchema = z.object({
-  features: mlFeaturePayloadSchema,
-  context: z.unknown().optional(),
-});
-
-export const reportMisclassificationPayloadSchema = z.object({
-  correctType: safeString,
-});
-
 export const captureSiteContextPayloadSchema = z.object({
   url: safeString.url(),
   pageText: z.string().max(100000),
@@ -361,9 +346,6 @@ export const messagePayloadSchemas: Record<string, z.ZodSchema> = {
   CAPTURE_SITE_CONTEXT: captureSiteContextPayloadSchema,
   CHECK_OTP_NOW: z.undefined().optional(),
   PING: z.undefined().optional(),
-  PREWARM_ML: z.undefined().optional(),
-  CLASSIFY_FIELD: classifyFieldPayloadSchema,
-  REPORT_MISCLASSIFICATION: reportMisclassificationPayloadSchema,
   LINK_ACTIVATED: z.undefined().optional(),
   CHECK_OTP_FRESHNESS: z.undefined().optional(),
   WAIT_FOR_FRESH_OTP: z
@@ -389,9 +371,6 @@ export const messagePayloadSchemas: Record<string, z.ZodSchema> = {
   GMAIL_GET_STATUS: z.undefined().optional(),
   GMAIL_SEARCH: gmailFetchInboxPayloadSchema,
   GMAIL_LIST_LABELS: z.undefined().optional(),
-  DOWNLOAD_TRAINING_DATA: z.object({
-    data: z.string(),
-  }),
 };
 
 // ─── Validation function ──────────────────────────────────────────────────────

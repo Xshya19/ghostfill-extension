@@ -35,8 +35,8 @@ import { FieldAnalyzer } from './fieldAnalyzer';
 import { pageStatus } from './pageStatus';
 import { IconSystem } from './utils/fab-icons';
 import { menuIcon } from './utils/fab-menu-icons';
+import { collectFieldDiagnostics } from './utils/fieldDiagnosticsHarvester';
 import { PageAnalyzer, PageType, PageAnalysis } from './utils/pageAnalyzer';
-import { collectTrainingData } from './utils/trainingDataHarvester';
 
 const log = createLogger('FloatingButton');
 
@@ -446,9 +446,9 @@ class ContextualMenu {
         handler: noop,
       },
       {
-        id: 'collect-training-data',
+        id: 'copy-field-diagnostics',
         icon: menuIcon('chart'),
-        label: 'Collect Training Data',
+        label: 'Copy Field Diagnostics',
         shortcut: 'Alt+Shift+H',
         visible: true,
         handler: noop,
@@ -1341,8 +1341,8 @@ export class FloatingButton {
           this.setState('idle');
           break;
 
-        case 'collect-training-data':
-          await collectTrainingData();
+        case 'copy-field-diagnostics':
+          await collectFieldDiagnostics();
           this.setState('idle');
           break;
 

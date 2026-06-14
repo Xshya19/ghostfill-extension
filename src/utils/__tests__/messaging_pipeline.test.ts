@@ -52,14 +52,6 @@ describe('Message Validation Pipeline', () => {
       expect(result.valid).toBe(true);
     });
 
-    it('accepts DOWNLOAD_TRAINING_DATA with valid payload', () => {
-      const result = validateMessage({
-        action: 'DOWNLOAD_TRAINING_DATA',
-        payload: { data: 'line1\nline2' },
-      });
-      expect(result.valid).toBe(true);
-    });
-
     it('accepts EXTRACT_OTP with popup metadata used to persist lastOTP', () => {
       const result = validateMessage({
         action: 'EXTRACT_OTP',
@@ -168,12 +160,22 @@ describe('Message Validation Pipeline', () => {
       const hugeString = 'x'.repeat(2 * 1024 * 1024 + 1);
       // Simulate a message with an oversized data blob
       const result = validateMessage({
-        action: 'CLASSIFY_FIELD',
+        action: 'ANALYZE_DOM',
         payload: { simplifiedDOM: hugeString },
       });
       // Should either fail validation or truncate — not crash
       expect(typeof result.valid).toBe('boolean');
     });
+  });
+
+  describe('validateMessage — removed action guardrails', () => {
+    it.each(['CLASSIFY_FIELD', 'CHECK_ML', 'PREWARM_ML', 'DOWNLOAD_TRAINING_DATA'])(
+      'rejects removed action %s',
+      (action) => {
+        const result = validateMessage({ action } as never);
+        expect(result.valid).toBe(false);
+      }
+    );
   });
 
   describe('validateMessage — payload type enforcement', () => {

@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  🧠  G H O S T F I L L   —   F I E L D   A N A L Y Z E R            ║
-// ║  Heuristic-first + ONNX-ML field classification (shadow DOM aware)   ║
+// ║  Heuristic-first field classification (shadow DOM aware)             ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 //
 // Architecture:
@@ -9,20 +9,15 @@
 // │  VisibilityCheck  — Shared element visibility logic                   │
 // │  LabelResolver    — Multi-strategy label text discovery               │
 // │  OTPDetector      — Specialized OTP field scoring engine              │
-// │  FieldClassifier  — Heuristic + optional ONNX blend (classify.ts)    │
-// │  AsyncModelScorer — Bridge to ONNX inference in offscreen document   │
+// │  FieldClassifier  — Heuristic classifier bridge (classify.ts)        │
+// │  FeatureExtractor — Local field signal extraction                    │
 // │  DOMTraversal     — Shadow-DOM-piercing query engine                  │
 // │  FieldAnalyzer    — Public API: analyze, discover, classify           │
 // └────────────────────────────────────────────────────────────────────────┘
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { classifyField } from '../intelligence/classifier/classify';
-import { classifyHeuristic } from '../intelligence/classifier/heuristicClassifier';
 import { extractFieldRecord } from '../intelligence/featureExtractor';
-import {
-  invokeMLScorer,
-  prewarmMLModel,
-} from '../intelligence/ml/asyncModelScorer';
 import { FieldClass } from '../intelligence/types';
 import { FieldType, DetectedField, FormType, GhostContainer, FormInputElement } from '../types';
 import { getUniqueSelector, getElementLabel, deepQuerySelectorAll } from '../utils/helpers';
@@ -93,10 +88,6 @@ const CONFIDENCE = {
 // ═══════════════════════════════════════════════════════════════
 //  §1  T Y P E S
 // ═══════════════════════════════════════════════════════════════
-
-interface FieldAnalysisResult {
-  fields: DetectedField[];
-}
 
 interface AICacheEntry {
   prediction: { label: string; confidence: number };
@@ -551,110 +542,6 @@ export class FieldAnalyzer {
     otpFields.sort((a, b) => b.confidence - a.confidence);
 
     return otpFields;
-  }
-
-  /**
-   * Get all fields with ML-enhanced classification for ambiguous fields.
-   *
-   * Strategy:
-   * 1. Run fast heuristic pass on all fields synchronously.
-   * 2. For any field where heuristic confidence is below the ML threshold,
-   *    invoke the ONNX model via the offscreen document proxy (async).
-   * 3. Blend heuristic + model scores and return the final decision.
-   *
-   * Fields where heuristics are already confident (email/password with
-   * standard autocomplete attributes) never pay the ML cost — they are
-   * returned immediately from the sync heuristic pass.
-   */
-  async getAllFieldsWithAI(): Promise<FieldAnalysisResult> {
-    if (!this.isContextValid()) {
-      return { fields: [] };
-    }
-
-    const elements = deepQuerySelectorAll<FormInputElement>(FieldAnalyzer.FILLABLE_INPUT_SELECTOR);
-    const visible = elements.filter((el) => VisibilityCheck.isVisible(el));
-
-    // Process all fields in parallel — heuristic is sync, ML calls are async
-    const fields = await Promise.all(
-      visible.map((el) => this.analyzeFieldWithML(el))
-    );
-
-    return { fields };
-  }
-
-  /**
-   * Classify a single field using the full intelligence stack:
-   * heuristics + optional ONNX model blend.
-   *
-   * Use this when accuracy matters most (e.g. the user clicked the fill button).
-   * Falls back to pure heuristics if the ML call times out or the offscreen
-   * document is unavailable.
-   */
-  async analyzeFieldWithML(element: FormInputElement): Promise<DetectedField> {
-    const record = extractFieldRecord(element);
-
-    // Quick heuristic pass — determines if ML is worth invoking
-    const heurResult = classifyHeuristic(record);
-
-    // Conditionally invoke ML (returns null if heuristic is already confident
-    // or if the offscreen call times out / fails)
-    const mlScores = await invokeMLScorer(record, heurResult.topProb);
-
-    if (mlScores) {
-      log.debug('ML blend applied', {
-        field: record.name || record.id || record.placeholder,
-        heuristicTop: heurResult.top,
-        heuristicProb: heurResult.topProb.toFixed(3),
-      });
-    }
-
-    // Full classification with optional ML blend
-    const { result, decision } = classifyField(record, {
-      modelScorer: mlScores ? () => mlScores : undefined,
-      modelWeight: 0.45, // heuristic stays dominant; ML is advisory
-    });
-
-    let fieldType = mapFieldClassToFieldType(result.top);
-    let confidence = result.topProb;
-
-    if (decision.action === 'BLOCK') {
-      fieldType = 'unknown';
-      confidence = 0;
-    }
-
-    // Intelligence 2.0: Extract Spatial/Topology signals
-    let spatialConfidence = 0;
-    try {
-      const rect = element.getBoundingClientRect();
-      const isSquare = Math.abs(rect.width - rect.height) < 10;
-      const isCentered = Math.abs(window.innerWidth / 2 - (rect.left + rect.width / 2)) < 200;
-      if (fieldType === 'otp') {
-        if (isSquare) spatialConfidence += 0.3;
-        if (isCentered) spatialConfidence += 0.2;
-      }
-    } catch { /* ignore */ }
-
-    return {
-      element,
-      selector: getUniqueSelector(element),
-      fieldType,
-      confidence: clampConfidence(confidence + spatialConfidence),
-      label: getElementLabel(element) || undefined,
-      placeholder: element.placeholder || undefined,
-      name: element.name || undefined,
-      id: element.id || undefined,
-      autocomplete: element.autocomplete || undefined,
-      rect: element.getBoundingClientRect(),
-    };
-  }
-
-  /**
-   * Trigger a background warm-up of the ONNX model in the offscreen document.
-   * Call this on content-script init so the model is ready when the user
-   * focuses a form field. Fire-and-forget.
-   */
-  prewarmML(): void {
-    prewarmMLModel();
   }
 
   /**

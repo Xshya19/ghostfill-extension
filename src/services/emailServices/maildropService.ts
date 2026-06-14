@@ -223,30 +223,35 @@ class MaildropService {
 
       const messages = data.inbox || [];
 
-      // For each message, fetch full content (needed for link extraction)
-      // Limit to first 10 to avoid excessive API calls
-      const fullMessages: Email[] = [];
-      for (const msg of messages.slice(0, 10)) {
-        if (signal?.aborted) {
-          break;
-        }
-        try {
-          const fullData = await this.executeGraphQL<{ message: MaildropFullMessage }>(
-            MESSAGE_QUERY,
-            { mailbox, id: msg.id },
-            signal
-          );
-          if (fullData.message) {
-            fullMessages.push(this.convertFullMessage(fullData.message, account.fullEmail));
+      // Fetch full content concurrently so a busy inbox does not spend one
+      // network round-trip per message before link/OTP extraction can start.
+      const fullMessages = await Promise.all(
+        messages.slice(0, 10).map(async (msg): Promise<Email | null> => {
+          if (signal?.aborted) {
+            return null;
           }
-        } catch (msgError) {
-          // If fetching full message fails, fall back to metadata-only version
-          log.warn('Failed to fetch full message, using metadata', { id: msg.id, error: msgError });
-          fullMessages.push(this.convertMessage(msg, account.fullEmail));
-        }
-      }
+          try {
+            const fullData = await this.executeGraphQL<{ message: MaildropFullMessage }>(
+              MESSAGE_QUERY,
+              { mailbox, id: msg.id },
+              signal
+            );
+            if (fullData.message) {
+              return this.convertFullMessage(fullData.message, account.fullEmail);
+            }
+          } catch (msgError) {
+            // If fetching full message fails, fall back to metadata-only version
+            log.warn('Failed to fetch full message, using metadata', {
+              id: msg.id,
+              error: msgError,
+            });
+            return this.convertMessage(msg, account.fullEmail);
+          }
+          return this.convertMessage(msg, account.fullEmail);
+        })
+      );
 
-      return fullMessages;
+      return fullMessages.filter((message): message is Email => message !== null);
     } catch (error) {
       log.error('Failed to get Maildrop messages', error);
       throw error;

@@ -1,7 +1,7 @@
 {
   "name": "ghostfill-extension",
   "version": "1.1.0",
-  "description": "Disposable emails, secure passwords, and automatic OTP detection & fill. Local AI engine - no API key required. 100% Free & Open Source.",
+  "description": "Disposable emails, secure passwords, and automatic OTP detection & fill. Local heuristics - no API key required. 100% Free & Open Source.",
   "private": true,
   "scripts": {
     "dev": "webpack --watch --mode=development",
@@ -10,12 +10,12 @@
     "build:dev": "npm run clean && webpack --mode=development",
     "lint": "eslint src/ --ext .ts,.tsx",
     "lint:fix": "eslint src/ --ext .ts,.tsx --fix",
-    "format:check": "prettier --check \"*.{json,md,cjs,js,ts}\" \"{src,scripts,tests,public,ml,training}/**/*.{ts,tsx,js,cjs,json,css,html,md}\"",
+    "format:check": "prettier --check \"*.{json,md,cjs,js,ts}\" \"{src,scripts,tests,public}/**/*.{ts,tsx,js,cjs,json,css,html,md}\"",
     "test": "vitest run",
     "test:ui": "vitest --ui",
     "test:watch": "vitest",
     "type-check": "tsc --noEmit",
-    "eval": "tsx src/intelligence/eval/runEval.ts",
+    "eval": "tsx src/intelligence/eval/runEval.ts --sample",
     "clean": "rimraf dist",
     "zip": "node scripts/build-zip.js",
     "build:zip": "npm run build && npm run zip"
@@ -36,7 +36,6 @@
     "dompurify": "^3.3.3",
     "framer-motion": "^12.23.26",
     "lucide-react": "^0.562.0",
-    "onnxruntime-web": "^1.26.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "zod": "^4.3.6",

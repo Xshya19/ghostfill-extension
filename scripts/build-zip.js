@@ -66,8 +66,6 @@ function validateDist() {
     'options.css',
     'offscreen.html',
     'offscreen.js',
-    'ort-wasm-simd-threaded.mjs',
-    'ort-wasm-simd-threaded.wasm',
   ]);
 
   const manifestPath = path.join(DIST_DIR, 'manifest.json');

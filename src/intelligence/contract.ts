@@ -1,5 +1,5 @@
-// THE feature/label contract. Single source of truth shared by harvesting,
-// labeling, classification, eval, and (later) training.
+// THE feature/label contract. Single source of truth shared by diagnostics,
+// labeling, classification, and eval.
 //
 // FIXES audit bug P1-1 / P1-2:
 //   - structural vector is 64-dim (was 128; dims 56..63 reserved/zero)

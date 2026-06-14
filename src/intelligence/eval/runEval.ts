@@ -1,9 +1,8 @@
 /// <reference types="node" />
 
 // Runs the classifier over a labeled JSONL set and prints a full report PLUS
-// the MODEL DECISION GATE: a data-driven verdict on whether you should invest
-// in training the distilled model at all, or whether the heuristic is already
-// good enough.
+// the MODEL DECISION GATE: a data-driven verdict on whether the heuristic is
+// already good enough or needs a future narrow model.
 //
 // Usage: tsx src/eval/runEval.ts [labeled.jsonl]
 
@@ -15,6 +14,70 @@ import type { FillDecision, LabeledFieldRecord } from '../types';
 import { evaluate } from './metrics';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+const SAMPLE_ROWS: LabeledFieldRecord[] = [
+  {
+    url: 'https://example.test/signup',
+    selector: '#email',
+    tag: 'input',
+    type: 'email',
+    autocomplete: 'email',
+    name: 'email',
+    id: 'email',
+    placeholder: 'Email address',
+    ariaLabel: '',
+    labelText: 'Email address',
+    surroundingText: 'Create account Email address',
+    maxLength: -1,
+    inputMode: '',
+    pattern: '',
+    required: true,
+    visible: true,
+    widthPx: 320,
+    label: 'Email',
+  },
+  {
+    url: 'https://example.test/verify',
+    selector: '#otp',
+    tag: 'input',
+    type: 'text',
+    autocomplete: 'one-time-code',
+    name: 'verification_code',
+    id: 'otp',
+    placeholder: 'Verification code',
+    ariaLabel: '',
+    labelText: 'Verification code',
+    surroundingText: 'Enter the 6 digit verification code',
+    maxLength: 6,
+    inputMode: 'numeric',
+    pattern: '\\d{6}',
+    required: true,
+    visible: true,
+    widthPx: 180,
+    label: 'OTP',
+  },
+  {
+    url: 'https://example.test/search',
+    selector: '#search',
+    tag: 'input',
+    type: 'search',
+    autocomplete: '',
+    name: 'q',
+    id: 'search',
+    placeholder: 'Search',
+    ariaLabel: 'Search',
+    labelText: '',
+    surroundingText: 'Search the site',
+    maxLength: -1,
+    inputMode: '',
+    pattern: '',
+    required: false,
+    visible: true,
+    widthPx: 260,
+    label: 'Unknown',
+    hardNegative: 'Search',
+  },
+];
 
 function load(path: string): LabeledFieldRecord[] {
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- CLI eval reads a caller-supplied dataset path.
@@ -31,8 +94,9 @@ function pct(x: number): string {
 
 function main(): void {
   const arg = (process as any).argv[2];
-  const path = arg ? resolve(arg) : resolve(__dirname, '../../data/sample.labeled.jsonl');
-  const rows = load(path);
+  const useSample = !arg || arg === '--sample';
+  const path = useSample ? 'built-in smoke sample' : resolve(arg);
+  const rows = useSample ? SAMPLE_ROWS : load(path);
   const decisions: FillDecision[] = rows.map((r) => classifyField(r).decision);
   const rep = evaluate(rows, decisions);
 
@@ -134,7 +198,7 @@ function main(): void {
       console.log('Target the model ONLY at these weak fillable classes: ' + weak.join(', '));
     } else {
       console.log(
-        'No single fillable class is weak with enough support -- harvest more data before training.'
+        'No single fillable class is weak with enough support -- harvest more eval data first.'
       );
     }
   }

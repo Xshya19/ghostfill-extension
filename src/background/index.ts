@@ -53,7 +53,7 @@ const __BACKGROUND_LOAD_START_EARLY__ = Date.now();
 // Synchronous error listener to catch load-time failures immediately
 self.addEventListener('error', (event: ErrorEvent) => {
   const msg = event.error?.message || event.message || '';
-  // Suppress ONNX internal image.png error - it's harmless and expected for non-image models
+  // Suppress known harmless library probes that can happen during extension startup.
   if (msg.includes('image.png') && msg.includes('does not support image input')) {
     event.preventDefault();
     return;
@@ -64,7 +64,7 @@ self.addEventListener('error', (event: ErrorEvent) => {
 
 self.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
   const reason = (event.reason as Error)?.message || String(event.reason) || '';
-  // Suppress ONNX internal image.png error
+  // Suppress known harmless library probes that can happen during extension startup.
   if (reason.includes('image.png') && reason.includes('does not support image input')) {
     event.preventDefault();
   }
@@ -270,10 +270,8 @@ async function initialize(trigger: InitTrigger): Promise<void> {
       log.debug('▶️ Phase 2: Notifications');
       safeCall(() => initNotifications());
 
-      // ML is intentionally not warmed during startup/install. Loading the ONNX
-      // runtime while Chrome is injecting content scripts into existing tabs can
-      // freeze the browser on machines with many open tabs.
-      log.debug('▶️ Phase 2.5: ML warm-up skipped; inference is on-demand only');
+      // The heuristic classifier has no heavyweight runtime warm-up step.
+      log.debug('▶️ Phase 2.5: Classifier warm-up skipped; heuristics are ready on demand');
 
       // Phase 3: Install-specific flows
       log.debug(`▶️ Phase 3: Install-specific flows (trigger: ${mainTrigger})`);
@@ -581,25 +579,8 @@ function installDevTools(): void {
 
   g.getBackgroundMetrics = getMetrics;
   g.restartBackground = restart;
-  g.checkML = async () => {
-    log.info('🔍 Checking ML status...');
-    try {
-      const response: any = await chrome.runtime.sendMessage({ action: 'CHECK_ML' });
-      if (response?.success) {
-        console.table(response.status);
-        log.info('✅ ML Engine is responsive');
-        return response.status;
-      } else {
-        log.error('❌ ML Check failed', response?.error);
-        return { error: response?.error };
-      }
-    } catch (e) {
-      log.error('❌ ML Check communication error', e);
-      return { error: String(e) };
-    }
-  };
 
-  log.info('🛠️ Dev tools: dumpAllStats(), getBackgroundMetrics(), restartBackground(), checkML()');
+  log.info('🛠️ Dev tools: dumpAllStats(), getBackgroundMetrics(), restartBackground()');
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

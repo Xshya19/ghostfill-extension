@@ -49,7 +49,13 @@ const chromeMock = {
       hasListener: vi.fn(),
     },
     id: 'test-extension-id',
-    getManifest: vi.fn(() => ({ version: '1.0.0' })),
+    getManifest: vi.fn(() => ({
+      version: '1.0.0',
+      oauth2: {
+        client_id: 'bundled-client.apps.googleusercontent.com',
+        scopes: [],
+      },
+    })),
     getURL: vi.fn().mockReturnValue('chrome-extension://mock/'),
     lastError: null,
     reload: vi.fn(),

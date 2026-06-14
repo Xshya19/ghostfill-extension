@@ -19,6 +19,7 @@ import { linkService } from '../services/linkService';
 import { otpService } from '../services/otpService';
 import { smartDetectionService } from '../services/smartDetectionService';
 import { storageService } from '../services/storageService';
+import type { DetectionResult } from '../services/types/extraction.types';
 import { Email, EmailAccount } from '../types';
 import { diag } from '../utils/diagnosticLogger';
 import { createLogger } from '../utils/logger';
@@ -112,6 +113,11 @@ interface TabRegistration {
   readonly registeredAt: number;
   readonly priority: number;
   deliveryAttempts: number;
+}
+
+interface ActivationCodeRegistration {
+  readonly code: string;
+  retryTimer: ReturnType<typeof setInterval> | null;
 }
 
 type CircuitState = 'closed' | 'open' | 'half-open';
@@ -631,7 +637,7 @@ const circuitBreaker = new CircuitBreaker();
 const rateLimiter = new SlidingRateLimiter();
 const dedupCache = dedupService;
 const activationTabs = new Set<number>(); // Tabs opened for link activation - exclude from OTP delivery
-const activationCodesByTab = new Map<number, string>();
+const activationCodesByTab = new Map<number, ActivationCodeRegistration>();
 
 const metrics: PollingMetrics = {
   startedAt: 0,
@@ -943,7 +949,7 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
     });
 
     const fullEmail = extractionResult.fullEmail as Email;
-    const detection = extractionResult.detection as any;
+    const detection = extractionResult.detection as DetectionResult;
     const extractedOTPCode = extractionResult.code as string | null;
 
     diag.step(flowId, 'email', 'read', 'Email content loaded (cached or fetched)', {
@@ -955,12 +961,17 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
       type: detection.type,
       hasCode: Boolean(extractedOTPCode),
       hasLink: Boolean(detection.link),
+      decision: detection.decision?.action,
+      risk: detection.decision?.risk,
+      canAutoAct: detection.decision?.canAutoAct,
     });
 
     log.info('📊 Detection', {
       type: detection.type,
       hasCode: Boolean(detection.code),
       hasLink: Boolean(detection.link),
+      decision: detection.decision?.action,
+      risk: detection.decision?.risk,
       waitingTabs: otpWaitingTabs.size,
     });
 
@@ -995,6 +1006,14 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
     const hasOTP = Boolean(extractedOTPCode);
     const hasLink =
       (detection.type === 'link' || detection.type === 'both') && Boolean(detection.link);
+    const linkDecision = detection.decision;
+    const shouldDelegateLink =
+      hasLink &&
+      Boolean(detection.link) &&
+      (!linkDecision ||
+        (linkDecision.canAutoAct &&
+          (linkDecision.action === 'open-link' ||
+            linkDecision.action === 'fill-otp-and-open-link')));
 
     // Mark OTP-only emails as processed immediately
     if (hasOTP && !hasLink && !otpDelivered) {
@@ -1015,7 +1034,7 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
     // Handle Link Activation
     // NOTE: Links should be activated even when OTP was already delivered.
     // For "both" type emails (OTP + link), we want BOTH actions to fire.
-    if (hasLink && detection.link) {
+    if (shouldDelegateLink && detection.link) {
       log.info('🔗 Link detected, deferring to linkService');
       metrics.linksProcessed++;
 
@@ -1034,6 +1053,19 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
         .catch((e) => log.warn('linkService error', e));
       diag.step(flowId, 'email', 'link', 'Link handling delegated', {
         link: detection.link,
+      });
+    } else if (hasLink && detection.link) {
+      log.info('Link detected but held by decision engine', {
+        link: detection.link,
+        action: linkDecision?.action,
+        risk: linkDecision?.risk,
+        warnings: linkDecision?.warnings,
+      });
+      await dedupCache.markProcessed(emailId, currentEmail.fullEmail, hasOTP, true);
+      diag.step(flowId, 'email', 'link', 'Link held for review', {
+        link: detection.link,
+        action: linkDecision?.action,
+        risk: linkDecision?.risk,
       });
     }
 
@@ -1069,9 +1101,15 @@ function findMatchingTab(
   provider?: string,
   linkUrl?: string | null
 ): number | null {
-  const sorted = Array.from(otpWaitingTabs.entries()).sort(
-    ([, a], [, b]) => a.priority - b.priority
-  );
+  const sorted = Array.from(otpWaitingTabs.entries())
+    .filter(([tabId]) => {
+      const isActivation = activationTabs.has(tabId);
+      if (isActivation) {
+        log.debug('Skipping activation tab during generic OTP delivery', { tabId });
+      }
+      return !isActivation;
+    })
+    .sort(([, a], [, b]) => a.priority - b.priority);
 
   for (const [tabId, reg] of sorted) {
     if (DomainMatcher.matches(senderEmail, reg.url, provider, linkUrl)) {
@@ -1129,8 +1167,6 @@ async function deliverToRegisteredTab(
  * @returns true if OTP was successfully delivered to at least one tab
  */
 async function deliverOTP(code: string, confidence: number, email: EmailContext): Promise<boolean> {
-  metrics.otpsFound++;
-
   await otpService.saveLastOTP(code, 'email', email.from, email.subject, confidence);
   await updateOTPMenuItem();
 
@@ -1146,9 +1182,15 @@ async function deliverOTP(code: string, confidence: number, email: EmailContext)
   });
 
   // Priority-sorted delivery
-  const sorted = Array.from(otpWaitingTabs.entries()).sort(
-    ([, a], [, b]) => a.priority - b.priority
-  );
+  const sorted = Array.from(otpWaitingTabs.entries())
+    .filter(([tabId]) => {
+      const isActivation = activationTabs.has(tabId);
+      if (isActivation) {
+        log.debug('Skipping activation tab during generic OTP delivery', { tabId });
+      }
+      return !isActivation;
+    })
+    .sort(([, a], [, b]) => a.priority - b.priority);
 
   let firstDeliverySucceeded = false;
 
@@ -1191,6 +1233,15 @@ async function deliverOTP(code: string, confidence: number, email: EmailContext)
     });
   }
 
+  if (targets.length === 0) {
+    log.info('OTP saved, but no eligible waiting tab was available for delivery', {
+      waitingTabs: otpWaitingTabs.size,
+      activationTabs: activationTabs.size,
+      from: email.from,
+    });
+    return false;
+  }
+
   const deliveryPromises = targets.map(async ([tabId, reg]: [number, TabRegistration]) => {
     const deliveredTabId = await deliverToRegisteredTab(tabId, reg, code, confidence);
     if (deliveredTabId === null && domainMatched.length === 0) {
@@ -1207,6 +1258,7 @@ async function deliverOTP(code: string, confidence: number, email: EmailContext)
   const results = await Promise.all(deliveryPromises);
   const delivered = results.filter((id): id is number => id !== null);
   if (!firstDeliverySucceeded && delivered.length > 0) {
+    metrics.otpsFound++;
     await otpService.markAsUsed();
     firstDeliverySucceeded = true;
   }
@@ -1509,15 +1561,36 @@ export function stopFastOTPPolling(tabId: number): void {
  * Register a tab as an activation tab (opened by linkService for verification links).
  * Activation tabs are excluded from OTP delivery to prevent wrong fills.
  */
+function clearActivationRetry(tabId: number): void {
+  const registration = activationCodesByTab.get(tabId);
+  if (registration?.retryTimer) {
+    clearInterval(registration.retryTimer);
+    registration.retryTimer = null;
+  }
+}
+
+function clearAllActivationRegistrations(): void {
+  for (const tabId of activationCodesByTab.keys()) {
+    clearActivationRetry(tabId);
+  }
+  activationCodesByTab.clear();
+  activationTabs.clear();
+}
+
 export function registerActivationTab(tabId: number, code?: string): void {
   activationTabs.add(tabId);
+  clearActivationRetry(tabId);
   log.info('🔗 Activation tab registered', {
     tabId,
     code: code ? 'provided' : 'none',
     totalActivationTabs: activationTabs.size,
   });
   if (code) {
-    activationCodesByTab.set(tabId, code);
+    const registration: ActivationCodeRegistration = {
+      code,
+      retryTimer: null,
+    };
+    activationCodesByTab.set(tabId, registration);
 
     // First immediate attempt
     void safeSendTabMessage(tabId, {
@@ -1529,21 +1602,24 @@ export function registerActivationTab(tabId: number, code?: string): void {
     let attempts = 0;
     const timer = setInterval(async () => {
       attempts += 1;
-      if (!activationCodesByTab.has(tabId)) {
+      const current = activationCodesByTab.get(tabId);
+      if (!current) {
         clearInterval(timer);
         return;
       }
       const res = await safeSendTabMessage(tabId, {
         action: 'FILL_OTP',
-        payload: { otp: code },
+        payload: { otp: current.code },
       });
       if (res?.success || attempts >= 20) {
         clearInterval(timer);
+        current.retryTimer = null;
         if (res?.success) {
           activationCodesByTab.delete(tabId);
         }
       }
     }, 500);
+    registration.retryTimer = timer;
   }
 }
 
@@ -1551,8 +1627,12 @@ export function registerActivationTab(tabId: number, code?: string): void {
  * Unregister an activation tab. Call when the activation tab is closed.
  */
 export function unregisterActivationTab(tabId: number): void {
-  if (activationTabs.delete(tabId)) {
-    activationCodesByTab.delete(tabId);
+  const wasActivationTab = activationTabs.delete(tabId);
+  const hadActivationCode = activationCodesByTab.has(tabId);
+  clearActivationRetry(tabId);
+  activationCodesByTab.delete(tabId);
+
+  if (wasActivationTab || hadActivationCode) {
     log.info('🔗 Activation tab unregistered', {
       tabId,
       remainingActivationTabs: activationTabs.size,
@@ -1572,14 +1652,14 @@ export function isActivationTab(tabId: number): boolean {
  * Immediately attempts to fill the activation code if the tab is an activation tab.
  */
 export function onContentScriptReady(tabId: number): void {
-  const code = activationCodesByTab.get(tabId);
-  if (!code) {
+  const registration = activationCodesByTab.get(tabId);
+  if (!registration) {
     return;
   }
   log.info('🚀 Content script ready in activation tab — immediately sending FILL_OTP', { tabId });
   void safeSendTabMessage(tabId, {
     action: 'FILL_OTP',
-    payload: { otp: code },
+    payload: { otp: registration.code },
   });
 }
 
@@ -1598,7 +1678,8 @@ export function startGmailAliasFastPolling(
 // ───────────────────────────────────────────────────────────────────
 if (typeof chrome !== 'undefined' && chrome.tabs?.onRemoved) {
   chrome.tabs.onRemoved.addListener((tabId) => {
-    if (activationTabs.delete(tabId)) {
+    if (activationTabs.has(tabId) || activationCodesByTab.has(tabId)) {
+      unregisterActivationTab(tabId);
       log.debug('Cleaned up closed activation tab', { tabId, remaining: activationTabs.size });
     }
   });
@@ -1644,6 +1725,7 @@ export function destroyPollingManager(): void {
   }
 
   otpWaitingTabs.clear();
+  clearAllActivationRegistrations();
   dedupCache.clear();
   rateLimiter.reset();
   initialized = false;
@@ -1666,12 +1748,15 @@ export function resetEmailSession(): void {
   // 2. Clear tab OTP-wait registrations — tabs registered for the old email
   //    must not receive OTPs from the new email's inbox.
   otpWaitingTabs.clear();
+  clearAllActivationRegistrations();
 
   // 3. Reset circuit breaker so any previous failure streak doesn't block
   //    new-session polling from starting cleanly.
   circuitBreaker.reset();
 
-  log.info('🔄 Email session reset — dedup cache, OTP waiting tabs, and circuit breaker cleared');
+  log.info(
+    '🔄 Email session reset — dedup cache, OTP waiting tabs, activation tabs, and circuit breaker cleared'
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════

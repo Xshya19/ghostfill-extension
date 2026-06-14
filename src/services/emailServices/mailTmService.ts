@@ -9,7 +9,7 @@ import { createLogger } from '../../utils/logger';
 const log = createLogger('MailTmService');
 
 /**
- * Detects transient network errors that should not be treated as bugs.
+ * Detects transient network errors that should be retried by the caller.
  * These occur when: the service worker wakes from sleep, the network is
  * temporarily unavailable, or Mail.tm is momentarily unreachable.
  */
@@ -526,9 +526,7 @@ export class MailTmService {
           );
           this.lastErrorTime = now;
         }
-        // Return empty array instead of throwing so the polling loop continues
-        // cleanly. The circuit breaker in pollingManager will back off if needed.
-        return [];
+        throw error;
       }
 
       // Non-network errors (auth failures, API changes, etc.) — log at ERROR

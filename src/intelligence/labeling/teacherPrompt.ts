@@ -1,7 +1,6 @@
-// Teacher prompt builder for DATA/LABEL distillation. A large LLM labels
-// harvested fields (with a rationale + calibrated confidence + hard-negative
-// tag). These labels become (a) the eval ground truth and (b) training data IF
-// the decision gate says a model is justified.
+// Teacher prompt builder for diagnostics/eval labeling. A large LLM labels
+// harvested fields with a rationale, calibrated confidence, and hard-negative
+// tag so the heuristic classifier can be measured safely.
 
 import { FIELD_CLASSES } from '../contract';
 import type { RawFieldRecord } from '../types';

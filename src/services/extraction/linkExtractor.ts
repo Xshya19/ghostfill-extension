@@ -138,6 +138,33 @@ function isGenericTokenPattern(patternName: string | null): boolean {
   );
 }
 
+function normalizeExpectedDomain(domain: string): string | null {
+  try {
+    const host = domain.includes('://') ? new URL(domain).hostname : domain;
+    const normalized = host.toLowerCase().replace(/^\.+|\.+$/g, '');
+    return normalized.includes('.') ? normalized : null;
+  } catch {
+    const normalized = domain.toLowerCase().replace(/^\.+|\.+$/g, '');
+    return normalized.includes('.') ? normalized : null;
+  }
+}
+
+function hostMatchesExpected(url: string, expectedDomains: string[]): boolean {
+  if (expectedDomains.length === 0) {
+    return false;
+  }
+
+  try {
+    const host = new URL(url).hostname.toLowerCase().replace(/\.$/, '');
+    return expectedDomains.some((domain) => {
+      const expected = normalizeExpectedDomain(domain);
+      return Boolean(expected && (host === expected || host.endsWith(`.${expected}`)));
+    });
+  } catch {
+    return false;
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  URL FILTER PATTERNS
 // ═══════════════════════════════════════════════════════════════════════
@@ -192,6 +219,12 @@ const NON_TARGET_URL_PATTERNS = [
  */
 export function isCTAButton(anchorHtml: string): boolean {
   const l = anchorHtml.toLowerCase();
+  const authish =
+    /\b(?:verify|confirm|activate|sign[-\s]?in|log[-\s]?in|reset|magic|continue|get started|accept|join|authorize|authorise|approve|authenticate|passwordless|invite|invitation|complete|finish)\b/i;
+  if (!authish.test(l)) {
+    return false;
+  }
+
   if (/\brole\s*=\s*["']button["']/i.test(l)) {
     return true;
   }
@@ -405,7 +438,8 @@ export function extractLink(
   intent: IntentResult,
   provider: ProviderKnowledge | null,
   zones: EmailZone[],
-  urls: string[]
+  urls: string[],
+  expectedDomains: string[] = []
 ): ExtractedLink | null {
   const plainText = stripHtmlPreserveStructure(html);
   const decoded = decodeHtmlEntities(html);
@@ -576,9 +610,17 @@ export function extractLink(
       confidence += Math.min(ctxResult.score / 8, 8);
     }
 
-    // Strategy 7: Domain trust
+    // Strategy 7: Domain trust and origin binding
     const domainTrust = calculateDomainTrust(url, provider);
     confidence += Math.min(domainTrust / 5, CONFIG.scoring.linkDomainTrustMax);
+
+    const normalizedUrl = normalizeUrl(url);
+    const originBound = hostMatchesExpected(normalizedUrl, expectedDomains);
+    if (originBound) {
+      confidence += 35;
+    } else if (expectedDomains.length > 0) {
+      confidence -= 20;
+    }
 
     // Strategy 8: Provider link pattern match
     if (
@@ -603,7 +645,7 @@ export function extractLink(
     confidence *= 0.65 + zw * 0.35; // was 0.55+0.45 — raises the floor significantly
 
     candidates.push({
-      url: normalizeUrl(url),
+      url: normalizedUrl,
       originalUrl: url,
       confidence: Math.min(Math.max(confidence, 0), 100),
       zone: zone?.zone || 'unknown',
@@ -620,6 +662,7 @@ export function extractLink(
       hasAuthToken: paramAn.hasToken || paramAn.hasCode,
       paramAnalysis: paramAn,
       domainTrust,
+      originBound,
       surroundingText: getContextAround(plainText, url, 100),
     });
   }
@@ -630,6 +673,9 @@ export function extractLink(
 
   // Sort candidates by confidence and other factors
   candidates.sort((a, b) => {
+    if (a.originBound !== b.originBound) {
+      return a.originBound ? -1 : 1;
+    }
     if (Math.abs(a.confidence - b.confidence) > 5) {
       return b.confidence - a.confidence;
     }
@@ -648,7 +694,7 @@ export function extractLink(
   }
 
   log.info(
-    `Link: ${best.url.substring(0, 70)}... (${best.confidence.toFixed(0)}%) [${best.type}] CTA=${best.isCTA}`
+    `Link: ${best.url.substring(0, 70)}... (${best.confidence.toFixed(0)}%) [${best.type}] CTA=${best.isCTA} origin=${best.originBound}`
   );
 
   return {
@@ -662,6 +708,7 @@ export function extractLink(
     anchorText: best.anchorText,
     context: best.surroundingText,
     domainTrust: best.domainTrust,
+    originBound: best.originBound,
     isShortened: false,
     redirectChain: [],
   };

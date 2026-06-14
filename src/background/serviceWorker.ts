@@ -371,7 +371,7 @@ async function initMessageRouter(): Promise<void> {
   try {
     log.debug('📡 Initializing message router...');
     // setupMessageHandler() is already called synchronously at module load in index.ts.
-    // Do not register a second CLASSIFY_FIELD listener here; duplicate async
+    // Keep runtime messages centralized in messageHandler. Duplicate async
     // sendResponse handlers make Chrome message delivery nondeterministic.
     log.info('✅ Message router ready - extension can now receive messages');
   } catch (error) {

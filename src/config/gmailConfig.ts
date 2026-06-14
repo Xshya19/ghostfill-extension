@@ -19,10 +19,17 @@
  *      It looks like: https://EXTENSION_ID.chromiumapp.org/
  *   9. Click Create → copy the Client ID below
  *
- * REPLACE THE LINE BELOW with your real client_id:
+ * Configure the production client_id in manifest.json under oauth2.client_id.
  */
-export const GMAIL_CLIENT_ID =
-  '459266010400-dolmu9evfqce3ijg3gggpp7r39ohc4kn.apps.googleusercontent.com';
+function getBundledGmailClientId(): string {
+  try {
+    return chrome.runtime.getManifest().oauth2?.client_id?.trim() ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export const GMAIL_CLIENT_ID = getBundledGmailClientId();
 
 export const GMAIL_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',

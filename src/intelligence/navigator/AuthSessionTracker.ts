@@ -6,8 +6,8 @@
  * ╚══════════════════════════════════════════════════════════════════╝
  */
 
+import { FieldType } from '../../types/form.types';
 import { FormFingerprint } from '../history/FuzzyFormFingerprint';
-import { FieldType } from '../ml/FeatureExtractorV2';
 
 export type AuthFlowType =
   | 'single_page_login'
