@@ -131,6 +131,7 @@ class StorageService {
   private writeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingResolvers: Array<{ resolve: () => void; reject: (err: unknown) => void }> = [];
   private readonly WRITE_BATCH_DELAY = 500;
+  private storageAvailable: boolean = true;
 
   // ───────────────────────────────────────────────────────────────────
   // CRITICAL FIX #4: Mutex for Write Operations
@@ -163,6 +164,19 @@ class StorageService {
     // Cache sync with external storage changes is handled by the `onChanged()` public
     // method's internal listener, which also decrypts sensitive values correctly.
     // Having two listeners caused double-decryption and performance overhead.
+    this.storageAvailable = this.checkStorageAvailability();
+  }
+
+  private checkStorageAvailability(): boolean {
+    if (typeof chrome === 'undefined' || !chrome.storage?.local) {
+      return false;
+    }
+    try {
+      chrome.storage.local.get(null, () => {});
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -533,6 +547,13 @@ class StorageService {
     if (!this.initPromise) {
       this.initPromise = (async () => {
         try {
+          this.storageAvailable = this.checkStorageAvailability();
+          if (!this.storageAvailable) {
+            log.warn('Storage API is not allowed or unavailable in this context (e.g. sandboxed iframe). Falling back to in-memory storage.');
+            this.initialized = true;
+            return;
+          }
+
           // Restore session secrets using isolated namespace from chrome.storage.session first
           if (chrome.storage.session) {
             // Also enforce TRUSTED_CONTEXTS to prevent non-extension components from reading secrets (PA3)
@@ -644,8 +665,8 @@ class StorageService {
 
     this.cacheMisses++;
 
-    if (typeof chrome === 'undefined' || !chrome.storage?.local) {
-      log.warn('Storage API unavailable', { key });
+    if (!this.storageAvailable || typeof chrome === 'undefined' || !chrome.storage?.local) {
+      log.warn('Storage API unavailable (get)', { key });
       return undefined;
     }
 
@@ -733,6 +754,10 @@ class StorageService {
    * CRITICAL FIX #4: Uses mutex to prevent race conditions
    */
   private async flushPendingWrites(): Promise<void> {
+    if (!this.storageAvailable) {
+      this.pendingWrites.clear();
+      return;
+    }
     const performWrite = async () => {
       await this.acquireWriteMutex();
       const writesAttempted = Array.from(this.pendingWrites.keys());
@@ -869,6 +894,10 @@ class StorageService {
     }
 
     try {
+      if (!this.storageAvailable || typeof chrome === 'undefined' || !chrome.storage?.local) {
+        log.debug(`Removed ${key} from in-memory cache only`);
+        return;
+      }
       await chrome.storage.local.remove(key);
       log.debug(`Removed ${key}`);
     } catch (error) {
@@ -949,8 +978,14 @@ class StorageService {
         clearTimeout(this.writeDebounceTimer);
         this.writeDebounceTimer = null;
       }
+      this.cache.clear();
+      this.optimisticUpdates.clear();
+
+      if (!this.storageAvailable || typeof chrome === 'undefined' || !chrome.storage?.local) {
+        log.info('Cleared in-memory cache');
+        return;
+      }
       // Preserve encryption bootstrap material so data written after a clear
-      // remains readable across the next service worker restart.
       const preservedLocal = await chrome.storage.local.get([
         'masterKeySeed',
         'internalEncryptionSalt',
@@ -1088,6 +1123,10 @@ class StorageService {
    */
   async getUsage(): Promise<{ used: number; total: number; percentage: number }> {
     return new Promise((resolve) => {
+      if (!this.storageAvailable || typeof chrome === 'undefined' || !chrome.storage?.local) {
+        resolve({ used: 0, total: 10485760, percentage: 0 });
+        return;
+      }
       chrome.storage.local.getBytesInUse(null, (bytesInUse) => {
         const total = chrome.storage.local.QUOTA_BYTES || 10485760;
         resolve({
@@ -1105,6 +1144,9 @@ class StorageService {
   onChanged(
     callback: (changes: { [key: string]: chrome.storage.StorageChange }) => void
   ): () => void {
+    if (!this.storageAvailable || typeof chrome === 'undefined' || !chrome.storage?.onChanged) {
+      return () => {};
+    }
     const listener = (
       changes: { [key: string]: chrome.storage.StorageChange },
       areaName: string
@@ -1149,7 +1191,7 @@ class StorageService {
    * PERFORMANCE: Preload frequently accessed keys into cache
    */
   async preload(keys: (keyof StorageSchema)[]): Promise<void> {
-    if (typeof chrome === 'undefined' || !chrome.storage?.local) {
+    if (!this.storageAvailable || typeof chrome === 'undefined' || !chrome.storage?.local) {
       return;
     }
 
