@@ -611,13 +611,13 @@ class StorageService {
           this.initialized = true;
           log.debug('Storage initialized with secure encryption');
         } catch (error) {
-          log.error('Failed to initialize storage', error);
           const errorMsg = error instanceof Error ? error.message : String(error);
           if (errorMsg.includes('Access to storage is not allowed') || errorMsg.includes('context')) {
             log.warn('GhostFill running in sandboxed environment, falling back to in-memory cache.');
             this.initialized = true;
             return;
           }
+          log.error('Failed to initialize storage', error);
           this.initPromise = null; // Allow retrying
           throw error;
         }
