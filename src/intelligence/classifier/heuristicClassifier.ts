@@ -8,7 +8,7 @@
 // alongside the distilled model in the offscreen document.
 
 import { FIELD_CLASSES } from '../contract';
-import { matchesAny, normalizeText } from '../keywords';
+import { KW, matchesAny, normalizeText } from '../keywords';
 import type { ClassificationResult, FieldClass, HardNegative, RawFieldRecord } from '../types';
 
 type Scores = Record<FieldClass, number>;
@@ -54,10 +54,20 @@ export function looksLikeOtpField(r: RawFieldRecord): boolean {
 // Detect hard-negative subtypes that must never be treated as identity/OTP.
 export function detectHardNegative(r: RawFieldRecord): HardNegative | undefined {
   const text = combinedText(r);
-  // honeypot: invisible-ish field that nonetheless asks for identity-like data
+  // honeypot: truly invisible field that nonetheless asks for identity-like data.
+  //   PERMANENT FIX 2026-06-21: requires ALL of (not-visible, opacity-0, off-screen OR tiny).
+  //   The previous rule fired on `!visible` alone — many legitimate OAuth fields
+  //   (login.kimchi.dev, social-continuation flows, multi-step OAuth) have brief
+  //   frames where they're not-yet-rendered (visibility=false but opacity=1, in-viewport,
+  //   normal size). Only treat a field as a honeypot when it is *all* of the classic
+  //   trap signals at once. A focused field is also forgiven — if the user just
+  //   tabbed in, it's almost certainly not a trap.
   if (
-    !r.visible &&
     r.type !== 'hidden' &&
+    !r.visible &&
+    r.opacityZero &&
+    (r.offscreen || r.tiny) &&
+    !r.focused &&
     (matchesAny(text, 'email') || matchesAny(text, 'user') || matchesAny(text, 'fullname'))
   ) {
     return 'Honeypot';
@@ -246,6 +256,39 @@ export function classifyHeuristic(
     !matchesAny(text, 'last')
   ) {
     add('Full_Name', 2.5, 'kw:generic-name');
+  }
+
+  // ---- Combination login identifiers (e.g. "email or username") ----
+  if (matchesAny(text, 'email') && matchesAny(text, 'user')) {
+    add('Email', 1.5, 'boost combination login field');
+    add('Username', 1.5, 'boost combination login field');
+  }
+
+  // ---- Exact keyword match boosts ----
+  const normLabel = normalizeText(r.labelText);
+  const normPlaceholder = normalizeText(r.placeholder);
+  const exactMatch = (grp: keyof typeof KW & string, cls: FieldClass, weight: number) => {
+    const keywords = KW[grp];
+    if (keywords.includes(normLabel) || keywords.includes(normPlaceholder)) {
+      add(cls, weight, `exact keyword match: ${grp}`);
+    }
+  };
+  exactMatch('email', 'Email', 2.0);
+  exactMatch('user', 'Username', 2.0);
+  exactMatch('password', 'Password', 2.0);
+  exactMatch('confirm', 'Target_Password_Confirm', 2.5);
+  exactMatch('newpw', 'Password', 1.5);
+  exactMatch('otp', 'OTP', 2.5);
+  exactMatch('phone', 'Phone', 2.0);
+  exactMatch('first', 'First_Name', 2.0);
+  exactMatch('last', 'Last_Name', 2.0);
+  exactMatch('fullname', 'Full_Name', 2.0);
+
+  // ---- Second password field sequence boost ----
+  if (r.isSecondPasswordField) {
+    add('Target_Password_Confirm', 5.0, 'second password field sequence');
+    s.Password *= 0.2;
+    signals.push('dampen Password due to second password field sequence');
   }
 
   // ---- Negative evidence: hard negatives suppress identity/OTP fills ----

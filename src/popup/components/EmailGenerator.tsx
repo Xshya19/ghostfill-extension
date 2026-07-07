@@ -1,15 +1,16 @@
-import { motion, AnimatePresence, Transition } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Copy, RefreshCw, Inbox, Clock, ChevronRight, ChevronLeft, Zap } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Button } from '../../shared/ui';
+import { interactiveSurface, springSoft } from '../../shared/ui/motion';
 import { EmailAccount, Email } from '../../types';
 import { formatRelativeTime } from '../../utils/formatters';
-import { copyToClipboard } from '../../utils/helpers';
+import { copyToClipboard, openSafeUrl } from '../../utils/helpers';
 import { safeSendMessage } from '../../utils/messaging';
 import { useOTPExtractor } from '../hooks/useOTPExtractor';
 
 import { useStorageSubscription } from '../hooks/useStorageSubscription';
-import { ConfirmModal } from './ConfirmModal';
-import { EmailAvatar } from './EmailAvatar';
+import { ConfirmModal, EmailAvatar } from './SharedComponents';
 
 // i18n helper
 const t = (key: string): string => {
@@ -41,13 +42,6 @@ function getEmailTimestamp(email: Email): number {
     ? email.date
     : Date.now();
 }
-
-const SPRING_TRANSITION: Transition = {
-  type: 'spring',
-  stiffness: 260,
-  damping: 25,
-  mass: 0.8,
-};
 
 interface Props {
   onToast: (message: string) => void;
@@ -207,26 +201,10 @@ const EmailGenerator: React.FC<Props> = ({
   );
 
   const openActivationLink = useCallback(
-    async (event: React.MouseEvent, activationLink: string) => {
+    (event: React.MouseEvent, activationLink: string) => {
       event.stopPropagation();
-
-      try {
-        let safeUrl: string;
-        try {
-          safeUrl = new URL(activationLink).href;
-          if (!safeUrl.startsWith('http://') && !safeUrl.startsWith('https://')) {
-            throw new Error('Invalid URL protocol');
-          }
-        } catch {
-          onToast('Invalid activation link URL');
-          return;
-        }
-
-        onToast('Opening activation link...');
-        await chrome.tabs.create({ url: safeUrl, active: true });
-      } catch {
-        onToast('Failed to open activation link');
-      }
+      onToast('Opening activation link...');
+      openSafeUrl(activationLink);
     },
     [onToast]
   );
@@ -237,10 +215,7 @@ const EmailGenerator: React.FC<Props> = ({
         <>
           {/* Active Identity Card - HIDE IN INBOX VARIANT */}
           {variant === 'default' && (
-            <motion.div
-              className="memphis-card email-generator-card"
-              transition={SPRING_TRANSITION}
-            >
+            <motion.div className="memphis-card email-generator-card" transition={springSoft}>
               {/* Decorative glow */}
               <div className="email-glow" />
 
@@ -299,8 +274,7 @@ const EmailGenerator: React.FC<Props> = ({
                 <motion.button
                   className={`copy-button ${copySuccess ? 'copy-success' : ''}`}
                   onClick={() => void copyEmail()}
-                  whileHover={{ x: -1, y: -1 }}
-                  whileTap={{ x: 1, y: 1 }}
+                  {...interactiveSurface}
                   aria-label="Copy email to clipboard"
                 >
                   <Copy size={22} strokeWidth={2} />
@@ -308,22 +282,19 @@ const EmailGenerator: React.FC<Props> = ({
               </div>
               {/* Action Buttons */}
               <div className="identity-actions-row">
-                <motion.button
-                  className="ios-button button-secondary identity-action-btn"
+                <Button
+                  className="identity-action-btn"
                   onClick={() => setShowConfirm(true)}
                   disabled={syncing}
-                  whileHover={{ x: -1, y: -1 }}
-                  whileTap={{ x: 1, y: 1 }}
                 >
                   <RefreshCw size={18} className={syncing ? 'spin' : ''} />
                   New Email
-                </motion.button>
-                <motion.button
-                  className="ios-button button-primary identity-action-btn"
+                </Button>
+                <Button
+                  variant="primary"
+                  className="identity-action-btn"
                   onClick={() => void checkInbox()}
                   disabled={checking || timeLeft === 'Expired'}
-                  whileHover={{ x: -1, y: -1 }}
-                  whileTap={{ x: 1, y: 1 }}
                 >
                   {timeLeft === 'Expired' ? (
                     <>
@@ -335,7 +306,7 @@ const EmailGenerator: React.FC<Props> = ({
                       {checking ? 'Syncing...' : 'Sync Inbox'}
                     </>
                   )}
-                </motion.button>
+                </Button>
               </div>
             </motion.div>
           )}
@@ -362,8 +333,7 @@ const EmailGenerator: React.FC<Props> = ({
                     <motion.button
                       className="action-icon email-back-btn"
                       onClick={onBack}
-                      whileHover={{ x: -1, y: -1 }}
-                      whileTap={{ x: 1, y: 1 }}
+                      {...interactiveSurface}
                       title="Go back"
                       aria-label="Go back to dashboard"
                     >
@@ -378,8 +348,7 @@ const EmailGenerator: React.FC<Props> = ({
                     className="action-icon"
                     onClick={() => void checkInbox()}
                     disabled={checking}
-                    whileHover={{ x: -1, y: -1 }}
-                    whileTap={{ x: 1, y: 1 }}
+                    {...interactiveSurface}
                     title={checking ? 'Syncing...' : 'Refresh inbox'}
                     aria-label="Refresh inbox"
                   >
@@ -403,11 +372,8 @@ const EmailGenerator: React.FC<Props> = ({
                           initial={{ opacity: 0, y: 16 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{
+                            ...springSoft,
                             delay: Math.min(i * 0.03, 0.3),
-                            type: 'spring',
-                            stiffness: 260,
-                            damping: 25,
-                            mass: 0.8,
                           }}
                         >
                           <EmailAvatar from={item.from} className="inbox-item-avatar">
@@ -435,8 +401,7 @@ const EmailGenerator: React.FC<Props> = ({
                                     e.stopPropagation();
                                     void copyCode(verificationCode);
                                   }}
-                                  whileHover={{ x: -1, y: -1 }}
-                                  whileTap={{ x: 1, y: 1 }}
+                                  {...interactiveSurface}
                                 >
                                   <span className="otp-badge-code">🔢 {verificationCode}</span>
                                   <Copy size={12} />
@@ -446,8 +411,7 @@ const EmailGenerator: React.FC<Props> = ({
                                 <motion.button
                                   className="link-badge"
                                   onClick={(e) => void openActivationLink(e, activationLink)}
-                                  whileHover={{ x: -1, y: -1 }}
-                                  whileTap={{ x: 1, y: 1 }}
+                                  {...interactiveSurface}
                                 >
                                   <span className="otp-badge-code">Verify Link</span>
                                   <ChevronRight size={12} />
@@ -461,7 +425,7 @@ const EmailGenerator: React.FC<Props> = ({
                   ) : (
                     <div className="inbox-empty inbox-empty-large shimmer">
                       <div className="inbox-empty-icon-wrapper">
-                        <Mail size={30} color="var(--brand-primary)" strokeWidth={1.5} />
+                        <Mail size={30} color="var(--gf-primary)" strokeWidth={1.5} />
                       </div>
                       <span className="inbox-empty-text-main">Listening for messages</span>
                       <span className="inbox-empty-text-sub">
@@ -490,11 +454,8 @@ const EmailGenerator: React.FC<Props> = ({
                           initial={{ opacity: 0, y: 16 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{
+                            ...springSoft,
                             delay: Math.min(i * 0.03, 0.3),
-                            type: 'spring',
-                            stiffness: 260,
-                            damping: 25,
-                            mass: 0.8,
                           }}
                           className="inbox-item-default"
                         >
@@ -532,8 +493,7 @@ const EmailGenerator: React.FC<Props> = ({
                                     e.stopPropagation();
                                     void copyCode(verificationCode);
                                   }}
-                                  whileHover={{ x: -1, y: -1 }}
-                                  whileTap={{ x: 1, y: 1 }}
+                                  {...interactiveSurface}
                                 >
                                   🔢 {verificationCode}
                                   <Copy size={12} />
@@ -543,8 +503,7 @@ const EmailGenerator: React.FC<Props> = ({
                                 <motion.button
                                   className="link-badge"
                                   onClick={(e) => void openActivationLink(e, activationLink)}
-                                  whileHover={{ x: -1, y: -1 }}
-                                  whileTap={{ x: 1, y: 1 }}
+                                  {...interactiveSurface}
                                 >
                                   Verify Link
                                   <ChevronRight size={12} />
@@ -553,7 +512,7 @@ const EmailGenerator: React.FC<Props> = ({
                             </div>
                           </div>
 
-                          <ChevronRight size={18} color="var(--text-tertiary)" strokeWidth={2.5} />
+                          <ChevronRight size={18} color="var(--gf-text-muted)" strokeWidth={2.5} />
                         </motion.div>
                       );
                     })
@@ -567,7 +526,6 @@ const EmailGenerator: React.FC<Props> = ({
                         <div className="inbox-empty-icon">
                           <Inbox
                             size={32}
-                            color="var(--brand-primary)"
                             strokeWidth={1.5}
                             className="email-empty-icon"
                           />
@@ -587,20 +545,19 @@ const EmailGenerator: React.FC<Props> = ({
       ) : (
         <div className="memphis-card missing-identity-card">
           <div className="shimmer-icon-container missing-identity-icon-box">
-            <Mail size={52} color="var(--brand-primary)" className="icon-faded" />
+            <Mail size={52} color="var(--gf-primary)" className="icon-faded" />
           </div>
           <h3 className="missing-identity-title">{t('identityRequired')}</h3>
           <p className="no-identity-desc">{t('generateIdentityMessage')}</p>
-          <motion.button
-            className="ios-button button-primary generate-identity-btn"
+          <Button
+            variant="primary"
+            className="generate-identity-btn"
             onClick={onGenerate}
             disabled={syncing}
-            whileHover={{ x: -1, y: -1 }}
-            whileTap={{ x: 1, y: 1 }}
           >
             {syncing ? <span className="spinner-small" /> : <Zap size={18} fill="white" />}
             {syncing ? t('syncingIdentity') : t('generateIdentity')}
-          </motion.button>
+          </Button>
         </div>
       )}
 

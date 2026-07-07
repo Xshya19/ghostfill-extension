@@ -40,17 +40,17 @@ const STYLES = `
   /* Premium Spatial Tokens */
   ${generateHostTokens()}
 
-  --brand:           var(--gf-violet);
-  --brand-rgb:       var(--gf-violet-rgb);
-  --brand-light:     var(--gf-magenta);
+  --brand:           var(--gf-primary);
+  --brand-rgb:       var(--gf-primary-rgb);
+  --brand-light:     var(--gf-primary-deep);
   --success:         var(--gf-mint);
   --success-rgb:     var(--gf-mint-rgb);
   --error:           var(--gf-coral);
   --error-rgb:       var(--gf-coral-rgb);
   
-  --sticker-bg: var(--gf-card, #211B3D);
-  --sticker-bg-hover: var(--gf-surface, #18152A);
-  --shadow-hard: 3px 3px 0 var(--gf-ink, #000);
+  --sticker-bg: var(--gf-grad-cobalt, linear-gradient(160deg, #7c83ff 0%, #5a61f0 100%));
+  --sticker-bg-hover: var(--gf-grad-cobalt, linear-gradient(160deg, #8b91ff 0%, #6a70f5 100%));
+  --shadow-hard: 0 4px 14px -4px rgba(var(--gf-primary-rgb, 124, 131, 255), 0.7), 0 1px 0 rgba(255,255,255,0.28) inset;
 
   --ease-out-expo:   cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring:     cubic-bezier(0.175, 0.885, 0.32, 1.275);
@@ -63,26 +63,35 @@ const STYLES = `
   justify-content: center;
   width: 100%;
   height: 100%;
-  border-radius: 6px;
-  background: var(--sticker-bg); /* SOLID. NO TRANSPARENCY. */
-  border: 2px solid var(--gf-ink, #000); /* Thick comic-ink border */
-  box-shadow: var(--shadow-hard); /* HARD OFFSET SHADOW */
+  border-radius: 9px;
+  background: var(--sticker-bg);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: var(--shadow-hard);
   overflow: hidden;
-  opacity: 1; /* Always fully opaque */
+  opacity: 1;
   position: relative;
-  transition: transform 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.1s;
+  color: #fff;
+  transition: transform 0.15s var(--ease-spring), box-shadow 0.15s, filter 0.15s;
 }
 
 .ghost-icon-container:hover {
   background: var(--sticker-bg-hover);
-  transform: translate(-1px, -1px);
-  box-shadow: 4px 4px 0 var(--gf-ink, #000);
-  border-color: var(--gf-cyan, #20F4FF);
+  transform: translateY(-1px) scale(1.04);
+  box-shadow: 0 8px 20px -6px rgba(var(--brand-rgb, 124,131,255), 0.8), 0 1px 0 rgba(255,255,255,0.06) inset;
+  filter: brightness(1.05);
 }
 
 .ghost-icon-container:active {
-  transform: translate(2px, 2px);
-  box-shadow: 0px 0px 0 var(--gf-ink, #000); /* Slams into the page */
+  transform: translateY(0) scale(0.96);
+  box-shadow: 0 3px 10px -4px rgba(var(--gf-primary-rgb, 124, 131, 255), 0.7), 0 1px 2px rgba(0,0,0,0.25) inset;
+}
+
+.ghost-icon-container:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--gf-bg, #181B21),
+    0 0 0 4px var(--gf-primary, #7C83FF),
+    0 3px 10px -4px rgba(var(--gf-primary-rgb, 124, 131, 255), 0.7);
 }
 
 /* ── SVG Icons ── */
@@ -135,14 +144,14 @@ const STYLES = `
   left: 50%;
   transform: translateX(-50%) translateY(4px) scale(0.85);
   transform-origin: bottom center;
-  background: var(--gf-bg);
-  border: 1.5px solid var(--gf-ink);
-  color: var(--gf-cream);
-  font-size: 10px;
-  font-weight: 700;
-  padding: 4px 8px;
-  border-radius: 4px;
-  box-shadow: 2px 2px 0 var(--gf-ink);
+  background: var(--gf-card-elevated);
+  border: 1px solid var(--gf-line-2, rgba(255,255,255,0.13));
+  color: var(--gf-ink);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 5px 9px;
+  border-radius: 7px;
+  box-shadow: 0 6px 18px -6px rgba(0,0,0,0.55), 0 1px 0 var(--gf-hi) inset;
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
@@ -161,7 +170,7 @@ const STYLES = `
   margin-left: -4px;
   border-width: 4px;
   border-style: solid;
-  border-color: var(--gf-ink) transparent transparent transparent;
+  border-color: var(--gf-card-elevated) transparent transparent transparent;
 }
 
 :host(:hover) .gl-tooltip {
@@ -169,34 +178,33 @@ const STYLES = `
   transform: translateX(-50%) translateY(-6px) scale(1);
 }
 
-/* State Modifiers — MEMPHIS SOLID TINTS */
+/* State Modifiers — Spectre glass tints */
 .ghost-icon-container.gl-loading {
   background: var(--gf-surface);
-  border-color: var(--gf-cyan);
+  border-color: var(--gf-line);
   cursor: wait;
 }
 .ghost-icon-container.gl-success {
-  background: var(--gf-mint); /* SOLID MINT */
-  border-color: var(--gf-ink);
-  box-shadow: 3px 3px 0 var(--gf-ink); /* HARD SHADOW */
+  background: var(--gf-grad-mint, linear-gradient(160deg, #3fe0c5, #12b886));
+  border-color: var(--gf-line-2, rgba(255,255,255,0.10));
+  box-shadow: 0 6px 18px -6px rgba(63, 224, 197, 0.7), 0 1px 0 rgba(255,255,255,0.06) inset;
 }
 .ghost-icon-container.gl-error {
-  background: var(--gf-coral); /* SOLID CORAL */
-  border-color: var(--gf-ink);
-  box-shadow: 3px 3px 0 var(--gf-ink);
-  animation: glShake2D 0.35s ease; /* 2D Shake */
+  background: var(--gf-grad-coral, linear-gradient(160deg, #ff6b6b, #e0463f));
+  border-color: var(--gf-line-2, rgba(255,255,255,0.10));
+  box-shadow: 0 6px 18px -6px rgba(255, 107, 107, 0.7), 0 1px 0 rgba(255,255,255,0.06) inset;
+  animation: glShake2D 0.35s ease;
 }
 .ghost-icon-container.gl-otp-ready {
-  background: var(--gf-violet); /* SOLID VIOLET */
-  border-color: var(--gf-ink);
-  box-shadow: 3px 3px 0 var(--gf-ink);
+  background: var(--gf-grad-cobalt, linear-gradient(160deg, #7c83ff, #5a61f0));
+  border-color: var(--gf-line-2, rgba(255,255,255,0.10));
+  box-shadow: 0 6px 18px -6px rgba(var(--brand-rgb, 124,131,255), 0.7), 0 1px 0 rgba(255,255,255,0.06) inset;
   animation: glPulse2D 2s ease-in-out infinite;
 }
 
-/* REMOVE ALL perspective() transforms */
 @keyframes glPulse2D {
-  0%, 100% { transform: translate(0, 0); }
-  50% { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--gf-ink); }
+  0%, 100% { box-shadow: 0 6px 18px -6px rgba(var(--brand-rgb, 124,131,255), 0.7), 0 1px 0 rgba(255,255,255,0.06) inset; }
+  50% { box-shadow: 0 6px 22px -4px rgba(var(--brand-rgb, 124,131,255), 0.95), 0 0 0 4px rgba(var(--brand-rgb, 124,131,255), 0.18), 0 1px 0 rgba(255,255,255,0.06) inset; }
 }
 @keyframes glShake2D {
   0%, 100% { transform: translateX(0); }
@@ -475,6 +483,7 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
       return;
     }
     this.isAttached = true;
+    this.classList.add('gl-attached');
     this.inputElement = input;
     this.fieldType = classifyField(input);
 
@@ -809,6 +818,7 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
     this.container = null;
     this.tooltipEl = null;
     this.isAttached = false;
+    this.classList.remove('gl-attached');
   }
 }
 

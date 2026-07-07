@@ -1,39 +1,26 @@
 import { motion } from 'framer-motion';
-import {
-  Mail,
-  Lock,
-  Copy,
-  RefreshCw,
-  Check,
-  Inbox,
-  ChevronRight,
-  Eye,
-  EyeOff,
-  Clock,
-  AlertCircle,
-} from 'lucide-react';
+import { Mail } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import gmailLogo from '../../assets/icons/gmail_icon.png';
-import { getDeterministicCombinedAlias } from '../../services/aliasService';
 import {
-  clearGmailAliasSessions,
+  getDeterministicCombinedAlias,
   rememberGmailAliasSession,
-  setGmailConnectedAt,
   getGmailAliasSessionByDomain,
-} from '../../services/gmailAliasSessionService';
+  persistGmailConnection,
+  clearGmailConnection,
+  isGmailSetupResponse,
+  formatGmailSetupError,
+  type GmailSignInResult,
+} from '../../services/gmailConnectionService';
 import { storageService } from '../../services/storageService';
-import { EmailAccount, Email } from '../../types';
-import { type GmailProfile } from '../../types/message.types';
+import { itemRise, springTab, stagger } from '../../shared/ui/motion';
+import { EmailAccount, Email, type ExtractOTPResponse } from '../../types';
 import { TIMING } from '../../utils/constants';
-import { formatRelativeTime } from '../../utils/formatters';
-import { copyToClipboard } from '../../utils/helpers';
+import { copyToClipboard, openSafeUrl } from '../../utils/helpers';
 import { safeSendMessage } from '../../utils/messaging';
 import { useOTPExtractor } from '../hooks/useOTPExtractor';
 import { useStorageSubscription } from '../hooks/useStorageSubscription';
 import { useAppStore } from '../store/useAppStore';
-import { ConfirmModal } from './ConfirmModal';
-import { CountdownTimer } from './CountdownTimer';
-import { EmailAvatar } from './EmailAvatar';
+import { AccountCard, ConfirmModal, EmailViewerModal, InboxList, QuickActions, type DisplayedEmail } from './SharedComponents';
 
 // i18n helper
 const t = (key: string): string => {
@@ -51,6 +38,8 @@ const RATE_LIMIT_MS = {
   GENERATE_PASSWORD: 1000, // 1 second between password generations
 };
 
+const HUB_INBOX_PREVIEW_LIMIT = 2;
+
 interface Props {
   onNavigate: (
     tab: 'email' | 'password' | 'otp' | 'aliases',
@@ -61,61 +50,12 @@ interface Props {
   onToast: (message: string) => void;
 }
 
-interface GmailSignInResult {
-  success?: boolean;
-  profile?: GmailProfile;
-  error?: string;
-  setupRequired?: boolean;
-}
-
 const formatGmailSignInFailure = (res: GmailSignInResult | undefined): string => {
-  if (res?.setupRequired) {
-    return res.error
-      ? `${res.error} Add a valid Gmail OAuth Client ID in Options > Email.`
-      : 'Gmail needs a valid OAuth Client ID in Options > Email.';
+  if (isGmailSetupResponse(res)) {
+    return formatGmailSetupError(res?.error);
   }
   return res?.error || 'Sign-in failed';
 };
-
-const CONTAINER_VARIANTS = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      // Cap the stagger at 0.03s so even 20 items render in under 0.6s
-      staggerChildren: 0.03,
-      delayChildren: 0.05,
-    },
-  },
-};
-
-const ITEM_VARIANTS = {
-  hidden: { opacity: 0, y: 12, scale: 0.97 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: {
-      type: 'spring' as const,
-      stiffness: 200,
-      damping: 28,
-      mass: 0.9,
-    },
-  },
-};
-
-/** Persist a successful Gmail OAuth connection (mirrors AliasPanel logic). */
-const persistGmailConnection = (profile: GmailProfile): Promise<unknown> =>
-  Promise.all([
-    setGmailConnectedAt(),
-    storageService.setImmediate('gmailProfile', profile),
-    storageService.setImmediate('gmailBase', profile.email),
-    storageService.setImmediate('gmailConnected', true),
-    storageService.setImmediate('gmailIsManual', false),
-    storageService.setImmediate('preferredEmailType', 'gmail'),
-    storageService.setImmediate('inbox', []),
-    clearGmailAliasSessions(),
-  ]);
 
 const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast }) => {
   const preferredEmailType = useAppStore((s) => s.preferredEmailType);
@@ -133,10 +73,13 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
   const gmailIsManual = useAppStore((state) => state.gmailIsManual);
   const setGmailIsManual = useAppStore((state) => state.setGmailIsManual);
   const setGmailProfile = useAppStore((state) => state.setGmailProfile);
+  const gmailProfile = useAppStore((state) => state.gmailProfile);
+  const setCurrentTabHostname = useAppStore((state) => state.setCurrentTabHostname);
 
   // Direct Gmail sign-in state
   const [gmailSigningIn, setGmailSigningIn] = useState(false);
   const gmailInboxRequestSeqRef = useRef(0);
+  const lastOpenedEmailIdRef = useRef<string | null>(null);
 
   // State
   const [emailCopied, setEmailCopied] = useState(false);
@@ -149,9 +92,20 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
   const [passwordCooldown, setPasswordCooldown] = useState(false);
   const [showConfirmEmail, setShowConfirmEmail] = useState(false);
 
+  // PERMANENT FIX 2026-06-21: email viewer state. Previously the Hub inbox
+  // had no way to open an email — clicking the row jumped to a tab. Now
+  // Hub owns the same EmailViewerModal that AliasPanel uses.
+  const [viewerEmail, setViewerEmail] = useState<DisplayedEmail | null>(null);
+  const [viewerLoading, setViewerLoading] = useState(false);
+  const [viewerError, setViewerError] = useState<string | null>(null);
+  const [viewerOtp, setViewerOtp] = useState<string | null>(null);
+  const [viewerLink, setViewerLink] = useState<string | null>(null);
+  const [viewerMeta, setViewerMeta] = useState<{ fromName?: string; dateFormatted?: string }>({});
+  const openingEmailId = viewerEmail ? String(viewerEmail.id) : null;
+
   const [currentTabDomain, setCurrentTabDomain] = useState<string>('');
 
-  // Query current tab domain
+  // Query current tab domain (single owner of chrome.tabs.query for the popup)
   useEffect(() => {
     if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -164,6 +118,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
             }
             if (hostname && !hostname.includes('newtab') && !hostname.includes('extensions')) {
               setCurrentTabDomain(hostname);
+              setCurrentTabHostname(hostname);
             }
           } catch {
             /* ignore */
@@ -523,30 +478,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     })();
   }, [onGenerate, onToast]);
 
-  const handleGenerateGmailAlias = useCallback(() => {
-    if (!gmailConnected) {
-      return;
-    }
-    void (async () => {
-      try {
-        setIsGeneratingEmail(true);
-        const res = (await safeSendMessage({
-          action: 'GENERATE_GMAIL_ALIAS',
-          payload: { domain: currentTabDomain || 'general' },
-        })) as { success?: boolean; email?: EmailAccount; error?: string };
-        if (res?.success && res?.email) {
-          setActiveGmailAlias(res.email.fullEmail);
-          onToast('New Gmail alias generated!');
-        } else {
-          onToast(res?.error || 'Failed to generate Gmail alias');
-        }
-      } catch {
-        onToast('Failed to generate Gmail alias');
-      } finally {
-        setIsGeneratingEmail(false);
-      }
-    })();
-  }, [currentTabDomain, gmailConnected, onToast]);
+
 
   const handleGeneratePassword = useCallback(() => {
     void generatePassword();
@@ -560,37 +492,177 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
   );
 
   const handleOpenLink = useCallback(
-    async (event: React.MouseEvent, url: string) => {
+    (event: React.MouseEvent, url: string) => {
       event.stopPropagation();
-      try {
-        const safeUrl = new URL(url).href;
-        if (!safeUrl.startsWith('http://') && !safeUrl.startsWith('https://')) {
-          throw new Error('Invalid URL protocol');
-        }
-        onToast('Opening activation link...');
-        await chrome.tabs.create({ url: safeUrl, active: true });
-      } catch {
-        onToast('Failed to open link');
-      }
+      onToast('Opening activation link...');
+      openSafeUrl(url);
     },
     [onToast]
   );
 
+  // PERMANENT FIX 2026-06-21: open an email in the viewer. Fetches the
+  // full body via the appropriate message channel (Gmail uses
+  // GMAIL_GET_MESSAGE; disposable inbox uses READ_EMAIL), then runs
+  // EXTRACT_OTP against the body so the modal's OTP/link buttons work.
+  const handleOpenEmail = useCallback(
+    async (emailItem: DisplayedEmail) => {
+      const currentId = String(emailItem.id);
+      lastOpenedEmailIdRef.current = currentId;
+
+      setViewerEmail(emailItem);
+      setViewerError(null);
+      setViewerOtp(emailItem.otpCode ?? null);
+      setViewerLink(emailItem.activationLink ?? null);
+      setViewerMeta({}); // Reset metadata to prevent bleed-through
+      setViewerLoading(true);
+      try {
+        if (preferredEmailType === 'gmail') {
+          const res = (await safeSendMessage({
+            action: 'GMAIL_GET_MESSAGE',
+            payload: { messageId: String(emailItem.id) },
+          })) as unknown as {
+            success?: boolean;
+            message?: {
+              body?: string;
+              htmlBody?: string;
+              snippet?: string;
+              dateFormatted?: string;
+              subject?: string;
+              from?: string;
+            };
+            error?: string;
+          } | null;
+
+          if (lastOpenedEmailIdRef.current !== currentId) {
+            return;
+          }
+
+          if (res?.success && res.message) {
+            const fullMsg = res.message;
+            setViewerEmail((prev) => {
+              if (!prev || String(prev.id) !== currentId) {
+                return prev;
+              }
+              const next: DisplayedEmail = {
+                ...prev,
+                body: fullMsg.body ?? prev.body,
+              };
+              if (fullMsg.htmlBody !== undefined) {
+                next.htmlBody = fullMsg.htmlBody;
+              }
+              if (fullMsg.snippet !== undefined) {
+                next.snippet = fullMsg.snippet;
+              }
+              return next;
+            });
+
+            setViewerMeta((prev) => {
+              if (lastOpenedEmailIdRef.current !== currentId) {
+                return prev;
+              }
+              return {
+                ...prev,
+                ...(fullMsg.dateFormatted ? { dateFormatted: fullMsg.dateFormatted } : {}),
+                ...(fullMsg.from ? { fromName: fullMsg.from } : {}),
+              };
+            });
+
+            const extract = (await safeSendMessage({
+              action: 'EXTRACT_OTP',
+              payload: {
+                subject: fullMsg.subject ?? emailItem.subject,
+                text: fullMsg.body ?? emailItem.body ?? '',
+                textBody: fullMsg.body ?? emailItem.body ?? '',
+                htmlBody: fullMsg.htmlBody ?? '',
+                emailId: emailItem.id,
+                emailFrom: fullMsg.from ?? emailItem.from,
+              },
+            })) as ExtractOTPResponse | null;
+
+            if (lastOpenedEmailIdRef.current !== currentId) {
+              return;
+            }
+
+            if (extract?.success) {
+              if (typeof extract.otp === 'string' && extract.otp) {
+                setViewerOtp(extract.otp);
+              }
+              if (typeof extract.link === 'string' && extract.link) {
+                setViewerLink(extract.link);
+              }
+            }
+          } else if (res?.error) {
+            setViewerError(typeof res.error === 'string' ? res.error : 'Could not load message');
+          }
+        }
+      } catch (err) {
+        if (lastOpenedEmailIdRef.current === currentId) {
+          setViewerError(err instanceof Error ? err.message : 'Failed to load message');
+        }
+      } finally {
+        if (lastOpenedEmailIdRef.current === currentId) {
+          setViewerLoading(false);
+        }
+      }
+    },
+    [preferredEmailType]
+  );
+
+  const handleCloseViewer = useCallback(() => {
+    setViewerEmail(null);
+    setViewerError(null);
+    setViewerOtp(null);
+    setViewerLink(null);
+    setViewerLoading(false);
+    setViewerMeta({});
+  }, []);
+
   // formatRelativeTime and extractOTP imported from utils/formatters
 
-  const { otps: emailOTPs, links: emailLinks } = useOTPExtractor(inboxEmails.slice(0, 3));
+  const previewEmails = React.useMemo(
+    () => inboxEmails.slice(0, HUB_INBOX_PREVIEW_LIMIT),
+    [inboxEmails]
+  );
+  const { otps: emailOTPs, links: emailLinks } = useOTPExtractor(previewEmails);
 
-  const displayedEmails = React.useMemo(() => {
-    return inboxEmails.slice(0, 3).map((email: Email) => ({
+  const displayedEmails: DisplayedEmail[] = React.useMemo(() => {
+    return previewEmails.map((email: Email) => ({
       ...email,
       otpCode: emailOTPs[email.id] !== undefined ? emailOTPs[email.id] : undefined,
       activationLink: emailLinks[email.id] !== undefined ? emailLinks[email.id] : undefined,
     }));
-  }, [inboxEmails, emailOTPs, emailLinks]);
+  }, [previewEmails, emailOTPs, emailLinks]);
 
-  const canOpenInbox =
-    (preferredEmailType === 'gmail' && gmailConnected && !gmailIsManual) ||
-    (preferredEmailType !== 'gmail' && inboxEmails.length > 0);
+  const handleGmailSignIn = useCallback(async () => {
+    setGmailSigningIn(true);
+    try {
+      const res = (await safeSendMessage({
+        action: 'GMAIL_SIGN_IN',
+      })) as GmailSignInResult;
+      if (res?.success && res?.profile) {
+        setGmailConnected(true);
+        setGmailProfile(res.profile);
+        setGmailBase(res.profile.email);
+        setGmailIsManual(false);
+        setPreferredEmailType('gmail');
+        await persistGmailConnection(res.profile, false);
+        onToast(`Connected: ${res.profile.email}`);
+      } else {
+        onToast(formatGmailSignInFailure(res));
+      }
+    } catch (e) {
+      onToast(e instanceof Error ? e.message : 'Sign-in failed');
+    } finally {
+      setGmailSigningIn(false);
+    }
+  }, [
+    onToast,
+    setGmailConnected,
+    setGmailProfile,
+    setGmailBase,
+    setGmailIsManual,
+    setPreferredEmailType,
+  ]);
 
   // ── Tab-switch handlers that immediately sync currentEmail in chrome.storage ──
   const handleSwitchToDisposable = useCallback(() => {
@@ -646,29 +718,31 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
   ]);
 
   return (
-    <motion.div
-      className="ghost-dashboard"
-      variants={CONTAINER_VARIANTS}
-      initial="hidden"
-      animate="visible"
-    >
+    <motion.div className="ghost-dashboard" variants={stagger} initial="initial" animate="animate">
       {/* ───────────────────────────────────────────────────────────
                  📊 EMAIL TYPE SELECTOR (Disposable vs Gmail)
                ─────────────────────────────────────────────────────────── */}
       <div className="hub-email-selector" role="tablist">
+        <motion.div
+          className="hub-email-selector-bg"
+          initial={false}
+          animate={{ x: preferredEmailType === 'disposable' ? '0%' : '100%' }}
+          transition={springTab}
+          style={{
+            position: 'absolute',
+            top: 3,
+            bottom: 3,
+            left: 3,
+            width: 'calc(50% - 3px)',
+            margin: 0,
+          }}
+        />
         <button
           role="tab"
           aria-selected={preferredEmailType === 'disposable'}
           className={`hub-email-selector-btn ${preferredEmailType === 'disposable' ? 'hub-email-selector-btn--active' : ''}`}
           onClick={handleSwitchToDisposable}
         >
-          {preferredEmailType === 'disposable' && (
-            <motion.div
-              className="hub-email-selector-bg"
-              layoutId="activeEmailTypeTab"
-              transition={{ type: 'spring', stiffness: 350, damping: 25 }}
-            />
-          )}
           <span className="hub-email-selector-label">
             <Mail size={13} strokeWidth={2.5} />
             <span>Temp Mail</span>
@@ -680,13 +754,6 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
           className={`hub-email-selector-btn ${preferredEmailType === 'gmail' ? 'hub-email-selector-btn--active' : ''}`}
           onClick={handleSwitchToGmail}
         >
-          {preferredEmailType === 'gmail' && (
-            <motion.div
-              className="hub-email-selector-bg"
-              layoutId="activeEmailTypeTab"
-              transition={{ type: 'spring', stiffness: 350, damping: 25 }}
-            />
-          )}
           <span className="hub-email-selector-label">
             <Mail size={13} strokeWidth={2.5} />
             <span>Gmail</span>
@@ -697,351 +764,70 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       {/* ═══════════════════════════════════════════════════════════
                  🎴 IDENTITY CARD - Combined Email & Password
                ═══════════════════════════════════════════════════════════ */}
-      <motion.div className="memphis-card identity-card" variants={ITEM_VARIANTS}>
-        {preferredEmailType === 'gmail' && !gmailConnected ? (
-          <div className="hub-gmail-not-connected">
-            <div className="hub-gmail-icon-box">
-              <img
-                src={gmailLogo}
-                alt="Gmail Logo"
-                className="hub-gmail-logo-img"
-                width={36}
-                height={36}
-              />
-            </div>
-            <span className="hub-gmail-title">Connect Gmail</span>
-            <span className="hub-gmail-desc">
-              Create site-specific aliases and sync OTP emails from your Gmail account.
-            </span>
-            <motion.button
-              onClick={async () => {
-                setGmailSigningIn(true);
-                try {
-                  const res = (await safeSendMessage({
-                    action: 'GMAIL_SIGN_IN',
-                  })) as GmailSignInResult;
-                  if (res?.success && res?.profile) {
-                    setGmailConnected(true);
-                    setGmailProfile(res.profile);
-                    setGmailBase(res.profile.email);
-                    setGmailIsManual(false);
-                    setPreferredEmailType('gmail');
-                    await persistGmailConnection(res.profile);
-                    onToast(`Connected: ${res.profile.email}`);
-                  } else {
-                    onToast(formatGmailSignInFailure(res));
-                  }
-                } catch (e) {
-                  onToast(e instanceof Error ? e.message : 'Sign-in failed');
-                } finally {
-                  setGmailSigningIn(false);
-                }
-              }}
-              className="hub-gmail-connect-btn"
-              whileHover={{ x: -1, y: -1 }}
-              whileTap={{ x: 1, y: 1 }}
-              disabled={gmailSigningIn}
-            >
-              {gmailSigningIn ? (
-                <span>
-                  <RefreshCw size={14} className="spin" /> Connecting...
-                </span>
-              ) : (
-                <span>Connect Gmail</span>
-              )}
-            </motion.button>
-          </div>
-        ) : (
-          <>
-            {/* Email Row */}
-            <div className="identity-row">
-              <div className="identity-icon">
-                <Mail size={18} className="icon-premium" />
-              </div>
-              <div className="identity-content">
-                <div className="identity-label-group">
-                  <span className="identity-label">
-                    {preferredEmailType === 'gmail' ? 'Gmail Alias' : t('emailLabel')}
-                  </span>
-                  {preferredEmailType === 'disposable' && (
-                    <CountdownTimer
-                      expiresAt={emailAccount?.expiresAt}
-                      expiredLabel={t('expiredLabel') || 'Expired'}
-                    />
-                  )}
-                </div>
-                <span
-                  className={`identity-value hub-val hub-val-email break-all ${
-                    preferredEmailType === 'disposable' && !emailAccount ? 'shimmer' : ''
-                  }`}
-                >
-                  {preferredEmailType === 'gmail'
-                    ? activeEmailAddress || 'Connect Gmail'
-                    : emailAccount?.fullEmail || t('syncingIdentity')}
-                </span>
-                {preferredEmailType === 'gmail' &&
-                  gmailConnected &&
-                  gmailBase &&
-                  activeEmailAddress &&
-                  activeEmailAddress !== gmailBase && (
-                    <div
-                      className="identity-original-email"
-                      style={{
-                        fontSize: '11px',
-                        color: 'var(--gf-text-muted)',
-                        opacity: 0.8,
-                        marginTop: '3px',
-                        fontWeight: 500,
-                        fontFamily: 'var(--font-sans)',
-                      }}
-                    >
-                      Original: {gmailBase}
-                    </div>
-                  )}
-              </div>
-              <div className="identity-actions">
-                <motion.button
-                  className={`action-icon ${emailCopied ? 'success' : ''}`}
-                  onClick={copyEmail}
-                  whileHover={{ x: -1, y: -1 }}
-                  whileTap={{ x: 1, y: 1 }}
-                  title="Copy email"
-                  aria-label="Copy email address to clipboard"
-                >
-                  {emailCopied ? <Check size={14} /> : <Copy size={14} />}
-                </motion.button>
-                {(preferredEmailType === 'disposable' ||
-                  (preferredEmailType === 'gmail' && gmailConnected)) && (
-                  <motion.button
-                    className={`action-icon ${isGeneratingEmail ? 'action-loading' : ''} ${emailCooldown ? 'opacity-50' : ''}`}
-                    onClick={
-                      preferredEmailType === 'gmail'
-                        ? handleGenerateGmailAlias
-                        : handleGenerateEmail
-                    }
-                    whileHover={{ x: -1, y: -1 }}
-                    whileTap={{ x: 1, y: 1 }}
-                    title={preferredEmailType === 'gmail' ? 'New Gmail alias' : 'New identity'}
-                    aria-label={
-                      preferredEmailType === 'gmail'
-                        ? 'Generate new Gmail alias'
-                        : 'Generate new temporary email'
-                    }
-                    disabled={isGeneratingEmail || emailCooldown}
-                  >
-                    <RefreshCw size={14} className={isGeneratingEmail ? 'spin' : ''} />
-                  </motion.button>
-                )}
-              </div>
-            </div>
-
-            {/* Password Row */}
-            <div className="identity-row">
-              <div className="identity-icon password">
-                <Lock size={18} className="icon-premium" />
-              </div>
-              <div className="identity-content">
-                <span className="identity-label">{t('passwordLabel')}</span>
-                <span
-                  className={`identity-value mono hub-val ${!password ? 'shimmer' : ''} ${
-                    !showPassword && password ? 'password-bullets' : ''
-                  }`}
-                >
-                  {!password ? t('generatingPassword') : showPassword ? password : '********'}
-                </span>
-              </div>
-              <div className="identity-actions">
-                <motion.button
-                  className={`action-icon ${passwordCopied ? 'success' : ''}`}
-                  onClick={copyPassword}
-                  whileHover={{ x: -1, y: -1 }}
-                  whileTap={{ x: 1, y: 1 }}
-                  title="Copy password"
-                  aria-label="Copy password to clipboard"
-                >
-                  {passwordCopied ? <Check size={14} /> : <Copy size={14} />}
-                </motion.button>
-                <motion.button
-                  className="action-icon"
-                  onClick={() => setShowPassword(!showPassword)}
-                  whileHover={{ x: -1, y: -1 }}
-                  whileTap={{ x: 1, y: 1 }}
-                  title={showPassword ? 'Hide' : 'Show'}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                </motion.button>
-                <div className="action-separator" />
-                <motion.button
-                  className={`action-icon action-danger ${passwordCooldown ? 'opacity-50' : ''}`}
-                  onClick={handleGeneratePassword}
-                  whileHover={{ x: -1, y: -1 }}
-                  whileTap={{ x: 1, y: 1 }}
-                  title="Reset secure password"
-                  aria-label="Generate new secure password"
-                  disabled={isGeneratingPassword || passwordCooldown}
-                >
-                  <RefreshCw size={14} className={isGeneratingPassword ? 'spin' : ''} />
-                </motion.button>
-              </div>
-            </div>
-          </>
+      <motion.div className="memphis-card identity-card" variants={itemRise}>
+        <AccountCard
+          preferredEmailType={preferredEmailType}
+          gmailConnected={gmailConnected}
+          gmailSigningIn={gmailSigningIn}
+          gmailBase={gmailBase}
+          activeEmailAddress={activeEmailAddress}
+          emailAccount={emailAccount}
+          emailCopied={emailCopied}
+          isGeneratingEmail={isGeneratingEmail}
+          emailCooldown={emailCooldown}
+          onCopyEmail={copyEmail}
+          onGenerateEmail={handleGenerateEmail}
+          onGmailSignIn={handleGmailSignIn}
+          gmailProfile={gmailProfile}
+          onSignOut={async () => {
+            try {
+              if (typeof chrome !== 'undefined' && chrome.identity) {
+                chrome.identity.clearAllCachedAuthTokens(() => {});
+              }
+              await clearGmailConnection(gmailIsManual);
+              setGmailConnected(false);
+              setGmailProfile(null);
+              setGmailBase(null);
+              setGmailIsManual(false);
+              setPreferredEmailType('disposable');
+              onToast('Gmail disconnected');
+            } catch {
+              onToast('Failed to disconnect Gmail');
+            }
+          }}
+        />
+        {!(preferredEmailType === 'gmail' && !gmailConnected) && (
+          <QuickActions
+            password={password}
+            passwordCopied={passwordCopied}
+            isGeneratingPassword={isGeneratingPassword}
+            passwordCooldown={passwordCooldown}
+            showPassword={showPassword}
+            onCopyPassword={copyPassword}
+            onToggleShowPassword={() => setShowPassword((s) => !s)}
+            onGeneratePassword={handleGeneratePassword}
+          />
         )}
       </motion.div>
 
       {/* ═══════════════════════════════════════════════════════════
                  📥 INBOX WITH EMAIL LIST
                ═══════════════════════════════════════════════════════════ */}
-      <motion.div className="inbox-section" variants={ITEM_VARIANTS}>
-        <div className="inbox-header-row">
-          <div className="inbox-title-group">
-            <Inbox size={22} />
-            <span>Inbox</span>
-            {inboxEmails.length > 0 && <span className="inbox-count">{inboxEmails.length}</span>}
-          </div>
-          {canOpenInbox && (
-            <motion.button
-              className="view-all-btn"
-              onClick={() => {
-                if (preferredEmailType === 'gmail') {
-                  onNavigate('aliases', { aliasTab: 'inbox' });
-                } else {
-                  onNavigate('email');
-                }
-              }}
-              whileHover={{ x: 2 }}
-              aria-label="View full inbox"
-            >
-              Open
-              <ChevronRight size={15} />
-            </motion.button>
-          )}
-        </div>
-
-        <div className="inbox-list">
-          {preferredEmailType === 'gmail' && !gmailConnected ? (
-            <div className="hub-empty-state hub-empty-state--action">
-              <AlertCircle size={18} strokeWidth={1.7} color="var(--gf-coral)" />
-              <span className="hub-empty-text">Connect Gmail above to sync OTP emails.</span>
-            </div>
-          ) : preferredEmailType === 'gmail' && gmailIsManual ? (
-            <div className="hub-empty-state hub-empty-state--action">
-              <AlertCircle size={18} strokeWidth={1.7} color="var(--gf-yellow)" />
-              <span className="hub-empty-text">
-                Use Google sign-in to sync messages automatically.
-              </span>
-            </div>
-          ) : preferredEmailType === 'gmail' && gmailInboxLoading && inboxEmails.length === 0 ? (
-            <div className="shimmer hub-empty-state">
-              <RefreshCw size={18} strokeWidth={1.5} className="spin" color="var(--gf-cyan)" />
-              <span>Syncing Gmail</span>
-            </div>
-          ) : preferredEmailType === 'gmail' && gmailInboxError ? (
-            <button
-              className="hub-empty-state hub-empty-state--action"
-              onClick={() => void fetchGmailInbox()}
-            >
-              <AlertCircle size={18} strokeWidth={1.7} color="var(--gf-coral)" />
-              <span className="hub-empty-text">{gmailInboxError}</span>
-            </button>
-          ) : inboxEmails.length === 0 ? (
-            <div className="hub-empty-state">
-              <Mail size={18} strokeWidth={1.5} color="var(--gf-cyan)" />
-              <span>
-                {preferredEmailType === 'gmail' ? 'No Gmail messages yet.' : t('listening')}
-              </span>
-            </div>
-          ) : (
-            <div className="hub-inbox-scroll">
-              {displayedEmails.map((emailItem, index: number) => {
-                return (
-                  <motion.div
-                    key={emailItem.id}
-                    className="inbox-item"
-                    initial={{ opacity: 0, x: -16 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{
-                      delay: 0.15 + index * 0.05,
-                      type: 'spring',
-                      stiffness: 260,
-                      damping: 25,
-                      mass: 0.8,
-                    }}
-                    whileHover={{ x: 4 }}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key !== 'Enter' && e.key !== ' ') {
-                        return;
-                      }
-                      e.preventDefault();
-                      if (preferredEmailType === 'gmail') {
-                        onNavigate('aliases', { aliasTab: 'inbox' });
-                      } else {
-                        onNavigate('email');
-                      }
-                    }}
-                    aria-label={`Open email from ${emailItem.from}: ${emailItem.subject}`}
-                  >
-                    <EmailAvatar from={emailItem.from} className="inbox-item-avatar" />
-                    <div className="inbox-item-content">
-                      <div className="inbox-item-header">
-                        <span className="inbox-item-from">{emailItem.from}</span>
-                        <span className="inbox-item-date">
-                          <Clock size={12} />
-                          {formatRelativeTime(new Date(emailItem.date).getTime())}
-                        </span>
-                      </div>
-                      <div className="inbox-item-subject">{emailItem.subject}</div>
-                      {(emailItem.otpCode || emailItem.activationLink) && (
-                        <div className="inbox-item-actions">
-                          {emailItem.otpCode && (
-                            <motion.button
-                              className="otp-badge"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (emailItem.otpCode) {
-                                  handleCopyOTP(emailItem.otpCode);
-                                }
-                              }}
-                              whileHover={{ x: -1, y: -1 }}
-                              whileTap={{ x: 1, y: 1 }}
-                              aria-label={`Copy verification code ${emailItem.otpCode}`}
-                            >
-                              <span className="otp-badge-code" aria-hidden="true">
-                                {emailItem.otpCode}
-                              </span>
-                              <Copy size={12} />
-                            </motion.button>
-                          )}
-                          {emailItem.activationLink && (
-                            <motion.button
-                              className="link-badge"
-                              onClick={(e) => {
-                                if (emailItem.activationLink) {
-                                  void handleOpenLink(e, emailItem.activationLink);
-                                }
-                              }}
-                              whileHover={{ x: -1, y: -1 }}
-                              whileTap={{ x: 1, y: 1 }}
-                              aria-label="Open verification link"
-                            >
-                              <span className="otp-badge-code" aria-hidden="true">
-                                Verify
-                              </span>
-                              <ChevronRight size={12} />
-                            </motion.button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </motion.div>
+      <InboxList
+        preferredEmailType={preferredEmailType}
+        gmailConnected={gmailConnected}
+        gmailIsManual={gmailIsManual}
+        gmailInboxLoading={gmailInboxLoading}
+        gmailInboxError={gmailInboxError}
+        inboxCount={inboxEmails.length}
+        displayedEmails={displayedEmails}
+        openingEmailId={openingEmailId}
+        onNavigate={onNavigate}
+        onCopyOTP={handleCopyOTP}
+        onOpenLink={handleOpenLink}
+        onFetchGmailInbox={fetchGmailInbox}
+        onOpenEmail={handleOpenEmail}
+      />
 
       <ConfirmModal
         isOpen={showConfirmEmail}
@@ -1052,6 +838,31 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
         onConfirm={executeGenerateEmail}
         onCancel={() => setShowConfirmEmail(false)}
         isDestructive={true}
+      />
+
+      {/* PERMANENT FIX 2026-06-21: email viewer so users can actually
+          READ the email — previously the Hub inbox jumped to a tab. */}
+      <EmailViewerModal
+        message={
+          viewerEmail
+            ? {
+                subject: viewerEmail.subject,
+                from: viewerEmail.from,
+                fromName: viewerMeta.fromName,
+                date: viewerEmail.date,
+                dateFormatted: viewerMeta.dateFormatted,
+                snippet: viewerEmail.snippet,
+                body: viewerEmail.body,
+                htmlBody: viewerEmail.htmlBody,
+                otp: viewerOtp,
+                link: viewerLink,
+              }
+            : null
+        }
+        loading={viewerLoading}
+        error={viewerError}
+        onClose={handleCloseViewer}
+        onToast={onToast}
       />
     </motion.div>
   );

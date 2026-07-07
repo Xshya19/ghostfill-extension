@@ -147,4 +147,80 @@ export const LINK_PATTERN_DATABASE: LinkPattern[] = [
     type: 'activation',
     description: 'Type=activation',
   },
+
+  // ── NEW: Additional Common Activation Paths ─────────────────────────────
+  {
+    // /callback and /oauth/callback — common in OIDC/OAuth flows (Auth0, Okta, etc.)
+    pattern: /\/(?:oauth\/)?callback(?:\/|$|\?)/i,
+    name: 'callback-path',
+    baseConfidence: 88,
+    type: 'activation',
+    description: 'OAuth/OIDC callback path',
+  },
+  {
+    // /complete, /complete-signup, /complete-registration
+    pattern: /\/complete(?:[-_]?(?:signup|registration|verification|account|email))?(?:\/|$|\?)/i,
+    name: 'complete-path',
+    baseConfidence: 85,
+    type: 'activation',
+    description: 'Completion path',
+  },
+  {
+    // /auth/verify, /auth/confirm — sub-path auth verification
+    pattern: /\/auth(?:enticate)?\/(?:verify|confirm|validate|activate|complete)(?:\/|$|\?)/i,
+    name: 'auth-sub-verify-path',
+    baseConfidence: 94,
+    type: 'activation',
+    description: 'Auth sub-path verification',
+  },
+  {
+    // /user/activate, /users/verify, /account/activate
+    pattern: /\/(?:user|users|account|accounts|member|members)\/(?:activate|verify|confirm|validate)(?:\/|$|\?)/i,
+    name: 'user-activate-path',
+    baseConfidence: 94,
+    type: 'activation',
+    description: 'User/account activation path',
+  },
+  {
+    // /register/confirm, /registration/verify
+    pattern: /\/register(?:ation)?\/(?:confirm|verify|activate|complete)(?:\/|$|\?)/i,
+    name: 'registration-confirm-path',
+    baseConfidence: 92,
+    type: 'activation',
+    description: 'Registration confirmation path',
+  },
+  {
+    // /onboard, /onboarding/complete
+    pattern: /\/onboard(?:ing)?(?:\/|$|\?)/i,
+    name: 'onboarding-path',
+    baseConfidence: 80,
+    type: 'activation',
+    description: 'Onboarding path',
+  },
+  {
+    // Hash-fragment tokens: /verify#token=abc123, /activate#code=xyz
+    // Standard URL parsers strip fragments — we detect them here before normalisation
+    pattern: /#(?:token|code|access_token|id_token|invite_token|confirmation_token|magic_token|auth_token)=[A-Za-z0-9._%-]{8,}/i,
+    name: 'hash-fragment-token',
+    baseConfidence: 90,
+    type: 'activation',
+    description: 'Token in URL hash fragment',
+  },
+  {
+    // /set-password, /create-password (post-invite flows)
+    pattern: /\/(?:set|create|choose)[-_]?password(?:\/|$|\?)/i,
+    name: 'set-password-path',
+    baseConfidence: 88,
+    type: 'password-reset',
+    description: 'Set/create password path',
+  },
+  {
+    // /link/login, /login/link, /email/verify (Supabase, Firebase Auth patterns)
+    pattern: /\/(?:link\/login|login\/link|email\/verify|verify\/email|auth\/link)(?:\/|$|\?)/i,
+    name: 'email-link-login-path',
+    baseConfidence: 93,
+    type: 'activation',
+    description: 'Email link login path (Supabase/Firebase)',
+  },
 ];
+

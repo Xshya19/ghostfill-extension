@@ -3,6 +3,14 @@ import React, { useState, useEffect } from 'react';
 
 import SettingsSection from '../SettingsSection';
 
+const t = (key: string): string => {
+  try {
+    return chrome.i18n.getMessage(key) || key;
+  } catch {
+    return key;
+  }
+};
+
 const AboutTab: React.FC = () => {
   const version = chrome.runtime.getManifest().version;
   const [storageUsage, setStorageUsage] = useState<{ used: number; quota: number } | null>(null);
@@ -93,7 +101,7 @@ const AboutTab: React.FC = () => {
             </div>
           </div>
         ) : (
-          <p className="text-dimmed">Loading storage info...</p>
+          <p className="text-dimmed">{t('loadingStorageInfo')}</p>
         )}
       </SettingsSection>
 

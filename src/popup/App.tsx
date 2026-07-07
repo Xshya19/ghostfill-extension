@@ -1,19 +1,25 @@
-import { motion, AnimatePresence, Transition, MotionConfig } from 'framer-motion';
-import { ChevronLeft, Sparkles, Mail, Zap, ShieldCheck } from 'lucide-react';
+import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
+import { ChevronLeft } from 'lucide-react';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { storageService } from '../services/storageService';
+import { Toast } from '../shared/ui';
+import { springSoft } from '../shared/ui/motion';
 import { EmailAccount } from '../types';
 import { withTimeout, withRetry } from '../utils/helpers';
 import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
-import AliasPanel from './components/AliasPanel';
-import AppSkeleton from './components/AppSkeleton';
-import EmailGenerator from './components/EmailGenerator';
-import ErrorBoundary from './components/ErrorBoundary';
-import Header from './components/Header';
-import Hub from './components/Hub';
-import OTPDisplay from './components/OTPDisplay';
-import PasswordGenerator from './components/PasswordGenerator';
+import {
+  AliasPanel,
+  AppSkeleton,
+  EmailGenerator,
+  ErrorBoundary,
+  Header,
+  HelpModal,
+  Hub,
+  Onboarding,
+  OTPDisplay,
+  PasswordGenerator
+} from './components';
 import { useAppStore } from './store/useAppStore';
 
 const log = createLogger('App');
@@ -34,13 +40,6 @@ const t = (key: string): string => {
   } catch {
     return key;
   }
-};
-
-const SPRING_TRANSITION: Transition = {
-  type: 'spring',
-  stiffness: 200,
-  damping: 28,
-  mass: 0.9,
 };
 
 type AppView = 'hub' | 'email' | 'password' | 'otp' | 'aliases';
@@ -96,49 +95,6 @@ const App: React.FC = () => {
   );
 
   useEffect(() => {
-    if (!showHelp) {
-      return;
-    }
-
-    const modal = document.querySelector('.help-card') as HTMLElement | null;
-    if (modal) {
-      const focusable = modal.querySelectorAll<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-      );
-      const first = focusable[0];
-      first?.focus();
-    }
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setShowHelp(false);
-        return;
-      }
-      if (e.key === 'Tab' && modal) {
-        const focusable = modal.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        );
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (e.shiftKey) {
-          if (document.activeElement === first) {
-            e.preventDefault();
-            last?.focus();
-          }
-        } else {
-          if (document.activeElement === last) {
-            e.preventDefault();
-            first?.focus();
-          }
-        }
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [showHelp]);
-
-  useEffect(() => {
     if (!showHelp && helpTriggerRef.current) {
       helpTriggerRef.current.focus();
     }
@@ -177,7 +133,7 @@ const App: React.FC = () => {
       log.info('Generating new identity...');
       const res = await withTimeout(
         withRetry(() => safeSendMessage({ action: 'GENERATE_EMAIL' }), 2, 1000),
-        20000 // 20 second absolute timeout
+        45000 // 45 second absolute timeout to allow for fallback providers
       );
       if (
         res &&
@@ -447,119 +403,17 @@ const App: React.FC = () => {
         Skip to main content
       </a>
       <main className="main-content-area" id="main-content" role="main">
-        <AnimatePresence>
-          {toast && (
-            <motion.div
-              className="ios-toast"
-              role="status"
-              aria-live="polite"
-              aria-atomic="true"
-              initial="hidden"
-              animate="visible"
-              exit="hidden"
-              variants={{
-                hidden: { opacity: 0, scale: 0.95, y: 20, x: '-50%' },
-                visible: { opacity: 1, scale: 1, y: 0, x: '-50%' },
-              }}
-              transition={SPRING_TRANSITION}
-            >
-              {toast}
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <Toast message={toast} />
 
         <AnimatePresence>
           {!isInitialized ? (
             <AppSkeleton key="app-skeleton" />
           ) : isFirstTime ? (
-            <motion.div
+            <Onboarding
               key="onboarding"
-              initial={{ opacity: 0, scale: 0.98 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 1.02 }}
-              transition={SPRING_TRANSITION}
-              className="onboarding-overlay"
-            >
-              <motion.div
-                initial={{ scale: 0.5, opacity: 0, rotate: -20 }}
-                animate={{ scale: 1, opacity: 1, rotate: 0 }}
-                transition={{ type: 'spring', stiffness: 200, damping: 20, delay: 0.05 }}
-                className="onboarding-logo"
-              >
-                <Sparkles size={36} color="white" strokeWidth={2.5} />
-              </motion.div>
-
-              <motion.h1
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.1 }}
-                className="onboarding-title"
-              >
-                {t('onboardingTitle')}
-              </motion.h1>
-
-              <motion.p
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.15 }}
-                className="onboarding-subtitle"
-              >
-                {t('onboardingSubtitle')}
-              </motion.p>
-
-              <motion.div
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.2 }}
-                className="onboarding-features"
-              >
-                {[
-                  {
-                    icon: <Mail size={24} color="var(--gf-cyan)" />,
-                    text: t('onboardingFeature1'),
-                    sub: t('onboardingFeature1Sub'),
-                  },
-                  {
-                    icon: <Zap size={24} color="var(--gf-yellow)" />,
-                    text: t('onboardingFeature2'),
-                    sub: t('onboardingFeature2Sub'),
-                  },
-                  {
-                    icon: <ShieldCheck size={24} color="var(--gf-mint)" />,
-                    text: t('onboardingFeature3'),
-                    sub: t('onboardingFeature3Sub'),
-                  },
-                ].map((step, i) => (
-                  <div key={i} className="onboarding-feature-item">
-                    <span className="onboarding-feature-icon">{step.icon}</span>
-                    <div>
-                      <div className="onboarding-feature-title">{step.text}</div>
-                      <div className="onboarding-feature-sub">{step.sub}</div>
-                    </div>
-                  </div>
-                ))}
-              </motion.div>
-
-              <motion.button
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.3 }}
-                onClick={dismissOnboarding}
-                className="ios-button button-primary onboarding-btn"
-                whileHover={{ x: -1, y: -1 }}
-                whileTap={{ x: 1, y: 1 }}
-              >
-                {t('onboardingButton')}
-              </motion.button>
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.4 }}
-                className="onboarding-footer"
-              >
-                {t('onboardingFooter')} • v{getExtensionVersion()}
-              </motion.p>
-            </motion.div>
+              onDismiss={dismissOnboarding}
+              version={getExtensionVersion()}
+            />
           ) : null}
         </AnimatePresence>
 
@@ -570,7 +424,7 @@ const App: React.FC = () => {
               initial={{ opacity: 0, scale: 0.98, x: -16 }}
               animate={{ opacity: 1, scale: 1, x: 0 }}
               exit={{ opacity: 0, scale: 1.02, x: 16 }}
-              transition={SPRING_TRANSITION}
+              transition={springSoft}
               className="app-view-container"
             >
               <Header onOpenSettings={handleOpenSettings} onOpenHelp={handleOpenHelp} />
@@ -588,7 +442,7 @@ const App: React.FC = () => {
               initial={{ opacity: 0, scale: 0.98, x: 16 }}
               animate={{ opacity: 1, scale: 1, x: 0 }}
               exit={{ opacity: 0, scale: 1.02, x: -16 }}
-              transition={SPRING_TRANSITION}
+              transition={springSoft}
               className="app-view-container"
             >
               <Header onOpenSettings={handleOpenSettings} onOpenHelp={handleOpenHelp} />
@@ -613,18 +467,43 @@ const App: React.FC = () => {
                 initial={{ opacity: 0, scale: 1.02, x: 16 }}
                 animate={{ opacity: 1, scale: 1, x: 0 }}
                 exit={{ opacity: 0, scale: 0.98, x: -16 }}
-                transition={SPRING_TRANSITION}
+                transition={springSoft}
               >
                 <div className="header detail-view-header">
-                  <div className="header-left detail-view-header-left">
+                  <div
+                    className="detail-view-header-left"
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}
+                  >
                     <button
-                      className="back-button detail-view-back-btn"
+                      className="icon-button"
+                      style={{
+                        width: 30,
+                        height: 30,
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
                       onClick={() => safeSetView('hub')}
                       aria-label="Go back to hub"
                     >
-                      <ChevronLeft size={22} className="sf-icon" />
+                      <ChevronLeft size={18} strokeWidth={2.5} />
                     </button>
-                    <span className="header-title detail-view-title">
+                    <span
+                      className="header-title"
+                      style={{
+                        fontSize: 15,
+                        fontWeight: 700,
+                        letterSpacing: '-0.02em',
+                        background:
+                          'linear-gradient(135deg, var(--gf-ink) 0%, rgba(var(--gf-ink-rgb), 0.75) 100%)',
+                        WebkitBackgroundClip: 'text',
+                        backgroundClip: 'text',
+                        WebkitTextFillColor: 'transparent',
+                        display: 'block',
+                        visibility: 'visible',
+                      }}
+                    >
                       {view === 'otp'
                         ? t('passcodeSync')
                         : view === 'aliases'
@@ -643,51 +522,14 @@ const App: React.FC = () => {
                   )}
                   {view === 'otp' && <OTPDisplay onToast={showToast} />}
                   {view === 'aliases' && (
-                    <AliasPanel
-                      initialTab={aliasInitialTab}
-                      onToast={showToast}
-                      onBack={() => safeSetView('hub')}
-                    />
+                    <AliasPanel initialTab={aliasInitialTab} onToast={showToast} onBack={() => safeSetView('hub')} />
                   )}
                 </div>
               </motion.div>
             )}
         </AnimatePresence>
 
-        <AnimatePresence>
-          {showHelp && (
-            <motion.div
-              className="modal-overlay help-modal-overlay"
-              onClick={() => setShowHelp(false)}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            >
-              <motion.div
-                className="memphis-card help-card"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="help-modal-title"
-                onClick={(e) => e.stopPropagation()}
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={SPRING_TRANSITION}
-              >
-                <h2 id="help-modal-title" className="help-title">
-                  {t('helpTitle')}
-                </h2>
-                <p className="help-desc">{t('helpDescription')}</p>
-                <button
-                  className="ios-button button-primary help-btn"
-                  onClick={() => setShowHelp(false)}
-                >
-                  {t('dismiss')}
-                </button>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <HelpModal open={showHelp} onClose={() => setShowHelp(false)} />
       </main>
     </div>
   );
@@ -695,11 +537,7 @@ const App: React.FC = () => {
 
 const AppWithErrorBoundary: React.FC = () => (
   <ErrorBoundary>
-    <MotionConfig
-      reducedMotion={
-        typeof process !== 'undefined' && process.env?.NODE_ENV === 'production' ? 'user' : 'never'
-      }
-    >
+    <MotionConfig reducedMotion="user">
       <App />
     </MotionConfig>
   </ErrorBoundary>

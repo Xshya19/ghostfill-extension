@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { AliasHistoryItem } from '../../services/aliasService';
+import { AliasHistoryItem } from '../../services/gmailConnectionService';
 import { storageService } from '../../services/storageService';
 import { EmailAccount } from '../../types';
 import { GmailMessage, GmailProfile } from '../../types/message.types';
@@ -44,6 +44,10 @@ export interface AppState {
   setGmailInboxError: (error: string | null) => void;
   gmailIsManual: boolean;
   setGmailIsManual: (isManual: boolean) => void;
+
+  // Current tab hostname (read once on mount by Hub)
+  currentTabHostname: string | null;
+  setCurrentTabHostname: (hostname: string | null) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -114,6 +118,10 @@ export const useAppStore = create<AppState>()(
           void storageService.setImmediate('gmailIsManual', gmailIsManual);
           return { gmailIsManual };
         }),
+
+      // Current tab hostname
+      currentTabHostname: null,
+      setCurrentTabHostname: (currentTabHostname) => set({ currentTabHostname }),
     }),
     {
       name: 'ghostfill-popup-state',

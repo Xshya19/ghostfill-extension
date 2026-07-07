@@ -3,7 +3,7 @@
 // SECURITY HARDENED: Session-based storage for sensitive data
 // ═══════════════════════════════════════════════════════════════════
 
-import { AliasHistoryItem } from '../services/aliasService';
+import { AliasHistoryItem } from '../services/gmailConnectionService';
 import { EmailAccount, EmailHistoryItem, Email, EmailService } from './email.types';
 import { IdentityProfile } from './identity.types';
 import { GmailProfile } from './message.types';
@@ -52,7 +52,8 @@ export interface UserSettings {
     | 'guerrilla'
     | 'tempmail'
     | 'maildrop'
-    | 'custom';
+    | 'custom'
+    | 'driftz';
   autoCheckInbox: boolean;
   checkIntervalSeconds: number;
 
@@ -241,7 +242,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   preferredEmailService: 'mailtm',
   autoCheckInbox: true,
   checkIntervalSeconds: 10,
-  darkMode: 'system',
+  darkMode: true,
   showFloatingButton: true,
   floatingButtonPosition: 'right',
   autoFillOTP: true,

@@ -6,7 +6,7 @@ import {
   normalizeAliasDomain,
   normalizeGmailUsername,
   getRandomizedGmailAlias,
-} from '../aliasService';
+} from '../gmailConnectionService';
 
 describe('aliasService combined Gmail aliases', () => {
   it('always combines a dot variation with a plus suffix', () => {

@@ -18,6 +18,9 @@ import {
   extractOTP,
   extractLink,
   stripHtmlPreserveStructure,
+  normalizeForExtraction,
+  extractOTPCognitive,
+  extractLinkCognitive,
   type ExtractionResult,
   type EmailIntent,
   type ProviderKnowledge,
@@ -378,12 +381,16 @@ export function extractAll(
   const startTime = performance.now();
   const timings: Record<string, number> = {};
 
-  const sanitizedSubject = sanitizeEmailSubject(subject);
-  const sanitizedBody = sanitizeEmailBody(htmlBody, body);
-  const sanitizedHtmlBody = sanitizeEmailBody(htmlBody, htmlBody || body);
+  const normSubject = normalizeForExtraction(subject);
+  const normBody = normalizeForExtraction(body);
+  const normHtmlBody = normalizeForExtraction(htmlBody);
+
+  const sanitizedSubject = sanitizeEmailSubject(normSubject);
+  const sanitizedBody = sanitizeEmailBody(normHtmlBody, normBody);
+  const sanitizedHtmlBody = sanitizeEmailBody(normHtmlBody, normHtmlBody || normBody);
   const sanitizedSenderEmail = sanitizeEmailFrom(senderEmail);
 
-  const sourceHtml = htmlBody || body; // Use RAW html to extract URLs
+  const sourceHtml = normHtmlBody || normBody; // Use normalized html to extract URLs
   const plainText = `${sanitizedSubject}\n\n${stripHtmlPreserveStructure(sanitizedHtmlBody || sanitizedBody)}`;
 
   log.info('═══ GhostFill Intelligent Extractor ═══');
@@ -418,17 +425,29 @@ export function extractAll(
   timings.security = performance.now() - t;
 
   t = performance.now();
-  let otp = extractOTP(plainText, sanitizedHtmlBody, provider, zones, intentResult);
+  // 🧠 Try Cognitive OTP extraction first
+  let otp = extractOTPCognitive(plainText, sanitizedHtmlBody, provider, zones, intentResult, sanitizedSubject);
   if (otp) {
     otp.code = sanitizeOTP(otp.code);
+  } else {
+    // Fallback to traditional extractOTP
+    otp = extractOTP(plainText, sanitizedHtmlBody, provider, zones, intentResult);
+    if (otp) {
+      otp.code = sanitizeOTP(otp.code);
+      // Cross-validation: subject-body cross-validation boost
+      if (sanitizedSubject.includes(otp.code)) {
+        otp.score = Math.min(100, otp.score + 35);
+        otp.confidence = otp.score / 100;
+      }
+    }
   }
   timings.otp = performance.now() - t;
 
   t = performance.now();
-  let link = extractLink(
-    sourceHtml,
-    sanitizedSubject,
-    sanitizedBody,
+  // 🧠 Try Cognitive Link extraction first
+  let link = extractLinkCognitive(
+    sanitizedHtmlBody,
+    plainText,
     intentResult,
     provider,
     zones,
@@ -437,6 +456,21 @@ export function extractAll(
   );
   if (link && link.url) {
     link.url = sanitizeActivationLink(link.url);
+  } else {
+    // Fallback to traditional extractLink
+    link = extractLink(
+      sourceHtml,
+      sanitizedSubject,
+      sanitizedBody,
+      intentResult,
+      provider,
+      zones,
+      allUrls,
+      expectedDomains
+    );
+    if (link && link.url) {
+      link.url = sanitizeActivationLink(link.url);
+    }
   }
   timings.link = performance.now() - t;
 

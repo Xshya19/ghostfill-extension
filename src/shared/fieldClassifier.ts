@@ -9,6 +9,10 @@
  * in isolation. DOM access is confined to label discovery and visibility checks,
  * each guarded against cross-origin / detached-node exceptions.
  */
+import { extractFieldRecord } from '../intelligence/featureExtractor';
+import { IntelligenceCore } from '../intelligence/IntelligenceCore';
+
+const intelligence = new IntelligenceCore();
 
 export type FieldType = 'email' | 'password' | 'otp' | 'user' | 'generic';
 
@@ -41,6 +45,10 @@ const EXCLUDED_INPUT_TYPES = new Set([
 const SEARCH_PATTERN = /search|query|filter|find/i;
 const CAPTCHA_PATTERN =
   /captcha|recaptcha|hcaptcha|turnstile|anti[-_\s]?bot|bot[-_\s]?check|robot/i;
+// Non-auth / content field patterns — these signals are never decorated with the FAB
+const NON_AUTH_SIGNALS_PATTERN = /newsletter|subscribe|coupon|promo|discount|referral|voucher/i;
+const CONTENT_FIELD_PATTERN =
+  /\bcomment\b|\bmessage\b|\bfeedback\b|\breview\b|\bnote\b|\bbio\b|\bdescription\b|\babout\b|\bsubject\b|\bbody\b|\bcompose\b/i;
 
 // ── Detection Patterns ────────────────────────────────
 const OTP_COMBINED =
@@ -92,102 +100,30 @@ export function classifyField(
   input: HTMLInputElement,
   pageContext: PageContext = 'default'
 ): FieldType {
-  const type = (input.type ?? '').toLowerCase();
-  const name = (input.name ?? '').toLowerCase();
-  const id = (input.id ?? '').toLowerCase();
-  const placeholder = (input.placeholder ?? '').toLowerCase();
-  const autocompleteRaw = (input.autocomplete ?? '').toLowerCase();
-  const autocompleteTokens = tokenize(autocompleteRaw);
-  const ariaLabel = (input.getAttribute('aria-label') ?? '').toLowerCase();
-  const label = findLabelText(input).toLowerCase();
+  try {
+    const record = extractFieldRecord(input);
+    const result = intelligence.classify(record);
 
-  const combined = `${type} ${name} ${id} ${placeholder} ${autocompleteRaw} ${ariaLabel} ${label}`;
-  const nameId = name + id;
-  const isCaptcha = CAPTCHA_PATTERN.test(combined);
-  const isVerificationPage =
-    pageContext === 'verification' || pageContext === '2fa' || pageContext === 'password-reset';
-
-  // ── 1. OTP / Verification Code (Highest Priority) ────────────
-  if (hasAnyToken(autocompleteTokens, OTP_AUTOCOMPLETE_TOKENS)) {
-    return 'otp';
-  }
-  if (!isCaptcha && OTP_COMBINED.test(combined)) {
-    return 'otp';
-  }
-  if (!isCaptcha && (OTP_EXACT_NAMES.has(name) || OTP_EXACT_NAMES.has(id))) {
-    return 'otp';
-  }
-  if (
-    isVerificationPage &&
-    !isCaptcha &&
-    (input.inputMode === 'numeric' ||
-      isShortNumericPattern(input) ||
-      (input.maxLength >= 4 && input.maxLength <= 10))
-  ) {
-    return 'otp';
-  }
-
-  // ── 2. Email ───────────────────────────────────
-  if (type === 'email' || hasAnyToken(autocompleteTokens, EMAIL_AUTOCOMPLETE_TOKENS)) {
-    return 'email';
-  }
-  if (isVerificationPage) {
-    // On code-entry pages, only trust strong email signals to avoid hijacking the OTP box.
-    if (/@/.test(placeholder) || EMAIL_NAME.test(label)) {
-      return 'email';
+    if (result.decision === 'BLOCK' || result.decision === 'ABSTAIN') {
+      return 'generic';
     }
-  } else if (EMAIL_NAME.test(nameId) || EMAIL_NAME.test(label) || /@/.test(placeholder)) {
-    return 'email';
-  }
 
-  // ── 3. Password ─────────────────────────────────
-  if (
-    type === 'password' ||
-    PASSWORD_NAME.test(nameId) ||
-    hasAnyToken(autocompleteTokens, PASSWORD_AUTOCOMPLETE_TOKENS) ||
-    /password|passwd/.test(combined)
-  ) {
-    return 'password';
-  }
-
-  // ── 4. Username → email fill mode (not on verification pages) ─
-  if (!isVerificationPage) {
-    if (
-      USERNAME_NAME.test(nameId) ||
-      hasAnyToken(autocompleteTokens, USERNAME_AUTOCOMPLETE_TOKENS)
-    ) {
-      return 'email';
+    switch (result.fieldType) {
+      case 'email':
+        return 'email';
+      case 'password':
+      case 'confirm-password':
+        return 'password';
+      case 'otp':
+        return 'otp';
+      case 'username':
+        return 'user';
+      default:
+        return 'generic';
     }
-  }
-
-  // ── 5. Excluded → generic ───────────────────────────
-  if (
-    CREDIT_CARD.test(combined) ||
-    hasAnyToken(autocompleteTokens, CREDIT_CARD_AUTOCOMPLETE_TOKENS)
-  ) {
+  } catch {
     return 'generic';
   }
-  if (type === 'search' || SEARCH_PATTERN.test(combined) || name === 'q' || id === 'q') {
-    return 'generic';
-  }
-  if (ADDRESS.test(combined)) {
-    return 'generic';
-  }
-
-  // ── 6. Name fields ────────────────────────────────
-  if (NAME_FIELD.test(nameId)) {
-    return 'user';
-  }
-  if (/name/i.test(nameId) && !NON_PERSON_NAME.test(nameId)) {
-    return 'user';
-  }
-
-  // ── 7. Signup context boost ──────────────────────────
-  if (pageContext === 'signup' && /user|name|profile/i.test(label)) {
-    return 'user';
-  }
-
-  return 'generic';
 }
 
 /**
@@ -214,6 +150,21 @@ export function shouldDecorateField(input: HTMLInputElement): boolean {
   const id = (input.id ?? '').toLowerCase();
   const nameIdPlaceholder = name + id + (input.placeholder ?? '').toLowerCase();
   if (SEARCH_PATTERN.test(nameIdPlaceholder) || name === 'q' || id === 'q') {
+    return false;
+  }
+
+  // Textareas are never used for auth credentials — they're for comments, messages, etc.
+  if ((input as HTMLElement).tagName === 'TEXTAREA') {
+    return false;
+  }
+
+  // Non-auth field name signals: newsletter boxes, coupon inputs, content areas.
+  // Checked on name + id only (not placeholder) to avoid false positive exclusions.
+  const nameAndId = `${name} ${id}`;
+  if (NON_AUTH_SIGNALS_PATTERN.test(nameAndId)) {
+    return false;
+  }
+  if (CONTENT_FIELD_PATTERN.test(nameAndId) && type !== 'email' && type !== 'password') {
     return false;
   }
 
@@ -264,6 +215,15 @@ export function getFieldTooltip(fieldType: FieldType): string {
     generic: 'GhostFill — Auto-fill',
   };
   return tooltips[fieldType] ?? tooltips.generic;
+}
+
+/**
+ * Returns true for field types that are clearly authentication-relevant.
+ * Used by the FAB to bypass the page-level gate for high-value fields —
+ * the field's own classification is a stronger truth signal than URL/text scanning.
+ */
+export function isHighValueField(type: FieldType): boolean {
+  return type === 'email' || type === 'password' || type === 'otp' || type === 'user';
 }
 
 // ── Internal Helpers ────────────────────────────────

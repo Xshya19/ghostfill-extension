@@ -433,6 +433,7 @@ export function onRotationAlarm(alarm: chrome.alarms.Alarm) {
  * @security Key has expiration time for automatic rotation
  */
 export async function initializeSecureEncryption(): Promise<void> {
+  let storageAccessFailed = false;
   try {
     const currentVersion =
       typeof chrome !== 'undefined' ? chrome.runtime.getManifest().version : 'unknown';
@@ -448,8 +449,9 @@ export async function initializeSecureEncryption(): Promise<void> {
         if (typeof localData.masterKeySeed === 'string') {
           masterSeed = Uint8Array.from(atob(localData.masterKeySeed), (c) => c.charCodeAt(0));
         }
-      } catch {
+      } catch (err) {
         // Fall through to generation if persisted key material is unavailable.
+        storageAccessFailed = true;
       }
 
       if (!masterSeed) {
@@ -459,7 +461,8 @@ export async function initializeSecureEncryption(): Promise<void> {
             masterKeySeed: btoa(String.fromCharCode(...masterSeed)),
           });
         } catch {
-          throw new Error('Critical: Failed to persist master encryption seed');
+          storageAccessFailed = true;
+          log.warn('Failed to persist master encryption seed (sandboxed context).');
         }
       }
 
@@ -536,9 +539,9 @@ export async function initializeSecureEncryption(): Promise<void> {
       }
     }
 
-    // Fallback only if in a non-extension context (tests)
+    // Fallback only if in a non-extension context or if storage access failed (sandboxed iframe)
     if (!masterKey) {
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local && !storageAccessFailed) {
         throw new Error('Critical: Failed to generate or load persistent master key from storage');
       }
       const seed = crypto.getRandomValues(new Uint8Array(32));

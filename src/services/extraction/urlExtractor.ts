@@ -179,6 +179,115 @@ export function unwrapTrackingUrl(url: string, depth: number = 0): string | null
   return candidate;
 }
 
+/**
+ * ESP-aware tracking URL unwrapper.
+ * Handles major Email Service Provider (ESP) click-tracking redirect patterns.
+ * Returns the embedded real destination URL, or null if the URL is not a known
+ * ESP tracker. Unlike unwrapTrackingUrl (which handles generic redirect params),
+ * this function understands ESP-specific hostname and parameter patterns for
+ * SendGrid, Mailchimp, Mailgun, Postmark, HubSpot, Campaign Monitor,
+ * Constant Contact, Klaviyo, Brevo/Sendinblue, and ActiveCampaign.
+ */
+export function unwrapEspTrackingUrl(url: string): string | null {
+  if (!url || !url.startsWith('http')) {
+    return null;
+  }
+
+  // First try the generic redirect param approach (covers most cases already)
+  const generic = unwrapTrackingUrl(url, 0);
+  if (generic && generic !== url) {
+    return generic;
+  }
+
+  try {
+    const u = new URL(url);
+    const host = u.hostname.toLowerCase();
+
+    // SendGrid: click.sendgrid.net/wf/click?upn=... (base64) or ?l=url
+    if (host.includes('sendgrid.net') || host.includes('.u.nr')) {
+      const upn = u.searchParams.get('upn');
+      if (upn) {
+        try {
+          const decoded = atob(upn.replace(/-/g, '+').replace(/_/g, '/'));
+          if (decoded.startsWith('http')) return decoded;
+        } catch { /* not base64 */ }
+      }
+      const dest = u.searchParams.get('l') || u.searchParams.get('url') || u.searchParams.get('redirectTo');
+      if (dest?.startsWith('http')) return decodeURIComponent(dest);
+    }
+
+    // Mailchimp / Mandrill
+    if (host.includes('list-manage.com') || host.includes('mailchi.mp') || host.includes('mc.sendgrid.net')) {
+      const dest = u.searchParams.get('url') || u.searchParams.get('u');
+      if (dest) {
+        const decoded = decodeURIComponent(dest);
+        if (decoded.startsWith('http')) return decoded;
+      }
+    }
+
+    // Mailgun: email.mg.*, click.em.*
+    if (/(?:^|\.)(?:mg\.[^.]+\.[^.]+|email\.mg\.|click\.em\.)/.test(host)) {
+      const pathParts = u.pathname.split('/').filter(Boolean);
+      for (const part of pathParts) {
+        if (part.length > 30) {
+          try {
+            const decoded = atob(part.replace(/-/g, '+').replace(/_/g, '/'));
+            if (decoded.startsWith('http')) return decoded;
+          } catch { /* not base64 */ }
+        }
+      }
+      const dest = u.searchParams.get('p') || u.searchParams.get('url') || u.searchParams.get('redirect');
+      if (dest?.startsWith('http')) return decodeURIComponent(dest);
+    }
+
+    // Postmark
+    if (host.includes('postmarkapp.com') || host.includes('pm.mtasv.net')) {
+      const dest = u.searchParams.get('url') || u.searchParams.get('p');
+      if (dest?.startsWith('http')) return decodeURIComponent(dest);
+    }
+
+    // HubSpot
+    if (host.includes('hubspot') || host.includes('hs-email') || host.includes('hubspotemail')) {
+      const dest = u.searchParams.get('url') || u.searchParams.get('redirect') || u.searchParams.get('q');
+      if (dest?.startsWith('http')) return decodeURIComponent(dest);
+    }
+
+    // Campaign Monitor
+    if (host.includes('campaignmonitor') || host.includes('cmail') || host.includes('createsend')) {
+      const dest = u.searchParams.get('url') || u.searchParams.get('l');
+      if (dest?.startsWith('http')) return decodeURIComponent(dest);
+    }
+
+    // Klaviyo
+    if (host.includes('klaviyo')) {
+      const dest = u.searchParams.get('url') || u.searchParams.get('cl');
+      if (dest?.startsWith('http')) return decodeURIComponent(dest);
+    }
+
+    // Brevo / Sendinblue
+    if (host.includes('brevo.com') || host.includes('sendinblue.com') || host.includes('sibpages.com')) {
+      const dest = u.searchParams.get('url') || u.searchParams.get('d') || u.searchParams.get('l');
+      if (dest?.startsWith('http')) return decodeURIComponent(dest);
+    }
+
+    // Constant Contact
+    if (host.includes('constantcontact') || host.includes('click.cc.email')) {
+      const dest = u.searchParams.get('url') || u.searchParams.get('d');
+      if (dest?.startsWith('http')) return decodeURIComponent(dest);
+    }
+
+    // ActiveCampaign
+    if (host.includes('activecampaign') || host.includes('lt.ac-email')) {
+      const dest = u.searchParams.get('url') || u.searchParams.get('l');
+      if (dest?.startsWith('http')) return decodeURIComponent(dest);
+    }
+  } catch {
+    // Invalid URL — ignore
+  }
+
+  return null;
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  URL EXTRACTION (8-LAYER DEEP)
 // ═══════════════════════════════════════════════════════════════════════

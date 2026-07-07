@@ -19,7 +19,7 @@ import {
   setGmailConnectedAt,
   getOrCreateGmailAliasSessionByDomain,
   getGmailAliasSession,
-} from '../gmailAliasSessionService';
+} from '../gmailConnectionService';
 import { GmailMessage } from '../../types/message.types';
 
 function message(id: string, date: number, to = 't.aayush515+twitter@gmail.com'): GmailMessage {

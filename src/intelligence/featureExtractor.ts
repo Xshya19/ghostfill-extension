@@ -60,6 +60,42 @@ export function resolveLabelText(el: Fillable): string {
       return parts.join(' ');
     }
   }
+
+  // 5) Check preceding element siblings (for custom/div label designs)
+  if (el.previousElementSibling) {
+    let prev: Element | null = el.previousElementSibling;
+    while (prev) {
+      const tag = prev.tagName.toLowerCase();
+      if (
+        tag === 'label' ||
+        prev.classList.contains('label') ||
+        prev.classList.contains('title') ||
+        prev.classList.contains('placeholder') ||
+        prev.classList.contains('caption') ||
+        prev.classList.contains('text') ||
+        prev.classList.contains('input-label')
+      ) {
+        const text = prev.textContent?.trim();
+        if (text && text.length < 100) {
+          return text;
+        }
+      }
+      prev = prev.previousElementSibling;
+    }
+  }
+
+  // 6) Check parent's previous sibling (common grid/layout wrapper labels)
+  const parent = el.parentElement;
+  if (parent) {
+    const prevSibling = parent.previousElementSibling;
+    if (prevSibling) {
+      const text = prevSibling.textContent?.trim();
+      if (text && text.length < 100) {
+        return text;
+      }
+    }
+  }
+
   return '';
 }
 
@@ -128,6 +164,21 @@ export function extractFieldRecord(el: Fillable): RawFieldRecord {
   const required = (el as HTMLInputElement).required === true;
   const vis = isVisible(el);
 
+  // DETECT duplicate password context: check if this is a password field following another password field.
+  let isSecondPasswordField = false;
+  if (type === 'password') {
+    try {
+      const form = el.closest('form, div.form, fieldset') || document;
+      const pwdFields = Array.from(form.querySelectorAll('input[type="password"]'));
+      const idx = pwdFields.indexOf(el);
+      if (idx > 0) {
+        isSecondPasswordField = true;
+      }
+    } catch {
+      // safe fallback
+    }
+  }
+
   const rec: RawFieldRecord = {
     url: location.href,
     selector: id ? '#' + id : name ? tag + '[name="' + name + '"]' : tag,
@@ -150,6 +201,8 @@ export function extractFieldRecord(el: Fillable): RawFieldRecord {
     opacityZero: vis.opacityZero,
     offscreen: vis.offscreen,
     tiny: vis.tiny,
+    className: el.className || '',
+    isSecondPasswordField,
   };
   rec.structural = buildStructural(rec, {
     ...vis,
@@ -182,6 +235,7 @@ export function buildStructural(rec: RawFieldRecord, vis: VisInfo): number[] {
     rec.id,
     rec.surroundingText,
     rec.autocomplete,
+    rec.className || '',
   ].join(' ');
 
   // type one-hots

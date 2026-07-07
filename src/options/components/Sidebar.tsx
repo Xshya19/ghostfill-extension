@@ -42,7 +42,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
           aria-controls={`tabpanel-${tab.id}`}
           id={`tab-${tab.id}`}
           tabIndex={activeTab === tab.id ? 0 : -1}
-          className={`sidebar-tab${activeTab === tab.id ? ' sidebar-tab--active' : ''}`}
+          className={`sidebar-nav-item${activeTab === tab.id ? ' active' : ''}`}
           onClick={() => onTabChange(tab.id)}
           onKeyDown={(e) => {
             let targetIndex = -1;
@@ -69,10 +69,10 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
           }}
           type="button"
         >
-          <span className="sidebar-tab-icon" aria-hidden="true">
+          <span className="sidebar-nav-icon" aria-hidden="true">
             {tab.icon}
           </span>
-          <span className="sidebar-tab-label">{tab.label}</span>
+          <span>{tab.label}</span>
         </button>
       ))}
     </nav>

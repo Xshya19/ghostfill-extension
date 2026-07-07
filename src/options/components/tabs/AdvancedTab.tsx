@@ -1,10 +1,19 @@
 import { Terminal, Save, AlertTriangle } from 'lucide-react';
 import React, { useRef } from 'react';
 
+import { Button } from '../../../shared/ui';
 import { UserSettings, DEFAULT_SETTINGS } from '../../../types/storage.types';
 import { createLogger } from '../../../utils/logger';
 import SettingsSection from '../SettingsSection';
 import ToggleSwitch from '../ToggleSwitch';
+
+const t = (key: string): string => {
+  try {
+    return chrome.i18n.getMessage(key) || key;
+  } catch {
+    return key;
+  }
+};
 
 const log = createLogger('AdvancedTab');
 
@@ -98,7 +107,7 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
 
   return (
     <div role="tabpanel" id="tabpanel-advanced" aria-labelledby="tab-advanced">
-      <SettingsSection id="developer" title="Developer" icon={<Terminal size={18} />}>
+      <SettingsSection id="developer" title={t('developerSection')} icon={<Terminal size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
             <label id="debug-mode-label">Debug Mode</label>
@@ -113,19 +122,15 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
         </div>
       </SettingsSection>
 
-      <SettingsSection id="backup" title="Backup & Restore" icon={<Save size={18} />}>
+      <SettingsSection id="backup" title={t('backupRestoreSection')} icon={<Save size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
             <label>Export Settings</label>
             <p>Download your current settings as a JSON file</p>
           </div>
-          <button
-            className="premium-btn premium-btn-secondary"
-            type="button"
-            onClick={handleExport}
-          >
+          <Button size="sm" type="button" onClick={handleExport}>
             Export
-          </button>
+          </Button>
         </div>
 
         <div className="setting-item">
@@ -133,10 +138,17 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
             <label htmlFor="import-settings">Import Settings</label>
             <p>Load settings from a previously exported JSON file</p>
           </div>
-          <label
-            className="premium-btn premium-btn-secondary import-btn"
-            tabIndex={0}
-            role="button"
+          <button
+            type="button"
+            className="gf-btn gf-btn--sm import-btn"
+            onClick={() => fileInputRef.current?.click()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                fileInputRef.current?.click();
+              }
+            }}
+            aria-label="Import settings from JSON file"
           >
             Import
             <input
@@ -146,8 +158,10 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
               accept=".json"
               onChange={handleImport}
               className="sr-only"
+              aria-hidden="true"
+              tabIndex={-1}
             />
-          </label>
+          </button>
         </div>
       </SettingsSection>
 
@@ -162,14 +176,14 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
             <label>Reset Settings</label>
             <p>Restore all settings to their defaults</p>
           </div>
-          <button
-            className="premium-btn premium-btn-secondary"
+          <Button
+            size="sm"
             onClick={onReset}
             type="button"
             aria-label="Reset all settings to defaults"
           >
             Reset
-          </button>
+          </Button>
         </div>
 
         <div className="setting-item">
@@ -177,14 +191,15 @@ const AdvancedTab: React.FC<AdvancedTabProps> = ({
             <label>Clear All Data</label>
             <p>Delete all emails, passwords, and history</p>
           </div>
-          <button
-            className="premium-btn btn-danger"
+          <Button
+            variant="danger"
+            size="sm"
             onClick={onClearData}
             type="button"
             aria-label="Clear all stored data"
           >
             Clear Data
-          </button>
+          </Button>
         </div>
       </SettingsSection>
     </div>

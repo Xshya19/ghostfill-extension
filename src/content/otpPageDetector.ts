@@ -22,6 +22,7 @@
 // │               Notify background → start fast OTP polling        │
 // │               Listen for AUTO_FILL_OTP → fill → feedback        │
 // └──────────────────────────────────────────────────────────────────┘
+import { generateHostTokens } from '../shared/tokens';
 import { ExtensionMessage } from '../types';
 import { getRandomString } from '../utils/encryption';
 import { createLogger } from '../utils/logger';
@@ -30,6 +31,7 @@ import { setHTML } from '../utils/setHTML';
 import { AutoFiller } from './autoFiller';
 import { FormDetector } from './formDetector';
 import { pageStatus } from './pageStatus';
+import { safeGetComputedStyle } from './utils/safeStyles';
 
 const log = createLogger('OTPDetector');
 
@@ -360,7 +362,7 @@ class VisibilityEngine {
     let depth = 0;
 
     while (current && depth < CONFIG.VISIBILITY_MAX_DEPTH) {
-      const style = window.getComputedStyle(current);
+      const style = safeGetComputedStyle(current);
       if (
         style.display === 'none' ||
         style.visibility === 'hidden' ||
@@ -792,9 +794,13 @@ class SplitDigitDetector {
     const ra = a.getBoundingClientRect();
     const rb = b.getBoundingClientRect();
 
+    // Use zoom/retina-relative thresholds (1.5 * width for gap, 0.5 * height for vertical delta)
+    const hGapLimit = Math.max(ra.width, 20) * 1.5;
+    const vDeltaLimit = Math.max(ra.height, 20) * 0.5;
+
     if (
-      Math.abs(rb.left - ra.right) > CONFIG.CONTIGUITY_H_GAP_PX ||
-      Math.abs(rb.top - ra.top) > CONFIG.CONTIGUITY_V_DELTA_PX
+      Math.abs(rb.left - ra.right) > hGapLimit ||
+      Math.abs(rb.top - ra.top) > vDeltaLimit
     ) {
       return false;
     }
@@ -1094,35 +1100,36 @@ class ToastFeedback {
   private static getStyles(): string {
     return `
       :host {
+        all: initial;
+        ${generateHostTokens()}
         position: fixed; top: 20px; right: 20px;
         z-index: 2147483645;
         isolation: isolate;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-family: "Space Grotesk", -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         pointer-events: none;
       }
       .toast {
-        background: var(--gf-magenta, #FF3BD4);
-        color: var(--gf-ink, #000);
-        padding: 14px 20px;
-        border-radius: 8px;
-        border: 2px solid var(--gf-ink, #000);
-        box-shadow: 4px 4px 0 var(--gf-ink, #000); /* HARD MEMPHIS SHADOW */
-        font-size: 14px;
-        font-weight: 800;
+        background: var(--gf-primary, #7C83FF);
+        color: #fff;
+        padding: 12px 18px;
+        border-radius: 12px;
+        border: 1px solid var(--gf-line-2, rgba(255,255,255,0.10));
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), inset 0 1px 0 var(--gf-hi, rgba(255,255,255,0.06));
+        font-size: 13px;
+        font-weight: 600;
         font-family: "Space Grotesk", sans-serif;
         display: flex;
         align-items: center;
         gap: 12px;
         max-width: 300px;
-        text-transform: uppercase;
         letter-spacing: 0.02em;
         animation: slideIn ${CONFIG.TOAST_ANIMATION_MS}ms cubic-bezier(0.22, 1, 0.36, 1);
       }
       .toast.out {
         animation: slideOut ${CONFIG.TOAST_ANIMATION_MS}ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
       }
-      .title { font-weight: 800; font-size: 14px; color: var(--gf-ink, #000); }
-      .sub { opacity: 0.9; font-size: 12px; font-family: "IBM Plex Mono", monospace; margin-top: 2px; color: var(--gf-ink, #000); font-weight: 700; }
+      .title { font-weight: 800; font-size: 14px; color: var(--gf-on-primary, #fff); }
+      .sub { opacity: 0.9; font-size: 12px; font-family: "IBM Plex Mono", monospace; margin-top: 2px; color: var(--gf-on-primary, #fff); font-weight: 700; }
       svg { flex-shrink: 0; }
       @keyframes slideIn {
         from { transform: translateX(120%); opacity: 0; }

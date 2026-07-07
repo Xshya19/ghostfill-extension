@@ -22,30 +22,23 @@ import {
   type AliasHistoryItem,
   getDeterministicCombinedAlias,
   normalizeAliasDomain,
-} from '../../services/aliasService';
-import {
-  clearGmailConnectedAt,
-  clearGmailAliasSessions,
   rememberGmailAliasSession,
-  setGmailConnectedAt,
-} from '../../services/gmailAliasSessionService';
+  persistGmailConnection,
+  clearGmailConnection,
+  isGmailSetupResponse,
+  formatGmailSetupError,
+  type GmailSignInResult,
+} from '../../services/gmailConnectionService';
 import { storageService } from '../../services/storageService';
 import { type GmailMessage, type GmailProfile } from '../../types/message.types';
-import { copyToClipboard } from '../../utils/helpers';
+import { copyToClipboard, openSafeUrl } from '../../utils/helpers';
 import { safeSendMessage } from '../../utils/messaging';
 import { useAppStore } from '../store/useAppStore';
 
 // ─── Types ───────────────────────────────────────────────
 type AliasPanelTab = 'generator' | 'inbox' | 'history';
 
-interface SignInResponse {
-  success?: boolean;
-  profile?: GmailProfile;
-  error?: string;
-  setupRequired?: boolean;
-  authIssue?: { permanent?: boolean };
-  clientIdStatus?: { blocked?: boolean };
-}
+
 interface StatusResponse {
   connected?: boolean;
   profile?: GmailProfile;
@@ -83,26 +76,17 @@ const COPY_RESET_MS = 2000;
 const MAX_MESSAGE_PREVIEW = 18_000;
 
 // ─── Pure helpers ────────────────────────────────────────
-const hasChrome = (): boolean => typeof chrome !== 'undefined';
-
-function openUrlInTab(url: string): void {
-  if (!hasChrome() || !chrome.tabs) {
-    window.open(url, '_blank', 'noopener,noreferrer');
-    return;
-  }
-  void chrome.tabs.create({ url, active: true });
-}
-
 function openOptionsPage(): void {
-  if (hasChrome() && chrome.runtime?.openOptionsPage) {
+  const hasChrome = typeof chrome !== 'undefined';
+  if (hasChrome && chrome.runtime?.openOptionsPage) {
     void chrome.runtime.openOptionsPage();
     return;
   }
   const optionsUrl =
-    hasChrome() && chrome.runtime?.getURL
+    hasChrome && chrome.runtime?.getURL
       ? chrome.runtime.getURL('options/options.html')
       : 'options/options.html';
-  openUrlInTab(optionsUrl);
+  openSafeUrl(optionsUrl);
 }
 
 const sanitizeDomain = (input: string): string => (input.trim() ? normalizeAliasDomain(input) : '');
@@ -118,48 +102,42 @@ const formatHistoryDate = (ts: number): string => {
 const errorMessage = (e: unknown, fallback = 'Error'): string =>
   e instanceof Error ? e.message : fallback;
 
-const isGmailSetupResponse = (res: SignInResponse | StatusResponse | undefined): boolean =>
-  !!(res?.clientIdStatus?.blocked || res?.authIssue?.permanent);
-
-const formatGmailSetupError = (message?: string): string =>
-  message
-    ? `${message} Add a valid Gmail OAuth Client ID in Options > Email, then reconnect.`
-    : 'Gmail needs a valid OAuth Client ID. Add it in Options > Email, then reconnect.';
-
-const stripHtml = (input: string): string =>
-  input
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-/** Single source of truth for persisting a successful connection. */
-const persistConnection = (profile: GmailProfile, isManual: boolean): Promise<unknown> =>
-  Promise.all([
-    setGmailConnectedAt(),
-    storageService.setImmediate('gmailProfile', profile),
-    storageService.setImmediate('gmailBase', profile.email),
-    storageService.setImmediate('gmailConnected', true),
-    storageService.setImmediate('gmailIsManual', isManual),
-    storageService.setImmediate('preferredEmailType', 'gmail'),
-    storageService.setImmediate('inbox', []),
-    clearGmailAliasSessions(),
-  ]);
-
-/** Single source of truth for clearing a connection. */
-const clearConnectionStorage = (): Promise<unknown> =>
-  Promise.all([
-    storageService.setImmediate('gmailProfile', null),
-    storageService.setImmediate('gmailBase', null),
-    storageService.setImmediate('gmailConnected', false),
-    storageService.setImmediate('gmailIsManual', false),
-    storageService.setImmediate('preferredEmailType', 'disposable'),
-    storageService.setImmediate('inbox', []),
-    clearGmailConnectedAt(),
-    clearGmailAliasSessions(),
-  ]);
+const stripHtml = (html: string): string => {
+  if (!html) {return '';}
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    
+    // Security: Nuke dangerous elements completely
+    doc.querySelectorAll('script, style, noscript, iframe, object, embed, link, meta')
+       .forEach(el => el.remove());
+    
+    // UX: Convert block elements to newlines for readability
+    const blockTags = new Set(['P', 'DIV', 'BR', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'TR', 'BLOCKQUOTE']);
+    let text = '';
+    const walker = document.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+    let node;
+    
+    while ((node = walker.nextNode())) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        text += node.textContent;
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        if (blockTags.has(node.nodeName)) {text += '\n';}
+        else if (node.nodeName === 'TD') {text += '\t';}
+      }
+    }
+    
+    return text.replace(/&nbsp;/gi, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  } catch {
+    // Fallback to regex stripping if DOMParser fails or isn't available
+    return html
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+};
 
 // ─── Brand ───────────────────────────────────────────────
 const GmailLogo: React.FC<{ size?: number }> = ({ size = 48 }) => (
@@ -585,6 +563,7 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
   );
 
   const [domainInput, setDomainInput] = useState('');
+  const [hydrated, setHydrated] = useState(false);
   const [copiedAlias, setCopiedAlias] = useState<string | null>(null);
   const [copyCelebrating, setCopyCelebrating] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
@@ -633,7 +612,8 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
 
   // Prefill domain from the active tab's hostname.
   useEffect(() => {
-    if (!hasChrome() || !chrome.tabs?.query) {
+    const hasChrome = typeof chrome !== 'undefined';
+    if (!hasChrome || !chrome.tabs?.query) {
       return;
     }
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -654,47 +634,55 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
 
   // Hydrate from storage + verify OAuth status.
   useEffect(() => {
-    if (!hasChrome() || !chrome.storage?.local) {
+    const hasChrome = typeof chrome !== 'undefined';
+    if (!hasChrome || !chrome.storage?.local) {
+      setHydrated(true);
       return;
     }
     let cancelled = false;
 
     void (async () => {
-      const [storedHistory, storedProfile, storedIsManual] = await Promise.all([
-        storageService.get('aliasHistory'),
-        storageService.get('gmailProfile'),
-        storageService.get('gmailIsManual'),
-      ]);
-      if (cancelled) {
-        return;
-      }
+      try {
+        const [storedHistory, storedProfile, storedIsManual] = await Promise.all([
+          storageService.get('aliasHistory'),
+          storageService.get('gmailProfile'),
+          storageService.get('gmailIsManual'),
+        ]);
+        if (cancelled) {
+          return;
+        }
 
-      if (Array.isArray(storedHistory)) {
-        setAliasHistory(storedHistory);
-      }
+        if (Array.isArray(storedHistory)) {
+          setAliasHistory(storedHistory);
+        }
 
-      const isManual = !!storedIsManual;
-      setGmailIsManual(isManual);
+        const isManual = !!storedIsManual;
+        setGmailIsManual(isManual);
 
-      if (storedProfile?.email) {
-        applyConnection(storedProfile, isManual);
-      }
+        if (storedProfile?.email) {
+          applyConnection(storedProfile, isManual);
+        }
 
-      if (!isManual) {
-        try {
-          const res = (await safeSendMessage({ action: 'GMAIL_GET_STATUS' })) as StatusResponse;
-          if (cancelled) {
-            return;
+        if (!isManual) {
+          try {
+            const res = (await safeSendMessage({ action: 'GMAIL_GET_STATUS' })) as StatusResponse;
+            if (cancelled) {
+              return;
+            }
+            if (res?.connected && res?.profile) {
+              applyConnection(res.profile, false);
+            } else {
+              setGmailConnected(false);
+              setGmailProfile(null);
+              setGmailBase(null);
+            }
+          } catch {
+            /* keep stored/optimistic state */
           }
-          if (res?.connected && res?.profile) {
-            applyConnection(res.profile, false);
-          } else {
-            setGmailConnected(false);
-            setGmailProfile(null);
-            setGmailBase(null);
-          }
-        } catch {
-          /* keep stored/optimistic state */
+        }
+      } finally {
+        if (!cancelled) {
+          setHydrated(true);
         }
       }
     })().catch(() => undefined);
@@ -811,10 +799,10 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
   );
 
   useEffect(() => {
-    if (activeTab === 'inbox' && gmailConnected && !gmailIsManual) {
+    if (gmailConnected && !gmailIsManual) {
       void fetchInbox();
     }
-  }, [activeTab, gmailConnected, gmailIsManual, fetchInbox]);
+  }, [gmailConnected, gmailIsManual, fetchInbox]);
 
   const handleCopy = useCallback(
     (alias: string, type: AliasHistoryItem['type'], website: string) => {
@@ -878,14 +866,14 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
     setSignInError(null);
     setGmailSetupRequired(false);
     try {
-      const res = (await safeSendMessage({ action: 'GMAIL_SIGN_IN' })) as SignInResponse;
+      const res = (await safeSendMessage({ action: 'GMAIL_SIGN_IN' })) as GmailSignInResult;
       if (res?.success && res?.profile) {
         applyConnection(res.profile, false);
-        await persistConnection(res.profile, false);
+        await persistGmailConnection(res.profile, false);
         setGmailSetupRequired(false);
         onToast(`Connected: ${res.profile.email}`);
       } else {
-        const setupRequired = !!res?.setupRequired || isGmailSetupResponse(res);
+        const setupRequired = isGmailSetupResponse(res);
         const err = setupRequired
           ? formatGmailSetupError(res?.error)
           : res?.error || 'Sign-in failed';
@@ -905,16 +893,13 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
 
   const handleSignOut = useCallback(async () => {
     try {
-      if (!gmailIsManual) {
-        await safeSendMessage({ action: 'GMAIL_SIGN_OUT' });
-      }
+      await clearGmailConnection(gmailIsManual);
       setGmailConnected(false);
       setGmailProfile(null);
       setGmailBase(null);
       setGmailInbox([]);
       setGmailIsManual(false);
       setPreferredEmailType('disposable');
-      await clearConnectionStorage();
       onToast('Disconnected');
     } catch (e) {
       onToast(errorMessage(e));
@@ -932,10 +917,10 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
 
   // ── Disconnected: auto-trigger sign-in, no intermediate page ──
   useEffect(() => {
-    if (!gmailConnected && !gmailProfile && !signingIn) {
+    if (hydrated && !gmailConnected && !gmailProfile && !signingIn) {
       void connectWithGoogle();
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hydrated, gmailConnected, gmailProfile, signingIn, connectWithGoogle]);
 
   if (!gmailConnected || !gmailProfile) {
     return (
@@ -1037,6 +1022,22 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
       </motion.div>
 
       <div className="alias-tabs" role="tablist">
+        <motion.div
+          className="alias-tab-bg"
+          initial={false}
+          animate={{
+            x: activeTab === 'generator' ? '0%' : activeTab === 'inbox' ? '100%' : '200%',
+          }}
+          transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+          style={{
+            position: 'absolute',
+            top: 3,
+            bottom: 3,
+            left: 3,
+            width: 'calc(33.3333% - 2px)',
+            margin: 0,
+          }}
+        />
         {TABS.map((tab) => {
           const isActive = activeTab === tab;
           const count =
@@ -1052,13 +1053,6 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
               className={`alias-tab-btn ${isActive ? 'alias-tab-btn--active' : ''}`}
               onClick={() => setActiveTab(tab)}
             >
-              {isActive && (
-                <motion.div
-                  className="alias-tab-bg"
-                  layoutId="activeAliasTab"
-                  transition={{ type: 'spring', stiffness: 350, damping: 25 }}
-                />
-              )}
               <span className="alias-tab-label">
                 <Icon size={13} /> {label}
                 {tab !== 'generator' && count > 0 && (
@@ -1098,7 +1092,7 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
               signingIn={signingIn}
               onRefresh={() => void fetchInbox()}
               onSignIn={() => void connectWithGoogle()}
-              onOpenMessage={(message) => void openMessage(message)}
+              onOpenMessage={openMessage}
               openingMessageId={openingMessageId}
             />
           </TabPanel>
@@ -1196,7 +1190,7 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
                   {messageAction.link && (
                     <button
                       className="alias-message-action-btn"
-                      onClick={() => openUrlInTab(messageAction.link ?? '')}
+                      onClick={() => openSafeUrl(messageAction.link ?? '')}
                     >
                       <Check size={14} />
                       <span>Open link</span>

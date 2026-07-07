@@ -20,22 +20,21 @@ import {
   classifyField,
   shouldDecorateField,
   getFieldTooltip,
+  isHighValueField,
   PageContext,
-  FieldType,
+  FieldType as ClassifierFieldType,
 } from '../shared/fieldClassifier';
 import { generateHostTokens } from '../shared/tokens';
-import { GenerateEmailResponse, GeneratePasswordResponse, GetLastOTPResponse } from '../types';
+import { FieldType, GenerateEmailResponse, GeneratePasswordResponse, GetLastOTPResponse } from '../types';
 import { TIMING } from '../utils/constants';
 import { debounce } from '../utils/debounce';
 import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
 import { setHTML, clearHTML } from '../utils/setHTML';
 import { AutoFiller } from './autoFiller';
-import { FieldAnalyzer } from './fieldAnalyzer';
+import { FieldAnalyzer, collectFieldDiagnostics } from './formDetector';
 import { pageStatus } from './pageStatus';
-import { IconSystem } from './utils/fab-icons';
-import { menuIcon } from './utils/fab-menu-icons';
-import { collectFieldDiagnostics } from './utils/fieldDiagnosticsHarvester';
+import { IconSystem, menuIcon } from './utils/fabIcons';
 import { PageAnalyzer, PageType, PageAnalysis } from './utils/pageAnalyzer';
 
 const log = createLogger('FloatingButton');
@@ -356,7 +355,7 @@ class ContextualMenu {
     currentMode: ButtonMode,
     hasOTPReady: boolean
   ): MenuAction[] {
-    const noop = async (): Promise<void> => {};
+    const noop = async (): Promise<void> => { };
 
     const isIdentityCtx =
       currentMode === 'user' || analysis.hasNameFields || analysis.pageType === 'signup';
@@ -475,7 +474,7 @@ class ContextualMenu {
 //  All SVGs: xmlns present, role="presentation", aria-hidden="true"
 // ═══════════════════════════════════════════════════════════════
 
-// NOTE: IconSystem is imported from './utils/fab-icons' instead of defined here locally.
+// NOTE: IconSystem is imported from './utils/fabIcons' instead of defined here locally.
 
 // ═══════════════════════════════════════════════════════════════
 //  §7  M A I N   F L O A T I N G   B U T T O N   C L A S S
@@ -787,7 +786,7 @@ export class FloatingButton {
     this.container.style.setProperty('display', 'block', 'important');
     setHTML(this.button, IconSystem.get(this.mode));
     this.button.classList.remove('gf-loading', 'gf-success', 'gf-error');
-    const tooltipMode = this.mode === 'magic' ? 'generic' : (this.mode as FieldType);
+    const tooltipMode = this.mode === 'magic' ? 'generic' : (this.mode as ClassifierFieldType);
     this.button.setAttribute('aria-label', getFieldTooltip(tooltipMode));
     this.updateBadge();
     this.scheduleAutoHide();
@@ -1417,8 +1416,22 @@ export class FloatingButton {
       return;
     }
 
-    if (resp?.success && resp.email?.fullEmail && this.currentField) {
-      const filled = await this.fillResolvedField(this.currentField, resp.email.fullEmail, 'email');
+    if (resp?.success && resp.email?.fullEmail) {
+      // Delegate entirely to the AutoFiller's intelligence-powered resolver.
+      // This runs a 4-stage ranked search:
+      //   Stage 0 — domain trusted-selector cache (instant warm-hit)
+      //   Stage 1 — heuristic classifier pipeline (authoritative, same as smartFill)
+      //   Stage 2 — shared heuristic classifier on the contextHint field
+      //   Stage 3 — ordered CSS signal selectors (fallback)
+      // After success, the winner is saved to the trusted cache for instant future fills.
+      const filled = await this.autoFiller.fillFieldIntoTarget(
+        'email',
+        resp.email.fullEmail,
+        this.currentField
+      );
+
+      if (this.destroyed) return;
+
       if (filled) {
         pageStatus.success('Email filled!', TIMING_MS.SUCCESS_DISPLAY);
         this.setState('success', 'Email filled!');
@@ -1445,12 +1458,14 @@ export class FloatingButton {
       return;
     }
 
-    if (resp?.result?.password && this.currentField) {
-      const filled = await this.fillResolvedField(
-        this.currentField,
+    if (resp?.result?.password) {
+      const filled = await this.autoFiller.fillFieldIntoTarget(
+        'password',
         resp.result.password,
-        'password'
+        this.currentField
       );
+      if (this.destroyed) return;
+
       if (filled) {
         pageStatus.success('Password filled!', TIMING_MS.SUCCESS_DISPLAY);
         this.setState('success', 'Password filled!');
@@ -1467,11 +1482,11 @@ export class FloatingButton {
   private static readonly IDENTITY_FIELD_MAP: Readonly<
     Record<string, { key: string; label: string }>
   > = {
-    'fill-firstname': { key: 'firstName', label: 'First Name' },
-    'fill-lastname': { key: 'lastName', label: 'Last Name' },
-    'fill-fullname': { key: 'fullName', label: 'Full Name' },
-    'fill-username': { key: 'username', label: 'Username' },
-  };
+      'fill-firstname': { key: 'firstName', label: 'First Name' },
+      'fill-lastname': { key: 'lastName', label: 'Last Name' },
+      'fill-fullname': { key: 'fullName', label: 'Full Name' },
+      'fill-username': { key: 'username', label: 'Username' },
+    };
 
   private async actionFillIdentity(actionId: string): Promise<void> {
     const resp = (await safeSendMessage({ action: 'GET_IDENTITY' })) as IdentityResponse | null;
@@ -1480,7 +1495,7 @@ export class FloatingButton {
       return;
     }
 
-    if (!resp?.success || !resp.identity || !this.currentField) {
+    if (!resp?.success || !resp.identity) {
       pageStatus.error('Failed to get identity', TIMING_MS.ERROR_DISPLAY);
       this.setState('error', 'Failed to get identity');
       return;
@@ -1495,7 +1510,19 @@ export class FloatingButton {
     const value = (resp.identity as Record<string, string | undefined>)[mapping.key];
 
     if (value) {
-      const filled = await this.fillResolvedField(this.currentField, value);
+      let resolvedType: FieldType = 'unknown';
+      if (actionId === 'fill-firstname') resolvedType = 'first-name';
+      else if (actionId === 'fill-lastname') resolvedType = 'last-name';
+      else if (actionId === 'fill-fullname') resolvedType = 'full-name';
+      else if (actionId === 'fill-username') resolvedType = 'username';
+
+      const filled = await this.autoFiller.fillFieldIntoTarget(
+        resolvedType,
+        value,
+        this.currentField
+      );
+      if (this.destroyed) return;
+
       if (filled) {
         pageStatus.success(`${mapping.label} filled!`, TIMING_MS.SUCCESS_DISPLAY);
         this.setState('success', `${mapping.label} filled!`);
@@ -1517,7 +1544,7 @@ export class FloatingButton {
     if (!this.tooltip) {
       return;
     }
-    const tooltipMode = this.mode === 'magic' ? 'generic' : (this.mode as FieldType);
+    const tooltipMode = this.mode === 'magic' ? 'generic' : (this.mode as ClassifierFieldType);
     this.tooltip.textContent = getFieldTooltip(tooltipMode);
     this.tooltipTimeout = setTimeout(() => {
       if (!this.destroyed) {
@@ -1955,53 +1982,7 @@ export class FloatingButton {
     return this.getPageAnalysis().pageType;
   }
 
-  private buildFieldSelector(field: HTMLElement): string {
-    const input = field as HTMLInputElement;
-    if (input.id) {
-      return `#${escapeCSS(input.id)}`;
-    }
-    if (input.name) {
-      return `input[name="${escapeCSS(input.name)}"]`;
-    }
-    if (input.type && input.type !== 'text') {
-      return `input[type="${escapeCSS(input.type)}"]`;
-    }
-    return 'input';
-  }
 
-  private async fillResolvedField(
-    field: HTMLElement,
-    value: string,
-    fieldType?: FieldType
-  ): Promise<boolean> {
-    if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) {
-      const directFill = await this.autoFiller.fillElement(field, value);
-      if (directFill) {
-        return true;
-      }
-    }
-
-    const refreshedField = this.currentFieldRef?.deref();
-    if (
-      refreshedField &&
-      refreshedField !== field &&
-      (refreshedField instanceof HTMLInputElement || refreshedField instanceof HTMLTextAreaElement)
-    ) {
-      const refreshedFill = await this.autoFiller.fillElement(refreshedField, value);
-      if (refreshedFill) {
-        return true;
-      }
-    }
-
-    if (fieldType) {
-      const currentFieldFill = await this.autoFiller.fillCurrentField(value, fieldType as any);
-      if (currentFieldFill) {
-        return true;
-      }
-    }
-
-    return this.autoFiller.fillField(this.buildFieldSelector(field), value);
-  }
 
   // ── Public API ──────────────────────────────────────────
 
@@ -2038,10 +2019,10 @@ export class FloatingButton {
   /* Memphis Neon Palette mapped to FAB */
   ${generateHostTokens()}
 
-  --brand: var(--gf-magenta);
-  --brand-dark: var(--xxx-violet-400);
-  --brand-rgb: var(--gf-magenta-rgb);
-  --brand-glow: rgba(var(--gf-magenta-rgb), 0.24);
+  --brand: var(--gf-primary);
+  --brand-dark: var(--gf-primary-deep);
+  --brand-rgb: var(--gf-primary-rgb);
+  --brand-glow: rgba(var(--gf-primary-rgb), 0.24);
 
   --neon-cyan: var(--gf-cyan);
   --neon-cyan-rgb: var(--gf-cyan-rgb);
@@ -2058,18 +2039,18 @@ export class FloatingButton {
   --error-rgb: var(--gf-coral-rgb);
   --error-glow: rgba(var(--gf-coral-rgb), 0.25);
 
-  --fab-bg: var(--xxx-yellow-200);
-  --fab-bg-hover: var(--xxx-cyan-200);
-  --fab-border: var(--gf-ink);
+  --fab-bg: var(--gf-surface);
+  --fab-bg-hover: var(--gf-primary-soft);
+  --fab-border: var(--gf-line);
   --text: var(--gf-ink);
   --text-secondary: var(--gf-text-muted);
   --text-tertiary: var(--gf-text-dim);
 
-  /* Memphis Hard Shadows (No soft blurs!) */
-  --shadow-rest: 3px 3px 0 var(--gf-ink);
-  --shadow-hover: 5px 5px 0 var(--gf-ink);
-  --shadow-active: 0px 0px 0 var(--gf-ink);
-  --panel-shadow: 5px 5px 0 var(--gf-ink);
+  /* Spectre soft layered shadows + machined top highlight */
+  --shadow-rest: 0 4px 14px -4px rgba(0, 0, 0, 0.5), 0 1px 0 var(--gf-hi) inset;
+  --shadow-hover: 0 10px 26px -8px rgba(0, 0, 0, 0.6), 0 1px 0 var(--gf-hi) inset;
+  --shadow-active: 0 2px 8px -2px rgba(0, 0, 0, 0.5) inset;
+  --panel-shadow: 0 18px 48px -16px rgba(0, 0, 0, 0.66), 0 1px 0 var(--gf-hi) inset;
 
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -2079,93 +2060,76 @@ export class FloatingButton {
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* ── FAB Button — Memphis Sticker Physics ── */
+/* ── .gf-pulse class — used by OTP-waiting indicator ring (toggle via class) ── */
+.gf-pulse { animation: gfBadgePulse 1.8s ease-in-out infinite; }
+
+/* ── FAB Button — Spectre glass chip ── */
 .gf-fab {
-  width: 38px; height: 38px; border-radius: 7px;
-  background:
-    linear-gradient(135deg, var(--xxx-yellow-300), var(--xxx-lime-300), var(--xxx-cyan-300)),
-    var(--fab-bg);
-  border: 2.5px solid var(--fab-border);
-  box-shadow: var(--shadow-rest);
+  width: 46px; height: 46px; border-radius: 13px;
+  background: var(--gf-grad-cobalt, linear-gradient(160deg, #7c83ff 0%, #5a61f0 100%));
+  border: 1px solid var(--gf-line-2, rgba(255, 255, 255, 0.10));
+  box-shadow: 0 8px 22px -8px rgba(var(--gf-primary-rgb, 124,131,255), 0.8), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   outline: none; position: relative; overflow: visible;
-  transition: transform 0.15s var(--ease-spring), box-shadow 0.15s var(--ease-spring), border-color 0.15s var(--ease-smooth);
+  color: #fff;
+  transition: transform 0.18s var(--ease-spring), box-shadow 0.18s var(--ease-spring), filter 0.18s var(--ease-smooth);
 }
 .gf-fab::before {
-  content: "";
-  position: absolute;
-  inset: 5px;
-  border: 1px dashed rgba(var(--gf-ink-rgb), 0.34);
-  border-radius: 4px;
-  pointer-events: none;
-  z-index: 1;
+  display: none;
 }
 .gf-fab::after {
-  content: "";
-  position: absolute;
-  right: -4px;
-  bottom: -4px;
-  width: 12px;
-  height: 12px;
-  background: var(--xxx-violet-300);
-  border: 2px solid var(--gf-ink);
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 2;
+  display: none;
 }
 
 .gf-fab:hover {
-  /* 2D Memphis Lift: Moves Up/Left, Shadow grows Down/Right */
-  transform: translate(-2px, -2px) scale(1.02); 
-  background:
-    linear-gradient(135deg, var(--xxx-pink-300), var(--xxx-yellow-300), var(--xxx-cyan-300)),
-    var(--fab-bg-hover);
-  box-shadow: 5px 5px 0 var(--gf-ink); /* Hard shadow grows */
-  border-color: var(--gf-cyan);
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 14px 30px -8px rgba(var(--gf-primary-rgb, 124,131,255), 0.9), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  filter: brightness(1.05);
 }
 
 .gf-fab:active {
-  /* 2D Memphis Slam: Slams Down/Right into the page, Shadow disappears */
-  transform: translate(3px, 3px) scale(0.98);
-  box-shadow: 0px 0px 0 var(--gf-ink);
+  transform: translateY(0) scale(0.97);
+  box-shadow: 0 4px 12px -4px rgba(var(--gf-primary-rgb, 124,131,255), 0.7), 0 1px 2px rgba(0, 0, 0, 0.3) inset;
   transition-duration: 0.05s;
 }
 
 .gf-fab:focus-visible {
-  outline: 3px solid var(--gf-cyan);
+  outline: 2px solid var(--gf-primary, #7c83ff);
   outline-offset: 3px;
 }
 
 /* Icon */
 .gf-fab svg {
-  width: 20px; height: 20px; position: relative; z-index: 3;
+  width: 21px; height: 21px; position: relative; z-index: 3;
   transition: transform 0.3s var(--ease-spring);
 }
 .gf-fab:hover svg {
-  transform: scale(1.1) rotate(-2deg);
+  transform: scale(1.08);
 }
 .gf-fab:active svg { transform: scale(0.92); transition-duration: 0.06s; }
 
 /* Loading */
 .gf-fab.gf-loading {
   cursor: wait; animation: none;
-  border-color: var(--gf-cyan);
+  background: var(--gf-surface, #181b21);
+  border-color: var(--gf-line);
 }
 .gf-spinner {
   width: 20px; height: 20px;
-  border: 2.5px solid rgba(var(--gf-cyan-rgb), 0.15);
-  border-radius: 50%; border-top-color: var(--gf-cyan);
+  border: 2.5px solid rgba(var(--gf-primary-rgb), 0.2);
+  border-radius: 50%; border-top-color: var(--gf-primary);
   animation: gfSpin 0.6s cubic-bezier(0.4,0,0.2,1) infinite;
   position: relative; z-index: 3;
 }
 @keyframes gfSpin { to { transform: rotate(360deg); } }
 
-/* Success — Neon mint check (outline style) */
+/* Success — mint glass */
 .gf-fab.gf-success {
   animation: none;
-  border-color: var(--gf-mint);
-  background: var(--xxx-lime-200);
+  border-color: var(--gf-line-2, rgba(255,255,255,0.10));
+  background: var(--gf-grad-mint, linear-gradient(160deg, #3fe0c5 0%, #12b886 100%));
+  box-shadow: 0 8px 22px -8px rgba(63, 224, 197, 0.7), 0 1px 0 rgba(255, 255, 255, 0.3) inset;
 }
 .gf-success-check {
   animation: gfCheckPop 0.4s var(--ease-spring);
@@ -2174,10 +2138,10 @@ export class FloatingButton {
 /* SVG is now stroked — remove fill overrides so fill="none" is respected */
 .gf-success-check circle {
   fill: none;
-  stroke: var(--gf-mint);
+  stroke: #fff;
 }
 .gf-success-check path {
-  stroke: var(--gf-mint);
+  stroke: #fff;
 }
 @keyframes gfCheckPop {
   0%   { transform: scale(0) rotate(-60deg); opacity: 0; }
@@ -2185,11 +2149,12 @@ export class FloatingButton {
   100% { transform: scale(1) rotate(0); }
 }
 
-/* Error — Red shake */
+/* Error — coral glass shake */
 .gf-fab.gf-error {
   animation: gfShake 0.4s ease;
-  border-color: var(--gf-coral);
-  background: var(--xxx-red-300);
+  border-color: rgba(255, 255, 255, 0.16);
+  background: var(--gf-grad-coral, linear-gradient(160deg, #ff6b6b 0%, #e0463f 100%));
+  box-shadow: 0 8px 22px -8px rgba(255, 107, 107, 0.7), 0 1px 0 rgba(255, 255, 255, 0.3) inset;
 }
 @keyframes gfShake {
   0%,100% { transform: translateX(0); }
@@ -2200,12 +2165,12 @@ export class FloatingButton {
   75%  { transform: translateX(-1px); }
 }
 
-/* Badge — Neon Yellow with Ink Border */
+/* Badge — Studio Mono Amber with Ink Border */
 .gf-badge {
   position: absolute; top: -6px; right: -6px;
   min-width: 18px; height: 18px; border-radius: 50%;
-  background: var(--gf-yellow); /* Memphis Yellow */
-  color: var(--gf-ink); 
+  background: var(--gf-amber, #e8920c); /* Studio Mono Amber */
+  color: var(--gf-ink);
   font-size: 10px; font-weight: 800;
   display: flex; align-items: center; justify-content: center;
   border: 2px solid var(--gf-ink); z-index: 10; padding: 0 3px;
@@ -2219,9 +2184,19 @@ export class FloatingButton {
 }
 
 .gf-badge.gf-badge-otp-ready {
-  background: var(--gf-magenta);
+  background: var(--gf-violet, #7c5ce0);
   color: white;
   animation: gfBadgePulse 2s ease-in-out infinite;
+}
+
+/* PERMANENT FIX 2026-06-21: count badge — shows the number of fillable
+   fields on the current page. Subtle mint accent so it doesn't
+   compete with the OTP-ready pulse. */
+.gf-badge.gf-badge-count {
+  background: var(--gf-mint, #3fe0c5);
+  color: #0a2a25;
+  font-family: var(--brand-font-mono, monospace);
+  font-weight: 800;
 }
 
 @keyframes gfBadgePulse {
@@ -2229,7 +2204,7 @@ export class FloatingButton {
   50% { transform: scale(1.12); }
 }
 
-/* OTP Waiting Indicator — Neon magenta pulse */
+/* OTP Waiting Indicator — Studio Mono cobalt pulse */
 .gf-otp-waiting-indicator {
   position: absolute;
   top: -8px;
@@ -2237,7 +2212,7 @@ export class FloatingButton {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: var(--gf-magenta);
+  background: var(--gf-primary, #2d5bff);
   opacity: 0;
   transform: scale(0);
   transition: opacity 0.4s ease, transform 0.4s var(--ease-spring);
@@ -2256,7 +2231,7 @@ export class FloatingButton {
   position: absolute;
   inset: -4px;
   border-radius: 50%;
-  border: 2px solid var(--gf-magenta);
+  border: 2px solid var(--gf-primary, #2d5bff);
   opacity: 0;
   animation: gfOTPWaitingRing 1.5s ease-out infinite;
 }
@@ -2271,36 +2246,36 @@ export class FloatingButton {
   100% { transform: scale(2.5); opacity: 0; }
 }
 
-/* Tooltip — Solid Dark, Neon Accent */
+/* Tooltip — Spectre glass pill */
 .gf-tooltip {
   position: absolute; bottom: calc(100% + 12px); left: 50%;
   transform: translateX(-50%) translateY(4px);
-  padding: 8px 14px;
-  background: var(--gf-bg);
-  color: var(--gf-cream); 
-  font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
-  border-radius: 6px; white-space: nowrap; pointer-events: none;
-  border: 2px solid var(--gf-ink);
-  box-shadow: 3px 3px 0 var(--gf-ink);
+  padding: 7px 13px;
+  background: var(--gf-card-elevated);
+  color: var(--gf-ink);
+  font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: none;
+  border-radius: 9px; white-space: nowrap; pointer-events: none;
+  border: 1px solid var(--gf-line-2, rgba(255,255,255,0.13));
+  box-shadow: 0 8px 22px -8px rgba(0,0,0,0.6), 0 1px 0 var(--gf-hi) inset;
   opacity: 0; transition: all 0.2s var(--ease-out-expo);
   z-index: 1001;
 }
 .gf-tooltip::after {
   content: ''; position: absolute; top: 100%; left: 50%;
   transform: translateX(-50%);
-  border: 6px solid transparent; border-top-color: var(--gf-ink);
+  border: 6px solid transparent; border-top-color: var(--gf-card-elevated);
 }
 .gf-tooltip-visible { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-/* Menu — Solid surface, neon top accent bar */
+/* Menu — Spectre glass panel with hairline border + soft shadow */
 .gf-menu {
   position: absolute; top: calc(100% + 10px); right: 0;
   min-width: 254px;
   background: var(--gf-card);
-  border-radius: 8px;
-  border: 2.5px solid var(--gf-ink);
+  border-radius: 16px;
+  border: 1px solid var(--gf-line-2, rgba(255,255,255,0.13));
   box-shadow: var(--panel-shadow);
-  padding: 6px; z-index: 999; overflow: hidden;
+  padding: 7px; z-index: 999; overflow: hidden;
   opacity: 0; visibility: hidden;
   transform: translateY(-6px) scale(0.96);
   transform-origin: top right;
@@ -2308,23 +2283,14 @@ export class FloatingButton {
     opacity 0.25s var(--ease-out-expo), visibility 0.25s var(--ease-out-expo),
     transform 0.3s var(--ease-spring);
 }
-/* Neon top accent bar */
+/* faint spectral glow at the top edge */
 .gf-menu::before {
-  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 5px;
-  background: linear-gradient(90deg, var(--gf-magenta) 0%, var(--gf-yellow) 36%, var(--gf-cyan) 70%, var(--gf-violet) 100%);
-  border-bottom: 2px solid var(--gf-ink);
-  border-radius: 0; z-index: 3;
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 100px;
+  background: radial-gradient(120% 80% at 50% 0%, rgba(var(--gf-primary-rgb), 0.12), transparent 70%);
+  pointer-events: none; z-index: 0;
 }
 .gf-menu::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(90deg, rgba(var(--gf-ink-rgb), 0.035) 1px, transparent 1px),
-    linear-gradient(rgba(var(--gf-ink-rgb), 0.035) 1px, transparent 1px);
-  background-size: 10px 10px;
-  pointer-events: none;
-  z-index: 1;
+  display: none;
 }
 .gf-menu-open {
   opacity: 1; visibility: visible;
@@ -2341,44 +2307,41 @@ export class FloatingButton {
 .gf-menu-item {
   display: flex; align-items: center; gap: 11px;
   padding: 9px 11px; width: 100%;
-  cursor: pointer; border-radius: 5px; border: 2px solid transparent; background: transparent;
-  font: inherit; font-size: 12.5px; font-weight: 800; letter-spacing: 0;
+  cursor: pointer; border-radius: 10px; border: 1px solid transparent; background: transparent;
+  font: inherit; font-size: 13px; font-weight: 600; letter-spacing: 0;
   color: var(--text); text-align: left; outline: none;
   position: relative; z-index: 2;
-  transition: background 0.15s var(--ease-smooth), transform 0.15s var(--ease-out-expo);
+  transition: background 0.15s var(--ease-smooth), border-color 0.15s var(--ease-smooth);
   transform-origin: center center;
 }
 .gf-menu-item:hover, .gf-menu-item:focus-visible {
-  background: var(--gf-surface);
-  border-color: var(--gf-ink);
-  transform: translate(-2px, -2px);
-  box-shadow: 3px 3px 0 var(--gf-ink);
+  background: var(--gf-surface-2, rgba(255,255,255,0.05));
+  border-color: var(--gf-line);
   color: var(--gf-ink);
 }
 .gf-menu-item:active {
-  transform: translate(2px, 2px);
-  box-shadow: none;
-  background: rgba(var(--gf-yellow-rgb), 0.28); transition-duration: 0.05s;
+  background: var(--gf-primary-soft);
+  transition-duration: 0.05s;
 }
-.gf-menu-item:focus-visible { outline: 2px solid var(--gf-cyan); outline-offset: -2px; }
+.gf-menu-item:focus-visible { outline: 2px solid var(--gf-primary); outline-offset: -2px; }
 
 .gf-menu-icon {
-  flex-shrink: 0; width: 26px; height: 26px;
+  flex-shrink: 0; width: 30px; height: 30px;
   display: flex; align-items: center; justify-content: center;
-  border-radius: 5px;
+  border-radius: 8px;
   background: var(--gf-sunken);
-  border: 1.5px solid var(--gf-ink);
-  box-shadow: 2px 2px 0 var(--gf-ink);
-  transition: transform 0.15s var(--ease-spring), background 0.15s ease;
+  border: 1px solid var(--gf-line);
+  color: var(--gf-primary);
+  transition: transform 0.15s var(--ease-spring), background 0.15s ease, color 0.15s ease;
 }
 .gf-menu-symbol {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   display: block;
 }
 .gf-menu-item:hover .gf-menu-icon {
-  background: var(--gf-card-elevated);
-  transform: rotate(-2deg);
+  background: rgba(var(--gf-primary-rgb), 0.12);
+  border-color: rgba(var(--gf-primary-rgb), 0.25);
 }
 .gf-menu-label {
   flex: 1;
@@ -2386,31 +2349,24 @@ export class FloatingButton {
   overflow-wrap: anywhere;
 }
 .gf-menu-shortcut {
-  font-size: 10px; color: var(--text-tertiary); font-weight: 600;
+  font-size: 10.5px; color: var(--text-tertiary); font-weight: 600;
   letter-spacing: 0; opacity: 0.85;
   display: inline-flex; align-items: center;
-  padding: 2px 5px; background: var(--gf-bg);
-  border-radius: 3px; border: 1px solid var(--gf-ink);
+  padding: 2px 6px; background: var(--gf-surface-2, rgba(255,255,255,0.05));
+  border-radius: 5px; border: 1px solid var(--gf-line);
+  font-family: var(--gf-font-mono, monospace);
   transition: opacity 0.15s ease;
 }
 .gf-menu-item:hover .gf-menu-shortcut { opacity: 1; }
 
 .gf-menu-divider {
-  height: 2px; margin: 5px 10px;
-  background: var(--gf-ink);
+  height: 1px; margin: 6px 10px;
+  background: var(--gf-line);
   position: relative; z-index: 2;
 }
 
 /* Staggered entry */
-.gf-menu-open .gf-menu-item { animation: gfMIE 0.3s var(--ease-out-expo) both; }
-.gf-menu-open .gf-menu-item:nth-child(1) { animation-delay: 0.02s; }
-.gf-menu-open .gf-menu-item:nth-child(2) { animation-delay: 0.04s; }
-.gf-menu-open .gf-menu-item:nth-child(3) { animation-delay: 0.06s; }
-.gf-menu-open .gf-menu-item:nth-child(4) { animation-delay: 0.08s; }
-.gf-menu-open .gf-menu-item:nth-child(5) { animation-delay: 0.10s; }
-.gf-menu-open .gf-menu-item:nth-child(6) { animation-delay: 0.12s; }
-.gf-menu-open .gf-menu-item:nth-child(7) { animation-delay: 0.14s; }
-.gf-menu-open .gf-menu-item:nth-child(8) { animation-delay: 0.16s; }
+.gf-menu-open .gf-menu-item { animation: gfMIE 0.3s var(--ease-out-expo) both; animation-delay: calc(var(--i, 0) * 0.02s); }
 @keyframes gfMIE {
   from { opacity: 0; transform: translateX(-5px) translateY(3px); }
   to   { opacity: 1; transform: translateX(0) translateY(0); }
@@ -2423,7 +2379,7 @@ export class FloatingButton {
 
 /* ── Sentinel Toast ── */
 .gf-sentinel-toast {
-  position: fixed;
+  position: absolute;
   z-index: 2147483645;
   pointer-events: none;
   opacity: 0;
@@ -2459,7 +2415,6 @@ export class FloatingButton {
 .gf-sentinel-toast-icon svg {
   width: 100%;
   height: 100%;
-  filter: drop-shadow(0 0 8px var(--gf-magenta));
   animation: gf-toast-icon-float 2s ease-in-out infinite;
 }
 

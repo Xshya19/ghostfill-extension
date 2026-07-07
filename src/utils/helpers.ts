@@ -423,3 +423,24 @@ export async function withRetry<T>(
   }
   throw lastError || new Error('Max retries reached');
 }
+
+/**
+ * Safely opens a URL with strict http/https scheme validation.
+ */
+export function openSafeUrl(url: string): void {
+  if (!url) {return;}
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      log.warn(`Blocked unsafe URL protocol attempt: ${parsed.protocol}`);
+      return;
+    }
+    if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
+      void chrome.tabs.create({ url: parsed.toString(), active: true });
+    } else {
+      window.open(parsed.toString(), '_blank', 'noopener,noreferrer');
+    }
+  } catch (e) {
+    log.error('Invalid URL passed to openSafeUrl', e);
+  }
+}

@@ -88,6 +88,7 @@ export {
   isValidUrl,
   normalizeUrl,
   unwrapTrackingUrl,
+  unwrapEspTrackingUrl,
   decodeHtmlEntities,
   analyzeUrlParams,
   calculateUrlComplexity,
@@ -148,3 +149,21 @@ export {
 // ───────────────────────────────────────────────────────────────────────
 // Orchestrator and standalone functions have been moved to direct imports
 // to prevent circular dependencies between extraction sub-modules.
+
+// ───────────────────────────────────────────────────────────────────────
+//  COGNITIVE EXTRACTOR EXPORTS
+// ───────────────────────────────────────────────────────────────────────
+export {
+  normalizeForExtraction,
+} from './domEngine';
+
+export {
+  extractOTPCognitive,
+} from './cognitiveOtpExtractor';
+
+export {
+  extractLinkCognitive,
+  recursiveUnwrap,
+} from './cognitiveLinkExtractor';
+
+

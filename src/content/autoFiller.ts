@@ -1,4 +1,3 @@
-import { classifyField } from '../intelligence/classifier/classify';
 import { extractFieldRecord } from '../intelligence/featureExtractor';
 import { FieldClass } from '../intelligence/types';
 import {
@@ -22,46 +21,17 @@ import {
   PhantomTyper,
   OTPFieldGroup,
 } from './autofill/index';
-import { HistoryManager } from './utils/intelligenceCore';
+import { HistoryManager } from './utils/intelligence';
+import { IntelligenceCore, mapFieldClassToFieldType } from '../intelligence/IntelligenceCore';
+import { UltraDetector } from './detection/UltraDetector';
+import { UniversalFiller } from './filling/UniversalFiller';
+import { VerificationLoop } from '../intelligence/VerificationLoop';
+import { AdaptiveStrategyEngine } from '../intelligence/AdaptiveStrategyEngine';
+import { ContextEngine } from './context/ContextEngine';
 
 const log = createLogger('AutoFiller');
 
-/**
- * Maps a classifier `FieldClass` to the canonical `FieldType` used throughout
- * the filler. This is exhaustive: adding a new `FieldClass` without handling it
- * here is a compile-time error (see the `never` assertion in the default case).
- */
-function mapFieldClassToFieldType(cls: FieldClass): FieldType {
-  switch (cls) {
-    case 'Email':
-      return 'email';
-    case 'Username':
-      return 'username';
-    case 'Password':
-      return 'password';
-    case 'Target_Password_Confirm':
-      return 'confirm-password';
-    case 'First_Name':
-      return 'first-name';
-    case 'Last_Name':
-      return 'last-name';
-    case 'Full_Name':
-      return 'full-name';
-    case 'Phone':
-      return 'phone';
-    case 'OTP':
-      return 'otp';
-    case 'Unknown':
-      return 'unknown';
-    default: {
-      // Exhaustiveness guard: if a new FieldClass is added and not handled
-      // above, TypeScript will flag this line.
-      const _exhaustive: never = cls;
-      void _exhaustive;
-      return 'unknown';
-    }
-  }
-}
+
 
 // ─────────────────────────────────────────────────────────────
 //  Constants
@@ -161,6 +131,17 @@ export class AutoFiller {
   private fillLock = false;
   /** The most recent OTP request received while a fill was already running. */
   private latestPendingOTP: PendingOTPRequest | null = null;
+
+  private detector = new UltraDetector();
+  private filler = new UniversalFiller();
+  private loop = new VerificationLoop();
+  private adaptive = new AdaptiveStrategyEngine();
+  private intelligence = new IntelligenceCore();
+  private contextEngine = new ContextEngine(this.detector);
+
+  constructor() {
+    this.contextEngine.init().catch((e) => log.error('Failed to initialize ContextEngine', e));
+  }
 
   // ═══════════════════════════════════════════════════════════
   //  CONTEXT
@@ -524,16 +505,17 @@ export class AutoFiller {
       return false;
     }
 
-    const { decision } = classifyField(extractFieldRecord(field));
-    if (decision.action === 'BLOCK') {
-      log.warn(`Field fill blocked by safety gate: ${decision.safety ?? ''}`);
+    const record = extractFieldRecord(field);
+    const calibrated = this.intelligence.classify(record);
+    if (calibrated.decision === 'BLOCK') {
+      log.warn(`Field fill blocked by safety gate: ${calibrated.safetyReason ?? ''}`);
       return false;
     }
-    if (decision.action === 'ABSTAIN') {
+    if (calibrated.decision === 'ABSTAIN') {
       return false;
     }
 
-    const classified = mapFieldClassToFieldType(decision.class);
+    const classified = calibrated.fieldType;
     if (classified === 'otp') {
       return true;
     }
@@ -708,6 +690,42 @@ export class AutoFiller {
       log.info('🛡️ Bypassing login block due to high-conviction OTP field discovery');
     }
 
+    // Check if we need to auto-generate a disposable email address
+    let { identity, otpCode } = await this.fetchIdentityAndOTP();
+    if (identity && !identity.email && !otpCode) {
+      const inputs = deepQuerySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea')
+        .filter((field) => !field.disabled && !field.readOnly);
+      let hasEmailOrIdentifierField = false;
+      for (const input of inputs) {
+        const record = extractFieldRecord(input);
+        const calibrated = this.intelligence.classify(record);
+        if (calibrated.decision === 'BLOCK') continue;
+        const type = calibrated.fieldType;
+        if (type === 'email' || type === 'username') {
+          hasEmailOrIdentifierField = true;
+          break;
+        }
+      }
+
+      if (hasEmailOrIdentifierField) {
+        log.info('✨ Smart Fill found email/identifier field but no email generated yet. Generating one...');
+        try {
+          const genResp = await safeSendMessage({
+            action: 'GENERATE_EMAIL',
+            payload: { domain: window.location.hostname },
+          });
+          if (genResp?.success && (genResp as any).email?.fullEmail) {
+            const refetched = await this.fetchIdentityAndOTP();
+            if (refetched.identity) {
+              identity = refetched.identity;
+            }
+          }
+        } catch (e) {
+          log.warn('Failed to auto-generate email during Smart Fill', e);
+        }
+      }
+    }
+
     for (const waitMs of SMART_FILL_RETRY_DELAYS_MS) {
       if (this.destroyed) {
         break;
@@ -746,44 +764,51 @@ export class AutoFiller {
       return 0;
     }
 
-    const inputs = deepQuerySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
-      'input, textarea'
-    ).filter((field) => !field.disabled && !field.readOnly);
+    await this.adaptive.init();
 
-    const filledElements = new Set<HTMLElement>();
-    for (const input of inputs) {
-      const { decision } = classifyField(extractFieldRecord(input));
-      if (decision.action === 'BLOCK') {
-        log.warn(`Field fill blocked by safety gate: ${decision.safety ?? ''}`);
-        continue;
-      }
-      if (decision.action === 'ABSTAIN') {
-        continue;
-      }
+    const candidates = this.contextEngine.getCandidates();
 
-      const type = mapFieldClassToFieldType(decision.class);
-      if (type === 'unknown') {
+    let filledCount = 0;
+    for (const candidate of candidates) {
+      if (candidate.decision === 'BLOCK') {
+        log.warn(`Field fill blocked by safety gate: ${candidate.selector}`);
         continue;
       }
-      if (this.shouldPreserveExistingValue(input, type)) {
+      if (candidate.decision === 'ABSTAIN') {
         continue;
       }
 
-      const value = this.getValueForFieldType(type, identity, otpCode, input, context);
-      if (value && (await FieldSetter.setValue(input, value, context.framework))) {
-        filledElements.add(input);
-        const selector = this.buildFieldSelector(input as HTMLInputElement);
-        this.saveTrustedSelector(type, selector);
-        details.push({
-          fieldType: type,
-          selector,
-          strategy: 'classification',
-          success: true,
-        });
+      if (this.shouldPreserveExistingValue(candidate.element as HTMLInputElement, candidate.fieldType)) {
+        continue;
+      }
+
+      const value = this.getValueForFieldType(candidate.fieldType, identity, otpCode, candidate.element as HTMLInputElement, context);
+      if (value) {
+        const start = performance.now();
+        const orderedFiller = new UniversalFiller(
+          this.adaptive.getOptimalStrategyOrder(window.location.hostname, (this.filler as any).strategies)
+        );
+
+        const fillResult = await this.loop.verifyAndCorrect(orderedFiller, candidate, value);
+        const latency = performance.now() - start;
+
+        await this.adaptive.recordOutcome(window.location.hostname, fillResult.strategy, candidate.fieldType, fillResult.success, latency);
+
+        if (fillResult.success) {
+          filledCount++;
+          const selector = candidate.selector;
+          this.saveTrustedSelector(candidate.fieldType, selector);
+          details.push({
+            fieldType: candidate.fieldType,
+            selector,
+            strategy: fillResult.strategy,
+            success: true,
+          });
+        }
       }
     }
 
-    return filledElements.size;
+    return filledCount;
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -849,18 +874,19 @@ export class AutoFiller {
         continue;
       }
 
-      const { decision } = classifyField(extractFieldRecord(input));
-      if (decision.action === 'BLOCK') {
+      const record = extractFieldRecord(input);
+      const calibrated = this.intelligence.classify(record);
+      if (calibrated.decision === 'BLOCK') {
         log.debug('Skipping field icon injection after safety check', {
-          reason: decision.safety ?? 'blocked',
+          reason: calibrated.safetyReason ?? 'blocked',
         });
         continue;
       }
-      if (decision.action === 'ABSTAIN') {
+      if (calibrated.decision === 'ABSTAIN') {
         continue;
       }
 
-      const type = mapFieldClassToFieldType(decision.class);
+      const type = calibrated.fieldType;
       const looksLikeIdentifier =
         type === 'unknown' &&
         /user|login|name|email/i.test(`${input.name} ${input.id} ${input.placeholder}`);
@@ -894,11 +920,29 @@ export class AutoFiller {
   }
 
   private async handleIconClick(input: HTMLInputElement, type: FieldType): Promise<void> {
-    const { identity, otpCode } = await this.fetchIdentityAndOTP();
+    let { identity, otpCode } = await this.fetchIdentityAndOTP();
     const context = this.getContext();
     if (this.shouldPreserveExistingValue(input, type)) {
       log.debug('Skipping icon fill because field already has a value', { fieldType: type });
       return;
+    }
+
+    if ((type === 'email' || type === 'username') && identity && !identity.email) {
+      log.info('✨ Ghost icon clicked on email/identifier field but no email generated yet. Generating one...');
+      try {
+        const genResp = await safeSendMessage({
+          action: 'GENERATE_EMAIL',
+          payload: { domain: window.location.hostname },
+        });
+        if (genResp?.success && (genResp as any).email?.fullEmail) {
+          const refetched = await this.fetchIdentityAndOTP();
+          if (refetched.identity) {
+            identity = refetched.identity;
+          }
+        }
+      } catch (e) {
+        log.warn('Failed to auto-generate email during icon click', e);
+      }
     }
 
     const value = this.getValueForFieldType(type, identity, otpCode, input, context);
@@ -957,15 +1001,16 @@ export class AutoFiller {
 
     // If a fieldType is specified, verify the active element matches before filling.
     if (fieldType && fieldType !== 'unknown') {
-      const { decision } = classifyField(extractFieldRecord(el));
-      if (decision.action === 'BLOCK') {
-        log.warn(`Field fill blocked by safety gate: ${decision.safety ?? ''}`);
+      const record = extractFieldRecord(el);
+      const calibrated = this.intelligence.classify(record);
+      if (calibrated.decision === 'BLOCK') {
+        log.warn(`Field fill blocked by safety gate: ${calibrated.safetyReason ?? ''}`);
         return false;
       }
-      if (decision.action === 'ABSTAIN') {
+      if (calibrated.decision === 'ABSTAIN') {
         return false;
       }
-      const classified = mapFieldClassToFieldType(decision.class);
+      const classified = calibrated.fieldType;
       if (classified !== fieldType && classified !== 'unknown') {
         log.debug('fillCurrentField: active element type mismatch, skipping', {
           expected: fieldType,
@@ -1119,9 +1164,272 @@ export class AutoFiller {
     });
   }
 
+  // ═══════════════════════════════════════════════════════════
+  //  GENERIC FIELD RESOLVER
+  //
+  //  Used by the FAB's actions (email, password, identity names).
+  //  Locates the best target input on the page through four stages:
+  //
+  //  Stage 0 — Domain trusted-selector cache (instant warm-hit)
+  //  Stage 1 — Heuristic classifier pipeline (authoritative, same as smartFill)
+  //  Stage 2 — Lightweight shared classifier on contextHint (focused element)
+  //  Stage 3 — Ordered CSS heuristic selectors (fallback)
+  //  Stage 4 — Fallback to contextHint element if it is fillable
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * Find the most-likely input on the page for a specific FieldType.
+   *
+   * Returns [element, selector] so the caller can both fill and cache.
+   * Returns null if nothing credible is found.
+   */
+  async resolveField(
+    fieldType: FieldType,
+    contextHint: HTMLElement | null
+  ): Promise<{ element: HTMLInputElement; selector: string } | null> {
+    const domain = window.location.hostname;
+
+    // ── Stage 0: trusted-selector fast-path ──────────────────
+    const trusted = await HistoryManager.getTrustedSelector(domain, fieldType);
+    if (trusted) {
+      const hits = deepQuerySelectorAll<HTMLInputElement>(trusted);
+      const live = hits.find((el) => el.isConnected && !el.disabled && !el.readOnly && this.isVisibleInput(el));
+      if (live) {
+        log.debug(`FieldResolver: Stage 0 hit (trusted selector for ${fieldType})`, { selector: trusted });
+        return { element: live, selector: trusted };
+      }
+      log.debug(`FieldResolver: Stage 0 miss (stale selector for ${fieldType})`, { selector: trusted });
+    }
+
+    // ── Stage 1: full heuristic classifier ─────────────────
+    const FILLABLE = 'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="image"]):not([type="range"]):not([type="color"])';
+    const allInputs = deepQuerySelectorAll<HTMLInputElement>(FILLABLE)
+      .filter((el) => el.isConnected && !el.disabled && !el.readOnly && this.isVisibleInput(el));
+
+    let bestEl: HTMLInputElement | null = null;
+    let bestScore = 0;
+
+    for (const input of allInputs) {
+      const record = extractFieldRecord(input);
+      const calibrated = this.intelligence.classify(record);
+      if (calibrated.decision === 'BLOCK') continue;
+      const type = calibrated.fieldType;
+      
+      let match = type === fieldType;
+      // Allow Username to act as email target if resolving email and no better email exists
+      if (!match && fieldType === 'email' && type === 'username') {
+        match = true;
+      }
+
+      if (match && calibrated.confidence > bestScore) {
+        bestScore = calibrated.confidence;
+        bestEl = input;
+      }
+    }
+
+    if (bestEl && bestScore >= 0.30) {
+      const selector = this.buildFieldSelector(bestEl);
+      log.debug(`FieldResolver: Stage 1 hit (classifier for ${fieldType})`, { selector, score: bestScore });
+      return { element: bestEl, selector };
+    }
+
+    // ── Stage 2: check contextHint using shared lightweight classifier ──
+    if (contextHint instanceof HTMLInputElement && !contextHint.disabled && !contextHint.readOnly) {
+      try {
+        const { classifyField: sharedClassify } = await import('../shared/fieldClassifier');
+        const type = sharedClassify(contextHint);
+        let match = false;
+        if (fieldType === 'email') {
+          match = type === 'email' || type === 'user';
+        } else if (fieldType === 'password') {
+          match = type === 'password';
+        } else if (fieldType === 'first-name' || fieldType === 'last-name' || fieldType === 'full-name') {
+          match = type === 'user';
+        } else {
+          match = type === (fieldType as any);
+        }
+
+        if (match) {
+          const selector = this.buildFieldSelector(contextHint);
+          log.debug(`FieldResolver: Stage 2 hit (shared classifier on contextHint for ${fieldType})`);
+          return { element: contextHint, selector };
+        }
+      } catch {
+        // dynamic import failed
+      }
+    }
+
+    // ── Stage 3: CSS heuristic ordered selectors ──────────────
+    const CSS_SELECTORS_MAP: Record<string, string[]> = {
+      'email': [
+        'input[type="email"]',
+        'input[autocomplete="email"]',
+        'input[autocomplete*="email" i]',
+        'input[name*="email" i]',
+        'input[id*="email" i]',
+        'input[placeholder*="email" i]',
+        'input[placeholder*="e-mail" i]',
+        'input[aria-label*="email" i]',
+        'input[aria-label*="e-mail" i]',
+      ],
+      'password': [
+        'input[type="password"]',
+        'input[autocomplete="new-password"]',
+        'input[autocomplete="current-password"]',
+        'input[name*="password" i]',
+        'input[id*="password" i]',
+        'input[placeholder*="password" i]',
+        'input[aria-label*="password" i]',
+      ],
+      'confirm-password': [
+        'input[name*="confirm" i][name*="password" i]',
+        'input[id*="confirm" i][id*="password" i]',
+        'input[placeholder*="confirm" i][placeholder*="password" i]',
+        'input[name*="password" i][name*="2" i]',
+      ],
+      'first-name': [
+        'input[autocomplete="given-name"]',
+        'input[name*="firstname" i]',
+        'input[name*="first_name" i]',
+        'input[name*="first-name" i]',
+        'input[id*="firstname" i]',
+        'input[id*="first_name" i]',
+        'input[id*="first-name" i]',
+        'input[placeholder*="first name" i]',
+      ],
+      'last-name': [
+        'input[autocomplete="family-name"]',
+        'input[name*="lastname" i]',
+        'input[name*="last_name" i]',
+        'input[name*="last-name" i]',
+        'input[id*="lastname" i]',
+        'input[id*="last_name" i]',
+        'input[id*="last-name" i]',
+        'input[placeholder*="last name" i]',
+      ],
+      'full-name': [
+        'input[autocomplete="name"]',
+        'input[name*="fullname" i]',
+        'input[name*="full_name" i]',
+        'input[name*="full-name" i]',
+        'input[name="name" i]',
+        'input[id*="fullname" i]',
+        'input[id*="full_name" i]',
+        'input[id*="full-name" i]',
+        'input[id="name" i]',
+        'input[placeholder*="full name" i]',
+        'input[placeholder*="your name" i]',
+      ],
+      'username': [
+        'input[autocomplete="username"]',
+        'input[name*="username" i]',
+        'input[name*="user_name" i]',
+        'input[name*="user-name" i]',
+        'input[id*="username" i]',
+        'input[id*="user_name" i]',
+        'input[id*="user-name" i]',
+        'input[placeholder*="username" i]',
+      ]
+    };
+
+    const selectors = CSS_SELECTORS_MAP[fieldType];
+    if (selectors) {
+      const searchRoots: ParentNode[] = [];
+      const form = contextHint?.closest?.('form');
+      if (form) searchRoots.push(form);
+      searchRoots.push(document);
+
+      for (const root of searchRoots) {
+        for (const sel of selectors) {
+          try {
+            const candidates = Array.from(root.querySelectorAll<HTMLInputElement>(sel));
+            const hit = candidates.find((el) => el.isConnected && !el.disabled && !el.readOnly && this.isVisibleInput(el));
+            if (hit) {
+              const selector = this.buildFieldSelector(hit);
+              log.debug(`FieldResolver: Stage 3 hit (CSS heuristic for ${fieldType})`, { selector: sel });
+              return { element: hit, selector };
+            }
+          } catch { /* skip */ }
+        }
+      }
+    }
+
+    // ── Stage 4: contextHint fallback if it matches basic constraints ──
+    if (contextHint instanceof HTMLInputElement && !contextHint.disabled && !contextHint.readOnly && this.isVisibleInput(contextHint)) {
+      const selector = this.buildFieldSelector(contextHint);
+      log.debug(`FieldResolver: Stage 4 fallback hit (contextHint for ${fieldType})`, { selector });
+      return { element: contextHint, selector };
+    }
+
+    log.warn(`FieldResolver: all stages exhausted, no ${fieldType} field found`);
+    return null;
+  }
+
+  /** Helper: is the input visually present (non-zero size, not hidden). */
+  private isVisibleInput(el: HTMLInputElement): boolean {
+    try {
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return false;
+      const style = window.getComputedStyle(el);
+      return style.display !== 'none' && style.visibility !== 'hidden' && parseFloat(style.opacity || '1') > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Fill a resolved field with the targeted value.
+   * Mirrors the fill-and-cache lifecycle of smartFill / performSmartFillAttempt.
+   *
+   * @param fieldType   The type of field we want to target.
+   * @param value       The string value to fill.
+   * @param contextHint The field that had focus when the FAB opened (used as resolver hint).
+   * @returns true if the field was resolved AND filled successfully.
+   */
+  async fillFieldIntoTarget(fieldType: FieldType, value: string, contextHint: HTMLElement | null): Promise<boolean> {
+    const resolved = await this.resolveField(fieldType, contextHint);
+    if (!resolved) {
+      log.warn(`fillFieldIntoTarget: no ${fieldType} field found on page`);
+      return false;
+    }
+
+    const { element, selector } = resolved;
+    const context = this.getContext();
+
+    // Re-focus the resolved element. If the user clicked the FAB menu,
+    // focus is now on the shadow-DOM host — we must restore it before
+    // any strategy that checks document.activeElement.
+    try {
+      element.focus({ preventScroll: true });
+    } catch { /* detached element — FieldSetter will handle it */ }
+
+    const success = await FieldSetter.setValue(element, value, context.framework);
+    if (success) {
+      // Persist the winning selector so Stage 0 is instant next time.
+      this.saveTrustedSelector(fieldType, selector);
+      log.info(`fillFieldIntoTarget: filled ${fieldType} successfully`, { selector });
+
+      // Intelligent co-filling for confirmation passwords
+      if (fieldType === 'password') {
+        const confirmResolved = await this.resolveField('confirm-password', contextHint);
+        if (confirmResolved) {
+          log.info('fillFieldIntoTarget: Autofilling confirm-password field as well');
+          await FieldSetter.setValue(confirmResolved.element, value, context.framework);
+          this.saveTrustedSelector('confirm-password', confirmResolved.selector);
+        }
+      }
+
+      return true;
+    }
+
+    log.warn(`fillFieldIntoTarget: FieldSetter failed on resolved element for ${fieldType}`, { selector });
+    return false;
+  }
+
   destroy(): void {
     this.destroyed = true;
     this.fieldWatcher.stop();
+    this.contextEngine.destroy();
     // Reject any queued OTP request so callers don't hang forever.
     if (this.latestPendingOTP) {
       this.latestPendingOTP.resolve(false);

@@ -1,0 +1,799 @@
+/* ============================================================================
+   GHOSTFILL — SHARED UI PRIMITIVES  ·  "SPECTRE"
+   ----------------------------------------------------------------------------
+   One definition of every primitive (button, card, input, toggle, badge, tabs,
+   modal, toast, …), consumed by both the popup and the options page. Token-driven
+   only — no hardcoded colors, no !important.
+
+   Spectre treatment: hairline borders, soft layered shadows, a 1px machined
+   top-edge highlight (inset --gf-hi), and a gentle 1px lift on hover (no
+   neo-brutalist hard-offset translate). Dark theme works automatically because
+   every value derives from the design tokens, which flip under [data-theme="dark"].
+
+   Pairs with the React wrappers in src/shared/ui/*.
+   ========================================================================== */
+
+/* ── Motion primitives ───────────────────────────────────────────────────── */
+@keyframes gf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.gf-spin {
+  /* Deliberately NOT built from --gf-dur* — a loading spinner is essential
+     feedback, not decoration, so it keeps moving even under reduced-motion
+     (see the media query below, which slows it rather than freezing it). */
+  animation: gf-spin 0.8s linear infinite;
+  display: inline-flex;
+}
+.gf-spinner {
+  display: inline-flex;
+  color: var(--gf-primary);
+  animation: gf-spin 0.8s linear infinite;
+}
+
+@keyframes gf-shimmer {
+  0% {
+    background-position: -320px 0;
+  }
+  100% {
+    background-position: 320px 0;
+  }
+}
+/* FIX: this keyframe used to be defined and never consumed anywhere in the
+   file. Turned into an actual shared skeleton-loading primitive. */
+.gf-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(
+    90deg,
+    var(--gf-sunken) 0%,
+    rgba(var(--gf-primary-rgb), 0.08) 50%,
+    var(--gf-sunken) 100%
+  );
+  background-size: 320px 100%;
+  border-radius: var(--radius-sm);
+  animation: gf-shimmer 1.6s linear infinite;
+}
+
+@keyframes gf-fade-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes gf-toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gf-spin,
+  .gf-spinner {
+    /* Slow, don't stop — a frozen spinner reads as "the app is stuck", which
+       is a worse outcome than gentle continued motion. */
+    animation-duration: 1.6s;
+  }
+}
+
+/* ── Focus ring (shared, accessible) ─────────────────────────────────────── */
+.gf-btn:focus-visible,
+.gf-icon-btn:focus-visible,
+.gf-input:focus-visible,
+.gf-toggle:focus-visible,
+.gf-tab:focus-visible,
+.gf-badge:focus-visible {
+  outline: var(--gf-ring-width) solid var(--gf-primary);
+  outline-offset: var(--gf-ring-offset);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   BUTTON
+   ════════════════════════════════════════════════════════════════════════ */
+.gf-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 10px 16px;
+  font-family: var(--gf-font-display);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: var(--gf-ink);
+  background: var(--gf-surface);
+  border: var(--gf-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--gf-shadow-sm), inset 0 1px 0 var(--gf-hi);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  text-decoration: none;
+  transition:
+    transform var(--gf-dur-fast) var(--gf-ease),
+    box-shadow var(--gf-dur-fast) var(--gf-ease),
+    border-color var(--gf-dur-fast) var(--gf-ease),
+    background-color var(--gf-dur-fast) var(--gf-ease);
+}
+.gf-btn:hover {
+  transform: translateY(-1px);
+  border-color: var(--gf-line-2);
+  box-shadow: var(--gf-shadow), inset 0 1px 0 var(--gf-hi);
+}
+.gf-btn:active {
+  transform: translateY(0);
+  box-shadow: var(--gf-shadow-sm), inset 0 1px 0 var(--gf-hi);
+}
+.gf-btn:disabled,
+.gf-btn[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: var(--gf-shadow-sm);
+}
+.gf-btn > svg {
+  flex-shrink: 0;
+}
+
+/* Solid variants — each pairs a *-fill background with its measured-safe
+   on-fill ink (see design-tokens.css for the contrast math). */
+.gf-btn--primary {
+  color: var(--gf-on-fill-light);
+  background: var(--gf-grad-cobalt);
+  border-color: transparent;
+  box-shadow:
+    0 8px 22px -10px rgba(var(--gf-primary-rgb), 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+.gf-btn--primary:hover {
+  filter: brightness(1.06);
+  border-color: transparent;
+  box-shadow:
+    0 12px 28px -10px rgba(var(--gf-primary-rgb), 0.9),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+.gf-btn--danger {
+  color: var(--gf-on-fill-light);
+  background: var(--gf-grad-coral);
+  border-color: transparent;
+  box-shadow:
+    0 8px 22px -10px rgba(var(--gf-coral-rgb), 0.7),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.gf-btn--danger:hover {
+  filter: brightness(1.06);
+}
+/* FIX: no solid success/warning variant existed at all — added for parity
+   with danger/primary. Foreground uses --gf-on-fill-dark (NOT white — mint
+   and amber can never clear 4.5:1 with white ink in either theme). */
+.gf-btn--success {
+  color: var(--gf-on-fill-dark);
+  background: linear-gradient(180deg, #12b886, var(--gf-success-fill));
+  border-color: transparent;
+  box-shadow:
+    0 8px 22px -10px rgba(var(--gf-mint-rgb), 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.gf-btn--success:hover {
+  filter: brightness(1.05);
+}
+.gf-btn--warning {
+  color: var(--gf-on-fill-dark);
+  background: linear-gradient(180deg, #e0950f, var(--gf-warning-fill));
+  border-color: transparent;
+  box-shadow:
+    0 8px 22px -10px rgba(var(--gf-amber-rgb), 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.gf-btn--warning:hover {
+  filter: brightness(1.05);
+}
+
+.gf-btn--soft {
+  background: var(--gf-primary-soft);
+  color: var(--gf-primary);
+  border-color: transparent;
+  box-shadow: none;
+}
+/* FIX: soft variant only existed for primary — added success/warning/danger
+   counterparts, each using the AA-safe *-text ink (not the raw hue) on its
+   own *-soft pastel background, matching the badge fix below. */
+.gf-btn--soft-success {
+  background: var(--gf-success-soft);
+  color: var(--gf-mint-text);
+  border-color: transparent;
+  box-shadow: none;
+}
+.gf-btn--soft-warning {
+  background: var(--gf-warning-soft);
+  color: var(--gf-amber-text);
+  border-color: transparent;
+  box-shadow: none;
+}
+.gf-btn--soft-danger {
+  background: var(--gf-danger-soft);
+  color: var(--gf-coral-text);
+  border-color: transparent;
+  box-shadow: none;
+}
+.gf-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.gf-btn--ghost:hover {
+  background: rgba(var(--gf-ink-rgb), 0.06);
+  box-shadow: none;
+}
+
+/* Sizes */
+.gf-btn--sm {
+  padding: 7px 12px;
+  font-size: 12.5px;
+}
+.gf-btn--lg {
+  padding: 13px 22px;
+  font-size: 15px;
+}
+.gf-btn--block {
+  display: flex;
+  width: 100%;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   ICON BUTTON
+   ════════════════════════════════════════════════════════════════════════ */
+.gf-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  color: var(--gf-ink-soft);
+  background: var(--gf-surface);
+  border: var(--gf-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--gf-shadow-xs), inset 0 1px 0 var(--gf-hi);
+  cursor: pointer;
+  transition:
+    transform var(--gf-dur-fast) var(--gf-ease),
+    box-shadow var(--gf-dur-fast) var(--gf-ease),
+    border-color var(--gf-dur-fast) var(--gf-ease),
+    background-color var(--gf-dur-fast) var(--gf-ease),
+    color var(--gf-dur-fast) var(--gf-ease);
+}
+.gf-icon-btn:hover {
+  color: var(--gf-ink);
+  border-color: var(--gf-line-2);
+  transform: translateY(-1px);
+  box-shadow: var(--gf-shadow-sm), inset 0 1px 0 var(--gf-hi);
+}
+.gf-icon-btn:active {
+  transform: translateY(0);
+}
+.gf-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+.gf-icon-btn--sm {
+  width: 30px;
+  height: 30px;
+}
+
+/* FIX: --primary used the raw (dark-mode-unsafe) --gf-primary fill; now
+   uses --gf-primary-fill, which is calibrated ≥4.5:1 with white in both
+   themes (dark theme resolves this to --gf-primary-deep). */
+.gf-icon-btn--primary {
+  background: var(--gf-primary-fill);
+  color: var(--gf-on-fill-light);
+  border-color: transparent;
+}
+/* FIX: --danger used the raw --gf-danger fill, which is only 2.78:1 with
+   white in dark theme. Now uses --gf-danger-fill (~5.0–6.5:1, both themes). */
+.gf-icon-btn--danger {
+  background: var(--gf-danger-fill);
+  color: var(--gf-on-fill-light);
+  border-color: transparent;
+}
+/* FIX: --success previously paired a bright mint fill with WHITE icon ink,
+   measuring 1.66:1 in dark theme (2.97:1 in light) — both fail even the 3:1
+   non-text minimum. Foreground now uses --gf-on-fill-dark. */
+.gf-icon-btn--success {
+  background: var(--gf-success-fill);
+  color: var(--gf-on-fill-dark);
+  border-color: transparent;
+}
+/* FIX: --warning didn't exist at all — added for parity, same treatment
+   as success (amber can't clear AA with white ink either). */
+.gf-icon-btn--warning {
+  background: var(--gf-warning-fill);
+  color: var(--gf-on-fill-dark);
+  border-color: transparent;
+}
+/* "plain" — borderless, shadowless (header / toolbar affordances) */
+.gf-icon-btn--plain {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.gf-icon-btn--plain:hover {
+  transform: none;
+  box-shadow: none;
+  background: rgba(var(--gf-ink-rgb), 0.07);
+}
+.gf-icon-btn--plain:active {
+  transform: none;
+  box-shadow: none;
+  background: rgba(var(--gf-ink-rgb), 0.12);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   CARD  ·  machined: hairline border + 1px top-edge highlight + soft shadow
+   ════════════════════════════════════════════════════════════════════════ */
+.gf-card {
+  background: var(--gf-surface);
+  border: var(--gf-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--gf-shadow), inset 0 1px 0 var(--gf-hi);
+  padding: var(--space-4);
+}
+.gf-card--flush {
+  padding: 0;
+}
+.gf-card--sunken {
+  background: var(--gf-sunken);
+  box-shadow: none;
+}
+.gf-card--interactive {
+  cursor: pointer;
+  transition:
+    transform var(--gf-dur-fast) var(--gf-ease),
+    border-color var(--gf-dur-fast) var(--gf-ease),
+    box-shadow var(--gf-dur-fast) var(--gf-ease);
+}
+.gf-card--interactive:hover {
+  transform: translateY(-1px);
+  border-color: var(--gf-line-2);
+  box-shadow: var(--gf-shadow-lg), inset 0 1px 0 var(--gf-hi);
+}
+.gf-card--interactive:active {
+  transform: translateY(0);
+}
+.gf-card--interactive:focus-visible {
+  outline: var(--gf-ring-width) solid var(--gf-primary);
+  outline-offset: var(--gf-ring-offset);
+}
+.gf-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.gf-card__title {
+  font-family: var(--gf-font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--gf-ink);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   INPUT / FIELD
+   ════════════════════════════════════════════════════════════════════════ */
+.gf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gf-field__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--gf-font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gf-ink-dim);
+}
+.gf-field__hint {
+  font-size: 11.5px;
+  color: var(--gf-text-muted);
+}
+.gf-field__error {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--gf-danger);
+}
+
+.gf-input {
+  width: 100%;
+  padding: 10px 12px;
+  font-family: var(--gf-font-body);
+  font-size: 14px;
+  color: var(--gf-ink);
+  background: var(--gf-sunken);
+  border: var(--gf-border);
+  border-radius: var(--radius-md);
+  transition:
+    border-color var(--gf-dur-fast) var(--gf-ease),
+    box-shadow var(--gf-dur-fast) var(--gf-ease),
+    background-color var(--gf-dur-fast) var(--gf-ease);
+}
+.gf-input::placeholder {
+  color: var(--gf-ink-dim);
+}
+.gf-input:focus {
+  outline: none;
+  background: var(--gf-surface);
+  border-color: var(--gf-primary);
+  box-shadow: 0 0 0 3px rgba(var(--gf-primary-rgb), 0.18);
+}
+.gf-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.gf-input--mono {
+  font-family: var(--gf-font-mono);
+  letter-spacing: 0.01em;
+}
+/* Class-based AND attribute-based invalid state — mirrors how .gf-toggle /
+   .gf-tab already support both class and aria-* state selectors elsewhere
+   in this file, so consumers can bind either way. */
+.gf-input--invalid,
+.gf-input[aria-invalid='true'] {
+  border-color: var(--gf-danger);
+}
+.gf-input--invalid:focus,
+.gf-input[aria-invalid='true']:focus {
+  box-shadow: 0 0 0 3px rgba(var(--gf-coral-rgb), 0.2);
+}
+
+/* Input with a leading icon */
+.gf-input-group {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.gf-input-group__icon {
+  position: absolute;
+  left: 11px;
+  display: inline-flex;
+  color: var(--gf-ink-dim);
+  pointer-events: none;
+}
+.gf-input-group .gf-input {
+  padding-left: 34px;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   TOGGLE (switch)
+   ════════════════════════════════════════════════════════════════════════ */
+.gf-toggle {
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 26px;
+  padding: 0;
+  background: var(--gf-sunken);
+  border: var(--gf-border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background-color var(--gf-dur) var(--gf-ease);
+}
+.gf-toggle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  background: #fff;
+  border-radius: 50%;
+  transform: translateY(-50%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: transform var(--gf-dur) var(--gf-ease-back);
+}
+.gf-toggle[aria-checked='true'],
+.gf-toggle.is-on {
+  /* FIX: uses the calibrated fill token — in dark theme this resolves to
+     --gf-primary-deep rather than the too-bright --gf-primary, keeping the
+     white thumb's contrast comfortably above the 3:1 non-text minimum. */
+  background: var(--gf-primary-fill);
+  border-color: transparent;
+}
+.gf-toggle[aria-checked='true']::after,
+.gf-toggle.is-on::after {
+  transform: translate(18px, -50%);
+}
+.gf-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   BADGE
+   ════════════════════════════════════════════════════════════════════════ */
+.gf-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  font-family: var(--gf-font-display);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--gf-ink-soft);
+  background: var(--gf-sunken);
+  border: var(--gf-border);
+  border-radius: var(--radius-pill);
+}
+.gf-badge--mono {
+  font-family: var(--gf-font-mono);
+  letter-spacing: 0.03em;
+}
+.gf-badge--accent {
+  background: rgba(var(--gf-primary-rgb), 0.12);
+  border-color: rgba(var(--gf-primary-rgb), 0.22);
+  color: var(--gf-primary);
+}
+/* FIX: these three previously used the raw bright hue (--gf-success /
+   --gf-warning / --gf-danger) as text color directly on their own *-soft
+   background, measuring 2.97:1 / 2.72:1 / 3.21:1 — all fail AA 4.5:1. Now
+   using the dedicated *-text tokens, each calibrated ≥4.5:1 against its own
+   *-soft background in both themes. */
+.gf-badge--success {
+  background: var(--gf-success-soft);
+  border-color: rgba(var(--gf-mint-rgb), 0.3);
+  color: var(--gf-mint-text);
+}
+.gf-badge--warning {
+  background: var(--gf-warning-soft);
+  border-color: rgba(var(--gf-amber-rgb), 0.3);
+  color: var(--gf-amber-text);
+}
+.gf-badge--danger {
+  background: var(--gf-danger-soft);
+  border-color: rgba(var(--gf-coral-rgb), 0.3);
+  color: var(--gf-coral-text);
+}
+
+/* Tiny status dot */
+.gf-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.gf-dot--success {
+  background: var(--gf-success);
+  box-shadow: 0 0 0 3px rgba(var(--gf-mint-rgb), 0.18);
+}
+.gf-dot--warning {
+  background: var(--gf-warning);
+  box-shadow: 0 0 0 3px rgba(var(--gf-amber-rgb), 0.18);
+}
+.gf-dot--danger {
+  background: var(--gf-danger);
+  box-shadow: 0 0 0 3px rgba(var(--gf-coral-rgb), 0.18);
+}
+.gf-dot--accent {
+  background: var(--gf-primary);
+  box-shadow: 0 0 0 3px rgba(var(--gf-primary-rgb), 0.18);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   TABS (segmented control)
+   ════════════════════════════════════════════════════════════════════════ */
+.gf-tabs {
+  position: relative;
+  display: inline-flex;
+  gap: 3px;
+  padding: 4px;
+  background: var(--gf-sunken);
+  border: var(--gf-border);
+  border-radius: var(--radius-md);
+}
+.gf-tab {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-family: var(--gf-font-display);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gf-ink-dim);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color var(--gf-dur-fast) var(--gf-ease);
+}
+.gf-tab[aria-selected='true'],
+.gf-tab.is-active {
+  color: var(--gf-ink);
+}
+/* FIX: tabs had no disabled treatment at all. */
+.gf-tab:disabled,
+.gf-tab[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* Static active chip (when not using a motion indicator) */
+.gf-tab--chip[aria-selected='true'],
+.gf-tab--chip.is-active {
+  background: var(--gf-surface);
+  border: var(--gf-border);
+  box-shadow: var(--gf-shadow-sm), inset 0 1px 0 var(--gf-hi);
+}
+/* Sliding pill used with framer-motion layoutId */
+.gf-tabs__indicator {
+  position: absolute;
+  z-index: 0;
+  inset: 4px auto 4px 4px;
+  background: var(--gf-surface);
+  border: var(--gf-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--gf-shadow-sm), inset 0 1px 0 var(--gf-hi);
+  will-change: transform;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   MODAL
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ════════════════════════════════════════════════════════════════════════
+   MODAL
+   ════════════════════════════════════════════════════════════════════════ */
+.gf-modal__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: var(--gf-scrim);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+.gf-modal {
+  width: 100%;
+  max-width: 340px;
+  padding: var(--space-5);
+  background: var(--gf-surface);
+  border: var(--gf-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--gf-shadow-lg), inset 0 1px 0 var(--gf-hi);
+  /* FIX: Added entrance motion */
+  animation: gf-fade-scale-in var(--gf-dur) var(--gf-ease) both;
+}
+.gf-modal__title {
+  font-family: var(--gf-font-display);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--gf-ink);
+  margin: 0 0 var(--space-2);
+}
+.gf-modal__desc {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--gf-text-muted);
+  margin: 0 0 var(--space-5);
+}
+.gf-modal__actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+}
+
+/* ── Confirm Modal Specific variants for buttons ─────────────────────── */
+.confirm-modal-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   TOAST
+   ════════════════════════════════════════════════════════════════════════ */
+.gf-toast {
+  position: fixed;
+  bottom: var(--space-5);
+  left: 50%;
+  z-index: var(--z-toast);
+  transform: translateX(-50%);
+  max-width: calc(100% - var(--space-8));
+  padding: 10px 16px;
+  font-family: var(--gf-font-display);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gf-ink);
+  background: var(--gf-card-elevated);
+  border: var(--gf-border-strong);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--gf-toast-shadow, var(--gf-shadow-lg)), inset 0 1px 0 var(--gf-hi);
+  /* FIX: Added entrance motion */
+  animation: gf-toast-in var(--gf-dur) var(--gf-ease-back) both;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   EMPTY STATE / SPINNER / DIVIDER
+   ════════════════════════════════════════════════════════════════════════ */
+.gf-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+  color: var(--gf-text-muted);
+  background: var(--gf-sunken);
+  border: 1px dashed var(--gf-line-2);
+  border-radius: var(--radius-md);
+}
+/* FIX: added __icon slot to match __title/__desc pattern */
+.gf-empty__icon {
+  width: 36px;
+  height: 36px;
+  padding: 7px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, rgba(var(--gf-primary-rgb), 0.10), rgba(var(--gf-primary-rgb), 0.04));
+  border: 1px solid rgba(var(--gf-primary-rgb), 0.22);
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 1px 0 var(--gf-hi);
+  color: var(--gf-primary);
+  margin-bottom: var(--space-1);
+}
+.gf-empty__title {
+  font-family: var(--gf-font-display);
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--gf-ink);
+}
+.gf-empty__desc {
+  font-size: 12px;
+  color: var(--gf-text-muted);
+}
+.gf-spinner {
+  display: inline-flex;
+  color: var(--gf-primary);
+}
+.gf-divider {
+  height: 1px;
+  border: none;
+  background: var(--gf-line);
+}
+
+/* ── Utilities ───────────────────────────────────────────────────────────── */
+.gf-mono {
+  font-family: var(--gf-font-mono);
+}
+.gf-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gf-break {
+  word-break: break-all;
+}

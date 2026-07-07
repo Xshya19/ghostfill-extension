@@ -24,21 +24,14 @@ const ToggleSwitch: React.FC<ToggleProps> = ({
   id,
   disabled = false,
 }) => {
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      if (!disabled) {
-        onChange(!checked);
-      }
-    }
-  };
-
+  // A native <button> already activates on Enter/Space and fires onClick, so we
+  // wire only onClick — adding a keydown handler that also calls onChange would
+  // double-fire on Space (keydown + the synthesized click).
   return (
     <button
       id={id}
       className={`toggle ${checked ? 'toggle--active' : ''}`}
       onClick={() => !disabled && onChange(!checked)}
-      onKeyDown={handleKeyDown}
       role="switch"
       aria-checked={checked}
       aria-label={ariaLabel}

@@ -10,7 +10,7 @@
  *  - Honest docstring (substring matching, 5 languages).
  */
 
-import { FIELD_CLASSES } from '../../content/extractor';
+import { FIELD_CLASSES } from '../types';
 
 /** Canonical class names produced by the local field classifier. */
 type CanonicalClass = (typeof FIELD_CLASSES)[number];

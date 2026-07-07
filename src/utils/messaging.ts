@@ -21,7 +21,11 @@ import { validateMessage } from './validation';
 const log = createLogger('Messaging');
 
 // Configuration
-const MESSAGE_TIMEOUT_MS = 30000;
+// 15 s is a deliberate compromise: fast enough to surface real stalls (<30 s old
+// default which caused 30-second UI hangs), but long enough for GET_IDENTITY
+// which does 4+ storage reads + optional Gmail alias creation on a cold service
+// worker (SW cold-start alone can add 1-2 s on slower devices).
+const MESSAGE_TIMEOUT_MS = 15_000;
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 150;
 
@@ -45,8 +49,11 @@ function isRecoverableError(errorMsg: string): boolean {
     'Could not establish connection',
     'Receiving end does not exist',
     'The message port closed before a response was received',
+    // Treat timeouts as recoverable so the retry loop has a chance to succeed
+    // on the next attempt (e.g. after the service worker has fully warmed up).
+    'timeout after',
   ];
-  return recoverablePatterns.some((pattern) => errorMsg.includes(pattern));
+  return recoverablePatterns.some((pattern) => errorMsg.toLowerCase().includes(pattern.toLowerCase()));
 }
 
 function getErrorMessage(error: unknown): string {
@@ -103,6 +110,8 @@ export async function safeSendMessage(
       return null;
     }
 
+    log.info(`[Messaging] Sending message to background: "${message.action}"`, (message as any).payload);
+
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= retries; attempt++) {
@@ -129,6 +138,7 @@ export async function safeSendMessage(
           timeoutPromise,
         ])) as ExtensionResponse | null;
 
+        log.info(`[Messaging] Received response from background for "${message.action}":`, response);
         return response;
       } catch (error) {
         const errorMsg = getErrorMessage(error);
@@ -214,6 +224,8 @@ export async function safeSendTabMessage(
       return null;
     }
 
+    log.info(`[Messaging] Sending message to Tab ${tabId}: "${message.action}"`, (message as any).payload);
+
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= retries; attempt++) {
@@ -243,6 +255,7 @@ export async function safeSendTabMessage(
           timeoutPromise,
         ])) as ExtensionResponse | null;
 
+        log.info(`[Messaging] Received response from Tab ${tabId} for "${message.action}":`, response);
         return response;
       } catch (error) {
         const errorMsg = getErrorMessage(error);

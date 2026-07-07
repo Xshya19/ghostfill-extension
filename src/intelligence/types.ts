@@ -13,6 +13,19 @@ export type FieldClass =
   | 'OTP'
   | 'Unknown';
 
+export const FIELD_CLASSES: FieldClass[] = [
+  'Email',
+  'Username',
+  'Password',
+  'Target_Password_Confirm',
+  'First_Name',
+  'Last_Name',
+  'Full_Name',
+  'Phone',
+  'OTP',
+  'Unknown',
+];
+
 // Hard negatives: things that LOOK fillable but must NEVER be treated as an
 // identity/OTP field. Tracked explicitly so the eval can measure the dangerous
 // cases where heuristics (and models) most often fail.
@@ -53,6 +66,8 @@ export interface RawFieldRecord {
   opacityZero?: boolean;
   offscreen?: boolean;
   tiny?: boolean;
+  className?: string | undefined;
+  isSecondPasswordField?: boolean | undefined;
   // Canonical structural feature vector (see contract.ts). Optional for eval
   // rows; required when collecting diagnostics for labeling.
   structural?: number[] | undefined;

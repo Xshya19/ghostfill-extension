@@ -19,6 +19,8 @@ export interface AbstentionPolicy {
 }
 
 export const DEFAULT_POLICY: AbstentionPolicy = {
+  // lowered non-critical thresholds so text-based identity inputs
+  // (like Qwen's email input field) are correctly filled.
   minProb: 0.55,
   minMargin: 0.15,
   criticalMinProb: 0.75,

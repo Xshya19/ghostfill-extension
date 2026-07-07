@@ -131,7 +131,7 @@ export class PageAnalyzer {
   // ── Field Detection Selectors ───────────────────────────
   private static readonly FIELD_SELECTORS = {
     email:
-      'input[type="email"], input[name*="email" i], input[id*="email" i], input[autocomplete*="email"]',
+      'input[type="email"], input[name*="email" i], input[id*="email" i], input[autocomplete*="email"], input[placeholder*="email" i], input[aria-label*="email" i]',
     password: 'input[type="password"]',
     otp: [
       'input[autocomplete="one-time-code"]',
@@ -245,7 +245,12 @@ export class PageAnalyzer {
     const hasOTPField = deepQuerySelectorAll(this.FIELD_SELECTORS.otp).length > 0;
     const hasNameFields = deepQuerySelectorAll(this.FIELD_SELECTORS.name).length > 0;
     const formCount = deepQuerySelectorAll('form').length;
-    const inputCount = deepQuerySelectorAll('input:not([type="hidden"])').length;
+    const inputCount = deepQuerySelectorAll(
+      'input:not([type="hidden"]):not([type="submit"]):not([type="button"])' +
+      ':not([type="reset"]):not([type="checkbox"]):not([type="radio"])' +
+      ':not([type="file"]):not([type="image"]):not([type="range"])' +
+      ':not([type="color"]):not([type="search"])'
+    ).length;
 
     // ── Page-type classification ──────────────────────────
     const pageType = this.classifyPage(

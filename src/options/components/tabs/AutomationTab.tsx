@@ -5,6 +5,14 @@ import { UserSettings } from '../../../types/storage.types';
 import SettingsSection from '../SettingsSection';
 import ToggleSwitch from '../ToggleSwitch';
 
+const t = (key: string): string => {
+  try {
+    return chrome.i18n.getMessage(key) || key;
+  } catch {
+    return key;
+  }
+};
+
 interface AutomationTabProps {
   settings: UserSettings;
   onSettingChange: (key: keyof UserSettings, value: UserSettings[keyof UserSettings]) => void;
@@ -13,71 +21,73 @@ interface AutomationTabProps {
 const AutomationTab: React.FC<AutomationTabProps> = ({ settings, onSettingChange }) => {
   return (
     <div role="tabpanel" id="tabpanel-automation" aria-labelledby="tab-automation">
-      <SettingsSection id="auto-fill" title="Auto-fill" icon={<Zap size={18} />}>
+      <SettingsSection id="auto-fill" title={t('autofillSection')} icon={<Zap size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
-            <label id="auto-fill-otp-label">Auto-fill OTP</label>
-            <p>Automatically fill OTP fields when a code is detected in email</p>
+            <label id="auto-fill-otp-label">{t('autofillOTP')}</label>
+            <p>{t('autofillOTPDescription')}</p>
           </div>
           <ToggleSwitch
             checked={settings.autoFillOTP}
             onChange={(checked) => onSettingChange('autoFillOTP', checked)}
-            ariaLabel="Auto-fill OTP"
+            ariaLabel={t('autofillOTPAriaLabel')}
             ariaLabelledBy="auto-fill-otp-label"
           />
         </div>
 
         <div className="setting-item">
           <div className="setting-info">
-            <label id="auto-confirm-links-label">Auto-open Verification Links</label>
-            <p>Automatically open activation/verification links from emails in a new tab</p>
+            <label id="auto-confirm-links-label">{t('autoOpenVerificationLinks')}</label>
+            <p>{t('autoOpenVerificationLinksDescription')}</p>
           </div>
           <ToggleSwitch
             checked={settings.autoConfirmLinks}
             onChange={(checked) => onSettingChange('autoConfirmLinks', checked)}
-            ariaLabel="Auto-confirm verification links"
+            ariaLabel={t('autoOpenVerificationLinksAriaLabel')}
             ariaLabelledBy="auto-confirm-links-label"
           />
         </div>
       </SettingsSection>
 
-      <SettingsSection id="shortcuts" title="Keyboard Shortcuts" icon={<Keyboard size={18} />}>
+      <SettingsSection id="shortcuts" title={t('shortcutsSection')} icon={<Keyboard size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
-            <label id="keyboard-shortcuts-label">Enable Shortcuts</label>
-            <p>Use keyboard shortcuts for quick actions</p>
+            <label id="keyboard-shortcuts-label">{t('enableShortcuts')}</label>
+            <p>{t('enableShortcutsDescription')}</p>
           </div>
           <ToggleSwitch
             checked={settings.keyboardShortcuts}
             onChange={(checked) => onSettingChange('keyboardShortcuts', checked)}
-            ariaLabel="Enable keyboard shortcuts"
+            ariaLabel={t('enableShortcutsAriaLabel')}
             ariaLabelledBy="keyboard-shortcuts-label"
           />
         </div>
 
-        <div className="shortcut-reference" role="group" aria-label="Keyboard shortcut reference">
-          <h3 className="shortcut-reference-title">Quick Reference</h3>
+        <div
+          className="shortcut-reference"
+          role="group"
+          aria-label={t('shortcutReferenceAriaLabel')}
+        >
+          <h3 className="shortcut-reference-title">{t('quickReference')}</h3>
           <div className="shortcut-list">
             <div className="shortcut-row">
-              <span className="shortcut-action">Open GhostFill</span>
+              <span className="shortcut-action">{t('shortcutOpenGhostFill')}</span>
               <kbd className="shortcut-keys">Ctrl + Shift + E</kbd>
             </div>
             <div className="shortcut-row">
-              <span className="shortcut-action">Generate Email</span>
+              <span className="shortcut-action">{t('shortcutGenerateEmail')}</span>
               <kbd className="shortcut-keys">Ctrl + Shift + M</kbd>
             </div>
             <div className="shortcut-row">
-              <span className="shortcut-action">Generate Password</span>
+              <span className="shortcut-action">{t('shortcutGeneratePassword')}</span>
               <kbd className="shortcut-keys">Ctrl + Shift + G</kbd>
             </div>
             <div className="shortcut-row">
-              <span className="shortcut-action">Auto-fill Form</span>
+              <span className="shortcut-action">{t('shortcutAutofillForm')}</span>
               <kbd className="shortcut-keys">Ctrl + Shift + F</kbd>
             </div>
           </div>
-          <p className="shortcut-note">
-            Customize shortcuts in <code>chrome://extensions/shortcuts</code>
-          </p>
+          <p className="shortcut-note">{t('customizeShortcutsNote')}</p>
         </div>
       </SettingsSection>
     </div>

@@ -4,18 +4,19 @@
 import { EmailAccount, Email, EmailService } from '../../types';
 import { createLogger } from '../../utils/logger';
 import { sanitizeEmailFrom, sanitizeEmailSubject } from '../../utils/sanitization.core';
+import * as gmailApiService from '../gmailApiService';
 import {
   buildGmailAliasSearchQuery,
   filterGmailMessagesForAliasSession,
   getGmailAliasProcessingBaseline,
   getGmailAliasSession,
   getMostRecentGmailAliasSession,
-} from '../gmailAliasSessionService';
-import * as gmailApiService from '../gmailApiService';
+} from '../gmailConnectionService';
 import { storageService } from '../storageService';
 import { IProviderHealthManager } from '../types/email-services.types';
 
 import { CustomDomainService } from './customDomainService';
+import { driftzService } from './driftzService';
 import { guerrillaMailService } from './guerrillaMailService';
 import { maildropService } from './maildropService';
 import { mailGwService } from './mailGwService';
@@ -29,6 +30,7 @@ const customDomainService = new CustomDomainService();
 class EmailServiceAggregator {
   private availableServices: EmailService[] = [
     'mailtm',
+    'driftz',
     'mailgw',
     'maildrop',
     'guerrilla',
@@ -298,6 +300,8 @@ class EmailServiceAggregator {
           return await mailTmService.createAccount(undefined, undefined, signal);
         case 'guerrilla':
           return await guerrillaMailService.createAccount(signal);
+        case 'driftz':
+          return await driftzService.createAccount(signal);
         case 'tempmail':
         case '1secmail':
           return await tempMailService.generateEmail(options.prefix, options.domain, signal);
@@ -632,6 +636,9 @@ class EmailServiceAggregator {
           }
           emails = await guerrillaMailService.getMessages(account.token, signal);
           break;
+        case 'driftz':
+          emails = await driftzService.getMessages(account.fullEmail, signal);
+          break;
         case 'tempmail':
         case '1secmail':
         default: {
@@ -784,6 +791,9 @@ class EmailServiceAggregator {
             signal
           );
           break;
+        case 'driftz':
+          email = await driftzService.getMessage(account.fullEmail, emailId.toString(), signal);
+          break;
         case 'tempmail':
         case '1secmail':
         default:
@@ -841,6 +851,8 @@ class EmailServiceAggregator {
           return mailGwService.getDomains(signal);
         case 'mailtm':
           return mailTmService.getDomains(signal);
+        case 'driftz':
+          return driftzService.getDomains(signal);
         case 'tempmail':
         case '1secmail':
           return tempMailService.getDomains(signal);
@@ -890,5 +902,6 @@ export { mailTmService } from './mailTmService';
 export { mailGwService } from './mailGwService';
 export { guerrillaMailService } from './guerrillaMailService';
 export { maildropService } from './maildropService';
+export { driftzService } from './driftzService';
 export { customDomainService };
 export { providerHealth } from './providerHealthManager';

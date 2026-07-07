@@ -1,142 +1,248 @@
-/*
-   GhostFill shared design tokens
-   Neo-Brutalism: hard ink borders, flat shadows, bold local type, saturated accents.
-*/
+/* ============================================================================
+   GHOSTFILL DESIGN TOKENS — single source of truth
+   "SPECTRE"  ·  graphite privacy console
+   ----------------------------------------------------------------------------
+   Graphite canvas · machined hairline surfaces (border + 1px top highlight) ·
+   ONE luminous accent (Iris) + semantic status (mint / amber / coral) ·
+   sensitive data rendered in mono and redacted until revealed.
+
+   This file is the ONLY place colors / spacing / shadows / motion are defined.
+   Every surface (popup, options, in-page content UI) consumes these `--gf-*`
+   tokens. The shadow-DOM content UI mirrors these values in src/shared/tokens.ts
+   — KEEP THE TWO IN SYNC.
+
+   THEMING
+     Light is the default (:root) and is fully supported.
+     Dark is the hero, applied via [data-theme="dark"] on <html> / #ghostfill-fab
+     by src/shared/theme.ts (UserSettings.darkMode defaults to dark).
+     Only the Canvas + Ink + shadow groups change between themes; the accent and
+     semantic status colors are tuned per-theme but otherwise everything derives.
+
+   CONTRAST DISCIPLINE
+     Every color that is used as TEXT/ICON on top of another color in this
+     system has been checked against WCAG 2.1 (4.5:1 for normal text, 3:1 for
+     large text / graphical objects / UI components). Two families exist on
+     purpose and are NOT interchangeable:
+       - "hue" tokens (--gf-primary / --gf-mint / --gf-amber / --gf-coral) are
+         calibrated to read well as TEXT/ICON/BORDER drawn directly on the
+         page canvas.
+       - "-text" tokens (--gf-mint-text / --gf-amber-text / --gf-coral-text)
+         are calibrated to read well as text drawn on top of that hue's own
+         *-soft pastel background (badges, chips).
+       - "-fill" tokens (--gf-primary-fill / --gf-danger-fill / etc, paired
+         with --gf-on-fill-light / --gf-on-fill-dark) are calibrated for solid
+         button/icon fills, which is a different job again — the vivid hue
+         tokens do NOT reliably clear 4.5:1 with white on top of them,
+         especially the brightened dark-theme accent.
+     See the inline math notes next to each new token below.
+   ========================================================================== */
+
+/* ── @font-face ───────────────────────────────────────────────────────────
+   Space Grotesk  → UI + display (variable, 300–900)
+   IBM Plex Mono  → monospace data (regular + bold)
+   NOTE: variable fonts load through the standard `format('woff2')` hint in
+   all evergreen engines today. The old `format('woff2-variations')` hint is
+   non-standard; any engine that doesn't recognize it skips the whole `src`
+   with no fallback, which could silently fail the entire @font-face. */
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 300 900;
+  font-display: swap;
+  src: url('../../assets/fonts/SpaceGrotesk-Variable.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../../assets/fonts/IBMPlexMono-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../../assets/fonts/IBMPlexMono-Bold.woff2') format('woff2');
+}
 
 :root {
-  --xxx-violet-200: #a8a6ff;
-  --xxx-violet-200-rgb: 168, 166, 255;
-  --xxx-violet-300: #918efa;
-  --xxx-violet-300-rgb: 145, 142, 250;
-  --xxx-violet-400: #807dfa;
-  --xxx-violet-400-rgb: 128, 125, 250;
-  --xxx-pink-200: #ffa6f6;
-  --xxx-pink-200-rgb: 255, 166, 246;
-  --xxx-pink-300: #fa8cef;
-  --xxx-pink-300-rgb: 250, 140, 239;
-  --xxx-pink-400: #fa7fee;
-  --xxx-pink-400-rgb: 250, 127, 238;
-  --xxx-red-200: #ff9f9f;
-  --xxx-red-200-rgb: 255, 159, 159;
-  --xxx-red-300: #fa7a7a;
-  --xxx-red-300-rgb: 250, 122, 122;
-  --xxx-red-400: #f76363;
-  --xxx-red-400-rgb: 247, 99, 99;
-  --xxx-orange-200: #ffc29f;
-  --xxx-orange-200-rgb: 255, 194, 159;
-  --xxx-orange-300: #ff965b;
-  --xxx-orange-300-rgb: 255, 150, 91;
-  --xxx-orange-400: #fa8543;
-  --xxx-orange-400-rgb: 250, 133, 67;
-  --xxx-yellow-200: #fff066;
-  --xxx-yellow-200-rgb: 255, 240, 102;
-  --xxx-yellow-300: #ffe500;
-  --xxx-yellow-300-rgb: 255, 229, 0;
-  --xxx-yellow-400: #ffe500;
-  --xxx-yellow-400-rgb: 255, 229, 0;
-  --xxx-lime-200: #b8ff9f;
-  --xxx-lime-200-rgb: 184, 255, 159;
-  --xxx-lime-300: #9dfc7c;
-  --xxx-lime-300-rgb: 157, 252, 124;
-  --xxx-lime-400: #7df752;
-  --xxx-lime-400-rgb: 125, 247, 82;
-  --xxx-cyan-200: #a6faff;
-  --xxx-cyan-200-rgb: 166, 250, 255;
-  --xxx-cyan-300: #79f7ff;
-  --xxx-cyan-300-rgb: 121, 247, 255;
-  --xxx-cyan-400: #53f2fc;
-  --xxx-cyan-400-rgb: 83, 242, 252;
+  /* ── Canvas (Spectre light — cool paper) ─────────────────────────────── */
+  --gf-paper: #eef0f4;
+  --gf-paper-2: #f5f7fb;
+  --gf-bg: #eef0f4;
+  --gf-bg-rgb: 238, 240, 244;
+  --gf-surface: #ffffff;
+  --gf-surface-rgb: 255, 255, 255;
+  --gf-surface-2: #f5f7fb;
+  --gf-sunken: #e8ebf1;
+  --gf-sunken-rgb: 232, 235, 241;
+  --gf-card: #ffffff;
+  --gf-card-rgb: 255, 255, 255;
+  --gf-card-elevated: #ffffff;
 
-  --xxx-spectrum: linear-gradient(
-    90deg,
-    var(--xxx-violet-200) 0%,
-    var(--xxx-violet-300) 5%,
-    var(--xxx-violet-400) 10%,
-    var(--xxx-pink-200) 15%,
-    var(--xxx-pink-300) 20%,
-    var(--xxx-pink-400) 25%,
-    var(--xxx-red-200) 30%,
-    var(--xxx-red-300) 35%,
-    var(--xxx-red-400) 40%,
-    var(--xxx-orange-200) 45%,
-    var(--xxx-orange-300) 50%,
-    var(--xxx-orange-400) 55%,
-    var(--xxx-yellow-200) 60%,
-    var(--xxx-yellow-300) 65%,
-    var(--xxx-yellow-400) 70%,
-    var(--xxx-lime-200) 75%,
-    var(--xxx-lime-300) 80%,
-    var(--xxx-lime-400) 85%,
-    var(--xxx-cyan-200) 90%,
-    var(--xxx-cyan-300) 95%,
-    var(--xxx-cyan-400) 100%
-  );
-  --xxx-spectrum-tight: linear-gradient(
-    90deg,
-    var(--xxx-violet-300),
-    var(--xxx-pink-300),
-    var(--xxx-red-300),
-    var(--xxx-orange-300),
-    var(--xxx-yellow-300),
-    var(--xxx-lime-300),
-    var(--xxx-cyan-300)
-  );
+  /* ── Ink (cool near-black) ───────────────────────────────────────────── */
+  --gf-ink: #11151d;
+  --gf-ink-rgb: 17, 21, 29;
+  --gf-ink-soft: #4b5566;
+  --gf-ink-soft-rgb: 75, 85, 102;
+  --gf-ink-dim: #5e6573; /* ~5.9:1 on white — AA-safe even for normal text */
+  --gf-line: rgba(16, 20, 30, 0.09);
+  --gf-line-2: rgba(16, 20, 30, 0.14);
+  --gf-hi: rgba(255, 255, 255, 0.9); /* machined top-edge highlight */
 
-  --gf-bg: #fffdf6;
-  --gf-bg-rgb: 255, 253, 246;
-  --gf-surface: #fffdf6;
-  --gf-surface-rgb: 255, 253, 246;
-  --gf-card: var(--xxx-yellow-200);
-  --gf-card-rgb: var(--xxx-yellow-200-rgb);
-  --gf-card-elevated: var(--xxx-yellow-300);
-  --gf-sunken: var(--xxx-cyan-200);
-  --gf-sunken-rgb: var(--xxx-cyan-200-rgb);
-  --gf-line: #181818;
+  /* FIX: these were separate hardcoded literals that happened to match the
+     canonical token — now true aliases, so they can never silently drift. */
+  --gf-cream: var(--gf-ink); /* legacy alias: primary text */
+  --gf-text-muted: var(--gf-ink-soft);
+  --gf-text-dim: var(--gf-ink-dim);
 
-  --gf-ink: #181818;
-  --gf-ink-rgb: 24, 24, 24;
-  --gf-ink-soft: #2f2f2f;
-  --gf-cream: #181818;
-  --gf-text-muted: #555047;
-  --gf-text-dim: #776f62;
+  /* ── Accent — the ONE hero color (Iris) ──────────────────────────────── */
+  --gf-primary: #5b54e8;
+  --gf-primary-rgb: 91, 84, 232;
+  --gf-primary-deep: #463cd0;
+  --gf-primary-soft: #e9e8fd;
+  --gf-on-primary: #ffffff; /* general-purpose text/icon color on accent-tinted surfaces */
 
-  --gf-mustard: var(--xxx-yellow-300);
-  --gf-mustard-rgb: var(--xxx-yellow-300-rgb);
-  --gf-sienna: var(--xxx-orange-300);
-  --gf-sienna-rgb: var(--xxx-orange-300-rgb);
-  --gf-teal: var(--xxx-cyan-400);
-  --gf-teal-rgb: var(--xxx-cyan-400-rgb);
-  --gf-coral-warm: var(--xxx-pink-300);
-  --gf-coral-warm-rgb: var(--xxx-pink-300-rgb);
+  /* ── Status hues — safe as TEXT/ICON/BORDER on the page canvas ───────── */
+  --gf-mint: #0a9d72;
+  --gf-mint-rgb: 10, 157, 114;
+  --gf-mint-text: #06734f; /* AA text on white/soft bg (~4.7:1); bright mint reserved for dots/fills/dark-canvas text */
+  --gf-amber: #c98209;
+  --gf-amber-rgb: 201, 130, 9;
+  --gf-amber-text: #9a6206; /* AA text on white/soft bg (~4.8:1); bright amber reserved for dots/fills/dark-canvas text */
+  --gf-coral: #e0463f;
+  --gf-coral-rgb: 224, 70, 63;
+  /* FIX: mint/amber both had an AA-safe "-text" darkened counterpart for use
+     on their own *-soft pastel background — coral/danger had none, so every
+     danger badge in primitives.css was rendering at ~3.2:1 (fails AA 4.5:1).
+     #a8353a clears 4.5:1 against BOTH white and --gf-danger-soft. */
+  --gf-coral-text: #a8353a;
+  --gf-violet: #6a52d8; /* rare tertiary accents only */
+  --gf-violet-rgb: 106, 82, 216;
 
-  --gf-magenta: var(--xxx-pink-300);
-  --gf-magenta-rgb: var(--xxx-pink-300-rgb);
-  --gf-cyan: var(--xxx-cyan-300);
-  --gf-cyan-rgb: var(--xxx-cyan-300-rgb);
-  --gf-violet: var(--xxx-violet-300);
-  --gf-violet-rgb: var(--xxx-violet-300-rgb);
-  --gf-yellow: var(--xxx-yellow-300);
-  --gf-yellow-rgb: var(--xxx-yellow-300-rgb);
-  --gf-mint: var(--xxx-lime-300);
-  --gf-mint-rgb: var(--xxx-lime-300-rgb);
-  --gf-coral: var(--xxx-red-300);
-  --gf-coral-rgb: var(--xxx-red-300-rgb);
+  /* Semantic aliases (generic naming) — aliased, not duplicated. */
+  --gf-success: var(--gf-mint);
+  --gf-success-rgb: var(--gf-mint-rgb);
+  --gf-success-soft: #dcf3ea;
+  --gf-warning: var(--gf-amber);
+  --gf-warning-rgb: var(--gf-amber-rgb);
+  --gf-warning-soft: #fbedd2;
+  --gf-danger: var(--gf-coral);
+  --gf-danger-rgb: var(--gf-coral-rgb);
+  --gf-danger-soft: #fadddb;
+  --gf-danger-text: var(--gf-coral-text);
 
-  --nb-bg: var(--gf-bg);
-  --nb-surface: var(--gf-surface);
-  --nb-ink: var(--gf-ink);
-  --nb-border: 2px solid var(--gf-ink);
-  --nb-shadow: 4px 4px 0 var(--gf-ink);
-  --nb-shadow-sm: 2px 2px 0 var(--gf-ink);
-  --nb-shadow-lg: 6px 6px 0 var(--gf-ink);
-  --nb-radius: 8px;
-  --nb-radius-sm: 6px;
+  /* ── Solid-fill contrast pairs ─────────────────────────────────────────
+     A different job from the hue tokens above: these are what a SOLID
+     button/icon fill should use as its background, paired with a foreground
+     ink that is guaranteed >= 4.5:1 (text) / 3:1 (icon) against it.
+       - primary / danger fills are dark enough for WHITE ink in both themes.
+       - success / warning fills (mint / amber) are light-luminance hues that
+         can NEVER clear 4.5:1 with white in either theme — they need DARK
+         ink instead. (Confirmed: white-on-mint 2.97:1, white-on-amber
+         2.72:1 in light theme; both far worse in the brightened dark theme.)
+     --gf-on-fill-dark deliberately reuses each theme's own darkest neutral
+     (ink in light mode, bg in dark mode) rather than inventing a new color —
+     both happen to be near-black and both measure >5.8:1 against mint/amber. */
+  --gf-primary-fill: var(--gf-primary); /* light: white text @ ~5.4:1 */
+  --gf-primary-fill-deep: var(--gf-primary-deep);
+  --gf-success-fill: var(--gf-mint);
+  --gf-warning-fill: var(--gf-amber);
+  --gf-danger-fill: #c73e43; /* white text @ ~5.0:1 in both themes */
+  --gf-danger-fill-deep: #a8353a; /* white text @ ~6.5:1 */
+  --gf-on-fill-light: #ffffff;
+  --gf-on-fill-dark: var(--gf-ink);
 
-  --font-display: 'Hanken Grotesk', 'Space Grotesk', Impact, 'Arial Black', system-ui, sans-serif;
-  --font-ui:
-    'Hanken Grotesk', 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'Space Mono', 'IBM Plex Mono', 'JetBrains Mono', 'Courier New', monospace;
+  /* ── Deprecated legacy aliases (map to canonical names — do not use) ────
+     Kept so existing rules keep rendering during the rebuild; new code uses the
+     semantic names above. Removed once all consumers are migrated.            */
+  --gf-mustard: var(--gf-amber);
+  --gf-mustard-rgb: var(--gf-amber-rgb);
+  --gf-yellow: var(--gf-amber);
+  --gf-yellow-rgb: var(--gf-amber-rgb);
+  --gf-sienna: var(--gf-coral);
+  --gf-sienna-rgb: var(--gf-coral-rgb);
+  --gf-teal: var(--gf-mint);
+  --gf-teal-rgb: var(--gf-mint-rgb);
+  --gf-cyan: var(--gf-primary);
+  --gf-cyan-rgb: var(--gf-primary-rgb);
+  --gf-magenta: var(--gf-primary);
+  --gf-magenta-rgb: var(--gf-primary-rgb);
+  --gf-coral-warm: var(--gf-violet);
+  --gf-coral-warm-rgb: var(--gf-violet-rgb);
+  --gf-accent: var(--gf-primary);
+  --gf-accent-soft: var(--gf-primary-soft);
+  --gf-detail-blue: var(--gf-primary);
+  --gf-detail-pink: var(--gf-violet);
 
+  /* Raw swatch aliases (200/300/400) — folded into the Iris family so any
+     stray direct usage stays coherent. Prefer the semantic names above.       */
+  --xxx-violet-200: var(--gf-primary-soft);
+  --xxx-violet-200-rgb: 233, 232, 253;
+  --xxx-violet-300: var(--gf-primary);
+  --xxx-violet-300-rgb: var(--gf-primary-rgb);
+  --xxx-violet-400: var(--gf-primary-deep);
+  --xxx-violet-400-rgb: 70, 60, 208;
+  --xxx-pink-200: var(--gf-primary-soft);
+  --xxx-pink-200-rgb: 233, 232, 253;
+  --xxx-pink-300: var(--gf-violet);
+  --xxx-pink-300-rgb: var(--gf-violet-rgb);
+  --xxx-pink-400: var(--gf-primary-deep);
+  --xxx-pink-400-rgb: 70, 60, 208;
+  --xxx-red-200: var(--gf-danger-soft);
+  --xxx-red-200-rgb: 250, 221, 219;
+  --xxx-red-300: var(--gf-danger);
+  --xxx-red-300-rgb: var(--gf-coral-rgb);
+  --xxx-red-400: var(--gf-coral-text);
+  --xxx-red-400-rgb: 168, 53, 58;
+  --xxx-orange-200: var(--gf-warning-soft);
+  --xxx-orange-200-rgb: 251, 237, 210;
+  --xxx-orange-300: var(--gf-warning);
+  --xxx-orange-300-rgb: var(--gf-amber-rgb);
+  --xxx-orange-400: var(--gf-amber-text);
+  --xxx-orange-400-rgb: 154, 98, 6;
+  --xxx-yellow-200: var(--gf-warning-soft);
+  --xxx-yellow-200-rgb: 251, 237, 210;
+  --xxx-yellow-300: var(--gf-warning);
+  --xxx-yellow-300-rgb: var(--gf-amber-rgb);
+  --xxx-yellow-400: var(--gf-amber-text);
+  --xxx-yellow-400-rgb: 154, 98, 6;
+  --xxx-lime-200: var(--gf-success-soft);
+  --xxx-lime-200-rgb: 220, 243, 234;
+  --xxx-lime-300: var(--gf-mint);
+  --xxx-lime-300-rgb: var(--gf-mint-rgb);
+  --xxx-lime-400: var(--gf-mint-text);
+  --xxx-lime-400-rgb: 6, 115, 79;
+  --xxx-cyan-200: var(--gf-primary-soft);
+  --xxx-cyan-200-rgb: 233, 232, 253;
+  --xxx-cyan-300: var(--gf-primary);
+  --xxx-cyan-300-rgb: var(--gf-primary-rgb);
+  --xxx-cyan-400: var(--gf-primary-deep);
+  --xxx-cyan-400-rgb: 70, 60, 208;
+
+  /* ── Gradients (accent hero only; semantic used sparingly) ───────────── */
+  --gf-grad-cobalt: linear-gradient(180deg, var(--gf-primary-fill), var(--gf-primary-fill-deep));
+  --gf-grad-cobalt-hover: linear-gradient(180deg, #6a64ee, var(--gf-primary));
+  --gf-grad-mint: linear-gradient(180deg, #12b886, var(--gf-mint));
+  --gf-grad-coral: linear-gradient(180deg, var(--gf-danger-fill), var(--gf-danger-fill-deep));
+  --gf-grad-amber: linear-gradient(180deg, #e0950f, var(--gf-amber));
+  --gf-grad-violet: linear-gradient(180deg, #7d66e6, var(--gf-violet));
+  --gf-grad-accent-bar: linear-gradient(90deg, var(--gf-primary), var(--gf-primary-deep));
+  --gf-grad-rainbow-stripe: linear-gradient(90deg, var(--gf-primary), var(--gf-primary-deep));
+  --xxx-spectrum: linear-gradient(90deg, var(--gf-primary), var(--gf-primary-deep));
+  --xxx-spectrum-tight: linear-gradient(90deg, var(--gf-primary), var(--gf-primary-deep));
+
+  /* ── Typography ──────────────────────────────────────────────────────── */
+  --font-display: 'Space Grotesk', 'Hanken Grotesk', system-ui, sans-serif;
+  --font-ui: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Space Mono', 'JetBrains Mono', ui-monospace, monospace;
+  --gf-font-display: var(--font-display);
+  --gf-font-body: var(--font-ui);
+  --gf-font-mono: var(--font-mono);
+  --gf-font-sign: var(--font-display);
+
+  /* ── Spacing scale ───────────────────────────────────────────────────── */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -148,25 +254,68 @@
   --space-9: 36px;
   --space-10: 40px;
 
-  --radius-xs: 3px;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 8px;
-  --radius-xl: 8px;
+  /* ── Radii ───────────────────────────────────────────────────────────── */
+  --radius-xs: 6px;
+  --radius-sm: 9px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
   --radius-pill: 999px;
-  --radius-button: 6px;
+  --radius-button: 12px;
+  --gf-radius: 14px;
+  --gf-radius-sm: 9px;
+  --gf-radius-lg: 16px;
+  --gf-radius-pill: 999px;
+  --nb-radius: 14px;
+  --nb-radius-sm: 9px;
 
-  --shadow-hard: 4px 4px 0 var(--gf-ink);
-  --shadow-hard-sm: 2px 2px 0 var(--gf-ink);
-  --shadow-hard-lg: 6px 6px 0 var(--gf-ink);
-  --shadow-floating: 5px 5px 0 var(--gf-ink);
-  --shadow-card: 3px 3px 0 var(--gf-ink);
+  /* ── Borders (hairline) ──────────────────────────────────────────────── */
+  --gf-border: 1px solid var(--gf-line);
+  --gf-border-strong: 1px solid var(--gf-line-2);
+  --gf-border-thin: 1px solid var(--gf-line);
+  --nb-border: 1px solid var(--gf-line);
 
+  /* ── Soft layered shadows (light) ────────────────────────────────────── */
+  --shadow-hard-sm: 0 1px 2px rgba(20, 28, 46, 0.06), 0 4px 10px -2px rgba(20, 28, 46, 0.10);
+  --shadow-hard: 0 2px 6px rgba(20, 28, 46, 0.08), 0 14px 30px -10px rgba(20, 28, 46, 0.16);
+  --shadow-hard-lg: 0 8px 20px -6px rgba(20, 28, 46, 0.14), 0 30px 60px -16px rgba(20, 28, 46, 0.22);
+  --shadow-floating: 0 8px 20px -6px rgba(20, 28, 46, 0.14), 0 30px 60px -16px rgba(20, 28, 46, 0.22);
+  --shadow-card: 0 1px 2px rgba(20, 28, 46, 0.06), 0 4px 10px -2px rgba(20, 28, 46, 0.10);
+  --gf-shadow-xs: 0 1px 2px rgba(20, 28, 46, 0.06);
+  --gf-shadow-sm: 0 1px 2px rgba(20, 28, 46, 0.06), 0 4px 10px -2px rgba(20, 28, 46, 0.10);
+  --gf-shadow: 0 2px 6px rgba(20, 28, 46, 0.08), 0 14px 30px -10px rgba(20, 28, 46, 0.16);
+  --gf-shadow-lg: 0 8px 20px -6px rgba(20, 28, 46, 0.14), 0 30px 60px -16px rgba(20, 28, 46, 0.22);
+  --nb-shadow: 0 2px 6px rgba(20, 28, 46, 0.08), 0 14px 30px -10px rgba(20, 28, 46, 0.16);
+  --nb-shadow-sm: 0 1px 2px rgba(20, 28, 46, 0.06), 0 4px 10px -2px rgba(20, 28, 46, 0.10);
+  --nb-shadow-lg: 0 8px 20px -6px rgba(20, 28, 46, 0.14), 0 30px 60px -16px rgba(20, 28, 46, 0.22);
+
+  /* ── Focus ring (accent) ─────────────────────────────────────────────── */
+  --gf-ring-width: 2px;
+  --gf-ring-radius: 9px;
+  --gf-ring-offset: 2px;
+
+  /* ── Scrim (modal / overlay backdrop) ─────────────────────────────────
+     FIX: primitives.css used to hardcode this inline, contradicting this
+     file's own "token-driven only" rule. */
+  --gf-scrim: rgba(8, 10, 14, 0.55);
+
+  /* ── Texture ─────────────────────────────────────────────────────────── */
+  --gf-pattern-dot: radial-gradient(rgba(var(--gf-ink-rgb), 0.04) 1px, transparent 1px);
+
+  /* ── Motion ──────────────────────────────────────────────────────────── */
   --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --gf-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --gf-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --gf-ease-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --gf-dur-fast: 140ms;
+  --gf-dur: 220ms;
+  --gf-dur-slow: 380ms;
+  --gf-transition: all var(--gf-dur) var(--gf-ease);
 
+  /* ── Z-index ─────────────────────────────────────────────────────────── */
   --z-base: 0;
   --z-content: 1;
   --z-header: 100;
@@ -174,890 +323,125 @@
   --z-toast: 300;
   --z-skip: 400;
 
-  --tracking-ultra-wide: 0;
-  --tracking-wide: 0;
+  /* ── Letter-spacing ──────────────────────────────────────────────────── */
+  --tracking-ultra-wide: 0.14em;
+  --tracking-wide: 0.06em;
   --tracking-normal: 0;
 }
 
-/* Local NeoBrutalismCSS-inspired component layer */
-.nb-button,
-.nb-input,
-.nb-textarea,
-.nb-card,
-.nb-navbar,
-.nb-breadcrumb,
-.nb-table-container,
-.nb-dialog,
-.badge,
-.avatar {
-  font-family: var(--font-ui);
-  color: var(--gf-ink);
-  letter-spacing: 0;
-}
-
-.nb-button,
-.nb-input,
-.nb-textarea,
-.nb-checkbox,
-.nb-radio {
-  border: var(--nb-border);
-  box-shadow: var(--nb-shadow-sm);
-}
-
-.nb-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 36px;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: var(--nb-radius-sm);
-  background: var(--gf-surface);
-  color: var(--gf-ink);
-  font-weight: 900;
-  line-height: 1;
-  text-decoration: none;
-  text-transform: none;
-  cursor: pointer;
-  transition:
-    transform 140ms var(--ease-spring),
-    box-shadow 140ms var(--ease-spring),
-    background-color 140ms var(--ease-smooth);
-}
-
-.nb-button:hover {
-  transform: translate(-1px, -1px);
-  box-shadow: var(--nb-shadow);
-}
-
-.nb-button:active {
-  transform: translate(1px, 1px);
-  box-shadow: 0 0 0 var(--gf-ink);
-}
-
-.nb-button.default {
-  background: var(--gf-surface);
-}
-
-.nb-button.orange {
-  background: var(--xxx-orange-300);
-}
-
-.nb-button.blue,
-.nb-button.cyan {
-  background: var(--xxx-cyan-300);
-}
-
-.nb-button.green,
-.nb-button.lime {
-  background: var(--xxx-lime-300);
-}
-
-.nb-button.violet {
-  background: var(--xxx-violet-300);
-}
-
-.nb-button.pink {
-  background: var(--xxx-pink-300);
-}
-
-.nb-button.red {
-  background: var(--xxx-red-300);
-}
-
-.nb-button.yellow {
-  background: var(--xxx-yellow-300);
-}
-
-.nb-button.rounded {
-  border-radius: var(--radius-pill);
-}
-
-.nb-button:disabled,
-.nb-input:disabled,
-.nb-textarea:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-  transform: none;
-  box-shadow: var(--nb-shadow-sm);
-}
-
-.nb-input,
-.nb-textarea {
-  width: 100%;
-  border-radius: var(--nb-radius-sm);
-  background: var(--gf-surface);
-  font-size: 13px;
-  font-weight: 750;
-  line-height: 1.2;
-  outline: none;
-  transition:
-    border-color 140ms var(--ease-smooth),
-    background-color 140ms var(--ease-smooth),
-    box-shadow 140ms var(--ease-spring);
-}
-
-.nb-input {
-  min-height: 38px;
-  padding: 8px 10px;
-}
-
-.nb-textarea {
-  min-height: 92px;
-  padding: 10px;
-  resize: vertical;
-}
-
-.nb-input:focus,
-.nb-textarea:focus {
-  background: var(--xxx-cyan-200);
-  box-shadow: var(--nb-shadow);
-}
-
-.nb-input.default {
-  background: var(--gf-surface);
-}
-
-.nb-input.orange,
-.nb-textarea.orange {
-  background: var(--xxx-orange-200);
-}
-
-.nb-input.blue,
-.nb-input.cyan,
-.nb-textarea.blue,
-.nb-textarea.cyan {
-  background: var(--xxx-cyan-200);
-}
-
-.nb-input.green,
-.nb-input.lime,
-.nb-textarea.green,
-.nb-textarea.lime {
-  background: var(--xxx-lime-200);
-}
-
-.nb-card,
-.nb-dialog,
-.nb-table-container {
-  position: relative;
-  overflow: hidden;
-  border: var(--nb-border);
-  border-radius: var(--nb-radius);
-  background:
-    linear-gradient(90deg, rgba(var(--gf-ink-rgb), 0.025) 1px, transparent 1px),
-    linear-gradient(rgba(var(--gf-ink-rgb), 0.025) 1px, transparent 1px), var(--gf-surface);
-  background-size: 12px 12px;
-  box-shadow: var(--nb-shadow);
-}
-
-.nb-card::before,
-.nb-dialog::before,
-.nb-table-container::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 6px;
-  background: var(--xxx-spectrum-tight);
-  border-bottom: var(--nb-border);
-}
-
-.nb-card-img {
-  display: block;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  object-fit: cover;
-  border-bottom: var(--nb-border);
-}
-
-.nb-card-content,
-.nb-dialog-body {
-  position: relative;
-  padding: 14px;
-}
-
-.nb-card-title,
-.nb-dialog-header,
-.nb-table-header {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 950;
-  line-height: 1.1;
-}
-
-.nb-card-text {
-  margin: 8px 0 0;
-  color: var(--gf-text-muted);
-  font-size: 13px;
-  line-height: 1.4;
-}
-
-.nb-card-actions,
-.nb-dialog-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding-top: 12px;
-}
-
-.nb-navbar,
-.nb-breadcrumb {
-  display: flex;
-  align-items: center;
-  border: var(--nb-border);
-  background: var(--gf-surface);
-  box-shadow: var(--nb-shadow-sm);
-}
-
-.nb-navbar {
-  min-height: 44px;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 10px;
-  border-radius: var(--nb-radius);
-}
-
-.nb-navbar-brand,
-.nb-breadcrumb-current {
-  color: var(--gf-ink);
-  font-weight: 950;
-  text-decoration: none;
-}
-
-.nb-navbar-nav {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.nb-navbar-link,
-.nb-breadcrumb-link {
-  display: inline-flex;
-  align-items: center;
-  min-height: 30px;
-  padding: 6px 9px;
-  border: var(--nb-border);
-  border-radius: var(--nb-radius-sm);
-  background: var(--xxx-cyan-200);
-  color: var(--gf-ink);
-  font-weight: 850;
-  text-decoration: none;
-}
-
-.nb-navbar-link.active,
-.nb-navbar-link[aria-current='page'],
-.nb-breadcrumb-current {
-  background: var(--xxx-yellow-300);
-}
-
-.nb-breadcrumb {
-  gap: 6px;
-  padding: 7px 9px;
-  border-radius: var(--nb-radius-sm);
-}
-
-.nb-breadcrumb-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.nb-breadcrumb-item + .nb-breadcrumb-item::before {
-  content: '/';
-  font-family: var(--font-mono);
-  font-weight: 900;
-}
-
-.nb-form-group {
-  display: grid;
-  gap: 6px;
-}
-
-.nb-form-group > label,
-.nb-label {
-  color: var(--gf-ink);
-  font-size: 12px;
-  font-weight: 900;
-  line-height: 1.2;
-}
-
-.nb-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.nb-checkbox,
-.nb-radio {
-  width: 20px;
-  height: 20px;
-  margin: 0;
-  accent-color: var(--xxx-yellow-300);
-  background: var(--gf-surface);
-  cursor: pointer;
-}
-
-.nb-radio {
-  border-radius: var(--radius-pill);
-}
-
-.nb-checkbox.default,
-.nb-radio.default {
-  accent-color: var(--gf-ink);
-}
-
-.nb-checkbox.orange,
-.nb-radio.orange {
-  accent-color: var(--xxx-orange-300);
-}
-
-.nb-checkbox.blue,
-.nb-checkbox.cyan,
-.nb-radio.blue,
-.nb-radio.cyan {
-  accent-color: var(--xxx-cyan-300);
-}
-
-.nb-checkbox.green,
-.nb-checkbox.lime,
-.nb-radio.green,
-.nb-radio.lime {
-  accent-color: var(--xxx-lime-300);
-}
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 2px;
-  border: var(--nb-border);
-  border-radius: var(--nb-radius-sm);
-  background: var(--gf-surface);
-  box-shadow: var(--nb-shadow-sm);
-}
-
-.badge-inner {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 20px;
-  padding: 3px 8px;
-  border-radius: 4px;
-  background: var(--xxx-yellow-300);
-}
-
-.badge-text {
-  margin: 0;
-  color: var(--gf-ink);
-  font-size: 11px;
-  font-weight: 950;
-  line-height: 1;
-}
-
-.badge.orange .badge-inner {
-  background: var(--xxx-orange-300);
-}
-
-.badge.blue .badge-inner,
-.badge.cyan .badge-inner {
-  background: var(--xxx-cyan-300);
-}
-
-.badge.green .badge-inner,
-.badge.lime .badge-inner {
-  background: var(--xxx-lime-300);
-}
-
-.badge.violet .badge-inner {
-  background: var(--xxx-violet-300);
-}
-
-.badge.pink .badge-inner {
-  background: var(--xxx-pink-300);
-}
-
-.badge.red .badge-inner {
-  background: var(--xxx-red-300);
-}
-
-.nb-table {
-  width: 100%;
-  border-collapse: collapse;
-  color: var(--gf-ink);
-  font-size: 13px;
-}
-
-.nb-table th,
-.nb-table td {
-  padding: 9px 10px;
-  border-bottom: var(--nb-border);
-  text-align: left;
-}
-
-.nb-table th {
-  background: var(--xxx-violet-200);
-  font-weight: 950;
-}
-
-.nb-table tr:nth-child(even) td {
-  background: rgba(var(--xxx-cyan-200-rgb), 0.35);
-}
-
-.nb-table-header,
-.nb-table-footer {
-  padding: 12px 14px;
-}
-
-.nb-table-header {
-  padding-top: 18px;
-  border-bottom: var(--nb-border);
-  background: var(--xxx-yellow-200);
-}
-
-.nb-table-footer {
-  border-top: var(--nb-border);
-  background: var(--xxx-lime-200);
-  font-weight: 850;
-}
-
-.nb-progress {
-  position: relative;
-  overflow: hidden;
-  min-height: 24px;
-  border: var(--nb-border);
-  border-radius: var(--nb-radius-sm);
-  background: var(--gf-surface);
-  box-shadow: var(--nb-shadow-sm);
-}
-
-.nb-progress-bar {
-  position: absolute;
-  inset: 0 auto 0 0;
-  min-width: 0;
-  background: var(--xxx-spectrum-tight);
-}
-
-.nb-progress-text {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 24px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 900;
-}
-
-.nb-spinner {
-  width: 28px;
-  height: 28px;
-  border: 3px solid var(--gf-ink);
-  border-top-color: var(--xxx-cyan-300);
-  border-right-color: var(--xxx-pink-300);
-  border-radius: var(--radius-pill);
-  animation: nb-spin 700ms linear infinite;
-}
-
-.nb-spinner.dots {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  border: 0;
-  border-radius: 0;
-  animation: none;
-}
-
-.nb-spinner.dots::before,
-.nb-spinner.dots::after,
-.nb-spinner.dots span {
-  content: '';
-  width: 8px;
-  height: 8px;
-  border: var(--nb-border);
-  border-radius: var(--radius-pill);
-  background: var(--xxx-yellow-300);
-  animation: nb-dot-bounce 760ms ease-in-out infinite;
-}
-
-.nb-spinner.dots span {
-  background: var(--xxx-pink-300);
-  animation-delay: 90ms;
-}
-
-.nb-spinner.dots::after {
-  background: var(--xxx-cyan-300);
-  animation-delay: 180ms;
-}
-
-.nb-dialog-header {
-  padding: 16px 14px 10px;
-  border-bottom: var(--nb-border);
-  background: var(--xxx-violet-200);
-}
-
-.nb-dialog-footer {
-  border-top: var(--nb-border);
-  padding: 10px 14px 14px;
-  background: var(--xxx-lime-200);
-}
-
-.avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  border: var(--nb-border);
-  border-radius: var(--nb-radius-sm);
-  background: var(--xxx-yellow-300);
-  box-shadow: var(--nb-shadow-sm);
-  color: var(--gf-ink);
-  font-weight: 950;
-}
-
-.avatar img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.avatar-sm {
-  width: 28px;
-  height: 28px;
-  font-size: 10px;
-}
-
-.avatar-md {
-  width: 36px;
-  height: 36px;
-  font-size: 12px;
-}
-
-.avatar-lg {
-  width: 48px;
-  height: 48px;
-  font-size: 15px;
-}
-
-.avatar.blue,
-.avatar.cyan {
-  background: var(--xxx-cyan-300);
-}
-
-.avatar.green,
-.avatar.lime {
-  background: var(--xxx-lime-300);
-}
-
-.avatar.pale-red,
-.avatar.red {
-  background: var(--xxx-red-200);
-}
-
-.avatar.violet {
-  background: var(--xxx-violet-300);
-}
-
-.nb-marquee {
-  overflow: hidden;
-  border: var(--nb-border);
-  border-radius: var(--nb-radius-sm);
-  background: var(--xxx-yellow-200);
-  box-shadow: var(--nb-shadow-sm);
-}
-
-.nb-marquee.green,
-.nb-marquee.lime {
-  background: var(--xxx-lime-200);
-}
-
-.nb-marquee-content {
-  display: inline-flex;
-  min-width: 100%;
-  gap: 14px;
-  padding: 8px 10px;
-  font-weight: 900;
-  white-space: nowrap;
-  animation: nb-marquee 14s linear infinite;
-}
-
-.nb-hidden {
-  display: none !important;
-}
-
-.nb-block {
-  display: block !important;
-}
-
-.nb-flex {
-  display: flex !important;
-}
-
-.nb-grid {
-  display: grid !important;
-}
-
-.nb-inline {
-  display: inline !important;
-}
-
-.nb-inline-block {
-  display: inline-block !important;
-}
-
-.nb-inline-flex {
-  display: inline-flex !important;
-}
-
-.nb-grid-1,
-.nb-grid-2,
-.nb-grid-3,
-.nb-grid-4 {
-  display: grid;
-  gap: 12px;
-}
-
-.nb-grid-1 {
-  grid-template-columns: 1fr;
-}
-
-.nb-grid-2 {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.nb-grid-3 {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.nb-grid-4 {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.nb-flex-col {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.nb-flex-row {
-  display: flex;
-  flex-flow: row wrap;
-  gap: 8px;
-}
-
-.nb-p-1 {
-  padding: 4px !important;
-}
-
-.nb-p-2 {
-  padding: 8px !important;
-}
-
-.nb-p-3 {
-  padding: 12px !important;
-}
-
-.nb-p-4 {
-  padding: 16px !important;
-}
-
-.nb-m-1 {
-  margin: 4px !important;
-}
-
-.nb-m-2 {
-  margin: 8px !important;
-}
-
-.nb-m-3 {
-  margin: 12px !important;
-}
-
-.nb-m-4 {
-  margin: 16px !important;
-}
-
-.nb-text-center {
-  text-align: center !important;
-}
-
-.nb-text-left {
-  text-align: left !important;
-}
-
-.nb-text-right {
-  text-align: right !important;
-}
-
-.nb-text-sm {
-  font-size: 12px !important;
-}
-
-.nb-text-md {
-  font-size: 14px !important;
-}
-
-.nb-text-lg {
-  font-size: 16px !important;
-}
-
-.nb-text-xl {
-  font-size: 20px !important;
-}
-
-.nb-text-2xl {
-  font-size: 24px !important;
-}
-
-.nb-text-3xl {
-  font-size: 30px !important;
-}
-
-.nb-w-full {
-  width: 100% !important;
-}
-
-.nb-w-auto {
-  width: auto !important;
-}
-
-.nb-max-w-sm {
-  max-width: 320px !important;
-}
-
-.nb-max-w-md {
-  max-width: 560px !important;
-}
-
-.nb-max-w-lg {
-  max-width: 768px !important;
-}
-
-.nb-max-w-xl {
-  max-width: 1024px !important;
-}
-
-@keyframes nb-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes nb-dot-bounce {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-
-  50% {
-    transform: translateY(-4px);
-  }
-}
-
-@keyframes nb-marquee {
-  from {
-    transform: translateX(0);
-  }
-
-  to {
-    transform: translateX(-50%);
-  }
-}
-
-@media (max-width: 576px) {
-  .nb-grid-2,
-  .nb-grid-3,
-  .nb-grid-4 {
-    grid-template-columns: 1fr;
-  }
-
-  .nb-flex-col-sm {
-    flex-direction: column !important;
-  }
-
-  .nb-hidden-sm {
-    display: none !important;
-  }
-
-  .nb-block-sm {
-    display: block !important;
-  }
-
-  .nb-p-sm-1 {
-    padding: 4px !important;
-  }
-
-  .nb-p-sm-2 {
-    padding: 8px !important;
-  }
-
-  .nb-p-sm-3 {
-    padding: 12px !important;
-  }
-
-  .nb-p-sm-4 {
-    padding: 16px !important;
-  }
-}
-
-@media (min-width: 768px) {
-  .nb-flex-row-md {
-    flex-direction: row !important;
-  }
-
-  .nb-text-md-lg {
-    font-size: 16px !important;
-  }
-
-  .nb-text-md-3xl {
-    font-size: 30px !important;
-  }
-
-  .nb-m-md-1 {
-    margin: 4px !important;
-  }
-
-  .nb-m-md-2 {
-    margin: 8px !important;
-  }
-
-  .nb-m-md-3 {
-    margin: 12px !important;
-  }
-
-  .nb-m-md-4 {
-    margin: 16px !important;
-  }
-
-  .nb-p-md-4 {
-    padding: 16px !important;
-  }
-}
-
-@media (min-width: 992px) {
-  .nb-flex-lg {
-    display: flex !important;
-  }
-
-  .nb-max-w-sm-lg {
-    max-width: 320px !important;
-  }
-}
-
-@media (min-width: 1200px) {
-  .nb-block-xl {
-    display: block !important;
-  }
-
-  .nb-max-w-md-xl {
-    max-width: 560px !important;
+/* ============================================================================
+   DARK THEME — the hero. Opt-in via [data-theme="dark"] on <html> / #ghostfill-fab.
+   Graphite canvas, cool light ink, Iris brightened so it stays vivid on dark.
+   ========================================================================== */
+[data-theme='dark'] {
+  /* Canvas (Spectre — graphite, faint cool cast, NOT blue-black) */
+  --gf-paper: #101216;
+  --gf-paper-2: #181b21;
+  --gf-bg: #101216;
+  --gf-bg-rgb: 16, 18, 22;
+  --gf-surface: #181b21;
+  --gf-surface-rgb: 24, 27, 33;
+  --gf-surface-2: #1f232b;
+  --gf-sunken: #0c0e12;
+  --gf-sunken-rgb: 12, 14, 18;
+  --gf-card: #181b21;
+  --gf-card-rgb: 24, 27, 33;
+  --gf-card-elevated: #1f232b;
+
+  /* Ink (cool light) */
+  --gf-ink: #eef1f6;
+  --gf-ink-rgb: 238, 241, 246;
+  --gf-ink-soft: #aab2c0;
+  --gf-ink-soft-rgb: 170, 178, 192;
+  /* FIX: was #727a88 → only 3.99:1 against --gf-surface (fails 4.5:1 AA for
+     the label text this token is used for). #7d8492 clears 4.59:1 and is
+     visually indistinguishable from the original. */
+  --gf-ink-dim: #7d8492;
+  --gf-line: rgba(255, 255, 255, 0.08);
+  --gf-line-2: rgba(255, 255, 255, 0.13);
+  --gf-hi: rgba(255, 255, 255, 0.06);
+  --gf-cream: var(--gf-ink);
+  --gf-text-muted: var(--gf-ink-soft);
+  --gf-text-dim: var(--gf-ink-dim);
+
+  /* Iris brightened for the dark canvas — great as text/icon/border against
+     the dark canvas (measured ~11:1), but NOT safe as a solid fill behind
+     white text (measured only 3.21:1) — see --gf-primary-fill below. */
+  --gf-primary: #7c83ff;
+  --gf-primary-rgb: 124, 131, 255;
+  --gf-primary-deep: #5a61f0;
+  --gf-primary-soft: #1c2040;
+  --gf-on-primary: #ffffff;
+
+  /* Status — brightened for dark canvas, and (per the design rule above)
+     ALREADY safe as text against their own darkened *-soft chip background,
+     so mint-text/amber-text/coral-text simply alias the bright hue here. */
+  --gf-mint: #3fe0c5;
+  --gf-mint-rgb: 63, 224, 197;
+  --gf-mint-text: var(--gf-mint);
+  --gf-amber: #f4b740;
+  --gf-amber-rgb: 244, 183, 64;
+  --gf-amber-text: var(--gf-amber);
+  --gf-coral: #ff6b6b;
+  --gf-coral-rgb: 255, 107, 107;
+  --gf-coral-text: var(--gf-coral);
+  --gf-violet: #a78bff;
+  --gf-violet-rgb: 167, 139, 255;
+
+  --gf-success: var(--gf-mint);
+  --gf-success-rgb: var(--gf-mint-rgb);
+  --gf-success-soft: #0f2a25;
+  --gf-warning: var(--gf-amber);
+  --gf-warning-rgb: var(--gf-amber-rgb);
+  --gf-warning-soft: #2a2110;
+  --gf-danger: var(--gf-coral);
+  --gf-danger-rgb: var(--gf-coral-rgb);
+  --gf-danger-soft: #2c1414;
+  --gf-danger-text: var(--gf-coral-text);
+
+  /* Solid-fill pairs, dark-theme calibration:
+       primary-fill: the brightened --gf-primary FAILS 4.5:1 with white
+       (measured 3.21:1) — use --gf-primary-deep instead (measured 4.78:1).
+       danger-fill: kept identical to light theme (already theme-agnostic-
+       safe at ~5.0:1/6.5:1) so it doesn't need its own override.
+       success/warning-fill: mint/amber are still the fill; the foreground
+       ink flips to --gf-on-fill-dark (below), not white. */
+  --gf-primary-fill: var(--gf-primary-deep);
+  --gf-primary-fill-deep: #464cd6;
+  --gf-on-fill-dark: var(--gf-bg); /* dark theme's own near-black canvas tone */
+
+  /* Soft, deep shadows for dark + a faint top highlight */
+  --shadow-hard-sm: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --shadow-hard: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.42), 0 16px 36px -12px rgba(0, 0, 0, 0.6);
+  --shadow-hard-lg: 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 26px -8px rgba(0, 0, 0, 0.5), 0 40px 80px -20px rgba(0, 0, 0, 0.72);
+  --shadow-floating: 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 26px -8px rgba(0, 0, 0, 0.5), 0 40px 80px -20px rgba(0, 0, 0, 0.72);
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --gf-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --gf-shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --gf-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.42), 0 16px 36px -12px rgba(0, 0, 0, 0.6);
+  --gf-shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 26px -8px rgba(0, 0, 0, 0.5), 0 40px 80px -20px rgba(0, 0, 0, 0.72);
+  --nb-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.42), 0 16px 36px -12px rgba(0, 0, 0, 0.6);
+  --nb-shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --nb-shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 26px -8px rgba(0, 0, 0, 0.5), 0 40px 80px -20px rgba(0, 0, 0, 0.72);
+
+  /* A darker canvas needs a slightly punchier scrim to still read as "dimmed
+     further" over an already-dark page. */
+  --gf-scrim: rgba(4, 5, 7, 0.7);
+
+  /* Gradients retuned for dark (fill tokens above already carry the fix
+     through automatically since the gradients reference them). */
+  --gf-grad-cobalt-hover: linear-gradient(180deg, #8b91ff, #6a70f5);
+}
+
+/* Reduced-motion: collapse durations globally for DECORATIVE motion.
+   NOTE: essential loading indicators (spinners) deliberately do NOT use
+   these tokens for their base duration — see .gf-spin in primitives.css —
+   because freezing a spinner at 0ms reads as "broken", not "reduced". */
+@media (prefers-reduced-motion: reduce) {
+  :root,
+  [data-theme='dark'] {
+    --gf-dur-fast: 0ms;
+    --gf-dur: 0ms;
+    --gf-dur-slow: 0ms;
   }
 }

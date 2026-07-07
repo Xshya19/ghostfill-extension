@@ -2,10 +2,19 @@ import { Check, Inbox, KeyRound, Mail, Save, X } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 import { storageService } from '../../../services/storageService';
+import { Button } from '../../../shared/ui';
 import { UserSettings } from '../../../types/storage.types';
 import { ProviderHealthMeter } from '../ProviderHealthMeter';
 import SettingsSection from '../SettingsSection';
 import ToggleSwitch from '../ToggleSwitch';
+
+const t = (key: string): string => {
+  try {
+    return chrome.i18n.getMessage(key) || key;
+  } catch {
+    return key;
+  }
+};
 
 const GMAIL_CLIENT_ID_PATTERN = /^[a-z0-9-]+\.apps\.googleusercontent\.com$/i;
 const SAVE_FEEDBACK_MS = 1800;
@@ -75,7 +84,11 @@ const EmailTab: React.FC<EmailTabProps> = ({
 
   return (
     <div role="tabpanel" id="tabpanel-email" aria-labelledby="tab-email">
-      <SettingsSection id="email-service" title="Email Service" icon={<Mail size={18} />}>
+      <SettingsSection
+        id="email-service"
+        title={t('emailServiceSection')}
+        icon={<Mail size={18} />}
+      >
         <div className="setting-item">
           <div className="setting-info">
             <label htmlFor="preferred-email-service" className="fs-15-fw-600">
@@ -98,6 +111,7 @@ const EmailTab: React.FC<EmailTabProps> = ({
             <option value="mailgw">Mail.gw</option>
             <option value="guerrilla">Guerrilla Mail</option>
             <option value="tempmail">1secmail.com</option>
+            <option value="driftz">Driftz.net</option>
             <option value="custom">Custom Infrastructure (Private)</option>
           </select>
         </div>
@@ -174,7 +188,11 @@ const EmailTab: React.FC<EmailTabProps> = ({
         )}
       </SettingsSection>
 
-      <SettingsSection id="gmail-oauth" title="Gmail OAuth" icon={<KeyRound size={18} />}>
+      <SettingsSection
+        id="gmail-oauth"
+        title={t('gmailOauthSection')}
+        icon={<KeyRound size={18} />}
+      >
         <div className="setting-item vertical-group">
           <div className="setting-info w-full">
             <label htmlFor="gmail-client-id" className="fs-15-fw-600">
@@ -204,24 +222,26 @@ const EmailTab: React.FC<EmailTabProps> = ({
             </span>
           )}
           <div className="gmail-client-id-actions">
-            <button
+            <Button
               type="button"
-              className={`settings-btn-primary ${
+              variant="primary"
+              size="sm"
+              className={
                 gmailClientIdSaveStatus === 'saving'
                   ? 'save-btn--saving'
                   : gmailClientIdSaveStatus === 'saved'
                     ? 'save-btn--saved'
                     : ''
-              }`}
+              }
               onClick={() => void saveGmailClientId()}
               disabled={gmailClientIdSaveStatus === 'saving'}
             >
               {gmailClientIdSaveStatus === 'saved' ? <Check size={16} /> : <Save size={16} />}
               <span>{gmailClientIdSaveStatus === 'saved' ? 'Saved' : 'Save'}</span>
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="settings-btn-secondary"
+              size="sm"
               onClick={() => {
                 setGmailClientId('');
                 setGmailClientIdError(null);
@@ -241,12 +261,16 @@ const EmailTab: React.FC<EmailTabProps> = ({
             >
               <X size={16} />
               <span>Clear</span>
-            </button>
+            </Button>
           </div>
         </div>
       </SettingsSection>
 
-      <SettingsSection id="inbox-polling" title="Inbox Polling" icon={<Inbox size={18} />}>
+      <SettingsSection
+        id="inbox-polling"
+        title={t('inboxPollingSection')}
+        icon={<Inbox size={18} />}
+      >
         <div className="setting-item">
           <div className="setting-info">
             <label id="auto-check-label">Auto-check Inbox</label>

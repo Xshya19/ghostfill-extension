@@ -62,6 +62,30 @@ function sliceAround(text: string, index: number, length: number, radius: number
   return text.slice(Math.max(0, index - radius), Math.min(text.length, index + length + radius));
 }
 
+function isInsideUrlLikeSpan(text: string, index: number, length: number): boolean {
+  if (!text || index < 0) {
+    return false;
+  }
+
+  const start = Math.max(0, index - 160);
+  const window = text.slice(start, Math.min(text.length, index + length + 160));
+  const localIndex = index - start;
+  const localEnd = localIndex + Math.max(length, 1);
+  const urlRegex = /https?:\/\/[^\s<>"')\]}]+/gi;
+  let m: RegExpExecArray | null;
+
+  while ((m = urlRegex.exec(window)) !== null) {
+    const urlStart = m.index;
+    const urlEnd = m.index + m[0].length;
+    if (localIndex >= urlStart && localEnd <= urlEnd) {
+      return true;
+    }
+  }
+
+  const before = window.slice(Math.max(0, localIndex - 50), localIndex).toLowerCase();
+  return /(?:[?&#/]|%3[fba]|&amp;)[a-z0-9_.-]{1,40}=$/i.test(before);
+}
+
 // ══════════════════════════════════════════
 //  PATTERN DEFINITIONS
 // ══════════════════════════════════════════
@@ -71,13 +95,24 @@ const STYLED_CODE_PATTERNS = [
 ] as const;
 
 const LABEL_PATTERNS = [
-  /(?:code|pin|otp|password|token|passcode)\s*(?:is|:|=)\s*([A-Za-z0-9]{4,10})/gi,
-  /(?:enter|use|type|input)\s+([A-Za-z0-9]{4,10})\b/gi,
-  /\b([A-Za-z0-9]{4,10})\s+(?:is your|as your)\s+(?:code|pin|otp|password|verification)/gi,
-  /(?:confirmation|verification|security|login|sign[- ]?in|access)\s+code\s*:?\s*([A-Za-z0-9]{4,10})\b/gi,
-  /your\s+(?:verification\s+|confirmation\s+|security\s+|login\s+)?(?:code|pin|otp|password|token)\s*(?:is|:)\s*([A-Za-z0-9]{4,10})/gi,
-  /(?:^|[.!?]\s*)(?:code|pin|otp)\s*[:=]\s*([A-Za-z0-9]{4,10})\b/gim,
+  // Tier 1: Explicit label + colon/equals (highest precision)
+  /(?:code|pin|otp|password|token|passcode|verification\s+code|security\s+code|confirmation\s+code|auth\s+code)\s*(?:is|:|=)\s*([A-Za-z0-9]{4,10})/gi,
+  // Tier 1: "Enter X to verify"
+  /(?:enter|use|type|input|submit|copy|provide)\s+([A-Za-z0-9]{4,10})\s+to\s+(?:verify|confirm|log\s*in|sign\s*in|authenticate|complete|access)/gi,
+  // Tier 1: "X is your code/OTP"
+  /\b([A-Za-z0-9]{4,10})\s+(?:is your|is the|as your)\s+(?:\w+\s+){0,2}(?:code|pin|otp|password|verification|passcode)/gi,
+  // Tier 1: "Your code is X" / "Your OTP is X"
+  /\byour\s+(?:\w+\s+){0,3}(?:code|otp|pin|passcode|token)\s+is\s+([A-Za-z0-9]{4,10})/gi,
+  // Tier 1: type-prefixed (verification code: X, security code - X)
+  /(?:confirmation|verification|security|one.?time|login|sign.?in|access)\s+code\s*[-:–—]?\s*([A-Za-z0-9]{4,10})\b/gi,
+  // Tier 2: bracket-wrapped codes [X], (X), {X}
+  /[\[({]\s*([A-Za-z0-9]{4,10})\s*[\])}]/g,
+  // Tier 2: line-start code labels
+  /(?:^|[.!?\n]\s*)(?:code|pin|otp|token)\s*[:=]\s*([A-Za-z0-9]{4,10})\b/gim,
+  // Tier 2: standalone number on its own line
   /^\s*(\d{4,8})\s*$/gm,
+  // Tier 2: dash-separated digit groups as codes (123 456 / 12 34 56)
+  /(?:code|pin|otp|passcode)\s*[:\s]\s*([A-Za-z0-9][A-Za-z0-9\s-]{3,12}[A-Za-z0-9])/gi,
 ] as const;
 
 // Extended anti-patterns for rejecting false positives.
@@ -193,6 +228,22 @@ const EXTENDED_ANTI_PATTERNS: Array<{
           : getContextAround(ctx, v, 50)
       ),
     severity: 'high',
+  },
+  {
+    name: 'promo-code',
+    test: (v, ctx, idx) =>
+      /\b(?:coupon|promo|promotion|discount|voucher|referral|offer|gift\s*card)\s*(?:code|pin|token|#)?\b/i.test(
+        idx !== undefined && idx >= 0
+          ? sliceAround(ctx, idx, v.length, 70)
+          : getContextAround(ctx, v, 70)
+      ) ||
+      /\b(?:code|pin|token)\s+(?:for|at checkout|to save|to get)\b/i.test(
+        idx !== undefined && idx >= 0
+          ? sliceAround(ctx, idx, v.length, 70)
+          : getContextAround(ctx, v, 70)
+      ),
+    severity: 'high',
+    reject: true,
   },
   { name: 'repeated', test: (v) => /^(\d)\1{3,}$/.test(v), severity: 'critical', reject: true },
   {
@@ -401,12 +452,14 @@ export function validateContext(
     }
   }
 
-  if (semanticDistance < 25) {
-    score += 12;
-  } else if (semanticDistance < 60) {
-    score += 8;
-  } else if (semanticDistance < 120) {
-    score += 4;
+  // WIDER WINDOWS: Table-layout emails place labels far from codes in DOM/plaintext.
+  // Extended from <25/<60/<120 to <40/<100/<200 to handle real-world transactional emails.
+  if (semanticDistance < 40) {
+    score += 14;
+  } else if (semanticDistance < 100) {
+    score += 9;
+  } else if (semanticDistance < 200) {
+    score += 5;
   }
 
   const rg: RelationshipGraph = {
@@ -436,10 +489,37 @@ export function validateContext(
 
   // Code label immediately preceding the actual occurrence.
   if (category === 'otp' && valIdx > 0) {
-    const before = fullText.substring(Math.max(0, valIdx - 45), valIdx);
-    if (/(?:code|pin|otp|password|token|passcode)\s*(?:is|:|=)\s*$/i.test(before)) {
+    const before = fullText.substring(Math.max(0, valIdx - 80), valIdx);
+    if (/(?:code|pin|otp|password|token|passcode|verification|security|confirmation)\s*(?:is|:|=|–|—|-)?\s*$/i.test(before)) {
       rg.hasCodeLabel = true;
       score += CONFIG.scoring.codeLabelBonus;
+    }
+    // NEW: check if the code is in a heading or standalone in the HTML
+    if (decodedHtml) {
+      const htmlValIdxLocal = decodedHtml.toLowerCase().indexOf(value.toLowerCase());
+      if (htmlValIdxLocal !== -1) {
+        const htmlCtx = decodedHtml.substring(
+          Math.max(0, htmlValIdxLocal - 200),
+          Math.min(decodedHtml.length, htmlValIdxLocal + value.length + 200)
+        );
+        // Heading tag proximity — very strong visual signal in emails
+        if (/<h[123][^>]*>\s*[^<]*$/i.test(htmlCtx.substring(0, htmlCtx.indexOf(value))) &&
+            /^[^<]*\s*<\/h[123]>/i.test(htmlCtx.substring(htmlCtx.indexOf(value) + value.length))) {
+          score += 30;
+          rg.hasCodeLabel = true;
+        }
+        // Strong/bold tag wrapping the code
+        if (/<(?:strong|b)\b[^>]*>\s*$/.test(htmlCtx.substring(0, htmlCtx.indexOf(value))) &&
+            /^\s*<\/(?:strong|b)>/.test(htmlCtx.substring(htmlCtx.indexOf(value) + value.length))) {
+          score += 20;
+        }
+        // TD cell containing only the number
+        if (/<(?:td|th)[^>]*>\s*$/.test(htmlCtx.substring(0, htmlCtx.indexOf(value))) &&
+            /^\s*<\/(?:td|th)>/.test(htmlCtx.substring(htmlCtx.indexOf(value) + value.length))) {
+          score += 25;
+          rg.hasCodeLabel = true;
+        }
+      }
     }
   }
 
@@ -635,6 +715,11 @@ export function extractOTP(
     }
 
     const anchorIdx = plainTextIndex >= 0 ? plainTextIndex : -1;
+    if (isInsideUrlLikeSpan(fullText, anchorIdx, rawMatch.length)) {
+      rejected.push({ code, reason: 'url-token' });
+      return;
+    }
+
     const anti = checkAntiPatterns(code, fullText, anchorIdx);
     if (anti.isRejected) {
       rejected.push({ code, reason: anti.reason });
@@ -822,6 +907,33 @@ export function extractOTP(
     }
   }
 
+  // ══════════════════════════════════════════
+  //  Strategy 6: HTML <td>/<th> Cell-Isolated Number Detection
+  //  Finds numbers that appear alone inside a table cell — the dominant
+  //  pattern used by Stripe, Auth0, Notion, Twilio, and many other SaaS
+  //  transactional email templates.
+  // ══════════════════════════════════════════
+  if (htmlBody) {
+    // Pattern: <td ...>   123456   </td> (with optional whitespace/entities)
+    const tdPattern = /<(?:td|th)[^>]*>\s*([\d]{4,8})\s*<\/(?:td|th)>/gi;
+    let tdMatch: RegExpExecArray | null;
+    while ((tdMatch = tdPattern.exec(htmlBody)) !== null) {
+      const code = tdMatch[1]!.trim();
+      // Check sibling / surrounding rows contain an OTP keyword
+      const surroundHtml = htmlBody.substring(
+        Math.max(0, tdMatch.index - 600),
+        Math.min(htmlBody.length, tdMatch.index + tdMatch[0].length + 600)
+      );
+      const hasNearbyKeyword = /(?:code|otp|pin|passcode|verification|security|confirm|authenticate|login|sign.?in)/i.test(
+        surroundHtml
+      );
+      const cellConfidence = hasNearbyKeyword ? 92 : 75;
+      // Plain text position for context scoring
+      const ptIdx = fullText.indexOf(code);
+      addCandidate(code, code, 'td-cell-isolated', cellConfidence, ptIdx >= 0 ? ptIdx : 0);
+    }
+  }
+
   if (candidates.length === 0) {
     log.debug(
       `No OTP candidates. Rejected: ${rejected.map((r) => `${r.code}(${r.reason})`).join(', ') || 'none'}`
@@ -853,7 +965,33 @@ export function extractOTP(
       score += CONFIG.scoring.verificationIntentBonus;
     }
 
+    if (c.zone === 'footer') {
+      score -= 22;
+    } else if (c.zone === 'header' || c.zone === 'preheader') {
+      score -= 8;
+    } else if (c.zone === 'unknown' && c.contextScore < 18) {
+      score -= 5;
+    }
+
+    if (
+      !c.providerMatch &&
+      !['label-adjacent', 'td-cell-isolated', 'td-isolated-number', 'heading-isolated-number', 'centered-paragraph-number'].includes(c.patternName) &&
+      !c.instructionVerb &&
+      !c.validityPeriod &&
+      !c.securityWarning &&
+      c.matchedKeywordCount < 2
+    ) {
+      score -= 14;
+    }
+
     score -= CONFIG.scoring.antiPenalty[c.antiPatternResult.severity] ?? 0;
+
+    // Bonus for strong alphanumeric OTPs (Steam, Epic Games, etc.)
+    // Must have >= 3 uppercase letters AND >= 3 digits to qualify
+    const hasAlnumBonus = /[A-Z]{3,}/.test(c.code) && /\d{3,}/.test(c.code);
+    if (hasAlnumBonus) {
+      score += 15;
+    }
 
     // FIX: rank by the UNCLAMPED score. The original clamped every candidate to
     // 100 BEFORE sorting, so two strong candidates (a real OTP and, e.g., a phone

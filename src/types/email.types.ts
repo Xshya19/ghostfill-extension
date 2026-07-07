@@ -26,7 +26,8 @@ export type EmailService =
   | 'guerrilla'
   | 'maildrop'
   | 'custom'
-  | 'gmail';
+  | 'gmail'
+  | 'driftz';
 
 export interface IEmailProvider {
   name: string;

@@ -5,6 +5,14 @@ import { UserSettings } from '../../../types/storage.types';
 import SettingsSection from '../SettingsSection';
 import ToggleSwitch from '../ToggleSwitch';
 
+const t = (key: string): string => {
+  try {
+    return chrome.i18n.getMessage(key) || key;
+  } catch {
+    return key;
+  }
+};
+
 interface PasswordTabProps {
   settings: UserSettings;
   onPasswordDefaultChange: (
@@ -25,11 +33,15 @@ const PasswordTab: React.FC<PasswordTabProps> = ({
 }) => {
   return (
     <div role="tabpanel" id="tabpanel-password" aria-labelledby="tab-password">
-      <SettingsSection id="password-defaults" title="Password Defaults" icon={<Lock size={18} />}>
+      <SettingsSection
+        id="password-defaults"
+        title={t('passwordDefaultsSection')}
+        icon={<Lock size={18} />}
+      >
         <div className="setting-item">
           <div className="setting-info">
-            <label htmlFor="password-length">Default Length</label>
-            <p>Default password length for new generations (8–128)</p>
+            <label htmlFor="password-length">{t('defaultLength')}</label>
+            <p>{t('defaultLengthDescription')}</p>
           </div>
           <input
             id="password-length"
@@ -47,7 +59,7 @@ const PasswordTab: React.FC<PasswordTabProps> = ({
             }
           />
           <span id="password-length-desc" className="sr-only">
-            Enter a value between 8 and 128 characters
+            {t('defaultLengthAriaDescription')}
           </span>
           {fieldHasError('passwordDefaults.length') && (
             <span id="password-length-error" className="field-error" role="alert">
@@ -58,65 +70,65 @@ const PasswordTab: React.FC<PasswordTabProps> = ({
 
         <div className="setting-item">
           <div className="setting-info">
-            <label id="uppercase-label">Uppercase Letters</label>
-            <p>Include A–Z in generated passwords</p>
+            <label id="uppercase-label">{t('uppercaseLetters')}</label>
+            <p>{t('uppercaseLettersDescription')}</p>
           </div>
           <ToggleSwitch
             checked={settings.passwordDefaults.uppercase}
             onChange={(checked) => onPasswordDefaultChange('uppercase', checked)}
-            ariaLabel="Include uppercase letters"
+            ariaLabel={t('uppercaseLettersAriaLabel')}
             ariaLabelledBy="uppercase-label"
           />
         </div>
 
         <div className="setting-item">
           <div className="setting-info">
-            <label id="lowercase-label">Lowercase Letters</label>
-            <p>Include a–z in generated passwords</p>
+            <label id="lowercase-label">{t('lowercaseLetters')}</label>
+            <p>{t('lowercaseLettersDescription')}</p>
           </div>
           <ToggleSwitch
             checked={settings.passwordDefaults.lowercase}
             onChange={(checked) => onPasswordDefaultChange('lowercase', checked)}
-            ariaLabel="Include lowercase letters"
+            ariaLabel={t('lowercaseLettersAriaLabel')}
             ariaLabelledBy="lowercase-label"
           />
         </div>
 
         <div className="setting-item">
           <div className="setting-info">
-            <label id="numbers-label">Numbers</label>
-            <p>Include 0–9 in generated passwords</p>
+            <label id="numbers-label">{t('numbers')}</label>
+            <p>{t('numbersDescription')}</p>
           </div>
           <ToggleSwitch
             checked={settings.passwordDefaults.numbers}
             onChange={(checked) => onPasswordDefaultChange('numbers', checked)}
-            ariaLabel="Include numbers"
+            ariaLabel={t('numbersAriaLabel')}
             ariaLabelledBy="numbers-label"
           />
         </div>
 
         <div className="setting-item">
           <div className="setting-info">
-            <label id="symbols-label">Symbols</label>
-            <p>Include special characters (!@#$%^&*)</p>
+            <label id="symbols-label">{t('symbols')}</label>
+            <p>{t('symbolsDescription')}</p>
           </div>
           <ToggleSwitch
             checked={settings.passwordDefaults.symbols}
             onChange={(checked) => onPasswordDefaultChange('symbols', checked)}
-            ariaLabel="Include symbols"
+            ariaLabel={t('symbolsAriaLabel')}
             ariaLabelledBy="symbols-label"
           />
         </div>
 
         <div className="setting-item">
           <div className="setting-info">
-            <label id="exclude-ambiguous-label">Exclude Ambiguous</label>
-            <p>Remove characters like O, 0, l, 1 that look similar</p>
+            <label id="exclude-ambiguous-label">{t('excludeAmbiguous')}</label>
+            <p>{t('excludeAmbiguousDescription')}</p>
           </div>
           <ToggleSwitch
             checked={settings.passwordDefaults.excludeAmbiguous}
             onChange={(checked) => onPasswordDefaultChange('excludeAmbiguous', checked)}
-            ariaLabel="Exclude ambiguous characters"
+            ariaLabel={t('excludeAmbiguousAriaLabel')}
             ariaLabelledBy="exclude-ambiguous-label"
           />
         </div>

@@ -10,132 +10,14 @@ import { createLogger } from '../utils/logger';
 import { errorTracker, performanceMonitor } from '../utils/monitoring';
 import { initRemoteLogger } from '../utils/remoteLogger';
 import { AutoFiller } from './autoFiller';
-import { DOMObserver } from './domObserver';
-import { FieldAnalyzer } from './fieldAnalyzer';
+import { FormDetector, FieldAnalyzer, DOMObserver, collectFieldDiagnostics } from './formDetector';
 import { FloatingButton } from './floatingButton';
-import { FormDetector } from './formDetector';
 import { OTPPageDetector } from './otpPageDetector';
 import { pageStatus } from './pageStatus';
-import { collectFieldDiagnostics } from './utils/fieldDiagnosticsHarvester';
 import './styles/content.css';
 import './ui/GhostLabel';
 
-if (process.env.NODE_ENV !== 'production' && typeof window !== 'undefined') {
-  const originalGetComputedStyle = window.getComputedStyle;
-
-  const createFallbackStyle = () => {
-    return new Proxy(
-      {
-        getPropertyValue: (prop: string) => {
-          if (prop === 'display') {
-            return 'none';
-          }
-          if (prop === 'visibility') {
-            return 'hidden';
-          }
-          if (prop === 'opacity') {
-            return '0';
-          }
-          if (prop === 'z-index' || prop === 'zIndex') {
-            return '0';
-          }
-          return '';
-        },
-      },
-      {
-        get: (target, prop) => {
-          if (prop === 'getPropertyValue') {
-            return target.getPropertyValue;
-          }
-          const propStr = String(prop);
-          if (propStr === 'display') {
-            return 'none';
-          }
-          if (propStr === 'visibility') {
-            return 'hidden';
-          }
-          if (propStr === 'opacity') {
-            return '0';
-          }
-          if (propStr === 'zIndex' || propStr === 'z-index') {
-            return '0';
-          }
-          return '';
-        },
-      }
-    ) as unknown as CSSStyleDeclaration;
-  };
-
-  window.getComputedStyle = function (el: Element, pseudoElt?: string | null): CSSStyleDeclaration {
-    let style: CSSStyleDeclaration;
-    try {
-      style = originalGetComputedStyle(el, pseudoElt);
-    } catch (e) {
-      console.warn(
-        '[GhostFill] window.getComputedStyle failed to call original function, using fallback:',
-        e
-      );
-      return createFallbackStyle();
-    }
-
-    return new Proxy(style, {
-      get(target, prop) {
-        try {
-          const val = Reflect.get(target, prop, target);
-          if (typeof val === 'function') {
-            return function (this: any, ...args: any[]) {
-              try {
-                return val.apply(target, args);
-              } catch (err) {
-                console.warn(
-                  `[GhostFill] CSSStyleDeclaration method call for "${String(prop)}" failed:`,
-                  err
-                );
-                if (prop === 'getPropertyValue') {
-                  const propName = args[0];
-                  if (propName === 'display') {
-                    return 'none';
-                  }
-                  if (propName === 'visibility') {
-                    return 'hidden';
-                  }
-                  if (propName === 'opacity') {
-                    return '0';
-                  }
-                  if (propName === 'z-index' || propName === 'zIndex') {
-                    return '0';
-                  }
-                  return '';
-                }
-                return '';
-              }
-            };
-          }
-          return val;
-        } catch (e) {
-          console.warn(
-            `[GhostFill] CSSStyleDeclaration property access for "${String(prop)}" failed:`,
-            e
-          );
-          const propStr = String(prop);
-          if (propStr === 'display') {
-            return 'none';
-          }
-          if (propStr === 'visibility') {
-            return 'hidden';
-          }
-          if (propStr === 'opacity') {
-            return '0';
-          }
-          if (propStr === 'zIndex' || propStr === 'z-index') {
-            return '0';
-          }
-          return '';
-        }
-      },
-    });
-  };
-} // Register web component
+// Register web component
 
 const log = createLogger('ContentScript');
 initRemoteLogger('Content');
@@ -457,7 +339,11 @@ function installPassiveMessageListener(): void {
     return;
   }
 
-  passiveRuntimeListener = (message, _sender, sendResponse) => {
+  passiveRuntimeListener = (message, sender, sendResponse) => {
+    if (sender && sender.id !== chrome.runtime.id) {
+      return false;
+    }
+
     const action =
       typeof message === 'object' && message !== null && 'action' in message
         ? String((message as { action?: unknown }).action ?? '')
@@ -530,7 +416,9 @@ function init(): void {
       formDetector = new FormDetector(fieldAnalyzer);
       autoFiller = new AutoFiller();
       floatingButton = new FloatingButton(autoFiller); // Inject autoFiller
-      domObserver = new DOMObserver(formDetector, autoFiller);
+      domObserver = new DOMObserver(formDetector, async () => {
+        await autoFiller.injectIcons();
+      });
       otpPageDetector = new OTPPageDetector(autoFiller, formDetector);
     } catch (e) {
       log.error('Failed to initialize content script components', e);
@@ -615,6 +503,9 @@ function init(): void {
     if (chrome?.runtime?.onMessage) {
       if (!mainRuntimeListener) {
         mainRuntimeListener = (message, sender, sendResponse) => {
+          if (sender && sender.id !== chrome.runtime.id) {
+            return false;
+          }
           log.debug('Message received', { action: message.action });
 
           handleMessage(message as { action: string; payload?: Record<string, unknown> })

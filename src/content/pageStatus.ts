@@ -1,6 +1,7 @@
 // Page Status Injector - Injects status banners directly into webpages
 // Solves the "disconnect" problem by showing extension status on the page itself
 
+import { generateHostTokens } from '../shared/tokens';
 import { createLogger } from '../utils/logger';
 import { setHTML } from '../utils/setHTML';
 
@@ -51,6 +52,7 @@ class PageStatusInjector {
     const STYLES = `
             :host {
                 all: initial;
+                ${generateHostTokens()}
                 font-family: "Space Grotesk", -apple-system, BlinkMacSystemFont, sans-serif;
                 position: fixed;
                 top: 0;
@@ -69,10 +71,10 @@ class PageStatusInjector {
                 align-items: center;
                 gap: 12px;
                 padding: 12px 18px;
-                background: var(--gf-card, #211B3D); /* SOLID SURFACE */
-                border: 2px solid var(--gf-ink, #000); /* THICK INK BORDER */
-                border-radius: 8px;
-                box-shadow: 4px 4px 0 var(--gf-ink, #000); /* HARD MEMPHIS SHADOW */
+                background: var(--gf-card, #181B21); /* SOLID SURFACE */
+                border: 1px solid var(--gf-line-2, rgba(255,255,255,0.10)); /* HAIRLINE */
+                border-radius: 12px;
+                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), inset 0 1px 0 var(--gf-hi, rgba(255,255,255,0.06)); /* SPECTRE LIFT */
                 transform: translateX(120%);
                 transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
                 pointer-events: auto;
@@ -111,18 +113,16 @@ class PageStatusInjector {
             }
 
             .status-text {
-                color: var(--gf-cream, #FFF3D6);
+                color: var(--gf-ink, #EEF1F6);
                 font-size: 13px;
-                font-weight: 700;
+                font-weight: 600;
                 letter-spacing: 0.02em;
-                text-transform: uppercase;
-                text-shadow: 1px 1px 0 var(--gf-ink, #000); /* INK TEXT OUTLINE */
             }
 
             .close-btn {
-                background: var(--gf-ink, #000);
-                border: 2px solid var(--gf-ink, #000);
-                border-radius: 4px;
+                background: transparent;
+                border: 1px solid var(--gf-line-2, rgba(255,255,255,0.10));
+                border-radius: 6px;
                 width: 20px;
                 height: 20px;
                 display: flex;
@@ -137,7 +137,7 @@ class PageStatusInjector {
             }
 
             .close-btn:hover {
-                transform: translate(-1px, -1px);
+                background: var(--gf-sunken, #0C0E12);
             }
 
             @media (prefers-reduced-motion: reduce) {

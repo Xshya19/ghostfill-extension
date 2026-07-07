@@ -1,6 +1,7 @@
-import { getRandomizedGmailAlias } from '../services/aliasService';
 import { emailService } from '../services/emailServices';
+import * as gmailApiService from '../services/gmailApiService';
 import {
+  getRandomizedGmailAlias,
   buildGmailAliasSearchQuery,
   clearGmailConnectedAt,
   clearGmailAliasSessions,
@@ -12,8 +13,7 @@ import {
   setGmailConnectedAt,
   getOrCreateGmailAliasSessionByDomain,
   messageMatchesGmailAlias,
-} from '../services/gmailAliasSessionService';
-import * as gmailApiService from '../services/gmailApiService';
+} from '../services/gmailConnectionService';
 import { identityService } from '../services/identityService';
 import { extractAll } from '../services/intelligentExtractor';
 import { linkService } from '../services/linkService';
@@ -255,6 +255,16 @@ export function setupMessageHandler(): void {
         return false;
       }
 
+      log.info(
+        `📩 [MessageHandler] RECEIVED message: "${message.action}" from Tab: ${sender.tab?.id ?? 'Background'} (${sender.url ?? 'unknown origin'})`,
+        (message as any).payload
+      );
+
+      const wrappedSendResponse = (response: ExtensionResponse) => {
+        log.info(`📤 [MessageHandler] REPLYING to "${message.action}" with:`, response);
+        sendResponse(response);
+      };
+
       // Use IIFE for async handling in listener
       void (async () => {
         try {
@@ -264,19 +274,19 @@ export function setupMessageHandler(): void {
               error: validation.error,
               origin: sender.url,
             });
-            sendResponse({ success: false, error: validation.error });
+            wrappedSendResponse({ success: false, error: validation.error });
             return;
           }
 
           const response = await handleMessage(message, sender);
-          sendResponse(response);
+          wrappedSendResponse(response);
         } catch (error) {
           // P3.2: Better error serialization
           log.error('Message handling failed', {
             action: message.action,
             error: error instanceof Error ? error.message : String(error),
           });
-          sendResponse({
+          wrappedSendResponse({
             success: false,
             error: error instanceof Error ? error.message : String(error),
           });
@@ -341,8 +351,14 @@ async function handleMessage(
       });
 
       // 6. Finally generate the new email address
-      // Use identity-based prefix for human-readable email addresses (e.g., bradleyscott.9445@)
-      const identity = await identityService.getCurrentIdentity();
+      // Refresh identity so username, names, and email prefix are all new
+      const identity = await identityService.refreshIdentity();
+      
+      // Generate a new cached password for this new identity to ensure everything changes
+      const passwordResult = await passwordService.generate();
+      identity.cachedPassword = passwordResult.password;
+      await identityService.saveIdentity(identity);
+
       const emailPayload = message.action === 'GENERATE_EMAIL' ? message.payload || {} : {};
       const email = await emailService.generateEmail({
         ...emailPayload,
@@ -708,6 +724,16 @@ async function handleMessage(
     case 'GENERATE_PASSWORD': {
       const payload = message.action === 'GENERATE_PASSWORD' ? message.payload : undefined;
       const result = await passwordService.generate(payload);
+      // Sync with active identity
+      try {
+        const identity = await identityService.getCurrentIdentity();
+        if (identity) {
+          identity.cachedPassword = result.password;
+          await identityService.saveIdentity(identity);
+        }
+      } catch (e) {
+        log.warn('Failed to sync generated password with active identity', e);
+      }
       return { success: true, result };
     }
 

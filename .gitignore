@@ -198,3 +198,12 @@ current-errors.txt
 new_issues*.md
 *_FIXES_*.md
 *.pem
+
+# Local scratch files
+diff.txt
+merge.js
+recover_css.js
+singe.md
+test-qwen-classifier.ts
+test-qwen-classifier.js
+test-qwen-classifier.log

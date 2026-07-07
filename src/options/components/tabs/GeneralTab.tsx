@@ -1,9 +1,18 @@
 import { Palette, Bell, Save } from 'lucide-react';
 import React from 'react';
 
+import { Button } from '../../../shared/ui';
 import { UserSettings } from '../../../types/storage.types';
 import SettingsSection from '../SettingsSection';
 import ToggleSwitch from '../ToggleSwitch';
+
+const t = (key: string): string => {
+  try {
+    return chrome.i18n.getMessage(key) || key;
+  } catch {
+    return key;
+  }
+};
 
 interface GeneralTabProps {
   settings: UserSettings;
@@ -13,11 +22,11 @@ interface GeneralTabProps {
 const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChange }) => {
   return (
     <div role="tabpanel" id="tabpanel-general" aria-labelledby="tab-general">
-      <SettingsSection id="appearance" title="Appearance" icon={<Palette size={18} />}>
+      <SettingsSection id="appearance" title={t('appearanceSection')} icon={<Palette size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
-            <label htmlFor="dark-mode">Dark Mode</label>
-            <p>Choose your preferred color scheme</p>
+            <label htmlFor="dark-mode">{t('darkMode')}</label>
+            <p>{t('darkModeDescription')}</p>
           </div>
           <select
             id="dark-mode"
@@ -28,32 +37,32 @@ const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChange }) =>
             }}
             aria-describedby="dark-mode-description"
           >
-            <option value="system">System</option>
-            <option value="false">Light</option>
-            <option value="true">Dark</option>
+            <option value="system">{t('themeSystem')}</option>
+            <option value="false">{t('themeLight')}</option>
+            <option value="true">{t('themeDark')}</option>
           </select>
           <span id="dark-mode-description" className="sr-only">
-            Choose dark mode, light mode, or follow system preference
+            {t('darkModeAriaDescription')}
           </span>
         </div>
 
         <div className="setting-item">
           <div className="setting-info">
-            <label id="show-floating-button-label">Floating Button</label>
-            <p>Display the GhostFill action button near input fields</p>
+            <label id="show-floating-button-label">{t('floatingButton')}</label>
+            <p>{t('floatingButtonDescription')}</p>
           </div>
           <ToggleSwitch
             checked={settings.showFloatingButton}
             onChange={(checked) => onSettingChange('showFloatingButton', checked)}
-            ariaLabel="Show floating button"
+            ariaLabel={t('floatingButtonAriaLabel')}
             ariaLabelledBy="show-floating-button-label"
           />
         </div>
 
         <div className="setting-item">
           <div className="setting-info">
-            <label htmlFor="floating-position">Button Position</label>
-            <p>Which side of the input field to display the button</p>
+            <label htmlFor="floating-position">{t('buttonPosition')}</label>
+            <p>{t('buttonPositionDescription')}</p>
           </div>
           <select
             id="floating-position"
@@ -62,22 +71,26 @@ const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChange }) =>
               onSettingChange('floatingButtonPosition', e.target.value as 'right' | 'left')
             }
           >
-            <option value="right">Right</option>
-            <option value="left">Left</option>
+            <option value="right">{t('right')}</option>
+            <option value="left">{t('left')}</option>
           </select>
         </div>
       </SettingsSection>
 
-      <SettingsSection id="notifications" title="Notifications & Sound" icon={<Bell size={18} />}>
+      <SettingsSection
+        id="notifications"
+        title={t('notificationsSection')}
+        icon={<Bell size={18} />}
+      >
         <div className="setting-item">
           <div className="setting-info">
-            <label id="notifications-label">Desktop Notifications</label>
-            <p>Show notifications for new emails and OTP codes</p>
+            <label id="notifications-label">{t('desktopNotifications')}</label>
+            <p>{t('desktopNotificationsDescription')}</p>
           </div>
           <ToggleSwitch
             checked={settings.notifications}
             onChange={(checked) => onSettingChange('notifications', checked)}
-            ariaLabel="Enable notifications"
+            ariaLabel={t('desktopNotificationsAriaLabel')}
             ariaLabelledBy="notifications-label"
           />
         </div>
@@ -85,36 +98,34 @@ const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChange }) =>
         <div className="setting-item">
           <div className="setting-info">
             <label id="sound-enabled-label">
-              Sound Effects <span className="coming-soon-label">(Coming soon)</span>
+              {t('soundEffects')} <span className="coming-soon-label">({t('comingSoon')})</span>
             </label>
-            <p>Play sounds for actions like copy, OTP detection, etc.</p>
+            <p>{t('soundEffectsDescription')}</p>
           </div>
           <ToggleSwitch
             checked={settings.soundEnabled}
             onChange={(checked) => onSettingChange('soundEnabled', checked)}
-            ariaLabel="Enable sound effects"
+            ariaLabel={t('soundEffectsAriaLabel')}
             ariaLabelledBy="sound-enabled-label"
           />
         </div>
       </SettingsSection>
 
-      <SettingsSection id="app-data" title="App State & Data" icon={<Save size={18} />}>
+      <SettingsSection id="app-data" title={t('appDataSection')} icon={<Save size={18} />}>
         <div className="setting-item setting-item-col">
           <div className="setting-info setting-info-mb-8">
-            <label>Application Tutorial</label>
-            <p>Replay the welcome onboarding tutorial to learn about GhostFill's features</p>
+            <label>{t('applicationTutorial')}</label>
+            <p>{t('applicationTutorialDescription')}</p>
           </div>
-          <button
-            className="premium-btn premium-btn-secondary"
+          <Button
+            size="sm"
             onClick={async () => {
               await chrome.storage.local.set({ hasSeenOnboarding: false });
-              console.warn(
-                'Onboarding reset! Please open the GhostFill popup to view the tutorial.'
-              );
+              console.warn(t('onboardingResetWarning'));
             }}
           >
-            Replay Onboarding
-          </button>
+            {t('replayOnboarding')}
+          </Button>
         </div>
       </SettingsSection>
     </div>

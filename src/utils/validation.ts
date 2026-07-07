@@ -29,6 +29,7 @@ const emailServiceSchema = z.enum([
   'maildrop',
   'tempmail',
   'custom',
+  'driftz',
 ]);
 
 const emailAccountServiceSchema = z.enum([
@@ -40,6 +41,7 @@ const emailAccountServiceSchema = z.enum([
   'tempmail',
   'custom',
   'gmail',
+  'driftz',
 ]);
 
 // ─── Email Account schema ─────────────────────────────────────────────────────
@@ -107,7 +109,7 @@ export const userSettingsSchema = z.object({
   checkIntervalSeconds: safeNumber.min(3).max(60).default(10),
 
   // UI settings
-  darkMode: z.union([safeBoolean, z.literal('system')]).default('system'),
+  darkMode: z.union([safeBoolean, z.literal('system')]).default(true),
   showFloatingButton: safeBoolean.default(true),
   floatingButtonPosition: z.enum(['right', 'left']).default('right'),
 

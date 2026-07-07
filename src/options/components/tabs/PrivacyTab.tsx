@@ -5,6 +5,14 @@ import { UserSettings } from '../../../types/storage.types';
 import SettingsSection from '../SettingsSection';
 import ToggleSwitch from '../ToggleSwitch';
 
+const t = (key: string): string => {
+  try {
+    return chrome.i18n.getMessage(key) || key;
+  } catch {
+    return key;
+  }
+};
+
 interface PrivacyTabProps {
   settings: UserSettings;
   onSettingChange: (key: keyof UserSettings, value: UserSettings[keyof UserSettings]) => void;
@@ -22,24 +30,24 @@ const PrivacyTab: React.FC<PrivacyTabProps> = ({
 }) => {
   return (
     <div role="tabpanel" id="tabpanel-privacy" aria-labelledby="tab-privacy">
-      <SettingsSection id="history" title="History & Data" icon={<Lock size={18} />}>
+      <SettingsSection id="history" title={t('historyDataSection')} icon={<Lock size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
-            <label id="save-history-label">Save History</label>
-            <p>Save generated emails and passwords to history for later retrieval</p>
+            <label id="save-history-label">{t('saveHistory')}</label>
+            <p>{t('saveHistoryDescription')}</p>
           </div>
           <ToggleSwitch
             checked={settings.saveHistory}
             onChange={(checked) => onSettingChange('saveHistory', checked)}
-            ariaLabel="Save history"
+            ariaLabel={t('saveHistoryAriaLabel')}
             ariaLabelledBy="save-history-label"
           />
         </div>
 
         <div className="setting-item">
           <div className="setting-info">
-            <label htmlFor="history-retention">History Retention</label>
-            <p>Days to keep history before auto-deletion (1–365)</p>
+            <label htmlFor="history-retention">{t('historyRetention')}</label>
+            <p>{t('historyRetentionDescription')}</p>
           </div>
           <input
             id="history-retention"
@@ -57,7 +65,7 @@ const PrivacyTab: React.FC<PrivacyTabProps> = ({
             }
           />
           <span id="history-retention-desc" className="sr-only">
-            Enter a value between 1 and 365 days
+            {t('historyRetentionAriaDescription')}
           </span>
           {fieldHasError('historyRetentionDays') && (
             <span id="history-retention-error" className="field-error" role="alert">
@@ -68,45 +76,47 @@ const PrivacyTab: React.FC<PrivacyTabProps> = ({
 
         <div className="setting-item">
           <div className="setting-info">
-            <label id="clear-on-close-label">Clear on Close</label>
-            <p>Automatically clear all data when the browser closes</p>
+            <label id="clear-on-close-label">{t('clearOnClose')}</label>
+            <p>{t('clearOnCloseDescription')}</p>
           </div>
           <ToggleSwitch
             checked={settings.clearOnClose}
             onChange={(checked) => onSettingChange('clearOnClose', checked)}
-            ariaLabel="Clear data on browser close"
+            ariaLabel={t('clearOnCloseAriaLabel')}
             ariaLabelledBy="clear-on-close-label"
           />
         </div>
       </SettingsSection>
 
-      <SettingsSection id="gmail-privacy" title="Gmail Privacy" icon={<MailCheck size={18} />}>
+      <SettingsSection
+        id="gmail-privacy"
+        title={t('gmailPrivacySection')}
+        icon={<MailCheck size={18} />}
+      >
         <div className="setting-item">
           <div className="setting-info">
-            <label id="gmail-session-fallback-label">Gmail Session Detection</label>
-            <p>Allow GhostFill to use an open Gmail session if Google sign-in is unavailable</p>
+            <label id="gmail-session-fallback-label">{t('gmailSessionDetection')}</label>
+            <p>{t('gmailSessionDetectionDescription')}</p>
           </div>
           <ToggleSwitch
             checked={settings.allowGmailSessionFallback}
             onChange={(checked) => onSettingChange('allowGmailSessionFallback', checked)}
-            ariaLabel="Allow Gmail session detection"
+            ariaLabel={t('gmailSessionDetectionAriaLabel')}
             ariaLabelledBy="gmail-session-fallback-label"
           />
         </div>
       </SettingsSection>
 
-      <SettingsSection id="telemetry" title="Telemetry" icon={<BarChart2 size={18} />}>
+      <SettingsSection id="telemetry" title={t('telemetrySection')} icon={<BarChart2 size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
-            <label id="analytics-label">Anonymous Analytics</label>
-            <p>
-              Help improve GhostFill by sharing anonymous usage statistics (no personal data ever)
-            </p>
+            <label id="analytics-label">{t('anonymousAnalytics')}</label>
+            <p>{t('anonymousAnalyticsDescription')}</p>
           </div>
           <ToggleSwitch
             checked={settings.analyticsEnabled}
             onChange={(checked) => onSettingChange('analyticsEnabled', checked)}
-            ariaLabel="Enable anonymous analytics"
+            ariaLabel={t('anonymousAnalyticsAriaLabel')}
             ariaLabelledBy="analytics-label"
           />
         </div>

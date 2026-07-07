@@ -40,6 +40,7 @@
 
 import { clipboardService } from '../services/clipboardService';
 import { emailService } from '../services/emailServices';
+import { identityService } from '../services/identityService';
 import { otpService } from '../services/otpService';
 import { passwordService } from '../services/passwordService';
 import { CONTEXT_MENU_IDS } from '../utils/constants';
@@ -215,7 +216,16 @@ function registerDefaultActions(): void {
 
   // ── Generate Email ──
   register('generate-email', async (ctx) => {
-    const email = await emailService.generateEmail({ service: 'tempmail' });
+    // Generate a fresh identity
+    const identity = await identityService.refreshIdentity();
+    const passwordResult = await passwordService.generate();
+    identity.cachedPassword = passwordResult.password;
+    await identityService.saveIdentity(identity);
+
+    const email = await emailService.generateEmail({
+      service: 'tempmail',
+      prefix: identity.emailPrefix.substring(0, 30).replace(/[^a-z0-9.]/g, ''),
+    });
     return {
       clipboardValue: email.fullEmail,
       clipboardType: 'email',

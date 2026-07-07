@@ -20,6 +20,7 @@ import {
   analyzeUrlParams,
   calculateUrlComplexity,
   unwrapTrackingUrl,
+  unwrapEspTrackingUrl,
 } from './urlExtractor';
 import {
   decodeHtmlEntities,
@@ -120,6 +121,12 @@ const ACTIVATION_CONTEXT_KEYWORDS = [
   'use this link',
 ] as const;
 
+const GENERIC_DESTINATION_ANCHOR =
+  /\b(?:shop now|sale|deal|offer|open dashboard|view dashboard|dashboard|learn more|read more|view details|visit site|visit website|docs|documentation|blog|help center|support center|download app|view profile|manage preferences)\b/i;
+
+const GENERIC_DESTINATION_URL =
+  /\/(?:dashboard|home|pricing|plans|billing|settings|preferences|profile|docs|documentation|blog|help|support|shop|store|sale|deals)(?:\/|\?|$)/i;
+
 function isActivationIntent(intent: EmailIntent): boolean {
   return [
     'activation',
@@ -135,6 +142,12 @@ function isGenericTokenPattern(patternName: string | null): boolean {
   return Boolean(
     patternName &&
     ['token-param', 'code-param', 'action-verify-param', 'url-oauth-flow'].includes(patternName)
+  );
+}
+
+function hasSpecificActionPattern(patternName: string | null): boolean {
+  return Boolean(
+    patternName && !['token-param', 'code-param', 'id-param-uuid'].includes(patternName)
   );
 }
 
@@ -165,6 +178,11 @@ function hostMatchesExpected(url: string, expectedDomains: string[]): boolean {
   }
 }
 
+interface ScoredLinkCandidate extends LinkCandidate {
+  actionProofScore: number;
+  negativeSignalScore: number;
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  URL FILTER PATTERNS
 // ═══════════════════════════════════════════════════════════════════════
@@ -180,32 +198,27 @@ const NON_TARGET_URL_PATTERNS = [
   /privacy[-_]?(?:policy|notice|statement)/i,
   /terms[-_]?(?:of|and)[-_]?(?:service|use|conditions)/i,
   /legal/i,
-  /(?:facebook|twitter|x|linkedin|pinterest)\.com\/(?:share|sharer|intent|company|in\/|profile|pub|posts?)(?:\/|\?|$)/i,
+  // Social sharing (not social login) links only
+  /(?:facebook|twitter|x|linkedin|pinterest)\.com\/(?:share|sharer|intent|company|posts?)(?:\/|\?|$)/i,
   /(?:youtube|tiktok|instagram)\.com\/(?:channel|user|watch|reel|p|shorts|@)(?:\/|\?|$)/i,
   /play\.google\.com/i,
   /apps\.apple\.com/i,
   /itunes\.apple\.com/i,
-  /help\.[a-z0-9.-]+\.com/i,
-  /support\.[a-z0-9.-]+\.com/i,
-  /blog\.[a-z0-9.-]+\.com/i,
-  /cdn\./i,
-  /static\./i,
+  // Static asset domains — never contain activation links
+  /\/cdn\//i,
+  /\/static\//i,
   /images?\./i,
   /img\./i,
   /assets?\./i,
   /fonts?\./i,
-  /beacon/i,
-  /pixel/i,
-  /tracking/i,
-  /analytics/i,
-  /open\.[a-z0-9.-]+\.com.*\/o\//i,
+  // Analytics / tracking pixels — content-less
+  /\/beacon(?:\/|$)/i,
+  /\/pixel(?:\/|$|\?)/i,
+  /\/track(?:ing)?(?:\/open|\?|$)/i,
+  /\/analytics(?:\/|$)/i,
+  // Email view-in-browser links
   /view[-_]?(?:in|this)[-_]?(?:browser|email)/i,
   /web[-_]?version/i,
-  /contact[-_]?us/i,
-  /about[-_]?us/i,
-  /faq/i,
-  /list-manage\.com/i,
-  /social[-_]?media/i,
 ] as const;
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -248,6 +261,11 @@ export function isCTAButton(anchorHtml: string): boolean {
     return true;
   }
   if (/border-radius/i.test(l) && /padding/i.test(l)) {
+    return true;
+  }
+  // NEW: <td> parent with bgcolor or background-color (table-layout buttons)
+  // These appear when the <td> wrapping the <a> has button styling
+  if (/<td[^>]*bgcolor\s*=/i.test(l) || /<td[^>]*background(?:-color)?\s*:/i.test(l)) {
     return true;
   }
   return false;
@@ -443,22 +461,46 @@ export function extractLink(
 ): ExtractedLink | null {
   const plainText = stripHtmlPreserveStructure(html);
   const decoded = decodeHtmlEntities(html);
-  const candidates: LinkCandidate[] = [];
+  const candidates: ScoredLinkCandidate[] = [];
 
   for (const url of urls) {
-    // Filter out non-target URLs
-    if (NON_TARGET_URL_PATTERNS.some((p: RegExp) => p.test(url))) {
+    // ─── ESP Tracking URL Unwrapping ───────────────────────────────────────────
+    // Many ESP platforms (SendGrid, Mailchimp, Mailgun, Postmark, HubSpot, etc.)
+    // wrap ALL links — including activation/verification links — in click-tracking
+    // redirects. We extract the embedded real URL before any scoring.
+    let effectiveUrl = url;
+    const espUnwrapped = unwrapEspTrackingUrl(url);
+    if (espUnwrapped && espUnwrapped !== url) {
+      log.debug(`ESP tracking URL unwrapped: ${url.substring(0, 60)}... → ${espUnwrapped.substring(0, 60)}...`);
+      effectiveUrl = espUnwrapped;
+    }
+
+    // ─── Hash-Fragment Token Detection ──────────────────────────────────────────
+    // Some activation links embed tokens in the URL hash: /verify#token=abc123
+    // Standard URL parsing strips fragments, so we handle them explicitly.
+    const hashTokenMatch = effectiveUrl.match(/#(?:token|code|access_token|id_token|invite_token|confirmation_token|magic_token)=([A-Za-z0-9._%-]{8,})/i);
+    const hasHashToken = hashTokenMatch !== null;
+
+    // Filter out non-target URLs (after unwrapping)
+    if (NON_TARGET_URL_PATTERNS.some((p: RegExp) => p.test(effectiveUrl))) {
       continue;
     }
 
+    // Use the effective (unwrapped) URL for all further scoring
+    const originalUrl = url;
+    const workingUrl = effectiveUrl;
+
     let confidence = 40;
-    let detectedType: EmailIntent = 'other';
-    let patternName: string | null = null;
+    if (hasHashToken) {
+      confidence = 72; // Hash token is a reliable activation signal
+    }
+    let detectedType: EmailIntent = hasHashToken ? 'activation' : 'other';
+    let patternName: string | null = hasHashToken ? 'hash-fragment-token' : null;
 
     // Strategy 1: Knowledge base patterns
     for (const pat of KnowledgeBase.linkPatterns) {
       pat.pattern.lastIndex = 0;
-      if (pat.pattern.test(url)) {
+      if (pat.pattern.test(workingUrl)) {
         confidence = pat.baseConfidence;
         detectedType = pat.type;
         patternName = pat.name;
@@ -468,28 +510,27 @@ export function extractLink(
 
     // Strategy 2: URL keyword + OAuth/auth-flow detection
     if (!patternName) {
-      if (PASSWORD_RESET_URL_KEYWORD.test(url)) {
+      if (PASSWORD_RESET_URL_KEYWORD.test(workingUrl)) {
         confidence = 75;
         detectedType = 'password-reset';
         patternName = 'url-kw-reset';
-      } else if (ACTIVATION_URL_KEYWORD.test(url)) {
+      } else if (ACTIVATION_URL_KEYWORD.test(workingUrl)) {
         confidence = 76;
         detectedType = 'activation';
         patternName = 'url-kw-activation';
       } else {
         // OAuth / SSO / Auth-flow detection
-        // Catches: ?auth=...&flow=..., /oauth/..., /sso/..., /auth/..., /login/...
-        const oauthFlow = /[?&](?:flow|state|nonce|grant_type|response_type)=/i.test(url);
+        const oauthFlow = /[?&](?:flow|state|nonce|grant_type|response_type)=/i.test(workingUrl);
         const authParam = /[?&](?:auth|token|access_token|id_token|code)=[A-Za-z0-9%._-]{8,}/i.test(
-          url
+          workingUrl
         );
         const authPath =
           /\/(?:auth|oauth|sso|login|signin|sign-in|magic|passwordless|email-login|oidc|saml|callback|authorize|approve|invite|invitation|join)(?:\/|\?|$)/i.test(
-            url
+            workingUrl
           );
-        const longPathToken = /\/[A-Za-z0-9_-]{20,}(?:\/|$|\?)/.test(url);
+        const longPathToken = /\/[A-Za-z0-9_-]{20,}(?:\/|$|\?)/.test(workingUrl);
         const uuidInPath =
-          /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\/|$)/i.test(url);
+          /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\/|$)/i.test(workingUrl);
 
         if (oauthFlow || authParam || authPath) {
           confidence = 68;
@@ -509,19 +550,28 @@ export function extractLink(
       }
     }
 
-    // Strategy 3: Anchor analysis
-    const { anchorText, anchorHtml, isCTA } = getAnchorInfo(decoded, url);
+    // Strategy 3: Anchor analysis — try workingUrl first, fall back to originalUrl for anchor HTML matching
+    const anchorInfoWorking = getAnchorInfo(decoded, workingUrl);
+    const anchorInfoOriginal = getAnchorInfo(decoded, originalUrl);
+    const { anchorText, anchorHtml, isCTA } = anchorInfoWorking.anchorText
+      ? anchorInfoWorking
+      : anchorInfoOriginal;
     const anchorLooksActivation = ACTIVATION_ANCHOR_KEYWORD.test(anchorText);
     const anchorLooksReset = PASSWORD_RESET_ANCHOR_KEYWORD.test(anchorText);
+    const anchorHasGenericDestination = Boolean(
+      anchorText && GENERIC_DESTINATION_ANCHOR.test(anchorText)
+    );
+    const anchorHasActionIntent =
+      (anchorLooksActivation || anchorLooksReset) && !anchorHasGenericDestination;
 
     if (isCTA) {
       confidence += CONFIG.scoring.linkCtaBonus;
-      if (anchorLooksReset) {
+      if (anchorLooksReset && !anchorHasGenericDestination) {
         confidence += CONFIG.scoring.linkAnchorKeyword;
         if (detectedType === 'other' || isGenericTokenPattern(patternName)) {
           detectedType = 'password-reset';
         }
-      } else if (anchorLooksActivation) {
+      } else if (anchorLooksActivation && !anchorHasGenericDestination) {
         confidence += CONFIG.scoring.linkAnchorKeyword;
         if (
           detectedType === 'other' ||
@@ -531,7 +581,7 @@ export function extractLink(
           detectedType = 'activation';
         }
       }
-    } else if (anchorText && (anchorLooksActivation || anchorLooksReset)) {
+    } else if (anchorText && anchorHasActionIntent) {
       confidence += 12;
       if (anchorLooksReset && (detectedType === 'other' || isGenericTokenPattern(patternName))) {
         detectedType = 'password-reset';
@@ -546,7 +596,7 @@ export function extractLink(
     }
 
     // Strategy 4: URL parameter analysis
-    const paramAn = analyzeUrlParams(url);
+    const paramAn = analyzeUrlParams(workingUrl);
     if (paramAn.hasToken) {
       confidence += CONFIG.scoring.linkParamToken;
     }
@@ -571,7 +621,7 @@ export function extractLink(
     }
     if (
       (paramAn.hasToken || paramAn.hasCode) &&
-      (anchorLooksActivation || isActivationIntent(intent.intent)) &&
+      (anchorHasActionIntent || isActivationIntent(intent.intent)) &&
       detectedType !== 'password-reset'
     ) {
       confidence += 10;
@@ -601,7 +651,10 @@ export function extractLink(
     }
 
     // Strategy 6: Context validation
-    const ctxResult = validateContext(url, plainText, 'activation', zones, decoded);
+    const contextNeedle = plainText.toLowerCase().includes(workingUrl.toLowerCase())
+      ? workingUrl
+      : anchorText || workingUrl;
+    const ctxResult = validateContext(workingUrl, plainText, 'activation', zones, decoded, contextNeedle);
     if (ctxResult.isValid) {
       confidence += Math.min(ctxResult.score / 4, CONFIG.scoring.linkContextBonusMax);
     }
@@ -611,10 +664,10 @@ export function extractLink(
     }
 
     // Strategy 7: Domain trust and origin binding
-    const domainTrust = calculateDomainTrust(url, provider);
+    const domainTrust = calculateDomainTrust(workingUrl, provider);
     confidence += Math.min(domainTrust / 5, CONFIG.scoring.linkDomainTrustMax);
 
-    const normalizedUrl = normalizeUrl(url);
+    const normalizedUrl = normalizeUrl(workingUrl);
     const originBound = hostMatchesExpected(normalizedUrl, expectedDomains);
     if (originBound) {
       confidence += 35;
@@ -622,31 +675,83 @@ export function extractLink(
       confidence -= 20;
     }
 
+    const urlHasActionKeyword =
+      ACTIVATION_URL_KEYWORD.test(workingUrl) || PASSWORD_RESET_URL_KEYWORD.test(workingUrl);
+    const hasSpecificActionEvidence =
+      anchorHasActionIntent ||
+      urlHasActionKeyword ||
+      hasSpecificActionPattern(patternName) ||
+      ctxResult.score >= 24 ||
+      originBound;
+    const genericTokenOnly =
+      (paramAn.hasToken || paramAn.hasCode || isGenericTokenPattern(patternName)) &&
+      !hasSpecificActionEvidence;
+    const genericDestination = anchorHasGenericDestination || GENERIC_DESTINATION_URL.test(workingUrl);
+
+    let actionProofScore = 0;
+    if (anchorHasActionIntent) {
+      actionProofScore += 4;
+    }
+    if (isCTA && anchorHasActionIntent) {
+      actionProofScore += 2;
+    }
+    if (urlHasActionKeyword || hasSpecificActionPattern(patternName)) {
+      actionProofScore += 4;
+    }
+    if (ctxResult.score >= 24) {
+      actionProofScore += 2;
+    }
+    if (paramAn.hasToken || paramAn.hasCode) {
+      actionProofScore += 1;
+    }
+    if (originBound) {
+      actionProofScore += 2;
+    }
+
+    let negativeSignalScore = 0;
+    if (genericTokenOnly) {
+      confidence -= 24;
+      negativeSignalScore += 3;
+    }
+    if (genericDestination && !hasSpecificActionEvidence) {
+      confidence -= 18;
+      negativeSignalScore += 2;
+    }
+
     // Strategy 8: Provider link pattern match
     if (
       provider?.linkPatterns?.some((p: RegExp) => {
         p.lastIndex = 0;
-        return p.test(url);
+        return p.test(workingUrl);
       })
     ) {
-      confidence += 25; // was 20 — provider match is very reliable
+      confidence += 25;
     }
 
-    // Zone scoring — use higher floor (0.65) so zone weight can't crush good signals
-    const urlPos = decoded.indexOf(url);
+    // Zone scoring — use higher floor (0.80) so zone weight can't crush good signals
+    // Changed from 0.65+zw*0.35 to 0.80+zw*0.20: unknown zones assumed mid-body.
+    const urlPos = decoded.indexOf(workingUrl) !== -1
+      ? decoded.indexOf(workingUrl)
+      : decoded.indexOf(originalUrl);
     const zone = urlPos !== -1 ? getZoneForPosition(zones, urlPos) : null;
     if (zone?.zone === 'cta') {
       confidence += 18;
-    } // was 15
+    }
     if (zone?.zone === 'footer') {
       confidence -= 15;
-    } // was 18 — less aggressive penalty
-    const zw = zone?.weight ?? 0.7; // default 0.7 (was 0.5) — unknown zones assumed mid-body
-    confidence *= 0.65 + zw * 0.35; // was 0.55+0.45 — raises the floor significantly
+    }
+    const zw = zone?.weight ?? 0.7;
+    confidence *= 0.80 + zw * 0.20;
+
+    const surroundingText = plainText.toLowerCase().includes(workingUrl.toLowerCase())
+      ? getContextAround(plainText, workingUrl, 100)
+      : anchorText
+        ? getContextAround(plainText, anchorText, 100)
+        : '';
 
     candidates.push({
       url: normalizedUrl,
-      originalUrl: url,
+      originalUrl: workingUrl, // store the effective (unwrapped) URL as originalUrl
       confidence: Math.min(Math.max(confidence, 0), 100),
       zone: zone?.zone || 'unknown',
       zoneWeight: zw,
@@ -658,12 +763,14 @@ export function extractLink(
       patternName,
       contextScore: ctxResult.score,
       semanticDistance: ctxResult.semanticDistance,
-      urlComplexity: calculateUrlComplexity(url),
-      hasAuthToken: paramAn.hasToken || paramAn.hasCode,
+      urlComplexity: calculateUrlComplexity(workingUrl),
+      hasAuthToken: paramAn.hasToken || paramAn.hasCode || hasHashToken,
       paramAnalysis: paramAn,
       domainTrust,
       originBound,
-      surroundingText: getContextAround(plainText, url, 100),
+      surroundingText,
+      actionProofScore,
+      negativeSignalScore,
     });
   }
 
@@ -673,6 +780,12 @@ export function extractLink(
 
   // Sort candidates by confidence and other factors
   candidates.sort((a, b) => {
+    if (Math.abs(a.actionProofScore - b.actionProofScore) > 2) {
+      return b.actionProofScore - a.actionProofScore;
+    }
+    if (Math.abs(a.negativeSignalScore - b.negativeSignalScore) > 1) {
+      return a.negativeSignalScore - b.negativeSignalScore;
+    }
     if (a.originBound !== b.originBound) {
       return a.originBound ? -1 : 1;
     }
@@ -727,10 +840,12 @@ function validateContext(
   fullText: string,
   category: 'activation',
   zones: EmailZone[],
-  decodedHtml?: string
+  decodedHtml?: string,
+  contextNeedle?: string
 ): { isValid: boolean; score: number; semanticDistance: number } {
   const lower = fullText.toLowerCase();
-  const urlIdx = lower.indexOf(url.toLowerCase());
+  const needle = contextNeedle && lower.includes(contextNeedle.toLowerCase()) ? contextNeedle : url;
+  const urlIdx = lower.indexOf(needle.toLowerCase());
 
   let score = 0;
 
@@ -739,7 +854,7 @@ function validateContext(
 
   const radius = 150;
   const start = Math.max(0, urlIdx - radius);
-  const end = Math.min(fullText.length, urlIdx + url.length + radius);
+  const end = Math.min(fullText.length, urlIdx + needle.length + radius);
   const context = lower.substring(start, end);
 
   for (const keyword of activationKeywords) {
@@ -767,12 +882,17 @@ function validateContext(
     'launch',
   ];
   let semanticDistance = Infinity;
-  for (const term of actionTerms) {
-    const tIdx = lower.indexOf(term);
-    if (tIdx !== -1 && urlIdx !== -1) {
-      const d = Math.abs(tIdx - urlIdx);
-      if (d < semanticDistance) {
-        semanticDistance = d;
+  if (urlIdx !== -1) {
+    for (const term of actionTerms) {
+      let from = 0;
+      let tIdx = lower.indexOf(term, from);
+      while (tIdx !== -1) {
+        const d = Math.abs(tIdx - urlIdx);
+        if (d < semanticDistance) {
+          semanticDistance = d;
+        }
+        from = tIdx + term.length;
+        tIdx = lower.indexOf(term, from);
       }
     }
   }
@@ -787,6 +907,9 @@ function validateContext(
   let htmlUrlIdx = -1;
   if (decodedHtml) {
     htmlUrlIdx = decodedHtml.toLowerCase().indexOf(url.toLowerCase());
+    if (htmlUrlIdx === -1 && contextNeedle) {
+      htmlUrlIdx = decodedHtml.toLowerCase().indexOf(contextNeedle.toLowerCase());
+    }
   } else {
     htmlUrlIdx = urlIdx;
   }

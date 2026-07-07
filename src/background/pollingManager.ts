@@ -73,6 +73,11 @@ const CIRCUIT = {
   MAX_BACKOFF_EXPONENT: 10,
 } as const;
 
+// PERMANENT FIX 2026-06-21: time-based decay so a single isolated
+// network blip doesn't accumulate forever — after 60s of no failures,
+// the streak resets.
+const TRANSPORT_DECAY_MS = 60_000;
+
 /** Sliding window rate limiter */
 const RATE = {
   MAX_PER_WINDOW: 60,
@@ -82,9 +87,18 @@ const RATE = {
 /** OTP delivery retry schedule (geometric backoff) */
 const OTP_DELIVERY_DELAYS_MS: readonly number[] = [0, 500, 1000, 2000];
 const OTP_DELIVERY_MESSAGE_TIMEOUT_MS = 5_000;
-const OTP_FALLBACK_DELIVERY_MAX_AGE_MS = 2 * 60 * 1000;
-const OTP_FALLBACK_PAGE_CONFIDENCE_MIN = 0.6;
-const OTP_FALLBACK_VERDICTS = new Set(['otp-page', 'possible-otp']);
+
+/** Email-Tab correlation scoring thresholds */
+const CORRELATION = {
+  /** Score at or above this → strong match, deliver immediately */
+  STRONG: 80,
+  /** Score in [MODERATE, STRONG) → acceptable match, deliver with logging */
+  MODERATE: 50,
+  /** Maximum age for contextual temporal proximity bonus */
+  TEMPORAL_PROXIMITY_MS: 2 * 60 * 1000, // 2 minutes
+  /** Minimum brand token length to avoid spurious matches (e.g. "io", "co") */
+  MIN_BRAND_LENGTH: 3,
+} as const;
 
 /** Chrome alarm names */
 const ALARM_NAMES = {
@@ -152,6 +166,21 @@ interface EmailContext {
   readonly subject: string;
   readonly provider?: string;
   readonly linkUrl?: string | null;
+  /** First ~500 chars of the plain-text email body for content-based matching */
+  readonly bodySnippet?: string;
+}
+
+interface CorrelationSignal {
+  readonly name: string;
+  readonly score: number;
+}
+
+type CorrelationTier = 'strong' | 'moderate' | 'none';
+
+interface CorrelationResult {
+  readonly score: number;
+  readonly tier: CorrelationTier;
+  readonly signals: CorrelationSignal[];
 }
 
 interface SessionState {
@@ -214,10 +243,12 @@ class CircuitBreaker {
     this.state.consecutiveFailures = 0;
     this.state.consecutiveSuccesses++;
 
-    if (
-      this.state.state === 'half-open' &&
-      this.state.consecutiveSuccesses >= CIRCUIT.HALF_OPEN_SUCCESSES
-    ) {
+    // PERMANENT FIX 2026-06-21: a single success while OPEN is enough to
+    // flip the breaker back to CLOSED. The old code required 3 in a row
+    // (HALF_OPEN_SUCCESSES), which meant the user's first successful
+    // fetch after a transport blip was logged as "half-open" and didn't
+    // reset the visible "dead inbox" state in the UI.
+    if (this.state.state !== 'closed') {
       this.state.state = 'closed';
       log.info('🟢 Circuit → closed (recovered)');
     }
@@ -225,8 +256,44 @@ class CircuitBreaker {
 
   recordFailure(error: unknown): void {
     this.state.consecutiveSuccesses = 0;
-    this.state.consecutiveFailures++;
     this.state.lastFailureTime = Date.now();
+
+    // PERMANENT FIX 2026-06-21: distinguish TRANSPORT errors (Failed to fetch,
+    // network down, SW wake-up race) from AUTH errors (401/403/419 — token
+    // expired). Transport errors used to latch the circuit after 5 failures
+    // and leave the user with a permanently dead inbox even though mail.tm
+    // itself was healthy. Now we:
+    //  - count transport failures toward the breaker, BUT
+    //  - decay the failure streak over time (1 failure older than 60s is
+    //    forgiven) so a temporary network blip doesn't accumulate, AND
+    //  - on auth errors, do NOT trip the breaker (those are re-auth issues,
+    //    not transport health — mailTmService has its own auth circuit).
+    const msg = error instanceof Error ? error.message : String(error);
+    const isAuthError = /\b(401|403|419|token|jwt|unauthor|forbidden)\b/i.test(msg);
+    const isTransportError =
+      /\b(fetch|network|aborted|timeout|cors|load failed)\b/i.test(msg) ||
+      msg.includes('Failed to fetch');
+
+    if (isAuthError) {
+      // Don't trip the breaker on auth problems — the per-service auth
+      // circuit handles those, and tripping the engine circuit here would
+      // hide the real signal from the UI.
+      log.debug('Auth error — not tripping engine circuit', { msg });
+      return;
+    }
+
+    // Decay: a failure older than the decay window is forgiven.
+    const now = Date.now();
+    if (
+      this.state.lastFailureTime > 0 &&
+      now - this.state.lastFailureTime > TRANSPORT_DECAY_MS &&
+      this.state.consecutiveFailures > 0
+    ) {
+      // The last failure was a long time ago — reset the streak.
+      this.state.consecutiveFailures = 0;
+    }
+    this.state.consecutiveFailures++;
+    this.state.lastFailureTime = now;
 
     if (this.state.consecutiveFailures >= CIRCUIT.FAIL_THRESHOLD) {
       this.state.state = 'open';
@@ -242,7 +309,15 @@ class CircuitBreaker {
       log.warn('🔴 Circuit → open', {
         failures: this.state.consecutiveFailures,
         retryInMs: backoff,
-        error: error instanceof Error ? error.message : String(error),
+        transport: isTransportError,
+        error: msg,
+      });
+    } else if (isTransportError) {
+      // Don't spam — log at debug for transport-only intermediate failures.
+      log.debug('Transport failure (no trip yet)', {
+        failures: this.state.consecutiveFailures,
+        threshold: CIRCUIT.FAIL_THRESHOLD,
+        error: msg,
       });
     }
   }
@@ -361,7 +436,12 @@ class AdaptiveScheduler {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  §7  DOMAIN MATCHING ENGINE
+//  §7  EMAIL-TAB CORRELATION ENGINE
+//
+//  Multi-signal scoring engine. Evaluates structural, content, and
+//  contextual signals to determine how likely an incoming email
+//  belongs to a given waiting tab. No hardcoded sender/provider
+//  lists — works for ANY email service.
 // ═══════════════════════════════════════════════════════════════
 
 class DomainMatcher {
@@ -371,77 +451,280 @@ class DomainMatcher {
     microsoft: ['microsoft.com', 'live.com', 'outlook.com', 'hotmail.com', 'azure.com'],
   };
 
+  /** Known OTP-page verdicts considered trustworthy */
+  private static readonly TRUSTED_OTP_VERDICTS: ReadonlySet<string> = new Set([
+    'otp-page',
+    'possible-otp',
+  ]);
+
+  // ─── Scoring weights (cumulative, not normalized) ───────────
+
+  private static readonly SCORE = {
+    // Structural signals
+    ROOT_DOMAIN:      100, // Definitive: sender domain matches tab domain
+    CLUSTER:          100, // Definitive: both in same corporate ecosystem
+    LINK_DOMAIN:       85, // Very strong: link in email points to tab's service
+    PROVIDER_KEYWORD:  75, // Strong: detected provider name found in tab hostname
+
+    // Content signals (no hardcoded lists needed — always evaluated)
+    SUBJECT_BRAND:     55, // Email subject mentions tab's brand name
+    BODY_BRAND:        45, // Email body text mentions tab's hostname/brand
+
+    // Contextual signals (from tab registration state)
+    SINGLE_WAITER:     15, // Only one non-activation tab is waiting (low ambiguity)
+    STRONG_VERDICT:    12, // Tab's OTP page detector gave a trusted verdict
+    TEMPORAL:          10, // Tab registered recently (< 2 min ago)
+    HAS_SELECTORS:      5, // Tab has specific field selectors registered
+  } as const;
+
+  // ─── Public API ─────────────────────────────────────────────
+
   /**
-   * Check if an email sender matches a tab's domain context.
-   * Uses root domain matching, cluster matching, provider matching,
-   * and link domain matching.
+   * Score how strongly an email correlates with a specific tab.
+   * Returns a CorrelationResult with cumulative score, tier, and
+   * a breakdown of which signals fired.
+   *
+   * @param email   Email-level context (from, subject, body, provider, link)
+   * @param tab     Tab registration to score against
+   */
+  static correlate(email: EmailContext, tab: TabRegistration): CorrelationResult {
+    const signals: CorrelationSignal[] = [];
+    let score = 0;
+
+    const senderDomain = (email.from.split('@')[1] ?? '').toLowerCase();
+    if (!senderDomain) {
+      return { score: 0, tier: 'none', signals };
+    }
+
+    const tabRoot = this.getRootDomain(tab.hostname);
+    const senderRoot = this.getRootDomain(senderDomain);
+
+    // ─── STRUCTURAL SIGNALS ───────────────────────────────────
+
+    // 1. Root domain overlap
+    if (
+      tabRoot === senderRoot ||
+      tab.hostname.includes(senderRoot) ||
+      senderDomain.includes(tabRoot)
+    ) {
+      signals.push({ name: 'root-domain', score: this.SCORE.ROOT_DOMAIN });
+      score += this.SCORE.ROOT_DOMAIN;
+    }
+
+    // 2. Cluster matching
+    if (score < this.SCORE.CLUSTER) {
+      for (const [canonical, domains] of Object.entries(this.CLUSTERS)) {
+        const tabInCluster = domains.some((d) => tab.hostname.endsWith(d));
+        const senderInCluster = domains.some((d) => senderDomain.endsWith(d));
+        const providerMatch = email.provider?.toLowerCase().includes(canonical);
+
+        if ((tabInCluster && senderInCluster) || (tabInCluster && providerMatch)) {
+          signals.push({ name: `cluster-${canonical}`, score: this.SCORE.CLUSTER });
+          score += this.SCORE.CLUSTER;
+          break;
+        }
+      }
+    }
+
+    // 3. Provider keyword match
+    if (email.provider && score < this.SCORE.CLUSTER) {
+      const normalized = email.provider.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (normalized && tab.hostname.includes(normalized)) {
+        signals.push({ name: 'provider-keyword', score: this.SCORE.PROVIDER_KEYWORD });
+        score += this.SCORE.PROVIDER_KEYWORD;
+      }
+    }
+
+    // 4. Link domain match
+    if (email.linkUrl) {
+      try {
+        const linkHostname = new URL(email.linkUrl).hostname.toLowerCase();
+        const linkRoot = this.getRootDomain(linkHostname);
+        if (tab.hostname.includes(linkRoot) || linkHostname.includes(tabRoot)) {
+          signals.push({ name: 'link-domain', score: this.SCORE.LINK_DOMAIN });
+          score += this.SCORE.LINK_DOMAIN;
+        }
+      } catch {
+        /* invalid URL — skip */
+      }
+    }
+
+    // ─── CONTENT SIGNALS ──────────────────────────────────────
+    //
+    // These are always evaluated regardless of who sent the email.
+    // This is the key insight: we don't need to know if the sender
+    // is a "third-party provider" — we just check if the email
+    // CONTENT relates to the tab. Works for Cloudflare, SendGrid,
+    // any custom ESP, or even a new service that didn't exist yet.
+
+    const tabBrands = this.extractBrandTokens(tabRoot);
+
+    // 5. Subject mentions tab brand
+    if (email.subject && tabBrands.length > 0) {
+      if (this.brandMatchesText(tabBrands, email.subject)) {
+        signals.push({ name: 'subject-brand', score: this.SCORE.SUBJECT_BRAND });
+        score += this.SCORE.SUBJECT_BRAND;
+      }
+    }
+
+    // 6. Body mentions tab brand (only if subject didn't already match)
+    if (
+      email.bodySnippet &&
+      tabBrands.length > 0 &&
+      !signals.some((s) => s.name === 'subject-brand')
+    ) {
+      if (this.brandMatchesText(tabBrands, email.bodySnippet)) {
+        signals.push({ name: 'body-brand', score: this.SCORE.BODY_BRAND });
+        score += this.SCORE.BODY_BRAND;
+      }
+    }
+
+    // ─── CONTEXTUAL SIGNALS ───────────────────────────────────
+
+    // 7. Single waiting tab (low ambiguity)
+    const nonActivationCount = Array.from(otpWaitingTabs.keys()).filter(
+      (tabId) => !activationTabs.has(tabId)
+    ).length;
+    if (nonActivationCount === 1) {
+      signals.push({ name: 'single-waiter', score: this.SCORE.SINGLE_WAITER });
+      score += this.SCORE.SINGLE_WAITER;
+    }
+
+    // 8. Strong OTP page verdict
+    if (tab.verdict && this.TRUSTED_OTP_VERDICTS.has(tab.verdict)) {
+      signals.push({ name: 'strong-verdict', score: this.SCORE.STRONG_VERDICT });
+      score += this.SCORE.STRONG_VERDICT;
+    }
+
+    // 9. Temporal proximity (tab registered recently)
+    const ageMs = Date.now() - tab.registeredAt;
+    if (ageMs <= CORRELATION.TEMPORAL_PROXIMITY_MS) {
+      signals.push({ name: 'temporal', score: this.SCORE.TEMPORAL });
+      score += this.SCORE.TEMPORAL;
+    }
+
+    // 10. Tab has field selectors (basic sanity)
+    if (tab.fieldSelectors.length > 0) {
+      signals.push({ name: 'has-selectors', score: this.SCORE.HAS_SELECTORS });
+      score += this.SCORE.HAS_SELECTORS;
+    }
+
+    // ─── Classify tier ────────────────────────────────────────
+    const tier: CorrelationTier =
+      score >= CORRELATION.STRONG
+        ? 'strong'
+        : score >= CORRELATION.MODERATE
+          ? 'moderate'
+          : 'none';
+
+    return { score: Math.min(100, score), tier, signals };
+  }
+
+  /**
+   * Boolean convenience — returns true for strong or moderate matches.
+   * Backward-compatible wrapper around `correlate()`.
    */
   static matches(
     senderEmail: string,
     tabUrl: string,
     providerName?: string,
-    linkUrl?: string | null
+    linkUrl?: string | null,
+    emailSubject?: string
   ): boolean {
     if (!tabUrl || tabUrl.startsWith('chrome://') || tabUrl.startsWith('about:')) {
       return false;
     }
 
     try {
-      const tabHostname = new URL(tabUrl).hostname.toLowerCase();
-      const senderDomain = (senderEmail.split('@')[1] ?? '').toLowerCase();
-      if (!senderDomain) {
+      let hostname: string;
+      try {
+        hostname = new URL(tabUrl).hostname.toLowerCase();
+      } catch {
         return false;
       }
 
-      const tabRoot = this.getRootDomain(tabHostname);
-      const senderRoot = this.getRootDomain(senderDomain);
+      // Build a minimal TabRegistration for scoring
+      const pseudoTab: TabRegistration = {
+        url: tabUrl,
+        hostname,
+        fieldSelectors: [],
+        registeredAt: Date.now(),
+        priority: 0,
+        deliveryAttempts: 0,
+      };
 
-      // 1. Root domain overlap
-      if (
-        tabRoot === senderRoot ||
-        tabHostname.includes(senderRoot) ||
-        senderDomain.includes(tabRoot)
-      ) {
-        return true;
-      }
+      const email: EmailContext = {
+        from: senderEmail,
+        subject: emailSubject ?? '',
+        ...(providerName !== undefined ? { provider: providerName } : {}),
+        linkUrl: linkUrl ?? null,
+      };
 
-      // 2. Cluster matching
-      for (const [canonical, domains] of Object.entries(this.CLUSTERS)) {
-        const tabInCluster = domains.some((d) => tabHostname.endsWith(d));
-        const senderInCluster = domains.some((d) => senderDomain.endsWith(d));
-        const providerMatch = providerName?.toLowerCase().includes(canonical);
-
-        if ((tabInCluster && senderInCluster) || (tabInCluster && providerMatch)) {
-          return true;
-        }
-      }
-
-      // 3. Provider keyword match
-      if (providerName) {
-        const normalized = providerName.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (normalized && tabHostname.includes(normalized)) {
-          return true;
-        }
-      }
-
-      // 4. Link domain match
-      if (linkUrl) {
-        try {
-          const linkHostname = new URL(linkUrl).hostname.toLowerCase();
-          const linkRoot = this.getRootDomain(linkHostname);
-          if (tabHostname.includes(linkRoot) || linkHostname.includes(tabRoot)) {
-            return true;
-          }
-        } catch {
-          /* invalid URL */
-        }
-      }
-
-      return false;
+      const result = this.correlate(email, pseudoTab);
+      // Structural-only matches (domain/cluster) score ≥ 75,
+      // so MODERATE threshold is appropriate for backward compat.
+      return result.tier !== 'none';
     } catch {
       return false;
     }
   }
+
+  // ─── Brand extraction & matching ────────────────────────────
+
+  /**
+   * Extract brand tokens from a root domain.
+   *
+   * Examples:
+   *   "huggingface.co"  → ["huggingface"]
+   *   "my-app.com"      → ["myapp", "my-app"]
+   *   "login.example.org" → ["example"]
+   *
+   * Returns tokens long enough to be meaningful (>= MIN_BRAND_LENGTH).
+   */
+  private static extractBrandTokens(rootDomain: string): string[] {
+    // Strip TLD portion: "huggingface.co" → "huggingface"
+    const brand = rootDomain.split('.')[0];
+    if (!brand || brand.length < CORRELATION.MIN_BRAND_LENGTH) {
+      return [];
+    }
+
+    const tokens: string[] = [];
+
+    // Original form (with hyphens)
+    tokens.push(brand.toLowerCase());
+
+    // Collapsed form (no hyphens/underscores) for matching "HuggingFace"
+    // against hostname "hugging-face.com"
+    const collapsed = brand.replace(/[-_]/g, '').toLowerCase();
+    if (collapsed !== brand.toLowerCase() && collapsed.length >= CORRELATION.MIN_BRAND_LENGTH) {
+      tokens.push(collapsed);
+    }
+
+    return tokens;
+  }
+
+  /**
+   * Check if any brand token appears in the given text.
+   * Handles common formatting variations:
+   *  - Case-insensitive:           "HuggingFace" matches "huggingface"
+   *  - Space/hyphen normalization: "Hugging Face" matches "huggingface"
+   */
+  private static brandMatchesText(brandTokens: string[], text: string): boolean {
+    // Normalize: lowercase and collapse all separators (spaces, hyphens, etc.)
+    const normalizedText = text.toLowerCase().replace(/[-_\s]+/g, '');
+
+    for (const token of brandTokens) {
+      // Match the collapsed token against collapsed text
+      const collapsedToken = token.replace(/[-_]/g, '');
+      if (normalizedText.includes(collapsedToken)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // ─── Domain utilities ───────────────────────────────────────
 
   private static getRootDomain(hostname: string): string {
     const parts = hostname.split('.');
@@ -979,18 +1262,20 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
 
     // ── PRIORITY 1: Inline OTP delivery to waiting tabs ──
     if (otpWaitingTabs.size > 0) {
-      const matchingTabId = findMatchingTab(fullEmail.from, detection.provider, detection.link);
+      const emailCtx: EmailContext = {
+        from: fullEmail.from,
+        subject: fullEmail.subject,
+        ...(detection.provider !== undefined ? { provider: detection.provider } : {}),
+        ...(detection.link !== undefined ? { linkUrl: detection.link } : {}),
+        bodySnippet: (fullEmail.body || '').substring(0, 500),
+      };
+      const bestTab = findBestTab(emailCtx);
 
-      if (matchingTabId !== null) {
+      if (bestTab !== null) {
         log.info('🎯 Matching tab found — inline OTP delivery');
 
         if (extractedOTPCode) {
-          otpDelivered = await deliverOTP(extractedOTPCode, detection.confidence ?? 0.9, {
-            from: fullEmail.from,
-            subject: fullEmail.subject,
-            ...(detection.provider !== undefined ? { provider: detection.provider } : {}),
-            ...(detection.link !== undefined ? { linkUrl: detection.link } : {}),
-          });
+          otpDelivered = await deliverOTP(extractedOTPCode, detection.confidence ?? 0.9, emailCtx);
 
           if (otpDelivered) {
             await dedupCache.markProcessed(emailId, currentEmail.fullEmail, true, false);
@@ -1028,6 +1313,7 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
         subject: fullEmail.subject,
         ...(detection.provider !== undefined ? { provider: detection.provider } : {}),
         ...(detection.link !== undefined ? { linkUrl: detection.link } : {}),
+        bodySnippet: (fullEmail.body || '').substring(0, 500),
       });
     }
 
@@ -1095,46 +1381,28 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
   }
 }
 
-// ── Find the highest-priority waiting tab that matches this email ──
-function findMatchingTab(
-  senderEmail: string,
-  provider?: string,
-  linkUrl?: string | null
-): number | null {
-  const sorted = Array.from(otpWaitingTabs.entries())
-    .filter(([tabId]) => {
-      const isActivation = activationTabs.has(tabId);
-      if (isActivation) {
-        log.debug('Skipping activation tab during generic OTP delivery', { tabId });
-      }
-      return !isActivation;
-    })
-    .sort(([, a], [, b]) => a.priority - b.priority);
+// ── Find the highest-scoring waiting tab above the MODERATE threshold ──
+function findBestTab(email: EmailContext): { tabId: number; result: CorrelationResult } | null {
+  let bestTabId: number | null = null;
+  let bestResult: CorrelationResult = { score: 0, tier: 'none', signals: [] };
 
-  for (const [tabId, reg] of sorted) {
-    if (DomainMatcher.matches(senderEmail, reg.url, provider, linkUrl)) {
-      return tabId;
+  for (const [tabId, reg] of otpWaitingTabs.entries()) {
+    if (activationTabs.has(tabId)) {
+      continue;
+    }
+
+    const result = DomainMatcher.correlate(email, reg);
+    if (result.score > bestResult.score) {
+      bestResult = result;
+      bestTabId = tabId;
     }
   }
 
-  return null;
-}
-
-function isSafeFallbackOTPRegistration(reg: TabRegistration): boolean {
-  const ageMs = Date.now() - reg.registeredAt;
-  if (ageMs > OTP_FALLBACK_DELIVERY_MAX_AGE_MS) {
-    return false;
-  }
-  if (reg.fieldSelectors.length === 0) {
-    return false;
+  if (bestTabId === null || bestResult.tier === 'none') {
+    return null;
   }
 
-  const trustedVerdict = reg.verdict ? OTP_FALLBACK_VERDICTS.has(reg.verdict) : false;
-  const confidentPage =
-    typeof reg.pageConfidence === 'number' &&
-    reg.pageConfidence >= OTP_FALLBACK_PAGE_CONFIDENCE_MIN;
-
-  return trustedVerdict || confidentPage;
+  return { tabId: bestTabId, result: bestResult };
 }
 
 async function deliverToRegisteredTab(
@@ -1160,10 +1428,19 @@ async function deliverToRegisteredTab(
 
 // ═══════════════════════════════════════════════════════════════
 //  §13  OTP DELIVERY ORCHESTRATOR
+//
+//  Uses the multi-signal scoring engine to rank tabs by correlation
+//  score and delivers OTP to all tabs above the MODERATE threshold.
+//  No separate "fallback" path — scoring is the single decision.
 // ═══════════════════════════════════════════════════════════════
 
 /**
- * Deliver OTP code to matching waiting tabs.
+ * Deliver OTP code to matching waiting tabs using multi-signal scoring.
+ *
+ * Scores every non-activation waiting tab against the email context,
+ * then delivers concurrently to all tabs above the MODERATE threshold
+ * (score ≥ 50). Tabs are prioritized by score descending.
+ *
  * @returns true if OTP was successfully delivered to at least one tab
  */
 async function deliverOTP(code: string, confidence: number, email: EmailContext): Promise<boolean> {
@@ -1181,60 +1458,32 @@ async function deliverOTP(code: string, confidence: number, email: EmailContext)
     activationTabs: activationTabs.size,
   });
 
-  // Priority-sorted delivery
-  const sorted = Array.from(otpWaitingTabs.entries())
-    .filter(([tabId]) => {
-      const isActivation = activationTabs.has(tabId);
-      if (isActivation) {
-        log.debug('Skipping activation tab during generic OTP delivery', { tabId });
-      }
-      return !isActivation;
-    })
-    .sort(([, a], [, b]) => a.priority - b.priority);
+  // Score every non-activation tab using the correlation engine
+  const scored: Array<{ tabId: number; reg: TabRegistration; result: CorrelationResult }> = [];
 
-  let firstDeliverySucceeded = false;
-
-  // ───────────────────────────────────────────────────────────────────
-  // M3: Parallelize OTPDeliveryEngine retries to prevent blocking
-  // Deliver to all matching tabs concurrently instead of sequentially
-  // ───────────────────────────────────────────────────────────────────
-  const domainMatched: Array<[number, TabRegistration]> = [];
-  const fallbackEligible: Array<[number, TabRegistration]> = [];
-
-  for (const entry of sorted) {
-    const [, reg] = entry;
-    if (DomainMatcher.matches(email.from, reg.url, email.provider, email.linkUrl)) {
-      domainMatched.push(entry);
+  for (const [tabId, reg] of otpWaitingTabs.entries()) {
+    if (activationTabs.has(tabId)) {
+      log.debug('Skipping activation tab during generic OTP delivery', { tabId });
       continue;
     }
 
-    const fallback = isSafeFallbackOTPRegistration(reg);
-    log.info(`⛔ Domain mismatch: tab ${reg.hostname} ≠ ${email.from}`, {
-      fallbackEligible: fallback,
-      fieldCount: reg.fieldSelectors.length,
-      pageConfidence: reg.pageConfidence,
-      verdict: reg.verdict,
+    const result = DomainMatcher.correlate(email, reg);
+
+    log.info(`📊 Tab ${reg.hostname} correlation: ${result.score}pts (${result.tier})`, {
+      tabId,
+      signals: result.signals.map((s) => `${s.name}:${s.score}`).join(', '),
     });
-    if (fallback) {
-      fallbackEligible.push(entry);
+
+    if (result.tier !== 'none') {
+      scored.push({ tabId, reg, result });
     }
   }
 
-  let targets = domainMatched;
-  if (targets.length === 0 && fallbackEligible.length > 0) {
-    const fallbackTarget = fallbackEligible[0]!;
-    targets = [fallbackTarget];
-    log.info('⚠️ Delivering OTP by verified-page fallback after domain mismatch', {
-      tabId: fallbackTarget[0],
-      hostname: fallbackTarget[1].hostname,
-      fieldCount: fallbackTarget[1].fieldSelectors.length,
-      pageConfidence: fallbackTarget[1].pageConfidence,
-      verdict: fallbackTarget[1].verdict,
-    });
-  }
+  // Sort by score descending — highest confidence tab first
+  scored.sort((a, b) => b.result.score - a.result.score);
 
-  if (targets.length === 0) {
-    log.info('OTP saved, but no eligible waiting tab was available for delivery', {
+  if (scored.length === 0) {
+    log.info('OTP saved, but no tab scored above delivery threshold', {
       waitingTabs: otpWaitingTabs.size,
       activationTabs: activationTabs.size,
       from: email.from,
@@ -1242,14 +1491,26 @@ async function deliverOTP(code: string, confidence: number, email: EmailContext)
     return false;
   }
 
-  const deliveryPromises = targets.map(async ([tabId, reg]: [number, TabRegistration]) => {
+  // Log the winning tab(s)
+  const best = scored[0]!;
+  if (best.result.tier === 'moderate') {
+    log.info('⚠️ Delivering OTP via moderate-confidence content match', {
+      tabId: best.tabId,
+      hostname: best.reg.hostname,
+      score: best.result.score,
+      signals: best.result.signals.map((s) => s.name),
+    });
+  }
+
+  // Deliver concurrently to all tabs above threshold
+  const deliveryPromises = scored.map(async ({ tabId, reg, result }) => {
     const deliveredTabId = await deliverToRegisteredTab(tabId, reg, code, confidence);
-    if (deliveredTabId === null && domainMatched.length === 0) {
-      log.debug('Fallback OTP delivery failed', {
+    if (deliveredTabId === null) {
+      log.debug('OTP delivery attempt failed', {
         tabId,
         hostname: reg.hostname,
-        pageConfidence: reg.pageConfidence,
-        verdict: reg.verdict,
+        score: result.score,
+        tier: result.tier,
       });
     }
     return deliveredTabId;
@@ -1257,10 +1518,10 @@ async function deliverOTP(code: string, confidence: number, email: EmailContext)
 
   const results = await Promise.all(deliveryPromises);
   const delivered = results.filter((id): id is number => id !== null);
-  if (!firstDeliverySucceeded && delivered.length > 0) {
+
+  if (delivered.length > 0) {
     metrics.otpsFound++;
     await otpService.markAsUsed();
-    firstDeliverySucceeded = true;
   }
 
   // Unregister delivered tabs
