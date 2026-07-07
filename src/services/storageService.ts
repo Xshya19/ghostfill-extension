@@ -557,9 +557,11 @@ class StorageService {
           // Restore session secrets using isolated namespace from chrome.storage.session first
           if (chrome.storage.session) {
             // Also enforce TRUSTED_CONTEXTS to prevent non-extension components from reading secrets (PA3)
-            await chrome.storage.session
-              .setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' })
-              .catch(() => {});
+            if (typeof chrome.storage.session.setAccessLevel === 'function') {
+              await chrome.storage.session
+                .setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' })
+                .catch(() => {});
+            }
 
             const allSession = await chrome.storage.session.get(null);
             const secrets: Record<string, unknown> = {};
