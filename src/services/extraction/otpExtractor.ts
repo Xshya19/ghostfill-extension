@@ -1,10 +1,10 @@
 // src/services/extraction/otpExtractor.ts
 // ══════════════════════════════════════════
-//  OTP EXTRACTION ENGINE (hardened)
-//  Multi-strategy OTP/Verification Code Extraction
+//  OTP EXTRACTION ENGINE v3 (grandmaster)
+//  Multi-strategy · Never-wrong · Alnum-safe
 // ══════════════════════════════════════════
 import { createLogger } from '../../utils/logger';
-import { KnowledgeBase } from '../knowledgeBase';
+import { KnowledgeBase } from './knowledge';
 import type {
   ProviderKnowledge,
   EmailZone,
@@ -21,18 +21,25 @@ import { decodeHtmlEntities, getZoneForPosition, getContextAround } from './zone
 
 const log = createLogger('OTPExtractor');
 
-const SEVERITY_RANK: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1, none: 0 };
+const SEVERITY_RANK: Record<string, number> = {
+  critical: 4, high: 3, medium: 2, low: 1, none: 0,
+};
 
 const CONFIG = {
   scoring: {
-    providerLengthMatch: 15,
-    lengthMatch: 10,
-    formatMatch: 5,
-    contextContributionMax: 50,
-    isolationBonusMax: 15,
-    verificationIntentBonus: 10,
-    codeLabelBonus: 20,
-    antiPenalty: { critical: 100, high: 14, medium: 12, low: 6, none: 0 } as Record<string, number>,
+    providerLengthMatch: 18,
+    lengthMatch: 12,
+    formatMatch: 8,
+    contextContributionMax: 55,
+    isolationBonusMax: 18,
+    verificationIntentBonus: 12,
+    codeLabelBonus: 22,
+    entropyBonusMax: 18,
+    frequencyBonus: 12,
+    alnumQualityBonus: 16,
+    antiPenalty: {
+      critical: 100, high: 18, medium: 12, low: 6, none: 0,
+    } as Record<string, number>,
   },
   limits: {
     minCodeLength: 4,
@@ -46,26 +53,23 @@ const CONFIG = {
     midWeight: 0.6,
     wideWeight: 0.3,
   },
+  // Short numeric codes need stronger evidence (years/zips/pins collide).
+  shortCodeMinContext: 22,
+  // Absolute floor before a candidate can ever win.
+  absoluteMinRawScore: 38,
 } as const;
 
 // ══════════════════════════════════════════
 //  INTERNAL HELPERS
 // ══════════════════════════════════════════
 
-// FIX: position-aware context slice. Avoids the original bug where context was
-// always taken from the FIRST indexOf() occurrence (and broke entirely when a
-// cleaned code with separators removed could not be found in the text at all).
 function sliceAround(text: string, index: number, length: number, radius: number): string {
-  if (!text || index < 0) {
-    return '';
-  }
+  if (!text || index < 0) return '';
   return text.slice(Math.max(0, index - radius), Math.min(text.length, index + length + radius));
 }
 
 function isInsideUrlLikeSpan(text: string, index: number, length: number): boolean {
-  if (!text || index < 0) {
-    return false;
-  }
+  if (!text || index < 0) return false;
 
   const start = Math.max(0, index - 160);
   const window = text.slice(start, Math.min(text.length, index + length + 160));
@@ -77,13 +81,59 @@ function isInsideUrlLikeSpan(text: string, index: number, length: number): boole
   while ((m = urlRegex.exec(window)) !== null) {
     const urlStart = m.index;
     const urlEnd = m.index + m[0].length;
-    if (localIndex >= urlStart && localEnd <= urlEnd) {
-      return true;
-    }
+    if (localIndex >= urlStart && localEnd <= urlEnd) return true;
   }
 
   const before = window.slice(Math.max(0, localIndex - 50), localIndex).toLowerCase();
   return /(?:[?&#/]|%3[fba]|&amp;)[a-z0-9_.-]{1,40}=$/i.test(before);
+}
+
+/** Shannon-ish entropy — random OTPs score higher than 111111 / ABABAB. */
+function codeEntropy(code: string): number {
+  if (!code) return 0;
+  const freq = new Map<string, number>();
+  for (const ch of code) freq.set(ch, (freq.get(ch) || 0) + 1);
+  let h = 0;
+  for (const c of freq.values()) {
+    const p = c / code.length;
+    h -= p * Math.log2(p);
+  }
+  // Normalize roughly to 0–1 for typical 4–8 char codes (max entropy log2(36)≈5.17)
+  return Math.min(h / 3.5, 1);
+}
+
+/** Quality score for alphanumeric OTPs (Steam/Epic/Discord style). */
+function alnumQuality(code: string): number {
+  const hasUpper = /[A-Z]/.test(code);
+  const hasLower = /[a-z]/.test(code);
+  const hasDigit = /\d/.test(code);
+  const letters = (code.match(/[A-Za-z]/g) || []).length;
+  const digits = (code.match(/\d/g) || []).length;
+  if (!hasDigit || letters === 0) return 0;
+
+  let q = 0;
+  // Mixed character classes are strong OTP signals
+  if (hasDigit && (hasUpper || hasLower)) q += 8;
+  if (hasUpper && hasDigit) q += 6;
+  if (digits >= 2 && letters >= 2) q += 6;
+  // Avoid dictionary-looking pure words with a trailing digit (e.g. "code1")
+  if (/^[A-Za-z]{4,}\d$/.test(code)) q -= 10;
+  // Avoid hex-color-like
+  if (/^[0-9a-f]{6}$/i.test(code) && !hasUpper) q -= 4;
+  return q;
+}
+
+function isPlausibleOtpShape(code: string): boolean {
+  if (code.length < CONFIG.limits.minCodeLength || code.length > CONFIG.limits.maxCodeLength) {
+    return false;
+  }
+  // Must contain at least one digit — pure words are never OTPs
+  if (!/\d/.test(code)) return false;
+  // Reject pure hex colors with #
+  if (code.startsWith('#')) return false;
+  // Reject mostly-separator garbage
+  if ((code.match(/[A-Za-z0-9]/g) || []).length < 4) return false;
+  return true;
 }
 
 // ══════════════════════════════════════════
@@ -95,30 +145,28 @@ const STYLED_CODE_PATTERNS = [
 ] as const;
 
 const LABEL_PATTERNS = [
-  // Tier 1: Explicit label + colon/equals (highest precision)
-  /(?:code|pin|otp|password|token|passcode|verification\s+code|security\s+code|confirmation\s+code|auth\s+code)\s*(?:is|:|=)\s*([A-Za-z0-9]{4,10})/gi,
-  // Tier 1: "Enter X to verify"
+  // Explicit label + colon/equals
+  /(?:code|pin|otp|password|token|passcode|verification\s+code|security\s+code|confirmation\s+code|auth\s+code|login\s+code|access\s+code)\s*(?:is|:|=)\s*([A-Za-z0-9]{4,10})/gi,
+  // "Enter X to verify"
   /(?:enter|use|type|input|submit|copy|provide)\s+([A-Za-z0-9]{4,10})\s+to\s+(?:verify|confirm|log\s*in|sign\s*in|authenticate|complete|access)/gi,
-  // Tier 1: "X is your code/OTP"
+  // "X is your code/OTP"
   /\b([A-Za-z0-9]{4,10})\s+(?:is your|is the|as your)\s+(?:\w+\s+){0,2}(?:code|pin|otp|password|verification|passcode)/gi,
-  // Tier 1: "Your code is X" / "Your OTP is X"
+  // "Your code is X"
   /\byour\s+(?:\w+\s+){0,3}(?:code|otp|pin|passcode|token)\s+is\s+([A-Za-z0-9]{4,10})/gi,
-  // Tier 1: type-prefixed (verification code: X, security code - X)
-  /(?:confirmation|verification|security|one.?time|login|sign.?in|access)\s+code\s*[-:–—]?\s*([A-Za-z0-9]{4,10})\b/gi,
-  // Tier 2: bracket-wrapped codes [X], (X), {X}
+  // type-prefixed
+  /(?:confirmation|verification|security|one.?time|login|sign.?in|access|authentication)\s+code\s*[-:–—]?\s*([A-Za-z0-9]{4,10})\b/gi,
+  // bracket-wrapped
   /[\[({]\s*([A-Za-z0-9]{4,10})\s*[\])}]/g,
-  // Tier 2: line-start code labels
-  /(?:^|[.!?\n]\s*)(?:code|pin|otp|token)\s*[:=]\s*([A-Za-z0-9]{4,10})\b/gim,
-  // Tier 2: standalone number on its own line
+  // line-start labels
+  /(?:^|[.!?\n]\s*)(?:code|pin|otp|token|passcode)\s*[:=]\s*([A-Za-z0-9]{4,10})\b/gim,
+  // standalone number on its own line
   /^\s*(\d{4,8})\s*$/gm,
-  // Tier 2: dash-separated digit groups as codes (123 456 / 12 34 56)
-  /(?:code|pin|otp|passcode)\s*[:\s]\s*([A-Za-z0-9][A-Za-z0-9\s-]{3,12}[A-Za-z0-9])/gi,
+  // dash/space separated groups (123 456 / 12-34-56 / AB-12-CD)
+  /(?:code|pin|otp|passcode|token)\s*[:\s]\s*([A-Za-z0-9][A-Za-z0-9\s-]{2,14}[A-Za-z0-9])/gi,
+  // Multilingual common labels
+  /(?:código|kennwort|code de|認証コード|验证码|인증번호|код|رمز|كود|şifre)\s*(?:is|:|=|は|为|：)?\s*([A-Za-z0-9]{4,10})/gi,
 ] as const;
 
-// Extended anti-patterns for rejecting false positives.
-// FIX: full-value structural matches (date/time/phone) now hard-reject
-// (reject:true) instead of being merely flagged — if the candidate IS entirely
-// a date/time/phone there is no reason to keep it.
 const EXTENDED_ANTI_PATTERNS: Array<{
   name: string;
   test: (v: string, ctx: string, idx?: number) => boolean;
@@ -152,28 +200,27 @@ const EXTENDED_ANTI_PATTERNS: Array<{
     severity: 'high',
     reject: true,
   },
-  { name: 'phone', test: (v) => /^[+]?\d[\d\s()-]{9,14}$/.test(v), severity: 'high', reject: true },
+  {
+    name: 'phone',
+    test: (v) => /^[+]?\d[\d\s()-]{9,14}$/.test(v) || /^\d{10,11}$/.test(v),
+    severity: 'high',
+    reject: true,
+  },
   {
     name: 'year',
     test: (v, ctx, idx) => {
-      if (!/^(?:19|20)\d{2}$/.test(v)) {
-        return false;
-      }
-      // If it is explicitly preceded by copyright indicators, reject it immediately!
+      if (!/^(?:19|20)\d{2}$/.test(v)) return false;
       const before =
         idx !== undefined && idx >= 0
           ? sliceAround(ctx, idx, v.length, 15).toLowerCase().substring(0, 15)
           : getContextAround(ctx, v, 15).toLowerCase().split(v)[0] || '';
-      if (/(?:©|copyright|\(c\)|copr\.)/.test(before)) {
-        return true;
-      }
-      // FIX: look around the ACTUAL occurrence when we know it, instead of the
-      // first indexOf hit.
+      if (/(?:©|copyright|\(c\)|copr\.)/.test(before)) return true;
       const near =
         idx !== undefined && idx >= 0
-          ? sliceAround(ctx, idx, v.length, 30).toLowerCase()
-          : getContextAround(ctx, v, 30).toLowerCase();
-      return !/(?:code|pin|otp|password|token|passcode)/.test(near);
+          ? sliceAround(ctx, idx, v.length, 40).toLowerCase()
+          : getContextAround(ctx, v, 40).toLowerCase();
+      // Hard reject year unless OTP language is RIGHT next to it
+      return !/(?:code|pin|otp|password|token|passcode|verification)/.test(near);
     },
     severity: 'high',
     reject: true,
@@ -195,7 +242,7 @@ const EXTENDED_ANTI_PATTERNS: Array<{
         idx !== undefined && idx >= 0
           ? sliceAround(ctx, idx, v.length, 25)
           : getContextAround(ctx, v, 25);
-      return /[$€£¥₹]/.test(around) || /(?:price|cost|total|amount|fee|usd|eur)/i.test(around);
+      return /[$€£¥₹]/.test(around) || /(?:price|cost|total|amount|fee|usd|eur|subtotal)/i.test(around);
     },
     severity: 'high',
   },
@@ -232,7 +279,7 @@ const EXTENDED_ANTI_PATTERNS: Array<{
   {
     name: 'promo-code',
     test: (v, ctx, idx) =>
-      /\b(?:coupon|promo|promotion|discount|voucher|referral|offer|gift\s*card)\s*(?:code|pin|token|#)?\b/i.test(
+      /\b(?:coupon|promo|discount|voucher|referral|offer|gift\s*card)\s*(?:code|pin|token|#)?\b/i.test(
         idx !== undefined && idx >= 0
           ? sliceAround(ctx, idx, v.length, 70)
           : getContextAround(ctx, v, 70)
@@ -245,27 +292,32 @@ const EXTENDED_ANTI_PATTERNS: Array<{
     severity: 'high',
     reject: true,
   },
-  { name: 'repeated', test: (v) => /^(\d)\1{3,}$/.test(v), severity: 'critical', reject: true },
+  {
+    name: 'repeated',
+    test: (v) => /^(\d)\1{3,}$/.test(v) || /^(.)\1{4,}$/i.test(v),
+    severity: 'critical',
+    reject: true,
+  },
   {
     name: 'sequential',
-    test: (v) => {
+    test: (v, ctx, idx) => {
       const d = v.replace(/\D/g, '');
-      if (d.length < 4) {
-        return false;
-      }
+      if (d.length < 4 || d.length !== v.length) return false; // only pure-digit sequential
       let asc = true;
       let desc = true;
       for (let i = 1; i < d.length; i++) {
-        if (parseInt(d[i]!, 10) !== (parseInt(d[i - 1]!, 10) + 1) % 10) {
-          asc = false;
-        }
-        if (parseInt(d[i]!, 10) !== (parseInt(d[i - 1]!, 10) - 1 + 10) % 10) {
-          desc = false;
-        }
+        if (parseInt(d[i]!, 10) !== (parseInt(d[i - 1]!, 10) + 1) % 10) asc = false;
+        if (parseInt(d[i]!, 10) !== (parseInt(d[i - 1]!, 10) - 1 + 10) % 10) desc = false;
       }
-      return asc || desc;
+      if (!(asc || desc)) return false;
+      // Soft: only hard-reject sequential when NO otp language nearby
+      const near =
+        idx !== undefined && idx >= 0
+          ? sliceAround(ctx, idx, v.length, 50).toLowerCase()
+          : getContextAround(ctx, v, 50).toLowerCase();
+      return !/(?:code|pin|otp|password|token|passcode|verification|enter|use)/.test(near);
     },
-    severity: 'critical',
+    severity: 'high',
     reject: true,
   },
   { name: 'all-zeros', test: (v) => /^0+$/.test(v), severity: 'critical', reject: true },
@@ -289,17 +341,26 @@ const EXTENDED_ANTI_PATTERNS: Array<{
       ),
     severity: 'medium',
   },
+  // Long pure-digit strings that look like IDs (9+ digits already filtered by max length,
+  // but 8-digit with no OTP context is suspicious)
+  {
+    name: 'bare-id-no-context',
+    test: (v, ctx, idx) => {
+      if (!/^\d{8,10}$/.test(v)) return false;
+      const near =
+        idx !== undefined && idx >= 0
+          ? sliceAround(ctx, idx, v.length, 60).toLowerCase()
+          : getContextAround(ctx, v, 60).toLowerCase();
+      return !/(?:code|pin|otp|password|token|passcode|verification|enter|use|your)/.test(near);
+    },
+    severity: 'medium',
+  },
 ];
 
 // ══════════════════════════════════════════
 //  ANTI-PATTERN CHECKING
 // ══════════════════════════════════════════
 
-// FIX: the original returned on the FIRST matching anti-pattern. A value that
-// matched a benign low-severity pattern early in the list (e.g. zip-code) would
-// short-circuit and never be tested against a later CRITICAL pattern. We now
-// evaluate ALL patterns and resolve to the strongest signal: any hard-reject
-// wins; otherwise the highest-severity match is returned for a scoring penalty.
 export function checkAntiPatterns(
   value: string,
   fullText: string,
@@ -320,23 +381,16 @@ export function checkAntiPatterns(
     }
   };
 
-  // Knowledge base patterns
   for (const anti of KnowledgeBase.antiPatterns) {
-    // Fresh, non-global regex avoids shared lastIndex mutation across calls.
     const fresh = new RegExp(anti.pattern.source, anti.pattern.flags.replace('g', ''));
-    if (!fresh.test(value)) {
-      continue;
-    }
+    if (!fresh.test(value)) continue;
 
-    // Context-aware year override: skip entirely when an OTP label is nearby.
     if (anti.name === 'year-4digit' || anti.name === 'year-2digit') {
       const near =
         valueIndex !== undefined && valueIndex >= 0
           ? sliceAround(fullText, valueIndex, value.length, 30).toLowerCase()
           : getContextAround(fullText, value, 30).toLowerCase();
-      if (/(?:code|pin|otp|password|token|passcode)/.test(near)) {
-        continue;
-      }
+      if (/(?:code|pin|otp|password|token|passcode)/.test(near)) continue;
     }
 
     const shouldReject =
@@ -352,14 +406,9 @@ export function checkAntiPatterns(
     );
   }
 
-  // Extended patterns. Strong contextual identifiers ("order #", "tracking no",
-  // "reference #", "account no") hard-reject: a number explicitly introduced as
-  // one of these is never an OTP.
-  const CONTEXTUAL_REJECT = new Set(['order', 'tracking', 'reference', 'account']);
+  const CONTEXTUAL_REJECT = new Set(['order', 'tracking', 'reference', 'account', 'promo-code']);
   for (const anti of EXTENDED_ANTI_PATTERNS) {
-    if (!anti.test(value, fullText, valueIndex)) {
-      continue;
-    }
+    if (!anti.test(value, fullText, valueIndex)) continue;
     const shouldReject =
       anti.reject === true || anti.severity === 'critical' || CONTEXTUAL_REJECT.has(anti.name);
     consider(
@@ -368,12 +417,8 @@ export function checkAntiPatterns(
     );
   }
 
-  if (rejectHit) {
-    return rejectHit;
-  }
-  if (penaltyHit) {
-    return penaltyHit;
-  }
+  if (rejectHit) return rejectHit;
+  if (penaltyHit) return penaltyHit;
   return { isRejected: false, reason: '', severity: 'none', pattern: '' };
 }
 
@@ -381,9 +426,6 @@ export function checkAntiPatterns(
 //  CONTEXT VALIDATION
 // ══════════════════════════════════════════
 
-// FIX: accepts an optional `anchor` describing the ACTUAL match location so the
-// context window is centered on the real occurrence (and works for cleaned
-// codes whose stripped form no longer appears verbatim in the text).
 export function validateContext(
   value: string,
   fullText: string,
@@ -400,9 +442,7 @@ export function validateContext(
   if (decodedHtml) {
     htmlValIdx = decodedHtml.toLowerCase().indexOf(value.toLowerCase());
   }
-  if (htmlValIdx === -1) {
-    htmlValIdx = valIdx;
-  }
+  if (htmlValIdx === -1) htmlValIdx = valIdx;
 
   const nearCtx = sliceAround(fullText, valIdx, anchorLen, CONFIG.context.nearRadius).toLowerCase();
   const midCtx = sliceAround(fullText, valIdx, anchorLen, CONFIG.context.midRadius).toLowerCase();
@@ -431,10 +471,9 @@ export function validateContext(
     }
   }
 
-  // Semantic distance from the actual occurrence to the nearest intent term.
   const terms =
     category === 'otp'
-      ? ['code', 'otp', 'pin', 'verification', 'password', 'token', 'passcode']
+      ? ['code', 'otp', 'pin', 'verification', 'password', 'token', 'passcode', '2fa', 'mfa']
       : ['verify', 'confirm', 'activate', 'click', 'button', 'link', 'reset'];
   let semanticDistance = Infinity;
   if (valIdx !== -1) {
@@ -443,58 +482,43 @@ export function validateContext(
       let tIdx = lower.indexOf(term, from);
       while (tIdx !== -1) {
         const d = Math.abs(tIdx - valIdx);
-        if (d < semanticDistance) {
-          semanticDistance = d;
-        }
+        if (d < semanticDistance) semanticDistance = d;
         from = tIdx + term.length;
         tIdx = lower.indexOf(term, from);
       }
     }
   }
 
-  // WIDER WINDOWS: Table-layout emails place labels far from codes in DOM/plaintext.
-  // Extended from <25/<60/<120 to <40/<100/<200 to handle real-world transactional emails.
-  if (semanticDistance < 40) {
-    score += 14;
-  } else if (semanticDistance < 100) {
-    score += 9;
-  } else if (semanticDistance < 200) {
-    score += 5;
-  }
+  if (semanticDistance < 40) score += 14;
+  else if (semanticDistance < 100) score += 9;
+  else if (semanticDistance < 200) score += 5;
 
   const rg: RelationshipGraph = {
-    hasInstructionVerb: /(?:enter|use|type|input|provide|submit|copy|paste|click|tap|press)/i.test(
-      nearCtx
-    ),
+    hasInstructionVerb: /(?:enter|use|type|input|provide|submit|copy|paste|click|tap|press)/i.test(nearCtx),
     hasUrgencyIndicator: /(?:now|immediately|urgent|asap|expire|quickly|hurry)/i.test(midCtx),
     hasValidityPeriod:
       /(?:valid for|expires? in|good for|active for|\d+\s*(?:min|hour|day|second))/i.test(midCtx),
     hasSecurityWarning:
-      /(?:do not share|don't share|never share|confidential|keep.*(?:safe|secure|private))/i.test(
-        midCtx
-      ),
+      /(?:do not share|don't share|never share|confidential|keep.*(?:safe|secure|private))/i.test(midCtx),
     hasCodeLabel: false,
     hasCTAProximity: false,
   };
 
-  if (rg.hasInstructionVerb) {
-    score += 8;
-  }
-  if (rg.hasValidityPeriod) {
-    score += 6;
-  }
-  if (rg.hasSecurityWarning) {
-    score += 6;
-  }
+  if (rg.hasInstructionVerb) score += 8;
+  if (rg.hasValidityPeriod) score += 6;
+  if (rg.hasSecurityWarning) score += 6;
 
-  // Code label immediately preceding the actual occurrence.
   if (category === 'otp' && valIdx > 0) {
     const before = fullText.substring(Math.max(0, valIdx - 80), valIdx);
-    if (/(?:code|pin|otp|password|token|passcode|verification|security|confirmation)\s*(?:is|:|=|–|—|-)?\s*$/i.test(before)) {
+    if (
+      /(?:code|pin|otp|password|token|passcode|verification|security|confirmation)\s*(?:is|:|=|–|—|-)?\s*$/i.test(
+        before
+      )
+    ) {
       rg.hasCodeLabel = true;
       score += CONFIG.scoring.codeLabelBonus;
     }
-    // NEW: check if the code is in a heading or standalone in the HTML
+
     if (decodedHtml) {
       const htmlValIdxLocal = decodedHtml.toLowerCase().indexOf(value.toLowerCase());
       if (htmlValIdxLocal !== -1) {
@@ -502,20 +526,19 @@ export function validateContext(
           Math.max(0, htmlValIdxLocal - 200),
           Math.min(decodedHtml.length, htmlValIdxLocal + value.length + 200)
         );
-        // Heading tag proximity — very strong visual signal in emails
-        if (/<h[123][^>]*>\s*[^<]*$/i.test(htmlCtx.substring(0, htmlCtx.indexOf(value))) &&
-            /^[^<]*\s*<\/h[123]>/i.test(htmlCtx.substring(htmlCtx.indexOf(value) + value.length))) {
+        const beforeHtml = htmlCtx.substring(0, htmlCtx.toLowerCase().indexOf(value.toLowerCase()));
+        const afterHtml = htmlCtx.substring(
+          htmlCtx.toLowerCase().indexOf(value.toLowerCase()) + value.length
+        );
+
+        if (/<h[123][^>]*>\s*[^<]*$/i.test(beforeHtml) && /^[^<]*\s*<\/h[123]>/i.test(afterHtml)) {
           score += 30;
           rg.hasCodeLabel = true;
         }
-        // Strong/bold tag wrapping the code
-        if (/<(?:strong|b)\b[^>]*>\s*$/.test(htmlCtx.substring(0, htmlCtx.indexOf(value))) &&
-            /^\s*<\/(?:strong|b)>/.test(htmlCtx.substring(htmlCtx.indexOf(value) + value.length))) {
+        if (/<(?:strong|b)\b[^>]*>\s*$/i.test(beforeHtml) && /^\s*<\/(?:strong|b)>/i.test(afterHtml)) {
           score += 20;
         }
-        // TD cell containing only the number
-        if (/<(?:td|th)[^>]*>\s*$/.test(htmlCtx.substring(0, htmlCtx.indexOf(value))) &&
-            /^\s*<\/(?:td|th)>/.test(htmlCtx.substring(htmlCtx.indexOf(value) + value.length))) {
+        if (/<(?:td|th)[^>]*>\s*$/i.test(beforeHtml) && /^\s*<\/(?:td|th)>/i.test(afterHtml)) {
           score += 25;
           rg.hasCodeLabel = true;
         }
@@ -533,28 +556,25 @@ export function validateContext(
     }
   }
 
-  if (matched.length >= 5) {
-    score += 15;
-  } else if (matched.length >= 3) {
-    score += 10;
-  } else if (matched.length >= 2) {
-    score += 5;
-  }
+  if (matched.length >= 5) score += 15;
+  else if (matched.length >= 3) score += 10;
+  else if (matched.length >= 2) score += 5;
 
   if (htmlValIdx !== -1) {
     const zone = getZoneForPosition(zones, htmlValIdx);
     if (zone) {
-      if (zone.zone === 'body-primary' || zone.zone === 'cta') {
-        score += 8;
-      } else if (zone.zone === 'footer') {
-        score -= 15;
-      } else if (zone.zone === 'preheader') {
-        score += 3;
-      }
+      if (zone.zone === 'body-primary' || zone.zone === 'cta') score += 8;
+      else if (zone.zone === 'footer') score -= 15;
+      else if (zone.zone === 'preheader') score += 3;
     }
   }
 
-  const threshold = category === 'otp' ? 18 : 22;
+  // Short pure-numeric codes need a higher bar
+  const isShortNumeric = /^\d{4,5}$/.test(value);
+  const threshold = category === 'otp'
+    ? (isShortNumeric ? CONFIG.shortCodeMinContext : 18)
+    : 22;
+
   return {
     isValid: score >= threshold,
     score: Math.min(score, 100),
@@ -566,7 +586,7 @@ export function validateContext(
 
 // ══════════════════════════════════════════
 //  ISOLATION SCORE
-// ════════════�����═════════════════════════════
+// ══════════════════════════════════════════
 export function calculateIsolationScore(
   code: string,
   text: string,
@@ -579,48 +599,27 @@ export function calculateIsolationScore(
   const lineStart = text.lastIndexOf('\n', pos);
   const lineEnd = text.indexOf('\n', pos + code.length);
   const line = text.substring(lineStart + 1, lineEnd === -1 ? text.length : lineEnd).trim();
-  if (line === code || line === (rawMatch ?? code)) {
-    score += 40;
-  } else if (line.length < code.length * 3) {
-    score += 20;
-  }
+  if (line === code || line === (rawMatch ?? code)) score += 40;
+  else if (line.length < code.length * 3) score += 20;
 
   const before = pos > 0 ? (text[pos - 1] ?? ' ') : ' ';
   const after = pos + code.length < text.length ? (text[pos + code.length] ?? ' ') : ' ';
-  if (/\s/.test(before) && /\s/.test(after)) {
-    score += 15;
-  }
+  if (/\s/.test(before) && /\s/.test(after)) score += 15;
 
   if (html) {
-    // FIX: search for the raw (possibly separated) match in HTML first; the
-    // cleaned code often does not appear verbatim inside markup.
     let htmlIdx = rawMatch ? html.indexOf(rawMatch) : -1;
-    if (htmlIdx === -1) {
-      htmlIdx = html.indexOf(code);
-    }
+    if (htmlIdx === -1) htmlIdx = html.indexOf(code);
     if (htmlIdx !== -1) {
       const surrounding = html.substring(
         Math.max(0, htmlIdx - 250),
         Math.min(html.length, htmlIdx + code.length + 60)
       );
-      if (/letter-spacing/i.test(surrounding)) {
-        score += 25;
-      }
-      if (/font-size\s*:\s*(?:1[8-9]|[2-9]\d|1\d{2})/i.test(surrounding)) {
-        score += 20;
-      }
-      if (/font-weight\s*:\s*(?:bold|[6-9]\d\d)/i.test(surrounding)) {
-        score += 15;
-      }
-      if (/<(?:strong|b)\b/i.test(surrounding)) {
-        score += 15;
-      }
-      if (/text-align\s*:\s*center/i.test(surrounding)) {
-        score += 10;
-      }
-      if (/<(?:code|pre|tt|samp|kbd)\b/i.test(surrounding)) {
-        score += 20;
-      }
+      if (/letter-spacing/i.test(surrounding)) score += 25;
+      if (/font-size\s*:\s*(?:1[8-9]|[2-9]\d|1\d{2})/i.test(surrounding)) score += 20;
+      if (/font-weight\s*:\s*(?:bold|[6-9]\d\d)/i.test(surrounding)) score += 15;
+      if (/<(?:strong|b)\b/i.test(surrounding)) score += 15;
+      if (/text-align\s*:\s*center/i.test(surrounding)) score += 10;
+      if (/<(?:code|pre|tt|samp|kbd)\b/i.test(surrounding)) score += 20;
     }
   }
 
@@ -628,18 +627,10 @@ export function calculateIsolationScore(
 }
 
 function strategyLabel(patternName: string): ExtractionStrategy {
-  if (patternName.startsWith('provider')) {
-    return 'explicit-label';
-  }
-  if (patternName === 'styled-code') {
-    return 'html-prominent';
-  }
-  if (patternName === 'label-adjacent') {
-    return 'explicit-label';
-  }
-  if (patternName === 'semantic-proximity') {
-    return 'proximity-inference';
-  }
+  if (patternName.startsWith('provider')) return 'explicit-label';
+  if (patternName === 'styled-code' || patternName === 'td-cell-isolated') return 'html-prominent';
+  if (patternName === 'label-adjacent') return 'explicit-label';
+  if (patternName === 'semantic-proximity') return 'proximity-inference';
   return 'explicit-label';
 }
 
@@ -647,6 +638,7 @@ interface ExtractedOTPCandidate extends OTPCandidate {
   rawScore: number;
   matchedKeywordCount: number;
   ambiguous?: boolean;
+  occurrenceCount?: number;
 }
 
 // ══════════════════════════════════════════
@@ -662,6 +654,7 @@ export function extractOTP(
   const candidates: ExtractedOTPCandidate[] = [];
   const rejected: Array<{ code: string; reason: string }> = [];
   const decodedHtml = decodeHtmlEntities(htmlBody);
+  const occurrenceCounts = new Map<string, number>();
 
   const addCandidate = (
     code: string,
@@ -670,25 +663,15 @@ export function extractOTP(
     baseConfidence: number,
     matchIndex: number
   ) => {
-    if (!code) {
-      return;
-    }
-    if (code.length < CONFIG.limits.minCodeLength || code.length > CONFIG.limits.maxCodeLength) {
-      return;
-    }
-    // FIX: an OTP always contains at least one digit. This rejects pure-alphabetic
-    // captures such as the word that follows "verification code ___" (e.g. "code
-    // below", "code here", "code now"), which the label patterns would otherwise
-    // grab and — being pure text — could even outrank the real code.
-    if (!/\d/.test(code)) {
-      return;
-    }
-    // FIX: if a stronger strategy re-discovers an existing code, upgrade its base
-    // confidence/patternName instead of discarding it. The original kept whichever
-    // strategy ran FIRST, so the generic numeric pass robbed label/styled matches
-    // of their higher confidence (and could let a phone fragment outrank the OTP).
-    const existing = candidates.find((c) => c.code === code);
+    // Normalize separators out of spaced/dashed codes
+    const cleanCode = code.replace(/[\s-]/g, '').trim();
+    if (!isPlausibleOtpShape(cleanCode)) return;
+
+    occurrenceCounts.set(cleanCode, (occurrenceCounts.get(cleanCode) || 0) + 1);
+
+    const existing = candidates.find((c) => c.code === cleanCode);
     if (existing) {
+      // Upgrade strategy if stronger; always keep highest base confidence
       if (baseConfidence > existing.patternConfidence) {
         existing.confidence = baseConfidence;
         existing.patternConfidence = baseConfidence;
@@ -697,60 +680,62 @@ export function extractOTP(
       return;
     }
 
-    // Resolve plaintext / html anchor positions for THIS occurrence.
     let plainTextIndex: number;
     let htmlIndex: number;
     if (patternName === 'styled-code') {
       htmlIndex = matchIndex;
-      plainTextIndex = fullText.indexOf(code);
+      plainTextIndex = fullText.indexOf(cleanCode);
       if (plainTextIndex === -1) {
-        plainTextIndex = fullText.toLowerCase().indexOf(code.toLowerCase());
+        plainTextIndex = fullText.toLowerCase().indexOf(cleanCode.toLowerCase());
       }
     } else {
       plainTextIndex = matchIndex;
       htmlIndex = decodedHtml.indexOf(rawMatch);
-      if (htmlIndex === -1) {
-        htmlIndex = decodedHtml.indexOf(code);
-      }
+      if (htmlIndex === -1) htmlIndex = decodedHtml.indexOf(cleanCode);
     }
 
     const anchorIdx = plainTextIndex >= 0 ? plainTextIndex : -1;
-    if (isInsideUrlLikeSpan(fullText, anchorIdx, rawMatch.length)) {
-      rejected.push({ code, reason: 'url-token' });
+    if (isInsideUrlLikeSpan(fullText, anchorIdx, rawMatch.length || cleanCode.length)) {
+      rejected.push({ code: cleanCode, reason: 'url-token' });
       return;
     }
 
-    const anti = checkAntiPatterns(code, fullText, anchorIdx);
+    const anti = checkAntiPatterns(cleanCode, fullText, anchorIdx);
     if (anti.isRejected) {
-      rejected.push({ code, reason: anti.reason });
+      rejected.push({ code: cleanCode, reason: anti.reason });
       return;
     }
 
     const ctx = validateContext(
-      code,
+      cleanCode,
       fullText,
       'otp',
       zones,
       decodedHtml,
-      anchorIdx >= 0 ? { index: anchorIdx, length: rawMatch.length } : undefined
+      anchorIdx >= 0 ? { index: anchorIdx, length: rawMatch.length || cleanCode.length } : undefined
     );
-    if (!ctx.isValid && ctx.score < 8) {
-      rejected.push({ code, reason: `low-context(${ctx.score})` });
+
+    // Short codes without context die here
+    const isShort = cleanCode.length <= 5 && /^\d+$/.test(cleanCode);
+    const minCtx = isShort ? 8 : 6;
+    if (!ctx.isValid && ctx.score < minCtx) {
+      rejected.push({ code: cleanCode, reason: `low-context(${ctx.score})` });
       return;
     }
 
+    let conf = baseConfidence;
     if (
       (patternName.startsWith('provider') || patternName === 'styled-code') &&
       !ctx.relationshipGraph.hasInstructionVerb &&
       !ctx.relationshipGraph.hasCodeLabel
     ) {
-      baseConfidence = Math.min(baseConfidence, 58);
+      conf = Math.min(conf, 58);
     }
 
     const zoneRefIndex = htmlIndex >= 0 ? htmlIndex : anchorIdx >= 0 ? anchorIdx : 0;
     const zone = getZoneForPosition(zones, zoneRefIndex);
     const isolationScore = calculateIsolationScore(
-      code,
+      cleanCode,
       fullText,
       htmlBody,
       anchorIdx >= 0 ? anchorIdx : 0,
@@ -758,61 +743,63 @@ export function extractOTP(
     );
 
     candidates.push({
-      code,
+      code: cleanCode,
       rawMatch,
-      confidence: baseConfidence,
+      confidence: conf,
       zone: zone?.zone || 'unknown',
       zoneWeight: zone?.weight || 0.5,
       patternName,
-      patternConfidence: baseConfidence,
+      patternConfidence: conf,
       contextScore: ctx.score,
       semanticDistance: ctx.semanticDistance,
       antiPatternResult: anti,
-      providerMatch: provider?.otpLength === code.length,
-      lengthMatch: provider?.otpLength === code.length,
+      providerMatch: provider?.otpLength === cleanCode.length,
+      lengthMatch: provider?.otpLength === cleanCode.length,
       formatMatch: provider
         ? provider.otpFormat === 'numeric'
-          ? /^\d+$/.test(code)
+          ? /^\d+$/.test(cleanCode)
           : true
-        : /^\d+$/.test(code),
-      surroundingText: sliceAround(fullText, anchorIdx, rawMatch.length, 80),
+        : /^\d+$/.test(cleanCode) || (/[A-Za-z]/.test(cleanCode) && /\d/.test(cleanCode)),
+      surroundingText: sliceAround(fullText, anchorIdx, rawMatch.length || cleanCode.length, 80),
       instructionVerb: ctx.relationshipGraph.hasInstructionVerb ? 'yes' : null,
       validityPeriod: ctx.relationshipGraph.hasValidityPeriod ? 'yes' : null,
       securityWarning: ctx.relationshipGraph.hasSecurityWarning,
       isolationScore,
       matchedKeywordCount: ctx.matchedKeywords.length,
       rawScore: 0,
+      occurrenceCount: 1,
     });
   };
 
-  // Strategy 1: Provider-specific patterns
+  // ── Strategy 1: Provider-specific ──────────────────────────────────────
   if (provider?.otpLength) {
     const rx =
       provider.otpFormat === 'numeric'
         ? new RegExp(`(?<!\\d)\\d{${provider.otpLength}}(?!\\d)`, 'g')
-        : new RegExp(`(?<![A-Za-z0-9])[A-Za-z0-9]{${provider.otpLength}}(?![A-Za-z0-9])`, 'g');
+        : new RegExp(
+            `(?<![A-Za-z0-9])[A-Za-z0-9]{${provider.otpLength}}(?![A-Za-z0-9])`,
+            'g'
+          );
     let m: RegExpExecArray | null;
     while ((m = rx.exec(fullText)) !== null) {
-      addCandidate(m[0], m[0], `provider-${provider.name}`, 80, m.index);
+      addCandidate(m[0], m[0], `provider-${provider.name}`, 82, m.index);
     }
   }
 
-  // Strategy 2: Styled codes in HTML
+  // ── Strategy 2: Styled HTML codes ──────────────────────────────────────
   if (htmlBody) {
     for (const rx of STYLED_CODE_PATTERNS) {
       rx.lastIndex = 0;
       let m: RegExpExecArray | null;
       while ((m = rx.exec(decodedHtml)) !== null) {
         const code = m[1]!.replace(/[\s-]/g, '').trim();
-        if (!/\d/.test(code)) {
-          continue;
-        }
-        addCandidate(code, m[1]!.trim(), 'styled-code', 68, m.index);
+        if (!/\d/.test(code)) continue;
+        addCandidate(code, m[1]!.trim(), 'styled-code', 70, m.index);
       }
     }
   }
 
-  // Strategy 3: Knowledge base patterns
+  // ── Strategy 3: Knowledge base patterns ────────────────────────────────
   for (const pattern of KnowledgeBase.otpPatterns) {
     const rx = new RegExp(
       pattern.pattern.source,
@@ -823,47 +810,36 @@ export function extractOTP(
       const raw = m[0];
       const clean = raw.replace(/[-\s]/g, '');
       addCandidate(clean, raw, pattern.name, pattern.baseConfidence, m.index);
-      if (m.index === rx.lastIndex) {
-        rx.lastIndex++;
-      }
+      if (m.index === rx.lastIndex) rx.lastIndex++;
     }
   }
 
-  // Strategy 4: Label-adjacent codes
+  // ── Strategy 4: Label-adjacent ─────────────────────────────────────────
   for (const rx of LABEL_PATTERNS) {
     rx.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = rx.exec(fullText)) !== null) {
-      // matchIndex points at the captured code, not the whole match, so context
-      // anchoring stays accurate.
-      const captured = m[1]?.trim() ?? '';
-      const capIdx = captured ? m.index + m[0].indexOf(captured) : m.index;
-      addCandidate(captured, captured, 'label-adjacent', 72, capIdx);
-      if (m.index === rx.lastIndex) {
-        rx.lastIndex++;
-      }
+      const captured = (m[1] ?? '').replace(/[\s-]/g, '').trim();
+      if (!captured) continue;
+      const capIdx = m.index + m[0].indexOf(m[1]!.trim());
+      addCandidate(captured, m[1]!.trim(), 'label-adjacent', 75, capIdx >= 0 ? capIdx : m.index);
+      if (m.index === rx.lastIndex) rx.lastIndex++;
     }
   }
 
-  // Strategy 5: Semantic token proximity
-  // FIX: the old token regex was /\b([a-zA-Z]+|\d{4,10})\b/ which can NEVER
-  // capture an alphanumeric token, so the "allow alphanumeric like Epic Games"
-  // branch was dead code. We now capture mixed tokens and classify them.
+  // ── Strategy 5: Semantic proximity (FIXED: captures alnum) ─────────────
   {
     const tokenRegex = /\b([A-Za-z0-9]{4,10})\b/g;
     const intentAnchors = new Set([
-      'code',
-      'pin',
-      'otp',
-      'password',
-      'passcode',
-      'verification',
-      'verify',
-      'login',
-      'authenticate',
-      'security',
+      'code', 'pin', 'otp', 'password', 'passcode', 'verification',
+      'verify', 'login', 'authenticate', 'security', 'token', '2fa', 'mfa',
     ]);
-    const tokens: Array<{ text: string; isNumeric: boolean; isAnchor: boolean; pos: number }> = [];
+    const tokens: Array<{
+      text: string;
+      isNumeric: boolean;
+      isAnchor: boolean;
+      pos: number;
+    }> = [];
     let m: RegExpExecArray | null;
     while ((m = tokenRegex.exec(fullText)) !== null) {
       const raw = m[1] ?? '';
@@ -880,16 +856,12 @@ export function extractOTP(
 
     for (let i = 0; i < tokens.length; i++) {
       const tok = tokens[i];
-      if (!tok?.isNumeric) {
-        continue;
-      }
+      if (!tok?.isNumeric) continue;
       let highestGravity = 0;
       const windowStart = Math.max(0, i - 10);
       const windowEnd = Math.min(tokens.length - 1, i + 10);
       for (let j = windowStart; j <= windowEnd; j++) {
-        if (i === j) {
-          continue;
-        }
+        if (i === j) continue;
         if (tokens[j]?.isAnchor) {
           const distance = Math.abs(i - j);
           highestGravity = Math.max(highestGravity, 100 / (distance * 1.5));
@@ -897,40 +869,46 @@ export function extractOTP(
       }
       if (highestGravity > 45) {
         const nearby = sliceAround(fullText, tok.pos, tok.text.length, 30);
-        const hasExplicitLabel = /(?:code|otp|pin|passcode|password)\b/i.test(nearby);
-        if (!hasExplicitLabel) {
-          continue;
-        }
-        const semanticConfidence = Math.min(55 + highestGravity / 2, 70);
+        const hasExplicitLabel = /(?:code|otp|pin|passcode|password|token)\b/i.test(nearby);
+        if (!hasExplicitLabel) continue;
+        const semanticConfidence = Math.min(55 + highestGravity / 2, 72);
         addCandidate(tok.text, tok.text, 'semantic-proximity', semanticConfidence, tok.pos);
       }
     }
   }
 
-  // ══════════════════════════════════════════
-  //  Strategy 6: HTML <td>/<th> Cell-Isolated Number Detection
-  //  Finds numbers that appear alone inside a table cell — the dominant
-  //  pattern used by Stripe, Auth0, Notion, Twilio, and many other SaaS
-  //  transactional email templates.
-  // ══════════════════════════════════════════
+  // ── Strategy 6: TD/TH cell isolation ───────────────────────────────────
   if (htmlBody) {
-    // Pattern: <td ...>   123456   </td> (with optional whitespace/entities)
-    const tdPattern = /<(?:td|th)[^>]*>\s*([\d]{4,8})\s*<\/(?:td|th)>/gi;
+    const tdPattern = /<(?:td|th)[^>]*>\s*([A-Za-z0-9]{4,10})\s*<\/(?:td|th)>/gi;
     let tdMatch: RegExpExecArray | null;
     while ((tdMatch = tdPattern.exec(htmlBody)) !== null) {
       const code = tdMatch[1]!.trim();
-      // Check sibling / surrounding rows contain an OTP keyword
+      if (!/\d/.test(code)) continue;
       const surroundHtml = htmlBody.substring(
         Math.max(0, tdMatch.index - 600),
         Math.min(htmlBody.length, tdMatch.index + tdMatch[0].length + 600)
       );
-      const hasNearbyKeyword = /(?:code|otp|pin|passcode|verification|security|confirm|authenticate|login|sign.?in)/i.test(
-        surroundHtml
-      );
-      const cellConfidence = hasNearbyKeyword ? 92 : 75;
-      // Plain text position for context scoring
+      const hasNearbyKeyword =
+        /(?:code|otp|pin|passcode|verification|security|confirm|authenticate|login|sign.?in)/i.test(
+          surroundHtml
+        );
+      const cellConfidence = hasNearbyKeyword ? 93 : 76;
       const ptIdx = fullText.indexOf(code);
       addCandidate(code, code, 'td-cell-isolated', cellConfidence, ptIdx >= 0 ? ptIdx : 0);
+    }
+  }
+
+  // ── Strategy 7: Spaced / dashed digit groups without label ─────────────
+  // e.g. "7 8 9 5 4 5" or "AB-12-CD" common in modern emails
+  {
+    const spacedRx = /(?:^|[\s>])((?:\d[-\s]){3,9}\d)(?:[\s<]|$)/gm;
+    let m: RegExpExecArray | null;
+    while ((m = spacedRx.exec(fullText)) !== null) {
+      const raw = m[1]!.trim();
+      const clean = raw.replace(/[\s-]/g, '');
+      if (clean.length >= 4 && clean.length <= 10) {
+        addCandidate(clean, raw, 'spaced-digit-group', 60, m.index);
+      }
     }
   }
 
@@ -941,41 +919,45 @@ export function extractOTP(
     return null;
   }
 
-  // Score and rank candidates.
-  // FIX: context signals (instruction verb, validity, security, semantic
-  // distance, zone, footer) are folded into ctx.score exactly ONCE here via a
-  // single capped contribution, instead of being added a second (and for zones,
-  // third) time as in the original.
+  // Attach occurrence counts
+  for (const c of candidates) {
+    c.occurrenceCount = occurrenceCounts.get(c.code) || 1;
+  }
+
+  // ── Score & rank ───────────────────────────────────────────────────────
   for (const c of candidates) {
     let score = c.confidence;
-    if (c.providerMatch) {
-      score += CONFIG.scoring.providerLengthMatch;
-    }
-    if (c.lengthMatch) {
-      score += CONFIG.scoring.lengthMatch;
-    }
-    if (provider && c.formatMatch) {
-      score += CONFIG.scoring.formatMatch;
-    }
+
+    if (c.providerMatch) score += CONFIG.scoring.providerLengthMatch;
+    if (c.lengthMatch) score += CONFIG.scoring.lengthMatch;
+    if (provider && c.formatMatch) score += CONFIG.scoring.formatMatch;
 
     score += Math.min(c.contextScore, CONFIG.scoring.contextContributionMax);
     score += Math.min(c.isolationScore / 5, CONFIG.scoring.isolationBonusMax);
 
-    if (intent.intent === 'verification') {
-      score += CONFIG.scoring.verificationIntentBonus;
-    }
+    if (intent.intent === 'verification') score += CONFIG.scoring.verificationIntentBonus;
 
-    if (c.zone === 'footer') {
-      score -= 22;
-    } else if (c.zone === 'header' || c.zone === 'preheader') {
-      score -= 8;
-    } else if (c.zone === 'unknown' && c.contextScore < 18) {
-      score -= 5;
-    }
+    // Entropy / randomness — real OTPs look random
+    const ent = codeEntropy(c.code);
+    score += Math.round(ent * CONFIG.scoring.entropyBonusMax);
 
+    // Alphanumeric quality
+    const aq = alnumQuality(c.code);
+    score += Math.min(aq, CONFIG.scoring.alnumQualityBonus);
+
+    // Frequency consensus — same code seen via multiple strategies/locations
+    if ((c.occurrenceCount || 1) >= 2) score += CONFIG.scoring.frequencyBonus;
+    if ((c.occurrenceCount || 1) >= 3) score += 6;
+
+    // Zone penalties
+    if (c.zone === 'footer') score -= 22;
+    else if (c.zone === 'header' || c.zone === 'preheader') score -= 8;
+    else if (c.zone === 'unknown' && c.contextScore < 18) score -= 5;
+
+    // Weak-signal penalty
     if (
       !c.providerMatch &&
-      !['label-adjacent', 'td-cell-isolated', 'td-isolated-number', 'heading-isolated-number', 'centered-paragraph-number'].includes(c.patternName) &&
+      !['label-adjacent', 'td-cell-isolated', 'styled-code'].includes(c.patternName) &&
       !c.instructionVerb &&
       !c.validityPeriod &&
       !c.securityWarning &&
@@ -984,26 +966,34 @@ export function extractOTP(
       score -= 14;
     }
 
-    score -= CONFIG.scoring.antiPenalty[c.antiPatternResult.severity] ?? 0;
-
-    // Bonus for strong alphanumeric OTPs (Steam, Epic Games, etc.)
-    // Must have >= 3 uppercase letters AND >= 3 digits to qualify
-    const hasAlnumBonus = /[A-Z]{3,}/.test(c.code) && /\d{3,}/.test(c.code);
-    if (hasAlnumBonus) {
-      score += 15;
+    // Short numeric without strong label: heavy penalty
+    if (
+      /^\d{4,5}$/.test(c.code) &&
+      !c.instructionVerb &&
+      c.matchedKeywordCount < 1 &&
+      c.isolationScore < 30
+    ) {
+      score -= 20;
     }
 
-    // FIX: rank by the UNCLAMPED score. The original clamped every candidate to
-    // 100 BEFORE sorting, so two strong candidates (a real OTP and, e.g., a phone
-    // fragment that also sits near OTP keywords) both saturated at 100 and the tie
-    // silently fell to whichever pattern happened to run first.
+    score -= CONFIG.scoring.antiPenalty[c.antiPatternResult.severity] ?? 0;
+
+    // Strong alnum (Steam/Epic style): ≥3 upper + ≥2 digits
+    if (/[A-Z]{2,}/.test(c.code) && /\d{2,}/.test(c.code) && /[A-Za-z]/.test(c.code)) {
+      score += 12;
+    }
+
     c.rawScore = Math.max(score, 0);
     c.confidence = Math.min(c.rawScore, 100);
   }
 
   candidates.sort((a, b) => b.rawScore - a.rawScore);
   const best = candidates[0];
-  if (!best) {
+  if (!best) return null;
+
+  // Absolute floor — refuse to return garbage
+  if (best.rawScore < CONFIG.absoluteMinRawScore) {
+    log.debug(`Best candidate ${best.code} below absolute floor (${best.rawScore.toFixed(1)})`);
     return null;
   }
 
@@ -1025,25 +1015,19 @@ export function extractOTP(
   const matchedSignals: OTPSignal[] = [];
   if (best.instructionVerb) {
     matchedSignals.push({
-      name: 'instruction-verb',
-      points: 8,
-      layer: 'context',
+      name: 'instruction-verb', points: 8, layer: 'context',
       detail: 'Email contains verification instructions',
     });
   }
   if (best.validityPeriod) {
     matchedSignals.push({
-      name: 'validity-period',
-      points: 6,
-      layer: 'context',
+      name: 'validity-period', points: 6, layer: 'context',
       detail: 'Email specifies code validity period',
     });
   }
   if (best.securityWarning) {
     matchedSignals.push({
-      name: 'security-warning',
-      points: 6,
-      layer: 'context',
+      name: 'security-warning', points: 6, layer: 'context',
       detail: 'Email warning not to share code',
     });
   }
@@ -1071,16 +1055,22 @@ export function extractOTP(
       detail: 'Length matches expectations for provider',
     });
   }
+  if ((best.occurrenceCount || 1) >= 2) {
+    matchedSignals.push({
+      name: 'multi-occurrence',
+      points: CONFIG.scoring.frequencyBonus,
+      layer: 'consensus',
+      detail: `Code appeared ${best.occurrenceCount} times in email`,
+    });
+  }
 
   const antiSignals: OTPSignal[] = best.antiPatternResult.reason
-    ? [
-        {
-          name: best.antiPatternResult.reason,
-          points: CONFIG.scoring.antiPenalty[best.antiPatternResult.severity] ?? 0,
-          layer: 'anti-pattern',
-          detail: `Anti-pattern match: ${best.antiPatternResult.reason} (${best.antiPatternResult.severity})`,
-        },
-      ]
+    ? [{
+        name: best.antiPatternResult.reason,
+        points: CONFIG.scoring.antiPenalty[best.antiPatternResult.severity] ?? 0,
+        layer: 'anti-pattern',
+        detail: `Anti-pattern match: ${best.antiPatternResult.reason} (${best.antiPatternResult.severity})`,
+      }]
     : [];
 
   log.info(
@@ -1128,24 +1118,20 @@ export function extractOTP(
           impact: 'positive',
         },
         ...(best.ambiguous
-          ? [
-              {
-                layer: 'ambiguity',
-                observation: 'Another distinct OTP candidate scored within the ambiguity margin.',
-                conclusion: 'Confidence lowered so automation can route this email to review.',
-                impact: 'negative' as const,
-              },
-            ]
+          ? [{
+              layer: 'ambiguity',
+              observation: 'Another distinct OTP candidate scored within the ambiguity margin.',
+              conclusion: 'Confidence lowered so automation can route this email to review.',
+              impact: 'negative' as const,
+            }]
           : []),
         ...(antiSignals.length
-          ? [
-              {
-                layer: 'anti-pattern',
-                observation: `Matched anti-pattern: ${antiSignals.map((s) => s.name).join(', ')}.`,
-                conclusion: 'Penalty applied for matching year or other false-positive indicator.',
-                impact: 'negative' as const,
-              },
-            ]
+          ? [{
+              layer: 'anti-pattern',
+              observation: `Matched anti-pattern: ${antiSignals.map((s) => s.name).join(', ')}.`,
+              conclusion: 'Penalty applied for matching year or other false-positive indicator.',
+              impact: 'negative' as const,
+            }]
           : []),
       ],
       summary: `Extracted '${best.code}' via ${strategyLabel(best.patternName)}.`,

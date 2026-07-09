@@ -2,8 +2,7 @@
 // harvested fields with a rationale, calibrated confidence, and hard-negative
 // tag so the heuristic classifier can be measured safely.
 
-import { FIELD_CLASSES } from '../contract';
-import type { RawFieldRecord } from '../types';
+import { FIELD_CLASSES, RawFieldRecord } from '../../IntelligenceCore';
 
 export const TEACHER_SYSTEM_PROMPT = [
   'You are an expert web form analyst labeling input fields for an autofill engine.',

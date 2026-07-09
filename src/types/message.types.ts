@@ -209,7 +209,7 @@ export interface GetIdentityMessage extends BaseMessage {
 
 export interface GetIdentityResponse {
   success: boolean;
-  identity?: import('./identity.types').IdentityProfile & { email: string; password: string };
+  identity?: import('./form.types').IdentityProfile & { email: string; password: string };
   error?: string;
 }
 
@@ -219,7 +219,7 @@ export interface GenerateIdentityMessage extends BaseMessage {
 
 export interface GenerateIdentityResponse {
   success: boolean;
-  identity?: import('./identity.types').IdentityProfile;
+  identity?: import('./form.types').IdentityProfile;
   error?: string;
 }
 

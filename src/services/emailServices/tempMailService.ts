@@ -1,7 +1,7 @@
 // TempMail Service - 1secmail.com API integration
 
 import { EmailAccount, Email, TempMailMessage, TempMailFullMessage } from '../../types';
-import { API, TEMP_MAIL_DOMAINS } from '../../utils/constants';
+import { API, TEMP_MAIL_DOMAINS } from '../../utils/core';
 import { getRandomInt } from '../../utils/encryption';
 import { createLogger } from '../../utils/logger';
 

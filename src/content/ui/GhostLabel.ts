@@ -17,7 +17,7 @@ import {
   FieldType,
 } from '../../shared/fieldClassifier';
 import { generateHostTokens } from '../../shared/tokens';
-import { setHTML } from '../../utils/setHTML';
+import { setHTML } from '../../utils/sanitization.core';
 
 const STYLES = `
 /* ═══════════════════════════════════════════════════

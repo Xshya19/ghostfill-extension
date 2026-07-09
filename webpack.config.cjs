@@ -36,7 +36,7 @@ class CssMinifyPlugin {
 
 module.exports = (env, argv) => {
   const isDev = argv.mode !== 'production';
-  const trustedTypesFallback = './src/utils/trustedTypesFallback.ts';
+  const trustedTypesFallback = './src/utils/sanitization.core.ts';
 
   const commonConfig = {
     mode: isDev ? 'development' : 'production',
@@ -75,7 +75,12 @@ module.exports = (env, argv) => {
           exclude: /node_modules/,
         },
         {
+          test: /\.shadow\.css$/,
+          type: 'asset/source',
+        },
+        {
           test: /\.css$/,
+          exclude: /\.shadow\.css$/,
           use: [MiniCssExtractPlugin.loader, 'css-loader'],
         },
         {

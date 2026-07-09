@@ -1,8 +1,7 @@
 // Mail.tm Service - Alternative email API with JWT auth
 
 import { EmailAccount, Email, MailTmDomain, MailTmAccount, MailTmMessage } from '../../types';
-import { API } from '../../utils/constants';
-import { fetchWithTimeout } from '../../utils/core';
+import { API, fetchWithTimeout } from '../../utils/core';
 import { getRandomInt, getRandomString } from '../../utils/encryption';
 import { createLogger } from '../../utils/logger';
 

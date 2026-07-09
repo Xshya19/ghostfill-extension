@@ -3,15 +3,14 @@ import { Mail, RefreshCw, Copy, Check, LogOut, Shield, Clock, AlertCircle, Inbox
 import React, { useEffect, useId, useRef, useState, useCallback, useMemo, Component, ErrorInfo, ReactNode } from 'react';
 
 import gmailLogo from '../../assets/icons/gmail_icon.png';
+import ghostLogoImg from '../../assets/logo.png';
 import { type AliasHistoryItem } from '../../services/gmailConnectionService';
 import { Button, IconButton } from '../../shared/ui';
 import { springSoft, interactiveSurface, tweenIn, tweenOut, tweenTimerBar, springDigit } from '../../shared/ui/motion';
 import { EmailAccount, Email, PasswordOptions, GeneratedPassword, DEFAULT_PASSWORD_OPTIONS } from '../../types';
 import { type GmailMessage, type GeneratePasswordResponse } from '../../types/message.types';
 import { LastOTP } from '../../types/storage.types';
-import { TIMING } from '../../utils/constants';
-import { formatRelativeTime } from '../../utils/formatters';
-import { copyToClipboard } from '../../utils/helpers';
+import { TIMING, formatRelativeTime, copyToClipboard } from '../../utils/core';
 import { createLogger } from '../../utils/logger';
 import { safeSendMessage, safeSendTabMessage } from '../../utils/messaging';
 import { useStorageSubscription } from '../hooks/useStorageSubscription';
@@ -1474,12 +1473,6 @@ const press = { scale: 0.92 };
  * Public API (size, className) is unchanged — call sites do not need edits.
  */
 const GhostLogo: React.FC<GhostLogoProps> = React.memo(({ size = 24, className = '' }) => {
-  // Unique gradient ids so multiple instances on the same page don't collide.
-  const gid = React.useId().replace(/:/g, '');
-  const bodyGrad = `gflogo-body-${gid}`;
-  const innerGrad = `gflogo-inner-${gid}`;
-  const glow = `gflogo-glow-${gid}`;
-
   return (
     <motion.div
       className={`ghost-logo-container ${className}`}
@@ -1492,87 +1485,14 @@ const GhostLogo: React.FC<GhostLogoProps> = React.memo(({ size = 24, className =
       whileHover={drift as never}
       whileTap={press as never}
     >
-      <svg
+      <img
+        src={ghostLogoImg}
         width={size}
         height={size}
-        viewBox="0 0 32 32"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        aria-hidden="true"
-        className="ghost-logo-svg"
-      >
-        <defs>
-          {/* Iris body gradient — bright top, deep bottom. */}
-          <linearGradient
-            id={bodyGrad}
-            x1="16"
-            y1="2"
-            x2="16"
-            y2="30"
-            gradientUnits="userSpaceOnUse"
-          >
-            <stop offset="0%" stopColor="var(--gf-primary, #7c83ff)" />
-            <stop offset="100%" stopColor="var(--gf-primary-deep, #4f55d6)" />
-          </linearGradient>
-          {/* Soft inner highlight (gives the ghost a glow center). */}
-          <radialGradient id={innerGrad} cx="50%" cy="42%" r="60%">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.32)" />
-            <stop offset="60%" stopColor="rgba(255,255,255,0.06)" />
-            <stop offset="100%" stopColor="rgba(255,255,255,0)" />
-          </radialGradient>
-          {/* Ambient halo behind body. */}
-          <radialGradient id={glow} cx="50%" cy="55%" r="55%">
-            <stop offset="0%" stopColor="var(--gf-primary, #7c83ff)" stopOpacity="0.35" />
-            <stop offset="100%" stopColor="var(--gf-primary, #7c83ff)" stopOpacity="0" />
-          </radialGradient>
-        </defs>
-
-        {/* Ambient glow halo */}
-        <circle cx="16" cy="17" r="14" fill={`url(#${glow})`} />
-
-        {/* Ghost body — smooth brow + three-scallop hem */}
-        <path
-          d="M16 4
-             C 9.8 4 6 8.6 6 14
-             V 26.4
-             C 6 27.3 7.0 27.7 7.6 27.0
-             L 9.7 24.7
-             L 12.4 27.0
-             C 12.9 27.4 13.6 27.4 14.1 27.0
-             L 16 25.0
-             L 17.9 27.0
-             C 18.4 27.4 19.1 27.4 19.6 27.0
-             L 22.3 24.7
-             L 24.4 27.0
-             C 25.0 27.7 26 27.3 26 26.4
-             V 14
-             C 26 8.6 22.2 4 16 4 Z"
-          fill={`url(#${bodyGrad})`}
-          stroke="rgba(var(--gf-ink-rgb, 17, 21, 29), 0.45)"
-          strokeWidth="0.9"
-          strokeLinejoin="round"
-        />
-
-        {/* Inner soft glow — dimensional warmth */}
-        <ellipse cx="16" cy="14" rx="7.5" ry="8" fill={`url(#${innerGrad})`} />
-
-        {/* Eyes — calm rounded shapes */}
-        <ellipse cx="12.6" cy="13.2" rx="1.55" ry="1.7" fill="rgba(255,255,255,0.95)" />
-        <ellipse cx="19.4" cy="13.2" rx="1.55" ry="1.7" fill="rgba(255,255,255,0.95)" />
-
-        {/* Bright catchlight — the signature gleam */}
-        <circle cx="13.2" cy="12.6" r="0.55" fill="#ffffff" />
-        <circle cx="20.0" cy="12.6" r="0.55" fill="#ffffff" />
-
-        {/* Subtle smile arc */}
-        <path
-          d="M13.8 17.2 C 14.6 18.2 17.4 18.2 18.2 17.2"
-          stroke="rgba(255,255,255,0.85)"
-          strokeWidth="1.1"
-          strokeLinecap="round"
-          fill="none"
-        />
-      </svg>
+        alt="GhostFill Logo"
+        className={`ghost-logo-img ${className}`}
+        style={{ objectFit: 'contain' }}
+      />
     </motion.div>
   );
 });

@@ -50,7 +50,7 @@
 
 import { storageService } from '../services/storageService';
 import { getRandomString } from '../utils/encryption';
-import { sleep } from '../utils/helpers';
+import { sleep } from '../utils/core';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('Notifications');

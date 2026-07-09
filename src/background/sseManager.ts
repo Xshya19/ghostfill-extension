@@ -23,8 +23,7 @@
 
 import { mailTmService, emailService } from '../services/emailServices';
 import { EmailAccount } from '../types';
-import { diag } from '../utils/diagnosticLogger';
-import { createLogger } from '../utils/logger';
+import { createLogger, diag } from '../utils/logger';
 
 const log = createLogger('SSEManager');
 

@@ -14,8 +14,7 @@ import {
 import { storageService } from '../../services/storageService';
 import { itemRise, springTab, stagger } from '../../shared/ui/motion';
 import { EmailAccount, Email, type ExtractOTPResponse } from '../../types';
-import { TIMING } from '../../utils/constants';
-import { copyToClipboard, openSafeUrl } from '../../utils/helpers';
+import { TIMING, copyToClipboard, openSafeUrl } from '../../utils/core';
 import { safeSendMessage } from '../../utils/messaging';
 import { useOTPExtractor } from '../hooks/useOTPExtractor';
 import { useStorageSubscription } from '../hooks/useStorageSubscription';

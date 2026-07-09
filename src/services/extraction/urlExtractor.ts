@@ -6,7 +6,7 @@
 
 import { createLogger } from '../../utils/logger';
 import type { LimitConfig } from '../types/extraction.types';
-import { decodeHtmlEntities, isValidUrl, normalizeUrl } from '../utils';
+import { decodeHtmlEntities, isValidUrl, normalizeUrl } from '../utils/extraction.utils';
 
 const log = createLogger('URLExtractor');
 

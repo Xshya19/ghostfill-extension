@@ -27,11 +27,11 @@ import { ExtensionMessage } from '../types';
 import { getRandomString } from '../utils/encryption';
 import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
-import { setHTML } from '../utils/setHTML';
+import { setHTML } from '../utils/sanitization.core';
 import { AutoFiller } from './autoFiller';
 import { FormDetector } from './formDetector';
-import { pageStatus } from './pageStatus';
-import { safeGetComputedStyle } from './utils/safeStyles';
+import { pageStatus } from './ui/pageStatus';
+import { safeGetComputedStyle } from './ui/safeStyles';
 
 const log = createLogger('OTPDetector');
 
@@ -123,7 +123,7 @@ interface AIContainerResult {
   readonly groupSize: number;
 }
 
-const AUTO_FILL_TIMEOUT_MS = 8_000;
+let AUTO_FILL_TIMEOUT_MS = 8_000;
 
 // ═══════════════════════════════════════════════════════════════
 //  §1  C O N S T A N T S
@@ -180,7 +180,7 @@ const CONFIG = {
   MAX_FORM_SNAPSHOT_CHARS: 2_000,
   SPLIT_DIGIT_MIN: 4,
   SPLIT_DIGIT_MAX: 8,
-  SMALL_INPUT_MAX_WIDTH: 65,
+  SMALL_INPUT_MAX_WIDTH: 85,
   SMALL_INPUT_MIN_WIDTH: 18,
   SIZE_VARIANCE_PX: 20,
   CONTIGUITY_H_GAP_PX: 80,
@@ -1510,11 +1510,27 @@ class ScoringEngine {
   }
 
   private static pageBodyHasKeyword(): boolean {
-    // Use textContent instead of innerText to avoid expensive layout recalculation (reflow)
     const text = (document.body?.textContent ?? '')
       .toLowerCase()
       .substring(0, CONFIG.MAX_BODY_SCAN_CHARS);
-    return KeywordMatcher.matchesContextPhrase(text);
+    
+    const matchesContext = KeywordMatcher.matchesContextPhrase(text);
+    const hasTimer = /\b\d+:\d+\b/i.test(text) || /expires?\s*in|remaining|seconds?\s*left/i.test(text);
+    const hasResend = /resend|re-send|send\s*again|send\s*another/i.test(text);
+
+    let hasHeadingKeyword = false;
+    try {
+      const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4'));
+      for (const h of headings) {
+        const hText = (h.textContent ?? '').toLowerCase();
+        if (KeywordMatcher.matchesKeyword(hText) || KeywordMatcher.matchesContextPhrase(hText)) {
+          hasHeadingKeyword = true;
+          break;
+        }
+      }
+    } catch {}
+
+    return matchesContext || hasTimer || hasResend || hasHeadingKeyword;
   }
 
   private static pageUrlHasKeyword(): boolean {
@@ -1757,6 +1773,10 @@ export class OTPPageDetector {
 
     // Fallback: Poll URL every 500ms for pushState navigations that don't touch the title
     this.urlPollInterval = setInterval(() => {
+      if (typeof chrome === 'undefined' || !chrome.runtime?.id) {
+        this.destroy();
+        return;
+      }
       if (location.href !== lastUrl) {
         lastUrl = location.href;
         this.onNavigate();
@@ -2277,6 +2297,14 @@ export class OTPPageDetector {
       selectors = this.fields.map((f) => f.selector);
     }
 
+    // Adaptive timeout logic
+    let timeoutMs = 8000;
+    if (this.verdict === 'otp-page') {
+      timeoutMs = 5000;
+    } else if (this.verdict === 'possible-otp') {
+      timeoutMs = 10000;
+    }
+
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     const success = await Promise.race<boolean>([
       this.autoFiller.fillOTP(otp, selectors, payload.isBackgroundTab),
@@ -2285,9 +2313,10 @@ export class OTPPageDetector {
           log.warn('AUTO_FILL_OTP timed out before completion', {
             source,
             selectorCount: selectors.length,
+            timeoutMs,
           });
           resolve(false);
-        }, AUTO_FILL_TIMEOUT_MS);
+        }, timeoutMs);
       }),
     ]);
 

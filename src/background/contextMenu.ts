@@ -43,7 +43,7 @@ import { emailService } from '../services/emailServices';
 import { identityService } from '../services/identityService';
 import { otpService } from '../services/otpService';
 import { passwordService } from '../services/passwordService';
-import { CONTEXT_MENU_IDS } from '../utils/constants';
+import { CONTEXT_MENU_IDS } from '../utils/core';
 import { createLogger } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
 
@@ -210,7 +210,11 @@ function registerDefaultActions(): void {
     if (!ctx.tabId) {
       return { notifyType: 'error', notifyTitle: 'Error', notifyMessage: 'No active tab' };
     }
-    await safeSendTabMessage(ctx.tabId, { action: 'SMART_AUTOFILL' });
+    const options: { frameId?: number } = {};
+    if (ctx.info.frameId !== undefined) {
+      options.frameId = ctx.info.frameId;
+    }
+    await safeSendTabMessage(ctx.tabId, { action: 'SMART_AUTOFILL' }, options);
     return Promise.resolve({});
   });
 
@@ -600,10 +604,14 @@ async function processResult(result: ActionResult, ctx: ActionContext): Promise<
     if (result.fillFieldType) {
       fillPayload.fieldType = result.fillFieldType;
     }
+    const options: { frameId?: number } = {};
+    if (ctx.info.frameId !== undefined) {
+      options.frameId = ctx.info.frameId;
+    }
     await safeSendTabMessage(ctx.tabId, {
       action: 'FILL_FIELD',
       payload: fillPayload,
-    }).catch((err) => log.debug('Fill message failed', extractMsg(err)));
+    }, options).catch((err) => log.debug('Fill message failed', extractMsg(err)));
   }
 
   // ── Notification ──

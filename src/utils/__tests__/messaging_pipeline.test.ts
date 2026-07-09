@@ -258,20 +258,20 @@ describe('OTP Extraction Patterns', () => {
 
 describe('Input Sanitization Pipeline', () => {
   it('sanitizeUrl blocks javascript: protocol', async () => {
-    const { sanitizeUrl } = await import('../../utils/sanitization');
+    const { sanitizeUrl } = await import('../../utils/sanitization.core');
     const result = sanitizeUrl('javascript:alert(1)');
     // Must return empty string or about:blank, never the dangerous URL
     expect(result).not.toContain('javascript:');
   });
 
   it('sanitizeUrl allows https URLs', async () => {
-    const { sanitizeUrl } = await import('../../utils/sanitization');
+    const { sanitizeUrl } = await import('../../utils/sanitization.core');
     const result = sanitizeUrl('https://example.com/path?q=1');
     expect(result).toBe('https://example.com/path?q=1');
   });
 
   it('sanitizeUrl blocks data: URLs', async () => {
-    const { sanitizeUrl } = await import('../../utils/sanitization');
+    const { sanitizeUrl } = await import('../../utils/sanitization.core');
     const result = sanitizeUrl('data:text/html,<script>alert(1)</script>');
     expect(result).not.toContain('data:');
   });

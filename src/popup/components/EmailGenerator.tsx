@@ -4,8 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '../../shared/ui';
 import { interactiveSurface, springSoft } from '../../shared/ui/motion';
 import { EmailAccount, Email } from '../../types';
-import { formatRelativeTime } from '../../utils/formatters';
-import { copyToClipboard, openSafeUrl } from '../../utils/helpers';
+import { formatRelativeTime, copyToClipboard, openSafeUrl } from '../../utils/core';
 import { safeSendMessage } from '../../utils/messaging';
 import { useOTPExtractor } from '../hooks/useOTPExtractor';
 

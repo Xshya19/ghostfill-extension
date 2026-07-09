@@ -1,7 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { initTheme } from '../shared/theme';
-import { initRemoteLogger } from '../utils/remoteLogger';
+import { initRemoteLogger } from '../utils/logger';
 import App from './App';
 import './styles/popup.css';
 

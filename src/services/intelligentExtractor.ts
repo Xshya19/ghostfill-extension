@@ -1,8 +1,3 @@
-// src/services/intelligentExtractor.ts
-// GHOSTFILL INTELLIGENT EXTRACTOR - ORCHESTRATOR
-// Coordinates extraction pipeline across specialized modules
-// Version 2.0: Three-Layer Hybrid Intelligence
-
 import { createLogger } from '../utils/logger';
 import {
   sanitizeEmailBody,
@@ -11,27 +6,86 @@ import {
   sanitizeOTP,
   sanitizeActivationLink,
 } from '../utils/sanitization.core';
-import {
-  extractUrls,
-  analyzeEmailZones,
-  detectProvider,
-  extractOTP,
-  extractLink,
-  stripHtmlPreserveStructure,
-  normalizeForExtraction,
-  extractOTPCognitive,
-  extractLinkCognitive,
-  type ExtractionResult,
-  type EmailIntent,
-  type ProviderKnowledge,
-  type IntentResult,
-  type EmailZone,
-  type CrossValidationResult,
-  type ExtractedOTP,
-  type ExtractedLink,
-  type IntentSignal,
-} from './extraction';
-import { IntentClassifier } from './extraction/intentClassifier';
+import { extractUrls } from './extraction/urlExtractor';
+import { analyzeEmailZones, stripHtmlPreserveStructure } from './extraction/zoneAnalyzer';
+import { detectProvider } from './extraction/providerDetector';
+import { extractOTP } from './extraction/otpExtractor';
+import { extractLink } from './extraction/linkExtractor';
+import { normalizeForExtraction } from './extraction/domEngine';
+import { extractOTPCognitive } from './extraction/cognitiveOtpExtractor';
+import { extractLinkCognitive } from './extraction/cognitiveLinkExtractor';
+import type {
+  ExtractionResult,
+  EmailIntent,
+  ProviderKnowledge,
+  IntentResult,
+  EmailZone,
+  CrossValidationResult,
+  ExtractedOTP,
+  ExtractedLink,
+  IntentSignal,
+} from './types/extraction.types';
+
+import intentModel from './extraction/knowledge/intent_model.json';
+
+interface ModelData {
+  priors: Record<string, number>;
+  likelihoods: Record<string, Record<string, number>>;
+  vocabSize: number;
+}
+
+const model = intentModel as unknown as ModelData;
+
+export class IntentClassifier {
+  private static tokenize(text: string): string[] {
+    return text
+      .toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 2);
+  }
+
+  static classify(subject: string, body: string): { intent: string; confidence: number } {
+    const tokens = this.tokenize(`${subject} ${body}`);
+    const results: Record<string, number> = {};
+
+    for (const label in model.priors) {
+      let logProb = Math.log(model.priors[label] || 1e-10);
+
+      tokens.forEach((token) => {
+        const likelihood = model.likelihoods[label]?.[token];
+        if (likelihood) {
+          logProb += Math.log(likelihood);
+        } else {
+          logProb += Math.log(1 / (model.vocabSize * 10));
+        }
+      });
+
+      results[label] = logProb;
+    }
+
+    const maxLogProb = Math.max(...Object.values(results));
+    const expProbs = Object.fromEntries(
+      Object.entries(results).map(([label, logProb]) => [label, Math.exp(logProb - maxLogProb)])
+    );
+
+    const sumExpProbs = Object.values(expProbs).reduce((a, b) => a + b, 0);
+    const finalProbs = Object.fromEntries(
+      Object.entries(expProbs).map(([label, prob]) => [label, prob / sumExpProbs])
+    );
+
+    const sorted = Object.entries(finalProbs).sort((a, b) => b[1] - a[1]);
+    if (sorted.length === 0) {
+      return { intent: 'unknown', confidence: 0 };
+    }
+    const [bestIntent, confidence] = sorted[0]!;
+
+    return {
+      intent: bestIntent,
+      confidence,
+    };
+  }
+}
 
 const log = createLogger('IntelligentExtractor');
 
@@ -425,21 +479,49 @@ export function extractAll(
   timings.security = performance.now() - t;
 
   t = performance.now();
-  // 🧠 Try Cognitive OTP extraction first
-  let otp = extractOTPCognitive(plainText, sanitizedHtmlBody, provider, zones, intentResult, sanitizedSubject);
-  if (otp) {
-    otp.code = sanitizeOTP(otp.code);
-  } else {
-    // Fallback to traditional extractOTP
-    otp = extractOTP(plainText, sanitizedHtmlBody, provider, zones, intentResult);
-    if (otp) {
-      otp.code = sanitizeOTP(otp.code);
-      // Cross-validation: subject-body cross-validation boost
-      if (sanitizedSubject.includes(otp.code)) {
-        otp.score = Math.min(100, otp.score + 35);
-        otp.confidence = otp.score / 100;
+  const cogOtp = extractOTPCognitive(plainText, sanitizedHtmlBody, provider, zones, intentResult, sanitizedSubject);
+  const tradOtp = extractOTP(plainText, sanitizedHtmlBody, provider, zones, intentResult);
+
+  if (cogOtp) cogOtp.code = sanitizeOTP(cogOtp.code);
+  if (tradOtp) tradOtp.code = sanitizeOTP(tradOtp.code);
+
+  let otp: typeof cogOtp = null;
+
+  if (cogOtp && tradOtp) {
+    if (cogOtp.code === tradOtp.code) {
+      // 🤝 Consensus: both engines agreed on the same code!
+      otp = cogOtp;
+      otp.score = Math.min(100, Math.max(cogOtp.score, tradOtp.score) + 25);
+      otp.confidence = otp.score / 100;
+      otp.reasoning.steps.push({
+        layer: 'consensus',
+        observation: 'Dual engines (Cognitive & Traditional Heuristics) reached agreement consensus on the code.',
+        conclusion: 'Confidence boosted to maximum agreement consensus.',
+        impact: 'positive',
+      });
+      if (cogOtp.matchedSignals && tradOtp.matchedSignals) {
+        // Merge signals uniquely
+        const seenSignals = new Set(cogOtp.matchedSignals.map(s => s.name));
+        for (const s of tradOtp.matchedSignals) {
+          if (!seenSignals.has(s.name)) {
+            otp.matchedSignals.push(s);
+          }
+        }
       }
+      log.info(`🤝 Dual-engine consensus on code: ${otp.code}. Boosted confidence to ${(otp.confidence * 100).toFixed(0)}%`);
+    } else {
+      // Disagreement: select higher scoring one
+      otp = cogOtp.score >= tradOtp.score ? cogOtp : tradOtp;
+      log.info(`Engine disagreement: Cognitive=${cogOtp.code}(${cogOtp.score.toFixed(0)}%) vs Traditional=${tradOtp.code}(${tradOtp.score.toFixed(0)}%). Selected higher scorer: ${otp.code}`);
     }
+  } else {
+    otp = cogOtp || tradOtp;
+  }
+
+  // Cross-validation: subject-body cross-validation boost (if not already applied in cognitive)
+  if (otp && sanitizedSubject.includes(otp.code) && !otp.matchedSignals?.some(s => s.name === 'subject-body-agreement')) {
+    otp.score = Math.min(100, otp.score + 35);
+    otp.confidence = otp.score / 100;
   }
   timings.otp = performance.now() - t;
 
@@ -516,20 +598,29 @@ export function extractAll(
   // H6: Emergency fallback — if both OTP and link are null, try emergency regex patterns
   if (!otp && !link) {
     const emergencyPatterns = [
-      /(?:code|pin|otp|token|passcode)\s*(?:is|:|=)\s*\b([A-Z0-9]{4,10})\b/i,
-      /(?:confirmation|verification|security|login|access)\s+code\s*:?\s*\b([A-Z0-9]{4,10})\b/i,
-      /your\s+(?:\w+\s+)?(?:code|pin|otp)\s*(?:is|:)\s*\b([A-Z0-9]{4,10})\b/i,
-      /\b([A-Z0-9]{4,10})\s+is\s+your\s+(?:\w+\s+)?(?:code|pin|otp)/i,
+      /(?:code|pin|otp|token|passcode|código|clave|kennwort|sécurité|vérification|कोड|ओटीपी|コード|認証|验证码|密码|인증|senha|kod|şifre|رمز|كود)\s*(?:is|:|:?\s*ist|:?\s*est|:?\s*है|:?\s*です|:?\s*为|:?\s*是|:?\s*equals?|=)\s*\b([A-Z0-9]{4,10})\b/i,
+      /(?:confirmation|verification|security|login|access|verificación|sécurité|authentication)\s+(?:code|pin|otp|código|clave|passcode|رمز|كود)\s*:?\s*\b([A-Z0-9]{4,10})\b/i,
+      /(?:your|su|ihr|votre|आपका|あなたの|您的|귀하의|seu|senin)\s+(?:\w+\s+)?(?:code|pin|otp|código|clave|kennwort|passcode|رمز|كود)\s*(?:is|:|:?\s*ist|:?\s*est|:?\s*है|:?\s*です|:?\s*为|:?\s*是|=)\s*\b([A-Z0-9]{4,10})\b/i,
+      /\b([A-Z0-9]{4,10})\s+(?:is|ist|est|है|です|为|是)\s+(?:your|su|ihr|votre|आपका|あなたの|您的|귀하의|seu|senin)\s+(?:\w+\s+)?(?:code|pin|otp|código|clave|passcode|رمز|كود)/i,
     ];
-    const textToSearch = `${subject} ${body}`.substring(0, 5000);
+    // Strip zero-width characters and RTL/LTR marks
+    const textToSearch = `${subject} ${body}`
+      .replace(/[\u200B-\u200D\uFEFF\u200E\u200F]/g, '')
+      .substring(0, 5000);
+      
+    const currentYear = new Date().getFullYear();
+
     for (const pattern of emergencyPatterns) {
       const match = textToSearch.match(pattern);
       if (match?.[1]) {
         const code = match[1].replace(/[-\s]/g, '');
+        const numVal = parseInt(code, 10);
+        const isYear = !isNaN(numVal) && numVal >= 1970 && numVal <= currentYear + 2;
+        if (isYear) {
+          continue; // Skip year-like matches
+        }
+
         const sanitizedCode = sanitizeOTP(code);
-        // FIX #28: Don't Object.freeze — line 309 mutates otp.code via sanitizeOTP,
-        // which would silently fail (sloppy) or throw (strict mode).
-        // Pre-sanitize the code instead.
         otp = {
           code: sanitizedCode,
           rawCode: match[1],
@@ -548,7 +639,6 @@ export function extractAll(
           providerMatch: null,
           matchedSignals: [],
           antiSignals: [],
-          // FIX: reasoning must be OTPReasoningChain object, not a string
           reasoning: {
             steps: [
               {

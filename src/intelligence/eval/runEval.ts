@@ -9,8 +9,8 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { classifyField } from '../classifier/classify';
-import type { FillDecision, LabeledFieldRecord } from '../types';
+import { classifyField } from '../IntelligenceCore';
+import type { FillDecision, LabeledFieldRecord } from '../IntelligenceCore';
 import { evaluate } from './metrics';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -97,7 +97,7 @@ function main(): void {
   const useSample = !arg || arg === '--sample';
   const path = useSample ? 'built-in smoke sample' : resolve(arg);
   const rows = useSample ? SAMPLE_ROWS : load(path);
-  const decisions: FillDecision[] = rows.map((r) => classifyField(r).decision);
+  const decisions: FillDecision[] = rows.map((r) => classifyField(r));
   const rep = evaluate(rows, decisions);
 
   console.log('============================================================');

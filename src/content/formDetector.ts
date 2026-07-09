@@ -8,15 +8,14 @@ import {
   GhostContainer,
   FormInputElement,
 } from '../types';
-import { getUniqueSelector, deepQuerySelectorAll, getElementLabel } from '../utils/helpers';
+import { getUniqueSelector, deepQuerySelectorAll, getElementLabel } from '../utils/core';
 import { createLogger } from '../utils/logger';
-import { safeGetComputedStyle } from './utils/safeStyles';
-import { extractFieldRecord } from '../intelligence/featureExtractor';
-import { classifyField } from '../intelligence/classifier/classify';
-import { mapFieldClassToFieldType } from './utils/intelligence';
+import { safeGetComputedStyle } from './ui/safeStyles';
+import { extractFieldRecord, resolveLabelText } from '../intelligence/pageAnalyzer';
+import { classifyField, classifyHeuristic, mapFieldClassToFieldType, IntelligenceCore } from '../intelligence/IntelligenceCore';
 import { debounce } from '../utils/debounce';
-import { harvestPageJsonl } from '../intelligence/harvest';
-import { pageStatus } from './pageStatus';
+import { harvestPageJsonl } from '../intelligence/eval/harvest';
+import { pageStatus } from './ui/pageStatus';
 
 const log = createLogger('FormDetector');
 
@@ -113,7 +112,7 @@ class VisibilityCheck {
     const rect = element.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return false;
     const style = safeGetComputedStyle(element);
-    return style.display !== 'none' && style.visibility !== 'hidden';
+    return style.display !== 'none' && style.visibility !== 'hidden' && parseFloat(style.opacity || '1') > 0.01;
   }
 }
 
@@ -123,62 +122,7 @@ class VisibilityCheck {
 
 class LabelResolver {
   static resolve(element: HTMLElement): string {
-    if (element.id) {
-      const label = safeQuerySelector<HTMLLabelElement>(
-        document,
-        `label[for="${escapeCSS(element.id)}"]`
-      );
-      if (label?.textContent) {
-        const text = label.textContent.trim();
-        if (text.length <= MAX_LABEL_TEXT_LENGTH) return text;
-      }
-    }
-
-    const parentLabel = element.closest('label');
-    if (parentLabel?.textContent) {
-      const text = parentLabel.textContent.trim();
-      if (text.length <= MAX_LABEL_TEXT_LENGTH) return text;
-    }
-
-    const labelledBy = element.getAttribute('aria-labelledby');
-    if (labelledBy) {
-      const texts: string[] = [];
-      for (const id of labelledBy.split(/\s+/)) {
-        const labelEl = document.getElementById(id.trim());
-        if (labelEl?.textContent) texts.push(labelEl.textContent.trim());
-      }
-      if (texts.length > 0) {
-        const combined = texts.join(' ');
-        if (combined.length <= MAX_LABEL_TEXT_LENGTH) return combined;
-      }
-    }
-
-    const ariaLabel = element.getAttribute('aria-label');
-    if (ariaLabel) {
-      const text = ariaLabel.trim();
-      if (text.length <= MAX_LABEL_TEXT_LENGTH) return text;
-    }
-
-    try {
-      const prev = element.previousElementSibling;
-      if (prev && prev.tagName !== 'INPUT' && prev.tagName !== 'TEXTAREA' && prev.textContent) {
-        const text = prev.textContent.trim();
-        if (text.length > 0 && text.length <= MAX_LABEL_TEXT_LENGTH) return text;
-      }
-
-      const parent = element.parentElement;
-      if (parent) {
-        const pPrev = parent.previousElementSibling;
-        if (pPrev && pPrev.tagName !== 'INPUT' && pPrev.tagName !== 'TEXTAREA' && pPrev.textContent) {
-          const text = pPrev.textContent.trim();
-          if (text.length > 0 && text.length <= MAX_LABEL_TEXT_LENGTH) return text;
-        }
-      }
-    } catch {
-      /* ignore */
-    }
-
-    return '';
+    return resolveLabelText(element as any);
   }
 }
 
@@ -325,7 +269,8 @@ export class FieldAnalyzer {
 
   analyzeField(element: FormInputElement, _allInputs?: FormInputElement[]): DetectedField {
     const record = extractFieldRecord(element);
-    const { result, decision } = classifyField(record);
+    const decision = classifyField(record);
+    const result = classifyHeuristic(record);
 
     let fieldType = mapFieldClassToFieldType(result.top);
     let confidence = result.topProb;
@@ -412,6 +357,23 @@ export class FieldAnalyzer {
 
   getAllFields(): DetectedField[] {
     const elements = deepQuerySelectorAll<FormInputElement>(FieldAnalyzer.FILLABLE_INPUT_SELECTOR);
+    
+    try {
+      const iframes = Array.from(document.querySelectorAll('iframe'));
+      for (const iframe of iframes) {
+        try {
+          if (iframe.contentDocument) {
+            const iframeInputs = Array.from(
+              iframe.contentDocument.querySelectorAll<FormInputElement>(FieldAnalyzer.FILLABLE_INPUT_SELECTOR)
+            );
+            elements.push(...iframeInputs);
+          }
+        } catch {
+          // Cross-origin iframe
+        }
+      }
+    } catch {}
+
     const fields: DetectedField[] = [];
 
     for (const element of elements) {
@@ -1056,6 +1018,7 @@ export class DOMObserver {
   };
 
   private handleSpaNavigation = (): void => {
+    if (location.href === this.lastUrl) return;
     this.lastUrl = location.href;
     log.debug('SPA navigation detected, restarting observer');
     this.restart();
@@ -1141,3 +1104,330 @@ export async function collectFieldDiagnostics(): Promise<void> {
     pageStatus.error('Error collecting field diagnostics', 3000);
   }
 }
+
+// ─── UltraDetector & ContextEngine ────────────────────────────────────
+
+export interface FieldCandidate {
+  element: HTMLInputElement | HTMLTextAreaElement;
+  selector: string;
+  fieldType: FieldType;
+  confidence: number;
+  signals: string[];
+  decision: 'FILL' | 'ABSTAIN' | 'BLOCK';
+  groupId?: string;
+  groupIndex?: number;
+  groupSize?: number;
+}
+
+export interface DetectionResult {
+  verdict: 'login' | 'signup' | 'verification' | '2fa' | 'password-reset' | 'default';
+  confidence: number;
+  candidates: FieldCandidate[];
+}
+
+export class UltraDetector {
+  private intelligence: IntelligenceCore;
+
+  constructor(intelligence = new IntelligenceCore()) {
+    this.intelligence = intelligence;
+  }
+
+  private getUniqueSelector(el: HTMLElement): string {
+    if (el.id) {
+      return '#' + CSS.escape(el.id);
+    }
+    const nameAttr = el.getAttribute('name');
+    if (nameAttr) {
+      return `${el.tagName.toLowerCase()}[name="${CSS.escape(nameAttr)}"]`;
+    }
+    const testid = el.getAttribute('data-testid');
+    if (testid) {
+      return `[data-testid="${CSS.escape(testid)}"]`;
+    }
+    const cy = el.getAttribute('data-cy');
+    if (cy) {
+      return `[data-cy="${CSS.escape(cy)}"]`;
+    }
+
+    if (el.className) {
+      const classes = el.className.split(/\s+/).filter(c => c && !c.includes(':')).map(c => '.' + CSS.escape(c)).join('');
+      if (classes) {
+        try {
+          if (document.querySelectorAll(classes).length === 1) {
+            return classes;
+          }
+        } catch {}
+      }
+    }
+
+    try {
+      const path: string[] = [];
+      let curr: HTMLElement | null = el;
+      while (curr && curr !== document.body && curr.parentElement) {
+        const index = Array.from(curr.parentElement.children).indexOf(curr) + 1;
+        path.unshift(`${curr.tagName.toLowerCase()}:nth-child(${index})`);
+        curr = curr.parentElement;
+      }
+      return path.join(' > ');
+    } catch {
+      return el.tagName.toLowerCase();
+    }
+  }
+
+  async detect(): Promise<DetectionResult> {
+    const inputs = deepQuerySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea')
+      .filter((el: HTMLInputElement | HTMLTextAreaElement) => !el.disabled && !el.readOnly);
+
+    const candidates: FieldCandidate[] = [];
+
+    // 1. Classify all inputs
+    for (const input of inputs) {
+      try {
+        const record = extractFieldRecord(input);
+        const calibrated = this.intelligence.classify(record);
+        const selector = this.getUniqueSelector(input);
+
+        candidates.push({
+          element: input,
+          selector,
+          fieldType: calibrated.fieldType,
+          confidence: calibrated.confidence,
+          signals: calibrated.signals,
+          decision: calibrated.decision,
+        });
+      } catch (e) {
+        log.warn('Failed to extract or classify element', e);
+      }
+    }
+
+    // 2. Detect split-digit OTP groups
+    this.detectSplitDigitGroups(candidates);
+
+    // 3. Determine Page Verdict
+    const verdict = this.determinePageVerdict(candidates);
+
+    return {
+      verdict,
+      confidence: this.calculatePageConfidence(candidates, verdict),
+      candidates,
+    };
+  }
+
+  private detectSplitDigitGroups(candidates: FieldCandidate[]): void {
+    const singleDigitCandidates = candidates.filter((c) => {
+      const el = c.element as HTMLInputElement;
+      const rect = el.getBoundingClientRect();
+      return (
+        el.maxLength === 1 ||
+        el.getAttribute('maxlength') === '1' ||
+        rect.width <= 85
+      );
+    });
+
+    if (singleDigitCandidates.length < 4) return;
+
+    // Group single-digit inputs by common ancestor up to 3 levels deep
+    const groupsByAncestor = new Map<HTMLElement, FieldCandidate[]>();
+    for (const c of singleDigitCandidates) {
+      let ancestor: HTMLElement | null = c.element.parentElement;
+      let depth = 0;
+      while (ancestor && depth < 3 && ancestor !== document.body) {
+        let count = 0;
+        for (const other of singleDigitCandidates) {
+          if (ancestor.contains(other.element)) {
+            count++;
+          }
+        }
+        if (count >= 4 && count <= 8) {
+          let list = groupsByAncestor.get(ancestor);
+          if (!list) {
+            list = [];
+            groupsByAncestor.set(ancestor, list);
+          }
+          if (!list.includes(c)) {
+            list.push(c);
+          }
+          break; // Found the lowest ancestor wrapping at least 4 digits
+        }
+        ancestor = ancestor.parentElement;
+        depth++;
+      }
+    }
+
+    let groupCounter = 1;
+    for (const [ancestor, list] of groupsByAncestor.entries()) {
+      if (list.length >= 4 && list.length <= 8) {
+        // Sort by DOM left coordinate
+        const sorted = list.sort((a, b) => {
+          const rectA = a.element.getBoundingClientRect();
+          const rectB = b.element.getBoundingClientRect();
+          return rectA.left - rectB.left;
+        });
+
+        const groupId = `otp-group-${groupCounter++}`;
+        sorted.forEach((c, idx) => {
+          c.fieldType = 'otp';
+          c.groupId = groupId;
+          c.groupIndex = idx;
+          c.groupSize = sorted.length;
+          c.decision = 'FILL';
+          c.confidence = 0.99; // Highly confident since it is a structured OTP group
+        });
+      }
+    }
+  }
+
+  private determinePageVerdict(candidates: FieldCandidate[]): DetectionResult['verdict'] {
+    let emailCount = 0;
+    let passwordCount = 0;
+    let confirmPasswordCount = 0;
+    let otpCount = 0;
+
+    for (const c of candidates) {
+      if (c.decision === 'BLOCK' || c.decision === 'ABSTAIN') continue;
+      if (c.fieldType === 'email') emailCount++;
+      if (c.fieldType === 'password') passwordCount++;
+      if (c.fieldType === 'confirm-password') confirmPasswordCount++;
+      if (c.fieldType === 'otp') otpCount++;
+    }
+
+    if (otpCount > 0) {
+      return otpCount > 1 || candidates.some((c) => c.groupId) ? '2fa' : 'verification';
+    }
+    if (confirmPasswordCount > 0) {
+      return 'signup';
+    }
+    if (passwordCount > 0) {
+      return emailCount > 0 ? 'login' : 'password-reset';
+    }
+    return 'default';
+  }
+
+  private calculatePageConfidence(candidates: FieldCandidate[], verdict: DetectionResult['verdict']): number {
+    if (verdict === 'default') return 0.5;
+    const relevant = candidates.filter((c) => {
+      if (verdict === '2fa' || verdict === 'verification') return c.fieldType === 'otp';
+      if (verdict === 'signup') return c.fieldType === 'confirm-password' || c.fieldType === 'password' || c.fieldType === 'email';
+      if (verdict === 'login') return c.fieldType === 'password' || c.fieldType === 'email';
+      return false;
+    });
+
+    if (relevant.length === 0) return 0.5;
+    const sum = relevant.reduce((acc, c) => acc + c.confidence, 0);
+    return sum / relevant.length;
+  }
+}
+
+export class ContextEngine {
+  private detector: UltraDetector;
+  private candidates: FieldCandidate[] = [];
+  private lastChecked = 0;
+  private observer: MutationObserver | null = null;
+  private callbacks: Array<(candidates: FieldCandidate[]) => void> = [];
+  private debounceTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(detector = new UltraDetector()) {
+    this.detector = detector;
+  }
+
+  private lastScanFingerprint = '';
+
+  async init(): Promise<void> {
+    await this.scan();
+
+    // Start MutationObserver for incremental DOM updates including attributes
+    this.observer = new MutationObserver((mutations) => {
+      let shouldRescan = false;
+      for (const m of mutations) {
+        if (m.addedNodes.length > 0 || m.removedNodes.length > 0 || m.type === 'attributes') {
+          shouldRescan = true;
+          break;
+        }
+      }
+
+      if (shouldRescan) {
+        this.triggerDebouncedScan();
+      }
+    });
+
+    this.observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['type', 'style', 'class', 'hidden', 'disabled', 'readonly'],
+    });
+
+    window.addEventListener('popstate', this.handleNavigation);
+  }
+
+  private handleNavigation = (): void => {
+    this.triggerDebouncedScan();
+  };
+
+  getCandidates(): FieldCandidate[] {
+    return this.candidates;
+  }
+
+  subscribe(callback: (candidates: FieldCandidate[]) => void): () => void {
+    this.callbacks.push(callback);
+    return () => {
+      this.callbacks = this.callbacks.filter((cb) => cb !== callback);
+    };
+  }
+
+  private getDOMFingerprint(): string {
+    try {
+      const inputs = Array.from(document.querySelectorAll('input, textarea'));
+      return inputs.map(i => `${i.tagName}:${i.id}:${i.className}:${(i as any).disabled}:${(i as any).readOnly}:${(i as any).type}`).join(';');
+    } catch {
+      return '';
+    }
+  }
+
+  async scan(): Promise<void> {
+    try {
+      const currentFingerprint = this.getDOMFingerprint();
+      if (currentFingerprint === this.lastScanFingerprint) {
+        return;
+      }
+      this.lastScanFingerprint = currentFingerprint;
+
+      const result = await this.detector.detect();
+      this.candidates = result.candidates;
+      this.lastChecked = Date.now();
+      this.notifySubscribers();
+    } catch (e) {
+      log.warn('Incremental scan failed', e);
+    }
+  }
+
+  destroy(): void {
+    if (this.observer) {
+      this.observer.disconnect();
+    }
+    if (this.debounceTimeout) {
+      clearTimeout(this.debounceTimeout);
+    }
+    window.removeEventListener('popstate', this.handleNavigation);
+  }
+
+  private triggerDebouncedScan(): void {
+    if (this.debounceTimeout) {
+      clearTimeout(this.debounceTimeout);
+    }
+    this.debounceTimeout = setTimeout(async () => {
+      await this.scan();
+    }, 250); // 250ms debounce
+  }
+
+  private notifySubscribers(): void {
+    for (const callback of this.callbacks) {
+      try {
+        callback(this.candidates);
+      } catch (e) {
+        log.warn('Subscriber callback failed', e);
+      }
+    }
+  }
+}
+

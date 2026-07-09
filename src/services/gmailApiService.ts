@@ -12,7 +12,7 @@ import {
   GMAIL_SCOPES,
   GMAIL_API_BASE,
   OAUTH_USERINFO,
-} from '../config/gmailConfig';
+} from '../utils/core';
 import { GmailMessage, GmailProfile } from '../types/message.types';
 import type { GmailSyncStateEntry } from '../types/storage.types';
 import { createLogger } from '../utils/logger';

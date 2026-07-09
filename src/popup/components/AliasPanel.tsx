@@ -31,7 +31,7 @@ import {
 } from '../../services/gmailConnectionService';
 import { storageService } from '../../services/storageService';
 import { type GmailMessage, type GmailProfile } from '../../types/message.types';
-import { copyToClipboard, openSafeUrl } from '../../utils/helpers';
+import { copyToClipboard, openSafeUrl } from '../../utils/core';
 import { safeSendMessage } from '../../utils/messaging';
 import { useAppStore } from '../store/useAppStore';
 

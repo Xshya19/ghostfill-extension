@@ -9,7 +9,7 @@
  * in isolation. DOM access is confined to label discovery and visibility checks,
  * each guarded against cross-origin / detached-node exceptions.
  */
-import { extractFieldRecord } from '../intelligence/featureExtractor';
+import { extractFieldRecord } from '../intelligence/pageAnalyzer';
 import { IntelligenceCore } from '../intelligence/IntelligenceCore';
 
 const intelligence = new IntelligenceCore();

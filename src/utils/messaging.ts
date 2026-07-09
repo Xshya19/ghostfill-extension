@@ -14,7 +14,7 @@
  */
 
 import { ExtensionMessage, ExtensionResponse } from '../types';
-import { sleep } from './helpers';
+import { sleep } from './core';
 import { createLogger } from './logger';
 import { validateMessage } from './validation';
 

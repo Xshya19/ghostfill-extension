@@ -1,9 +1,9 @@
 // Page Status Injector - Injects status banners directly into webpages
 // Solves the "disconnect" problem by showing extension status on the page itself
 
-import { generateHostTokens } from '../shared/tokens';
-import { createLogger } from '../utils/logger';
-import { setHTML } from '../utils/setHTML';
+import { generateHostTokens } from '../../shared/tokens';
+import { createLogger } from '../../utils/logger';
+import { setHTML } from '../../utils/sanitization.core';
 
 const log = createLogger('PageStatus');
 

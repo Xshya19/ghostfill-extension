@@ -122,7 +122,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["assets/icons/icon128.png"],
+      "resources": ["assets/icons/icon128.png", "assets/logo.png"],
       "matches": ["https://*/*"],
       "use_dynamic_url": true
     }

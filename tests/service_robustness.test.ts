@@ -86,7 +86,13 @@ describe('MailTmService robustness', () => {
     vi.useFakeTimers();
 
     const fetchWithTimeout = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
-    vi.doMock('../src/utils/core', () => ({ fetchWithTimeout }));
+    vi.doMock('../src/utils/core', async (importOriginal) => {
+      const actual = await importOriginal<any>();
+      return {
+        ...actual,
+        fetchWithTimeout,
+      };
+    });
 
     const { MailTmService } = await import('../src/services/emailServices/mailTmService');
     const service = new MailTmService();

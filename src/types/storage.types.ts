@@ -5,7 +5,7 @@
 
 import { AliasHistoryItem } from '../services/gmailConnectionService';
 import { EmailAccount, EmailHistoryItem, Email, EmailService } from './email.types';
-import { IdentityProfile } from './identity.types';
+import { IdentityProfile } from './form.types';
 import { GmailProfile } from './message.types';
 import { PasswordOptions, PasswordHistoryItem } from './password.types';
 
@@ -296,3 +296,25 @@ export const STORAGE_KEYS = {
 } as const;
 
 export type StorageKey = keyof typeof STORAGE_KEYS;
+
+// OTP extraction types (consolidated from former ai.types.ts)
+
+export interface PatternMatch {
+  pattern: string;
+  confidence: number;
+  extractedValue: string;
+  startIndex: number;
+  endIndex: number;
+}
+
+export interface LastOTP {
+  code: string;
+  source: 'email' | 'sms' | 'manual';
+  extractedAt: number;
+  confidence: number;
+  usedAt?: number;
+  emailFrom?: string;
+  emailSubject?: string;
+  emailId?: string | number;
+  emailDate?: number;
+}

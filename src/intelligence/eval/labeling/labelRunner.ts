@@ -13,7 +13,7 @@
 //   tsx src/labeling/labelRunner.ts <input.jsonl> <output.jsonl> [batchSize]
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import type { LabeledFieldRecord, RawFieldRecord } from '../types';
+import type { LabeledFieldRecord, RawFieldRecord } from '../../IntelligenceCore';
 import { TEACHER_SYSTEM_PROMPT, buildUserPrompt } from './teacherPrompt';
 
 const DEFAULT_URL = 'https://api.openai.com/v1/chat/completions';

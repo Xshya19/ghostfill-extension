@@ -5,7 +5,7 @@ import { storageService } from '../services/storageService';
 import { Toast } from '../shared/ui';
 import { springSoft } from '../shared/ui/motion';
 import { EmailAccount } from '../types';
-import { withTimeout, withRetry } from '../utils/helpers';
+import { withTimeout, withRetry } from '../utils/core';
 import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
 import {

@@ -11,7 +11,7 @@ import {
 import { generateId } from '../utils/core';
 import { getRandomInt } from '../utils/encryption';
 import { createLogger } from '../utils/logger';
-import { BIP39_WORDLIST } from '../utils/wordlist';
+import { BIP39_WORDLIST } from './data/wordlist';
 
 const log = createLogger('PasswordService');
 const PASSWORD_HISTORY_SESSION_KEY = 'passwordHistorySession';

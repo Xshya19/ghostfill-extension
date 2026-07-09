@@ -17,12 +17,12 @@
 
 import { Email } from '../types';
 import { DEFAULT_SETTINGS } from '../types/storage.types';
-import { sleep } from '../utils/helpers';
+import { sleep } from '../utils/core';
 import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
 
 import { dedupService } from './dedupService';
-import { smartDetectionService } from './smartDetectionService';
+import { smartDetectionService } from './otpService';
 import { storageService } from './storageService';
 
 const log = createLogger('LinkEngine');

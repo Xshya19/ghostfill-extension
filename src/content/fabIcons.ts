@@ -1,18 +1,4 @@
-/**
- * fab-icons.ts — Spectre v2026-06-28
- *
- * Simple, refined Spectre icons for the floating action button.
- * Replaces the heavy Memphis Neon mascot set with quiet, minimal
- * strokes that read at 20–24px.
- *
- * Public API unchanged:
- *  - SHARED_SVG_DEFS (back-compat empty)
- *  - IconSystem.get(mode) / getSpinner() / getSuccess() / getError()
- *
- * Contract preserved: every returned SVG includes `role="presentation"`
- * exactly once (covered by fab-icons.test.ts).
- */
-export type ButtonMode = 'magic' | 'email' | 'password' | 'otp' | 'user' | 'form';
+import { type ButtonMode } from './floatingButton';
 
 const TOKENS = {
   iris: 'var(--gf-primary, #7c83ff)',
@@ -26,24 +12,7 @@ const STROKE = '1.7';
 export const SHARED_SVG_DEFS = '';
 
 const ICONS: Readonly<Record<ButtonMode, string>> = {
-  magic: `<svg viewBox="0 0 24 24" fill="none" role="presentation" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="gf-fab-ghost" x1="12" y1="3" x2="12" y2="22" gradientUnits="userSpaceOnUse">
-        <stop offset="0%" stop-color="${TOKENS.iris}"/>
-        <stop offset="100%" stop-color="${TOKENS.irisDeep}"/>
-      </linearGradient>
-    </defs>
-    <path d="M12 3 C 7.6 3 5 6.2 5 10 V 19.6 C 5 20.3 5.8 20.6 6.3 20.1 L 7.8 18.5 L 9.7 20.1 C 10.0 20.4 10.5 20.4 10.8 20.1 L 12 18.9 L 13.2 20.1 C 13.5 20.4 14.0 20.4 14.3 20.1 L 16.2 18.5 L 17.7 20.1 C 18.2 20.6 19 20.3 19 19.6 V 10 C 19 6.2 16.4 3 12 3 Z"
-      fill="url(#gf-fab-ghost)"
-      stroke="rgba(0,0,0,0.25)"
-      stroke-width="0.8"
-      stroke-linejoin="round"/>
-    <ellipse cx="9.7" cy="10.6" rx="1.05" ry="1.15" fill="#fff" opacity="0.95"/>
-    <ellipse cx="14.3" cy="10.6" rx="1.05" ry="1.15" fill="#fff" opacity="0.95"/>
-    <circle cx="10.05" cy="10.25" r="0.36" fill="#fff"/>
-    <circle cx="14.65" cy="10.25" r="0.36" fill="#fff"/>
-    <path d="M10.6 13.4 c 0.6 0.7 2.2 0.7 2.8 0" stroke="#fff" stroke-width="1.15" stroke-linecap="round" fill="none" opacity="0.8"/>
-  </svg>`,
+  magic: `<img src="${chrome.runtime.getURL('assets/logo.png')}" role="presentation" aria-hidden="true" alt="GhostFill Logo" />`,
 
   email: `<svg viewBox="0 0 24 24" fill="none" role="presentation" aria-hidden="true" stroke="currentColor" stroke-width="${STROKE}" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
     <rect x="3" y="5" width="18" height="14" rx="2.5"/>
@@ -81,7 +50,7 @@ const ICONS: Readonly<Record<ButtonMode, string>> = {
 
 export class IconSystem {
   static get(mode: ButtonMode): string {
-    const icon = ICONS[mode] ?? ICONS.magic;
+    const icon: string = ICONS[mode] || ICONS.magic;
     if (/\srole=/.test(icon)) {
       return icon;
     }

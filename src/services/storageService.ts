@@ -30,7 +30,7 @@ import { createLogger } from '../utils/logger';
  * Map provides O(1) get/set/delete
  * Access order is maintained by Map's insertion order (ES2015+ guarantee)
  */
-import { LRUCache } from '../utils/lruCache';
+import { LRUCache } from '../utils/core';
 
 const log = createLogger('StorageService');
 
@@ -119,7 +119,7 @@ function withStorageTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
   ]);
 }
 
-class StorageService {
+export class StorageService {
   // PERFORMANCE: O(1) LRU Cache instead of array-based O(n)
   private readonly cache: LRUCache<keyof StorageSchema, unknown>;
   private initialized: boolean = false;
@@ -291,25 +291,22 @@ class StorageService {
     this.optimisticUpdates.set(key, value);
     this.cache.set(key, value);
 
-    return new Promise<void>((resolve, reject) => {
-      const timerId = setTimeout(async () => {
-        try {
-          await this.set(key, value);
-          this.optimisticUpdates.delete(key);
-          resolve();
-        } catch (error) {
-          log.error(`Optimistic update failed for ${String(key)}`, error);
-          if (previousValue !== undefined) {
-            this.cache.set(key, previousValue);
-          } else {
-            this.cache.delete(key);
-          }
-          this.optimisticUpdates.delete(key);
-          reject(error);
+    const timerId = setTimeout(async () => {
+      try {
+        await this.setImmediate(key, value);
+        this.optimisticUpdates.delete(key);
+      } catch (error) {
+        log.error(`Optimistic update failed for ${String(key)}`, error);
+        if (previousValue !== undefined) {
+          this.cache.set(key, previousValue);
+        } else {
+          this.cache.delete(key);
         }
-      }, syncDelay);
-      this.optimisticTimers.set(key, timerId);
-    });
+        this.optimisticUpdates.delete(key);
+      }
+    }, syncDelay);
+    this.optimisticTimers.set(key, timerId);
+    return Promise.resolve();
   }
 
   /**
@@ -549,7 +546,7 @@ class StorageService {
         try {
           this.storageAvailable = this.checkStorageAvailability();
           if (!this.storageAvailable) {
-            log.warn('Storage API is not allowed or unavailable in this context (e.g. sandboxed iframe). Falling back to in-memory storage.');
+          log.debug('Storage API is not allowed or unavailable in this context (e.g. sandboxed iframe). Falling back to in-memory storage.');
             this.initialized = true;
             return;
           }
@@ -613,7 +610,7 @@ class StorageService {
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
           if (errorMsg.includes('Access to storage is not allowed') || errorMsg.includes('context')) {
-            log.warn('GhostFill running in sandboxed environment, falling back to in-memory cache.');
+            log.debug('GhostFill running in sandboxed environment, falling back to in-memory cache.');
             this.initialized = true;
             return;
           }
@@ -652,6 +649,8 @@ class StorageService {
    * Get a value from storage (decrypts sensitive data)
    * PERFORMANCE: O(1) cache lookup with LRU eviction
    */
+  private static readonly NEGATIVE_CACHE_SENTINEL = Symbol('NEGATIVE_CACHE_SENTINEL');
+
   async get<K extends keyof StorageSchema>(key: K): Promise<StorageSchema[K] | undefined> {
     await this.ensureInitialized();
 
@@ -662,7 +661,9 @@ class StorageService {
     const cachedValue = this.cache.get(key);
     if (cachedValue !== undefined) {
       this.cacheHits++;
-      return cachedValue as StorageSchema[K];
+      return cachedValue === StorageService.NEGATIVE_CACHE_SENTINEL
+        ? undefined
+        : (cachedValue as StorageSchema[K]);
     }
 
     this.cacheMisses++;
@@ -676,6 +677,7 @@ class StorageService {
       const result = await withStorageTimeout(chrome.storage.local.get(key), `get:${String(key)}`);
 
       if (!result || !(key in result)) {
+        this.cache.set(key, StorageService.NEGATIVE_CACHE_SENTINEL);
         return undefined;
       }
 
@@ -683,7 +685,7 @@ class StorageService {
 
       // Decrypt sensitive data
       if (value && SENSITIVE_KEYS.includes(key)) {
-        if (typeof value === 'string') {
+        if (typeof value === 'string' && value.startsWith('v1:')) {
           try {
             value = (await decrypt(value as string, this.getEncryptionKey())) as StorageSchema[K];
           } catch (error) {
@@ -702,6 +704,8 @@ class StorageService {
       // Cache the value (O(1) with automatic eviction)
       if (value !== undefined) {
         this.cache.set(key, value);
+      } else {
+        this.cache.set(key, StorageService.NEGATIVE_CACHE_SENTINEL);
       }
 
       return value;
@@ -818,13 +822,20 @@ class StorageService {
         }
 
         await new Promise<void>((resolve, reject) => {
-          chrome.storage.local.set(Object.fromEntries(writes), () => {
-            if (chrome.runtime.lastError) {
-              log.error('Chrome storage set failed', chrome.runtime.lastError);
-              return reject(chrome.runtime.lastError);
+          try {
+            const p: any = chrome.storage.local.set(Object.fromEntries(writes), () => {
+              if (chrome.runtime.lastError) {
+                log.error('Chrome storage set failed', chrome.runtime.lastError);
+                return reject(chrome.runtime.lastError);
+              }
+              resolve();
+            });
+            if (p && typeof p.then === 'function') {
+              p.then(resolve).catch(reject);
             }
-            resolve();
-          });
+          } catch (error) {
+            reject(error);
+          }
         });
 
         log.debug(`Batch saved ${writes.size} keys`);
@@ -871,7 +882,21 @@ class StorageService {
 
     this.pendingWrites.set(key, value);
     this.cache.set(key as keyof StorageSchema, value);
-    return this.flushPendingWrites();
+
+    const resolvers = this.pendingResolvers;
+    this.pendingResolvers = [];
+
+    const flushPromise = this.flushPendingWrites();
+
+    flushPromise
+      .then(() => {
+        resolvers.forEach((r) => r.resolve());
+      })
+      .catch((err) => {
+        resolvers.forEach((r) => r.reject(err));
+      });
+
+    return flushPromise;
   }
 
   /**
@@ -895,21 +920,23 @@ class StorageService {
       log.debug(`Cancelled pending write for removed key: ${String(key)}`);
     }
 
-    try {
-      if (!this.storageAvailable || typeof chrome === 'undefined' || !chrome.storage?.local) {
-        log.debug(`Removed ${key} from in-memory cache only`);
-        return;
+    return this.withWriteMutex(async () => {
+      try {
+        if (!this.storageAvailable || typeof chrome === 'undefined' || !chrome.storage?.local) {
+          log.debug(`Removed ${key} from in-memory cache only`);
+          return;
+        }
+        await chrome.storage.local.remove(key);
+        log.debug(`Removed ${key}`);
+      } catch (error) {
+        log.error(`Failed to remove ${key}`, error);
+        // Rollback optimistic update
+        if (originalValue !== undefined) {
+          this.cache.set(key, originalValue);
+        }
+        throw error;
       }
-      await chrome.storage.local.remove(key);
-      log.debug(`Removed ${key}`);
-    } catch (error) {
-      log.error(`Failed to remove ${key}`, error);
-      // Rollback optimistic update
-      if (originalValue !== undefined) {
-        this.cache.set(key, originalValue);
-      }
-      throw error;
-    }
+    });
   }
 
   /**
@@ -936,7 +963,8 @@ class StorageService {
         if (
           value &&
           SENSITIVE_KEYS.includes(key as keyof StorageSchema) &&
-          typeof value === 'string'
+          typeof value === 'string' &&
+          value.startsWith('v1:')
         ) {
           try {
             const masterKey = this.getEncryptionKey();
@@ -1165,9 +1193,14 @@ class StorageService {
               continue;
             }
 
-            if (SENSITIVE_KEYS.includes(typedKey) && typeof newValue === 'string') {
+            if (SENSITIVE_KEYS.includes(typedKey) && typeof newValue === 'string' && newValue.startsWith('v1:')) {
               try {
-                const decryptedValue = await decrypt(newValue, this.getEncryptionKey());
+                const masterKey = getMasterKey();
+                if (!masterKey) {
+                  this.cache.delete(typedKey);
+                  return;
+                }
+                const decryptedValue = await decrypt(newValue, masterKey);
                 this.cache.set(typedKey, decryptedValue);
               } catch (error) {
                 log.warn(`Failed to decrypt changed key ${key}, clearing cache entry`, error);
@@ -1203,7 +1236,7 @@ class StorageService {
       // encrypted ciphertext from the cache
       for (const [key, value] of Object.entries(result)) {
         const typedKey = key as keyof StorageSchema;
-        if (SENSITIVE_KEYS.includes(typedKey) && typeof value === 'string') {
+        if (SENSITIVE_KEYS.includes(typedKey) && typeof value === 'string' && value.startsWith('v1:')) {
           try {
             const decrypted = await decrypt(value, this.getEncryptionKey());
             this.cache.set(typedKey, decrypted);

@@ -69,6 +69,17 @@ interface PerformanceReport {
     overallSuccessRate: number;
     recommendation: string;
   };
+
+  percentiles: {
+    p95: number;
+    p99: number;
+  };
+  regressionDetected: boolean;
+  memoryWatchdog: {
+    limitBytes: number;
+    heapBytes: number;
+    percentage: number;
+  };
 }
 
 // ========================
@@ -418,6 +429,12 @@ class PerformanceService {
         '❌ Heuristics are struggling. Review and enhance regex patterns. AI is being used too frequently.';
     }
 
+    const latencies = allMetrics.map((m) => m.latencyMs);
+    const p95 = this.getPercentile(latencies, 95);
+    const p99 = this.getPercentile(latencies, 99);
+    const regressionDetected = this.detectRegression(allMetrics).regressed;
+    const memory = this.getMemoryUsage();
+
     const report: PerformanceReport = {
       generatedAt: new Date().toISOString(),
       sessionStart: new Date(this.sessionStart).toISOString(),
@@ -463,9 +480,47 @@ class PerformanceService {
           allMetrics.length > 0 ? (successOps.length / allMetrics.length) * 100 : 0,
         recommendation,
       },
+
+      percentiles: {
+        p95,
+        p99,
+      },
+      regressionDetected,
+      memoryWatchdog: memory,
     };
 
     return report;
+  }
+
+  private getPercentile(latencies: number[], percentile: number): number {
+    if (latencies.length === 0) return 0;
+    const sorted = [...latencies].sort((a, b) => a - b);
+    const index = Math.ceil((percentile / 100) * sorted.length) - 1;
+    return sorted[index] ?? 0;
+  }
+
+  private detectRegression(metrics: OperationMetric[]): { regressed: boolean; percentageIncrease: number } {
+    if (metrics.length < 20) return { regressed: false, percentageIncrease: 0 };
+    const recent = metrics.slice(-5);
+    const baseline = metrics.slice(0, -5);
+    const recentAvg = recent.reduce((sum, m) => sum + m.latencyMs, 0) / recent.length;
+    const baselineAvg = baseline.reduce((sum, m) => sum + m.latencyMs, 0) / baseline.length;
+    if (baselineAvg > 0 && recentAvg > baselineAvg * 1.5) {
+      return { regressed: true, percentageIncrease: ((recentAvg - baselineAvg) / baselineAvg) * 100 };
+    }
+    return { regressed: false, percentageIncrease: 0 };
+  }
+
+  private getMemoryUsage(): { limitBytes: number; heapBytes: number; percentage: number } {
+    if (typeof performance !== 'undefined' && (performance as any).memory) {
+      const mem = (performance as any).memory;
+      return {
+        limitBytes: mem.jsHeapSizeLimit,
+        heapBytes: mem.usedJSHeapSize,
+        percentage: (mem.usedJSHeapSize / mem.jsHeapSizeLimit) * 100,
+      };
+    }
+    return { limitBytes: 0, heapBytes: 0, percentage: 0 };
   }
 
   /**
@@ -505,3 +560,498 @@ class PerformanceService {
 
 // Export singleton
 export const performanceService = new PerformanceService();
+
+// =========================================================================
+// Centralized Performance & Memory Monitoring (Consolidated from monitoring.ts)
+// =========================================================================
+
+// Local Metric type to avoid web-vitals type issues
+export interface LocalMetric {
+  name: string;
+  value: number;
+  rating: 'good' | 'needs-improvement' | 'poor';
+  entries: PerformanceEntry[];
+  delta?: number;
+  id?: string;
+  navigationType?: string;
+}
+
+// Type aliases for performance entry types
+type LayoutShiftEntry = PerformanceEntry & { hadRecentInput: boolean; value: number };
+type LongTaskEntry = PerformanceEntry & { duration: number };
+
+// Performance budgets - thresholds for alerts
+export const PERFORMANCE_BUDGETS = {
+  // Core Web Vitals
+  LCP: 2500, // ms
+  FID: 100, // ms
+  CLS: 0.1, // score
+  INP: 200, // ms
+
+  // Extension-specific
+  POPUP_LOAD: 500, // ms
+  EMAIL_GENERATION: 100, // ms
+  PASSWORD_GENERATION: 50, // ms
+  OTP_DETECTION: 200, // ms
+
+  // Resource budgets
+  BUNDLE_SIZE: 2 * 1024 * 1024, // 2MB
+  MEMORY_USAGE: 50 * 1024 * 1024, // 50MB
+  CPU_USAGE: 5, // percent
+} as const;
+
+// Metric types to track
+export type MetricType = keyof typeof PERFORMANCE_BUDGETS;
+
+/**
+ * Performance Observer for monitoring
+ */
+class PerformanceMonitor {
+  private metrics: Map<string, LocalMetric[]> = new Map();
+  private observers: PerformanceObserver[] = [];
+  private reportCallback?: (metric: LocalMetric) => void;
+
+  constructor(reportCallback?: (metric: LocalMetric) => void) {
+    if (reportCallback) {
+      this.reportCallback = reportCallback;
+    }
+  }
+
+  /**
+   * Initialize all performance observers
+   */
+  init(): void {
+    const isPage = typeof window !== 'undefined' && typeof document !== 'undefined';
+    const isExtensionPage =
+      isPage && typeof location !== 'undefined' && location.protocol === 'chrome-extension:';
+
+    if (isExtensionPage) {
+      this.observeLCP();
+      this.observeFID();
+      this.observeCLS();
+      this.observeINP();
+      this.observeLongTasks();
+      this.observeResourceTiming();
+    }
+    if (!isPage) {
+      this.observeResourceTiming();
+    }
+  }
+
+  private observeLCP(): void {
+    const observer = new PerformanceObserver((entryList) => {
+      const entries = entryList.getEntries();
+      const lastEntry = entries[entries.length - 1];
+      if (!lastEntry) return;
+
+      const metric: LocalMetric = {
+        name: 'LCP',
+        value: lastEntry.startTime,
+        rating: this.getRating('LCP', lastEntry.startTime),
+        entries: [lastEntry],
+      };
+
+      this.recordMetric('LCP', metric);
+    });
+
+    try {
+      observer.observe({ type: 'largest-contentful-paint', buffered: true });
+      this.observers.push(observer);
+    } catch {
+      log.warn('LCP observer not supported');
+    }
+  }
+
+  private observeFID(): void {
+    const observer = new PerformanceObserver((entryList) => {
+      const entries = entryList.getEntries();
+      entries.forEach((entry) => {
+        if (entry.entryType === 'first-input') {
+          const fidEntry = entry as PerformanceEventTiming;
+          const metric: LocalMetric = {
+            name: 'FID',
+            value: fidEntry.processingStart - fidEntry.startTime,
+            rating: this.getRating('FID', fidEntry.processingStart - fidEntry.startTime),
+            entries: [entry],
+          };
+          this.recordMetric('FID', metric);
+        }
+      });
+    });
+
+    try {
+      observer.observe({ type: 'first-input', buffered: true });
+      this.observers.push(observer);
+    } catch {
+      log.warn('FID observer not supported');
+    }
+  }
+
+  private observeCLS(): void {
+    let clsValue = 0;
+    const observer = new PerformanceObserver((entryList) => {
+      const entries = entryList.getEntries() as LayoutShiftEntry[];
+      entries.forEach((entry) => {
+        if (!entry.hadRecentInput) {
+          clsValue += entry.value;
+        }
+      });
+
+      const metric: LocalMetric = {
+        name: 'CLS',
+        value: clsValue,
+        rating: this.getRating('CLS', clsValue),
+        entries: entries as unknown as PerformanceEntry[],
+      };
+      this.recordMetric('CLS', metric);
+    });
+
+    try {
+      observer.observe({ type: 'layout-shift', buffered: true });
+      this.observers.push(observer);
+    } catch {
+      log.warn('CLS observer not supported');
+    }
+  }
+
+  private observeINP(): void {
+    const observer = new PerformanceObserver((entryList) => {
+      const entries = entryList.getEntries();
+      let longestInteraction = 0;
+      entries.forEach((entry) => {
+        const duration = entry.duration;
+        if (duration > longestInteraction) {
+          longestInteraction = duration;
+        }
+      });
+
+      const metric: LocalMetric = {
+        name: 'INP',
+        value: longestInteraction,
+        rating: this.getRating('INP', longestInteraction),
+        entries: entries as unknown as PerformanceEntry[],
+      };
+      this.recordMetric('INP', metric);
+    });
+
+    try {
+      observer.observe({ type: 'event', buffered: true });
+      this.observers.push(observer);
+    } catch {
+      log.warn('INP observer not supported');
+    }
+  }
+
+  private observeLongTasks(): void {
+    const observer = new PerformanceObserver((entryList) => {
+      const entries = entryList.getEntries() as LongTaskEntry[];
+      entries.forEach((entry) => {
+        const metric: LocalMetric = {
+          name: 'LongTask',
+          value: entry.duration,
+          rating:
+            entry.duration > 500 ? 'poor' : entry.duration > 200 ? 'needs-improvement' : 'good',
+          entries: [entry as unknown as PerformanceEntry],
+        };
+        this.recordMetric('LongTask', metric);
+        if (entry.duration > 500 && (typeof chrome === 'undefined' || !!chrome.runtime?.id)) {
+          this.reportLongTask(entry as unknown as PerformanceEntry);
+        }
+      });
+    });
+
+    try {
+      observer.observe({ type: 'longtask', buffered: true });
+      this.observers.push(observer);
+    } catch {
+      log.warn('LongTask observer not supported');
+    }
+  }
+
+  private static POLLING_ENDPOINTS: readonly string[] = [
+    'api.mail.gw/messages',
+    'api.guerrillamail',
+    'tempmail',
+    'mercure.mail.tm',
+    'well-known/mercure',
+  ];
+
+  private observeResourceTiming(): void {
+    const observer = new PerformanceObserver((entryList) => {
+      const entries = entryList.getEntries() as PerformanceResourceTiming[];
+      entries.forEach((entry) => {
+        const isPolling = PerformanceMonitor.POLLING_ENDPOINTS.some((endpoint) =>
+          entry.name.includes(endpoint)
+        );
+        if (!isPolling && entry.duration > 5000) {
+          this.reportSlowResource(entry);
+        }
+      });
+    });
+
+    try {
+      observer.observe({ type: 'resource', buffered: true });
+      this.observers.push(observer);
+    } catch {
+      log.warn('Resource observer not supported');
+    }
+  }
+
+  private recordMetric(name: string, metric: LocalMetric): void {
+    if (!this.metrics.has(name)) {
+      this.metrics.set(name, []);
+    }
+    this.metrics.get(name)!.push(metric);
+    const metrics = this.metrics.get(name)!;
+    if (metrics.length > 100) {
+      metrics.shift();
+    }
+    if (this.reportCallback && (typeof chrome === 'undefined' || !!chrome.runtime?.id)) {
+      this.reportCallback(metric);
+    }
+  }
+
+  private getRating(metric: MetricType, value: number): 'good' | 'needs-improvement' | 'poor' {
+    const budget = PERFORMANCE_BUDGETS[metric];
+    if (value <= budget * 0.8) return 'good';
+    if (value <= budget) return 'needs-improvement';
+    return 'poor';
+  }
+
+  private reportLongTask(entry: PerformanceEntry): void {
+    log.warn(
+      'Long task detected',
+      JSON.stringify({
+        name: entry.name,
+        duration: entry.duration,
+        startTime: entry.startTime,
+      })
+    );
+  }
+
+  private reportSlowResource(entry: PerformanceResourceTiming): void {
+    log.warn(
+      'Slow resource detected',
+      JSON.stringify({
+        name: entry.name,
+        duration: entry.duration,
+        transferSize: entry.transferSize || 0,
+        encodedBodySize: entry.encodedBodySize || 0,
+      })
+    );
+  }
+
+  getMetrics(): Map<string, LocalMetric[]> {
+    return new Map(this.metrics);
+  }
+
+  getAverage(name: string): number | null {
+    const metrics = this.metrics.get(name);
+    if (!metrics || metrics.length === 0) return null;
+    const sum = metrics.reduce((acc, m) => acc + m.value, 0);
+    return sum / metrics.length;
+  }
+
+  destroy(): void {
+    this.observers.forEach((observer) => {
+      try {
+        observer.disconnect();
+      } catch {
+        // ignore
+      }
+    });
+    this.observers = [];
+    this.metrics.clear();
+  }
+}
+
+export interface MemoryUsage {
+  timestamp: number;
+  usedJSHeapSize: number;
+  totalJSHeapSize: number;
+  jsHeapSizeLimit: number;
+}
+
+export type MemoryTrend = 'increasing' | 'decreasing' | 'stable';
+
+export class MemoryMonitor {
+  private snapshots: MemoryUsage[] = [];
+  private timeoutId?: number;
+
+  start(intervalMs: number = 10000): void {
+    const tick = () => {
+      this.takeSnapshot();
+      this.timeoutId = globalThis.setTimeout(tick, intervalMs) as unknown as number;
+    };
+    this.stop();
+    this.timeoutId = globalThis.setTimeout(tick, intervalMs) as unknown as number;
+  }
+
+  stop(): void {
+    if (this.timeoutId) {
+      clearTimeout(this.timeoutId);
+      delete this.timeoutId;
+    }
+  }
+
+  private takeSnapshot(): void {
+    if (typeof performance !== 'undefined' && (performance as any).memory) {
+      const memory = (performance as any).memory;
+      const snapshot: MemoryUsage = {
+        timestamp: Date.now(),
+        usedJSHeapSize: memory.usedJSHeapSize,
+        totalJSHeapSize: memory.totalJSHeapSize,
+        jsHeapSizeLimit: memory.jsHeapSizeLimit,
+      };
+      this.snapshots.push(snapshot);
+      if (this.snapshots.length > 100) {
+        this.snapshots.shift();
+      }
+      this.checkForLeaks();
+    }
+  }
+
+  private checkForLeaks(): void {
+    if (this.snapshots.length < 10) return;
+    const recent = this.snapshots.slice(-10);
+    const first = recent[0]!.usedJSHeapSize;
+    const last = recent[recent.length - 1]!.usedJSHeapSize;
+    const increase = first > 0 ? (last - first) / first : 0;
+    if (increase > 0.2) {
+      log.warn(
+        'Potential memory leak detected',
+        JSON.stringify({
+          increase: `${(increase * 100).toFixed(2)}%`,
+          from: first,
+          to: last,
+        })
+      );
+    }
+  }
+
+  getTrend(): MemoryTrend {
+    if (this.snapshots.length < 2) return 'stable';
+    const first = this.snapshots[0]!.usedJSHeapSize;
+    const last = this.snapshots[this.snapshots.length - 1]!.usedJSHeapSize;
+    const change = (last - first) / first;
+    if (change > 0.1) return 'increasing';
+    if (change < -0.1) return 'decreasing';
+    return 'stable';
+  }
+
+  getSnapshots(): MemoryUsage[] {
+    return [...this.snapshots];
+  }
+}
+
+export interface TrackedError {
+  type: string;
+  message: string;
+  filename?: string | undefined;
+  lineno?: number | undefined;
+  colno?: number | undefined;
+  stack?: string | undefined;
+  timestamp: number;
+}
+
+export class ErrorTracker {
+  private errors: TrackedError[] = [];
+  private maxErrors = 100;
+
+  init(): void {
+    const globalContext =
+      typeof window !== 'undefined' ? window : typeof self !== 'undefined' ? self : null;
+
+    if (globalContext) {
+      globalContext.addEventListener('error', (event: Event) => {
+        const errorEvent = event as ErrorEvent;
+        this.trackError({
+          type: 'uncaught',
+          message: this.sanitizeMessage(errorEvent.message || 'Unknown error'),
+          filename: errorEvent.filename,
+          lineno: errorEvent.lineno,
+          colno: errorEvent.colno,
+          stack: errorEvent.error?.stack,
+          timestamp: Date.now(),
+        });
+      });
+
+      globalContext.addEventListener('unhandledrejection', (event: Event) => {
+        const rejectionEvent = event as PromiseRejectionEvent;
+        const reason = rejectionEvent.reason;
+        const message = reason instanceof Error ? reason.message : String(reason);
+        const stack = reason instanceof Error ? reason.stack : undefined;
+        this.trackError({
+          type: 'unhandledrejection',
+          message: this.sanitizeMessage(message),
+          stack: stack ? this.sanitizeMessage(stack) : undefined,
+          timestamp: Date.now(),
+        });
+      });
+    }
+  }
+
+  trackError(error: TrackedError): void {
+    const sanitizedError = this.sanitizeError(error);
+    this.errors.push(sanitizedError);
+    if (this.errors.length > this.maxErrors) {
+      this.errors.shift();
+    }
+    if (this.isCritical(error)) {
+      this.reportCriticalError(sanitizedError);
+    }
+  }
+
+  private sanitizeMessage(message: string): string {
+    message = message.replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, '[EMAIL]');
+    message = message.replace(/[a-zA-Z0-9]{32,}/g, '[TOKEN]');
+    message = message.replace(/password[=:]\s*\S+/gi, 'password=[REDACTED]');
+    return message;
+  }
+
+  private sanitizeError(error: TrackedError): TrackedError {
+    const result: TrackedError = {
+      ...error,
+      message: this.sanitizeMessage(error.message),
+    };
+    if (error.stack) {
+      result.stack = this.sanitizeMessage(error.stack);
+    }
+    return result;
+  }
+
+  private isCritical(error: TrackedError): boolean {
+    const criticalPatterns = [
+      /security/i,
+      /authentication/i,
+      /authorization/i,
+      /permission/i,
+      /unauthorized/i,
+      /forbidden/i,
+    ];
+    return criticalPatterns.some((pattern) => pattern.test(error.message));
+  }
+
+  private reportCriticalError(error: TrackedError): void {
+    log.error('Critical error tracked', error);
+  }
+
+  getErrors(): TrackedError[] {
+    return [...this.errors];
+  }
+
+  getErrorSummary(): Record<string, number> {
+    return this.errors.reduce(
+      (acc, error) => {
+        acc[error.type] = (acc[error.type] || 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>
+    );
+  }
+}
+
+export const performanceMonitor = new PerformanceMonitor();
+export const memoryMonitor = new MemoryMonitor();
+export const errorTracker = new ErrorTracker();
+

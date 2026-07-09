@@ -707,3 +707,14 @@ export const FORM_INDICATORS: Record<
     requiredFields: [],
   },
 };
+
+export interface IdentityProfile {
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  username: string;
+  emailPrefix: string;
+  email?: string;
+  password?: string;
+  cachedPassword?: string;
+}

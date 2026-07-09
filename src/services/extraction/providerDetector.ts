@@ -5,7 +5,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { createLogger } from '../../utils/logger';
-import { KnowledgeBase } from '../knowledgeBase';
+import { KnowledgeBase } from './knowledge';
 
 import type { ProviderKnowledge, ProviderDetectionResult } from '../types/extraction.types';
 

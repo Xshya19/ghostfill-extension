@@ -1,7 +1,7 @@
 // Guerrilla Mail Service - With Robust Rate Limiting
 
 import { EmailAccount, Email } from '../../types';
-import { API } from '../../utils/constants';
+import { API } from '../../utils/core';
 import { createLogger } from '../../utils/logger';
 
 const log = createLogger('GuerrillaMailService');

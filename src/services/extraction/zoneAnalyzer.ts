@@ -5,7 +5,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import type { EmailZone, ZoneType } from '../types/extraction.types';
-import { decodeHtmlEntities, stripHtml, stripHtmlPreserveStructure } from '../utils';
+import { decodeHtmlEntities, stripHtml, stripHtmlPreserveStructure } from '../utils/extraction.utils';
 
 // Re-export for use by other modules
 export { decodeHtmlEntities, stripHtml, stripHtmlPreserveStructure };

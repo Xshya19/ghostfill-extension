@@ -1,10 +1,62 @@
-import './polyfill'; // Keep this as the first import to polyfill setImmediate
-import { sleep } from '../utils/helpers';
-import { createLogger } from '../utils/logger';
+// ─── Trusted Types default policy (safety-net) ────────────────────
+// Chrome enforces `require-trusted-types-for 'script'` from the
+// manifest CSP on the service worker too. Webpack creates its own
+// named policy for chunk-loading, but any OTHER code that touches a
+// Trusted-Types-guarded sink (setTimeout with strings, eval, etc.)
+// would still throw. The 'default' policy is the browser's built-in
+// fallback — it is invoked automatically whenever an untrusted string
+// is assigned to a sink and no named policy was used.
+{
+  interface GlobalWithTrustedTypes {
+    trustedTypes?: {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      createPolicy: (name: string, rules: any) => void;
+    };
+    setImmediate?: (callback: (...args: unknown[]) => void, ...args: unknown[]) => void;
+    clearImmediate?: (id: ReturnType<typeof setTimeout>) => void;
+  }
+  const g = globalThis as unknown as GlobalWithTrustedTypes;
+  if (typeof g.trustedTypes !== 'undefined') {
+    try {
+      g.trustedTypes.createPolicy('default', {
+        createHTML: (s: string) =>
+          s
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;'),
+        createScriptURL: (s: string) => {
+          if (s.startsWith('chrome-extension://') || s.startsWith('/')) {
+            return s;
+          }
+          console.warn('Blocked uncontrolled script URL');
+          return '';
+        },
+        createScript: (_s: string) => {
+          throw new Error('createScript is not allowed by GhostFill policy');
+        },
+      });
+    } catch {
+      // Policy may already exist
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const g2 = globalThis as any;
+  g2.setImmediate = (callback: (...args: unknown[]) => void, ...args: unknown[]) => {
+    return setTimeout(callback, 0, ...args);
+  };
+
+  g2.clearImmediate = (id: ReturnType<typeof setTimeout>) => {
+    clearTimeout(id);
+  };
+}
+import { sleep } from '../utils/core';
+import { createLogger, initRemoteLogger } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
 
-import { errorTracker, performanceMonitor } from '../utils/monitoring';
-import { initRemoteLogger } from '../utils/remoteLogger';
+import { errorTracker, performanceMonitor } from '../services/performanceService';
 import { dumpMenuStats } from './contextMenu';
 import { dumpRouterStats, setupMessageHandler } from './messageHandler';
 import { initNotifications, dumpNotificationStats } from './notifications';
@@ -474,13 +526,13 @@ function installListeners(): void {
   // Suspend cleanup (SECURITY FIX C12)
   chrome.runtime.onSuspend.addListener(() => {
     log.info('Extension suspending, cleaning up resources');
-    import('./offscreenManager')
-      .then(({ closeOffscreenDocument }) => closeOffscreenDocument())
+    import('./serviceWorker')
+      .then(({ closeOffscreenDocument, clearDeferredTimers }) => {
+        void closeOffscreenDocument();
+        clearDeferredTimers();
+      })
       .catch((e) => log.warn('Suspend cleanup failed', extractMsg(e)));
     import('./pollingManager').then(({ stopEmailPolling }) => stopEmailPolling()).catch(() => {});
-    import('./serviceWorker')
-      .then(({ clearDeferredTimers }) => clearDeferredTimers())
-      .catch(() => {});
   });
 
   log.debug('Event listeners installed');

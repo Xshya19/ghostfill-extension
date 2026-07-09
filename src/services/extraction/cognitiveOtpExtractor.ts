@@ -7,7 +7,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { createLogger } from '../../utils/logger';
-import { KnowledgeBase } from '../knowledgeBase';
+import { KnowledgeBase } from './knowledge';
 import type { ProviderKnowledge, EmailZone, ExtractedOTP, IntentResult, OTPSignal } from '../types/extraction.types';
 import {
   buildDom, getFlattenedText, walkTextNodes, getEffectiveStyle,
@@ -17,18 +17,25 @@ import {
 
 const log = createLogger('CognitiveOTP');
 
-const CODE_RE = /\b([A-Z0-9]{4,10})\b/g;
+const CODE_RE = /\b([A-Za-z0-9]{4,10})\b/g;
 
-const OTP_INTENT_RE = /\b(otp|verification\s*code|security\s*code|access\s*code|login\s*code|pin|passcode|two.?factor|2fa|authenticat\w*|confirmation\s*code|auth\s*code|one.?time)\b/i;
-const ACTION_INTENT_RE = /\b(verify|confirm|activate|log\s*in|sign\s*in|authenticate|complete|submit|enter|use|type|input)\b/i;
-const DIRECT_ASSIGN_RE = /\b(?:your\s+code\s+is|use\s+code|code\s*(?:is|:|=)|is\s+your\s+(?:code|otp|pin))\b/i;
+const OTP_INTENT_RE =
+  /\b(otp|verification\s*code|security\s*code|access\s*code|login\s*code|pin|passcode|two.?factor|2fa|mfa|authenticat\w*|confirmation\s*code|auth\s*code|one.?time|verification|código|验证码|認証|인증)\b/i;
+const ACTION_INTENT_RE =
+  /\b(verify|confirm|activate|log\s*in|sign\s*in|authenticate|complete|submit|enter|use|type|input)\b/i;
+const DIRECT_ASSIGN_RE =
+  /\b(?:your\s+code\s+is|use\s+code|code\s*(?:is|:|=)|is\s+your\s+(?:code|otp|pin)|passcode\s*(?:is|:))\b/i;
 
-// Anti-pattern keywords — rejection strength decays with structural distance.
-const ANTI_ORDER_RE = /\b(order|tracking|shipment|package|invoice|receipt|transaction|ref\w*)\s*(no\.?|#|number|id)?\b/i;
-const ANTI_PRICE_RE = /[$€£¥₹]|\b(price|total|amount|subtotal|shipping\s*fee|usd|eur|gbp|inr)\b/i;
-const ANTI_DATE_RE = /\b(date|expires?\s*(?:on)?|valid\s*until|expiry|mm\/dd|dd\/mm|yyyy)\b/i;
-const ANTI_ACCOUNT_RE = /\b(account|acct|a\/c|member|customer)\s*(no\.?|#|number|id)\b/i;
-const ANTI_PROMO_RE = /\b(coupon|promo|discount|voucher|referral|gift\s*card)\s*(code)?\b/i;
+const ANTI_ORDER_RE =
+  /\b(order|tracking|shipment|package|invoice|receipt|transaction|ref\w*)\s*(no\.?|#|number|id)?\b/i;
+const ANTI_PRICE_RE =
+  /[$€£¥₹]|\b(price|total|amount|subtotal|shipping\s*fee|usd|eur|gbp|inr)\b/i;
+const ANTI_DATE_RE =
+  /\b(date|expires?\s*(?:on)?|valid\s*until|expiry|mm\/dd|dd\/mm|yyyy)\b/i;
+const ANTI_ACCOUNT_RE =
+  /\b(account|acct|a\/c|member|customer)\s*(no\.?|#|number|id)\b/i;
+const ANTI_PROMO_RE =
+  /\b(coupon|promo|discount|voucher|referral|gift\s*card)\s*(code)?\b/i;
 
 interface Candidate {
   code: string;

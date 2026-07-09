@@ -1,5 +1,5 @@
-import { extractFieldRecord } from '../intelligence/featureExtractor';
-import { FieldClass } from '../intelligence/types';
+import { extractFieldRecord } from '../intelligence/pageAnalyzer';
+import { FieldClass } from '../intelligence/IntelligenceCore';
 import {
   PageContext,
   FormInputElement,
@@ -8,26 +8,25 @@ import {
   IdentityWithCredentials,
   FieldType,
 } from '../types/form.types';
-import { deepQuerySelectorAll } from '../utils/helpers';
+import { deepQuerySelectorAll } from '../utils/core';
 import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
+import {
+  AutoSubmitDetector,
+  FieldSetter,
+  PhantomTyper,
+  OTPFieldGroup,
+} from './autofill/formFiller';
 import {
   PageIntelligence,
   OTPFieldDiscovery,
   OTPFiller,
-  AutoSubmitDetector,
   FieldWatcher,
-  FieldSetter,
-  PhantomTyper,
-  OTPFieldGroup,
-} from './autofill/index';
-import { HistoryManager } from './utils/intelligence';
-import { IntelligenceCore, mapFieldClassToFieldType } from '../intelligence/IntelligenceCore';
-import { UltraDetector } from './detection/UltraDetector';
-import { UniversalFiller } from './filling/UniversalFiller';
-import { VerificationLoop } from '../intelligence/VerificationLoop';
-import { AdaptiveStrategyEngine } from '../intelligence/AdaptiveStrategyEngine';
-import { ContextEngine } from './context/ContextEngine';
+} from './autofill/otpEngine';
+import { IntelligenceCore, HistoryManager, mapFieldClassToFieldType } from '../intelligence/IntelligenceCore';
+import { UltraDetector, ContextEngine } from './formDetector';
+import { UniversalFiller } from './autofill/formFiller';
+import { VerificationLoop, AdaptiveStrategyEngine } from '../intelligence/IntelligenceCore';
 
 const log = createLogger('AutoFiller');
 
@@ -38,7 +37,7 @@ const log = createLogger('AutoFiller');
 // ─────────────────────────────────────────────────────────────
 
 const DYNAMIC_WATCH_TIMEOUT_MS = 7_000;
-const SMART_FILL_RETRY_DELAYS_MS = [0, 500, 1_500, 3_000] as const;
+const SMART_FILL_RETRY_DELAYS_MS = [0, 300, 900, 2700] as const;
 const OTP_DISCOVERY_RETRIES = 5;
 const OTP_DISCOVERY_RETRY_DELAY_MS = 200;
 
@@ -392,9 +391,9 @@ export class AutoFiller {
       document.activeElement instanceof HTMLInputElement ? document.activeElement : null;
 
     const candidates = deepQuerySelectorAll<HTMLInputElement>('input')
-      .filter((field) => !ignored.has(field))
-      .filter((field) => field.isConnected && !field.disabled && !field.readOnly)
-      .filter((field) => this.isOTPCompatibleInput(field));
+      .filter((field: HTMLInputElement) => !ignored.has(field))
+      .filter((field: HTMLInputElement) => field.isConnected && !field.disabled && !field.readOnly)
+      .filter((field: HTMLInputElement) => this.isOTPCompatibleInput(field));
 
     let bestField: HTMLInputElement | null = null;
     let bestScore = -1;
@@ -694,7 +693,7 @@ export class AutoFiller {
     let { identity, otpCode } = await this.fetchIdentityAndOTP();
     if (identity && !identity.email && !otpCode) {
       const inputs = deepQuerySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea')
-        .filter((field) => !field.disabled && !field.readOnly);
+        .filter((field: HTMLInputElement | HTMLTextAreaElement) => !field.disabled && !field.readOnly);
       let hasEmailOrIdentifierField = false;
       for (const input of inputs) {
         const record = extractFieldRecord(input);
@@ -768,47 +767,54 @@ export class AutoFiller {
 
     const candidates = this.contextEngine.getCandidates();
 
-    let filledCount = 0;
-    for (const candidate of candidates) {
+    const fillPromises = candidates.map(async (candidate, index) => {
       if (candidate.decision === 'BLOCK') {
         log.warn(`Field fill blocked by safety gate: ${candidate.selector}`);
-        continue;
+        return false;
       }
       if (candidate.decision === 'ABSTAIN') {
-        continue;
+        return false;
       }
 
       if (this.shouldPreserveExistingValue(candidate.element as HTMLInputElement, candidate.fieldType)) {
-        continue;
+        return false;
       }
 
       const value = this.getValueForFieldType(candidate.fieldType, identity, otpCode, candidate.element as HTMLInputElement, context);
-      if (value) {
-        const start = performance.now();
-        const orderedFiller = new UniversalFiller(
-          this.adaptive.getOptimalStrategyOrder(window.location.hostname, (this.filler as any).strategies)
-        );
-
-        const fillResult = await this.loop.verifyAndCorrect(orderedFiller, candidate, value);
-        const latency = performance.now() - start;
-
-        await this.adaptive.recordOutcome(window.location.hostname, fillResult.strategy, candidate.fieldType, fillResult.success, latency);
-
-        if (fillResult.success) {
-          filledCount++;
-          const selector = candidate.selector;
-          this.saveTrustedSelector(candidate.fieldType, selector);
-          details.push({
-            fieldType: candidate.fieldType,
-            selector,
-            strategy: fillResult.strategy,
-            success: true,
-          });
-        }
+      if (!value) {
+        return false;
       }
-    }
 
-    return filledCount;
+      // Stagger slightly to prevent race conditions on input focus / validation events
+      if (index > 0) {
+        await this.delay(index * 25);
+      }
+
+      const start = performance.now();
+      const orderedStrategies = this.adaptive.getOptimalStrategyOrder(window.location.hostname, (this.filler as any).strategies, candidate.fieldType);
+      const orderedFiller = new UniversalFiller(orderedStrategies as any);
+
+      const fillResult = await this.loop.verifyAndCorrect(orderedFiller, candidate, value);
+      const latency = performance.now() - start;
+
+      await this.adaptive.recordOutcome(window.location.hostname, fillResult.strategy, candidate.fieldType, fillResult.success, latency);
+
+      if (fillResult.success) {
+        const selector = candidate.selector;
+        this.saveTrustedSelector(candidate.fieldType, selector);
+        details.push({
+          fieldType: candidate.fieldType,
+          selector,
+          strategy: fillResult.strategy,
+          success: true,
+        });
+        return true;
+      }
+      return false;
+    });
+
+    const results = await Promise.all(fillPromises);
+    return results.filter(Boolean).length;
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -900,6 +906,13 @@ export class AutoFiller {
   }
 
   private isInjectionExcludedHost(hostname: string): boolean {
+    const url = window.location.href.toLowerCase();
+    const oauthPaths = ['/oauth', '/oauth2', '/openid', '/authorize', '/connect/token', '/signin', '/login'];
+    const isOAuthPath = oauthPaths.some(p => url.includes(p));
+    const isOAuthQuery = url.includes('client_id=') || url.includes('response_type=');
+    if (isOAuthPath || isOAuthQuery) {
+      return true;
+    }
     return INJECTION_EXCLUDED_HOSTS.some(
       (host) => hostname === host || hostname.endsWith(`.${host}`)
     );
@@ -946,8 +959,17 @@ export class AutoFiller {
     }
 
     const value = this.getValueForFieldType(type, identity, otpCode, input, context);
-    if (value && (await FieldSetter.setValue(input, value, context.framework))) {
-      this.saveTrustedSelector(type, this.buildFieldSelector(input));
+    if (value) {
+      let success = await FieldSetter.setValue(input, value, context.framework);
+      let attempt = 0;
+      while (!success && attempt < 2) {
+        attempt++;
+        await this.delay(200);
+        success = await FieldSetter.setValue(input, value, context.framework);
+      }
+      if (success) {
+        this.saveTrustedSelector(type, this.buildFieldSelector(input));
+      }
     }
   }
 
@@ -957,7 +979,7 @@ export class AutoFiller {
     // radios, hidden fields, etc.
     const inputs = deepQuerySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
       'input, textarea'
-    ).filter((el) => el instanceof HTMLTextAreaElement || this.isClearableInput(el));
+    ).filter((el: HTMLInputElement | HTMLTextAreaElement) => el instanceof HTMLTextAreaElement || this.isClearableInput(el as HTMLInputElement));
     for (const input of inputs) {
       if (!input.disabled && !input.readOnly) {
         await FieldSetter.setValue(input, '', framework);
@@ -1137,6 +1159,15 @@ export class AutoFiller {
         descriptor
       );
 
+    const isPhoneLike = /phone|mobile|tel|contact/i.test(descriptor);
+    const acceptsBoth = /email|username/i.test(descriptor) && isPhoneLike;
+    if (acceptsBoth && identity.phone) {
+      const isAsianLocale = navigator.language.startsWith('zh') || navigator.language.startsWith('ja') || navigator.language.startsWith('ko') || navigator.language.startsWith('vi') || navigator.language.startsWith('hi');
+      if (isAsianLocale) {
+        return identity.phone;
+      }
+    }
+
     const authContext =
       Boolean(context?.isLoginPage) ||
       Boolean(context?.isSignupPage) ||
@@ -1193,7 +1224,7 @@ export class AutoFiller {
     const trusted = await HistoryManager.getTrustedSelector(domain, fieldType);
     if (trusted) {
       const hits = deepQuerySelectorAll<HTMLInputElement>(trusted);
-      const live = hits.find((el) => el.isConnected && !el.disabled && !el.readOnly && this.isVisibleInput(el));
+      const live = hits.find((el: HTMLInputElement) => el.isConnected && !el.disabled && !el.readOnly && this.isVisibleInput(el));
       if (live) {
         log.debug(`FieldResolver: Stage 0 hit (trusted selector for ${fieldType})`, { selector: trusted });
         return { element: live, selector: trusted };
@@ -1204,7 +1235,7 @@ export class AutoFiller {
     // ── Stage 1: full heuristic classifier ─────────────────
     const FILLABLE = 'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="image"]):not([type="range"]):not([type="color"])';
     const allInputs = deepQuerySelectorAll<HTMLInputElement>(FILLABLE)
-      .filter((el) => el.isConnected && !el.disabled && !el.readOnly && this.isVisibleInput(el));
+      .filter((el: HTMLInputElement) => el.isConnected && !el.disabled && !el.readOnly && this.isVisibleInput(el));
 
     let bestEl: HTMLInputElement | null = null;
     let bestScore = 0;
@@ -1271,6 +1302,9 @@ export class AutoFiller {
         'input[placeholder*="e-mail" i]',
         'input[aria-label*="email" i]',
         'input[aria-label*="e-mail" i]',
+        'input[data-testid*="email" i]',
+        'input[data-cy*="email" i]',
+        'input[data-field*="email" i]',
       ],
       'password': [
         'input[type="password"]',
@@ -1280,12 +1314,17 @@ export class AutoFiller {
         'input[id*="password" i]',
         'input[placeholder*="password" i]',
         'input[aria-label*="password" i]',
+        'input[data-testid*="password" i]',
+        'input[data-cy*="password" i]',
+        'input[data-field*="password" i]',
       ],
       'confirm-password': [
         'input[name*="confirm" i][name*="password" i]',
         'input[id*="confirm" i][id*="password" i]',
         'input[placeholder*="confirm" i][placeholder*="password" i]',
         'input[name*="password" i][name*="2" i]',
+        'input[data-testid*="confirm" i]',
+        'input[data-cy*="confirm" i]',
       ],
       'first-name': [
         'input[autocomplete="given-name"]',
@@ -1296,6 +1335,8 @@ export class AutoFiller {
         'input[id*="first_name" i]',
         'input[id*="first-name" i]',
         'input[placeholder*="first name" i]',
+        'input[data-testid*="first" i]',
+        'input[data-cy*="first" i]',
       ],
       'last-name': [
         'input[autocomplete="family-name"]',
@@ -1306,6 +1347,8 @@ export class AutoFiller {
         'input[id*="last_name" i]',
         'input[id*="last-name" i]',
         'input[placeholder*="last name" i]',
+        'input[data-testid*="last" i]',
+        'input[data-cy*="last" i]',
       ],
       'full-name': [
         'input[autocomplete="name"]',
@@ -1319,6 +1362,8 @@ export class AutoFiller {
         'input[id="name" i]',
         'input[placeholder*="full name" i]',
         'input[placeholder*="your name" i]',
+        'input[data-testid*="name" i]',
+        'input[data-cy*="name" i]',
       ],
       'username': [
         'input[autocomplete="username"]',
@@ -1329,6 +1374,8 @@ export class AutoFiller {
         'input[id*="user_name" i]',
         'input[id*="user-name" i]',
         'input[placeholder*="username" i]',
+        'input[data-testid*="user" i]',
+        'input[data-cy*="user" i]',
       ]
     };
 
@@ -1371,6 +1418,8 @@ export class AutoFiller {
       const rect = el.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) return false;
       const style = window.getComputedStyle(el);
+      const isAnimating = style.animationName !== 'none' || style.transitionProperty !== 'none';
+      if (isAnimating) return true;
       return style.display !== 'none' && style.visibility !== 'hidden' && parseFloat(style.opacity || '1') > 0;
     } catch {
       return false;
@@ -1419,6 +1468,34 @@ export class AutoFiller {
         }
       }
 
+      // Name composition: first-name + last-name -> full-name
+      if (fieldType === 'first-name' || fieldType === 'last-name') {
+        const fullResolved = await this.resolveField('full-name', contextHint);
+        if (fullResolved) {
+          const firstVal = fieldType === 'first-name' ? value : (await this.resolveField('first-name', contextHint))?.element.value || '';
+          const lastVal = fieldType === 'last-name' ? value : (await this.resolveField('last-name', contextHint))?.element.value || '';
+          if (firstVal && lastVal) {
+            await FieldSetter.setValue(fullResolved.element, `${firstVal} ${lastVal}`, context.framework);
+            this.saveTrustedSelector('full-name', fullResolved.selector);
+          }
+        }
+      }
+
+      // Name decomposition: full-name -> first-name + last-name
+      if (fieldType === 'full-name') {
+        const parts = value.trim().split(/\s+/);
+        if (parts.length >= 2) {
+          const firstResolved = await this.resolveField('first-name', contextHint);
+          const lastResolved = await this.resolveField('last-name', contextHint);
+          if (firstResolved && lastResolved) {
+            await FieldSetter.setValue(firstResolved.element, parts[0]!, context.framework);
+            await FieldSetter.setValue(lastResolved.element, parts.slice(1).join(' '), context.framework);
+            this.saveTrustedSelector('first-name', firstResolved.selector);
+            this.saveTrustedSelector('last-name', lastResolved.selector);
+          }
+        }
+      }
+
       return true;
     }
 
@@ -1430,12 +1507,13 @@ export class AutoFiller {
     this.destroyed = true;
     this.fieldWatcher.stop();
     this.contextEngine.destroy();
+    void this.adaptive.flush().catch(() => {});
     // Reject any queued OTP request so callers don't hang forever.
     if (this.latestPendingOTP) {
       this.latestPendingOTP.resolve(false);
       this.latestPendingOTP = null;
     }
-    deepQuerySelectorAll('ghost-label').forEach((el) => el.remove());
+    deepQuerySelectorAll('ghost-label').forEach((el: Element) => el.remove());
     document.body.removeAttribute('data-ghost-injected');
   }
 }

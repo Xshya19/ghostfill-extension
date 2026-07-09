@@ -1,8 +1,8 @@
 import { FrameworkType, PageContext } from '../../types/form.types';
-import { OTP_PATTERNS, OTP_CONSTANTS } from '../../utils/otp-detection-core';
+import { OTP_PATTERNS, OTP_CONSTANTS } from '../../intelligence/pageAnalyzer';
 import { createLogger } from '../../utils/logger';
-import { verifyFill } from '../../intelligence/classifier/safetyGate';
-import { OTPFieldGroup, OTPFillOutcome } from './types';
+import { verifyFill } from '../../intelligence/IntelligenceCore';
+import { OTPFieldGroup, OTPFillOutcome } from './formFiller';
 import { FieldSetter, PhantomTyper, delay, VisibilityEngine } from './formFiller';
 
 const log = createLogger('AutofillOTPEngine');
@@ -51,7 +51,16 @@ export class NegativePatternMatcher {
 
   static isLikelyNotOTP(input: HTMLInputElement): boolean {
     const nameId = `${input.name} ${input.id}`.toLowerCase();
-    const combined = `${nameId} ${input.placeholder} ${input.autocomplete}`.toLowerCase();
+    
+    let dataVals = '';
+    for (let i = 0; i < input.attributes.length; i++) {
+      const attr = input.attributes[i];
+      if (attr && attr.name.startsWith('data-')) {
+        dataVals += ' ' + attr.value;
+      }
+    }
+    
+    const combined = `${nameId} ${input.placeholder} ${input.autocomplete} ${dataVals}`.toLowerCase();
     const type = input.type.toLowerCase();
 
     if (['email', 'search', 'url', 'date', 'month'].includes(type)) {
@@ -448,7 +457,39 @@ export class OTPFieldDiscovery {
   private static findSplitDigitFields(): OTPFieldGroup | null {
     const candidates = this.queryVisible('input[maxlength="1"]');
     if (candidates.length < this.MIN_SPLIT_FIELDS) return null;
-    return this.wrap(candidates.slice(0, this.MAX_SPLIT_FIELDS), 90, 'S3:split-digit');
+    
+    const sorted = [...candidates].sort((a, b) => {
+      const rA = a.getBoundingClientRect();
+      const rB = b.getBoundingClientRect();
+      return rA.top - rB.top || rA.left - rB.left;
+    });
+
+    const groups: HTMLInputElement[][] = [];
+    for (const el of sorted) {
+      const rectEl = el.getBoundingClientRect();
+      let added = false;
+      for (const group of groups) {
+        const lead = group[0]!;
+        const rectLead = lead.getBoundingClientRect();
+        const yDiff = Math.abs(rectEl.top - rectLead.top);
+        const xDiff = Math.abs(rectEl.left - group[group.length - 1]!.getBoundingClientRect().right);
+        if (yDiff <= 50 && xDiff <= 300) {
+          group.push(el);
+          added = true;
+          break;
+        }
+      }
+      if (!added) {
+        groups.push([el]);
+      }
+    }
+
+    const validGroup = groups.find(g => g.length >= this.MIN_SPLIT_FIELDS && g.length <= this.MAX_SPLIT_FIELDS);
+    if (validGroup) {
+      return this.wrap(validGroup, 90, 'S3:split-digit');
+    }
+
+    return null;
   }
 
   private static findSingleInputSplitOTP(): OTPFieldGroup | null {
@@ -649,6 +690,8 @@ export class OTPFiller {
       if (i < total) {
         const char = digits[i]!;
         field.focus({ preventScroll: true });
+        
+        field.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: char }));
         field.textContent = char;
 
         field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: char }));
@@ -712,10 +755,13 @@ export class OTPFiller {
   }
 
   private static async tryPasteDistributedCode(digits: string, fields: HTMLInputElement[]): Promise<boolean> {
-    const target = fields.find((field) => document.activeElement === field) ?? fields[0];
+    const target = fields[0];
     if (!target) return false;
 
+    const originalValues = fields.map((f) => f.value);
+
     try {
+      const activeElBefore = document.activeElement;
       target.focus({ preventScroll: true });
       target.click();
 
@@ -727,8 +773,30 @@ export class OTPFiller {
       target.dispatchEvent(new InputEvent('input', { data: digits, inputType: 'insertFromPaste', bubbles: true }));
 
       await delay(80);
-      return this.readSplitValue(fields).slice(0, digits.length) === digits;
+      const success = this.readSplitValue(fields).slice(0, digits.length) === digits;
+      if (success) {
+        return true;
+      }
+
+      // Rollback on failure
+      for (let i = 0; i < fields.length; i++) {
+        const field = fields[i];
+        if (field) {
+          field.value = originalValues[i] ?? '';
+          field.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
+      if (activeElBefore instanceof HTMLElement) {
+        activeElBefore.focus({ preventScroll: true });
+      }
+      return false;
     } catch {
+      for (let i = 0; i < fields.length; i++) {
+        const field = fields[i];
+        if (field) {
+          field.value = originalValues[i] ?? '';
+        }
+      }
       return false;
     }
   }
@@ -815,7 +883,7 @@ export class FieldWatcher {
     if (this.debounceTimeout) clearTimeout(this.debounceTimeout);
     this.debounceTimeout = setTimeout(() => {
       void this.handleMutationTick(checkFields);
-    }, 300);
+    }, 250);
   }
 
   private async handleMutationTick(checkFields: () => Promise<void>): Promise<void> {

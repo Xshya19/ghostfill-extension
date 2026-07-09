@@ -197,6 +197,48 @@ export const ANTI_PATTERN_DATABASE: AntiPattern[] = [
     description: 'US ZIP / ZIP+4 — context-aware penalty only (5-digit OTPs are common)',
     severity: 'low',
   },
+  {
+    pattern: /\b(?:1Z[0-9A-Z]{16}|(e.g.)?[T]\d{10}|\d{9,15})\b/gi,
+    name: 'tracking-number',
+    reject: true,
+    description: 'UPS / FedEx / DHL / USPS tracking number',
+    severity: 'high',
+  },
+  {
+    pattern: /#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b/g,
+    name: 'hex-color',
+    reject: true,
+    description: 'CSS Hex color code (e.g. #F5F6F8 or #FFFFFF)',
+    severity: 'high',
+  },
+  {
+    pattern: /:\b\d{2,5}\b/g,
+    name: 'port-suffix',
+    reject: true,
+    description: 'Port suffix on IP or localhost (e.g. :8080, :3000)',
+    severity: 'medium',
+  },
+  {
+    pattern: /\bv?\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?\b/g,
+    name: 'semver-version',
+    reject: true,
+    description: 'Semantic version number (e.g. v1.2.3, 10.4.1-beta)',
+    severity: 'medium',
+  },
+  {
+    pattern: /&[a-zA-Z0-9#]{2,8};/g,
+    name: 'html-entity',
+    reject: true,
+    description: 'HTML character entity (e.g. &amp;, &nbsp;, &#1234;)',
+    severity: 'high',
+  },
+  {
+    pattern: /\b(?:0x[a-fA-F0-9]{40}|[13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[ac-hj-np-z02-9]{11,71})\b/g,
+    name: 'crypto-wallet',
+    reject: true,
+    description: 'Ethereum / Bitcoin wallet address',
+    severity: 'critical',
+  },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════

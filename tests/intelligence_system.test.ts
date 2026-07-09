@@ -13,9 +13,8 @@ vi.mock('../src/services/storageService', () => ({
   },
 }));
 
-import { IntelligenceCore } from '../src/intelligence/IntelligenceCore';
-import { AdaptiveStrategyEngine } from '../src/intelligence/AdaptiveStrategyEngine';
-import { RawFieldRecord } from '../src/intelligence/types';
+import { IntelligenceCore, AdaptiveStrategyEngine } from '../src/intelligence/IntelligenceCore';
+import { RawFieldRecord } from '../src/intelligence/IntelligenceCore';
 
 describe('GhostFill Intelligence System Tests', () => {
   describe('IntelligenceCore classification accuracy', () => {
@@ -142,7 +141,7 @@ describe('GhostFill Intelligence System Tests', () => {
       await engine.recordOutcome('https://mykeeta.com', 'strategy-native', 'otp', true, 10);
 
       // Get updated ranking
-      const updated = engine.getOptimalStrategyOrder('https://mykeeta.com', strategies);
+      const updated = engine.getOptimalStrategyOrder('https://mykeeta.com', strategies, 'otp');
       expect(updated[0].name).toBe('strategy-native'); // Ranked first due to success
     });
   });

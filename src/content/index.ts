@@ -2,18 +2,17 @@
 
 // Safe getComputedStyle override to prevent Chrome/Brave crashing on invalid pattern attributes (Chromium bug)
 // Initialize debug console FIRST to capture all errors
-import './debugConsole';
+import './dev/debugConsole';
 
 import { FieldType } from '../types/form.types';
-import { deepQuerySelectorAll } from '../utils/helpers';
-import { createLogger } from '../utils/logger';
-import { errorTracker, performanceMonitor } from '../utils/monitoring';
-import { initRemoteLogger } from '../utils/remoteLogger';
+import { deepQuerySelectorAll } from '../utils/core';
+import { createLogger, initRemoteLogger } from '../utils/logger';
+import { errorTracker, performanceMonitor } from '../services/performanceService';
 import { AutoFiller } from './autoFiller';
 import { FormDetector, FieldAnalyzer, DOMObserver, collectFieldDiagnostics } from './formDetector';
 import { FloatingButton } from './floatingButton';
 import { OTPPageDetector } from './otpPageDetector';
-import { pageStatus } from './pageStatus';
+import { pageStatus } from './ui/pageStatus';
 import './styles/content.css';
 import './ui/GhostLabel';
 
@@ -539,7 +538,8 @@ function init(): void {
     // Cleanup on page unload to prevent memory leaks
     const cleanupHandler = () => {
       domObserver.stop();
-      floatingButton?.hide?.();
+      floatingButton?.destroy?.();
+      autoFiller?.destroy?.();
       void otpPageDetector?.destroy?.();
       if (mainRuntimeListener && chrome?.runtime?.onMessage) {
         chrome.runtime.onMessage.removeListener(mainRuntimeListener);

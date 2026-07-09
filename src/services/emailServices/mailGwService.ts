@@ -1,8 +1,7 @@
 // Mail.gw Service - Free temporary email API (similar to Mail.tm)
 
 import { EmailAccount, Email, MailTmDomain, MailTmAccount, MailTmMessage } from '../../types';
-import { API } from '../../utils/constants';
-import { fetchWithTimeout } from '../../utils/core';
+import { API, fetchWithTimeout } from '../../utils/core';
 import { getRandomInt, getRandomString } from '../../utils/encryption';
 import { createLogger } from '../../utils/logger';
 

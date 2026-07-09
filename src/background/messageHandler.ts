@@ -29,8 +29,7 @@ import {
   GmailMessage,
   EmailAccount,
 } from '../types';
-import { diag } from '../utils/diagnosticLogger';
-import { createLogger } from '../utils/logger';
+import { createLogger, diag } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
 import { validateMessage } from '../utils/validation';
 import { updateOTPMenuItem } from './contextMenu';
@@ -47,8 +46,8 @@ import {
   suppressNextEmailTypeTransition,
   startGmailAliasFastPolling,
   onContentScriptReady,
+  extractEmailOnce,
 } from './pollingManager';
-import { extractEmailOnce } from './singleExtractionGuard';
 import { sseManager } from './sseManager';
 
 const log = createLogger('MessageHandler');
@@ -234,6 +233,36 @@ async function saveExtractedOTPFromMessage(
  * Handles all core extension actions from popup and content scripts.
  */
 let hasRegistered = false;
+const lastProcessedMessageHashes = new Map<string, number>();
+
+const HIGH_PRIORITY_ACTIONS = new Set([
+  'PING',
+  'OTP_PAGE_DETECTED',
+  'CHECK_OTP_NOW',
+  'GMAIL_GET_STATUS',
+]);
+
+function isMessageDuplicate(message: ExtensionMessage): boolean {
+  if (
+    HIGH_PRIORITY_ACTIONS.has(message.action) ||
+    message.action.startsWith('GET_') ||
+    message.action.startsWith('CHECK_')
+  ) {
+    return false;
+  }
+  try {
+    const hash = `${message.action}:${JSON.stringify((message as any).payload ?? {})}`;
+    const now = Date.now();
+    const lastTime = lastProcessedMessageHashes.get(hash);
+    if (lastTime && now - lastTime < 500) {
+      return true;
+    }
+    lastProcessedMessageHashes.set(hash, now);
+    return false;
+  } catch {
+    return false;
+  }
+}
 
 export function setupMessageHandler(): void {
   // CRITICAL FIX: Prevent double registration which causes multiple response bugs
@@ -252,6 +281,12 @@ export function setupMessageHandler(): void {
       if (sender.id !== chrome.runtime.id) {
         log.warn('Blocked message from unauthorized origin', { id: sender.id, url: sender.url });
         sendResponse({ success: false, error: 'Unauthorized origin' });
+        return false;
+      }
+
+      if (isMessageDuplicate(message)) {
+        log.info(`📩 [MessageHandler] Blocked duplicate message: "${message.action}"`);
+        sendResponse({ success: true, duplicated: true } as any);
         return false;
       }
 

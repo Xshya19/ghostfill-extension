@@ -9,8 +9,7 @@
 // So we measure positives (fillable classes) separately from rejections
 // (Unknown / hard-negatives), instead of lumping them together.
 
-import { FIELD_CLASSES } from '../contract';
-import type { FieldClass, FillDecision, LabeledFieldRecord } from '../types';
+import { FIELD_CLASSES, FieldClass, FillDecision, LabeledFieldRecord } from '../IntelligenceCore';
 
 export interface PerClass {
   class: FieldClass;

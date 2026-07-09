@@ -1,0 +1,481 @@
+/* ══════════════════════════════════════════════════════════════
+   GhostFill 3.0 — Memphis Neon Archive — FAB Shadow DOM
+   Solid surfaces · Neon accents · Sharp geometry · Dark mode
+   ══════════════════════════════════════════════════════════════ */
+
+:host {
+  all: initial;
+  font-family: "Space Grotesk", "Inter", sans-serif;
+  isolation: isolate;
+
+  /* Memphis Neon Palette mapped to FAB */
+
+  --brand: var(--gf-primary);
+  --brand-dark: var(--gf-primary-deep);
+  --brand-rgb: var(--gf-primary-rgb);
+  --brand-glow: rgba(var(--gf-primary-rgb), 0.24);
+
+  --neon-cyan: var(--gf-cyan);
+  --neon-cyan-rgb: var(--gf-cyan-rgb);
+  --neon-green: var(--gf-mint);
+  --neon-green-rgb: var(--gf-mint-rgb);
+  --neon-amber: var(--gf-yellow);
+  --neon-violet: var(--gf-violet);
+  --neon-violet-rgb: var(--gf-violet-rgb);
+
+  --success: var(--gf-mint);
+  --success-rgb: var(--gf-mint-rgb);
+  --success-glow: rgba(var(--gf-mint-rgb), 0.25);
+  --error: var(--gf-coral);
+  --error-rgb: var(--gf-coral-rgb);
+  --error-glow: rgba(var(--gf-coral-rgb), 0.25);
+
+  --fab-bg: var(--gf-surface);
+  --fab-bg-hover: var(--gf-primary-soft);
+  --fab-border: var(--gf-line);
+  --text: var(--gf-ink);
+  --text-secondary: var(--gf-text-muted);
+  --text-tertiary: var(--gf-text-dim);
+
+  /* Spectre soft layered shadows + machined top highlight */
+  --shadow-rest: 0 4px 14px -4px rgba(0, 0, 0, 0.5), 0 1px 0 var(--gf-hi) inset;
+  --shadow-hover: 0 10px 26px -8px rgba(0, 0, 0, 0.6), 0 1px 0 var(--gf-hi) inset;
+  --shadow-active: 0 2px 8px -2px rgba(0, 0, 0, 0.5) inset;
+  --panel-shadow: 0 18px 48px -16px rgba(0, 0, 0, 0.66), 0 1px 0 var(--gf-hi) inset;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --perspective: 600px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── .gf-pulse class — used by OTP-waiting indicator ring (toggle via class) ── */
+.gf-pulse { animation: gfBadgePulse 1.8s ease-in-out infinite; }
+
+/* ── FAB Button — Spectre glass chip ── */
+.gf-fab {
+  width: 46px; height: 46px; border-radius: 13px;
+  background: var(--gf-grad-cobalt, linear-gradient(160deg, #7c83ff 0%, #5a61f0 100%));
+  border: 1px solid var(--gf-line-2, rgba(255, 255, 255, 0.10));
+  box-shadow: 0 8px 22px -8px rgba(var(--gf-primary-rgb, 124,131,255), 0.8), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  outline: none; position: relative; overflow: visible;
+  color: #fff;
+  transition: transform 0.18s var(--ease-spring), box-shadow 0.18s var(--ease-spring), filter 0.18s var(--ease-smooth);
+}
+.gf-fab::before {
+  display: none;
+}
+.gf-fab::after {
+  display: none;
+}
+
+.gf-fab:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 14px 30px -8px rgba(var(--gf-primary-rgb, 124,131,255), 0.9), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  filter: brightness(1.05);
+}
+
+.gf-fab:active {
+  transform: translateY(0) scale(0.97);
+  box-shadow: 0 4px 12px -4px rgba(var(--gf-primary-rgb, 124,131,255), 0.7), 0 1px 2px rgba(0, 0, 0, 0.3) inset;
+  transition-duration: 0.05s;
+}
+
+.gf-fab:focus-visible {
+  outline: 2px solid var(--gf-primary, #7c83ff);
+  outline-offset: 3px;
+}
+
+/* Icon */
+.gf-fab svg, .gf-fab img {
+  width: 21px; height: 21px; position: relative; z-index: 3;
+  transition: transform 0.3s var(--ease-spring);
+}
+.gf-fab:hover svg, .gf-fab:hover img {
+  transform: scale(1.08);
+}
+.gf-fab:active svg, .gf-fab:active img { transform: scale(0.92); transition-duration: 0.06s; }
+
+/* Loading */
+.gf-fab.gf-loading {
+  cursor: wait;
+  background: var(--gf-grad-cobalt, linear-gradient(160deg, #7c83ff 0%, #5a61f0 100%));
+  border-color: var(--gf-line-2, rgba(255, 255, 255, 0.10));
+  animation: gfFabPulse 1.4s ease-in-out infinite;
+}
+.gf-spinner {
+  width: 20px; height: 20px;
+  border: 2.5px solid rgba(255, 255, 255, 0.25);
+  border-radius: 50%; border-top-color: #ffffff;
+  animation: gfSpin 0.6s cubic-bezier(0.4,0,0.2,1) infinite;
+  position: relative; z-index: 3;
+}
+@keyframes gfSpin { to { transform: rotate(360deg); } }
+@keyframes gfFabPulse {
+  0%, 100% {
+    transform: translateY(-2px) scale(1.03);
+    box-shadow: 0 10px 24px -6px rgba(var(--gf-primary-rgb, 124,131,255), 0.8), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  }
+  50% {
+    transform: translateY(-2px) scale(0.97);
+    box-shadow: 0 6px 14px -8px rgba(var(--gf-primary-rgb, 124,131,255), 0.6), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  }
+}
+
+/* Success — mint glass */
+.gf-fab.gf-success {
+  animation: none;
+  border-color: var(--gf-line-2, rgba(255,255,255,0.10));
+  background: var(--gf-grad-mint, linear-gradient(160deg, #3fe0c5 0%, #12b886 100%));
+  box-shadow: 0 8px 22px -8px rgba(63, 224, 197, 0.7), 0 1px 0 rgba(255, 255, 255, 0.3) inset;
+}
+.gf-success-check {
+  animation: gfCheckPop 0.4s var(--ease-spring);
+  position: relative; z-index: 3;
+}
+/* SVG is now stroked — remove fill overrides so fill="none" is respected */
+.gf-success-check circle {
+  fill: none;
+  stroke: #fff;
+}
+.gf-success-check path {
+  stroke: #fff;
+}
+@keyframes gfCheckPop {
+  0%   { transform: scale(0) rotate(-60deg); opacity: 0; }
+  50%  { transform: scale(1.2) rotate(5deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); }
+}
+
+/* Error — coral glass shake */
+.gf-fab.gf-error {
+  animation: gfShake 0.4s ease;
+  border-color: rgba(255, 255, 255, 0.16);
+  background: var(--gf-grad-coral, linear-gradient(160deg, #ff6b6b 0%, #e0463f 100%));
+  box-shadow: 0 8px 22px -8px rgba(255, 107, 107, 0.7), 0 1px 0 rgba(255, 255, 255, 0.3) inset;
+}
+@keyframes gfShake {
+  0%,100% { transform: translateX(0); }
+  15%  { transform: translateX(-5px); }
+  30%  { transform: translateX(4px); }
+  45%  { transform: translateX(-3px); }
+  60%  { transform: translateX(2px); }
+  75%  { transform: translateX(-1px); }
+}
+
+/* Badge — Studio Mono Amber with Ink Border */
+.gf-badge {
+  position: absolute; top: -6px; right: -6px;
+  min-width: 18px; height: 18px; border-radius: 50%;
+  background: var(--gf-amber, #e8920c); /* Studio Mono Amber */
+  color: var(--gf-ink);
+  font-size: 10px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  border: 2px solid var(--gf-ink); z-index: 10; padding: 0 3px;
+  box-shadow: 2px 2px 0 var(--gf-ink);
+  animation: gfBadgePop 0.3s var(--ease-spring);
+}
+@keyframes gfBadgePop {
+  0%   { transform: scale(0) rotate(-20deg); opacity: 0; }
+  60%  { transform: scale(1.15) rotate(5deg); }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+
+.gf-badge.gf-badge-otp-ready {
+  background: var(--gf-violet, #7c5ce0);
+  color: white;
+  animation: gfBadgePulse 2s ease-in-out infinite;
+}
+
+/* PERMANENT FIX 2026-06-21: count badge — shows the number of fillable
+   fields on the current page. Subtle mint accent so it doesn't
+   compete with the OTP-ready pulse. */
+.gf-badge.gf-badge-count {
+  background: var(--gf-mint, #3fe0c5);
+  color: #0a2a25;
+  font-family: var(--brand-font-mono, monospace);
+  font-weight: 800;
+}
+
+@keyframes gfBadgePulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+}
+
+/* OTP Waiting Indicator — Studio Mono cobalt pulse */
+.gf-otp-waiting-indicator {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--gf-primary, #2d5bff);
+  opacity: 0;
+  transform: scale(0);
+  transition: opacity 0.4s ease, transform 0.4s var(--ease-spring);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.gf-otp-waiting-indicator.gf-otp-waiting-visible {
+  opacity: 1;
+  transform: scale(1);
+  animation: gfOTPWaitingPulse 1.5s ease-in-out infinite;
+}
+
+.gf-otp-waiting-indicator::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--gf-primary, #2d5bff);
+  opacity: 0;
+  animation: gfOTPWaitingRing 1.5s ease-out infinite;
+}
+
+@keyframes gfOTPWaitingPulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.2); opacity: 1; }
+}
+
+@keyframes gfOTPWaitingRing {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+
+/* Tooltip — Spectre glass pill */
+.gf-tooltip {
+  position: absolute; bottom: calc(100% + 12px); left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  padding: 7px 13px;
+  background: var(--gf-card-elevated);
+  color: var(--gf-ink);
+  font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: none;
+  border-radius: 9px; white-space: nowrap; pointer-events: none;
+  border: 1px solid var(--gf-line-2, rgba(255,255,255,0.13));
+  box-shadow: 0 8px 22px -8px rgba(0,0,0,0.6), 0 1px 0 var(--gf-hi) inset;
+  opacity: 0; transition: all 0.2s var(--ease-out-expo);
+  z-index: 1001;
+}
+.gf-tooltip::after {
+  content: ''; position: absolute; top: 100%; left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent; border-top-color: var(--gf-card-elevated);
+}
+.gf-tooltip-visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* Menu — Spectre glass panel with hairline border + soft shadow */
+.gf-menu {
+  position: absolute; top: calc(100% + 10px); right: 0;
+  min-width: 254px;
+  background: var(--gf-card);
+  border-radius: 16px;
+  border: 1px solid var(--gf-line-2, rgba(255,255,255,0.13));
+  box-shadow: var(--panel-shadow);
+  padding: 7px; z-index: 999; overflow: hidden;
+  opacity: 0; visibility: hidden;
+  transform: translateY(-6px) scale(0.96);
+  transform-origin: top right;
+  transition:
+    opacity 0.25s var(--ease-out-expo), visibility 0.25s var(--ease-out-expo),
+    transform 0.3s var(--ease-spring);
+}
+/* faint spectral glow at the top edge */
+.gf-menu::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 100px;
+  background: radial-gradient(120% 80% at 50% 0%, rgba(var(--gf-primary-rgb), 0.12), transparent 70%);
+  pointer-events: none; z-index: 0;
+}
+.gf-menu::after {
+  display: none;
+}
+.gf-menu-open {
+  opacity: 1; visibility: visible;
+  transform: translateY(0) scale(1);
+  animation: gfMenuSpring 0.35s var(--ease-spring);
+}
+
+@keyframes gfMenuSpring {
+  0% { transform: translateY(-10px) scale(0.92); opacity: 0; }
+  60% { transform: translateY(2px) scale(1.01); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.gf-menu-item {
+  display: flex; align-items: center; gap: 11px;
+  padding: 9px 11px; width: 100%;
+  cursor: pointer; border-radius: 10px; border: 1px solid transparent; background: transparent;
+  font: inherit; font-size: 13px; font-weight: 600; letter-spacing: 0;
+  color: var(--text); text-align: left; outline: none;
+  position: relative; z-index: 2;
+  transition: background 0.15s var(--ease-smooth), border-color 0.15s var(--ease-smooth);
+  transform-origin: center center;
+}
+.gf-menu-item:hover, .gf-menu-item:focus-visible {
+  background: var(--gf-surface-2, rgba(255,255,255,0.05));
+  border-color: var(--gf-line);
+  color: var(--gf-ink);
+}
+.gf-menu-item:active {
+  background: var(--gf-primary-soft);
+  transition-duration: 0.05s;
+}
+.gf-menu-item:focus-visible { outline: 2px solid var(--gf-primary); outline-offset: -2px; }
+
+.gf-menu-icon {
+  flex-shrink: 0; width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 8px;
+  background: var(--gf-sunken);
+  border: 1px solid var(--gf-line);
+  color: var(--gf-primary);
+  transition: transform 0.15s var(--ease-spring), background 0.15s ease, color 0.15s ease;
+}
+.gf-menu-symbol {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+.gf-menu-item:hover .gf-menu-icon {
+  background: rgba(var(--gf-primary-rgb), 0.12);
+  border-color: rgba(var(--gf-primary-rgb), 0.25);
+}
+.gf-menu-label {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.gf-menu-shortcut {
+  font-size: 10.5px; color: var(--text-tertiary); font-weight: 600;
+  letter-spacing: 0; opacity: 0.85;
+  display: inline-flex; align-items: center;
+  padding: 2px 6px; background: var(--gf-surface-2, rgba(255,255,255,0.05));
+  border-radius: 5px; border: 1px solid var(--gf-line);
+  font-family: var(--gf-font-mono, monospace);
+  transition: opacity 0.15s ease;
+}
+.gf-menu-item:hover .gf-menu-shortcut { opacity: 1; }
+
+.gf-menu-divider {
+  height: 1px; margin: 6px 10px;
+  background: var(--gf-line);
+  position: relative; z-index: 2;
+}
+
+/* Staggered entry */
+.gf-menu-open .gf-menu-item { animation: gfMIE 0.3s var(--ease-out-expo) both; animation-delay: calc(var(--i, 0) * 0.02s); }
+@keyframes gfMIE {
+  from { opacity: 0; transform: translateX(-5px) translateY(3px); }
+  to   { opacity: 1; transform: translateX(0) translateY(0); }
+}
+.gf-menu-open .gf-menu-divider { animation: gfDF 0.35s var(--ease-out-expo) 0.08s both; }
+@keyframes gfDF {
+  from { opacity: 0; transform: scaleX(0.3); }
+  to   { opacity: 1; transform: scaleX(1); }
+}
+
+/* ── Sentinel Toast ── */
+.gf-sentinel-toast {
+  position: absolute;
+  z-index: 2147483645;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-10px) scale(0.95);
+  transition: opacity 0.3s var(--ease-out-expo), transform 0.3s var(--ease-spring);
+  will-change: opacity, transform;
+}
+
+.gf-sentinel-toast-visible {
+  opacity: 1;
+  transform: translateX(0) scale(1);
+  pointer-events: auto;
+}
+
+.gf-sentinel-toast-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--gf-card);
+  border: 2px solid var(--gf-ink);
+  border-radius: 8px;
+  box-shadow: var(--shadow-hover);
+  white-space: nowrap;
+}
+
+.gf-sentinel-toast-icon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
+.gf-sentinel-toast-icon svg {
+  width: 100%;
+  height: 100%;
+  animation: gf-toast-icon-float 2s ease-in-out infinite;
+}
+
+@keyframes gf-toast-icon-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+.gf-sentinel-toast-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gf-sentinel-toast-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gf-cream);
+  letter-spacing: 0;
+}
+
+.gf-sentinel-toast-subtitle {
+  font-size: 11px;
+  color: var(--gf-text-muted);
+  transition: opacity 0.3s ease;
+}
+
+/* ── Reduced Motion — respect user OS preference ── */
+@media (prefers-reduced-motion: reduce) {
+  .gf-fab,
+  .gf-fab *,
+  .gf-menu,
+  .gf-menu-item,
+  .gf-tooltip {
+    animation: none !important;
+    transition: none !important;
+  }
+  .gf-spinner {
+    animation: none !important;
+    border-top-color: var(--gf-cyan);
+  }
+  .gf-badge.gf-badge-otp-ready,
+  .gf-otp-waiting-indicator,
+  .gf-otp-waiting-indicator::before {
+    animation: none !important;
+  }
+  .gf-sentinel-toast-icon svg {
+    animation: none !important;
+  }
+  /* Keep visibility transitions for menu open/close (accessibility needs it) */
+  .gf-menu {
+    transition: opacity 0.1s ease, visibility 0.1s ease !important;
+  }
+  .gf-fab svg circle[animate],
+  .gf-fab svg path[animate],
+  .gf-fab svg animate,
+  .gf-fab svg animateTransform {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
+}

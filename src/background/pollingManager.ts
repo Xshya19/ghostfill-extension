@@ -17,18 +17,15 @@ import { dedupService } from '../services/dedupService';
 import { emailService } from '../services/emailServices';
 import { linkService } from '../services/linkService';
 import { otpService } from '../services/otpService';
-import { smartDetectionService } from '../services/smartDetectionService';
+import { smartDetectionService } from '../services/otpService';
 import { storageService } from '../services/storageService';
 import type { DetectionResult } from '../services/types/extraction.types';
 import { Email, EmailAccount } from '../types';
-import { diag } from '../utils/diagnosticLogger';
-import { createLogger } from '../utils/logger';
+import { createLogger, diag } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
 
 import { updateOTPMenuItem } from './contextMenu';
-import { startGmailFastWatch, TriggerReason } from './gmailFastWatch';
 import { notifyNewEmail } from './notifications';
-import { extractEmailOnce } from './singleExtractionGuard';
 
 const log = createLogger('PollingEngine');
 
@@ -984,7 +981,26 @@ function runHealthSweep(): void {
     if (now - reg.registeredAt > TIMING.STALE_TAB_MS) {
       log.info('🧹 Expired stale OTP tab', { tabId, hostname: reg.hostname });
       stopFastOTPPolling(tabId);
+      continue;
     }
+
+    if (typeof chrome !== 'undefined' && chrome.tabs) {
+      chrome.tabs.get(tabId, (tab) => {
+        if (chrome.runtime.lastError || !tab) {
+          log.info('🧹 Removing non-existent tab from OTP registry', { tabId });
+          stopFastOTPPolling(tabId);
+        }
+      });
+    }
+  }
+
+  // Heartbeat watchdog
+  if (pollingActive && now - lastGlobalCheckTime > 2 * 60 * 1000) {
+    log.warn('💔 Heartbeat: Polling is active but no checks run in 2m. Restarting alarms.');
+    void performCheck('general').then(() => {
+      if (generalTimer) clearTimeout(generalTimer);
+      void scheduleGeneralPoll();
+    });
   }
 
   void dedupCache.prune();
@@ -2056,3 +2072,137 @@ export function recordEmailReceived(): void {
   log.info('🔔 SSE received email event — forcing immediate inbox check');
   performCheck('fast').catch((e) => log.warn('SSE-driven poll error', e));
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  GMAIL FAST WATCH (Consolidated from gmailFastWatch.ts)
+// ═══════════════════════════════════════════════════════════════
+
+export type TriggerReason =
+  | 'gmail_alias_resolved'
+  | 'gmail_alias_generated'
+  | 'registration_form_submitted'
+  | 'otp_page_detected';
+
+const GMAIL_FAST_WATCH_INTERVAL_MS = 2_000;
+const GMAIL_FAST_WATCH_DURATION_MS = 60_000;
+
+let gmailFastWatchTimer: ReturnType<typeof setInterval> | null = null;
+let gmailFastWatchStopTimer: ReturnType<typeof setTimeout> | null = null;
+let gmailFastWatchUntil = 0;
+let gmailFastWatchRunning = false;
+
+/**
+ * Starts fast-watch polling for Gmail events.
+ */
+export function startGmailFastWatch(
+  triggerEventDrivenPolling: (reason: string) => void,
+  reason: TriggerReason,
+  options?: { intervalMs?: number; durationMs?: number }
+): void {
+  const intervalMs = options?.intervalMs ?? GMAIL_FAST_WATCH_INTERVAL_MS;
+  const durationMs = options?.durationMs ?? GMAIL_FAST_WATCH_DURATION_MS;
+  const now = Date.now();
+  const nextUntil = now + durationMs;
+
+  gmailFastWatchUntil = Math.max(gmailFastWatchUntil, nextUntil);
+
+  if (gmailFastWatchRunning) {
+    log.debug('[GmailFastWatch] extended', {
+      reason,
+      intervalMs,
+      until: new Date(gmailFastWatchUntil).toISOString(),
+    });
+    triggerEventDrivenPolling(`gmail_fast_extend:${reason}`);
+    return;
+  }
+
+  gmailFastWatchRunning = true;
+  log.info('[GmailFastWatch] started', {
+    reason,
+    intervalMs,
+    durationMs,
+    until: new Date(gmailFastWatchUntil).toISOString(),
+  });
+
+  triggerEventDrivenPolling(`gmail_fast_start:${reason}`);
+
+  gmailFastWatchTimer = setInterval(() => {
+    if (Date.now() >= gmailFastWatchUntil) {
+      stopGmailFastWatch('duration_expired');
+      return;
+    }
+    triggerEventDrivenPolling('gmail_fast_tick');
+  }, intervalMs);
+
+  gmailFastWatchStopTimer = setTimeout(() => {
+    stopGmailFastWatch('stop_timer');
+  }, durationMs + 1_000);
+}
+
+export function stopGmailFastWatch(reason = 'manual'): void {
+  if (gmailFastWatchTimer) {
+    clearInterval(gmailFastWatchTimer);
+    gmailFastWatchTimer = null;
+  }
+  if (gmailFastWatchStopTimer) {
+    clearTimeout(gmailFastWatchStopTimer);
+    gmailFastWatchStopTimer = null;
+  }
+  if (gmailFastWatchRunning) {
+    log.info('[GmailFastWatch] stopped', { reason });
+  }
+  gmailFastWatchRunning = false;
+  gmailFastWatchUntil = 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SINGLE EXTRACTION GUARD (Consolidated from singleExtractionGuard.ts)
+// ═══════════════════════════════════════════════════════════════
+
+export type ExtractionPayload = {
+  code?: string | null | undefined;
+  link?: string | null | undefined;
+  intent?: string | undefined;
+  [key: string]: unknown;
+};
+
+const activeExtractionsByEmailId = new Map<string, Promise<ExtractionPayload>>();
+const extractionCacheByEmailId = new Map<string, { result: ExtractionPayload; savedAt: number }>();
+
+const EXTRACTION_CACHE_TTL_MS = 30_000;
+
+export async function extractEmailOnce(
+  emailId: string,
+  run: () => Promise<ExtractionPayload>
+): Promise<ExtractionPayload> {
+  const cached = extractionCacheByEmailId.get(emailId);
+  if (cached && Date.now() - cached.savedAt < EXTRACTION_CACHE_TTL_MS) {
+    return cached.result;
+  }
+
+  const active = activeExtractionsByEmailId.get(emailId);
+  if (active) {
+    return active;
+  }
+
+  const promise = run()
+    .then((result) => {
+      extractionCacheByEmailId.set(emailId, { result, savedAt: Date.now() });
+
+      if (extractionCacheByEmailId.size > 100) {
+        const first = extractionCacheByEmailId.keys().next().value;
+        if (first) {
+          extractionCacheByEmailId.delete(first);
+        }
+      }
+
+      return result;
+    })
+    .finally(() => {
+      activeExtractionsByEmailId.delete(emailId);
+    });
+
+  activeExtractionsByEmailId.set(emailId, promise);
+  return promise;
+}
+

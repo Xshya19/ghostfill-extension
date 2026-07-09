@@ -349,7 +349,7 @@ export async function encrypt(data: unknown, passwordOrKey: string | CryptoKey):
     for (let i = 0; i < packed.length; i += chunkSize) {
       binary += String.fromCharCode(...packed.subarray(i, i + chunkSize));
     }
-    return btoa(binary);
+    return 'v1:' + btoa(binary);
   } catch (error) {
     log.error('Encryption failed', error);
     throw new Error('Failed to encrypt data');
@@ -359,7 +359,7 @@ export async function encrypt(data: unknown, passwordOrKey: string | CryptoKey):
 /**
  * Decrypts data encrypted with encrypt() - SECURITY HARDENED
  *
- * @param encryptedData - Base64-encoded encrypted data
+ * @param encryptedData - Base64-encoded encrypted data, optionally prefixed with 'v1:'
  * @param password - Password for decryption
  * @returns Decrypted and parsed data
  *
@@ -376,9 +376,13 @@ export async function decrypt<T>(
   passwordOrKey: string | CryptoKey
 ): Promise<T> {
   let packed: Uint8Array;
+  let dataToDecode = encryptedData;
+  if (dataToDecode.startsWith('v1:')) {
+    dataToDecode = dataToDecode.slice(3);
+  }
   try {
     // Decode from base64
-    packed = Uint8Array.from(atob(encryptedData), (c) => c.charCodeAt(0));
+    packed = Uint8Array.from(atob(dataToDecode), (c) => c.charCodeAt(0));
   } catch {
     // Not valid base64 — likely legacy unencrypted data
     throw new Error('Invalid encrypted data format (not base64)');
@@ -450,6 +454,7 @@ export async function initializeSecureEncryption(): Promise<void> {
           masterSeed = Uint8Array.from(atob(localData.masterKeySeed), (c) => c.charCodeAt(0));
         }
       } catch (err) {
+        log.debug('Master key seed read failed (sandboxed or restricted context)', err);
         // Fall through to generation if persisted key material is unavailable.
         storageAccessFailed = true;
       }
@@ -460,9 +465,9 @@ export async function initializeSecureEncryption(): Promise<void> {
           await chrome.storage.local.set({
             masterKeySeed: btoa(String.fromCharCode(...masterSeed)),
           });
-        } catch {
+        } catch (e) {
           storageAccessFailed = true;
-          log.warn('Failed to persist master encryption seed (sandboxed context).');
+          log.debug('Failed to persist master encryption seed (sandboxed context).');
         }
       }
 
