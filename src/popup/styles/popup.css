@@ -215,15 +215,15 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
 
 /* â”€â”€ 6. SURFACES & DASHBOARD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .ghost-dashboard, .inbox-detailed-dashboard {
-  display: flex; flex-direction: column; gap: var(--space-2);
-  padding: var(--space-2) var(--space-3) var(--space-3);
+  display: flex; flex-direction: column; gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-3);
   flex: 1; min-height: 0;
   overflow-y: auto; overflow-x: hidden;
 }
 
 .memphis-card, .identity-card, .alias-profile-card, .alias-inbox-card,
 .alias-history-card, .email-generator-card, .hub-gmail-not-connected,
-.efficiency-tip-card, .alias-setup-card {
+.efficiency-tip-card, .alias-setup-card, .inbox-section {
   background: var(--gf-surface);
   border: 1px solid var(--gf-line);
   border-radius: var(--radius-md);
@@ -267,8 +267,8 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
 
 /* â”€â”€ 7. IDENTITY & ACTIONS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .identity-row {
-  display: flex; align-items: center; gap: var(--space-2);
-  padding: var(--space-2) var(--space-3); min-height: 48px;
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-3) var(--space-3); min-height: 52px;
   position: relative; transition: background var(--gf-dur-fast) var(--gf-ease);
 }
 .identity-row + .identity-row { border-top: 1px solid var(--gf-line); }
@@ -339,7 +339,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
 .action-icon svg { width: 14px; height: 14px; }
 
 /* â”€â”€ 8. INBOX & LISTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-.inbox-section { display: flex; flex-direction: column; gap: var(--space-1); flex: 1 1 auto; min-height: 0; }
+.inbox-section { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); flex: 1 1 auto; min-height: 0; }
 .inbox-header-row, .inbox-header-default { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: 0 2px; flex-shrink: 0; }
 .inbox-title-group { display: inline-flex; align-items: center; gap: var(--space-1); min-width: 0; }
 .inbox-title-group .inbox-title-icon { color: var(--gf-primary); display: inline-flex; flex-shrink: 0; }
@@ -369,13 +369,13 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
 
 .inbox-item, .inbox-item-default {
   display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) var(--space-3);
-  background: var(--gf-surface); border: 1px solid var(--gf-line);
+  background: var(--gf-surface-2); border: 1px solid var(--gf-line);
   border-radius: var(--radius-sm); box-shadow: var(--gf-shadow-xs), inset 0 1px 0 var(--gf-hi);
   cursor: pointer; position: relative;
-  transition: border-color var(--gf-dur-fast) var(--gf-ease), box-shadow var(--gf-dur-fast) var(--gf-ease), transform var(--gf-dur-fast) var(--gf-ease);
+  transition: background var(--gf-dur-fast) var(--gf-ease), border-color var(--gf-dur-fast) var(--gf-ease), box-shadow var(--gf-dur-fast) var(--gf-ease), transform var(--gf-dur-fast) var(--gf-ease);
   animation: gf-fade-up var(--gf-dur) var(--gf-ease) both;
 }
-.inbox-item:hover, .inbox-item-default:hover { border-color: rgba(var(--gf-primary-rgb), 0.30); box-shadow: 0 4px 14px -4px rgba(var(--gf-primary-rgb), 0.18), inset 0 1px 0 var(--gf-hi); transform: translateY(-1px); }
+.inbox-item:hover, .inbox-item-default:hover { background: var(--gf-surface); border-color: rgba(var(--gf-primary-rgb), 0.30); box-shadow: 0 4px 14px -4px rgba(var(--gf-primary-rgb), 0.18), inset 0 1px 0 var(--gf-hi); transform: translateY(-1px); }
 .inbox-item:active, .inbox-item-default:active { transform: scale(0.985); }
 .inbox-item.is-unread, .inbox-item-default.is-unread { border-color: rgba(var(--gf-primary-rgb), 0.32); }
 .inbox-item.is-unread::before, .inbox-item-default.is-unread::before {
@@ -423,8 +423,9 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
 .hub-empty-state {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-3) var(--space-2);
   color: var(--gf-text-muted);
   font-size: 11.5px;
   border-radius: var(--radius-sm);
@@ -1447,6 +1448,13 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
 
 .mono { font-family: var(--gf-font-mono); }
 
+.hub-gmail-logo-img {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  margin-bottom: var(--space-2);
+}
+
 /* Dark-mode Gmail logo filter */
 [data-theme="dark"] .hub-gmail-logo-img {
   filter: brightness(0.92) contrast(1.05);
@@ -1567,17 +1575,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
   pointer-events: none; /* clicks pass through to parent button */
 }
 
-/* â”€â”€ FIX #8: Gmail "Connect" card child classes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-.hub-gmail-icon-box {
-  width: 48px;
-  height: 48px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-md);
-  background: var(--gf-sunken);
-  border: 1px solid var(--gf-line);
-  margin-bottom: var(--space-1);
-}
+
 .hub-gmail-title {
   font-family: var(--gf-font-display);
   font-size: 14px;

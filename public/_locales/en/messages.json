@@ -44,7 +44,7 @@
     "message": "Scanning..."
   },
   "listening": {
-    "message": "Listening for codes..."
+    "message": "Listening for messages..."
   },
   "activeIdentity": {
     "message": "Active Identity"

@@ -44,7 +44,7 @@
     "message": "Escaneando..."
   },
   "listening": {
-    "message": "Escuchando codigos..."
+    "message": "Escuchando mensajes..."
   },
   "activeIdentity": {
     "message": "Identidad activa"

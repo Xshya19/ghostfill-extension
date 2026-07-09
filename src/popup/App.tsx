@@ -3,7 +3,7 @@ import { ChevronLeft } from 'lucide-react';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { storageService } from '../services/storageService';
 import { Toast } from '../shared/ui';
-import { springSoft } from '../shared/ui/motion';
+import { springSoft, viewFade } from '../shared/ui/motion';
 import { EmailAccount } from '../types';
 import { withTimeout, withRetry } from '../utils/core';
 import { createLogger } from '../utils/logger';
@@ -421,10 +421,10 @@ const App: React.FC = () => {
           {isInitialized && !isFirstTime && view === 'hub' && (
             <motion.div
               key="hub-view"
-              initial={{ opacity: 0, scale: 0.98, x: -16 }}
-              animate={{ opacity: 1, scale: 1, x: 0 }}
-              exit={{ opacity: 0, scale: 1.02, x: 16 }}
-              transition={springSoft}
+              variants={viewFade}
+              initial="initial"
+              animate="animate"
+              exit="exit"
               className="app-view-container"
             >
               <Header onOpenSettings={handleOpenSettings} onOpenHelp={handleOpenHelp} />
@@ -439,10 +439,10 @@ const App: React.FC = () => {
           {isInitialized && !isFirstTime && view === 'email' && emailAccount && (
             <motion.div
               key="email-view"
-              initial={{ opacity: 0, scale: 0.98, x: 16 }}
-              animate={{ opacity: 1, scale: 1, x: 0 }}
-              exit={{ opacity: 0, scale: 1.02, x: -16 }}
-              transition={springSoft}
+              variants={viewFade}
+              initial="initial"
+              animate="animate"
+              exit="exit"
               className="app-view-container"
             >
               <Header onOpenSettings={handleOpenSettings} onOpenHelp={handleOpenHelp} />
@@ -464,10 +464,10 @@ const App: React.FC = () => {
               <motion.div
                 key="detail-view"
                 className="detail-view app-view-container"
-                initial={{ opacity: 0, scale: 1.02, x: 16 }}
-                animate={{ opacity: 1, scale: 1, x: 0 }}
-                exit={{ opacity: 0, scale: 0.98, x: -16 }}
-                transition={springSoft}
+                variants={viewFade}
+                initial="initial"
+                animate="animate"
+                exit="exit"
               >
                 <div className="header detail-view-header">
                   <div

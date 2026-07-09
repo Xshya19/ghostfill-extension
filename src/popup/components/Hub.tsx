@@ -809,24 +809,23 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
         )}
       </motion.div>
 
-      {/* ═══════════════════════════════════════════════════════════
-                 📥 INBOX WITH EMAIL LIST
-               ═══════════════════════════════════════════════════════════ */}
-      <InboxList
-        preferredEmailType={preferredEmailType}
-        gmailConnected={gmailConnected}
-        gmailIsManual={gmailIsManual}
-        gmailInboxLoading={gmailInboxLoading}
-        gmailInboxError={gmailInboxError}
-        inboxCount={inboxEmails.length}
-        displayedEmails={displayedEmails}
-        openingEmailId={openingEmailId}
-        onNavigate={onNavigate}
-        onCopyOTP={handleCopyOTP}
-        onOpenLink={handleOpenLink}
-        onFetchGmailInbox={fetchGmailInbox}
-        onOpenEmail={handleOpenEmail}
-      />
+      {(preferredEmailType === 'disposable' || (preferredEmailType === 'gmail' && gmailConnected)) && (
+        <InboxList
+          preferredEmailType={preferredEmailType}
+          gmailConnected={gmailConnected}
+          gmailIsManual={gmailIsManual}
+          gmailInboxLoading={gmailInboxLoading}
+          gmailInboxError={gmailInboxError}
+          inboxCount={inboxEmails.length}
+          displayedEmails={displayedEmails}
+          openingEmailId={openingEmailId}
+          onNavigate={onNavigate}
+          onCopyOTP={handleCopyOTP}
+          onOpenLink={handleOpenLink}
+          onFetchGmailInbox={fetchGmailInbox}
+          onOpenEmail={handleOpenEmail}
+        />
+      )}
 
       <ConfirmModal
         isOpen={showConfirmEmail}

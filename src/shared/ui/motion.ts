@@ -18,9 +18,9 @@ import type { Transition, Variants } from 'framer-motion';
 /** Default spring — buttons, toggles, FAB press. Fast, snappy. */
 export const springDefault: Transition = {
   type: 'spring',
-  stiffness: 420,
-  damping: 32,
-  mass: 0.7,
+  stiffness: 380,
+  damping: 35,
+  mass: 0.8,
 };
 
 /** Soft spring — page transitions, list reorder, sheet enter. */
@@ -34,9 +34,9 @@ export const springSoft: Transition = {
 /** Tab pill spring — used for the sliding active-tab indicator (layoutId). */
 export const springTab: Transition = {
   type: 'spring',
-  stiffness: 350,
-  damping: 25,
-  mass: 0.8,
+  stiffness: 320,
+  damping: 28,
+  mass: 0.85,
 };
 
 /** Per-digit spring — tight, snappy entrance for OTP characters. */
@@ -50,9 +50,9 @@ export const springDigit: Transition = {
 /** Playful spring with a small overshoot — success toasts, copy button. */
 export const springBounce: Transition = {
   type: 'spring',
-  stiffness: 540,
-  damping: 18,
-  mass: 0.6,
+  stiffness: 500,
+  damping: 22,
+  mass: 0.65,
 };
 
 /* ── Tweens (state transitions) ─────────────────────────────────── */
@@ -84,7 +84,7 @@ export const tweenOut: Transition = {
 /** 1s smooth tween — used for the OTP timer bar width animation. */
 export const tweenTimerBar: Transition = {
   duration: 1,
-  ease: [0.16, 1, 0.3, 1],
+  ease: 'linear',
 };
 
 /* ── Hover / Press / Focus (the interactive vocabulary) ──────────── */

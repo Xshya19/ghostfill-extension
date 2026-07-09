@@ -61,15 +61,11 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
   if (preferredEmailType === 'gmail' && !gmailConnected) {
     return (
       <div className="hub-gmail-not-connected">
-        <div className="hub-gmail-icon-box">
-          <img
-            src={gmailLogo}
-            alt="Gmail Logo"
-            className="hub-gmail-logo-img"
-            width={36}
-            height={36}
-          />
-        </div>
+        <img
+          src={gmailLogo}
+          alt="Gmail Logo"
+          className="hub-gmail-logo-img"
+        />
         <span className="hub-gmail-title">Connect Gmail</span>
         <span className="hub-gmail-desc">
           Create site-specific aliases and sync OTP emails from your Gmail account.
@@ -1611,9 +1607,8 @@ const HelpModal: React.FC<HelpModalProps> = ({ open, onClose }) => {
             aria-labelledby="help-modal-title"
             onClick={(e) => e.stopPropagation()}
             initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={springSoft}
+            animate={{ opacity: 1, scale: 1, transition: tweenIn }}
+            exit={{ opacity: 0, scale: 0.95, transition: tweenOut }}
           >
             <h2 id="help-modal-title" className="help-title">
               {t('helpTitle')}
@@ -1758,11 +1753,11 @@ const InboxListComponent: React.FC<InboxListProps> = ({
                 <motion.div
                   key={emailItem.id}
                   className="inbox-item"
-                  initial={{ opacity: 0, x: -16 }}
-                  animate={{ opacity: 1, x: 0 }}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
                   transition={{
-                    ...springSoft,
-                    delay: 0.15 + index * 0.05,
+                    ...tweenIn,
+                    delay: 0.05 + index * 0.03,
                   }}
                   whileHover={{ x: 4 }}
                   role="button"
