@@ -1,0 +1,466 @@
+/* ==========================================================================
+   GHOSTFILL POPUP — SPECTRE V2
+   Visual refinement only. Existing popup information architecture is retained.
+   ========================================================================== */
+
+.app {
+  isolation: isolate;
+  background:
+    radial-gradient(
+      130% 72% at 50% -18%,
+      rgba(var(--gf-primary-rgb), 0.105),
+      transparent 62%
+    ),
+    var(--gf-bg);
+}
+
+.app::before {
+  display: none;
+}
+
+/* Header ------------------------------------------------------------------ */
+
+.header,
+.detail-view-header {
+  height: 46px;
+  min-height: 46px;
+  padding: 0 12px;
+  background: rgba(var(--gf-surface-rgb), 0.88);
+  border-bottom-color: var(--gf-line);
+  box-shadow: 0 1px 0 var(--gf-hi);
+  backdrop-filter: blur(18px) saturate(125%);
+  -webkit-backdrop-filter: blur(18px) saturate(125%);
+}
+
+.logo-circle {
+  width: 29px;
+  height: 29px;
+  border-radius: 9px;
+  border: 1px solid rgba(var(--gf-primary-rgb), 0.28);
+  box-shadow:
+    0 7px 18px -10px rgba(var(--gf-primary-rgb), 0.9),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.logo-circle:hover {
+  transform: none;
+  box-shadow:
+    0 7px 18px -9px rgba(var(--gf-primary-rgb), 0.85),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.header-title {
+  color: var(--gf-ink);
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  font-size: 14.5px;
+  font-weight: 680;
+  letter-spacing: -0.018em;
+}
+
+.icon-button,
+.eye-button,
+.back-button,
+.detail-view-back-btn,
+.email-back-btn {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.icon-button:hover,
+.eye-button:hover,
+.back-button:hover,
+.detail-view-back-btn:hover,
+.email-back-btn:hover {
+  transform: none;
+  color: var(--gf-ink);
+  background: rgba(var(--gf-ink-rgb), 0.06);
+  border-color: transparent;
+}
+
+/* Layout ------------------------------------------------------------------ */
+
+.ghost-dashboard,
+.inbox-detailed-dashboard {
+  gap: 10px;
+  padding: 10px 11px 11px;
+}
+
+.detail-content-scroll,
+.detail-view-content,
+.alias-tab-content-area {
+  padding: 9px 11px 11px;
+}
+
+.memphis-card,
+.identity-card,
+.alias-profile-card,
+.alias-inbox-card,
+.alias-history-card,
+.email-generator-card,
+.hub-gmail-not-connected,
+.efficiency-tip-card,
+.alias-setup-card,
+.inbox-section {
+  border-color: var(--gf-line);
+  border-radius: 11px;
+  box-shadow: var(--gf-shadow-xs), inset 0 1px 0 var(--gf-hi);
+}
+
+.identity-card:hover {
+  border-color: var(--gf-line-2);
+  box-shadow: var(--gf-shadow-sm), inset 0 1px 0 var(--gf-hi);
+}
+
+/* Tabs -------------------------------------------------------------------- */
+
+.hub-email-selector,
+.alias-tabs {
+  padding: 3px;
+  background: var(--gf-sunken);
+  border-color: var(--gf-line);
+  border-radius: 10px;
+  box-shadow: inset 0 1px 2px rgba(var(--gf-ink-rgb), 0.04);
+}
+
+.hub-email-selector-btn,
+.alias-tab-btn {
+  min-height: 29px;
+  color: var(--gf-ink-dim);
+  font-size: 11.25px;
+  font-weight: 620;
+}
+
+.hub-email-selector-btn--active,
+.alias-tab-btn--active {
+  color: var(--gf-ink);
+  font-weight: 680;
+}
+
+.hub-email-selector-bg,
+.alias-tab-bg {
+  background: var(--gf-surface);
+  border-color: var(--gf-line-2);
+  box-shadow: var(--gf-shadow-xs), inset 0 1px 0 var(--gf-hi);
+}
+
+/* Identity --------------------------------------------------------------- */
+
+.identity-row {
+  min-height: 54px;
+  gap: 10px;
+  padding: 10px 11px;
+}
+
+.identity-row:hover {
+  background: rgba(var(--gf-primary-rgb), 0.035);
+}
+
+.identity-icon {
+  width: 30px;
+  height: 30px;
+  color: var(--gf-primary);
+  background: var(--gf-primary-soft);
+  border-color: rgba(var(--gf-primary-rgb), 0.16);
+  box-shadow: none;
+}
+
+.identity-icon.password {
+  color: var(--gf-mint-text);
+  background: var(--gf-success-soft);
+  border-color: rgba(var(--gf-mint-rgb), 0.18);
+}
+
+.identity-row:hover .identity-icon {
+  transform: none;
+}
+
+.identity-label {
+  color: var(--gf-ink-dim);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.09em;
+}
+
+.identity-row:hover .identity-label {
+  color: var(--gf-ink-dim);
+}
+
+.identity-value {
+  color: var(--gf-ink);
+  font-size: 11.75px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+}
+
+.action-icon {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.action-icon:hover {
+  transform: none;
+  color: var(--gf-ink);
+  background: rgba(var(--gf-ink-rgb), 0.06);
+  border-color: transparent;
+}
+
+.action-icon.action-danger:hover {
+  color: var(--gf-coral);
+  background: var(--gf-danger-soft);
+}
+
+.identity-action-btn {
+  min-height: 32px;
+  color: var(--gf-ink-soft);
+  background: var(--gf-surface-2);
+  border-color: var(--gf-line);
+  box-shadow: inset 0 1px 0 var(--gf-hi);
+}
+
+.identity-action-btn:hover {
+  transform: translateY(-1px);
+  color: var(--gf-ink);
+  background: var(--gf-surface);
+  border-color: var(--gf-line-2);
+}
+
+/* Inbox ------------------------------------------------------------------- */
+
+.inbox-section {
+  gap: 7px;
+  padding: 10px;
+}
+
+.inbox-title-group .inbox-title-text {
+  color: var(--gf-ink-dim);
+  font-size: 10px;
+  font-weight: 680;
+  letter-spacing: 0.09em;
+}
+
+.inbox-count,
+.alias-tab-badge {
+  color: var(--gf-primary);
+  background: var(--gf-primary-soft);
+  border-color: rgba(var(--gf-primary-rgb), 0.15);
+}
+
+.inbox-item,
+.inbox-item-default,
+.alias-inbox-item,
+.alias-history-item {
+  background: var(--gf-surface-2);
+  border-color: var(--gf-line);
+  box-shadow: none;
+}
+
+.inbox-item:hover,
+.inbox-item-default:hover,
+.alias-inbox-item:hover,
+.alias-history-item:hover {
+  transform: none;
+  background: var(--gf-surface);
+  border-color: var(--gf-line-2);
+  box-shadow: var(--gf-shadow-xs);
+}
+
+.inbox-item.is-unread,
+.inbox-item-default.is-unread {
+  border-color: rgba(var(--gf-primary-rgb), 0.25);
+}
+
+.inbox-item.is-unread::before,
+.inbox-item-default.is-unread::before {
+  width: 2px;
+  top: 9px;
+  bottom: 9px;
+}
+
+.inbox-item-avatar,
+.alias-inbox-avatar {
+  color: var(--gf-primary);
+  background: var(--gf-primary-soft);
+  border: 1px solid rgba(var(--gf-primary-rgb), 0.16);
+  box-shadow: none;
+}
+
+.inbox-item-from,
+.inbox-from-default {
+  font-weight: 650;
+}
+
+.inbox-item-open-chevron {
+  opacity: 0.45;
+}
+
+.inbox-item:hover .inbox-item-open-chevron,
+.inbox-item-default:hover .inbox-item-open-chevron {
+  transform: translateX(1px);
+}
+
+/* Password generator ------------------------------------------------------ */
+
+.password-terminal {
+  margin: 6px 0;
+  padding: 15px 12px;
+  background: var(--gf-sunken);
+  border-color: var(--gf-line-2);
+  box-shadow: inset 0 1px 2px rgba(var(--gf-ink-rgb), 0.04);
+}
+
+.password-terminal::after {
+  display: none;
+}
+
+.password-terminal:hover {
+  border-color: rgba(var(--gf-primary-rgb), 0.38);
+}
+
+.password-display-text {
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.055em;
+}
+
+.password-display-visible::after {
+  content: '▏';
+}
+
+.strength-bar-bg,
+.otp-timer-bg {
+  background: var(--gf-sunken);
+  border-color: var(--gf-line);
+  box-shadow: inset 0 1px 2px rgba(var(--gf-ink-rgb), 0.06);
+}
+
+.toggle-pill {
+  background: var(--gf-surface-2);
+  border-color: var(--gf-line);
+}
+
+.toggle-pill:hover {
+  border-color: var(--gf-line-2);
+}
+
+.toggle-pill.active {
+  background: var(--gf-primary-soft);
+  border-color: rgba(var(--gf-primary-rgb), 0.24);
+}
+
+.pill-check {
+  background: var(--gf-primary-fill);
+}
+
+/* OTP --------------------------------------------------------------------- */
+
+.otp-box {
+  border: none;
+  padding: 5px 0;
+}
+
+.otp-box:hover {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.otp-digit {
+  width: 36px;
+  height: 45px;
+  color: var(--gf-ink);
+  background: var(--gf-sunken);
+  border-color: var(--gf-line-2);
+  box-shadow:
+    inset 0 1px 0 var(--gf-hi),
+    var(--gf-shadow-xs);
+}
+
+.otp-action-primary {
+  color: var(--gf-on-fill-light);
+  background: var(--gf-grad-cobalt);
+  border-color: rgba(var(--gf-primary-rgb), 0.25);
+}
+
+.otp-action-secondary {
+  background: var(--gf-surface-2);
+  box-shadow: none;
+}
+
+/* Empty/error states ------------------------------------------------------- */
+
+.inbox-empty,
+.inbox-empty-card,
+.inbox-empty-large,
+.inbox-empty-container,
+.alias-inbox-empty,
+.alias-history-empty,
+.alias-inbox-manual,
+.email-empty,
+.missing-identity-card,
+.otp-empty-state {
+  background: var(--gf-surface-2);
+  border-color: var(--gf-line);
+  box-shadow: inset 0 1px 0 var(--gf-hi);
+}
+
+.inbox-empty::after,
+.inbox-empty-card::after,
+.alias-inbox-empty::after,
+.alias-history-empty::after,
+.alias-inbox-manual::after,
+.email-empty::after,
+.missing-identity-card::after {
+  display: none;
+}
+
+.inbox-error,
+.inbox-error-banner,
+.alias-inbox-error,
+.alias-signin-error {
+  color: var(--gf-coral-text);
+  background: var(--gf-danger-soft);
+}
+
+/* Modals ------------------------------------------------------------------ */
+
+.modal-overlay,
+.alias-message-modal-backdrop {
+  background: var(--gf-scrim);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.confirmation-modal,
+.help-card,
+.alias-message-modal {
+  border-color: var(--gf-line-2);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--gf-shadow-lg), inset 0 1px 0 var(--gf-hi);
+}
+
+/* Debug UI should not look like product UI -------------------------------- */
+
+.gf-debug-trigger {
+  color: var(--gf-on-fill-light);
+  background: var(--gf-primary-fill);
+  border-color: transparent;
+}
+
+/* Essential progress motion survives reduced motion ----------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .spin,
+  .spin-icon,
+  .alias-inbox-refresh--loading,
+  .gf-spin,
+  .gf-spinner {
+    animation-duration: 1.8s !important;
+    animation-iteration-count: infinite !important;
+  }
+
+  .strength-bar-fill {
+    animation: none !important;
+  }
+}

@@ -7,7 +7,13 @@ export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> 
   leftIcon?: React.ReactNode;
 }
 
-/** Neo-brutalist text input. Pass `leftIcon` to render a leading glyph. */
+/**
+ * GhostFill shared UI primitives.
+ *
+ * Styling follows the Spectre design language:
+ * graphite canvases, machined hairline surfaces, restrained elevation,
+ * Iris accent and semantic status colors.
+ */
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(function Input(
   { mono = false, invalid = false, leftIcon, className, ...rest },
   ref

@@ -6,30 +6,7 @@
    Clean, modern, single-pass design-token-driven stylesheet.
    ═══════════════════════════════════════════════════════════ */
 
-/* ── Fonts ──────────────────────────────────────────────── */
-@font-face {
-  font-family: 'Hanken Grotesk';
-  font-style: normal;
-  font-weight: 300 900;
-  font-display: swap;
-  src: url('../../assets/fonts/SpaceGrotesk-Variable.woff2') format('woff2-variations');
-}
 
-@font-face {
-  font-family: 'Space Mono';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('../../assets/fonts/IBMPlexMono-Regular.woff2') format('woff2');
-}
-
-@font-face {
-  font-family: 'Space Mono';
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url('../../assets/fonts/IBMPlexMono-Bold.woff2') format('woff2');
-}
 
 /* ── Options Custom Variables ───────────────────────────── */
 :root {
@@ -38,14 +15,6 @@
 }
 
 /* ── Keyframes ──────────────────────────────────────────── */
-@keyframes gf-shimmer {
-  0% { background-position: -200px 0; }
-  100% { background-position: 200px 0; }
-}
-
-@keyframes gf-spin {
-  to { transform: rotate(360deg); }
-}
 
 @keyframes gf-modal-rise {
   from { opacity: 0; transform: translateY(8px) scale(0.97); }

@@ -1,0 +1,403 @@
+/* ==========================================================================
+   GHOSTFILL — SPECTRE V2
+   Final shared visual layer. Load after design-tokens.css and primitives.css.
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* Canvas */
+  --gf-bg: #f2f3f6;
+  --gf-bg-rgb: 242, 243, 246;
+  --gf-paper: var(--gf-bg);
+  --gf-paper-2: #f7f8fa;
+
+  --gf-surface: #ffffff;
+  --gf-surface-rgb: 255, 255, 255;
+  --gf-surface-2: #f7f8fa;
+  --gf-sunken: #e9ebf0;
+  --gf-sunken-rgb: 233, 235, 240;
+  --gf-card: var(--gf-surface);
+  --gf-card-rgb: var(--gf-surface-rgb);
+  --gf-card-elevated: #ffffff;
+
+  /* Ink */
+  --gf-ink: #151820;
+  --gf-ink-rgb: 21, 24, 32;
+  --gf-ink-soft: #505766;
+  --gf-ink-soft-rgb: 80, 87, 102;
+  --gf-ink-dim: #68707f;
+  --gf-text-muted: var(--gf-ink-soft);
+  --gf-text-dim: var(--gf-ink-dim);
+  --gf-cream: var(--gf-ink);
+
+  /* Structure */
+  --gf-line: rgba(19, 24, 35, 0.085);
+  --gf-line-2: rgba(19, 24, 35, 0.15);
+  --gf-line-3: rgba(19, 24, 35, 0.22);
+  --gf-hi: rgba(255, 255, 255, 0.92);
+
+  /* Iris */
+  --gf-primary: #5148df;
+  --gf-primary-rgb: 81, 72, 223;
+  --gf-primary-deep: #4037c7;
+  --gf-primary-soft: #e9e8fb;
+  --gf-primary-fill: #5148df;
+  --gf-primary-fill-deep: #4037c7;
+  --gf-on-primary: #ffffff;
+  --gf-on-fill-light: #ffffff;
+
+  /* Semantic colors */
+  --gf-mint: #148663;
+  --gf-mint-rgb: 20, 134, 99;
+  --gf-mint-text: #096348;
+  --gf-success: var(--gf-mint);
+  --gf-success-rgb: var(--gf-mint-rgb);
+  --gf-success-soft: #ddf1e9;
+  --gf-success-fill: #32b58d;
+
+  --gf-amber: #a66c0a;
+  --gf-amber-rgb: 166, 108, 10;
+  --gf-amber-text: #78500b;
+  --gf-warning: var(--gf-amber);
+  --gf-warning-rgb: var(--gf-amber-rgb);
+  --gf-warning-soft: #f7ebd3;
+  --gf-warning-fill: #dca33c;
+
+  --gf-coral: #c8454d;
+  --gf-coral-rgb: 200, 69, 77;
+  --gf-coral-text: #98343b;
+  --gf-danger: var(--gf-coral);
+  --gf-danger-rgb: var(--gf-coral-rgb);
+  --gf-danger-soft: #f8e1e3;
+  --gf-danger-text: var(--gf-coral-text);
+  --gf-danger-fill: #be3d46;
+  --gf-danger-fill-deep: #9d3038;
+
+  --gf-violet: #6654cf;
+  --gf-violet-rgb: 102, 84, 207;
+  --gf-on-fill-dark: #11151d;
+
+  /* Geometry */
+  --radius-xs: 5px;
+  --radius-sm: 8px;
+  --radius-md: 11px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-button: 9px;
+  --radius-pill: 999px;
+  --gf-radius: 12px;
+  --gf-radius-sm: 8px;
+  --gf-radius-lg: 14px;
+  --gf-radius-pill: 999px;
+
+  /* Shadows: deliberately neutral and restrained */
+  --gf-shadow-xs:
+    0 1px 1px rgba(17, 21, 29, 0.035),
+    0 1px 3px rgba(17, 21, 29, 0.045);
+
+  --gf-shadow-sm:
+    0 1px 2px rgba(17, 21, 29, 0.045),
+    0 5px 14px -9px rgba(17, 21, 29, 0.16);
+
+  --gf-shadow:
+    0 1px 2px rgba(17, 21, 29, 0.045),
+    0 10px 28px -16px rgba(17, 21, 29, 0.22);
+
+  --gf-shadow-lg:
+    0 2px 4px rgba(17, 21, 29, 0.06),
+    0 24px 56px -24px rgba(17, 21, 29, 0.32);
+
+  --shadow-hard-sm: var(--gf-shadow-sm);
+  --shadow-hard: var(--gf-shadow);
+  --shadow-hard-lg: var(--gf-shadow-lg);
+  --shadow-card: var(--gf-shadow-sm);
+  --shadow-floating: var(--gf-shadow-lg);
+  --nb-shadow: var(--gf-shadow);
+  --nb-shadow-sm: var(--gf-shadow-sm);
+  --nb-shadow-lg: var(--gf-shadow-lg);
+
+  /* Borders */
+  --gf-border: 1px solid var(--gf-line);
+  --gf-border-thin: var(--gf-border);
+  --gf-border-strong: 1px solid var(--gf-line-2);
+  --nb-border: var(--gf-border);
+
+  /* Motion */
+  --gf-dur-fast: 120ms;
+  --gf-dur: 190ms;
+  --gf-dur-slow: 320ms;
+  --gf-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --gf-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --gf-ease-back: cubic-bezier(0.34, 1.3, 0.64, 1);
+
+  /* Gradients are limited to primary actions and brand marks */
+  --gf-grad-cobalt:
+    linear-gradient(180deg, #5c54e7 0%, var(--gf-primary-fill) 52%, var(--gf-primary-fill-deep) 100%);
+  --gf-grad-cobalt-hover:
+    linear-gradient(180deg, #6962ec 0%, #554ce4 55%, #443acd 100%);
+  --gf-grad-coral:
+    linear-gradient(180deg, var(--gf-danger-fill), var(--gf-danger-fill-deep));
+  --gf-grad-mint:
+    linear-gradient(180deg, #3fc19a, #168664);
+  --gf-grad-amber:
+    linear-gradient(180deg, #e5ac42, #ac720d);
+  --gf-grad-accent-bar:
+    linear-gradient(180deg, var(--gf-primary), var(--gf-primary-deep));
+
+  --gf-scrim: rgba(16, 19, 27, 0.5);
+  --gf-pattern-dot: none;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --gf-bg: #0d0f12;
+  --gf-bg-rgb: 13, 15, 18;
+  --gf-paper: var(--gf-bg);
+  --gf-paper-2: #111419;
+
+  --gf-surface: #15181d;
+  --gf-surface-rgb: 21, 24, 29;
+  --gf-surface-2: #1a1e24;
+  --gf-sunken: #0a0c0f;
+  --gf-sunken-rgb: 10, 12, 15;
+  --gf-card: var(--gf-surface);
+  --gf-card-rgb: var(--gf-surface-rgb);
+  --gf-card-elevated: #1b1f25;
+
+  --gf-ink: #f1f3f7;
+  --gf-ink-rgb: 241, 243, 247;
+  --gf-ink-soft: #adb4c0;
+  --gf-ink-soft-rgb: 173, 180, 192;
+  --gf-ink-dim: #858d9b;
+  --gf-text-muted: var(--gf-ink-soft);
+  --gf-text-dim: var(--gf-ink-dim);
+  --gf-cream: var(--gf-ink);
+
+  --gf-line: rgba(255, 255, 255, 0.075);
+  --gf-line-2: rgba(255, 255, 255, 0.13);
+  --gf-line-3: rgba(255, 255, 255, 0.2);
+  --gf-hi: rgba(255, 255, 255, 0.055);
+
+  --gf-primary: #969bff;
+  --gf-primary-rgb: 150, 155, 255;
+  --gf-primary-deep: #656be3;
+  --gf-primary-soft: #202344;
+  --gf-primary-fill: #5b61d8;
+  --gf-primary-fill-deep: #474dbf;
+
+  --gf-mint: #53d5b1;
+  --gf-mint-rgb: 83, 213, 177;
+  --gf-mint-text: #6be0bf;
+  --gf-success-soft: #142a24;
+  --gf-success-fill: #54cfad;
+
+  --gf-amber: #efbd64;
+  --gf-amber-rgb: 239, 189, 100;
+  --gf-amber-text: #f1c572;
+  --gf-warning-soft: #2b2416;
+  --gf-warning-fill: #e0ad51;
+
+  --gf-coral: #ff858b;
+  --gf-coral-rgb: 255, 133, 139;
+  --gf-coral-text: #ff969b;
+  --gf-danger-soft: #30191c;
+
+  --gf-violet: #b0a2ff;
+  --gf-violet-rgb: 176, 162, 255;
+  --gf-on-fill-dark: #0d0f12;
+
+  --gf-shadow-xs:
+    0 1px 1px rgba(0, 0, 0, 0.3),
+    0 2px 5px rgba(0, 0, 0, 0.2);
+
+  --gf-shadow-sm:
+    0 1px 0 rgba(255, 255, 255, 0.025),
+    0 5px 14px -7px rgba(0, 0, 0, 0.65);
+
+  --gf-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.03),
+    0 14px 34px -16px rgba(0, 0, 0, 0.88);
+
+  --gf-shadow-lg:
+    0 1px 0 rgba(255, 255, 255, 0.04),
+    0 30px 70px -22px rgba(0, 0, 0, 0.95);
+
+  --gf-grad-cobalt:
+    linear-gradient(180deg, #666ce1 0%, var(--gf-primary-fill) 54%, var(--gf-primary-fill-deep) 100%);
+  --gf-grad-cobalt-hover:
+    linear-gradient(180deg, #747aea 0%, #6268df 55%, #4b51c5 100%);
+
+  --gf-scrim: rgba(3, 4, 6, 0.74);
+}
+
+/* Shared controls --------------------------------------------------------- */
+
+.gf-btn {
+  min-height: 36px;
+  padding: 9px 14px;
+  border-radius: var(--radius-button);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+  box-shadow: var(--gf-shadow-xs), inset 0 1px 0 var(--gf-hi);
+}
+
+.gf-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--gf-shadow-sm), inset 0 1px 0 var(--gf-hi);
+}
+
+.gf-btn:active {
+  transform: translateY(0) scale(0.985);
+}
+
+.gf-btn--primary {
+  color: var(--gf-on-fill-light);
+  background: var(--gf-grad-cobalt);
+  border-color: rgba(var(--gf-primary-rgb), 0.3);
+}
+
+.gf-btn--primary:hover {
+  background: var(--gf-grad-cobalt-hover);
+}
+
+.gf-btn--soft {
+  color: var(--gf-primary);
+  background: var(--gf-primary-soft);
+  border-color: rgba(var(--gf-primary-rgb), 0.16);
+}
+
+.gf-btn--ghost {
+  color: var(--gf-ink-soft);
+  background: transparent;
+  border-color: transparent;
+}
+
+.gf-btn--ghost:hover {
+  color: var(--gf-ink);
+  background: rgba(var(--gf-ink-rgb), 0.055);
+}
+
+.gf-icon-btn {
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 1px 0 var(--gf-hi);
+}
+
+.gf-icon-btn--plain {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.gf-card {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--gf-shadow-sm), inset 0 1px 0 var(--gf-hi);
+}
+
+.gf-input {
+  min-height: 38px;
+  padding: 9px 11px;
+  background: var(--gf-sunken);
+  border-color: var(--gf-line-2);
+  border-radius: var(--radius-button);
+  box-shadow: inset 0 1px 2px rgba(var(--gf-ink-rgb), 0.035);
+}
+
+.gf-input:hover:not(:disabled) {
+  border-color: var(--gf-line-3);
+}
+
+.gf-input:focus,
+.gf-input:focus-visible {
+  outline: none;
+  border-color: var(--gf-primary);
+  background: var(--gf-surface);
+  box-shadow:
+    0 0 0 3px rgba(var(--gf-primary-rgb), 0.16),
+    inset 0 1px 0 var(--gf-hi);
+}
+
+.gf-toggle {
+  width: 42px;
+  height: 24px;
+  background: var(--gf-sunken);
+  border-color: var(--gf-line-2);
+  box-shadow: inset 0 1px 2px rgba(var(--gf-ink-rgb), 0.05);
+}
+
+.gf-toggle::after {
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  background: var(--gf-surface);
+  border: 1px solid var(--gf-line-2);
+  box-shadow: var(--gf-shadow-sm);
+}
+
+.gf-toggle[aria-checked='true']::after,
+.gf-toggle.is-on::after {
+  transform: translate(18px, -50%);
+}
+
+.gf-badge {
+  min-height: 20px;
+  padding: 3px 8px;
+  font-size: 10.5px;
+  letter-spacing: 0.01em;
+  box-shadow: inset 0 1px 0 var(--gf-hi);
+}
+
+.gf-tabs {
+  gap: 2px;
+  padding: 3px;
+  border-color: var(--gf-line);
+  border-radius: var(--radius-button);
+}
+
+.gf-tab {
+  min-height: 30px;
+  padding: 6px 11px;
+  border-radius: 7px;
+}
+
+.gf-modal {
+  border-radius: var(--radius-lg);
+  animation: none;
+}
+
+.gf-toast {
+  animation: none;
+}
+
+.gf-empty__icon {
+  display: grid;
+}
+
+:where(
+  .gf-btn,
+  .gf-icon-btn,
+  .gf-input,
+  .gf-toggle,
+  .gf-tab,
+  .gf-card--interactive
+):focus-visible {
+  outline: 2px solid var(--gf-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root,
+  [data-theme='dark'] {
+    --gf-dur-fast: 0ms;
+    --gf-dur: 0ms;
+    --gf-dur-slow: 0ms;
+  }
+
+  .gf-spin,
+  .gf-spinner {
+    animation-duration: 1.8s;
+    animation-iteration-count: infinite;
+  }
+}

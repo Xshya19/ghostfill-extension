@@ -7,7 +7,13 @@ export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   sunken?: boolean;
 }
 
-/** Neo-brutalist surface card (2px ink border, hard offset shadow). */
+/**
+ * GhostFill shared UI primitives.
+ *
+ * Styling follows the Spectre design language:
+ * graphite canvases, machined hairline surfaces, restrained elevation,
+ * Iris accent and semantic status colors.
+ */
 export const Card = React.forwardRef<HTMLDivElement, CardProps>(function Card(
   { interactive = false, flush = false, sunken = false, className, children, ...rest },
   ref

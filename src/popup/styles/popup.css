@@ -1,13 +1,13 @@
 /* ============================================================================
-   GHOSTFILL POPUP â€” SPECTRE ARCHITECTURE
-   Exact 375 Ã— 400 containment. Single-authority stylesheet.
+   GHOSTFILL POPUP — SPECTRE ARCHITECTURE
+   Exact 375 × 400 containment. Single-authority stylesheet.
    Consumes design-tokens.css and primitives.css directly. No local overrides.
    ========================================================================== */
 
 @import '../../shared/styles/design-tokens.css';
 @import '../../shared/styles/primitives.css';
 
-/* â”€â”€ 1. POPUP-SPECIFIC GEOMETRY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── 1. POPUP-SPECIFIC GEOMETRY ────────────────────────────────────────── */
 :root {
   --popup-w: 375px;
   --popup-h: 400px;
@@ -15,7 +15,7 @@
   --z-debug: 100000; /* Escalated above standard z-toast for dev overlay */
 }
 
-/* â”€â”€ 2. KEYFRAMES (Popup-specific only; base spin/shimmer in primitives) â”€ */
+/* ── 2. KEYFRAMES (Popup-specific only; base spin/shimmer in primitives) ─ */
 @keyframes gf-fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes gf-flip-in { 0% { transform: rotateX(-90deg); opacity: 0; } 100% { transform: rotateX(0deg); opacity: 1; } }
 @keyframes gf-caret-blink { 0%, 60% { opacity: 1; } 61%, 100% { opacity: 0; } }
@@ -26,7 +26,7 @@
 @keyframes gf-celebrate-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(var(--gf-mint-rgb), 0); } 50% { box-shadow: 0 0 0 8px rgba(var(--gf-mint-rgb), 0.18); } }
 @keyframes skeleton-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
 
-/* â”€â”€ 3. BASE RESET & FRAME CONTAINMENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── 3. BASE RESET & FRAME CONTAINMENT ─────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
 html, body, #root, .app {
@@ -78,7 +78,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
   transform: none;
 }
 
-/* â”€â”€ 4. APP SHELL & SCROLL MANAGEMENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── 4. APP SHELL & SCROLL MANAGEMENT ──────────────────────────────────── */
 .app {
   display: flex;
   flex-direction: column;
@@ -132,7 +132,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
 .alias-tab-content-area::-webkit-scrollbar-thumb:hover, .alias-inbox-list::-webkit-scrollbar-thumb:hover,
 .alias-history-list::-webkit-scrollbar-thumb:hover { background: rgba(var(--gf-primary-rgb), 0.40); }
 
-/* â”€â”€ 5. HEADER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── 5. HEADER ─────────────────────────────────────────────────────────── */
 .header, .detail-view-header {
   display: flex;
   align-items: center;
@@ -213,7 +213,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* â”€â”€ 6. SURFACES & DASHBOARD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── 6. SURFACES & DASHBOARD ───────────────────────────────────────────── */
 .ghost-dashboard, .inbox-detailed-dashboard {
   display: flex; flex-direction: column; gap: var(--space-3);
   padding: var(--space-3) var(--space-3) var(--space-3);
@@ -265,7 +265,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
   will-change: transform;
 }
 
-/* â”€â”€ 7. IDENTITY & ACTIONS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── 7. IDENTITY & ACTIONS ─────────────────────────────────────────────── */
 .identity-row {
   display: flex; align-items: center; gap: var(--space-3);
   padding: var(--space-3) var(--space-3); min-height: 52px;
@@ -338,7 +338,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
 .action-icon.action-loading { opacity: 0.6; pointer-events: none; }
 .action-icon svg { width: 14px; height: 14px; }
 
-/* â”€â”€ 8. INBOX & LISTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── 8. INBOX & LISTS ──────────────────────────────────────────────────── */
 .inbox-section { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); flex: 1 1 auto; min-height: 0; }
 .inbox-header-row, .inbox-header-default { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: 0 2px; flex-shrink: 0; }
 .inbox-title-group { display: inline-flex; align-items: center; gap: var(--space-1); min-width: 0; }
@@ -418,7 +418,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
 .inbox-badge--unread { color: var(--gf-amber-text); background: rgba(var(--gf-amber-rgb), 0.10); border: 1px solid rgba(var(--gf-amber-rgb), 0.25); }
 .otp-badge:active, .link-badge:active { transform: scale(0.95); }
 
-/* â”€â”€ 9. EMPTY STATES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── 9. EMPTY STATES ───────────────────────────────────────────────────── */
 /* Inline empty state for Hub inbox (e.g. "Listening for codes...", "Connect Gmail above") */
 .hub-empty-state {
   display: flex;
@@ -501,7 +501,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
 }
 .inbox-error svg, .inbox-error-banner svg, .alias-inbox-error svg, .alias-signin-error svg { color: var(--gf-coral); flex-shrink: 0; }
 
-/* â”€â”€ 10. GENERATORS & PASSWORDS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── 10. GENERATORS & PASSWORDS ────────────────────────────────────────── */
 .detail-content-scroll, .detail-view-content {
   flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
   padding: var(--space-2) var(--space-3) var(--space-3); animation: gf-fade-up var(--gf-dur) var(--gf-ease) both;
@@ -539,7 +539,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
 .password-display-hidden { letter-spacing: 0.2em; }
 .password-display-visible { letter-spacing: 0.02em; filter: blur(0); }
 .password-display-visible::after {
-  content: 'â–'; display: inline-block; margin-left: 2px; color: var(--gf-primary);
+  content: '▏'; display: inline-block; margin-left: 2px; color: var(--gf-primary);
   animation: gf-caret-blink 1.05s steps(1) infinite;
 }
 
@@ -587,7 +587,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
 .pill-check svg { color: var(--gf-on-primary); }
 .toggle-pill.active .pill-check { opacity: 1; transform: scale(1); animation: gf-fade-up 220ms var(--gf-ease); }
 
-/* â”€â”€ 11. OTP DISPLAY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── 11. OTP DISPLAY ───────────────────────────────────────────────────── */
 .otp-box {
   display: flex; justify-content: center; gap: var(--space-1); background: transparent;
   border: 1px solid transparent; border-radius: var(--radius-sm); box-shadow: none;
@@ -624,7 +624,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
 .otp-action-secondary:hover { background: var(--gf-surface-2); border-color: var(--gf-line-2); }
 .otp-action-secondary:active { transform: translateY(1px); }
 
-/* â”€â”€ 12. GMAIL ALIAS PANEL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── 12. GMAIL ALIAS PANEL ─────────────────────────────────────────────── */
 .alias-connect-btn, .alias-oauth-connect-btn, .hub-gmail-connect-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--space-1); margin-top: var(--space-1); padding: 9px 22px;
   font-family: var(--gf-font-display); font-size: 12.5px; font-weight: 700; color: var(--gf-on-primary);
@@ -700,7 +700,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
 .alias-inbox-open-btn:hover, .alias-history-copy-btn:hover, .alias-history-copy-btn:hover { color: var(--gf-primary); border-color: rgba(var(--gf-primary-rgb), 0.3); }
 .alias-inbox-open-btn:active, .alias-history-copy-btn:active { transform: scale(0.95); }
 
-/* â”€â”€ 13. MODALS & OVERLAYS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── 13. MODALS & OVERLAYS ─────────────────────────────────────────────── */
 .alias-message-modal-backdrop {
   position: absolute;
   inset: 0;
@@ -1059,7 +1059,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
 }
 
 /* FIX #13: .identity-action-btn, .identity-actions-row, .identity-content-wrapper
-   were defined twice with conflicting values. Removed duplicate â€” canonical
+   were defined twice with conflicting values. Removed duplicate — canonical
    definitions live at lines ~311, ~309, ~287 respectively. */
 .identity-email-info {
   display: flex;
@@ -1121,7 +1121,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
   border-color: var(--gf-mint);
 }
 
-/* â”€â”€ Inbox section wrappers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Inbox section wrappers ────────────────────────────────────────────── */
 .inbox-section-wrapper {
   display: flex;
   flex-direction: column;
@@ -1158,7 +1158,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
   margin-bottom: 0;
 }
 
-/* FIX #16: Inbox empty states â€” REMOVED duplicate definitions that conflicted
+/* FIX #16: Inbox empty states — REMOVED duplicate definitions that conflicted
    with the canonical definitions at lines ~421-467. The canonical versions have
    gradient background, pseudo-element glow, and shadow. The duplicates here
    had flat sunken background and dashed borders which cancelled the design. */
@@ -1195,7 +1195,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
   display: inline-flex;
 }
 
-/* â”€â”€ Default inbox variant helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Default inbox variant helpers ───────────────────────────────────── */
 .inbox-list-default,
 .inbox-content-default,
 .inbox-header-default,
@@ -1228,7 +1228,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
   line-height: 1.4;
 }
 
-/* â”€â”€ Version badge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Version badge ──────────────────────────────────────────────────────── */
 .version-badge {
   font-family: var(--gf-font-mono);
   font-size: 10px;
@@ -1499,17 +1499,17 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
-   MISSING CLASS DEFINITIONS â€” Permanent Fixes
+   MISSING CLASS DEFINITIONS — Permanent Fixes
    Cross-referenced against every TSX component in src/popup/components/.
    ────────────────────────────────────────────────────────────────────────── */
 
-/* â”€â”€ FIX #1: .spin â€” Components use "spin", primitives defines ".gf-spin" â”€â”€ */
+/* ── FIX #1: .spin — Components use "spin", primitives defines ".gf-spin" ── */
 .spin {
   animation: gf-spin 0.8s linear infinite;
   display: inline-block;
 }
 
-/* â”€â”€ FIX #2: .shimmer â€” loading shimmer effect â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── FIX #2: .shimmer — loading shimmer effect ──────────────────────────── */
 .shimmer {
   position: relative;
   overflow: hidden;
@@ -1530,20 +1530,20 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
   border-radius: inherit;
 }
 
-/* â”€â”€ FIX #3: .truncate â€” text truncation utility â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── FIX #3: .truncate — text truncation utility ───────────────────────── */
 .truncate {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* â”€â”€ FIX #4: .opacity-50 â€” cooldown opacity utility â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── FIX #4: .opacity-50 — cooldown opacity utility ────────────────────── */
 .opacity-50 { opacity: 0.5; }
 
-/* â”€â”€ FIX #5: .break-all â€” word-break utility â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── FIX #5: .break-all — word-break utility ───────────────────────────── */
 .break-all { word-break: break-all; }
 
-/* â”€â”€ FIX #6: .view-all-btn â€” Inbox "Open" / "View all" button â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── FIX #6: .view-all-btn — Inbox "Open" / "View all" button ──────────── */
 .view-all-btn {
   display: inline-flex;
   align-items: center;
@@ -1565,7 +1565,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
 }
 .view-all-btn:active { transform: scale(0.95); }
 
-/* â”€â”€ FIX #7: .hub-email-selector-label â€” tab icon + text alignment â”€â”€â”€â”€â”€ */
+/* ── FIX #7: .hub-email-selector-label — tab icon + text alignment ───── */
 .hub-email-selector-label, .alias-tab-label {
   position: relative;
   z-index: 1;
@@ -1599,14 +1599,14 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
   text-align: center;
 }
 
-/* â”€â”€ FIX #9: .password-bullets â€” masked password styling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── FIX #9: .password-bullets — masked password styling ───────────────── */
 .password-bullets {
   letter-spacing: 0.15em;
   -webkit-text-security: disc;
   color: var(--gf-ink-dim);
 }
 
-/* â”€â”€ FIX #10: .otp-badge-code â€” OTP badge text in inbox â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── FIX #10: .otp-badge-code — OTP badge text in inbox ────────────────── */
 .otp-badge-code {
   font-family: var(--gf-font-mono);
   font-size: inherit;
@@ -1614,7 +1614,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
   letter-spacing: 0.04em;
 }
 
-/* â”€â”€ FIX #11: All skeleton-* classes for AppSkeleton.tsx â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── FIX #11: All skeleton-* classes for AppSkeleton.tsx ────────────────── */
 .skeleton-pulse {
   animation: skeleton-pulse 1.5s ease-in-out infinite;
   background: var(--gf-sunken);
@@ -1645,7 +1645,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
 .skeleton-inbox-flex    { flex: 1; min-height: 0; }
 .skeleton-mt-10         { margin-top: 10px; }
 
-/* â”€â”€ FIX #12: OTP display-specific classes for OTPDisplay.tsx â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── FIX #12: OTP display-specific classes for OTPDisplay.tsx ──────────── */
 .otp-memphis-card-padded {
   padding: var(--space-3);
 }
@@ -1722,7 +1722,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
   text-align: right;
 }
 
-/* â”€â”€ Additional utility aliases used by components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Additional utility aliases used by components ─────────────────────── */
 .action-separator {
   width: 1px;
   height: 16px;
@@ -1732,7 +1732,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
 }
 .icon-faded { opacity: 0.55; }
 
-/* â”€â”€ Accessibility â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Accessibility ────────────────────────────────────────────────────────── */
 .sr-only {
   position: absolute;
   width: 1px;

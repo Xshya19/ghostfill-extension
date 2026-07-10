@@ -4,6 +4,8 @@ import { initTheme } from '../shared/theme';
 import { initRemoteLogger } from '../utils/logger';
 import App from './App';
 import './styles/popup.css';
+import '../shared/styles/spectre-v2.css';
+import './styles/popup-v2.css';
 
 initRemoteLogger('Popup');
 initTheme();
