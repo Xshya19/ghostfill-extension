@@ -661,7 +661,9 @@
    MODAL
    ════════════════════════════════════════════════════════════════════════ */
 
-
+/* ════════════════════════════════════════════════════════════════════════
+   MODAL
+   ════════════════════════════════════════════════════════════════════════ */
 .gf-modal__overlay {
   position: fixed;
   inset: 0;
@@ -680,7 +682,7 @@
   background: var(--gf-surface);
   border: var(--gf-border-strong);
   border-radius: var(--radius-lg);
-  box-shadow: var(--gf-shadow-lg), inset 0 1px 0 var(--gf-hi);
+  box-shadow: var(--gf-shadow-lg);
   /* FIX: Added entrance motion */
   animation: gf-fade-scale-in var(--gf-dur) var(--gf-ease) both;
 }
@@ -728,7 +730,7 @@
   background: var(--gf-card-elevated);
   border: var(--gf-border-strong);
   border-radius: var(--radius-pill);
-  box-shadow: var(--gf-toast-shadow, var(--gf-shadow-lg)), inset 0 1px 0 var(--gf-hi);
+  box-shadow: var(--gf-toast-shadow, var(--gf-shadow-lg));
   /* FIX: Added entrance motion */
   animation: gf-toast-in var(--gf-dur) var(--gf-ease-back) both;
 }
@@ -756,10 +758,9 @@
   padding: 7px;
   display: grid;
   place-items: center;
-  background: linear-gradient(180deg, rgba(var(--gf-primary-rgb), 0.10), rgba(var(--gf-primary-rgb), 0.04));
+  background: rgba(var(--gf-primary-rgb), 0.10);
   border: 1px solid rgba(var(--gf-primary-rgb), 0.22);
   border-radius: var(--radius-sm);
-  box-shadow: inset 0 1px 0 var(--gf-hi);
   color: var(--gf-primary);
   margin-bottom: var(--space-1);
 }

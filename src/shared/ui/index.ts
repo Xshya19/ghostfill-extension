@@ -1,9 +1,7 @@
 /**
- * GhostFill shared UI primitives.
- *
- * Styling follows the Spectre design language:
- * graphite canvases, machined hairline surfaces, restrained elevation,
- * Iris accent and semantic status colors.
+ * GhostFill shared UI primitives — the single, neo-brutalist component vocabulary
+ * used by the popup and options surfaces. Styling lives in
+ * src/shared/styles/primitives.css.
  */
 export { Button } from './Button';
 export type { ButtonProps, ButtonVariant, ButtonSize } from './Button';
