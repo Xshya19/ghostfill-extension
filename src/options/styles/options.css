@@ -6,30 +6,7 @@
    Clean, modern, single-pass design-token-driven stylesheet.
    ═══════════════════════════════════════════════════════════ */
 
-/* ── Fonts ──────────────────────────────────────────────── */
-@font-face {
-  font-family: 'Hanken Grotesk';
-  font-style: normal;
-  font-weight: 300 900;
-  font-display: swap;
-  src: url('../../assets/fonts/SpaceGrotesk-Variable.woff2') format('woff2-variations');
-}
-
-@font-face {
-  font-family: 'Space Mono';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('../../assets/fonts/IBMPlexMono-Regular.woff2') format('woff2');
-}
-
-@font-face {
-  font-family: 'Space Mono';
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url('../../assets/fonts/IBMPlexMono-Bold.woff2') format('woff2');
-}
+/* Fonts are loaded directly from design-tokens.css */
 
 /* ── Options Custom Variables ───────────────────────────── */
 :root {
@@ -38,14 +15,7 @@
 }
 
 /* ── Keyframes ──────────────────────────────────────────── */
-@keyframes gf-shimmer {
-  0% { background-position: -200px 0; }
-  100% { background-position: 200px 0; }
-}
-
-@keyframes gf-spin {
-  to { transform: rotate(360deg); }
-}
+/* Shimmer and Spin keyframes are loaded from primitives.css */
 
 @keyframes gf-modal-rise {
   from { opacity: 0; transform: translateY(8px) scale(0.97); }
@@ -125,19 +95,16 @@ body {
   scrollbar-color: var(--gf-line) transparent;
 }
 
-/* ── Ambient Background & Grain ────────────────────────── */
-.ambient-scene,
-.blob,
-.material-grain {
-  display: none;
-}
+/* Ambient Background & Grain are removed in V2 ECTO */
 
 /* ── Options Main App Wrapper ──────────────────────────── */
 .options-app {
   position: relative;
   min-height: 100vh;
   padding-bottom: 24px;
-  background: var(--gf-bg);
+  background:
+    radial-gradient(80% 50% at 50% -5%, rgba(var(--gf-primary-rgb), 0.06), transparent 60%),
+    var(--gf-bg);
   color: var(--gf-ink);
 }
 
@@ -162,10 +129,11 @@ body {
   height: 56px;
   display: grid;
   place-items: center;
-  border-radius: 16px;
-  background: var(--gf-primary-fill);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, var(--gf-primary), var(--gf-violet, #805ad5));
+  box-shadow: 0 12px 30px -10px rgba(var(--gf-primary-rgb), 0.4);
   flex-shrink: 0;
-  border: 1px solid rgba(0,0,0,0.1);
+  border: 1px solid rgba(var(--gf-primary-rgb), 0.2);
 }
 
 .logo-box img,
@@ -218,7 +186,7 @@ body {
   padding: 8px;
   background: var(--gf-surface);
   border: 1px solid var(--gf-line);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   box-shadow: var(--gf-shadow), inset 0 1px 0 var(--gf-hi);
   height: fit-content;
   position: sticky;
@@ -260,7 +228,7 @@ body {
   color: var(--gf-ink-soft);
   background: transparent;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   text-align: left;
   position: relative;
@@ -305,7 +273,7 @@ body {
 }
 
 .sidebar-nav-item:hover .sidebar-nav-icon {
-  /* removed transform scale */
+  transform: scale(1.05);
 }
 
 .sidebar-nav-icon svg {
@@ -332,8 +300,8 @@ body {
 .ghost-card {
   background: var(--gf-surface);
   border: 1px solid var(--gf-line);
-  border-radius: 16px;
-  box-shadow: var(--gf-shadow-sm);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--gf-shadow), inset 0 1px 0 var(--gf-hi);
   padding: 20px 22px;
   position: relative;
   overflow: hidden;
@@ -375,7 +343,7 @@ body {
   height: 34px;
   display: grid;
   place-items: center;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   background: rgba(var(--gf-primary-rgb), 0.12);
   border: 1px solid rgba(var(--gf-primary-rgb), 0.2);
   color: var(--gf-primary);
@@ -446,7 +414,7 @@ body {
   color: var(--gf-ink);
   background: var(--gf-sunken);
   border: 1px solid var(--gf-line);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   padding: 9px 12px;
   transition:
     background var(--gf-dur-fast) var(--gf-ease),
@@ -513,7 +481,7 @@ body {
   padding: 8px 12px;
   background: rgba(var(--gf-amber-rgb), 0.08);
   border: 1px solid rgba(var(--gf-amber-rgb), 0.18);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   font-size: 12px;
   color: var(--gf-warning, var(--gf-amber));
   line-height: 1.4;
@@ -544,7 +512,7 @@ body {
 }
 
 .toggle:active {
-  transform: translate(0.5px, 0.5px);
+  transform: none;
 }
 
 .toggle .toggle-slider {
@@ -572,79 +540,7 @@ body {
 }
 
 /* ── Buttons ───────────────────────────────────────────── */
-.options-main .gf-btn,
-.btn-primary,
-.btn-secondary,
-.btn-danger,
-.settings-btn-primary,
-.settings-btn-secondary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 8px 14px;
-  min-height: 38px;
-  border: 1px solid var(--gf-line);
-  border-radius: 8px;
-  font-family: var(--gf-font-display);
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--gf-ink);
-  background: var(--gf-sunken);
-  cursor: pointer;
-  transition:
-    background 180ms var(--gf-ease),
-    border-color 180ms var(--gf-ease),
-    color 180ms var(--gf-ease),
-    box-shadow 180ms var(--gf-ease);
-}
-
-.gf-btn:hover,
-.btn-secondary:hover,
-.settings-btn-secondary:hover {
-  background: var(--gf-surface);
-  border-color: var(--gf-line-2);
-}
-
-.btn-primary,
-.settings-btn-primary {
-  background: rgba(var(--gf-primary-rgb), 0.08);
-  border-color: rgba(var(--gf-primary-rgb), 0.25);
-  color: var(--gf-primary);
-}
-
-.btn-primary:hover,
-.settings-btn-primary:hover {
-  background: rgba(var(--gf-primary-rgb), 0.16);
-  border-color: var(--gf-primary);
-  color: var(--gf-primary);
-}
-
-.btn-danger {
-  background: rgba(var(--gf-coral-rgb), 0.10);
-  border-color: rgba(var(--gf-coral-rgb), 0.30);
-  color: var(--gf-coral);
-}
-
-.btn-danger:hover {
-  background: rgba(var(--gf-coral-rgb), 0.18);
-  border-color: var(--gf-coral);
-  color: var(--gf-coral);
-}
-
-.gf-btn:active,
-.btn-primary:active,
-.btn-secondary:active,
-.btn-danger:active {
-  box-shadow: var(--gf-shadow-sm);
-}
-
-.gf-btn:focus-visible,
-.btn-primary:focus-visible,
-.btn-secondary:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--gf-bg), 0 0 0 4px var(--gf-primary);
-}
+/* Standard button styling is imported from primitives.css */
 
 .save-btn--saving {
   background: var(--gf-sunken);
@@ -654,7 +550,7 @@ body {
 
 .save-btn--saved {
   background: var(--gf-success);
-  color: var(--gf-on-primary, #fff);
+  color: var(--gf-on-fill-dark);
   border-color: var(--gf-success);
 }
 
@@ -678,11 +574,10 @@ body {
   gap: 10px;
   padding: 12px;
   border: 1px solid var(--gf-line);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   background: var(--gf-sunken);
 }
 
-/* ── Badges & Chips ────────────────────────────────────── */
 .version-badge,
 .tech-pill {
   font-family: var(--gf-font-mono);
@@ -698,9 +593,6 @@ body {
 
 .tech-pill:hover {
   border-color: var(--gf-line-2);
-}
-
-.tech-pill:active {
 }
 
 .tech-pill-primary {
@@ -731,7 +623,7 @@ body {
   color: var(--gf-ink-soft);
   background: var(--gf-surface-2);
   border: 1px solid var(--gf-line);
-  border-radius: 11px;
+  border-radius: var(--radius-sm);
   text-decoration: none;
   transition:
     border-color var(--gf-dur-fast) var(--gf-ease),
@@ -741,9 +633,6 @@ body {
 .about-link:hover {
   color: var(--gf-primary);
   border-color: rgba(var(--gf-primary-rgb), 0.4);
-}
-
-.about-link:active {
 }
 
 .coming-soon-label {
@@ -766,7 +655,7 @@ body {
   padding: 11px 13px;
   background: var(--gf-sunken);
   border: 1px solid var(--gf-line);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -778,9 +667,6 @@ body {
 
 .health-pill-card:hover {
   border-color: var(--gf-line-2);
-}
-
-.health-pill-card:active {
 }
 
 .health-provider-name {
@@ -833,13 +719,13 @@ body {
 .about-logo-box {
   width: 72px;
   height: 72px;
-  border-radius: 16px;
-  background: var(--gf-primary-fill);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, var(--gf-primary), var(--gf-violet));
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0 auto 16px;
-  border: 1px solid rgba(0,0,0,0.1);
+  box-shadow: var(--gf-shadow-lg);
 }
 
 .about-version {
@@ -867,7 +753,7 @@ body {
 
 .storage-monitor {
   border: 1px solid var(--gf-line);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--gf-sunken);
   padding: 16px;
   display: flex;
@@ -903,7 +789,7 @@ body {
 /* ── Automation Tab Shortcuts ─────────────────────────── */
 .shortcut-reference {
   border: 1px solid var(--gf-line);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--gf-sunken);
   padding: 16px;
   display: flex;
@@ -932,18 +818,14 @@ body {
   padding: 10px 12px;
   gap: 12px;
   border: 1px solid var(--gf-line);
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   background: var(--gf-surface);
-  box-shadow: var(--gf-shadow-xs);
-  transition:
-    border-color 180ms var(--gf-ease);
+  box-shadow: var(--gf-shadow-sm);
+  transition: border-color 180ms var(--gf-ease);
 }
 
 .shortcut-row:hover {
   border-color: var(--gf-line-2);
-}
-
-.shortcut-row:active {
 }
 
 .shortcut-action {
@@ -1003,8 +885,8 @@ kbd {
   width: calc(100% - 32px);
   background: var(--gf-surface);
   border: 1px solid var(--gf-line-2);
-  border-radius: 18px;
-  box-shadow: var(--gf-shadow-lg);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--gf-shadow-lg), inset 0 1px 0 var(--gf-hi);
   padding: 22px;
   animation: gf-modal-rise 280ms var(--gf-ease);
 }
@@ -1043,7 +925,7 @@ kbd {
   background: var(--gf-card-elevated);
   border: 1px solid var(--gf-line-2);
   border-radius: 999px;
-  box-shadow: var(--gf-shadow-lg);
+  box-shadow: var(--gf-shadow-lg), inset 0 1px 0 var(--gf-hi);
 }
 
 /* ── Save Pending Indicator ────────────────────────────── */
@@ -1116,8 +998,8 @@ kbd {
   max-width: calc(100% - 32px);
   background: var(--gf-card-elevated);
   border: 1px solid var(--gf-line);
-  border-radius: 14px;
-  box-shadow: var(--gf-shadow-lg);
+  border-radius: var(--radius-md);
+  box-shadow: var(--gf-shadow-lg), inset 0 1px 0 var(--gf-hi);
   overflow: hidden;
   animation: commandPaletteIn 0.18s ease-out;
 }
@@ -1165,7 +1047,7 @@ kbd {
   flex-direction: column;
   gap: 2px;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-xs);
   cursor: pointer;
   position: relative;
 }
@@ -1346,9 +1228,6 @@ kbd {
   }
 
   .sidebar-nav-item,
-  .settings-btn-primary,
-  .settings-btn-secondary,
-  .btn,
   .gf-btn {
     min-height: 42px;
   }
