@@ -120,8 +120,9 @@ body {
   display: flex;
   align-items: center;
   gap: 16px;
-  max-width: 980px;
+  max-width: 920px;
   margin: 0 auto;
+  padding: 0 16px;
 }
 
 .logo-box {
@@ -171,10 +172,13 @@ body {
 .dashboard-layout {
   display: grid;
   grid-template-columns: var(--sidebar-width) 1fr;
-  gap: 24px;
-  max-width: 980px;
-  margin: 0 auto;
-  padding: 20px 40px 40px;
+  max-width: 920px;
+  margin: 16px auto 48px;
+  background: var(--gf-surface);
+  border: 1px solid var(--gf-line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--gf-shadow-lg), inset 0 1px 0 var(--gf-hi);
+  overflow: hidden;
   position: relative;
 }
 
@@ -182,15 +186,16 @@ body {
 .settings-sidebar {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 8px;
-  background: var(--gf-surface);
-  border: 1px solid var(--gf-line);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--gf-shadow), inset 0 1px 0 var(--gf-hi);
-  height: fit-content;
-  position: sticky;
-  top: 20px;
+  gap: 4px;
+  padding: 32px 20px;
+  background: var(--gf-surface-2);
+  border-right: 1px solid var(--gf-line);
+  border-left: none;
+  border-top: none;
+  border-bottom: none;
+  border-radius: 0;
+  box-shadow: none;
+  height: 100%;
 }
 
 .sidebar-nav {
@@ -285,8 +290,9 @@ body {
 .options-main {
   display: flex;
   flex-direction: column;
-  gap: 18px;
   min-width: 0;
+  padding: 40px;
+  background: var(--gf-surface);
 }
 
 [role='tabpanel'] {
@@ -296,7 +302,6 @@ body {
   width: 100%;
 }
 
-.settings-section,
 .ghost-card {
   background: var(--gf-surface);
   border: 1px solid var(--gf-line);
@@ -307,23 +312,34 @@ body {
   overflow: hidden;
 }
 
+.settings-section {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  position: relative;
+  overflow: visible;
+}
+
+.settings-section + .settings-section {
+  margin-top: 32px;
+  padding-top: 32px;
+  border-top: 1px solid var(--gf-line);
+}
+
 .settings-section::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--gf-primary);
-  z-index: 1;
+  display: none;
 }
 
 .settings-section.danger {
-  border-color: rgba(var(--gf-coral-rgb), 0.25);
+  border: 1px solid rgba(var(--gf-coral-rgb), 0.2);
+  background: rgba(var(--gf-coral-rgb), 0.02);
+  border-radius: var(--radius-md);
+  padding: 24px;
 }
-
 .settings-section.danger::before {
-  background: var(--gf-coral);
+  display: none;
 }
 
 .settings-section h2 {
@@ -1204,6 +1220,11 @@ kbd {
     grid-template-columns: 1fr;
     gap: 16px;
     padding-top: 8px;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    overflow: visible;
   }
 
   .settings-sidebar {
@@ -1212,6 +1233,29 @@ kbd {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
     padding: 8px;
+    background: var(--gf-surface);
+    border: 1px solid var(--gf-line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--gf-shadow), inset 0 1px 0 var(--gf-hi);
+  }
+
+  .options-main {
+    padding: 0;
+    background: transparent;
+  }
+
+  .settings-section {
+    background: var(--gf-surface);
+    border: 1px solid var(--gf-line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--gf-shadow), inset 0 1px 0 var(--gf-hi);
+    padding: 20px 22px;
+  }
+
+  .settings-section + .settings-section {
+    margin-top: 16px;
+    padding-top: 20px;
+    border-top: 1px solid var(--gf-line);
   }
 
   .sidebar-tab-label {
