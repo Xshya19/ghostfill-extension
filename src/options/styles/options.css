@@ -429,7 +429,7 @@ body {
   outline: none;
   background: var(--gf-surface);
   border-color: var(--gf-primary);
-  box-shadow: 0 0 0 3px rgba(var(--gf-primary-rgb), 0.18);
+  box-shadow: 0 0 0 1px var(--gf-primary), 0 0 0 4px rgba(var(--gf-primary-rgb), 0.12);
 }
 
 .options-app select {
@@ -652,21 +652,24 @@ body {
 
 /* ── Provider Health Meter ─────────────────────────────── */
 .health-pill-card {
-  padding: 11px 13px;
-  background: var(--gf-sunken);
+  padding: 12px 14px;
+  background: var(--gf-surface);
   border: 1px solid var(--gf-line);
   border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  box-shadow: var(--gf-shadow-xs);
   transition:
-    background 200ms var(--gf-ease),
-    border-color 200ms var(--gf-ease);
+    background var(--gf-dur-fast) var(--gf-ease),
+    border-color var(--gf-dur-fast) var(--gf-ease),
+    box-shadow var(--gf-dur-fast) var(--gf-ease);
 }
 
 .health-pill-card:hover {
-  border-color: var(--gf-line-2);
+  border-color: rgba(var(--gf-primary-rgb), 0.3);
+  box-shadow: var(--gf-shadow-sm);
 }
 
 .health-provider-name {
@@ -916,37 +919,40 @@ kbd {
 /* ── Save Toast ────────────────────────────────────────── */
 .options-toast {
   position: fixed;
-  right: 18px;
-  bottom: 18px;
+  right: 24px;
+  bottom: 24px;
   z-index: 1100;
-  padding: 10px 18px;
+  padding: 12px 20px;
   font-family: var(--gf-font-display);
+  font-size: 13.5px;
+  font-weight: 600;
   color: var(--gf-ink);
   background: var(--gf-card-elevated);
   border: 1px solid var(--gf-line-2);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   box-shadow: var(--gf-shadow-lg), inset 0 1px 0 var(--gf-hi);
+  animation: optionsSaveSlide 0.25s var(--gf-ease) both;
 }
 
 /* ── Save Pending Indicator ────────────────────────────── */
 .options-save-indicator {
   position: fixed;
-  bottom: 18px;
-  left: 18px;
+  bottom: 24px;
+  left: 24px;
   z-index: 1099;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: 10px;
+  padding: 10px 16px;
   font-family: var(--gf-font-mono);
   font-size: 11.5px;
   font-weight: 600;
-  border-radius: 999px;
-  border: 1px solid var(--gf-line);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--gf-line-2);
   background: var(--gf-card-elevated);
   color: var(--gf-ink);
-  box-shadow: var(--gf-shadow-lg);
-  animation: optionsSaveSlide 0.2s ease-out;
+  box-shadow: var(--gf-shadow-lg), inset 0 1px 0 var(--gf-hi);
+  animation: optionsSaveSlide 0.25s var(--gf-ease) both;
 }
 
 .options-save-indicator-dot {
@@ -1046,15 +1052,21 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 10px 12px;
+  padding: 10px 16px;
   border-radius: var(--radius-xs);
   cursor: pointer;
   position: relative;
+  border-left: 3px solid transparent;
+  transition:
+    background var(--gf-dur-fast) var(--gf-ease),
+    border-color var(--gf-dur-fast) var(--gf-ease),
+    padding-left var(--gf-dur-fast) var(--gf-ease);
 }
 
 .command-palette-item-active {
-  background: rgba(var(--gf-primary-rgb), 0.12);
-  border-color: var(--gf-line-2);
+  background: rgba(var(--gf-primary-rgb), 0.08);
+  border-left-color: var(--gf-primary);
+  padding-left: 12px;
 }
 
 .command-palette-item-label {
