@@ -6,6 +6,7 @@ import type {
   EmailIntent,
   ExtractionResult,
 } from './types/extraction.types';
+import { isAutoOpenableActivationLink, scoreActivationLink } from './extraction/activationLinkGuard';
 
 interface DecisionInput {
   extraction: ExtractionResult;
@@ -263,6 +264,18 @@ function chooseAction(
   }
 
   if (hasOTP && hasLink) {
+    // Activation / invite / magic-login emails usually need the link, not a
+    // flaky alphanumeric "OTP". Prefer opening the link so we never block
+    // activate-account flows because a weak code was also scored.
+    const linkFirstPurposes: EmailDecisionPurpose[] = [
+      'activation',
+      'invitation',
+      'magic-login',
+      'password-reset',
+    ];
+    if (linkFirstPurposes.includes(purpose) && risk === 'low') {
+      return confidence >= 0.55 ? 'fill-otp-and-open-link' : 'open-link';
+    }
     return risk === 'low' && confidence >= 0.7 ? 'fill-otp-and-open-link' : 'fill-otp';
   }
 
@@ -334,12 +347,35 @@ export function assessEmailDecision(input: DecisionInput): EmailDecision {
   );
   const riskPenalty = risk === 'high' ? 0.35 : risk === 'medium' ? 0.12 : 0;
   const confidence = clamp01(signalConfidence - riskPenalty);
-  const action = chooseAction(extraction, purpose, risk, confidence);
+  let action = chooseAction(extraction, purpose, risk, confidence);
+
+  // Hard gate: never auto-open non-activation / marketing / token-only links
+  let linkAutoOpenable = true;
+  if (extraction.link?.url && actionIncludesLink(action)) {
+    const linkCtx =
+      'context' in extraction.link && typeof extraction.link.context === 'string'
+        ? extraction.link.context
+        : '';
+    const anchor = extraction.link.anchorText || '';
+    const gate = scoreActivationLink(extraction.link.url, anchor, linkCtx);
+    reasons.push(`link-gate:${gate.cls}:q${gate.quality}:${gate.reasons.slice(0, 3).join('+')}`);
+    linkAutoOpenable = isAutoOpenableActivationLink(extraction.link.url, anchor, linkCtx);
+    if (!linkAutoOpenable) {
+      // Prefer review over wrong auto-open; keep OTP-only if dual action
+      if (action === 'fill-otp-and-open-link' && extraction.otp) {
+        action = 'fill-otp';
+        warnings.push('link-not-auto-openable-otp-only');
+      } else if (action === 'open-link') {
+        action = 'show-review';
+        warnings.push('link-not-auto-openable');
+      }
+    }
+  }
 
   const canAutoAct =
     action !== 'show-review' &&
     action !== 'ignore' &&
-    (!actionIncludesLink(action) || risk === 'low');
+    (!actionIncludesLink(action) || (risk === 'low' && linkAutoOpenable));
 
   return {
     purpose,

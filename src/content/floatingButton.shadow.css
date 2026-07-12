@@ -54,6 +54,24 @@
 /* ── .gf-pulse class — used by OTP-waiting indicator ring (toggle via class) ── */
 .gf-pulse { animation: gfBadgePulse 1.8s ease-in-out infinite; }
 
+/* Ultra-advanced status rings on FAB host button */
+.gf-fab.gf-mode-otp {
+  box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.55), 0 8px 22px -8px rgba(52, 211, 153, 0.65);
+}
+.gf-fab.gf-mode-email {
+  box-shadow: 0 0 0 2px rgba(124, 131, 255, 0.55), 0 8px 22px -8px rgba(124, 131, 255, 0.75);
+}
+.gf-fab.gf-mode-password {
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.5), 0 8px 22px -8px rgba(251, 191, 36, 0.55);
+}
+.gf-fab.gf-otp-armed {
+  animation: gfOtpArmed 1.4s ease-in-out infinite;
+}
+@keyframes gfOtpArmed {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.4), 0 8px 22px -8px rgba(52, 211, 153, 0.5); }
+  50% { box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.75), 0 12px 28px -6px rgba(52, 211, 153, 0.85); }
+}
+
 /* ── FAB Button — Spectre glass chip ── */
 .gf-fab {
   width: 46px; height: 46px; border-radius: 13px;

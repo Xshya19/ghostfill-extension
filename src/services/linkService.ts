@@ -24,6 +24,7 @@ import { safeSendMessage } from '../utils/messaging';
 import { dedupService } from './dedupService';
 import { smartDetectionService } from './otpService';
 import { storageService } from './storageService';
+import { isAutoOpenableActivationLink } from './extraction/activationLinkGuard';
 
 const log = createLogger('LinkEngine');
 
@@ -413,6 +414,15 @@ class LinkService {
         return;
       }
 
+      // Final activation-quality gate — never open marketing / wrong links
+      if (!isAutoOpenableActivationLink(detection.link, '', '')) {
+        this.metrics.linksBlocked++;
+        log.warn('⛔ Blocked non-activation link at open gate', {
+          url: maskUrl(detection.link),
+        });
+        return;
+      }
+
       if (
         decision &&
         decision.action !== 'open-link' &&
@@ -426,20 +436,16 @@ class LinkService {
         return;
       }
 
-      if (
-        detection.type === 'both' &&
-        detection.code &&
-        decision?.action !== 'fill-otp-and-open-link'
-      ) {
-        log.info('⏭️ Skipping auto-confirm (prefer OTP filling in current tab)', {
-          url: maskUrl(detection.link),
-          code: maskCode(detection.code),
-        });
-        return;
-      }
+      // Previously we skipped opening the link when type=both (OTP+link) so OTP
+      // fill could win. That broke pure activation flows (e.g. Qwen) where a
+      // weak/false OTP was extracted alongside a real /activate link — the link
+      // never opened and FILL_OTP spammed a dead tab. Always open a high-quality
+      // activation link; OTP delivery is handled separately by pollingManager.
 
       log.info('🔓 Auto-confirming link (user enabled)', {
         url: maskUrl(detection.link),
+        type: detection.type,
+        hasCode: Boolean(detection.code),
       });
 
       // ── Build activation record & enqueue ──

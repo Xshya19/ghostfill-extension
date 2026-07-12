@@ -419,9 +419,14 @@ export const KW = {
 
 export type KeywordGroup = keyof typeof KW;
 
+const normCache = new Map<string, string>();
 export function normalizeText(input: string): string {
   if (!input) {
     return '';
+  }
+  const cached = normCache.get(input);
+  if (cached !== undefined) {
+    return cached;
   }
   let s = input.replace(/[\u200B-\u200D\u200E\u200F\uFEFF]/g, '').toLowerCase();
   s = s.normalize('NFD');
@@ -434,7 +439,24 @@ export function normalizeText(input: string): string {
     out += ch;
   }
   out = out.replace(/[ \t\r\n]+/g, ' ').trim();
+  
+  if (normCache.size > 2000) {
+    normCache.clear();
+  }
+  normCache.set(input, out);
   return out;
+}
+
+// Precompile regexes for each keyword group with safe Unicode word boundaries
+const precompiledKwRegexes = new Map<KeywordGroup, RegExp[]>();
+
+for (const [group, keywords] of Object.entries(KW)) {
+  const regexes = keywords.map(kw => {
+    const normalized = normalizeText(kw);
+    const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}(?=$|[^\\p{L}\\p{N}])`, 'iu');
+  });
+  precompiledKwRegexes.set(group as KeywordGroup, regexes);
 }
 
 export function matchesAny(text: string, group: KeywordGroup): boolean {
@@ -442,9 +464,12 @@ export function matchesAny(text: string, group: KeywordGroup): boolean {
   if (!t) {
     return false;
   }
-  for (const kw of KW[group]) {
-    // Dynamic pre-normalization of keywords to ensure accentless matches work 100% reliably
-    if (t.includes(normalizeText(kw))) {
+  const regexes = precompiledKwRegexes.get(group);
+  if (!regexes) {
+    return false;
+  }
+  for (const rx of regexes) {
+    if (rx.test(t)) {
       return true;
     }
   }
@@ -585,19 +610,10 @@ export function checkSafety(
   result: ClassificationResult,
   chosen: FieldClass
 ): SafetyVerdict {
-  if (r.isAnimating) {
-    return { allow: true, reason: 'element is transitioning/animating' };
-  }
-
-  if (result.hardNegative === 'Honeypot' && !looksLikeOAuthFlow(r.url ?? '')) {
+  if (result.hardNegative === 'Honeypot') {
     return { allow: false, reason: 'honeypot trap field' };
   }
-  if (!r.visible && r.type !== 'hidden') {
-    const isCustomStyledInput = r.opacityZero && !r.offscreen && !r.tiny;
-    if (!r.focused && !isCustomStyledInput) {
-      return { allow: false, reason: 'field not visible' };
-    }
-  }
+
   const dangerousNegatives = new Set([
     'CVV',
     'CardNumber',
@@ -614,6 +630,17 @@ export function checkSafety(
       allow: false,
       reason: 'target looks like ' + result.hardNegative + ', refusing identity/OTP fill',
     };
+  }
+
+  if (r.isAnimating) {
+    return { allow: true, reason: 'element is transitioning/animating' };
+  }
+
+  if (!r.visible && r.type !== 'hidden') {
+    const isCustomStyledInput = r.opacityZero && !r.offscreen && !r.tiny;
+    if (!r.focused && !isCustomStyledInput) {
+      return { allow: false, reason: 'field not visible' };
+    }
   }
   if (chosen === 'OTP' && !otpCapable(r)) {
     return { allow: false, reason: 'element not OTP-capable (type/maxLength)' };
@@ -685,6 +712,9 @@ function combinedText(r: RawFieldRecord): string {
 
 export function looksLikeOtpField(r: RawFieldRecord): boolean {
   const text = combinedText(r);
+  if (/phone|mobile|tel|contact/i.test(text)) {
+    return false;
+  }
   const textOtp =
     matchesAny(text, 'otp') ||
     (matchesAny(text, 'code') && matchesAny(text, 'verify')) ||
@@ -723,7 +753,7 @@ export function detectHardNegative(r: RawFieldRecord): HardNegative | undefined 
     r.opacityZero &&
     (r.offscreen || r.tiny) &&
     !r.focused &&
-    (matchesAny(text, 'email') || matchesAny(text, 'user') || matchesAny(text, 'fullname'))
+    (matchesAny(text, 'email') || matchesAny(text, 'user') || matchesAny(text, 'fullname') || matchesAny(text, 'password'))
   ) {
     return 'Honeypot';
   }
@@ -988,7 +1018,13 @@ export class IntelligenceCore {
       record.autocomplete,
       record.className || '',
       record.labelText,
+      record.formAction || '',
+      record.surroundingText?.slice(0, 80) || '',
     ].join('|');
+
+    if (this.classificationCache.size > 800) {
+      this.classificationCache.clear();
+    }
 
     const cached = this.classificationCache.get(fingerprint);
     if (cached) {
@@ -999,7 +1035,8 @@ export class IntelligenceCore {
 
     const fieldType = mapFieldClassToFieldType(result.top);
     const confidence = result.topProb;
-    const rawScore = Math.log(result.topProb / (1 - result.topProb + 1e-9));
+    const p = Math.max(0.001, Math.min(0.999, result.topProb));
+    const rawScore = Math.log(p / (1 - p));
 
     let finalDecision: 'FILL' | 'ABSTAIN' | 'BLOCK' = 'FILL';
     if (decision.action === 'BLOCK') {
@@ -1029,7 +1066,10 @@ export class IntelligenceCore {
   }
 
   classifyBatch(records: RawFieldRecord[]): CalibratedResult[] {
-    const results = records.map(r => this.classify(r));
+    const results = records.map(r => {
+      const res = this.classify(r);
+      return { ...res, signals: [...res.signals] };
+    });
 
     for (let i = 0; i < results.length; i++) {
       const current = results[i];
@@ -1118,24 +1158,113 @@ export function mapFieldClassToFieldType(cls: FieldClass): FieldType {
 
 // ─── 6. HISTORY & TELEMETRY ──────────────────────────────────────────
 
+/** Ranked field memory entry — learns which selectors work per site */
+export interface TrustedSelectorEntry {
+  selector: string;
+  hits: number;
+  misses: number;
+  lastSuccess: number;
+  lastAttempt: number;
+}
+
 export class HistoryManager {
   private static readonly KEY_PREFIX = 'trusted_selector_';
+  private static readonly MAX_PER_TYPE = 5;
 
+  /** Return best-ranked live selector for domain+type (hits-weighted). */
   static async getTrustedSelector(domain: string, type: FieldType): Promise<string | null> {
+    const ranked = await this.getRankedSelectors(domain, type);
+    return ranked[0]?.selector ?? null;
+  }
+
+  /** All remembered selectors for a field type, best first. */
+  static async getRankedSelectors(domain: string, type: FieldType): Promise<TrustedSelectorEntry[]> {
     try {
       const data = await chrome.storage.local.get(`${this.KEY_PREFIX}${domain}`);
-      return data[`${this.KEY_PREFIX}${domain}`]?.[type] || null;
+      const raw = data[`${this.KEY_PREFIX}${domain}`]?.[type];
+      if (!raw) {
+        return [];
+      }
+      // Legacy: plain string
+      if (typeof raw === 'string') {
+        return [{ selector: raw, hits: 1, misses: 0, lastSuccess: Date.now(), lastAttempt: Date.now() }];
+      }
+      if (Array.isArray(raw)) {
+        return [...raw]
+          .filter((e): e is TrustedSelectorEntry => Boolean(e?.selector))
+          .sort((a, b) => this.score(b) - this.score(a));
+      }
+      return [];
     } catch {
-      return null;
+      return [];
     }
   }
 
+  private static score(e: TrustedSelectorEntry): number {
+    const total = e.hits + e.misses;
+    const rate = total > 0 ? e.hits / total : 0.5;
+    const recency = Math.max(0, 1 - (Date.now() - (e.lastSuccess || 0)) / (30 * 24 * 60 * 60 * 1000));
+    return rate * 70 + e.hits * 3 + recency * 20;
+  }
+
   static async saveTrustedSelector(domain: string, type: FieldType, selector: string): Promise<void> {
+    if (!selector || selector === 'input') {
+      return;
+    }
     try {
       const key = `${this.KEY_PREFIX}${domain}`;
-      const existing = (await chrome.storage.local.get(key))[key] || {};
-      existing[type] = selector;
-      await chrome.storage.local.set({ [key]: existing });
+      const bag = (await chrome.storage.local.get(key))[key] || {};
+      let list: TrustedSelectorEntry[] = [];
+      const prev = bag[type];
+      if (typeof prev === 'string') {
+        list = [{ selector: prev, hits: 1, misses: 0, lastSuccess: Date.now(), lastAttempt: Date.now() }];
+      } else if (Array.isArray(prev)) {
+        list = prev.filter((e: TrustedSelectorEntry) => e?.selector);
+      }
+
+      const now = Date.now();
+      const existing = list.find((e) => e.selector === selector);
+      if (existing) {
+        existing.hits += 1;
+        existing.lastSuccess = now;
+        existing.lastAttempt = now;
+      } else {
+        list.unshift({ selector, hits: 1, misses: 0, lastSuccess: now, lastAttempt: now });
+      }
+
+      list.sort((a, b) => this.score(b) - this.score(a));
+      bag[type] = list.slice(0, this.MAX_PER_TYPE);
+      await chrome.storage.local.set({ [key]: bag });
+    } catch {
+      // ignore
+    }
+  }
+
+  /** Record that a remembered selector failed to resolve or fill. */
+  static async recordSelectorMiss(domain: string, type: FieldType, selector: string): Promise<void> {
+    try {
+      const key = `${this.KEY_PREFIX}${domain}`;
+      const bag = (await chrome.storage.local.get(key))[key] || {};
+      const prev = bag[type];
+      if (!Array.isArray(prev)) {
+        if (typeof prev === 'string' && prev === selector) {
+          delete bag[type];
+          await chrome.storage.local.set({ [key]: bag });
+        }
+        return;
+      }
+      const entry = prev.find((e: TrustedSelectorEntry) => e.selector === selector);
+      if (entry) {
+        entry.misses += 1;
+        entry.lastAttempt = Date.now();
+        // Evict consistently failing selectors
+        if (entry.misses >= 3 && entry.hits === 0) {
+          bag[type] = prev.filter((e: TrustedSelectorEntry) => e.selector !== selector);
+        } else {
+          bag[type] = prev;
+        }
+        await chrome.storage.local.set({ [key]: bag });
+      }
     } catch {
       // ignore
     }
@@ -1478,7 +1607,7 @@ export class VerificationLoop {
     }
 
     if (el.type === 'password') {
-      return el.value.length >= expected.length;
+      return el.value === expected;
     }
 
     const actual = el.value || '';
@@ -1486,7 +1615,7 @@ export class VerificationLoop {
       return true;
     }
 
-    const normalize = (val: string) => val.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const normalize = (val: string) => val.replace(/\s+/g, '').toLowerCase();
     return normalize(actual) === normalize(expected);
   }
 

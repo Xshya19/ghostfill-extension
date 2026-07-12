@@ -47,22 +47,23 @@ const log = createLogger('FloatingButton');
 /** Timing constants (milliseconds) */
 const TIMING_MS = {
   TOOLTIP_SHOW_DELAY: 350,
-  SUCCESS_DISPLAY: 1500,
-  ERROR_DISPLAY: 2000,
-  LONG_PRESS: 500,
-  AUTO_HIDE: (TIMING?.FLOATING_BUTTON_HIDE_MS as number | undefined) ?? 4000,
-  FOCUS_DEBOUNCE: 100,
-  RESIZE_DEBOUNCE: 100,
-  FIELD_RESIZE_DEBOUNCE: 50,
+  SUCCESS_DISPLAY: 1600,
+  ERROR_DISPLAY: 2200,
+  LONG_PRESS: 450,
+  // Only used after focus leaves the field — never while the input is active
+  AUTO_HIDE: (TIMING?.FLOATING_BUTTON_HIDE_MS as number | undefined) ?? 6000,
+  FOCUS_DEBOUNCE: 40,
+  RESIZE_DEBOUNCE: 80,
+  FIELD_RESIZE_DEBOUNCE: 40,
   POSITION_DRIFT_THRESHOLD: 0.5,
   PAGE_TEXT_SCAN_LIMIT: 3000,
 } as const;
 
-/** Size presets in pixels */
+/** Size presets — must match `.gf-fab` in floatingButton.shadow.css (46px normal) */
 const BUTTON_SIZE_PX: Readonly<Record<ButtonSize, number>> = {
-  mini: 24,
-  normal: 32,
-  expanded: 44,
+  mini: 32,
+  normal: 46,
+  expanded: 52,
 };
 
 /** Viewport margin to prevent edge clipping */
@@ -282,7 +283,12 @@ class SmartPositioner {
   /** H10: Cached z-index to avoid 500-element scan on every position update */
   private static _cachedMaxZ = 0;
   private static _cachedMaxZTs = 0;
-  private static readonly Z_CACHE_TTL_MS = 15000;
+  private static readonly Z_CACHE_TTL_MS = 8000;
+
+  static invalidateZCache(): void {
+    this._cachedMaxZ = 0;
+    this._cachedMaxZTs = 0;
+  }
 
   static getMaxZIndex(): number {
     const now = Date.now();
@@ -307,11 +313,6 @@ class SmartPositioner {
     } catch {
       return ABSOLUTE_MAX_Z;
     }
-  }
-
-  /** Invalidate the z-index cache (call on DOM mutation or new field focus) */
-  static invalidateZCache(): void {
-    this._cachedMaxZTs = 0;
   }
 
   static calculateMenuPosition(
@@ -384,7 +385,7 @@ class ContextualMenu {
       {
         id: 'smart-fill',
         icon: menuIcon('spark'),
-        label: `Auto-fill ${contextName}`,
+        label: `⚡ Ultra Auto-fill ${contextName}`,
         shortcut: 'Ctrl+Shift+G',
         visible: true,
         handler: noop,
@@ -392,7 +393,7 @@ class ContextualMenu {
       {
         id: 'paste-otp',
         icon: menuIcon('key'),
-        label: hasOTPReady ? 'Paste Found Code' : 'Paste Code',
+        label: hasOTPReady ? '✓ Paste Found Code' : 'Paste Code',
         visible: showOTP,
         handler: noop,
       },
@@ -400,14 +401,14 @@ class ContextualMenu {
         id: 'generate-email',
         icon: menuIcon('mail'),
         label: 'Use Hidden Email',
-        visible: showEmail,
+        visible: true, // always available for advanced one-click inject
         handler: noop,
       },
       {
         id: 'generate-password',
         icon: menuIcon('lock'),
         label: 'Generate Secure Password',
-        visible: showPassword,
+        visible: true,
         handler: noop,
       },
       {
@@ -784,13 +785,47 @@ export class FloatingButton {
     if (!this.container || !this.button) {
       return;
     }
+    this.ensureContainerAttached();
     this.container.style.setProperty('display', 'block', 'important');
+    this.container.style.setProperty('visibility', 'visible', 'important');
+    this.container.style.setProperty('pointer-events', 'auto', 'important');
+    this.refreshZIndex();
     setHTML(this.button, IconSystem.get(this.mode));
     this.button.classList.remove('gf-loading', 'gf-success', 'gf-error');
+    this.applyModeChrome();
     const tooltipMode = this.mode === 'magic' ? 'generic' : (this.mode as ClassifierFieldType);
-    this.button.setAttribute('aria-label', getFieldTooltip(tooltipMode));
+    const baseLabel = getFieldTooltip(tooltipMode);
+    const armed = this.hasOTPReady ? ' · OTP ready' : this.isWaitingForOTP ? ' · waiting for code' : '';
+    this.button.setAttribute('aria-label', `${baseLabel}${armed}`);
     this.updateBadge();
-    this.scheduleAutoHide();
+    // Stay visible while the user is still on the field — only hide on focus leave
+    if (this.isCurrentFieldFocused()) {
+      this.cancelHideTimer();
+    } else {
+      this.scheduleAutoHide();
+    }
+  }
+
+  /** Visual intelligence: mode-colored ring + OTP armed pulse */
+  private applyModeChrome(): void {
+    if (!this.button) {
+      return;
+    }
+    this.button.classList.remove(
+      'gf-mode-otp',
+      'gf-mode-email',
+      'gf-mode-password',
+      'gf-mode-user',
+      'gf-otp-armed'
+    );
+    if (this.mode === 'otp') this.button.classList.add('gf-mode-otp');
+    else if (this.mode === 'email') this.button.classList.add('gf-mode-email');
+    else if (this.mode === 'password') this.button.classList.add('gf-mode-password');
+    else if (this.mode === 'user') this.button.classList.add('gf-mode-user');
+
+    if (this.hasOTPReady || this.isWaitingForOTP) {
+      this.button.classList.add('gf-otp-armed');
+    }
   }
 
   private applyHovering(): void {
@@ -812,6 +847,9 @@ export class FloatingButton {
     if (!this.button) {
       return;
     }
+    this.ensureContainerAttached();
+    this.container?.style.setProperty('display', 'block', 'important');
+    this.container?.style.setProperty('visibility', 'visible', 'important');
     this.button.classList.remove('gf-loading');
     this.button.classList.add('gf-success');
     setHTML(this.button, IconSystem.getSuccess());
@@ -824,7 +862,12 @@ export class FloatingButton {
 
     this.stateResetTimeout = setTimeout(() => {
       this.clearStatusTooltip();
-      this.setState('hidden');
+      // Keep FAB visible if the user is still in the form field
+      if (this.isCurrentFieldFocused()) {
+        this.setState('idle');
+      } else {
+        this.setState('hidden');
+      }
     }, TIMING_MS.SUCCESS_DISPLAY);
   }
 
@@ -848,8 +891,60 @@ export class FloatingButton {
 
   private applyMenuOpen(): void {
     this.cancelAllTimers();
+    this.ensureContainerAttached();
+    this.container?.style.setProperty('display', 'block', 'important');
+    this.container?.style.setProperty('visibility', 'visible', 'important');
     this.openMenuInternal();
     this.hideTooltip();
+  }
+
+  /** Host.contains() is false for closed-shadow descendants — check both. */
+  private isEventInsideFab(target: EventTarget | null): boolean {
+    if (!target || !(target instanceof Node)) {
+      return false;
+    }
+    if (this.container === target || this.container?.contains(target)) {
+      return true;
+    }
+    try {
+      return Boolean(this.shadowRoot?.contains(target));
+    } catch {
+      return false;
+    }
+  }
+
+  private isCurrentFieldFocused(): boolean {
+    const field = this.currentFieldRef?.deref() ?? this.currentField;
+    if (!field || !field.isConnected) {
+      return false;
+    }
+    const active = document.activeElement;
+    if (!active) {
+      return false;
+    }
+    return active === field || field.contains(active);
+  }
+
+  private ensureContainerAttached(): void {
+    if (this.container && !this.container.isConnected) {
+      const target = document.documentElement ?? document.body;
+      if (target) {
+        target.appendChild(this.container);
+      }
+    }
+  }
+
+  private refreshZIndex(): void {
+    if (!this.container) {
+      return;
+    }
+    // Bust cache so modals/sticky headers don't bury the FAB
+    SmartPositioner.invalidateZCache();
+    this.container.style.setProperty(
+      'z-index',
+      SmartPositioner.getMaxZIndex().toString(),
+      'important'
+    );
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -912,10 +1007,17 @@ export class FloatingButton {
     }
 
     // ── Click ─────────────────────────────────────────────
+    // mousedown: keep focus from leaving the input before click (prevents hide race)
+    this.button.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      this.cancelHideTimer();
+    });
+
     this.button.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      if (this.state === 'loading') {
+      this.cancelHideTimer();
+      if (this.state === 'loading' || this.destroyed) {
         return;
       }
 
@@ -927,9 +1029,8 @@ export class FloatingButton {
         this.setState('idle');
         return;
       }
-      void this.handlePrimaryAction().catch((e) => {
-        /* handled internally by handlePrimaryAction */
-        log.error('Unexpected error in primary action', e);
+      void this.handlePrimaryAction().catch((err) => {
+        log.error('Unexpected error in primary action', err);
       });
     });
 
@@ -1033,9 +1134,31 @@ export class FloatingButton {
     this.setState('loading');
 
     try {
-      if (this.mode === 'otp') {
-        pageStatus.show('Filling verification code...', 'loading');
-        await this.actionPasteOTP();
+      // Ultra-advanced context routing: pick the strongest action for this field/page
+      if (this.mode === 'otp' || this.hasOTPReady) {
+        const analysis = this.getPageAnalysis();
+        if (
+          this.mode === 'otp' ||
+          analysis.pageType === 'verification' ||
+          analysis.pageType === '2fa' ||
+          analysis.hasOTPField
+        ) {
+          pageStatus.show('Filling verification code...', 'loading');
+          await this.actionPasteOTP();
+          return;
+        }
+      }
+
+      if (this.mode === 'email' && this.currentField instanceof HTMLInputElement) {
+        // Fill ACTIVE popup tab email. Disposable is only generated if Temp Mail tab is active.
+        pageStatus.show('Injecting email...', 'loading');
+        await this.actionFillActiveEmail({ allowGenerateDisposable: true });
+        return;
+      }
+
+      if (this.mode === 'password' && this.currentField instanceof HTMLInputElement) {
+        pageStatus.show('Injecting secure password...', 'loading');
+        await this.actionGeneratePassword();
         return;
       }
 
@@ -1065,9 +1188,14 @@ export class FloatingButton {
         );
         this.setState('idle');
       } else {
-        pageStatus.hide();
+        // Never fail silently — user clicked expecting action
+        const msg =
+          result.message && result.message !== 'No fields found'
+            ? result.message
+            : 'Could not fill fields. Open GhostFill popup to generate email/password, then try again.';
+        pageStatus.error(msg, 4000);
         this.setState('idle');
-        log.debug('No fields filled — silent dismiss');
+        log.debug('No fields filled', { message: result.message });
       }
     } catch (error) {
       if (this.destroyed) {
@@ -1321,7 +1449,8 @@ export class FloatingButton {
           break;
 
         case 'generate-email':
-          await this.actionGenerateEmail();
+          // Menu label may say "generate" but must still respect Gmail/Temp Mail tab
+          await this.actionFillActiveEmail({ allowGenerateDisposable: true });
           break;
 
         case 'generate-password':
@@ -1408,45 +1537,97 @@ export class FloatingButton {
     }
   }
 
-  private async actionGenerateEmail(): Promise<void> {
-    const resp = (await safeSendMessage({
-      action: 'GENERATE_EMAIL',
-    })) as GenerateEmailResponse | null;
+  /**
+   * Fill the email field with whatever the popup tab has selected:
+   * - Gmail tab → Gmail alias / base (never generate disposable)
+   * - Temp Mail tab → existing disposable, or generate one if allowed
+   */
+  private async actionFillActiveEmail(
+    opts: { allowGenerateDisposable?: boolean } = {}
+  ): Promise<void> {
+    const { allowGenerateDisposable = false } = opts;
 
-    if (this.destroyed) {
+    // 1) Resolve identity for the active popup tab (GET_IDENTITY is tab-aware)
+    const idResp = (await safeSendMessage({ action: 'GET_IDENTITY' })) as {
+      success?: boolean;
+      identity?: { email?: string; preferredEmailType?: 'disposable' | 'gmail' };
+      preferredEmailType?: 'disposable' | 'gmail';
+      error?: string;
+    } | null;
+
+    if (this.destroyed) return;
+
+    const preferred =
+      idResp?.preferredEmailType ||
+      idResp?.identity?.preferredEmailType ||
+      'disposable';
+    let email = idResp?.identity?.email?.trim() || '';
+
+    // 2) Only generate a NEW disposable when Temp Mail tab is active and empty
+    if (!email && preferred === 'disposable' && allowGenerateDisposable) {
+      const gen = (await safeSendMessage({
+        action: 'GENERATE_EMAIL',
+      })) as GenerateEmailResponse | null;
+      if (this.destroyed) return;
+      if (gen?.success && gen.email?.fullEmail) {
+        email = gen.email.fullEmail;
+      } else {
+        const msg =
+          gen && 'error' in gen && typeof gen.error === 'string'
+            ? gen.error
+            : 'Failed to generate email';
+        pageStatus.error(msg, TIMING_MS.ERROR_DISPLAY);
+        this.setState('error', msg);
+        return;
+      }
+    }
+
+    if (!email && preferred === 'gmail') {
+      pageStatus.error('Gmail tab active — connect Gmail in popup first', TIMING_MS.ERROR_DISPLAY);
+      this.setState('error', 'Connect Gmail first');
       return;
     }
 
-    if (resp?.success && resp.email?.fullEmail) {
-      // Delegate entirely to the AutoFiller's intelligence-powered resolver.
-      // This runs a 4-stage ranked search:
-      //   Stage 0 — domain trusted-selector cache (instant warm-hit)
-      //   Stage 1 — heuristic classifier pipeline (authoritative, same as smartFill)
-      //   Stage 2 — shared heuristic classifier on the contextHint field
-      //   Stage 3 — ordered CSS signal selectors (fallback)
-      // After success, the winner is saved to the trusted cache for instant future fills.
-      const filled = await this.autoFiller.fillFieldIntoTarget(
-        'email',
-        resp.email.fullEmail,
-        this.currentField
-      );
+    if (!email && preferred === 'disposable') {
+      pageStatus.error('No temp mail — open popup and generate one', TIMING_MS.ERROR_DISPLAY);
+      this.setState('error', 'No temp mail');
+      return;
+    }
 
-      if (this.destroyed) return;
+    if (!email) {
+      pageStatus.error('No email available', TIMING_MS.ERROR_DISPLAY);
+      this.setState('error', 'No email available');
+      return;
+    }
 
-      if (filled) {
-        pageStatus.success('Email filled!', TIMING_MS.SUCCESS_DISPLAY);
-        this.setState('success', 'Email filled!');
-      } else {
-        pageStatus.error('Could not fill email field', TIMING_MS.ERROR_DISPLAY);
-        this.setState('error', 'Could not fill email field');
-      }
+    // Block accidental disposable fill while Gmail tab is selected
+    if (
+      preferred === 'gmail' &&
+      email &&
+      !/@(gmail|googlemail)\.com$/i.test(email)
+    ) {
+      log.warn('Blocked non-Gmail address while Gmail tab active', { email });
+      pageStatus.error('Gmail tab active but got non-Gmail address', TIMING_MS.ERROR_DISPLAY);
+      this.setState('error', 'Wrong email type');
+      return;
+    }
+
+    const filled = await this.autoFiller.fillFieldIntoTarget(
+      'email',
+      email,
+      this.currentField
+    );
+
+    if (this.destroyed) return;
+
+    if (filled) {
+      const tag = preferred === 'gmail' ? 'Gmail' : 'Temp Mail';
+      pageStatus.success(`${tag} filled!`, TIMING_MS.SUCCESS_DISPLAY);
+      this.setState('success', `${tag} filled!`);
+      log.info('FAB filled email for active tab', { preferred, email });
     } else {
-      const msg =
-        resp && 'error' in resp && typeof resp.error === 'string'
-          ? resp.error
-          : 'Failed to generate email';
-      pageStatus.error(msg, TIMING_MS.ERROR_DISPLAY);
-      this.setState('error', msg);
+      pageStatus.error('Could not fill email field', TIMING_MS.ERROR_DISPLAY);
+      this.setState('error', 'Could not fill email field');
     }
   }
 
@@ -1676,17 +1857,26 @@ export class FloatingButton {
       if (this.destroyed) {
         return;
       }
-      const related = e.relatedTarget as HTMLElement | null;
+      const related = e.relatedTarget as EventTarget | null;
 
-      // Don't hide if focus moved to our container or we have menu open
-      if (this.container?.contains(related)) {
+      // Don't hide when focus moves into the FAB (including closed shadow tree)
+      if (this.isEventInsideFab(related)) {
+        this.cancelHideTimer();
         return;
       }
-      if (this.state === 'menu-open') {
+      if (this.state === 'menu-open' || this.state === 'loading') {
         return;
       }
 
-      this.scheduleAutoHide();
+      // Only schedule hide if focus left the decorated field
+      const field = this.currentFieldRef?.deref() ?? this.currentField;
+      const leavingField =
+        !field ||
+        e.target === field ||
+        (e.target instanceof Node && field.contains(e.target));
+      if (leavingField) {
+        this.scheduleAutoHide();
+      }
     };
     document.addEventListener('focusout', onFocusOut, true);
     this.cleanupFns.push(() => document.removeEventListener('focusout', onFocusOut, true));
@@ -1697,7 +1887,10 @@ export class FloatingButton {
         return;
       }
       const path = e.composedPath?.() ?? [];
-      if (path.some((el) => el === this.container)) {
+      if (path.some((el) => el === this.container || el === this.menu || el === this.button)) {
+        return;
+      }
+      if (this.isEventInsideFab(e.target)) {
         return;
       }
       this.setState('idle');
@@ -1734,19 +1927,34 @@ export class FloatingButton {
 
   private readonly handleFocusChange = debounce((...args: unknown[]): void => {
     const target = args[0] as EventTarget | null;
-    if (this.destroyed) {
+    if (this.destroyed || !this.isEnabled) {
       return;
     }
     if (!target || !(target instanceof HTMLElement)) {
       return;
     }
 
+    // Ignore focus inside our own FAB
+    if (this.isEventInsideFab(target)) {
+      this.cancelHideTimer();
+      return;
+    }
+
     // Invalidate page analysis cache on focus to detect SPA changes
     this.pageAnalysis = null;
 
-    if (isFormInputElement(target) && shouldDecorateField(target as HTMLInputElement)) {
-      this.showNearField(target);
+    if (!isFormInputElement(target)) {
+      return;
     }
+
+    // Textareas / contenteditable: only decorate when clearly email/password/otp-like
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+      if (!shouldDecorateField(target as HTMLInputElement)) {
+        return;
+      }
+    }
+
+    this.showNearField(target);
   }, TIMING_MS.FOCUS_DEBOUNCE) as any;
 
   // ═══════════════════════════════════════════════════════════
@@ -1797,29 +2005,12 @@ ${fabStyles}`;
       return;
     }
 
-    // Re-attach container if SPA removed it
-    if (this.container && !this.container.isConnected) {
-      const target = document.documentElement ?? document.body;
-      if (target) {
-        target.appendChild(this.container);
-      }
-    }
+    this.ensureContainerAttached();
+    this.cancelHideTimer();
 
-    // Check if page has auth-relevant content
+    // Classify field first — high-value fields always show FAB even if page
+    // analysis is conservative (SPA marketing shells, etc.)
     const analysis = this.getPageAnalysis();
-    if (
-      !analysis.isAuthRelated &&
-      !analysis.hasOTPField &&
-      !analysis.hasEmailField &&
-      !analysis.hasPasswordField &&
-      analysis.inputCount < 1
-    ) {
-      return;
-    }
-
-    this.currentField = field;
-    this.currentFieldRef = new WeakRef(field);
-    this.currentFieldRect = null;
     let pageContext: PageContext = 'default';
     if (analysis.pageType === 'signup') {
       pageContext = 'signup';
@@ -1833,6 +2024,22 @@ ${fabStyles}`;
       pageContext = 'password-reset';
     }
     const classified = classifyField(field as HTMLInputElement, pageContext);
+    const highValue = isHighValueField(classified);
+
+    if (
+      !highValue &&
+      !analysis.isAuthRelated &&
+      !analysis.hasOTPField &&
+      !analysis.hasEmailField &&
+      !analysis.hasPasswordField &&
+      analysis.inputCount < 1
+    ) {
+      return;
+    }
+
+    this.currentField = field;
+    this.currentFieldRef = new WeakRef(field);
+    this.currentFieldRect = null;
     this.mode = classified === 'generic' ? 'magic' : classified;
 
     // Observe field resize
@@ -1851,7 +2058,7 @@ ${fabStyles}`;
     );
     this.fieldResizeObserver.observe(field);
 
-    // Observe field visibility (Intersection)
+    // Observe field visibility — only hide when fully off-screen
     if (this.fieldIntersectionObserver) {
       this.fieldIntersectionObserver.disconnect();
     }
@@ -1859,7 +2066,7 @@ ${fabStyles}`;
       (entries) => {
         const entry = entries[0];
         if (!this.destroyed && this.state !== 'hidden' && entry) {
-          if (!entry.isIntersecting || entry.intersectionRatio < 0.1) {
+          if (!entry.isIntersecting) {
             this.container?.style.setProperty('visibility', 'hidden', 'important');
           } else {
             this.container?.style.setProperty('visibility', 'visible', 'important');
@@ -1867,12 +2074,17 @@ ${fabStyles}`;
           }
         }
       },
-      { threshold: [0, 0.1, 0.5, 1.0] }
+      { threshold: [0, 0.01, 0.25, 1.0], rootMargin: '40px' }
     );
     this.fieldIntersectionObserver.observe(field);
 
     this.positionNearField(field);
-    this.setState('idle');
+    // Force re-apply even if already idle so hide timers reset and display sticks
+    if (this.state === 'idle') {
+      this.applyIdle();
+    } else {
+      this.setState('idle');
+    }
   }
 
   private positionNearField(field: HTMLElement): void {
@@ -1880,31 +2092,51 @@ ${fabStyles}`;
       return;
     }
 
+    this.ensureContainerAttached();
+
     const btnSize = BUTTON_SIZE_PX[this.size];
     let pos = SmartPositioner.calculate(field, btnSize);
 
     if (pos.left === OFF_SCREEN) {
-      this.setState('hidden');
+      // Field scrolled away — soft-hide, keep state so scroll-back can restore
+      this.container.style.setProperty('visibility', 'hidden', 'important');
       return;
+    }
+
+    // Prefer outside-right first when field is narrow or already has an icon
+    const rect = field.getBoundingClientRect();
+    if (rect.width < btnSize + 40 && pos.placement === 'inside-right') {
+      const m = VIEWPORT_MARGIN;
+      const outsideRight = rect.right + m;
+      if (outsideRight + btnSize < (window.visualViewport?.width ?? window.innerWidth) - m) {
+        pos = {
+          left: outsideRight,
+          top: rect.top + (rect.height - btnSize) / 2,
+          placement: 'outside-right',
+        };
+      }
     }
 
     // Smart Obstruction Check: if blocked, try "Outside Left" or "Below"
     if (
-      pos.placement === 'inside-right' &&
+      (pos.placement === 'inside-right' || pos.placement === 'outside-right') &&
       SmartPositioner.checkObstructions(pos.left, pos.top, btnSize)
     ) {
-      const rect = field.getBoundingClientRect();
       const m = VIEWPORT_MARGIN;
 
-      // Try Below
-      const belowTop = rect.bottom + m;
-      if (!SmartPositioner.checkObstructions(rect.left, belowTop, btnSize)) {
-        pos = { left: rect.left, top: belowTop, placement: 'below' };
+      // Prefer outside-right
+      const rightX = rect.right + m;
+      if (!SmartPositioner.checkObstructions(rightX, pos.top, btnSize)) {
+        pos = { left: rightX, top: pos.top, placement: 'outside-right' };
       } else {
-        // Try Outside Left
-        const leftX = rect.left - btnSize - m;
-        if (leftX > m && !SmartPositioner.checkObstructions(leftX, pos.top, btnSize)) {
-          pos = { left: leftX, top: pos.top, placement: 'outside-left' };
+        const belowTop = rect.bottom + m;
+        if (!SmartPositioner.checkObstructions(rect.left, belowTop, btnSize)) {
+          pos = { left: rect.left, top: belowTop, placement: 'below' };
+        } else {
+          const leftX = rect.left - btnSize - m;
+          if (leftX > m && !SmartPositioner.checkObstructions(leftX, pos.top, btnSize)) {
+            pos = { left: leftX, top: pos.top, placement: 'outside-left' };
+          }
         }
       }
     }
@@ -1912,15 +2144,9 @@ ${fabStyles}`;
     this.container.style.setProperty('left', `${pos.left}px`, 'important');
     this.container.style.setProperty('top', `${pos.top}px`, 'important');
     this.container.style.setProperty('transform', 'none', 'important');
-
-    // Z-Index calculation is expensive, only do it once
-    if (!this.container.style.zIndex) {
-      this.container.style.setProperty(
-        'z-index',
-        SmartPositioner.getMaxZIndex().toString(),
-        'important'
-      );
-    }
+    this.container.style.setProperty('display', 'block', 'important');
+    this.container.style.setProperty('visibility', 'visible', 'important');
+    this.refreshZIndex();
   }
 
   private followFieldOnScroll(): void {
@@ -1947,11 +2173,20 @@ ${fabStyles}`;
     if (this.state === 'menu-open' || this.state === 'loading') {
       return;
     }
+    // Never auto-hide while the decorated field still has focus
+    if (this.isCurrentFieldFocused()) {
+      this.cancelHideTimer();
+      return;
+    }
     this.cancelHideTimer();
     this.hideTimeout = setTimeout(() => {
-      if (!this.destroyed && this.state !== 'menu-open' && this.state !== 'loading') {
-        this.setState('hidden');
+      if (this.destroyed || this.state === 'menu-open' || this.state === 'loading') {
+        return;
       }
+      if (this.isCurrentFieldFocused() || this.isEventInsideFab(document.activeElement)) {
+        return;
+      }
+      this.setState('hidden');
     }, TIMING_MS.AUTO_HIDE);
   }
 

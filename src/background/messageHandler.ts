@@ -394,11 +394,12 @@ async function handleMessage(
       await identityService.saveIdentity(identity);
 
       const emailPayload = message.action === 'GENERATE_EMAIL' ? message.payload || {} : {};
+      // Switch to Temp Mail tab BEFORE save so currentEmail is updated for fill
+      await storageService.setImmediate('preferredEmailType', 'disposable');
       const email = await emailService.generateEmail({
         ...emailPayload,
         prefix: identity.emailPrefix.substring(0, 30).replace(/[^a-z0-9.]/g, ''),
       });
-      await storageService.set('preferredEmailType', 'disposable');
 
       // 7. Always start polling immediately when email is generated.
       // SSE is a bonus push layer — polling is the reliable fallback.
@@ -792,159 +793,180 @@ async function handleMessage(
       return { success: true };
     }
 
-    // ── IDENTITY ACTIONS ──────────────────────────────���───────────
+    // ── IDENTITY ACTIONS ─────────────────────────────────────────
     case 'GET_IDENTITY': {
+      // Popup Temp Mail / Gmail tab is source of truth via preferredEmailType.
+      // Never cross-fill: disposable tab → temp mail only; Gmail tab → gmail only.
+      // getFresh avoids stale SW cache after popup tab switch.
+      const freshPref = await storageService.getFresh('preferredEmailType');
+      const preferredEmailType: 'disposable' | 'gmail' =
+        freshPref === 'gmail' ? 'gmail' : 'disposable';
+
       const identity = await identityService.getCompleteIdentity();
+      // Trust disk preference over identity snapshot (identity may race)
+      identity.preferredEmailType = preferredEmailType;
 
-      let baseEmail: string | null = null;
-      const profile = gmailApiService.getCachedProfile();
-      if (profile?.email) {
-        baseEmail = profile.email;
-      } else {
-        try {
-          const [storedProfile, storedBase, isManual, connected] = await Promise.all([
-            storageService.get('gmailProfile'),
-            storageService.get('gmailBase'),
-            storageService.get('gmailIsManual'),
-            storageService.get('gmailConnected'),
-          ]);
-          if (!isManual && connected === false) {
-            baseEmail = null;
-          } else if (storedProfile?.email) {
-            baseEmail = storedProfile.email;
-          } else if (storedBase) {
-            baseEmail = storedBase;
-          }
-        } catch (e) {
-          log.warn('Failed to retrieve gmail profile/base from storage', e);
-        }
-      }
-
-      // Check if user preferred Gmail over disposable email
-      let preferredEmailType = 'disposable';
-      try {
-        preferredEmailType = (await storageService.get('preferredEmailType')) ?? 'disposable';
-      } catch (e) {
-        log.warn('Failed to retrieve preferredEmailType', e);
-      }
-
-      if (preferredEmailType === 'gmail' && baseEmail) {
-        try {
-          let domain = 'general';
-          if (sender.url) {
-            try {
-              const urlObj = new URL(sender.url);
-              let hostname = urlObj.hostname;
-              if (hostname.startsWith('www.')) {
-                hostname = hostname.substring(4);
-              }
-              if (hostname) {
-                domain = hostname;
-              }
-            } catch {
-              /* Intentionally ignored */
+      if (preferredEmailType === 'gmail') {
+        let baseEmail: string | null = null;
+        const profile = gmailApiService.getCachedProfile();
+        if (profile?.email) {
+          baseEmail = profile.email;
+        } else {
+          try {
+            const bag = await storageService.getMany([
+              'gmailProfile',
+              'gmailBase',
+              'gmailIsManual',
+              'gmailConnected',
+            ]);
+            const storedProfile = bag.gmailProfile;
+            const storedBase = bag.gmailBase;
+            const isManual = bag.gmailIsManual;
+            const connected = bag.gmailConnected;
+            if (!isManual && connected === false) {
+              baseEmail = null;
+            } else if (storedProfile?.email) {
+              baseEmail = storedProfile.email;
+            } else if (storedBase) {
+              baseEmail = storedBase;
             }
+          } catch (e) {
+            log.warn('Failed to retrieve gmail profile/base from storage', e);
           }
+        }
 
-          const aliasSession = await getOrCreateGmailAliasSessionByDomain(
-            baseEmail,
-            domain,
-            getRandomizedGmailAlias
-          );
-          const aliasEmail = aliasSession.alias;
-          identity.email = aliasEmail;
-
-          // Check if this is a transition to a different active email alias
-          const currentEmail = await storageService.get('currentEmail');
-          const currentAlias =
-            currentEmail && typeof currentEmail === 'object' && currentEmail.service === 'gmail'
-              ? String(currentEmail.fullEmail || '').toLowerCase()
-              : '';
-          const isDifferentEmail = currentAlias !== aliasEmail.toLowerCase();
-
-          const currentEmailAcct: EmailAccount = {
-            id: `gmail_${aliasEmail.replace(/[@.+]/g, '_')}`,
-            fullEmail: aliasEmail,
-            domain: 'gmail.com',
-            service: 'gmail',
-            createdAt: aliasSession.startedAt,
-            expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
-            gmailBaseEmail: baseEmail,
-            gmailAliasSessionStartedAt: aliasSession.startedAt,
-          };
-
-          if (isDifferentEmail) {
-            log.info('🔄 Gmail alias transition in GET_IDENTITY — performing full session reset', {
-              old: currentEmail?.fullEmail,
-              new: aliasEmail,
-            });
-
-            // 1. Clear stale OTP so old codes can't fire on the new email session
-            await otpService.clearLastOTP();
-
-            // 2. Clear processed-email dedup cache so new inbox is scanned fresh
-            resetEmailSession();
-
-            // 3. Clear notification dedup cache
-            resetNotificationSession();
-
-            // 4. Clear linkService activation history/queue so old links don't replay
-            linkService.clearHistory();
-
-            // 5. Clear inbox in storage so popup shows empty state immediately
-            await storageService.set('inbox', []);
-            invalidateGmailInboxFetches();
-            await storageService.set('gmailInbox', []);
-            await storageService.set('gmailSyncState', {});
-
-            // 6. Broadcast RESET_STATE to all content scripts so FAB badges clear
-            chrome.tabs.query({}, (tabs) => {
-              for (const tab of tabs) {
-                if (tab.id) {
-                  chrome.tabs.sendMessage(tab.id, { action: 'RESET_STATE' }).catch(() => {});
+        if (baseEmail) {
+          try {
+            let domain = 'general';
+            if (sender.url) {
+              try {
+                const urlObj = new URL(sender.url);
+                let hostname = urlObj.hostname;
+                if (hostname.startsWith('www.')) {
+                  hostname = hostname.substring(4);
                 }
+                if (hostname) {
+                  domain = hostname;
+                }
+              } catch {
+                /* Intentionally ignored */
               }
-            });
-          }
+            }
 
-          // Save the currentEmail in storage in all cases (to ensure it matches the dynamic alias)
-          sseManager.disconnect();
-          await storageService.set('currentEmail', currentEmailAcct);
+            const aliasSession = await getOrCreateGmailAliasSessionByDomain(
+              baseEmail,
+              domain,
+              getRandomizedGmailAlias
+            );
+            const aliasEmail = aliasSession.alias;
+            identity.email = aliasEmail;
 
-          // Trigger polling if the email changed
-          if (isDifferentEmail) {
-            startEmailPolling();
-            triggerEventDrivenPolling('email_gen');
-          }
+            const currentEmail = await storageService.get('currentEmail');
+            const currentAlias =
+              currentEmail && typeof currentEmail === 'object' && currentEmail.service === 'gmail'
+                ? String(currentEmail.fullEmail || '').toLowerCase()
+                : '';
+            const isDifferentEmail = currentAlias !== aliasEmail.toLowerCase();
 
-          // Save to used alias history in chrome.storage.local
-          const history = (await storageService.get('aliasHistory')) ?? [];
-          const exists = history.some((h: any) => h.alias === aliasEmail && h.website === domain);
-          if (!exists) {
-            const newItem = {
-              alias: aliasEmail,
-              originalEmail: baseEmail,
-              type: 'combined' as const,
-              website: domain,
-              createdAt: Date.now(),
+            const currentEmailAcct: EmailAccount = {
+              id: `gmail_${aliasEmail.replace(/[@.+]/g, '_')}`,
+              fullEmail: aliasEmail,
+              domain: 'gmail.com',
+              service: 'gmail',
+              createdAt: aliasSession.startedAt,
+              expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
+              gmailBaseEmail: baseEmail,
+              gmailAliasSessionStartedAt: aliasSession.startedAt,
             };
-            await storageService.set('aliasHistory', [newItem, ...history].slice(0, 500));
-          }
-          log.info('Dynamic Gmail Alias resolved and filled', {
-            aliasEmail,
-            domain,
-            isRandomized: true,
-            startedAt: aliasSession.startedAt,
-          });
 
-          // Trigger fast Gmail polling watch
-          startGmailAliasFastPolling('gmail_alias_resolved');
-        } catch (e) {
-          log.warn('Failed to generate Gmail alias for identity', e);
+            if (isDifferentEmail) {
+              log.info('🔄 Gmail alias transition in GET_IDENTITY — full session reset', {
+                old: currentEmail?.fullEmail,
+                new: aliasEmail,
+              });
+              await otpService.clearLastOTP();
+              resetEmailSession();
+              resetNotificationSession();
+              linkService.clearHistory();
+              await storageService.set('inbox', []);
+              invalidateGmailInboxFetches();
+              await storageService.set('gmailInbox', []);
+              await storageService.set('gmailSyncState', {});
+              chrome.tabs.query({}, (tabs) => {
+                for (const tab of tabs) {
+                  if (tab.id) {
+                    chrome.tabs.sendMessage(tab.id, { action: 'RESET_STATE' }).catch(() => {});
+                  }
+                }
+              });
+            }
+
+            sseManager.disconnect();
+            await storageService.setImmediate('currentEmail', currentEmailAcct);
+
+            if (isDifferentEmail) {
+              startEmailPolling();
+              triggerEventDrivenPolling('email_gen');
+            }
+
+            const history = (await storageService.get('aliasHistory')) ?? [];
+            const exists = history.some((h: any) => h.alias === aliasEmail && h.website === domain);
+            if (!exists) {
+              const newItem = {
+                alias: aliasEmail,
+                originalEmail: baseEmail,
+                type: 'combined' as const,
+                website: domain,
+                createdAt: Date.now(),
+              };
+              await storageService.set('aliasHistory', [newItem, ...history].slice(0, 500));
+            }
+            log.info('GET_IDENTITY fill source=gmail', {
+              aliasEmail,
+              domain,
+              preferredEmailType,
+            });
+            startGmailAliasFastPolling('gmail_alias_resolved');
+          } catch (e) {
+            log.warn('Failed to generate Gmail alias for identity', e);
+          }
+        } else {
+          // Gmail tab active but not connected — never fall back to temp mail
+          identity.email = '';
+          log.info('GET_IDENTITY: Gmail tab active, no Gmail base — email left empty');
+        }
+      } else {
+        // ── Temp Mail tab: force disposable only ──
+        const disposableEmail = await storageService.get('disposableEmail');
+        if (
+          disposableEmail?.fullEmail &&
+          disposableEmail.service !== 'gmail' &&
+          disposableEmail.domain !== 'gmail.com'
+        ) {
+          identity.email = disposableEmail.fullEmail;
+          // Keep currentEmail aligned so inbox/polling match the fill address
+          await storageService.setImmediate('currentEmail', disposableEmail);
+          log.info('GET_IDENTITY fill source=disposable', {
+            email: disposableEmail.fullEmail,
+            preferredEmailType,
+          });
+        } else {
+          // No temp mail yet — do NOT fill a Gmail address on Temp Mail tab
+          const looksGmail =
+            typeof identity.email === 'string' &&
+            /@(gmail|googlemail)\.com$/i.test(identity.email);
+          if (looksGmail) {
+            identity.email = '';
+          }
+          log.info('GET_IDENTITY: Temp Mail tab active, no disposable email yet');
         }
       }
 
-      return { success: true, identity };
+      return {
+        success: true,
+        identity,
+        preferredEmailType,
+      };
     }
 
     case 'GENERATE_IDENTITY':

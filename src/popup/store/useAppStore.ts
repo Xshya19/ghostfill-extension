@@ -92,14 +92,12 @@ export const useAppStore = create<AppState>()(
           return { gmailAliasType: 'combined' };
         }),
       preferredEmailType: 'disposable',
-      setPreferredEmailType: (preferredEmailType) =>
-        set(() => {
-          // CRITICAL: Use setImmediate to bypass the 500ms write debounce.
-          // This ensures the service worker's cache is updated instantly via
-          // chrome.storage.onChanged, preventing stale identity reads.
-          void storageService.setImmediate('preferredEmailType', preferredEmailType);
-          return { preferredEmailType };
-        }),
+      setPreferredEmailType: (preferredEmailType) => {
+        // Write to chrome.storage immediately so service-worker GET_IDENTITY
+        // sees Gmail/Temp Mail preference before the next fill.
+        void storageService.setImmediate('preferredEmailType', preferredEmailType);
+        set({ preferredEmailType });
+      },
 
       // Gmail OAuth2 initial states
       gmailConnected: false,

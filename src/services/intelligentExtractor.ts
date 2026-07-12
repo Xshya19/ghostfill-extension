@@ -14,6 +14,7 @@ import { extractLink } from './extraction/linkExtractor';
 import { normalizeForExtraction } from './extraction/domEngine';
 import { extractOTPCognitive } from './extraction/cognitiveOtpExtractor';
 import { extractLinkCognitive } from './extraction/cognitiveLinkExtractor';
+import { pickBestActivationLink, isSelectableActivationLink } from './extraction/activationLinkGuard';
 import type {
   ExtractionResult,
   EmailIntent,
@@ -551,8 +552,9 @@ export function extractAll(
   timings.otp = performance.now() - t;
 
   t = performance.now();
-  // 🧠 Try Cognitive Link extraction first
-  let link = extractLinkCognitive(
+  // Dual-engine link extraction + activation-guard consensus
+  // Never pick marketing / tracking / dashboard when a real verify link exists.
+  const cogLink = extractLinkCognitive(
     sanitizedHtmlBody,
     plainText,
     intentResult,
@@ -561,22 +563,36 @@ export function extractAll(
     allUrls,
     expectedDomains
   );
+  const tradLink = extractLink(
+    sourceHtml,
+    sanitizedSubject,
+    sanitizedBody,
+    intentResult,
+    provider,
+    zones,
+    allUrls,
+    expectedDomains
+  );
+
+  let link = pickBestActivationLink(cogLink, tradLink);
   if (link && link.url) {
     link.url = sanitizeActivationLink(link.url);
-  } else {
-    // Fallback to traditional extractLink
-    link = extractLink(
-      sourceHtml,
-      sanitizedSubject,
-      sanitizedBody,
-      intentResult,
-      provider,
-      zones,
-      allUrls,
-      expectedDomains
-    );
-    if (link && link.url) {
-      link.url = sanitizeActivationLink(link.url);
+    // Final hard gate — if sanitize left something non-selectable, drop it
+    if (
+      !isSelectableActivationLink(
+        link.url,
+        link.anchorText || '',
+        link.context || ''
+      )
+    ) {
+      log.info(
+        `Link dropped after final activation guard: ${link.url.substring(0, 70)}`
+      );
+      link = null;
+    } else if (cogLink?.url && tradLink?.url && cogLink.url !== tradLink.url) {
+      log.info(
+        `Link dual-engine: cog=${cogLink.url.substring(0, 50)} trad=${tradLink.url.substring(0, 50)} → ${link.url.substring(0, 50)}`
+      );
     }
   }
   timings.link = performance.now() - t;

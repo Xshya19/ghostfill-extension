@@ -209,7 +209,14 @@ export interface GetIdentityMessage extends BaseMessage {
 
 export interface GetIdentityResponse {
   success: boolean;
-  identity?: import('./form.types').IdentityProfile & { email: string; password: string };
+  identity?: import('./form.types').IdentityProfile & {
+    email: string;
+    password: string;
+    preferredEmailType?: 'disposable' | 'gmail';
+    emailSource?: string;
+  };
+  /** Popup tab that was active when identity was resolved */
+  preferredEmailType?: 'disposable' | 'gmail';
   error?: string;
 }
 

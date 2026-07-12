@@ -330,13 +330,13 @@ export class OTPFieldDiscovery {
 
           if (f.maxLength >= 4 && f.maxLength <= 8) return true;
 
-          const rect = f.getBoundingClientRect();
+          const width = f.offsetWidth;
           const numericish =
             f.inputMode === 'numeric' ||
             f.getAttribute('inputmode') === 'numeric' ||
             f.type === 'number' ||
             f.type === 'tel';
-          if (numericish && rect.width > 0 && rect.width < 140) return true;
+          if (numericish && width > 0 && width < 140) return true;
 
           return false;
         });
@@ -458,35 +458,33 @@ export class OTPFieldDiscovery {
     const candidates = this.queryVisible('input[maxlength="1"]');
     if (candidates.length < this.MIN_SPLIT_FIELDS) return null;
     
-    const sorted = [...candidates].sort((a, b) => {
-      const rA = a.getBoundingClientRect();
-      const rB = b.getBoundingClientRect();
-      return rA.top - rB.top || rA.left - rB.left;
-    });
+    const sortedWithRects = candidates
+      .map(el => ({ el, rect: el.getBoundingClientRect() }))
+      .sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left);
 
-    const groups: HTMLInputElement[][] = [];
-    for (const el of sorted) {
-      const rectEl = el.getBoundingClientRect();
+    const groups: { el: HTMLInputElement; rect: DOMRect }[][] = [];
+    for (const item of sortedWithRects) {
+      const rectEl = item.rect;
       let added = false;
       for (const group of groups) {
         const lead = group[0]!;
-        const rectLead = lead.getBoundingClientRect();
+        const rectLead = lead.rect;
         const yDiff = Math.abs(rectEl.top - rectLead.top);
-        const xDiff = Math.abs(rectEl.left - group[group.length - 1]!.getBoundingClientRect().right);
+        const xDiff = Math.abs(rectEl.left - group[group.length - 1]!.rect.right);
         if (yDiff <= 50 && xDiff <= 300) {
-          group.push(el);
+          group.push(item);
           added = true;
           break;
         }
       }
       if (!added) {
-        groups.push([el]);
+        groups.push([item]);
       }
     }
 
     const validGroup = groups.find(g => g.length >= this.MIN_SPLIT_FIELDS && g.length <= this.MAX_SPLIT_FIELDS);
     if (validGroup) {
-      return this.wrap(validGroup, 90, 'S3:split-digit');
+      return this.wrap(validGroup.map(g => g.el), 90, 'S3:split-digit');
     }
 
     return null;
@@ -506,7 +504,7 @@ export class OTPFieldDiscovery {
         style.fontFamily?.includes('monospace') ||
         style.textAlign === 'center';
 
-      const isShortWide = input.getBoundingClientRect().width > 150 && input.maxLength >= 4;
+      const isShortWide = input.offsetWidth > 150 && input.maxLength >= 4;
 
       const hasOTPSignal = /otp|code|verification|passcode|2fa|mfa/i.test(
         input.placeholder + ' ' + input.name + ' ' + input.id + ' ' + (input.getAttribute('aria-label') || '')

@@ -38,11 +38,32 @@ export const LINK_PATTERN_DATABASE: LinkPattern[] = [
     description: 'Signup verification',
   },
   {
-    pattern: /\/(?:email[-_]?verification|verify[-_]?email|confirm[-_]?email|email\/confirm)/i,
+    pattern: /\/(?:email[-_]?verification|verify[-_]?email|confirm[-_]?email|email\/confirm|email\/action|auth\/action)/i,
     name: 'email-confirmation-path',
     baseConfidence: 94,
     type: 'activation',
     description: 'Email confirmation path',
+  },
+  {
+    pattern: /\/(?:validate|validation|email[-_]?validat(?:e|ion)|validat(?:e|ion)[-_]?email)/i,
+    name: 'validate-path',
+    baseConfidence: 93,
+    type: 'activation',
+    description: 'Email/account validation path (synonym of verify)',
+  },
+  {
+    pattern: /\/(?:claim|enable|unlock)(?:[-_]?(?:account|email|access))?/i,
+    name: 'claim-enable-unlock-path',
+    baseConfidence: 88,
+    type: 'activation',
+    description: 'Claim/enable/unlock account path (activation synonyms)',
+  },
+  {
+    pattern: /[?&](?:mode=verifyEmail|oobCode=|oob_code=)/i,
+    name: 'firebase-oob-verify',
+    baseConfidence: 96,
+    type: 'activation',
+    description: 'Firebase Auth email action (verifyEmail + oobCode)',
   },
   {
     pattern: /\/(?:invite|invitation|invitations)\/?(?:accept|join)?/i,

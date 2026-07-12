@@ -19,6 +19,7 @@ import { linkService } from '../services/linkService';
 import { otpService } from '../services/otpService';
 import { smartDetectionService } from '../services/otpService';
 import { storageService } from '../services/storageService';
+import { isAutoOpenableActivationLink } from '../services/extraction/activationLinkGuard';
 import type { DetectionResult } from '../services/types/extraction.types';
 import { Email, EmailAccount } from '../types';
 import { createLogger, diag } from '../utils/logger';
@@ -1275,8 +1276,45 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
 
     let otpDelivered = false;
 
-    // ── PRIORITY 1: Inline OTP delivery to waiting tabs ──
-    if (otpWaitingTabs.size > 0) {
+    // ── PRIORITY 2 setup first (link vs OTP policy) ──
+    const hasLink =
+      (detection.type === 'link' || detection.type === 'both') && Boolean(detection.link);
+    const linkDecision = detection.decision;
+    // Strong activation path (verify/activate/confirm) → open link even if a
+    // weak alphanumeric "OTP" was also scored (common false positive).
+    const linkIsStrongActivation =
+      Boolean(detection.link) &&
+      isAutoOpenableActivationLink(detection.link || '', '', fullEmail.subject || '');
+    const otpLooksWeak = Boolean(
+      extractedOTPCode &&
+        (!/^\d{4,8}$/.test(extractedOTPCode.replace(/[-\s]/g, '')) ||
+          extractedOTPCode.length > 10)
+    );
+    // When we have a real activation link, open it. Don't require decision.action
+    // to be perfect when the guard already says auto-openable.
+    const shouldDelegateLink =
+      hasLink &&
+      Boolean(detection.link) &&
+      (linkIsStrongActivation ||
+        !linkDecision ||
+        (linkDecision.canAutoAct &&
+          (linkDecision.action === 'open-link' ||
+            linkDecision.action === 'fill-otp-and-open-link')));
+
+    // Skip OTP delivery when the email is clearly link-activation and OTP is weak
+    const shouldDeliverOTP =
+      Boolean(extractedOTPCode) &&
+      !(linkIsStrongActivation && otpLooksWeak && detection.type !== 'otp');
+
+    if (!shouldDeliverOTP && extractedOTPCode && hasLink) {
+      log.info('⏭️ Skipping weak OTP delivery — prefer activation link', {
+        code: extractedOTPCode.substring(0, 3) + '…',
+        link: detection.link?.substring(0, 60),
+      });
+    }
+
+    // ── PRIORITY 1: Inline OTP delivery to waiting tabs (real OTPs only) ──
+    if (shouldDeliverOTP && otpWaitingTabs.size > 0) {
       const emailCtx: EmailContext = {
         from: fullEmail.from,
         subject: fullEmail.subject,
@@ -1294,7 +1332,6 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
 
           if (otpDelivered) {
             await dedupCache.markProcessed(emailId, currentEmail.fullEmail, true, false);
-            // Wait to notify at the end
           }
         } else {
           log.warn('⚠️ Matching tab but no OTP extractable — falling through');
@@ -1302,26 +1339,15 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
       }
     }
 
-    // ── PRIORITY 2: Standard processing ──
-    const hasOTP = Boolean(extractedOTPCode);
-    const hasLink =
-      (detection.type === 'link' || detection.type === 'both') && Boolean(detection.link);
-    const linkDecision = detection.decision;
-    const shouldDelegateLink =
-      hasLink &&
-      Boolean(detection.link) &&
-      (!linkDecision ||
-        (linkDecision.canAutoAct &&
-          (linkDecision.action === 'open-link' ||
-            linkDecision.action === 'fill-otp-and-open-link')));
+    const hasOTP = Boolean(extractedOTPCode) && shouldDeliverOTP;
 
     // Mark OTP-only emails as processed immediately
     if (hasOTP && !hasLink && !otpDelivered) {
       await dedupCache.markProcessed(emailId, currentEmail.fullEmail, hasOTP, false);
     }
 
-    // For "both" emails, deliver OTP FIRST if not already done
-    if (hasOTP && extractedOTPCode && !otpDelivered) {
+    // Deliver real OTP if not already done
+    if (shouldDeliverOTP && extractedOTPCode && !otpDelivered) {
       log.info('🔢 OTP detected — delivering to waiting tabs');
       otpDelivered = await deliverOTP(extractedOTPCode, detection.confidence ?? 0.9, {
         from: fullEmail.from,
@@ -1332,14 +1358,14 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
       });
     }
 
-    // Handle Link Activation
-    // NOTE: Links should be activated even when OTP was already delivered.
-    // For "both" type emails (OTP + link), we want BOTH actions to fire.
+    // Handle Link Activation FIRST-CLASS — do not block on OTP success
     if (shouldDelegateLink && detection.link) {
-      log.info('🔗 Link detected, deferring to linkService');
+      log.info('🔗 Link detected, deferring to linkService', {
+        strongActivation: linkIsStrongActivation,
+        action: linkDecision?.action,
+      });
       metrics.linksProcessed++;
 
-      // Broadcast to UI
       for (const tabId of otpWaitingTabs.keys()) {
         chrome.tabs
           .sendMessage(tabId, {
@@ -1362,7 +1388,12 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
         risk: linkDecision?.risk,
         warnings: linkDecision?.warnings,
       });
-      await dedupCache.markProcessed(emailId, currentEmail.fullEmail, hasOTP, true);
+      await dedupCache.markProcessed(
+        emailId,
+        currentEmail.fullEmail,
+        Boolean(extractedOTPCode),
+        true
+      );
       diag.step(flowId, 'email', 'link', 'Link held for review', {
         link: detection.link,
         action: linkDecision?.action,

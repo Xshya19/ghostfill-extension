@@ -388,9 +388,14 @@ class EmailServiceAggregator {
       email: account.fullEmail,
       hasId: Boolean(account.id),
     });
+    // Always store disposable account. Only set currentEmail when Temp Mail tab
+    // is active (or preferred not set) so Gmail-tab fill is never overwritten mid-session.
     await storageService.set('disposableEmail', account);
-    await storageService.set('currentEmail', account);
-    log.info('✅ Email saved to storage');
+    const preferred = (await storageService.get('preferredEmailType')) ?? 'disposable';
+    if (preferred !== 'gmail') {
+      await storageService.set('currentEmail', account);
+    }
+    log.info('✅ Email saved to storage', { preferred, setAsCurrent: preferred !== 'gmail' });
 
     await storageService.pushToArray(
       'emailHistory',

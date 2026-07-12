@@ -38,15 +38,37 @@ const fixtures: ExtractionFixture[] = [
       'https://accounts.example.com/email/action?token=confirm_8cfa45677890abcdef1234567890',
   },
   {
-    name: 'does not treat copyright years as OTPs in activation emails',
-    subject: 'qwen.ai active mail.',
-    sender: 'noreply@qwen.ai',
-    body: 'Please click the following link to active your mail: https://chat.qwen.ai/verify?token=abc123xyz789. Copyright 2026 Qwen.',
+    name: 'does not treat copyright years as OTPs; picks activation via context wording',
+    subject: 'active mail',
+    sender: 'noreply@mail-host.example',
+    body: 'Please click the following link to active your mail: https://mail-host.example/verify?token=context_token_xyz78901. Copyright 2026 Brand.',
     htmlBody:
-      '<p>Please click the following link to active your mail:</p><a href="https://chat.qwen.ai/verify?token=abc123xyz789">Verify Email</a><p>Copyright 2026 Qwen.</p>',
+      '<p>Please click the following link to active your mail:</p><a href="https://mail-host.example/verify?token=context_token_xyz78901">Verify Email</a><p>Copyright 2026 Brand.</p>',
     expectedIntent: 'activation',
     expectedCode: null,
-    expectedLink: 'https://chat.qwen.ai/verify?token=abc123xyz789',
+    expectedLink: 'https://mail-host.example/verify?token=context_token_xyz78901',
+  },
+  {
+    name: 'extracts validate synonym activation link',
+    subject: 'Please validate your email',
+    sender: 'accounts@example.com',
+    body: 'Validate your email: https://accounts.example.com/validate?token=val_8cfa45677890abcdef',
+    htmlBody:
+      '<p>Almost done.</p><a href="https://accounts.example.com/validate?token=val_8cfa45677890abcdef">Validate your email</a>',
+    expectedIntent: 'activation',
+    expectedCode: null,
+    expectedLink: 'https://accounts.example.com/validate?token=val_8cfa45677890abcdef',
+  },
+  {
+    name: 'extracts verify link when marketing links compete',
+    subject: 'Confirm your Example account',
+    sender: 'hello@example.com',
+    body: 'Confirm your account. Also check our sale.',
+    htmlBody:
+      '<a href="https://example.com/sale">Shop now</a><a href="https://app.example.com/verify?token=only_correct_token_xyz">Confirm my account</a><a href="https://example.com/unsubscribe">Unsubscribe</a>',
+    expectedIntent: 'activation',
+    expectedCode: null,
+    expectedLink: 'https://app.example.com/verify?token=only_correct_token_xyz',
   },
 ];
 

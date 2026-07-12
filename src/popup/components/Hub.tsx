@@ -663,40 +663,38 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     setPreferredEmailType,
   ]);
 
-  // ── Tab-switch handlers that immediately sync currentEmail in chrome.storage ──
+  // ── Tab-switch: popup tab IS the fill source of truth ──
+  // Temp Mail tab → fill disposable only; Gmail tab → fill gmail only.
+  // Await storage writes so fill never races a stale preferredEmailType.
   const handleSwitchToDisposable = useCallback(() => {
-    if (preferredEmailType === 'disposable') {
-      return;
-    }
-    setPreferredEmailType('disposable');
-    // Immediately sync currentEmail to disposable email
     void (async () => {
+      await storageService.setImmediate('preferredEmailType', 'disposable');
+      setPreferredEmailType('disposable');
       const disposableEmail = emailAccount || (await storageService.get('disposableEmail'));
       if (disposableEmail?.fullEmail && disposableEmail.service !== 'gmail') {
         await storageService.setImmediate('currentEmail', disposableEmail);
+        onToast(`Temp Mail active: ${disposableEmail.fullEmail}`);
       } else {
-        // No disposable email yet — remove currentEmail so Gmail doesn't leak
         await storageService.remove('currentEmail');
+        onToast('Temp Mail tab active — generate a temp address to fill');
       }
     })();
-  }, [preferredEmailType, setPreferredEmailType, emailAccount]);
+  }, [setPreferredEmailType, emailAccount, onToast]);
 
   const handleSwitchToGmail = useCallback(() => {
-    if (preferredEmailType === 'gmail') {
-      return;
-    }
-    setPreferredEmailType('gmail');
-    // Immediately sync currentEmail to Gmail alias
-    if (gmailConnected && !gmailIsManual && activeGmailAlias && gmailBase) {
-      void (async () => {
+    void (async () => {
+      await storageService.setImmediate('preferredEmailType', 'gmail');
+      setPreferredEmailType('gmail');
+      const alias = activeGmailAlias || gmailBase;
+      if (gmailConnected && alias && gmailBase) {
         const session = await rememberGmailAliasSession(
-          activeGmailAlias,
+          alias,
           gmailBase,
           currentTabDomain || 'general'
         );
         await storageService.setImmediate('currentEmail', {
-          id: `gmail_${activeGmailAlias.replace(/[@.+]/g, '_')}`,
-          fullEmail: activeGmailAlias,
+          id: `gmail_${alias.replace(/[@.+]/g, '_')}`,
+          fullEmail: alias,
           domain: 'gmail.com',
           service: 'gmail',
           createdAt: session.startedAt,
@@ -704,16 +702,29 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
           gmailBaseEmail: gmailBase,
           gmailAliasSessionStartedAt: session.startedAt,
         });
-      })();
-    }
+        onToast(`Gmail active: ${alias}`);
+      } else if (gmailConnected && gmailBase) {
+        await storageService.setImmediate('currentEmail', {
+          id: `gmail_${gmailBase.replace(/[@.+]/g, '_')}`,
+          fullEmail: gmailBase,
+          domain: 'gmail.com',
+          service: 'gmail',
+          createdAt: Date.now(),
+          expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
+          gmailBaseEmail: gmailBase,
+        });
+        onToast(`Gmail active: ${gmailBase}`);
+      } else {
+        onToast('Gmail tab active — connect Gmail in popup to fill');
+      }
+    })();
   }, [
-    preferredEmailType,
     setPreferredEmailType,
     gmailConnected,
-    gmailIsManual,
     activeGmailAlias,
     gmailBase,
     currentTabDomain,
+    onToast,
   ]);
 
   return (

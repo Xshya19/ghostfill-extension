@@ -67,53 +67,104 @@ class IdentityService {
     return newIdentity;
   }
 
+  private isGmailAccount(account: {
+    service?: string;
+    domain?: string;
+    fullEmail?: string;
+  } | null | undefined): boolean {
+    if (!account) return false;
+    if (account.service === 'gmail' || account.domain === 'gmail.com') return true;
+    const email = (account.fullEmail || '').toLowerCase();
+    return email.endsWith('@gmail.com') || email.endsWith('@googlemail.com');
+  }
+
+  /**
+   * Resolve the email that must be filled, strictly from the popup tab:
+   * - Temp Mail tab (disposable) → only disposable / non-gmail currentEmail
+   * - Gmail tab → only gmail alias / base — never temp mail
+   */
+  async resolveEmailForActiveTab(): Promise<{
+    email: string;
+    preferredEmailType: 'disposable' | 'gmail';
+    source: 'disposable' | 'gmail-alias' | 'gmail-base' | 'current' | 'none';
+  }> {
+    // getFresh: popup writes preferredEmailType in a different JS context;
+    // never trust a stale service-worker LRU cache for this key.
+    const rawPref = await storageService.getFresh('preferredEmailType');
+    const preferredEmailType: 'disposable' | 'gmail' =
+      rawPref === 'gmail' ? 'gmail' : 'disposable';
+
+    if (preferredEmailType === 'gmail') {
+      // Prefer active alias in currentEmail, then gmail base / profile
+      const currentEmail = await storageService.getFresh('currentEmail');
+      if (currentEmail?.fullEmail && this.isGmailAccount(currentEmail)) {
+        log.info('resolveEmail: gmail alias from currentEmail', {
+          email: currentEmail.fullEmail,
+        });
+        return {
+          email: currentEmail.fullEmail,
+          preferredEmailType,
+          source: 'gmail-alias',
+        };
+      }
+      const gmailBase =
+        (await storageService.getFresh('gmailBase')) ||
+        ((await storageService.getFresh('gmailProfile')) as { email?: string } | null)?.email ||
+        '';
+      if (gmailBase) {
+        log.info('resolveEmail: gmail base', { email: gmailBase });
+        return { email: gmailBase, preferredEmailType, source: 'gmail-base' };
+      }
+      log.info('Gmail tab active but no Gmail address configured');
+      return { email: '', preferredEmailType, source: 'none' };
+    }
+
+    // Temp Mail tab — never leak Gmail into fill
+    const disposableEmail = await storageService.getFresh('disposableEmail');
+    if (disposableEmail?.fullEmail && !this.isGmailAccount(disposableEmail)) {
+      return {
+        email: disposableEmail.fullEmail,
+        preferredEmailType,
+        source: 'disposable',
+      };
+    }
+    const currentEmail = await storageService.getFresh('currentEmail');
+    if (currentEmail?.fullEmail && !this.isGmailAccount(currentEmail)) {
+      return {
+        email: currentEmail.fullEmail,
+        preferredEmailType,
+        source: 'current',
+      };
+    }
+    log.info('Temp Mail tab active but no disposable email configured');
+    return { email: '', preferredEmailType, source: 'none' };
+  }
+
   /**
    * Get identity with email and password attached
    * Note: Password is cached in identity profile to ensure consistency across fills
    */
-  async getCompleteIdentity(): Promise<IdentityProfile & { email: string; password: string }> {
+  async getCompleteIdentity(): Promise<
+    IdentityProfile & {
+      email: string;
+      password: string;
+      preferredEmailType: 'disposable' | 'gmail';
+      emailSource: string;
+    }
+  > {
     try {
       const identity = await this.getCurrentIdentity();
 
-      // Get current email account based on user's preferred type (disposable vs gmail)
-      let email: string;
+      let email = '';
+      let preferredEmailType: 'disposable' | 'gmail' = 'disposable';
+      let emailSource = 'none';
       try {
-        const preferredEmailType = (await storageService.get('preferredEmailType')) ?? 'disposable';
-        if (preferredEmailType === 'gmail') {
-          const gmailBase = await storageService.get('gmailBase');
-          email = gmailBase || '';
-        } else {
-          const disposableEmail = await storageService.get('disposableEmail');
-          email = disposableEmail?.fullEmail || '';
-        }
-
-        // Fallback to currentEmail if the preferred one is empty/not set
-        // BUT respect the preferredEmailType — don't cross-pollinate
-        if (!email) {
-          const currentEmail = await storageService.get('currentEmail');
-          if (currentEmail?.fullEmail) {
-            const isGmailAccount =
-              currentEmail.service === 'gmail' || currentEmail.domain === 'gmail.com';
-            if (
-              (preferredEmailType === 'disposable' && !isGmailAccount) ||
-              (preferredEmailType === 'gmail' && isGmailAccount)
-            ) {
-              email = currentEmail.fullEmail;
-            } else {
-              // currentEmail is the wrong type for the active tab — don't use it
-              log.info(
-                `Skipping currentEmail fallback (type mismatch: preferred=${preferredEmailType}, found=${currentEmail.service})`
-              );
-              email = '';
-            }
-          } else {
-            // Log as info to avoid raising an Error badge in chrome://extensions for unconfigured installs
-            log.info('No email account configured yet');
-            email = '';
-          }
-        }
+        const resolved = await this.resolveEmailForActiveTab();
+        email = resolved.email;
+        preferredEmailType = resolved.preferredEmailType;
+        emailSource = resolved.source;
       } catch (e) {
-        log.warn('Failed to get current email from storage', e);
+        log.warn('Failed to resolve email for active tab', e);
         email = '';
       }
 
@@ -143,6 +194,8 @@ class IdentityService {
         ...identity,
         email,
         password,
+        preferredEmailType,
+        emailSource,
       };
     } catch (error) {
       log.error('Failed to get complete identity', error);

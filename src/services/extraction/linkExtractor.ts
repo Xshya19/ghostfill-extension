@@ -29,6 +29,10 @@ import {
   getZoneForPosition,
   getContextAround,
 } from './zoneAnalyzer'; // eslint-disable-line @typescript-eslint/no-unused-vars
+import {
+  scoreActivationLink,
+  SELECT_MIN_QUALITY,
+} from './activationLinkGuard';
 
 const log = createLogger('LinkExtractor');
 
@@ -55,12 +59,12 @@ const CONFIG = {
 } as const;
 
 const ACTIVATION_URL_KEYWORD =
-  /verify|verification|activate|activation|confirm|confirmation|registration|signup|sign[-_]?up|email[-_]?verify|verify[-_]?email|confirm[-_]?email|magic(?:[-_]?link)?|passwordless|signin[-_]?link|sign[-_]?in|login[-_]?link|accept[-_]?invite|invitation|invite|join|onboard|welcome|complete|finish|authorize|authorise|approve|authenticate|device/i;
+  /verify|verification|activate|activation|confirm|confirmation|validat(?:e|ion)|registration|signup|sign[-_]?up|email[-_]?verify|verify[-_]?email|confirm[-_]?email|email\/action|auth\/action|magic(?:[-_]?link)?|passwordless|signin[-_]?link|sign[-_]?in|login[-_]?link|accept[-_]?invite|invitation|invite|join|onboard|welcome|complete|finish|authorize|authorise|approve|authenticate|device|claim|enable|unlock|oobCode|mode=verifyEmail/i;
 
-const PASSWORD_RESET_URL_KEYWORD = /reset|recover|password|forgot|change[-_]?password/i;
+const PASSWORD_RESET_URL_KEYWORD = /reset|recover|password|forgot|change[-_]?password|mode=resetPassword/i;
 
 const ACTIVATION_ANCHOR_KEYWORD =
-  /\b(?:verify|confirm|activate|active|complete|finish|get started|click here|tap here|continue|proceed|open|access|launch|start using|sign in|log in|login|magic link|secure link|passwordless|accept invite|accept invitation|join workspace|join team|join organization|join organisation|join|authorize|authorise|approve|authenticate|trust this device|confirm account|confirm email|verify email|verify account|activate account|active mail|active email|active account)\b/i;
+  /\b(?:verify|confirm|activate|active|validate|validation|complete|finish|get started|click here|tap here|continue|proceed|open|access|launch|start using|sign in|log in|login|magic link|secure link|passwordless|accept invite|accept invitation|join workspace|join team|join organization|join organisation|join|authorize|authorise|approve|authenticate|trust this device|confirm account|confirm email|verify email|verify account|activate account|active mail|active email|active account|this was me|it was me|claim (?:your |my )?account|enable (?:your |my )?account|unlock (?:your |my )?account|secure (?:your |my )?account|click (?:here )?to (?:verify|confirm|activate|validate)|verificar|confirmar|activar|validar)\b/i;
 
 const PASSWORD_RESET_ANCHOR_KEYWORD =
   /\b(?:reset|change|recover|restore|set(?: up)?(?: a)? new password|forgot password)\b/i;
@@ -70,6 +74,8 @@ const ACTIVATION_CONTEXT_KEYWORDS = [
   'confirm',
   'activate',
   'activation',
+  'validate',
+  'validation',
   'active your mail',
   'active your email',
   'active account',
@@ -87,9 +93,17 @@ const ACTIVATION_CONTEXT_KEYWORDS = [
   'confirm your email',
   'verify email',
   'verify your email',
+  'validate email',
+  'validate your email',
   'confirm account',
   'verify account',
   'activate account',
+  'claim your account',
+  'enable your account',
+  'unlock your account',
+  'secure your account',
+  'this was me',
+  'it was me',
   'sign in',
   'sign in securely',
   'log in',
@@ -119,6 +133,10 @@ const ACTIVATION_CONTEXT_KEYWORDS = [
   'please click',
   'follow this link',
   'use this link',
+  'click to verify',
+  'click to confirm',
+  'click to activate',
+  'click to validate',
 ] as const;
 
 const GENERIC_DESTINATION_ANCHOR =
@@ -669,10 +687,11 @@ export function extractLink(
 
     const normalizedUrl = normalizeUrl(workingUrl);
     const originBound = hostMatchesExpected(normalizedUrl, expectedDomains);
+    // Soft trust only — never let domain lists override semantic activation quality
     if (originBound) {
-      confidence += 35;
+      confidence += 12;
     } else if (expectedDomains.length > 0) {
-      confidence -= 20;
+      confidence -= 8;
     }
 
     const urlHasActionKeyword =
@@ -718,14 +737,15 @@ export function extractLink(
       negativeSignalScore += 2;
     }
 
-    // Strategy 8: Provider link pattern match
+    // Strategy 8: Provider link pattern is a mild brand-agnostic soft signal only.
+    // Never rely on hardcoded brand URL lists to pick the winner.
     if (
       provider?.linkPatterns?.some((p: RegExp) => {
         p.lastIndex = 0;
         return p.test(workingUrl);
       })
     ) {
-      confidence += 25;
+      confidence += 8;
     }
 
     // Zone scoring — use higher floor (0.80) so zone weight can't crush good signals
@@ -778,8 +798,43 @@ export function extractLink(
     return null;
   }
 
-  // Sort candidates by confidence and other factors
-  candidates.sort((a, b) => {
+  // Grandmaster gate: score every candidate; drop hard rejects / unknowns
+  const gated = candidates
+    .map((c) => {
+      const gate = scoreActivationLink(c.url, c.anchorText || '', c.surroundingText || '');
+      return { c, gate };
+    })
+    .filter(({ gate }) => !gate.hardReject && gate.cls !== 'unknown' && gate.quality >= SELECT_MIN_QUALITY)
+    .map(({ c, gate }) => {
+      // Blend traditional confidence with activation quality
+      const blended = Math.min(100, c.confidence * 0.55 + gate.quality * 0.55);
+      return {
+        ...c,
+        confidence: blended,
+        type:
+          gate.cls === 'password-reset'
+            ? ('password-reset' as EmailIntent)
+            : c.type === 'other'
+              ? ('activation' as EmailIntent)
+              : c.type,
+        actionProofScore: c.actionProofScore + Math.floor(gate.quality / 20),
+        gateQuality: gate.quality,
+      };
+    });
+
+  const pool = gated.length > 0 ? gated : [];
+  if (pool.length === 0) {
+    log.info('Link: no selectable activation candidate after guard');
+    return null;
+  }
+
+  // Sort by action proof + gate quality + confidence
+  pool.sort((a, b) => {
+    const aq = (a as typeof a & { gateQuality?: number }).gateQuality ?? 0;
+    const bq = (b as typeof b & { gateQuality?: number }).gateQuality ?? 0;
+    if (Math.abs(aq - bq) > 8) {
+      return bq - aq;
+    }
     if (Math.abs(a.actionProofScore - b.actionProofScore) > 2) {
       return b.actionProofScore - a.actionProofScore;
     }
@@ -801,13 +856,13 @@ export function extractLink(
     return b.domainTrust - a.domainTrust;
   });
 
-  const best = candidates[0];
+  const best = pool[0];
   if (!best) {
     return null;
   }
 
   log.info(
-    `Link: ${best.url.substring(0, 70)}... (${best.confidence.toFixed(0)}%) [${best.type}] CTA=${best.isCTA} origin=${best.originBound}`
+    `Link: ${best.url.substring(0, 70)}... (${best.confidence.toFixed(0)}%) [${best.type}] CTA=${best.isCTA} origin=${best.originBound} gate=${(best as typeof best & { gateQuality?: number }).gateQuality ?? '?'}`
   );
 
   return {

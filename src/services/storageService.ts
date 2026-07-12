@@ -86,9 +86,24 @@ const SENSITIVE_KEYS: Array<keyof StorageSchema> = [
 
 // PERFORMANCE: O(1) LRU Cache Configuration
 const CACHE_CONFIG = {
-  MAX_SIZE: 100, // Maximum cache entries
-  TTL_MS: 5 * 60 * 1000, // 5 minutes TTL for cache entries
+  MAX_SIZE: 150, // Hot keys + histories
+  TTL_MS: 10 * 60 * 1000, // 10 min — OTP/email paths stay warm longer
 } as const;
+
+/**
+ * Keys that must hit disk ASAP (OTP delivery, active email, inbox).
+ * These skip the write debounce so FAB/polling never wait on a batch timer.
+ */
+const IMMEDIATE_WRITE_KEYS = new Set<keyof StorageSchema>([
+  'lastOTP',
+  'currentEmail',
+  'disposableEmail',
+  'preferredEmailType',
+  'inbox',
+  'gmailInbox',
+  'gmailSyncState',
+  'currentIdentity',
+] as Array<keyof StorageSchema>);
 
 /**
  * Type-safe Chrome storage wrapper with encryption for sensitive data
@@ -104,7 +119,8 @@ const CACHE_CONFIG = {
  * CRITICAL FIX #2: Optimistic UI with background sync
  * CRITICAL FIX #4: Mutex for write operations to prevent race conditions
  */
-const STORAGE_OP_TIMEOUT_MS = 5_000; // 5-second hard timeout for storage ops
+const STORAGE_OP_TIMEOUT_MS = 4_000; // hard timeout for storage ops
+const USAGE_CACHE_TTL_MS = 2_500;
 
 /** Wraps a storage promise with a hard timeout to prevent UI from hanging */
 function withStorageTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
@@ -130,7 +146,7 @@ export class StorageService {
   private pendingWrites: Map<string, unknown> = new Map();
   private writeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingResolvers: Array<{ resolve: () => void; reject: (err: unknown) => void }> = [];
-  private readonly WRITE_BATCH_DELAY = 80;
+  private readonly WRITE_BATCH_DELAY = 40; // snappy batching for non-critical keys
   private storageAvailable: boolean = true;
 
   // ───────────────────────────────────────────────────────────────────
@@ -149,9 +165,12 @@ export class StorageService {
   // never declared, causing a TypeError crash on every optimistic UI update.
   private optimisticTimers: Map<keyof StorageSchema, ReturnType<typeof setTimeout>> = new Map();
 
-  // PERFORMANCE: Cache statistics
+  // PERFORMANCE: Cache statistics + coalesced in-flight reads
   private cacheHits = 0;
   private cacheMisses = 0;
+  private readonly inflightGets = new Map<string, Promise<unknown>>();
+  private cachedUsage: { used: number; total: number; percentage: number; ts: number } | null =
+    null;
 
   constructor() {
     this.cache = new LRUCache<keyof StorageSchema, unknown>(
@@ -657,7 +676,17 @@ export class StorageService {
     // FIX #3: Trigger lazy cache cleanup on access
     this.maybecleanupCache();
 
-    // PERFORMANCE: O(1) cache check
+    // 1) Optimistic / pending writes win (never wait for disk)
+    if (this.optimisticUpdates.has(key as string)) {
+      this.cacheHits++;
+      return this.optimisticUpdates.get(key as string) as StorageSchema[K] | undefined;
+    }
+    if (this.pendingWrites.has(key as string)) {
+      this.cacheHits++;
+      return this.pendingWrites.get(key as string) as StorageSchema[K] | undefined;
+    }
+
+    // 2) PERFORMANCE: O(1) cache check
     const cachedValue = this.cache.get(key);
     if (cachedValue !== undefined) {
       this.cacheHits++;
@@ -669,10 +698,52 @@ export class StorageService {
     this.cacheMisses++;
 
     if (!this.storageAvailable || typeof chrome === 'undefined' || !chrome.storage?.local) {
-      log.warn('Storage API unavailable (get)', { key });
+      log.debug('Storage API unavailable (get)', { key });
       return undefined;
     }
 
+    // 3) Coalesce concurrent reads of the same key (OTP/email storms)
+    const inflightKey = String(key);
+    const existing = this.inflightGets.get(inflightKey);
+    if (existing) {
+      return existing as Promise<StorageSchema[K] | undefined>;
+    }
+
+    const loadPromise = this.loadAndDecrypt(key).finally(() => {
+      this.inflightGets.delete(inflightKey);
+    });
+    this.inflightGets.set(inflightKey, loadPromise);
+    return loadPromise;
+  }
+
+  /**
+   * Bypass LRU cache and re-read from chrome.storage.local.
+   * Use for cross-context preferences (e.g. popup tab → service worker fill)
+   * so a stale SW cache cannot force the wrong email type.
+   */
+  async getFresh<K extends keyof StorageSchema>(key: K): Promise<StorageSchema[K] | undefined> {
+    await this.ensureInitialized();
+
+    if (this.optimisticUpdates.has(key as string)) {
+      return this.optimisticUpdates.get(key as string) as StorageSchema[K] | undefined;
+    }
+    if (this.pendingWrites.has(key as string)) {
+      return this.pendingWrites.get(key as string) as StorageSchema[K] | undefined;
+    }
+
+    this.cache.delete(key);
+    this.inflightGets.delete(String(key));
+
+    if (!this.storageAvailable || typeof chrome === 'undefined' || !chrome.storage?.local) {
+      return undefined;
+    }
+
+    return this.loadAndDecrypt(key);
+  }
+
+  private async loadAndDecrypt<K extends keyof StorageSchema>(
+    key: K
+  ): Promise<StorageSchema[K] | undefined> {
     try {
       const result = await withStorageTimeout(chrome.storage.local.get(key), `get:${String(key)}`);
 
@@ -701,7 +772,6 @@ export class StorageService {
         }
       }
 
-      // Cache the value (O(1) with automatic eviction)
       if (value !== undefined) {
         this.cache.set(key, value);
       } else {
@@ -728,8 +798,14 @@ export class StorageService {
     key: K,
     value: StorageSchema[K]
   ): Promise<void> {
-    this.pendingWrites.set(key, value);
+    // Invalidate negative cache + surface value immediately
+    this.pendingWrites.set(key as string, value);
     this.cache.set(key as keyof StorageSchema, value);
+
+    // Critical path: lastOTP / currentEmail / inbox must not wait on debounce
+    if (IMMEDIATE_WRITE_KEYS.has(key)) {
+      return this.flushNow();
+    }
 
     if (this.writeDebounceTimer) {
       clearTimeout(this.writeDebounceTimer);
@@ -755,6 +831,23 @@ export class StorageService {
     });
   }
 
+  /** Force immediate flush of pending writes (used by hot keys + setImmediate). */
+  private async flushNow(): Promise<void> {
+    if (this.writeDebounceTimer) {
+      clearTimeout(this.writeDebounceTimer);
+      this.writeDebounceTimer = null;
+    }
+    const resolvers = this.pendingResolvers;
+    this.pendingResolvers = [];
+    try {
+      await this.flushPendingWrites();
+      resolvers.forEach((r) => r.resolve());
+    } catch (err) {
+      resolvers.forEach((r) => r.reject(err));
+      throw err;
+    }
+  }
+
   /**
    * PERFORMANCE: Flush all pending writes in a single batch
    * CRITICAL FIX #4: Uses mutex to prevent race conditions
@@ -776,79 +869,86 @@ export class StorageService {
         const writes = new Map(this.pendingWrites);
         this.pendingWrites.clear();
 
-        const usage = await this.getUsage();
+        // Cached quota check (avoids getBytesInUse on every micro-flush)
+        const usage = await this.getUsageCached();
 
-        for (const [key, value] of writes.entries()) {
-          const valueSize = JSON.stringify(value).length;
-
-          if (usage.percentage >= this.QUOTA_WARNING_THRESHOLD * 100) {
-            log.error(`Storage quota at ${usage.percentage.toFixed(1)}% - refusing write`, {
-              key,
-              size: valueSize,
-            });
-            // CRITICAL FIX: To prevent endless loops, throw so we revert cache
-            throw new Error('Storage quota nearly full');
+        if (usage.percentage >= this.QUOTA_WARNING_THRESHOLD * 100) {
+          log.error(`Storage quota at ${usage.percentage.toFixed(1)}% - pruning then writing`);
+          await this.pruneOldData();
+          for (const [pKey, pVal] of this.pendingWrites.entries()) {
+            writes.set(pKey, pVal);
           }
-
-          if (valueSize > this.QUOTA_MAX_SIZE) {
-            log.warn(`Large write detected for key ${key}`, { size: valueSize });
-            await this.pruneOldData();
-            // Prune updates pendingWrites, we need to ingest those updates into our current batch
-            for (const [pKey, pVal] of this.pendingWrites.entries()) {
-              writes.set(pKey, pVal);
-            }
-            this.pendingWrites.clear();
-          }
-
-          // Encrypt sensitive data
-          let valueToStore: unknown = value;
-          if (SENSITIVE_KEYS.includes(key as keyof StorageSchema)) {
-            const masterKey = this.getEncryptionKey();
-            if (masterKey) {
-              try {
-                valueToStore = await encrypt(value, masterKey);
-              } catch (error) {
-                log.error(`Failed to encrypt ${key}`, error);
-                // CRITICAL FIX: throw so we revert cache instead of endless looping
-                throw new Error('Failed to encrypt sensitive data');
-              }
-            }
-          }
-
-          writes.set(key, valueToStore);
-
-          // PERFORMANCE: O(1) cache update
-          this.cache.set(key as keyof StorageSchema, value);
+          this.pendingWrites.clear();
+          this.cachedUsage = null; // force refresh after prune
         }
 
-        await new Promise<void>((resolve, reject) => {
+        // Keep plaintext values for cache; encrypt copies for disk in parallel
+        const plaintextByKey = new Map(writes);
+        const masterKey = getMasterKey();
+
+        const encryptJobs = Array.from(writes.entries()).map(async ([key, value]) => {
+          // Rough size guard without full stringify of huge encrypted blobs
+          let approxSize = 0;
           try {
-            const p: any = chrome.storage.local.set(Object.fromEntries(writes), () => {
-              if (chrome.runtime.lastError) {
-                log.error('Chrome storage set failed', chrome.runtime.lastError);
-                return reject(chrome.runtime.lastError);
-              }
-              resolve();
-            });
-            if (p && typeof p.then === 'function') {
-              p.then(resolve).catch(reject);
-            }
-          } catch (error) {
-            reject(error);
+            approxSize = typeof value === 'string' ? value.length : JSON.stringify(value).length;
+          } catch {
+            approxSize = 0;
           }
+          if (approxSize > this.QUOTA_MAX_SIZE) {
+            log.warn(`Large write detected for key ${key}`, { size: approxSize });
+            await this.pruneOldData();
+          }
+
+          if (SENSITIVE_KEYS.includes(key as keyof StorageSchema)) {
+            if (!masterKey) {
+              throw new Error('Encryption not initialized');
+            }
+            try {
+              const cipher = await encrypt(value, masterKey);
+              writes.set(key, cipher);
+            } catch (error) {
+              log.error(`Failed to encrypt ${key}`, error);
+              throw new Error('Failed to encrypt sensitive data');
+            }
+          }
+
+          // Cache always holds plaintext for instant subsequent reads
+          this.cache.set(key as keyof StorageSchema, plaintextByKey.get(key));
         });
 
+        await Promise.all(encryptJobs);
+
+        await withStorageTimeout(
+          new Promise<void>((resolve, reject) => {
+            try {
+              const p: any = chrome.storage.local.set(Object.fromEntries(writes), () => {
+                if (chrome.runtime.lastError) {
+                  log.error('Chrome storage set failed', chrome.runtime.lastError);
+                  return reject(chrome.runtime.lastError);
+                }
+                resolve();
+              });
+              if (p && typeof p.then === 'function') {
+                p.then(resolve).catch(reject);
+              }
+            } catch (error) {
+              reject(error);
+            }
+          }),
+          `set:${writes.size}-keys`
+        );
+
+        // Bust usage cache after successful write
+        this.cachedUsage = null;
         log.debug(`Batch saved ${writes.size} keys`);
       } catch (error) {
         log.error('Failed to flush pending writes', error);
 
-        // CRITICAL FIX: Revert the cache instead of leaving dirty UI state
         for (const key of writesAttempted) {
-          this.pendingWrites.delete(key as keyof StorageSchema);
+          this.pendingWrites.delete(key);
+          // Drop stale cache entries so next get reloads from disk
+          this.cache.delete(key as keyof StorageSchema);
         }
-
-        // Resync cache to actual storage since the optimistic update failed
-        await this.getAllInternal().catch((e) => log.warn('Failed to resync cache', e));
 
         throw error;
       } finally {
@@ -874,29 +974,9 @@ export class StorageService {
     value: StorageSchema[K]
   ): Promise<void> {
     await this.ensureInitialized();
-
-    if (this.writeDebounceTimer) {
-      clearTimeout(this.writeDebounceTimer);
-      this.writeDebounceTimer = null;
-    }
-
-    this.pendingWrites.set(key, value);
+    this.pendingWrites.set(key as string, value);
     this.cache.set(key as keyof StorageSchema, value);
-
-    const resolvers = this.pendingResolvers;
-    this.pendingResolvers = [];
-
-    const flushPromise = this.flushPendingWrites();
-
-    flushPromise
-      .then(() => {
-        resolvers.forEach((r) => r.resolve());
-      })
-      .catch((err) => {
-        resolvers.forEach((r) => r.reject(err));
-      });
-
-    return flushPromise;
+    return this.flushNow();
   }
 
   /**
@@ -1047,7 +1127,87 @@ export class StorageService {
    */
   async getSettings(): Promise<UserSettings> {
     const settings = await this.get(STORAGE_KEYS.SETTINGS as keyof StorageSchema);
-    return deepMerge(DEFAULT_SETTINGS, (settings || {}) as Partial<UserSettings>);
+    // deepMerge is only needed when partial settings exist
+    if (!settings || typeof settings !== 'object') {
+      return { ...DEFAULT_SETTINGS };
+    }
+    return deepMerge(DEFAULT_SETTINGS, settings as Partial<UserSettings>);
+  }
+
+  /** Multi-get: one chrome.storage call for many keys (decrypts in parallel). */
+  async getMany<K extends keyof StorageSchema>(
+    keys: K[]
+  ): Promise<Partial<Pick<StorageSchema, K>>> {
+    await this.ensureInitialized();
+    const out: Partial<Pick<StorageSchema, K>> = {};
+    const missing: K[] = [];
+
+    for (const key of keys) {
+      if (this.optimisticUpdates.has(key as string)) {
+        out[key] = this.optimisticUpdates.get(key as string) as StorageSchema[K];
+        continue;
+      }
+      if (this.pendingWrites.has(key as string)) {
+        out[key] = this.pendingWrites.get(key as string) as StorageSchema[K];
+        continue;
+      }
+      const cached = this.cache.get(key);
+      if (cached !== undefined) {
+        if (cached !== StorageService.NEGATIVE_CACHE_SENTINEL) {
+          out[key] = cached as StorageSchema[K];
+        }
+        this.cacheHits++;
+      } else {
+        missing.push(key);
+        this.cacheMisses++;
+      }
+    }
+
+    if (missing.length === 0 || !this.storageAvailable) {
+      return out;
+    }
+
+    try {
+      const result = await withStorageTimeout(
+        chrome.storage.local.get(missing as string[]),
+        `getMany:${missing.length}`
+      );
+      const masterKey = getMasterKey();
+      await Promise.all(
+        missing.map(async (key) => {
+          if (!(key in result)) {
+            this.cache.set(key, StorageService.NEGATIVE_CACHE_SENTINEL);
+            return;
+          }
+          let value = result[key as string] as StorageSchema[K] | undefined;
+          if (
+            value &&
+            SENSITIVE_KEYS.includes(key) &&
+            typeof value === 'string' &&
+            value.startsWith('v1:')
+          ) {
+            try {
+              if (masterKey) {
+                value = (await decrypt(value, masterKey)) as StorageSchema[K];
+              } else {
+                value = undefined;
+              }
+            } catch {
+              value = undefined;
+            }
+          }
+          if (value !== undefined) {
+            this.cache.set(key, value);
+            out[key] = value;
+          } else {
+            this.cache.set(key, StorageService.NEGATIVE_CACHE_SENTINEL);
+          }
+        })
+      );
+    } catch (e) {
+      log.error('getMany failed', e);
+    }
+    return out;
   }
 
   /**
@@ -1152,18 +1312,38 @@ export class StorageService {
    * Get storage usage info
    */
   async getUsage(): Promise<{ used: number; total: number; percentage: number }> {
+    return this.getUsageCached(true);
+  }
+
+  /** Cached usage for flush path — avoids blocking every OTP/email write. */
+  private async getUsageCached(
+    force = false
+  ): Promise<{ used: number; total: number; percentage: number }> {
+    if (
+      !force &&
+      this.cachedUsage &&
+      Date.now() - this.cachedUsage.ts < USAGE_CACHE_TTL_MS
+    ) {
+      return this.cachedUsage;
+    }
+
     return new Promise((resolve) => {
       if (!this.storageAvailable || typeof chrome === 'undefined' || !chrome.storage?.local) {
-        resolve({ used: 0, total: 10485760, percentage: 0 });
+        const empty = { used: 0, total: 10485760, percentage: 0, ts: Date.now() };
+        this.cachedUsage = empty;
+        resolve(empty);
         return;
       }
       chrome.storage.local.getBytesInUse(null, (bytesInUse) => {
         const total = chrome.storage.local.QUOTA_BYTES || 10485760;
-        resolve({
+        const snap = {
           used: bytesInUse,
           total,
           percentage: (bytesInUse / total) * 100,
-        });
+          ts: Date.now(),
+        };
+        this.cachedUsage = snap;
+        resolve(snap);
       });
     });
   }
@@ -1254,7 +1434,7 @@ export class StorageService {
   }
 
   /**
-   * Get cache stats for debugging
+   * Get cache stats for debugging / diagnostics
    */
   getCacheStats(): {
     size: number;
@@ -1262,6 +1442,7 @@ export class StorageService {
     hits: number;
     misses: number;
     hitRate: number;
+    pendingWrites: number;
   } {
     const total = this.cacheHits + this.cacheMisses;
     return {
@@ -1269,7 +1450,8 @@ export class StorageService {
       keys: this.cache.keys() as string[],
       hits: this.cacheHits,
       misses: this.cacheMisses,
-      hitRate: total > 0 ? this.cacheHits / total : 0,
+      hitRate: total > 0 ? this.cacheHits / total : 1,
+      pendingWrites: this.pendingWrites.size,
     };
   }
 
