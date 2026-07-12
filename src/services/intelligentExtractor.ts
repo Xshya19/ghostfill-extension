@@ -91,13 +91,15 @@ const log = createLogger('IntelligentExtractor');
 
 const CONFIG = {
   thresholds: {
-    baseOtp: 75,
-    baseLink: 65,
-    minOtp: 50,
-    minLink: 30,
-    providerReduction: 10,
-    highConfidenceReduction: 5,
-    verificationOtpReduction: 5,
+    // Powerful adaptive gates: catch real OTPs/links without spam floods.
+    // Dual-engine consensus still boosts winners to near-100.
+    baseOtp: 65,
+    baseLink: 55,
+    minOtp: 40,
+    minLink: 25,
+    providerReduction: 14,
+    highConfidenceReduction: 8,
+    verificationOtpReduction: 10,
     activationLinkReduction: 25,
     highSignalReduction: 5,
   },
@@ -479,6 +481,7 @@ export function extractAll(
   timings.security = performance.now() - t;
 
   t = performance.now();
+  // Dual engines for accuracy (cognitive + traditional). Prefer consensus.
   const cogOtp = extractOTPCognitive(plainText, sanitizedHtmlBody, provider, zones, intentResult, sanitizedSubject);
   const tradOtp = extractOTP(plainText, sanitizedHtmlBody, provider, zones, intentResult);
 
@@ -489,9 +492,9 @@ export function extractAll(
 
   if (cogOtp && tradOtp) {
     if (cogOtp.code === tradOtp.code) {
-      // 🤝 Consensus: both engines agreed on the same code!
+      // 🤝 Consensus: both engines agreed on the same code — max confidence
       otp = cogOtp;
-      otp.score = Math.min(100, Math.max(cogOtp.score, tradOtp.score) + 25);
+      otp.score = Math.min(100, Math.max(cogOtp.score, tradOtp.score) + 35);
       otp.confidence = otp.score / 100;
       otp.reasoning.steps.push({
         layer: 'consensus',
@@ -500,19 +503,41 @@ export function extractAll(
         impact: 'positive',
       });
       if (cogOtp.matchedSignals && tradOtp.matchedSignals) {
-        // Merge signals uniquely
-        const seenSignals = new Set(cogOtp.matchedSignals.map(s => s.name));
+        const seenSignals = new Set(cogOtp.matchedSignals.map((s) => s.name));
         for (const s of tradOtp.matchedSignals) {
           if (!seenSignals.has(s.name)) {
             otp.matchedSignals.push(s);
           }
         }
       }
-      log.info(`🤝 Dual-engine consensus on code: ${otp.code}. Boosted confidence to ${(otp.confidence * 100).toFixed(0)}%`);
+      log.info(
+        `🤝 Dual-engine consensus on ${otp.code}. Boosted confidence to ${(otp.confidence * 100).toFixed(0)}%`
+      );
     } else {
-      // Disagreement: select higher scoring one
-      otp = cogOtp.score >= tradOtp.score ? cogOtp : tradOtp;
-      log.info(`Engine disagreement: Cognitive=${cogOtp.code}(${cogOtp.score.toFixed(0)}%) vs Traditional=${tradOtp.code}(${tradOtp.score.toFixed(0)}%). Selected higher scorer: ${otp.code}`);
+      // Disagreement: prefer code that also appears in subject / near intent keywords
+      const subject = sanitizedSubject.toLowerCase();
+      const cogInSubject = subject.includes(cogOtp.code.toLowerCase());
+      const tradInSubject = subject.includes(tradOtp.code.toLowerCase());
+      const margin = Math.abs(cogOtp.score - tradOtp.score);
+
+      if (cogInSubject && !tradInSubject) {
+        otp = cogOtp;
+        otp.score = Math.min(100, otp.score + 10);
+      } else if (tradInSubject && !cogInSubject) {
+        otp = tradOtp;
+        otp.score = Math.min(100, otp.score + 10);
+      } else if (margin >= 8) {
+        otp = cogOtp.score >= tradOtp.score ? cogOtp : tradOtp;
+      } else {
+        // Near-tie: cognitive tends to be better on modern email layouts
+        otp = cogOtp.score >= tradOtp.score - 3 ? cogOtp : tradOtp;
+        // Soft-penalize non-consensus so weak fills don't auto-act as aggressively
+        otp.score = Math.max(0, otp.score - 8);
+      }
+      otp.confidence = otp.score / 100;
+      log.info(
+        `Engine disagreement: Cognitive=${cogOtp.code}(${cogOtp.score.toFixed(0)}%) vs Traditional=${tradOtp.code}(${tradOtp.score.toFixed(0)}%). Selected: ${otp.code}`
+      );
     }
   } else {
     otp = cogOtp || tradOtp;

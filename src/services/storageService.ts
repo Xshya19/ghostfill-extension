@@ -130,7 +130,7 @@ export class StorageService {
   private pendingWrites: Map<string, unknown> = new Map();
   private writeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingResolvers: Array<{ resolve: () => void; reject: (err: unknown) => void }> = [];
-  private readonly WRITE_BATCH_DELAY = 500;
+  private readonly WRITE_BATCH_DELAY = 80;
   private storageAvailable: boolean = true;
 
   // ───────────────────────────────────────────────────────────────────

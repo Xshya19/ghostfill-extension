@@ -25,9 +25,11 @@ const log = createLogger('Messaging');
 // default which caused 30-second UI hangs), but long enough for GET_IDENTITY
 // which does 4+ storage reads + optional Gmail alias creation on a cold service
 // worker (SW cold-start alone can add 1-2 s on slower devices).
-const MESSAGE_TIMEOUT_MS = 15_000;
-const MAX_RETRY_ATTEMPTS = 3;
-const RETRY_DELAY_MS = 150;
+// 10s default keeps cold SW + multi-storage reads workable without UI hangs.
+// Callers that need longer (e.g. GENERATE_EMAIL) can pass options.timeout.
+const MESSAGE_TIMEOUT_MS = 10_000;
+const MAX_RETRY_ATTEMPTS = 2;
+const RETRY_DELAY_MS = 80;
 
 /**
  * Check if extension context is valid
@@ -110,7 +112,7 @@ export async function safeSendMessage(
       return null;
     }
 
-    log.info(`[Messaging] Sending message to background: "${message.action}"`, (message as any).payload);
+    log.debug(`[Messaging] → "${message.action}"`);
 
     let lastError: Error | null = null;
 
@@ -138,7 +140,7 @@ export async function safeSendMessage(
           timeoutPromise,
         ])) as ExtensionResponse | null;
 
-        log.info(`[Messaging] Received response from background for "${message.action}":`, response);
+        log.debug(`[Messaging] ← "${message.action}" ok=${response?.success !== false}`);
         return response;
       } catch (error) {
         const errorMsg = getErrorMessage(error);

@@ -134,17 +134,17 @@ export const PASSWORD_PRESETS: PasswordPreset[] = [
 ];
 
 export const DEFAULT_PASSWORD_OPTIONS: PasswordOptions = {
-  length: 16,
+  length: 20,
   uppercase: true,
   lowercase: true,
   numbers: true,
   symbols: true,
-  excludeAmbiguous: false,
+  excludeAmbiguous: true,
   excludeSimilar: false,
   minNumbers: 2,
   minSymbols: 2,
-  minUppercase: 1, // Ensures at least 2 letters total (1 upper + 1 lower)
-  minLowercase: 1,
+  minUppercase: 2,
+  minLowercase: 2,
 };
 
 export const CHARACTER_SETS = {

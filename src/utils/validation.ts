@@ -95,19 +95,23 @@ export const generatedPasswordSchema = z.object({
 export const userSettingsSchema = z.object({
   // Password settings
   passwordDefaults: passwordOptionsSchema.default({
-    length: 16,
+    length: 20,
     uppercase: true,
     lowercase: true,
     numbers: true,
     symbols: true,
-    excludeAmbiguous: false,
+    excludeAmbiguous: true,
     excludeSimilar: false,
+    minUppercase: 2,
+    minLowercase: 2,
+    minNumbers: 2,
+    minSymbols: 2,
   }),
 
   // Email settings
   preferredEmailService: emailServiceSchema.default('tempmail'),
   autoCheckInbox: safeBoolean.default(true),
-  checkIntervalSeconds: safeNumber.min(3).max(60).default(10),
+  checkIntervalSeconds: safeNumber.min(3).max(60).default(5),
 
   // UI settings
   darkMode: z.union([safeBoolean, z.literal('system')]).default(true),

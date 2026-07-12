@@ -124,7 +124,7 @@ interface AIContainerResult {
   readonly groupSize: number;
 }
 
-let AUTO_FILL_TIMEOUT_MS = 8_000;
+let AUTO_FILL_TIMEOUT_MS = 5_000;
 
 // ═══════════════════════════════════════════════════════════════
 //  §1  C O N S T A N T S
@@ -164,16 +164,16 @@ const SIGNAL_WEIGHTS = {
 /** Standalone OTP field from FormDetector gets 60% of 2FA weight */
 const STANDALONE_OTP_WEIGHT_RATIO = 0.6;
 
-const CONFIDENCE_THRESHOLD = 0.4;
-const HIGH_CONFIDENCE = 0.7;
-const AI_FALLBACK_THRESHOLD = 0.25;
-const AI_CONFIRM_THRESHOLD = 0.7;
+const CONFIDENCE_THRESHOLD = 0.32;
+const HIGH_CONFIDENCE = 0.62;
+const AI_FALLBACK_THRESHOLD = 0.18;
+const AI_CONFIRM_THRESHOLD = 0.62;
 
 /** Configuration constants */
 const CONFIG = {
-  DEBOUNCE_MS: 300,
-  INITIAL_DELAY_MS: 150,
-  OBSERVER_THROTTLE_MS: 500,
+  DEBOUNCE_MS: 60,
+  INITIAL_DELAY_MS: 20,
+  OBSERVER_THROTTLE_MS: 100,
   TOAST_DURATION_MS: 3_500,
   TOAST_ANIMATION_MS: 300,
   MAX_BODY_SCAN_CHARS: 3_000,

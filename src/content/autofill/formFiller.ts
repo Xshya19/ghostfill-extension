@@ -86,8 +86,8 @@ export class VisibilityEngine {
 // ─────────────────────────────────────────────────────────────
 
 /** Minimum yield between characters (ms). Allows framework digest cycles. */
-const INTER_CHAR_YIELD_MS = 1;
-const JITTER_MS = 3; // Max random jitter for "smoothness"
+const INTER_CHAR_YIELD_MS = 0;
+const JITTER_MS = 1; // Tiny jitter only when needed for event loop yield
 const MAX_INPUT_LENGTH = 1024;
 
 const nativeInputSetter: ((this: HTMLInputElement, value: string) => void) | null = (() => {
@@ -298,10 +298,14 @@ export class PhantomTyper {
         this.typeCharacter(element, text[i]!);
 
         if (i < text.length - 1) {
+          // Yield only every few chars so React/Vue still see intermediate events
+          // without making long passwords / OTPs feel laggy.
           const isSensitive = /pass|pin|otp|code/i.test(element.name || element.id || element.type);
-          const baseYield = isSensitive ? 15 : INTER_CHAR_YIELD_MS;
-          const jitter = getRandomInt(0, JITTER_MS - 1);
-          await delay(baseYield + jitter);
+          if (isSensitive || i % 3 === 2) {
+            const baseYield = isSensitive ? 2 : INTER_CHAR_YIELD_MS;
+            const jitter = JITTER_MS > 0 ? getRandomInt(0, JITTER_MS) : 0;
+            await delay(baseYield + jitter);
+          }
         }
       }
 

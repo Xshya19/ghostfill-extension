@@ -205,15 +205,18 @@ export function extractOTPCognitive(
       const anti = relationalAntiCheck(textNode, localText);
       if (anti.reject) continue;
 
-      let points = 25; // base: it's a plausible code shape
-      if (OTP_INTENT_RE.test(relationalText)) points += 30;
-      if (ACTION_INTENT_RE.test(relationalText)) points += 10;
-      if (DIRECT_ASSIGN_RE.test(relationalText)) points += 22;
+      let points = 30; // base: plausible code shape
+      if (OTP_INTENT_RE.test(relationalText)) points += 36;
+      if (ACTION_INTENT_RE.test(relationalText)) points += 14;
+      if (DIRECT_ASSIGN_RE.test(relationalText)) points += 28;
       points += styleProminence(textNode.parent!);
-      if (isIsolatedInParent(textNode)) points += 20;
+      if (isIsolatedInParent(textNode)) points += 24;
       points -= anti.penalty;
-      if (provider?.otpLength === code.length) points += 20;
-      if (intent.intent === 'verification') points += 12;
+      if (provider?.otpLength === code.length) points += 24;
+      if (intent.intent === 'verification') points += 18;
+      // Classic 6-digit codes dominate real OTP mail — slight prior
+      if (/^\d{6}$/.test(code)) points += 8;
+      else if (/^\d{4}$/.test(code) || /^\d{8}$/.test(code)) points += 4;
 
       // Run curated KnowledgeBase label patterns against the LOCAL block only
       // (not the whole email) — keeps their precision, drops their false-proximity risk.
@@ -234,8 +237,8 @@ export function extractOTPCognitive(
   // ── Strategy B: split-digit box reconstruction ──────────────────────────
   for (const split of findSplitDigitCodes(root)) {
     const relationalText = split.contextSample;
-    let points = 55; // structurally near-unfakeable signal
-    if (OTP_INTENT_RE.test(relationalText)) points += 20;
+    let points = 65; // structurally near-unfakeable signal
+    if (OTP_INTENT_RE.test(relationalText)) points += 24;
     const anti = relationalAntiCheck(split.node!, relationalText);
     if (anti.reject) continue;
     points -= anti.penalty;
@@ -245,7 +248,7 @@ export function extractOTPCognitive(
   // ── Strategy C: subject-body cross-confirmation ─────────────────────────
   for (const c of byCode.values()) {
     if (normalizedSubject && normalizedSubject.includes(c.code)) {
-      c.points += 35;
+      c.points += 42;
       c.fromSubjectMatch = true;
     }
   }
@@ -253,7 +256,7 @@ export function extractOTPCognitive(
   // ── Strategy D: dominant single-candidate floor (SMS-autofill heuristic) ─
   const numericCandidates = [...byCode.values()].filter((c) => /^\d{4,8}$/.test(c.code));
   if (numericCandidates.length === 1 && numericCandidates[0]) {
-    numericCandidates[0].points = Math.max(numericCandidates[0].points, 55);
+    numericCandidates[0].points = Math.max(numericCandidates[0].points, 62);
   }
 
   if (byCode.size === 0) {
@@ -266,7 +269,8 @@ export function extractOTPCognitive(
   const runnerUp = candidates[1];
 
   let ambiguous = false;
-  if (runnerUp && runnerUp.code !== best.code && best.points - runnerUp.points < 14) {
+  // Only mark ambiguous when runner-up is truly close (reduces false soft-caps)
+  if (runnerUp && runnerUp.code !== best.code && best.points - runnerUp.points < 10) {
     ambiguous = true;
   }
 

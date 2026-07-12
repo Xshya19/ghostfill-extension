@@ -36,10 +36,10 @@ const log = createLogger('AutoFiller');
 //  Constants
 // ─────────────────────────────────────────────────────────────
 
-const DYNAMIC_WATCH_TIMEOUT_MS = 7_000;
-const SMART_FILL_RETRY_DELAYS_MS = [0, 300, 900, 2700] as const;
-const OTP_DISCOVERY_RETRIES = 5;
-const OTP_DISCOVERY_RETRY_DELAY_MS = 200;
+const DYNAMIC_WATCH_TIMEOUT_MS = 6_000;
+const SMART_FILL_RETRY_DELAYS_MS = [0, 40, 120, 350, 800] as const;
+const OTP_DISCOVERY_RETRIES = 8;
+const OTP_DISCOVERY_RETRY_DELAY_MS = 60;
 
 /** Minimum number of single-character boxes for a valid split-OTP layout. */
 const MIN_SPLIT_OTP_FIELDS = 4;
@@ -420,6 +420,11 @@ export class AutoFiller {
       if (this.hasStrongOTPSignal(field, expectedLength, context)) {
         score += 3;
       }
+      const record = extractFieldRecord(field);
+      const calibrated = this.intelligence.classify(record);
+      if (calibrated.fieldType === 'otp' && calibrated.decision === 'FILL') {
+        score += 3;
+      }
       // maxLength is -1 when unset, so this only rewards explicit, fitting limits.
       if (field.maxLength >= expectedLength) {
         score += 2;
@@ -709,10 +714,13 @@ export class AutoFiller {
       if (hasEmailOrIdentifierField) {
         log.info('✨ Smart Fill found email/identifier field but no email generated yet. Generating one...');
         try {
-          const genResp = await safeSendMessage({
-            action: 'GENERATE_EMAIL',
-            payload: { domain: window.location.hostname },
-          });
+          const genResp = await safeSendMessage(
+            {
+              action: 'GENERATE_EMAIL',
+              payload: { domain: window.location.hostname },
+            },
+            { timeout: 20_000, retries: 1 }
+          );
           if (genResp?.success && (genResp as any).email?.fullEmail) {
             const refetched = await this.fetchIdentityAndOTP();
             if (refetched.identity) {
@@ -943,10 +951,13 @@ export class AutoFiller {
     if ((type === 'email' || type === 'username') && identity && !identity.email) {
       log.info('✨ Ghost icon clicked on email/identifier field but no email generated yet. Generating one...');
       try {
-        const genResp = await safeSendMessage({
-          action: 'GENERATE_EMAIL',
-          payload: { domain: window.location.hostname },
-        });
+        const genResp = await safeSendMessage(
+          {
+            action: 'GENERATE_EMAIL',
+            payload: { domain: window.location.hostname },
+          },
+          { timeout: 20_000, retries: 1 }
+        );
         if (genResp?.success && (genResp as any).email?.fullEmail) {
           const refetched = await this.fetchIdentityAndOTP();
           if (refetched.identity) {

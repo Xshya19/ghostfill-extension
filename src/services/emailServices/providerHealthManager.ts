@@ -19,11 +19,11 @@ type HealthConfig = ProviderHealthConfig;
 
 const DEFAULT_CONFIG: HealthConfig = {
   circuitBreakerThreshold: 3, // 3 consecutive failures = circuit open
-  circuitResetTimeout: 2 * 60 * 1000, // 2 minutes before trying again (faster recovery)
-  maxCooldown: 30 * 60 * 1000, // Max 30 minutes cooldown
-  baseCooldown: 15 * 1000, // Start with 15 second cooldown
+  circuitResetTimeout: 90 * 1000, // faster recovery so self-heal kicks in quickly
+  maxCooldown: 15 * 60 * 1000, // Cap cooldown at 15 min (was 30)
+  baseCooldown: 8 * 1000, // Start with 8s cooldown
   successRateDecay: 0.9, // Weight factor for rolling average
-  responseTimeDecay: 0.8, // Weight factor for response time avg
+  responseTimeDecay: 0.75, // React faster to latency changes
   degradedThreshold: 0.6, // Success rate below this = degraded (H1)
 };
 
@@ -38,13 +38,15 @@ class ProviderHealthManager implements IProviderHealthManager {
   private config: HealthConfig = DEFAULT_CONFIG;
   private listeners: Set<ProviderHealthEventListener> = new Set();
 
-  // Priority order for providers (best first)
+  // Priority order for providers (best first) — speed + reliability ranking
   private readonly providerPriority: EmailService[] = [
     'mailtm', // Real API, excellent anti-block reliability
+    'driftz', // Fast modern API
     'maildrop', // Free GraphQL, reliable
     'guerrilla', // Long-standing service
     'tempmail', // 1secmail.com
     '1secmail', // Legacy tempmail
+    'mailgw', // Mail.gw
     'custom', // Custom domain
   ];
 
@@ -327,30 +329,32 @@ class ProviderHealthManager implements IProviderHealthManager {
 
     let score = 0;
 
-    // Success rate contribution (0-40 points)
-    score += health.successRate * 40;
+    // Success rate contribution (0-45 points) — accuracy first
+    score += health.successRate * 45;
 
-    // Recency bonus (0-20 points) - prefer recently successful
+    // Recency bonus (0-15 points) — prefer recently successful
     const timeSinceSuccess = Date.now() - health.lastSuccess;
-    const recencyBonus = Math.max(0, 20 - timeSinceSuccess / (60 * 1000)); // -1 point per minute
+    const recencyBonus = Math.max(0, 15 - timeSinceSuccess / (60 * 1000));
     score += recencyBonus;
 
-    // Response time penalty (0-20 points penalty)
-    const responseTimePenalty = Math.min(20, health.avgResponseTime / 100);
-    score -= responseTimePenalty;
+    // Response time: reward sub-second, punish slow (0–25)
+    // <400ms → full 25 pts; 400–2500ms linear decay; >2500ms → 0
+    const rt = health.avgResponseTime;
+    const speedScore = rt <= 400 ? 25 : rt >= 2500 ? 0 : 25 * (1 - (rt - 400) / 2100);
+    score += speedScore;
 
-    // Priority bonus based on predefined order (0-10 points)
+    // Priority bonus based on predefined order
     const priorityIndex = this.providerPriority.indexOf(provider);
     if (priorityIndex >= 0) {
-      score += (this.providerPriority.length - priorityIndex) * 2;
+      score += (this.providerPriority.length - priorityIndex) * 1.5;
     }
 
     // Failure penalty (exponential)
     score -= Math.pow(1.5, health.consecutiveFailures) * 5;
 
-    // Degraded penalty (H1)
+    // Degraded penalty
     if (health.successRate < (this.config as any).degradedThreshold) {
-      score -= 30; // Significant penalty for degraded providers
+      score -= 30;
     }
 
     return Math.max(-100, Math.min(100, score));

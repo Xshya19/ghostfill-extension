@@ -46,7 +46,7 @@ const log = createLogger('FloatingButton');
 
 /** Timing constants (milliseconds) */
 const TIMING_MS = {
-  TOOLTIP_SHOW_DELAY: 600,
+  TOOLTIP_SHOW_DELAY: 350,
   SUCCESS_DISPLAY: 1500,
   ERROR_DISPLAY: 2000,
   LONG_PRESS: 500,

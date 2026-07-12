@@ -27,18 +27,19 @@ const SEVERITY_RANK: Record<string, number> = {
 
 const CONFIG = {
   scoring: {
-    providerLengthMatch: 18,
-    lengthMatch: 12,
-    formatMatch: 8,
-    contextContributionMax: 55,
-    isolationBonusMax: 18,
-    verificationIntentBonus: 12,
-    codeLabelBonus: 22,
-    entropyBonusMax: 18,
-    frequencyBonus: 12,
-    alnumQualityBonus: 16,
+    // Heavier rewards for real OTP context → stronger winner separation
+    providerLengthMatch: 22,
+    lengthMatch: 15,
+    formatMatch: 10,
+    contextContributionMax: 65,
+    isolationBonusMax: 22,
+    verificationIntentBonus: 18,
+    codeLabelBonus: 28,
+    entropyBonusMax: 20,
+    frequencyBonus: 14,
+    alnumQualityBonus: 18,
     antiPenalty: {
-      critical: 100, high: 18, medium: 12, low: 6, none: 0,
+      critical: 100, high: 22, medium: 14, low: 7, none: 0,
     } as Record<string, number>,
   },
   limits: {
@@ -46,17 +47,17 @@ const CONFIG = {
     maxCodeLength: 10,
   },
   context: {
-    nearRadius: 80,
-    midRadius: 200,
-    wideRadius: 400,
+    nearRadius: 100,
+    midRadius: 240,
+    wideRadius: 480,
     nearWeight: 1.0,
-    midWeight: 0.6,
-    wideWeight: 0.3,
+    midWeight: 0.65,
+    wideWeight: 0.35,
   },
   // Short numeric codes need stronger evidence (years/zips/pins collide).
-  shortCodeMinContext: 22,
+  shortCodeMinContext: 18,
   // Absolute floor before a candidate can ever win.
-  absoluteMinRawScore: 38,
+  absoluteMinRawScore: 32,
 } as const;
 
 // ══════════════════════════════════════════

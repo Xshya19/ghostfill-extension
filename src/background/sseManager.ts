@@ -30,19 +30,19 @@ const log = createLogger('SSEManager');
 // Mercure hub URL for Mail.tm
 const MERCURE_HUB_URL = 'https://mercure.mail.tm/.well-known/mercure';
 
-// Reconnection settings
-const RECONNECT_BASE_DELAY_MS = 2_000;
-const RECONNECT_MAX_DELAY_MS = 60_000;
-const RECONNECT_MULTIPLIER = 2;
-const MAX_RECONNECT_ATTEMPTS = 5;
+// Reconnection settings — aggressive recovery for real-time inbox
+const RECONNECT_BASE_DELAY_MS = 800;
+const RECONNECT_MAX_DELAY_MS = 20_000;
+const RECONNECT_MULTIPLIER = 1.7;
+const MAX_RECONNECT_ATTEMPTS = 8;
 
 // Circuit breaker for persistent server errors (502/503/504)
-const CIRCUIT_BREAKER_THRESHOLD = 3;
-const CIRCUIT_BREAKER_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+const CIRCUIT_BREAKER_THRESHOLD = 4;
+const CIRCUIT_BREAKER_COOLDOWN_MS = 90 * 1000; // recover faster
 
 // Connection health check
-const HEALTH_CHECK_INTERVAL_MS = 30_000;
-const MAX_SILENT_MS = 90_000;
+const HEALTH_CHECK_INTERVAL_MS = 20_000;
+const MAX_SILENT_MS = 60_000;
 
 interface SSEState {
   connected: boolean;

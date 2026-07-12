@@ -33,68 +33,64 @@ const log = createLogger('PollingEngine');
 //  §0  CONSTANTS
 // ═══════════════════════════════════════════════════════════════
 
-/** Adaptive polling intervals */
+/** Adaptive polling — maximum aggression while still respectful of provider APIs */
 const TIMING = {
-  // Fast OTP polling ladder
-  FAST_FLOOR_MS: 2_000,
-  FAST_AGGRESSIVE_MS: 2_500,
-  FAST_NORMAL_MS: 5_000,
-  FAST_RELAXED_MS: 10_000,
-  FAST_CEILING_MS: 20_000,
+  // Fast OTP polling ladder (any tab waiting for OTP)
+  FAST_FLOOR_MS: 700,
+  FAST_AGGRESSIVE_MS: 800,
+  FAST_NORMAL_MS: 1_600,
+  FAST_RELAXED_MS: 3_500,
+  FAST_CEILING_MS: 8_000,
 
-  // Fast ladder time boundaries
-  FAST_AGGRESSIVE_UNTIL_MS: 60_000,
-  FAST_NORMAL_UNTIL_MS: 120_000,
-  FAST_RELAXED_UNTIL_MS: 180_000,
+  // Stay aggressive longer so late emails still get snappy pickup
+  FAST_AGGRESSIVE_UNTIL_MS: 120_000,
+  FAST_NORMAL_UNTIL_MS: 240_000,
+  FAST_RELAXED_UNTIL_MS: 420_000,
 
-  // General polling ladder
-  GENERAL_ACTIVE_MS: 7_000,
-  GENERAL_DEFAULT_MS: 10_000,
+  // Idle inbox
+  GENERAL_ACTIVE_MS: 4_000,
+  GENERAL_DEFAULT_MS: 6_000,
 
   // Lifecycle
-  STALE_TAB_MS: 300_000,
-  DEDUP_TTL_MS: 24 * 60 * 60 * 1000, // 24 hours
+  STALE_TAB_MS: 420_000,
+  DEDUP_TTL_MS: 24 * 60 * 60 * 1000,
   HEALTH_TICK_MS: 30_000,
   METRICS_TICK_MS: 60_000,
 
-  // Email age filter
-  MAX_EMAIL_AGE_MS: 24 * 60 * 60 * 1000, // 24 hours
+  MAX_EMAIL_AGE_MS: 24 * 60 * 60 * 1000,
 } as const;
 
 /** Circuit breaker thresholds */
 const CIRCUIT = {
-  FAIL_THRESHOLD: 5,
-  HALF_OPEN_SUCCESSES: 3,
-  BACKOFF_BASE_MS: 5_000,
-  BACKOFF_CAP_MS: 120_000,
-  MAX_BACKOFF_EXPONENT: 10,
+  FAIL_THRESHOLD: 6,
+  HALF_OPEN_SUCCESSES: 2,
+  BACKOFF_BASE_MS: 3_000,
+  BACKOFF_CAP_MS: 60_000,
+  MAX_BACKOFF_EXPONENT: 8,
 } as const;
 
 // PERMANENT FIX 2026-06-21: time-based decay so a single isolated
-// network blip doesn't accumulate forever — after 60s of no failures,
+// network blip doesn't accumulate forever — after 45s of no failures,
 // the streak resets.
-const TRANSPORT_DECAY_MS = 60_000;
+const TRANSPORT_DECAY_MS = 45_000;
 
-/** Sliding window rate limiter */
+/** Sliding window rate limiter — headroom for sub-second OTP polling */
 const RATE = {
-  MAX_PER_WINDOW: 60,
+  MAX_PER_WINDOW: 90,
   WINDOW_MS: 60_000,
 } as const;
 
-/** OTP delivery retry schedule (geometric backoff) */
-const OTP_DELIVERY_DELAYS_MS: readonly number[] = [0, 500, 1000, 2000];
-const OTP_DELIVERY_MESSAGE_TIMEOUT_MS = 5_000;
+/** OTP delivery: instant first shot + rapid retries for SPA fields */
+const OTP_DELIVERY_DELAYS_MS: readonly number[] = [0, 60, 180, 400, 900];
+const OTP_DELIVERY_MESSAGE_TIMEOUT_MS = 2_800;
 
 /** Email-Tab correlation scoring thresholds */
 const CORRELATION = {
-  /** Score at or above this → strong match, deliver immediately */
-  STRONG: 80,
-  /** Score in [MODERATE, STRONG) → acceptable match, deliver with logging */
-  MODERATE: 50,
-  /** Maximum age for contextual temporal proximity bonus */
-  TEMPORAL_PROXIMITY_MS: 2 * 60 * 1000, // 2 minutes
-  /** Minimum brand token length to avoid spurious matches (e.g. "io", "co") */
-  MIN_BRAND_LENGTH: 3,
+  STRONG: 75,
+  MODERATE: 52,
+  MULTI_DELIVER_SCORE_GAP: 15,
+  TEMPORAL_PROXIMITY_MS: 3 * 60 * 1000,
+  MIN_BRAND_LENGTH: 4,
 } as const;
 
 /** Chrome alarm names */
@@ -464,14 +460,15 @@ class DomainMatcher {
     PROVIDER_KEYWORD:  75, // Strong: detected provider name found in tab hostname
 
     // Content signals (no hardcoded lists needed — always evaluated)
-    SUBJECT_BRAND:     55, // Email subject mentions tab's brand name
-    BODY_BRAND:        45, // Email body text mentions tab's hostname/brand
+    SUBJECT_BRAND:     58, // Email subject mentions tab's brand name
+    BODY_BRAND:        48, // Email body text mentions tab's hostname/brand
+    SUBJECT_AND_BODY:  12, // Bonus when brand appears in both subject + body
 
     // Contextual signals (from tab registration state)
-    SINGLE_WAITER:     15, // Only one non-activation tab is waiting (low ambiguity)
-    STRONG_VERDICT:    12, // Tab's OTP page detector gave a trusted verdict
-    TEMPORAL:          10, // Tab registered recently (< 2 min ago)
-    HAS_SELECTORS:      5, // Tab has specific field selectors registered
+    SINGLE_WAITER:     18, // Only one non-activation tab is waiting (low ambiguity)
+    STRONG_VERDICT:    14, // Tab's OTP page detector gave a trusted verdict
+    TEMPORAL:          12, // Tab registered recently (< 2 min ago)
+    HAS_SELECTORS:      6, // Tab has specific field selectors registered
   } as const;
 
   // ─── Public API ─────────────────────────────────────────────
@@ -556,23 +553,24 @@ class DomainMatcher {
 
     const tabBrands = this.extractBrandTokens(tabRoot);
 
-    // 5. Subject mentions tab brand
+    // 5–6. Brand in subject and/or body (both = stronger accuracy signal)
+    let subjectBrand = false;
+    let bodyBrand = false;
     if (email.subject && tabBrands.length > 0) {
-      if (this.brandMatchesText(tabBrands, email.subject)) {
+      subjectBrand = this.brandMatchesText(tabBrands, email.subject);
+      if (subjectBrand) {
         signals.push({ name: 'subject-brand', score: this.SCORE.SUBJECT_BRAND });
         score += this.SCORE.SUBJECT_BRAND;
       }
     }
-
-    // 6. Body mentions tab brand (only if subject didn't already match)
-    if (
-      email.bodySnippet &&
-      tabBrands.length > 0 &&
-      !signals.some((s) => s.name === 'subject-brand')
-    ) {
-      if (this.brandMatchesText(tabBrands, email.bodySnippet)) {
+    if (email.bodySnippet && tabBrands.length > 0) {
+      bodyBrand = this.brandMatchesText(tabBrands, email.bodySnippet);
+      if (bodyBrand && !subjectBrand) {
         signals.push({ name: 'body-brand', score: this.SCORE.BODY_BRAND });
         score += this.SCORE.BODY_BRAND;
+      } else if (bodyBrand && subjectBrand) {
+        signals.push({ name: 'subject-and-body-brand', score: this.SCORE.SUBJECT_AND_BODY });
+        score += this.SCORE.SUBJECT_AND_BODY;
       }
     }
 
@@ -1165,7 +1163,8 @@ async function performCheck(mode: CheckMode): Promise<void> {
           .catch(() => {});
       }
 
-      const batches = chunk(newEmails, 3);
+      // Process many emails in parallel for max throughput
+      const batches = chunk(newEmails, 6);
       for (const batch of batches) {
         await Promise.allSettled(
           batch.map((email) => processEmail(String(email.id), currentEmail))
@@ -1507,8 +1506,20 @@ async function deliverOTP(code: string, confidence: number, email: EmailContext)
     return false;
   }
 
-  // Log the winning tab(s)
+  // Accuracy: deliver to best tab always. Also deliver to other tabs only when
+  // they are strong matches within a tight score gap of the winner — avoids
+  // spraying moderate matches across unrelated signup tabs.
   const best = scored[0]!;
+  const deliverTargets = scored.filter((entry, index) => {
+    if (index === 0) {
+      return true;
+    }
+    if (entry.result.tier !== 'strong') {
+      return false;
+    }
+    return best.result.score - entry.result.score <= CORRELATION.MULTI_DELIVER_SCORE_GAP;
+  });
+
   if (best.result.tier === 'moderate') {
     log.info('⚠️ Delivering OTP via moderate-confidence content match', {
       tabId: best.tabId,
@@ -1516,10 +1527,13 @@ async function deliverOTP(code: string, confidence: number, email: EmailContext)
       score: best.result.score,
       signals: best.result.signals.map((s) => s.name),
     });
+  } else {
+    log.info('🎯 Delivering OTP to best-matched tab(s)', {
+      targets: deliverTargets.map((t) => `${t.reg.hostname}:${t.result.score}`).join(', '),
+    });
   }
 
-  // Deliver concurrently to all tabs above threshold
-  const deliveryPromises = scored.map(async ({ tabId, reg, result }) => {
+  const deliveryPromises = deliverTargets.map(async ({ tabId, reg, result }) => {
     const deliveredTabId = await deliverToRegisteredTab(tabId, reg, code, confidence);
     if (deliveredTabId === null) {
       log.debug('OTP delivery attempt failed', {
@@ -1751,7 +1765,11 @@ async function scheduleGeneralPoll(): Promise<void> {
     clearTimeout(generalTimer);
   }
 
-  let interval = AdaptiveScheduler.calculateInterval('general', otpWaitingTabs);
+  // CRITICAL SPEED FIX: when any tab is waiting for OTP, use the fast ladder
+  // (was always "general" — so OTP waiters sat on 7–10s intervals).
+  const waitingForOtp = otpWaitingTabs.size > 0;
+  const mode: CheckMode = waitingForOtp ? 'fast' : 'general';
+  let interval = AdaptiveScheduler.calculateInterval(mode, otpWaitingTabs);
 
   try {
     const settings = await storageService.getSettings();
@@ -1760,7 +1778,7 @@ async function scheduleGeneralPoll(): Promise<void> {
       pollingActive = false;
       return;
     }
-    if (otpWaitingTabs.size === 0) {
+    if (!waitingForOtp) {
       interval = settings.checkIntervalSeconds * 1000;
     }
   } catch (e) {
@@ -1772,13 +1790,26 @@ async function scheduleGeneralPoll(): Promise<void> {
     if (!pollingActive) {
       return;
     }
-    void performCheck('general')
+    void performCheck(mode)
       .then(() => scheduleGeneralPoll())
       .catch((error) => {
-        log.warn('General poll failed', error);
+        log.warn(`${mode} poll failed`, error);
         void scheduleGeneralPoll();
       });
   }, interval);
+}
+
+/** Force the poll loop to reschedule immediately (e.g. when a tab starts waiting for OTP). */
+function kickPollingLoop(): void {
+  if (!pollingActive) {
+    startEmailPolling();
+    return;
+  }
+  if (generalTimer !== undefined && generalTimer !== null) {
+    clearTimeout(generalTimer);
+    generalTimer = null;
+  }
+  void scheduleGeneralPoll();
 }
 
 export function startFastOTPPolling(
@@ -1817,14 +1848,16 @@ export function startFastOTPPolling(
     totalWaiting: otpWaitingTabs.size,
   });
 
-  // Immediate first check
+  // Immediate first check + re-arm poll loop on the fast ladder (do not wait
+  // out a leftover 8–10s general interval from idle inbox mode).
   if (checkPermitted('fast')) {
     performCheck('fast').catch((e) => log.warn('Initial fast check error', e));
+  } else {
+    queuePendingCheck('fast');
+    flushPendingCheck();
   }
 
-  if (!pollingActive) {
-    startEmailPolling();
-  }
+  kickPollingLoop();
 }
 
 export function stopFastOTPPolling(tabId: number): void {
@@ -1869,13 +1902,12 @@ export function registerActivationTab(tabId: number, code?: string): void {
     };
     activationCodesByTab.set(tabId, registration);
 
-    // First immediate attempt
+    // Immediate attempt + rapid SPA hydration burst (~8s @ 150ms)
     void safeSendTabMessage(tabId, {
       action: 'FILL_OTP',
       payload: { otp: code },
     });
 
-    // Short retry burst for SPAs where input appears after React hydration.
     let attempts = 0;
     const timer = setInterval(async () => {
       attempts += 1;
@@ -1888,14 +1920,14 @@ export function registerActivationTab(tabId: number, code?: string): void {
         action: 'FILL_OTP',
         payload: { otp: current.code },
       });
-      if (res?.success || attempts >= 20) {
+      if (res?.success || attempts >= 50) {
         clearInterval(timer);
         current.retryTimer = null;
         if (res?.success) {
           activationCodesByTab.delete(tabId);
         }
       }
-    }, 500);
+    }, 150);
     registration.retryTimer = timer;
   }
 }
@@ -2083,8 +2115,8 @@ export type TriggerReason =
   | 'registration_form_submitted'
   | 'otp_page_detected';
 
-const GMAIL_FAST_WATCH_INTERVAL_MS = 2_000;
-const GMAIL_FAST_WATCH_DURATION_MS = 60_000;
+const GMAIL_FAST_WATCH_INTERVAL_MS = 800;
+const GMAIL_FAST_WATCH_DURATION_MS = 120_000;
 
 let gmailFastWatchTimer: ReturnType<typeof setInterval> | null = null;
 let gmailFastWatchStopTimer: ReturnType<typeof setTimeout> | null = null;

@@ -290,13 +290,12 @@ export function setupMessageHandler(): void {
         return false;
       }
 
-      log.info(
-        `📩 [MessageHandler] RECEIVED message: "${message.action}" from Tab: ${sender.tab?.id ?? 'Background'} (${sender.url ?? 'unknown origin'})`,
-        (message as any).payload
+      log.debug(
+        `📩 "${message.action}" from tab=${sender.tab?.id ?? 'bg'}`
       );
 
       const wrappedSendResponse = (response: ExtensionResponse) => {
-        log.info(`📤 [MessageHandler] REPLYING to "${message.action}" with:`, response);
+        log.debug(`📤 "${message.action}" success=${response?.success !== false}`);
         sendResponse(response);
       };
 

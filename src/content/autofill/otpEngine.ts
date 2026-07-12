@@ -307,7 +307,7 @@ export class OTPFieldDiscovery {
           'input[placeholder*="enter code" i]', 'input[placeholder*="6-digit" i]',
           'input[placeholder*="4-digit" i]', 'input[data-testid*="otp" i]', 'input[data-testid*="code" i]',
           'input[data-testid*="verification" i]', 'input[aria-describedby*="otp" i]',
-          'input[aria-describedby*="code" i]',
+          'input[aria-describedby*="code" i]', 'input[placeholder="code" i]', 'input[name="code"]', 'input[id="code"]'
         ].join(', '),
         score: 80,
       },
@@ -571,8 +571,8 @@ export class OTPFieldDiscovery {
 //  OTPFiller
 // ─────────────────────────────────────────────────────────────
 
-const SPLIT_FIELD_SETTLE_MS = 50;
-const AUTO_ADVANCE_DETECT_DELAY = 15;
+const SPLIT_FIELD_SETTLE_MS = 25;
+const AUTO_ADVANCE_DETECT_DELAY = 8;
 
 export class OTPFiller {
   static async fill(
@@ -657,7 +657,7 @@ export class OTPFiller {
       }
 
       if (i < fields.length - 1) {
-        await delay(autoAdvances ? 10 : 35);
+        await delay(autoAdvances ? 4 : 12);
         if (!isBackgroundTab && !autoAdvances && document.activeElement === field) {
           field.blur();
           const nextField = fields[i + 1];
@@ -701,7 +701,7 @@ export class OTPFiller {
       }
 
       if (i < fields.length - 1) {
-        await delay(30);
+        await delay(10);
         if (document.activeElement === field) {
           field.blur();
           const nextField = fields[i + 1];

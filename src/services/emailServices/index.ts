@@ -189,7 +189,7 @@ class EmailServiceAggregator {
    * Mail.tm is now the primary service. TMailor is secondary.
    */
   private lastGenerationTime: number = 0;
-  private readonly GENERATION_COOLDOWN_MS = 500; // 500ms rate limit
+  private readonly GENERATION_COOLDOWN_MS = 150; // snappy UI without hammering providers
 
   async generateEmail(
     options: {
@@ -275,7 +275,8 @@ class EmailServiceAggregator {
     service: EmailService,
     options: { prefix?: string; domain?: string; signal?: AbortSignal }
   ): Promise<EmailAccount> {
-    const TIMEOUT_MS = 30000;
+    // Fail fast so fallback providers engage quickly
+    const TIMEOUT_MS = 12_000;
     const internalAbortController = new AbortController();
     const signal = options.signal || internalAbortController.signal;
 
@@ -324,7 +325,7 @@ class EmailServiceAggregator {
     startTime: number
   ): Promise<EmailAccount> {
     const triedProviders: EmailService[] = [failedService];
-    const maxRetries = 3;
+    const maxRetries = 5;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       const nextProvider = this.healthManager.getBestProvider(triedProviders);

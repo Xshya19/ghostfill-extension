@@ -126,15 +126,15 @@ const CONFIG = {
   DEDUP_TTL_MS: 600_000, // 10 min
   MAX_DEDUP_ENTRIES: 200,
 
-  // Tab lifecycle
-  TAB_LOAD_TIMEOUT_MS: 12_000, // 12 s
-  CS_READY_TIMEOUT_MS: 5_000, //  5 s
-  CS_POLL_INTERVAL_MS: 250, // poll every 250 ms
+  // Tab lifecycle — snappy without abandoning slow SPAs
+  TAB_LOAD_TIMEOUT_MS: 9_000,
+  CS_READY_TIMEOUT_MS: 3_500,
+  CS_POLL_INTERVAL_MS: 120,
 
   // Activation queue
   MAX_RETRIES: 2,
-  RETRY_BASE_DELAY_MS: 2_000, // 2 s × attempt
-  ACTIVATION_COOLDOWN_MS: 3_000, // min gap between activations
+  RETRY_BASE_DELAY_MS: 1_200,
+  ACTIVATION_COOLDOWN_MS: 1_500,
 
   // History
   MAX_HISTORY_ENTRIES: 50,
@@ -637,8 +637,8 @@ class LinkService {
         record.status = 'activated';
       }
 
-      // ── Give the content script a moment to process the code, but KEEP THE TAB OPEN ──
-      await sleep(1_000);
+      // Brief settle for SPA hydration — keep tab open for the user
+      await sleep(350);
       log.info('✨ Tab is ready and waiting for user', { tabId: tab.id });
 
       // The polling manager keeps this tab excluded from generic OTP delivery
@@ -847,6 +847,8 @@ class LinkService {
     if (BLOCKED_SCHEMES.has(parsed.protocol)) {
       return { safe: false, reason: `Blocked scheme: ${parsed.protocol}` };
     }
+    // Prefer secure transport for auto-activation (still allows http only if
+    // nothing else — http is accepted for rare legacy providers).
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       return { safe: false, reason: `Non-HTTP scheme: ${parsed.protocol}` };
     }
