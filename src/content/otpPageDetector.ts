@@ -23,6 +23,7 @@
 // │               Listen for AUTO_FILL_OTP → fill → feedback        │
 // └──────────────────────────────────────────────────────────────────┘
 import { generateHostTokens } from '../shared/tokens';
+import { PageAnalyzer } from '../intelligence/pageAnalyzer';
 import { ExtensionMessage } from '../types';
 import { getRandomString } from '../utils/encryption';
 import { createLogger } from '../utils/logger';
@@ -1276,9 +1277,11 @@ class ScoringEngine {
     signals.push('page-body-keyword', SIGNAL_WEIGHTS.BODY_TEXT_KEYWORD, bodyMatch);
     signals.push('url-keyword', SIGNAL_WEIGHTS.URL_KEYWORD, urlMatch);
 
-    // Negative: password field present
+    // Negative: password field present (only apply if page is not signup or reset)
     const hasPassword = visibleInputs.some((i) => i.type === 'password');
-    if (hasPassword) {
+    const pageAnalysis = PageAnalyzer.analyze();
+    const isSignupOrReset = pageAnalysis.pageType === 'signup' || pageAnalysis.pageType === 'password-reset';
+    if (hasPassword && !isSignupOrReset) {
       signals.push('password-field-negative', SIGNAL_WEIGHTS.LOGIN_FORM_PRESENT, true);
     }
 
@@ -1295,7 +1298,7 @@ class ScoringEngine {
     if (urlMatch) {
       contextScore += SIGNAL_WEIGHTS.URL_KEYWORD;
     }
-    if (hasPassword) {
+    if (hasPassword && !isSignupOrReset) {
       contextScore += SIGNAL_WEIGHTS.LOGIN_FORM_PRESENT;
     }
     contextScore = clamp(contextScore, CONFIG.CONTEXT_SCORE_MIN, CONFIG.CONTEXT_SCORE_MAX);
@@ -1469,8 +1472,13 @@ class ScoringEngine {
       const formAnalysis = formDetector.detectForms();
 
       for (const form of formAnalysis.forms) {
-        if (form.formType === 'two-factor') {
-          signals.push('FormDetector: 2FA form', SIGNAL_WEIGHTS.FORM_DETECTOR_2FA, true);
+        const hasOtpField = form.fields.some((f) => f.fieldType === 'otp');
+        if (form.formType === 'two-factor' || hasOtpField) {
+          signals.push(
+            `FormDetector: ${form.formType} form with OTP`,
+            SIGNAL_WEIGHTS.FORM_DETECTOR_2FA,
+            true
+          );
 
           for (const field of form.fields) {
             if (field.fieldType === 'otp') {

@@ -335,7 +335,7 @@ export const KW = {
     'doğrulama kodu'
   ],
   code: ['code', 'pin', 'token'],
-  verify: ['verify', 'verification', 'confirm your', 'enter the code', 'we sent', 'sent to your'],
+  verify: ['verify', 'verification', 'confirm your', 'enter the code', 'we sent', 'sent to your', 'send code', 'send_code', 'send', 'resend', 're-send'],
   phone: [
     'phone',
     'mobile',
@@ -686,20 +686,23 @@ function combinedText(r: RawFieldRecord): string {
 export function looksLikeOtpField(r: RawFieldRecord): boolean {
   const text = combinedText(r);
   const textOtp =
-    matchesAny(text, 'otp') || (matchesAny(text, 'code') && matchesAny(text, 'verify'));
+    matchesAny(text, 'otp') ||
+    (matchesAny(text, 'code') && matchesAny(text, 'verify')) ||
+    (matchesAny(text, 'code') && matchesAny(text, 'confirm')) ||
+    (matchesAny(text, 'code') && /sent|send|auth|resend/i.test(text)) ||
+    (matchesAny(text, 'code') && r.url && /signup|register|create|reset|forgot/i.test(r.url));
   const splitShape =
     r.maxLength === 1 &&
     (r.inputMode === 'numeric' || r.type === 'tel' || r.type === 'number' || r.type === 'text');
   const shortNumeric =
-    r.maxLength > 0 &&
-    r.maxLength <= 8 &&
-    (r.inputMode === 'numeric' || r.autocomplete.includes('one-time-code'));
-  
+    (r.maxLength > 0 && r.maxLength <= 8 && (r.inputMode === 'numeric' || r.autocomplete.includes('one-time-code'))) ||
+    ((r.maxLength === -1 || r.maxLength > 500) && (r.inputMode === 'numeric' || r.autocomplete.includes('one-time-code')));
+
   const hasSiblingSameShapeCount = Boolean(r.structural && r.structural[27] === 1);
 
   return (
     r.autocomplete.includes('one-time-code') ||
-    (textOtp && (splitShape || shortNumeric || r.maxLength === 6)) ||
+    (textOtp && (splitShape || shortNumeric || r.maxLength === 6 || r.maxLength === -1 || r.maxLength > 500)) ||
     (splitShape && hasSiblingSameShapeCount)
   );
 }

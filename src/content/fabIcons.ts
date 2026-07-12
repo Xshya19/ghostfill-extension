@@ -12,7 +12,7 @@ const STROKE = '1.7';
 export const SHARED_SVG_DEFS = '';
 
 const ICONS: Readonly<Record<ButtonMode, string>> = {
-  magic: `<img src="${chrome.runtime.getURL('assets/logo.png')}" role="presentation" aria-hidden="true" alt="GhostFill Logo" />`,
+  magic: `<span class="gf-emoji-icon" role="presentation" aria-hidden="true">👻</span>`,
 
   email: `<svg viewBox="0 0 24 24" fill="none" role="presentation" aria-hidden="true" stroke="currentColor" stroke-width="${STROKE}" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
     <rect x="3" y="5" width="18" height="14" rx="2.5"/>

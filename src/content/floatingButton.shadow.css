@@ -91,14 +91,21 @@
 }
 
 /* Icon */
-.gf-fab svg, .gf-fab img {
+.gf-fab svg, .gf-fab img, .gf-fab .gf-emoji-icon {
   width: 21px; height: 21px; position: relative; z-index: 3;
   transition: transform 0.3s var(--ease-spring);
 }
-.gf-fab:hover svg, .gf-fab:hover img {
+.gf-fab .gf-emoji-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 21px;
+  line-height: 1;
+}
+.gf-fab:hover svg, .gf-fab:hover img, .gf-fab:hover .gf-emoji-icon {
   transform: scale(1.08);
 }
-.gf-fab:active svg, .gf-fab:active img { transform: scale(0.92); transition-duration: 0.06s; }
+.gf-fab:active svg, .gf-fab:active img, .gf-fab:active .gf-emoji-icon { transform: scale(0.92); transition-duration: 0.06s; }
 
 /* Loading */
 .gf-fab.gf-loading {
