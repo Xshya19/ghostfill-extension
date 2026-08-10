@@ -27,6 +27,18 @@ import { safeSendTabMessage } from '../utils/messaging';
 
 import { updateOTPMenuItem } from './contextMenu';
 import { notifyNewEmail } from './notifications';
+import { sseManager } from './sseManager';
+import { persistWaiters, rehydrateWaiters } from './waiterStore';
+import {
+  unregisterActivationTab,
+  rehydrateActivationRegistry,
+  getActivationTabsSet,
+} from './activationRegistry';
+
+// Live reference to the activation-tabs set managed by activationRegistry.
+// Using a getter avoids holding a stale reference after the registry clears.
+const getActivationTabs = (): ReadonlySet<number> => getActivationTabsSet();
+
 
 const log = createLogger('PollingEngine');
 
@@ -37,11 +49,12 @@ const log = createLogger('PollingEngine');
 /** Adaptive polling — maximum aggression while still respectful of provider APIs */
 const TIMING = {
   // Fast OTP polling ladder (any tab waiting for OTP)
-  FAST_FLOOR_MS: 700,
-  FAST_AGGRESSIVE_MS: 800,
-  FAST_NORMAL_MS: 1_600,
-  FAST_RELAXED_MS: 3_500,
-  FAST_CEILING_MS: 8_000,
+  // Sub-second polling: 800ms floor provides near-instant OTP pickup (75 req/min max)
+  FAST_FLOOR_MS: 800,
+  FAST_AGGRESSIVE_MS: 1_000,
+  FAST_NORMAL_MS: 2_000,
+  FAST_RELAXED_MS: 4_000,
+  FAST_CEILING_MS: 6_000,
 
   // Stay aggressive longer so late emails still get snappy pickup
   FAST_AGGRESSIVE_UNTIL_MS: 120_000,
@@ -49,8 +62,8 @@ const TIMING = {
   FAST_RELAXED_UNTIL_MS: 420_000,
 
   // Idle inbox
-  GENERAL_ACTIVE_MS: 4_000,
-  GENERAL_DEFAULT_MS: 6_000,
+  GENERAL_ACTIVE_MS: 3_000,
+  GENERAL_DEFAULT_MS: 5_000,
 
   // Lifecycle
   STALE_TAB_MS: 420_000,
@@ -155,13 +168,14 @@ interface PollingMetrics {
 
 type CheckMode = 'fast' | 'general';
 
-interface EmailContext {
+export interface EmailContext {
   readonly from: string;
   readonly subject: string;
   readonly provider?: string;
   readonly linkUrl?: string | null;
   /** First ~500 chars of the plain-text email body for content-based matching */
   readonly bodySnippet?: string;
+  readonly accountOriginUrl?: string;
 }
 
 interface CorrelationSignal {
@@ -264,6 +278,7 @@ class CircuitBreaker {
     //    not transport health — mailTmService has its own auth circuit).
     const msg = error instanceof Error ? error.message : String(error);
     const isAuthError = /\b(401|403|419|token|jwt|unauthor|forbidden)\b/i.test(msg);
+    const isRateLimitError = /\b(429|rate limit|too many requests)\b/i.test(msg);
     const isTransportError =
       /\b(fetch|network|aborted|timeout|cors|load failed)\b/i.test(msg) ||
       msg.includes('Failed to fetch');
@@ -273,6 +288,12 @@ class CircuitBreaker {
       // circuit handles those, and tripping the engine circuit here would
       // hide the real signal from the UI.
       log.debug('Auth error — not tripping engine circuit', { msg });
+      return;
+    }
+
+    if (isRateLimitError) {
+      // Don't trip the breaker on HTTP 429 rate limit responses — provider asks to wait
+      log.debug('HTTP 429 Rate Limit hit — non-fatal, not tripping engine circuit', { msg });
       return;
     }
 
@@ -342,7 +363,8 @@ class SlidingRateLimiter {
 
   /** Get current state for persistence */
   getTimestamps(): readonly number[] {
-    return [...this.timestamps];
+    this.prune();
+    return this.timestamps.slice();
   }
 
   get windowSize(): number {
@@ -363,13 +385,35 @@ class SlidingRateLimiter {
     this.timestamps.length = 0;
   }
 
+  /**
+   * PERF: O(log n) binary-search prune replaces O(n²) shift() loop.
+   * Timestamps are always sorted (appended via stamp()), so binary search
+   * finds the first in-window entry, then a single splice() removes all
+   * expired entries in one operation.
+   */
   private prune(): void {
+    if (this.timestamps.length === 0) return;
     const cutoff = Date.now() - RATE.WINDOW_MS;
-    const pruneIndex = this.timestamps.findIndex((ts) => ts >= cutoff);
-    if (pruneIndex > 0) {
-      this.timestamps.splice(0, pruneIndex);
-    } else if (pruneIndex === -1 && this.timestamps.length > 0) {
+    // Fast path: oldest entry is still within window
+    if (this.timestamps[0]! >= cutoff) return;
+    // Fast path: all entries expired
+    if (this.timestamps[this.timestamps.length - 1]! < cutoff) {
       this.timestamps.length = 0;
+      return;
+    }
+    // Binary search for first entry >= cutoff
+    let lo = 0;
+    let hi = this.timestamps.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (this.timestamps[mid]! < cutoff) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    if (lo > 0) {
+      this.timestamps.splice(0, lo);
     }
   }
 }
@@ -482,7 +526,11 @@ class DomainMatcher {
    * @param email   Email-level context (from, subject, body, provider, link)
    * @param tab     Tab registration to score against
    */
-  static correlate(email: EmailContext, tab: TabRegistration): CorrelationResult {
+  static correlate(
+    email: EmailContext,
+    tab: TabRegistration,
+    context: { waitingTabs: ReadonlyMap<number, TabRegistration>; activationTabs: ReadonlySet<number> }
+  ): CorrelationResult {
     const signals: CorrelationSignal[] = [];
     let score = 0;
 
@@ -578,8 +626,9 @@ class DomainMatcher {
     // ─── CONTEXTUAL SIGNALS ───────────────────────────────────
 
     // 7. Single waiting tab (low ambiguity)
-    const nonActivationCount = Array.from(otpWaitingTabs.keys()).filter(
-      (tabId) => !activationTabs.has(tabId)
+    // GRANDMASTER FIX: Use injected context instead of global otpWaitingTabs
+    const nonActivationCount = Array.from(context.waitingTabs.keys()).filter(
+      (tabId) => !context.activationTabs.has(tabId)
     ).length;
     if (nonActivationCount === 1) {
       signals.push({ name: 'single-waiter', score: this.SCORE.SINGLE_WAITER });
@@ -656,7 +705,8 @@ class DomainMatcher {
         linkUrl: linkUrl ?? null,
       };
 
-      const result = this.correlate(email, pseudoTab);
+      const correlationContext = { waitingTabs: otpWaitingTabs, activationTabs: getActivationTabs() };
+      const result = this.correlate(email, pseudoTab, correlationContext);
       // Structural-only matches (domain/cluster) score ≥ 75,
       // so MODERATE threshold is appropriate for backward compat.
       return result.tier !== 'none';
@@ -848,57 +898,75 @@ class OTPCodeExtractor {
    * 3. URLs found in email body
    * 4. Emergency regex patterns
    */
+  static isPlausibleOtp(v: string): boolean {
+    if (!v || v.length < 4 || v.length > 10) return false;
+    if (!/\d/.test(v)) return false;
+    if (/^(19|20)\d{2}$/.test(v)) return false;
+    const lower = v.toLowerCase();
+    if (lower === 'true' || lower === 'false' || lower === 'null' || lower === 'undefined') return false;
+    return true;
+  }
+
   static extract(
     detection: { type: string; code?: string; link?: string },
     fullEmail: { body?: string; htmlBody?: string; subject?: string }
   ): string | null {
     // Source 1: Direct detection
     if ((detection.type === 'otp' || detection.type === 'both') && detection.code) {
-      return detection.code;
+      if (this.isPlausibleOtp(detection.code)) {
+        return detection.code;
+      }
     }
 
-    // Source 2: Link URL extraction
+    const emailText = fullEmail.body ?? fullEmail.subject ?? '';
+
+    // Source 2: Emergency regex (labeled human copy)
+    for (const rx of this.EMERGENCY_PATTERNS) {
+      const match = emailText.match(rx);
+      if (match?.[1] && this.isPlausibleOtp(match[1])) {
+        log.info('🚨 OTP via emergency regex', { code: match[1] });
+        return match[1];
+      }
+    }
+
+    // Source 3: Short email standalone number
+    if (emailText.length < 300) {
+      const standaloneMatch = emailText.match(/\b(?!(?:20[0-9]{2})\b)(?!\d{9,})(\d{6,8})(?!\d)\b/);
+      if (standaloneMatch?.[1] && this.isPlausibleOtp(standaloneMatch[1])) {
+        log.info('🚨 OTP from short email', { code: standaloneMatch[1] });
+        return standaloneMatch[1];
+      }
+    }
+
+    // Source 4: Link URL extraction
     if (detection.link) {
       const code = linkService.extractCodeFromUrl(detection.link);
-      if (code) {
+      if (code && this.isPlausibleOtp(code)) {
         log.info('🔑 OTP from link URL');
         return code;
       }
     }
 
-    // Source 3: URLs in email body
-    const rawText = fullEmail.htmlBody ?? fullEmail.body ?? '';
-    const urlMatches = rawText.match(/https?:\/\/[^\s"'<>]+/gi);
+    // Source 5: URLs in email body
+    // GRANDMASTER FIX: Prevent ReDoS and Service Worker freezes on massive HTML emails.
+    // 1. Prefer plain text body (usually contains the link cleanly).
+    // 2. If HTML must be searched, truncate to first 50KB. OTP links are rarely buried 
+    //    after 50KB of base64 images and tracking pixels.
+    const plainText = fullEmail.body ?? '';
+    let urlMatches = plainText.match(/https?:\/\/[^\s"'<>]+/gi);
+    
+    if (!urlMatches && fullEmail.htmlBody) {
+      const safeHtml = fullEmail.htmlBody.substring(0, 50_000); // 50KB limit
+      urlMatches = safeHtml.match(/https?:\/\/[^\s"'<>]+/gi);
+    }
+
     if (urlMatches) {
       for (const candidateUrl of urlMatches) {
         const code = linkService.extractCodeFromUrl(candidateUrl);
-        if (code) {
+        if (code && this.isPlausibleOtp(code)) {
           log.info('🔎 OTP from email body URL');
           return code;
         }
-      }
-    }
-
-    // Source 4: Emergency regex
-    const emailText = fullEmail.body ?? fullEmail.subject ?? '';
-    for (const rx of this.EMERGENCY_PATTERNS) {
-      const match = emailText.match(rx);
-      if (match?.[1]) {
-        log.info('🚨 OTP via emergency regex');
-        return match[1];
-      }
-    }
-
-    // Source 5: Short email standalone number
-    if (emailText.length < 300) {
-      // M7: Tightened regex to reduce false positives:
-      // - Excludes years 2000-2099
-      // - Excludes 9+ digit sequences (phone numbers, account IDs, ZIP+4)
-      // - Requires exactly 6-8 digit sequences bounded by word boundaries
-      const standaloneMatch = emailText.match(/\b(?!(?:20[0-9]{2})\b)(?!\d{9,})(\d{6,8})(?!\d)\b/);
-      if (standaloneMatch?.[1]) {
-        log.info('🚨 OTP from short email');
-        return standaloneMatch[1];
       }
     }
 
@@ -915,8 +983,9 @@ const otpWaitingTabs = new Map<number, TabRegistration>();
 const circuitBreaker = new CircuitBreaker();
 const rateLimiter = new SlidingRateLimiter();
 const dedupCache = dedupService;
-const activationTabs = new Set<number>(); // Tabs opened for link activation - exclude from OTP delivery
+// activationTabs is now managed by activationRegistry — use getActivationTabs()
 const activationCodesByTab = new Map<number, ActivationCodeRegistration>();
+
 
 const metrics: PollingMetrics = {
   startedAt: 0,
@@ -947,18 +1016,27 @@ const suppressedEmailTypeTransitions = new Map<'disposable' | 'gmail', number>()
 
 // ── Alarm handler (must be stable reference for removeListener) ──
 export const onPollingAlarm = (alarm: chrome.alarms.Alarm): void => {
+  if (alarm.name.startsWith('sse-reconnect')) {
+    log.info('⏰ SSE reconnect alarm triggered');
+    void sseManager.reconnect();
+    return;
+  }
+
   switch (alarm.name) {
     case ALARM_NAMES.EMAIL_SYNC:
-      if (pollingActive) {
-        log.debug('⏰ Alarm sync triggered');
-        void performCheck('general').then(() => {
-          // Restart aggressive polling loop in case SW was completely suspended
+      log.debug('⏰ Alarm sync triggered');
+      void rehydrateWaiters(otpWaitingTabs, TIMING.STALE_TAB_MS)
+        .then(() => {
+          if (otpWaitingTabs.size > 0 || pollingActive) {
+            return performCheck('general');
+          }
+        })
+        .then(() => {
           if (generalTimer) {
             clearTimeout(generalTimer);
           }
           void scheduleGeneralPoll();
         });
-      }
       break;
     case ALARM_NAMES.HEALTH_SWEEP:
       runHealthSweep();
@@ -1002,8 +1080,16 @@ function runHealthSweep(): void {
     });
   }
 
+  // GRANDMASTER FIX: Clean extraction cache periodically instead of on every insert
+  for (const [key, entry] of extractionCacheByEmailId) {
+    if (now - entry.savedAt >= EXTRACTION_CACHE_TTL_MS) {
+      extractionCacheByEmailId.delete(key);
+    }
+  }
+
   void dedupCache.prune();
   rateLimiter.windowSize; // Rate limiter self-prunes on access
+  sseManager.checkHealth();
 }
 
 function logMetricsSnapshot(): void {
@@ -1066,7 +1152,18 @@ function flushPendingCheck(): void {
 }
 
 // ── Session state persistence ──
+// PERF: Debounced to at most once per 10s. Was running after every poll check
+// (up to 30x/min during fast polling), generating unnecessary storage writes.
+let lastSessionPersistTime = 0;
+const SESSION_PERSIST_DEBOUNCE_MS = 10_000;
+
 function persistSessionState(): void {
+  const now = Date.now();
+  if (now - lastSessionPersistTime < SESSION_PERSIST_DEBOUNCE_MS) {
+    return;
+  }
+  lastSessionPersistTime = now;
+
   if (typeof chrome === 'undefined' || !chrome.storage?.session) {
     return;
   }
@@ -1085,10 +1182,12 @@ function persistSessionState(): void {
 //  §11  CORE: UNIFIED INBOX CHECK
 // ═══════════════════════════════════════════════════════════════
 
+let activeCheckPromise: Promise<void> | null = null;
+
 async function performCheck(mode: CheckMode): Promise<void> {
   const flowId = diag.startFlow('polling', 'inbox-check', `mode=${mode}`);
-  // Coalescing: if already running, skip
-  if (checkInProgress) {
+
+  if (activeCheckPromise) {
     queuePendingCheck(mode);
     log.debug('Check in progress, skipping', { mode });
     diag.step(flowId, 'polling', 'skip', 'Check already in progress');
@@ -1109,7 +1208,8 @@ async function performCheck(mode: CheckMode): Promise<void> {
   let checkSucceeded = false;
   let finalDetail = 'Inbox check complete';
 
-  try {
+  activeCheckPromise = (async () => {
+    try {
     const currentEmail = await emailService.getCurrentEmail();
     if (!currentEmail) {
       log.debug('No current email configured');
@@ -1141,7 +1241,9 @@ async function performCheck(mode: CheckMode): Promise<void> {
       if (await dedupCache.isProcessed(String(e.id), currentEmail.fullEmail)) {
         continue;
       }
-      if ((e.date ?? 0) < cutoff) {
+      // BUG-5 FIX: Parse string date/timestamp properly before comparing to numeric cutoff
+      const emailTs = typeof e.date === 'number' ? e.date : (typeof e.date === 'string' ? Date.parse(e.date) : 0);
+      if (emailTs > 0 && emailTs < cutoff) {
         log.debug('Skipping old email', { id: e.id });
         continue;
       }
@@ -1194,6 +1296,7 @@ async function performCheck(mode: CheckMode): Promise<void> {
     });
     finalDetail = 'Inbox check failed';
   } finally {
+    activeCheckPromise = null;
     checkInProgress = false;
 
     const elapsed = Date.now() - t0;
@@ -1213,6 +1316,9 @@ async function performCheck(mode: CheckMode): Promise<void> {
     });
     flushPendingCheck();
   }
+  })();
+
+  return activeCheckPromise;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1222,10 +1328,10 @@ async function performCheck(mode: CheckMode): Promise<void> {
 async function processEmail(emailId: string, currentEmail: EmailAccount): Promise<void> {
   const flowId = diag.startFlow('email', 'process-email', emailId);
   try {
-    if (await dedupCache.isProcessed(emailId, currentEmail.fullEmail)) {
-      diag.endFlow(flowId, 'email', 'process-email', true, 'Already processed');
-      return;
-    }
+    // PERF: Removed redundant dedupCache.isProcessed() check here.
+    // The caller's newEmails filter (performCheck §11) already guarantees
+    // only unprocessed emails reach this function. extractEmailOnce()
+    // provides idempotency for concurrent/retry paths.
 
     const extractionResult = await extractEmailOnce(emailId, async () => {
       const fullEmail = await emailService.readEmail(emailId, currentEmail);
@@ -1282,9 +1388,10 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
     const linkDecision = detection.decision;
     // Strong activation path (verify/activate/confirm) → open link even if a
     // weak alphanumeric "OTP" was also scored (common false positive).
+    const linkUrlString = typeof detection.link === 'string' ? detection.link : (detection.link as any)?.url || '';
     const linkIsStrongActivation =
-      Boolean(detection.link) &&
-      isAutoOpenableActivationLink(detection.link || '', '', fullEmail.subject || '');
+      Boolean(linkUrlString) &&
+      isAutoOpenableActivationLink(linkUrlString, '', fullEmail.subject || '');
     const otpLooksWeak = Boolean(
       extractedOTPCode &&
         (!/^\d{4,8}$/.test(extractedOTPCode.replace(/[-\s]/g, '')) ||
@@ -1432,12 +1539,14 @@ function findBestTab(email: EmailContext): { tabId: number; result: CorrelationR
   let bestTabId: number | null = null;
   let bestResult: CorrelationResult = { score: 0, tier: 'none', signals: [] };
 
+  const correlationContext = { waitingTabs: otpWaitingTabs, activationTabs: getActivationTabs() };
+
   for (const [tabId, reg] of otpWaitingTabs.entries()) {
-    if (activationTabs.has(tabId)) {
+    if (getActivationTabs().has(tabId)) {
       continue;
     }
 
-    const result = DomainMatcher.correlate(email, reg);
+    const result = DomainMatcher.correlate(email, reg, correlationContext);
     if (result.score > bestResult.score) {
       bestResult = result;
       bestTabId = tabId;
@@ -1489,7 +1598,7 @@ async function deliverToRegisteredTab(
  *
  * @returns true if OTP was successfully delivered to at least one tab
  */
-async function deliverOTP(code: string, confidence: number, email: EmailContext): Promise<boolean> {
+export async function deliverOTP(code: string, confidence: number, email: EmailContext): Promise<boolean> {
   await otpService.saveLastOTP(code, 'email', email.from, email.subject, confidence);
   await updateOTPMenuItem();
 
@@ -1501,19 +1610,20 @@ async function deliverOTP(code: string, confidence: number, email: EmailContext)
     confidence: `${Math.round(confidence * 100)}%`,
     from: email.from,
     waitingTabs: otpWaitingTabs.size,
-    activationTabs: activationTabs.size,
+    activationTabs: getActivationTabs().size,
   });
 
   // Score every non-activation tab using the correlation engine
   const scored: Array<{ tabId: number; reg: TabRegistration; result: CorrelationResult }> = [];
+  const correlationContext = { waitingTabs: otpWaitingTabs, activationTabs: getActivationTabs() };
 
   for (const [tabId, reg] of otpWaitingTabs.entries()) {
-    if (activationTabs.has(tabId)) {
+    if (getActivationTabs().has(tabId)) {
       log.debug('Skipping activation tab during generic OTP delivery', { tabId });
       continue;
     }
 
-    const result = DomainMatcher.correlate(email, reg);
+    const result = DomainMatcher.correlate(email, reg, correlationContext);
 
     log.info(`📊 Tab ${reg.hostname} correlation: ${result.score}pts (${result.tier})`, {
       tabId,
@@ -1529,9 +1639,30 @@ async function deliverOTP(code: string, confidence: number, email: EmailContext)
   scored.sort((a, b) => b.result.score - a.result.score);
 
   if (scored.length === 0) {
+    const nonActivation = Array.from(otpWaitingTabs.entries()).filter(
+      ([tabId]) => !getActivationTabs().has(tabId)
+    );
+    if (nonActivation.length === 1) {
+      const [soleTabId, reg] = nonActivation[0]!;
+      if (Date.now() - reg.registeredAt <= 10 * 60 * 1000) {
+        log.info('📮 Sole-waiter fallback delivery triggered', { tabId: soleTabId, hostname: reg.hostname });
+        scored.push({
+          tabId: soleTabId,
+          reg,
+          result: {
+            score: 50,
+            tier: 'moderate',
+            signals: [{ name: 'sole-waiter-fallback', score: 50 }],
+          },
+        });
+      }
+    }
+  }
+
+  if (scored.length === 0) {
     log.info('OTP saved, but no tab scored above delivery threshold', {
       waitingTabs: otpWaitingTabs.size,
-      activationTabs: activationTabs.size,
+      activationTabs: getActivationTabs().size,
       from: email.from,
     });
     return false;
@@ -1759,6 +1890,10 @@ export function setupPollingManager(): void {
       /* no email configured */
     });
 
+  // Rehydrate persisted session waiters and activation tabs
+  void rehydrateWaiters(otpWaitingTabs, TIMING.STALE_TAB_MS);
+  void rehydrateActivationRegistry();
+
   runHealthSweep();
   logMetricsSnapshot();
   log.info('🚀 Polling engine initialized');
@@ -1794,12 +1929,27 @@ async function scheduleGeneralPoll(): Promise<void> {
 
   if (generalTimer !== undefined && generalTimer !== null) {
     clearTimeout(generalTimer);
+    generalTimer = null;
   }
 
-  // CRITICAL SPEED FIX: when any tab is waiting for OTP, use the fast ladder
-  // (was always "general" — so OTP waiters sat on 7–10s intervals).
   const waitingForOtp = otpWaitingTabs.size > 0;
   const mode: CheckMode = waitingForOtp ? 'fast' : 'general';
+
+  if (mode === 'general') {
+    // MV3 GRANDMASTER RULE: Never use setTimeout for >= 1min intervals.
+    // The chrome.alarms API (EMAIL_SYNC) handles the cadence.
+    // We just ensure the alarm exists and let the OS wake us.
+    const alarm = await chrome.alarms.get(ALARM_NAMES.EMAIL_SYNC);
+    if (!alarm) {
+      chrome.alarms.create(ALARM_NAMES.EMAIL_SYNC, { periodInMinutes: 1 });
+    }
+    return;
+  }
+
+  // FAST MODE: Sub-minute polling requires setTimeout.
+  // WARNING: If the service worker sleeps, this timer dies.
+  // This is acceptable because fast polling is only needed while
+  // the user is actively on an OTP page (which keeps the worker awake via content script ports).
   let interval = AdaptiveScheduler.calculateInterval(mode, otpWaitingTabs);
 
   try {
@@ -1809,11 +1959,7 @@ async function scheduleGeneralPoll(): Promise<void> {
       pollingActive = false;
       return;
     }
-    if (!waitingForOtp) {
-      interval = settings.checkIntervalSeconds * 1000;
-    }
   } catch (e) {
-    // Fall back to AdaptiveScheduler if settings fail
     log.warn('Failed to fetch user settings for polling interval', e);
   }
 
@@ -1829,7 +1975,6 @@ async function scheduleGeneralPoll(): Promise<void> {
       });
   }, interval);
 }
-
 /** Force the poll loop to reschedule immediately (e.g. when a tab starts waiting for OTP). */
 function kickPollingLoop(): void {
   if (!pollingActive) {
@@ -1870,6 +2015,8 @@ export function startFastOTPPolling(
     deliveryAttempts: 0,
   });
 
+  void emailService.prewarmConnections();
+
   log.info('⚡ Fast OTP registered', {
     tabId,
     hostname,
@@ -1878,6 +2025,8 @@ export function startFastOTPPolling(
     verdict,
     totalWaiting: otpWaitingTabs.size,
   });
+
+  void persistWaiters(otpWaitingTabs);
 
   // Immediate first check + re-arm poll loop on the fast ladder (do not wait
   // out a leftover 8–10s general interval from idle inbox mode).
@@ -1889,13 +2038,16 @@ export function startFastOTPPolling(
   }
 
   kickPollingLoop();
+  updateKeepAliveAlarm();
 }
 
 export function stopFastOTPPolling(tabId: number): void {
   if (!otpWaitingTabs.delete(tabId)) {
     return;
   }
+  void persistWaiters(otpWaitingTabs);
   log.info('🛑 Fast OTP unregistered', { tabId, remaining: otpWaitingTabs.size });
+  updateKeepAliveAlarm();
 }
 
 /**
@@ -1905,7 +2057,8 @@ export function stopFastOTPPolling(tabId: number): void {
 function clearActivationRetry(tabId: number): void {
   const registration = activationCodesByTab.get(tabId);
   if (registration?.retryTimer) {
-    clearInterval(registration.retryTimer);
+    clearTimeout(registration.retryTimer as any);
+    clearInterval(registration.retryTimer as any);
     registration.retryTimer = null;
   }
 }
@@ -1915,92 +2068,10 @@ function clearAllActivationRegistrations(): void {
     clearActivationRetry(tabId);
   }
   activationCodesByTab.clear();
-  activationTabs.clear();
-}
-
-export function registerActivationTab(tabId: number, code?: string): void {
-  activationTabs.add(tabId);
-  clearActivationRetry(tabId);
-  log.info('🔗 Activation tab registered', {
-    tabId,
-    code: code ? 'provided' : 'none',
-    totalActivationTabs: activationTabs.size,
-  });
-  if (code) {
-    const registration: ActivationCodeRegistration = {
-      code,
-      retryTimer: null,
-    };
-    activationCodesByTab.set(tabId, registration);
-
-    // Immediate attempt + rapid SPA hydration burst (~8s @ 150ms)
-    void safeSendTabMessage(tabId, {
-      action: 'FILL_OTP',
-      payload: { otp: code },
-    });
-
-    let attempts = 0;
-    const timer = setInterval(async () => {
-      attempts += 1;
-      const current = activationCodesByTab.get(tabId);
-      if (!current) {
-        clearInterval(timer);
-        return;
-      }
-      const res = await safeSendTabMessage(tabId, {
-        action: 'FILL_OTP',
-        payload: { otp: current.code },
-      });
-      if (res?.success || attempts >= 50) {
-        clearInterval(timer);
-        current.retryTimer = null;
-        if (res?.success) {
-          activationCodesByTab.delete(tabId);
-        }
-      }
-    }, 150);
-    registration.retryTimer = timer;
+  // Clear the registry's set via individual unregister calls
+  for (const tabId of Array.from(getActivationTabs())) {
+    unregisterActivationTab(tabId);
   }
-}
-
-/**
- * Unregister an activation tab. Call when the activation tab is closed.
- */
-export function unregisterActivationTab(tabId: number): void {
-  const wasActivationTab = activationTabs.delete(tabId);
-  const hadActivationCode = activationCodesByTab.has(tabId);
-  clearActivationRetry(tabId);
-  activationCodesByTab.delete(tabId);
-
-  if (wasActivationTab || hadActivationCode) {
-    log.info('🔗 Activation tab unregistered', {
-      tabId,
-      remainingActivationTabs: activationTabs.size,
-    });
-  }
-}
-
-/**
- * Check if a tab is an activation tab.
- */
-export function isActivationTab(tabId: number): boolean {
-  return activationTabs.has(tabId);
-}
-
-/**
- * Triggered when content script signals it is ready (via PING or OTP detection).
- * Immediately attempts to fill the activation code if the tab is an activation tab.
- */
-export function onContentScriptReady(tabId: number): void {
-  const registration = activationCodesByTab.get(tabId);
-  if (!registration) {
-    return;
-  }
-  log.info('🚀 Content script ready in activation tab — immediately sending FILL_OTP', { tabId });
-  void safeSendTabMessage(tabId, {
-    action: 'FILL_OTP',
-    payload: { otp: registration.code },
-  });
 }
 
 /**
@@ -2018,15 +2089,27 @@ export function startGmailAliasFastPolling(
 // ───────────────────────────────────────────────────────────────────
 if (typeof chrome !== 'undefined' && chrome.tabs?.onRemoved) {
   chrome.tabs.onRemoved.addListener((tabId) => {
-    if (activationTabs.has(tabId) || activationCodesByTab.has(tabId)) {
-      unregisterActivationTab(tabId);
-      log.debug('Cleaned up closed activation tab', { tabId, remaining: activationTabs.size });
+  if (activationCodesByTab.has(tabId) || getActivationTabs().has(tabId)) {
+    unregisterActivationTab(tabId);
+    log.debug('Cleaned up closed activation tab', { tabId, remaining: getActivationTabs().size });
     }
   });
 }
 
 export function getOTPWaitingTabs(): ReadonlyMap<number, TabRegistration> {
   return otpWaitingTabs;
+}
+
+export function updateKeepAliveAlarm(): void {
+  const hasActiveWaiters = otpWaitingTabs.size > 0 || sseManager.isConnected();
+  
+  if (hasActiveWaiters) {
+    // Only keep alive when actively waiting for an OTP
+    chrome.alarms.create('ghostfill-keepalive', { periodInMinutes: 1 }); // 1 min min limit
+  } else {
+    // Let the service worker sleep to save battery
+    chrome.alarms.clear('ghostfill-keepalive').catch(() => {});
+  }
 }
 
 export function getPollingMetrics(): Readonly<
@@ -2072,6 +2155,8 @@ export function destroyPollingManager(): void {
   priorityCounter = 0;
   checkInProgress = false;
   pendingCheckMode = null;
+
+  updateKeepAliveAlarm();
 
   log.info('💣 Polling engine destroyed');
 }
@@ -2232,7 +2317,9 @@ export type ExtractionPayload = {
 const activeExtractionsByEmailId = new Map<string, Promise<ExtractionPayload>>();
 const extractionCacheByEmailId = new Map<string, { result: ExtractionPayload; savedAt: number }>();
 
-const EXTRACTION_CACHE_TTL_MS = 30_000;
+// PERF: 5 min TTL — email content is immutable, no reason to re-extract.
+// Old 30s TTL caused re-extraction when retry/dual-path flows span >30s.
+const EXTRACTION_CACHE_TTL_MS = 300_000;
 
 export async function extractEmailOnce(
   emailId: string,
@@ -2248,17 +2335,9 @@ export async function extractEmailOnce(
     return active;
   }
 
-  const promise = run()
+    const promise = run()
     .then((result) => {
       extractionCacheByEmailId.set(emailId, { result, savedAt: Date.now() });
-
-      if (extractionCacheByEmailId.size > 100) {
-        const first = extractionCacheByEmailId.keys().next().value;
-        if (first) {
-          extractionCacheByEmailId.delete(first);
-        }
-      }
-
       return result;
     })
     .finally(() => {

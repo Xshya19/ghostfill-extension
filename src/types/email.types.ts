@@ -1,5 +1,56 @@
 // Email Types
 
+export interface GmailProfile {
+  email: string;
+  name?: string;
+  picture?: string;
+  messagesTotal?: number;
+  historyId?: string;
+}
+
+export interface GmailMessageHeader {
+  name: string;
+  value: string;
+}
+
+export interface GmailMessagePayload {
+  headers: GmailMessageHeader[];
+  body?: { data?: string; size?: number };
+  parts?: GmailMessagePayload[];
+  mimeType?: string;
+}
+
+export interface GmailMessage {
+  id: string;
+  threadId: string;
+  snippet: string;
+  subject: string;
+  from: string;
+  fromEmail: string;
+  fromName: string;
+  to?: string;
+  cc?: string;
+  bcc?: string;
+  deliveredTo?: string;
+  xOriginalTo?: string;
+  headers?: Array<{ name: string; value: string }>;
+  date: number;
+  dateFormatted: string;
+  body?: string;
+  /** Separate HTML body for link detection — may differ from plain-text `body` */
+  htmlBody?: string;
+  isUnread: boolean;
+  labelIds: string[];
+}
+
+export interface AliasHistoryItem {
+  alias: string;
+  originalEmail: string;
+  type: 'combined';
+  website: string;
+  createdAt: number;
+}
+
 export interface EmailAccount {
   id: string; // Required: Unique identifier from provider (critical for SSE)
   login?: string; // Legacy - use username instead
@@ -27,7 +78,18 @@ export type EmailService =
   | 'maildrop'
   | 'custom'
   | 'gmail'
-  | 'driftz';
+  | 'driftz'
+  | 'evilmail'
+  | 'openinbox'
+  | 'catchmail'
+  | 'mailboxtemp'
+  | 'dropmail'
+  | 'tempmaillol'
+  | 'tempmailplus'
+  | 'mailcx'
+  | 'getnada'
+  | 'mailinator'
+  | 'mailnesia';
 
 export interface IEmailProvider {
   name: string;

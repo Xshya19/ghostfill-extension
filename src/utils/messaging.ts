@@ -25,9 +25,9 @@ const log = createLogger('Messaging');
 // default which caused 30-second UI hangs), but long enough for GET_IDENTITY
 // which does 4+ storage reads + optional Gmail alias creation on a cold service
 // worker (SW cold-start alone can add 1-2 s on slower devices).
-// 10s default keeps cold SW + multi-storage reads workable without UI hangs.
-// Callers that need longer (e.g. GENERATE_EMAIL) can pass options.timeout.
-const MESSAGE_TIMEOUT_MS = 10_000;
+// 25s default keeps cold SW boot + multi-storage reads workable without premature timeouts.
+// Callers that need longer (e.g. GENERATE_EMAIL) can pass custom options.timeout.
+const MESSAGE_TIMEOUT_MS = 25_000;
 const MAX_RETRY_ATTEMPTS = 2;
 const RETRY_DELAY_MS = 80;
 

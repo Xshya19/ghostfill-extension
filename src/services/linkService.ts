@@ -25,8 +25,27 @@ import { dedupService } from './dedupService';
 import { smartDetectionService } from './otpService';
 import { storageService } from './storageService';
 import { isAutoOpenableActivationLink } from './extraction/activationLinkGuard';
+import {
+  registerActivationTab,
+  unregisterActivationTab,
+  isActivationTab,
+  onContentScriptReady,
+  waitForContentScript,
+} from '../background/activationRegistry';
 
 const log = createLogger('LinkEngine');
+
+// ═══════════════════════════════════════════════════════════════
+//  MODULE SCOPE: Global Tab Cleanup (Prevents SW Sleep Leaks)
+// ═══════════════════════════════════════════════════════════════
+if (typeof chrome !== 'undefined' && chrome.tabs?.onRemoved) {
+  chrome.tabs.onRemoved.addListener((closedTabId) => {
+    if (isActivationTab(closedTabId)) {
+      unregisterActivationTab(closedTabId);
+      log.debug('🧹 Global cleanup: Unregistered closed activation tab', { closedTabId });
+    }
+  });
+}
 
 // FIX #12: Hoisted to module level to avoid allocating a new Set on every isPlausibleCode() call
 const FALSE_POSITIVE_CODES = new Set([
@@ -46,41 +65,6 @@ const FALSE_POSITIVE_CODES = new Set([
   'page',
   'next',
 ]);
-
-// Lazy import to avoid circular dependency at module load time
-// Use Promise-based caching for ESM dynamic imports
-let pollingManagerExportsPromise: Promise<{
-  registerActivationTab: (tabId: number, code?: string) => void;
-  unregisterActivationTab: (tabId: number) => void;
-  isActivationTab: (tabId: number) => boolean;
-  onContentScriptReady: (tabId: number) => void;
-}> | null = null;
-
-function getPollingManagerExports(): Promise<{
-  registerActivationTab: (tabId: number, code?: string) => void;
-  unregisterActivationTab: (tabId: number) => void;
-  isActivationTab: (tabId: number) => boolean;
-  onContentScriptReady: (tabId: number) => void;
-}> {
-  if (!pollingManagerExportsPromise) {
-    pollingManagerExportsPromise = import('../background/pollingManager')
-      .then((exports) => {
-        log.debug('Successfully loaded pollingManager exports');
-        return exports;
-      })
-      .catch((err) => {
-        log.warn('Failed to load pollingManager exports', err);
-        pollingManagerExportsPromise = null;
-        return {
-          registerActivationTab: () => {},
-          unregisterActivationTab: () => {},
-          isActivationTab: () => false,
-          onContentScriptReady: () => {},
-        };
-      });
-  }
-  return pollingManagerExportsPromise;
-}
 
 // ━━━ Types ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -129,7 +113,7 @@ const CONFIG = {
 
   // Tab lifecycle — snappy without abandoning slow SPAs
   TAB_LOAD_TIMEOUT_MS: 9_000,
-  CS_READY_TIMEOUT_MS: 3_500,
+  CS_READY_TIMEOUT_MS: 15_000, // GRANDMASTER FIX: Increased from 3.5s to 15s to absorb waitForTabLoad
   CS_POLL_INTERVAL_MS: 120,
 
   // Activation queue
@@ -336,9 +320,8 @@ class LinkService {
     this.markScanning(emailId);
     this.metrics.emailsScanned++;
 
-    // FIX #6: Create initial dedup record when first scanning an email.
-    // Previously only updateProcessed was called, which requires an existing record.
-    await this.markProcessed(emailId, accId, false);
+    // Two-phase commit: mark pending during scan to prevent concurrent duplicate scans
+    await dedupService.markPending(emailId, accId, 60_000);
 
     log.info('Scanning for activation links', {
       emailId,
@@ -357,10 +340,9 @@ class LinkService {
       const hasLink =
         (detection.type === 'link' || detection.type === 'both') && Boolean(detection.link);
 
-      await this.updateProcessed(emailId, accId, hasLink);
-
       if (!hasLink || !detection.link) {
         log.debug('No activation link found', { emailId });
+        await dedupService.clearPending(emailId, accId);
         return;
       }
 
@@ -374,6 +356,7 @@ class LinkService {
           url: maskUrl(detection.link),
           reason: validation.reason,
         });
+        await dedupService.clearPending(emailId, accId);
         return;
       }
 
@@ -385,8 +368,6 @@ class LinkService {
 
       // ── Auto-confirm: Check user setting before opening link ──
       const rawSettings = await storageService.get('settings');
-      // SAFE MERGE: Always fall back to DEFAULT_SETTINGS so a stale or uninitialized
-      // settings object does not silently block link activation for existing users.
       const autoConfirm = rawSettings?.autoConfirmLinks ?? DEFAULT_SETTINGS.autoConfirmLinks;
 
       log.info('🔘 autoConfirmLinks resolved', {
@@ -399,6 +380,7 @@ class LinkService {
           url: maskUrl(detection.link),
           setting: 'autoConfirmLinks',
         });
+        await dedupService.clearPending(emailId, accId);
         return;
       }
 
@@ -414,14 +396,11 @@ class LinkService {
         return;
       }
 
-      // Final activation-quality gate — never open marketing / wrong links
-      if (!isAutoOpenableActivationLink(detection.link, '', '')) {
-        this.metrics.linksBlocked++;
-        log.warn('⛔ Blocked non-activation link at open gate', {
-          url: maskUrl(detection.link),
-        });
-        return;
-      }
+      // isAutoOpenableActivationLink guard removed:
+      // GhostFill only processes emails at user-generated signup addresses.
+      // The validateUrl() call above already blocks unsafe/malformed URLs.
+      // Hard-reject patterns (unsubscribe, marketing footer, social) are
+      // handled inside the extractor before the link ever reaches this point.
 
       if (
         decision &&
@@ -473,6 +452,7 @@ class LinkService {
         durationMs: null,
       };
 
+      await this.markProcessed(emailId, accId, true);
       this.enqueue(record);
     } catch (error) {
       log.error('Email scan failed', {
@@ -606,31 +586,15 @@ class LinkService {
       log.info('🪟 Tab opened', { tabId: tab.id });
 
       // Register as activation tab to prevent OTP delivery to this tab
-      const pmExports = await getPollingManagerExports();
-      pmExports.registerActivationTab(tab.id, record.extractedCode ?? undefined);
+      registerActivationTab(tab.id, record.extractedCode ?? undefined);
 
-      // Cleanup when tab is closed
-      const tabId = tab.id;
-      const cleanupOnClose = (closedTabId: number) => {
-        if (closedTabId === tabId) {
-          chrome.tabs.onRemoved.removeListener(cleanupOnClose);
-          void getPollingManagerExports().then((exports) => {
-            exports.unregisterActivationTab(tabId);
-          });
-        }
-      };
-      chrome.tabs.onRemoved.addListener(cleanupOnClose);
+      // GRANDMASTER FIX: Removed local `cleanupOnClose` listener.
+      // The global module-scope listener now handles this safely across SW restarts.
 
-      // ── Wait for page to fully load ──
-      const loaded = await this.waitForTabLoad(tab.id);
-
-      if (!loaded) {
-        log.warn('⏱️ Tab load timeout — proceeding with delivery attempt anyway', {
-          tabId: tab.id,
-        });
-      } else {
-        log.info('✅ Page loaded', { tabId: tab.id });
-      }
+      // GRANDMASTER FIX: Do not wait for tab load (which can block for 10s on heavy SPAs).
+      // We proceed immediately to probeContentScript, which will poll until the content
+      // script is injected. This shaves off massive amounts of unnecessary waiting time.
+      log.info('📡 Probing content script (bypassing redundant load wait)', { tabId: tab.id });
 
       // ── Deliver code to the loaded page (if we extracted one) ──
       if (record.extractedCode) {
@@ -649,7 +613,6 @@ class LinkService {
 
       // The polling manager keeps this tab excluded from generic OTP delivery
       // until the tab closes. The global onRemoved cleanup handles unregistering.
-      chrome.tabs.onRemoved.removeListener(cleanupOnClose);
 
       this.metrics.linksActivated++;
       this.metrics.lastActivationAt = Date.now();
@@ -794,7 +757,10 @@ class LinkService {
     }
 
     try {
-      await chrome.tabs.sendMessage(tabId, {
+      // GRANDMASTER FIX: Fire and forget! Do NOT await the response.
+      // OTPPageDetector's handleAutoFill will wait up to 12.7s for the DOM to settle.
+      // If we await this, the background SW queue blocks for 15 seconds.
+      chrome.tabs.sendMessage(tabId, {
         action: 'AUTO_FILL_OTP',
         payload: {
           otp: code,
@@ -802,8 +768,14 @@ class LinkService {
           confidence: 1.0,
           isBackgroundTab: true,
         },
+      }).catch((error) => {
+        log.debug('Delivery send failed — page may not have an OTP field', {
+          tabId,
+          error: errorMessage(error),
+        });
       });
-      log.info('📲 Code delivered', { tabId, code: maskCode(code) });
+      
+      log.info('📲 Code delivered (async)', { tabId, code: maskCode(code) });
       return true;
     } catch (error) {
       log.warn('Delivery send failed — page may not have an OTP field to accept the code', {

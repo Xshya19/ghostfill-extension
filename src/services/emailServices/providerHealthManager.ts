@@ -40,14 +40,24 @@ class ProviderHealthManager implements IProviderHealthManager {
 
   // Priority order for providers (best first) — speed + reliability ranking
   private readonly providerPriority: EmailService[] = [
-    'mailtm', // Real API, excellent anti-block reliability
-    'driftz', // Fast modern API
-    'maildrop', // Free GraphQL, reliable
-    'guerrilla', // Long-standing service
-    'tempmail', // 1secmail.com
-    '1secmail', // Legacy tempmail
-    'mailgw', // Mail.gw
-    'custom', // Custom domain
+    'catchmail', // Fast, 7-day retention, custom names
+    'mailcx', // SSE, 24h retention, custom names
+    'mailtm', // Highly reliable API
+    'guerrilla', // 10 domains (sharklasers, grr.la)
+    'maildrop', // GraphQL, 24h retention
+    'tempmail', // 9 domains, 1secmail.com
+    'mailboxtemp', // 24h retention, custom names
+    'dropmail', // GraphQL, 4 domains (emlpro.com)
+    'tempmailplus', // 3 domains (mailto.plus)
+    'getnada', // 4 domains (nada.ltd, inboxes.com)
+    'tempmaillol', // TempMail.lol
+    'openinbox', // Lower priority (prone to timeouts)
+    'evilmail',
+    'driftz',
+    'mailgw',
+    'mailinator',
+    'mailnesia',
+    'custom',
   ];
 
   constructor() {

@@ -371,10 +371,12 @@ export function extractUrls(html: string): string[] {
         }
         // Check path for encoded URLs
         const pathDecoded = decodeURIComponent(u.pathname + u.search);
-        const found = pathDecoded.match(/https?:\/\/[^\s"']+/gi);
-        if (found) {
-          for (const f of found) {
-            processUrl(f, urls);
+        if (typeof pathDecoded === 'string') {
+          const found = pathDecoded.match(/https?:\/\/[^\s"']+/gi);
+          if (found) {
+            for (const f of found) {
+              processUrl(f, urls);
+            }
           }
         }
       }

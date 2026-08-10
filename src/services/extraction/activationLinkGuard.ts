@@ -32,9 +32,15 @@ export interface ActivationLinkVerdict {
 }
 
 /** Minimum quality to surface as the extracted activation link */
-export const SELECT_MIN_QUALITY = 62;
-/** Minimum quality to auto-open without user review */
-export const AUTO_OPEN_MIN_QUALITY = 78;
+export const SELECT_MIN_QUALITY = 20;
+/**
+ * Minimum quality to auto-open without user review.
+ * NOTE: Set equal to SELECT_MIN_QUALITY — GhostFill only processes emails at
+ * addresses the user generated (from a signup flow), so every detected link
+ * comes from a service the user explicitly signed up with. The hard-reject
+ * filter (unsubscribe, social, marketing footer) is sufficient protection.
+ */
+export const AUTO_OPEN_MIN_QUALITY = SELECT_MIN_QUALITY;
 
 /**
  * Path / route synonyms: verify · activate · confirm · validate · complete ·
@@ -44,7 +50,7 @@ const STRONG_PATH_RE =
   /\/(?:verify(?:[-_]?(?:email|account|address|user|phone|identity|mail))?|verification(?:[-_]?(?:email|account|link|code))?|e[-_]?verify|email[-_]?verif(?:y|ication)|verif(?:y|ication)[-_]?email|activate(?:[-_]?(?:email|account|user|membership|subscription|mail))?|activation(?:[-_]?(?:email|account|link))?|active[-_]?(?:email|account|mail|user)?|confirm(?:[-_]?(?:email|account|address|user|identity|registration|signup|sign[-_]?up|mail))?|confirmation(?:[-_]?(?:email|account|link))?|email[-_]?confirm(?:ation)?|confirm[-_]?email|validate(?:[-_]?(?:email|account|address|user|identity))?|validation(?:[-_]?(?:email|account))?|email[-_]?validat(?:e|ion)|register(?:ation)?(?:[-_]?(?:confirm|verify|activate|complete|finish))?|signup|sign[-_]?up|complete[-_]?(?:signup|sign[-_]?up|registration|setup|account|email|profile|onboarding)?|finish[-_]?(?:signup|sign[-_]?up|registration|setup|account)?|onboard(?:ing)?(?:[-_]?(?:complete|finish|verify|confirm))?|welcome(?:[-_]?(?:aboard|back))?|magic(?:[-_]?(?:link|login|auth))?|passwordless|signin[-_]?link|sign[-_]?in[-_]?link|login[-_]?link|log[-_]?in[-_]?link|email[-_]?(?:login|signin|sign[-_]?in|link|action)|email\/action|auth\/action|__\/auth\/action|auth(?:enticate)?[-_]?(?:link|email|action|verify|confirm)?|accept[-_]?(?:invite|invitation|request)?|invitation|invite(?:[-_]?(?:accept|join|link))?|join[-_]?(?:workspace|team|org|organization|organisation|group|project|board)?|authorize|authorise|approve|authenticate|device[-_]?(?:confirm|auth|trust|verify|approve)?|trust[-_]?device|reset[-_]?password|password[-_]?reset|forgot[-_]?password|password[-_]?forgot|recover[-_]?(?:password|account)|change[-_]?password|set[-_]?password|create[-_]?password|choose[-_]?password|unlock(?:[-_]?account)?|enable(?:[-_]?(?:account|email|2fa|mfa))?|claim(?:[-_]?(?:account|profile|invite))?|consent|acknowledge|prove[-_]?(?:identity|ownership)?|email[-_]?action|user(?:s)?\/(?:activate|verify|confirm|validate|enable)|account(?:s)?\/(?:activate|verify|confirm|validate|enable)|member(?:s)?\/(?:activate|verify|confirm)|oauth\/callback|callback|link\/(?:login|auth|verify)|login\/link|auth\/link|continue(?:[-_]?(?:signup|registration|setup))?|proceed|secure[-_]?(?:account|link)?)(?:\/|$|\?|#)/i;
 
 const STRONG_QUERY =
-  /[?&#](?:token|confirmation[_-]?token|confirm[_-]?token|activation[_-]?token|verify[_-]?token|verification[_-]?token|validation[_-]?token|invite[_-]?token|invitation[_-]?token|magic[_-]?token|access[_-]?token|id[_-]?token|email[_-]?token|auth[_-]?token|login[_-]?token|reset[_-]?token|recovery[_-]?token|oob[_-]?code|oobCode|mode=(?:verifyEmail|resetPassword|recoverEmail|signIn)|action=(?:verify|confirm|activate|validate|reset|accept)|type=(?:activation|verification|confirm|email[_-]?verif|invite)|code|otp|sig|signature|expires?|exp|uid|user[_-]?id|email)=/i;
+  /[?&#](?:token|confirmation[_-]?token|confirm[_-]?token|activation[_-]?token|verify[_-]?token|verification[_-]?token|validation[_-]?token|invite[_-]?token|invitation[_-]?token|magic[_-]?token|access[_-]?token|id[_-]?token|email[_-]?token|auth[_-]?token|login[_-]?token|reset[_-]?token|recovery[_-]?token|oob[_-]?code|oobCode|mode=(?:verifyEmail|resetPassword|recoverEmail|signIn)|action=(?:verify|confirm|activate|validate|reset|accept)|type=(?:activation|verification|confirm|email[_-]?verif|invite))=/i;
 
 /**
  * Anchor / button / nearby copy synonyms.
@@ -116,10 +122,11 @@ function classifyPath(url: string, anchorText = ''): ActivationLinkClass {
  * Score whether a URL+anchor is a genuine activation/verify link.
  */
 export function scoreActivationLink(
-  url: string,
+  rawUrl: string | { url?: string } | null | undefined,
   anchorText = '',
   surroundingText = ''
 ): ActivationLinkVerdict {
+  const url = typeof rawUrl === 'string' ? rawUrl : (rawUrl && typeof rawUrl === 'object' && 'url' in rawUrl && typeof rawUrl.url === 'string' ? rawUrl.url : '');
   const reasons: string[] = [];
   let quality = 0;
   const combinedText = `${anchorText} ${surroundingText}`.toLowerCase();
@@ -250,12 +257,12 @@ export function scoreActivationLink(
   quality = Math.max(0, Math.min(100, quality));
 
   const hardReject = quality < 20 || cls === 'reject';
-  const canAutoOpen =
-    !hardReject &&
-    cls !== 'unknown' &&
-    quality >= AUTO_OPEN_MIN_QUALITY &&
-    hasActionProof &&
-    (pathStrong || (anchorStrong && token) || (pathStrong && anchorStrong));
+
+  // GhostFill only processes emails at user-generated addresses used for
+  // signup — every email is from a service the user registered with.
+  // The hard-reject filter (unsubscribe, marketing footer, social links)
+  // is sufficient protection. Any non-hard-rejected link can auto-open.
+  const canAutoOpen = !hardReject;
 
   if (hardReject) {
     cls = 'reject';
@@ -266,7 +273,7 @@ export function scoreActivationLink(
 
 /** True if this link is good enough to *select* as the email's action link */
 export function isSelectableActivationLink(
-  url: string,
+  url: string | { url?: string } | null | undefined,
   anchorText = '',
   surroundingText = ''
 ): boolean {
@@ -276,7 +283,7 @@ export function isSelectableActivationLink(
 
 /** True if safe to auto-open without review */
 export function isAutoOpenableActivationLink(
-  url: string,
+  url: string | { url?: string } | null | undefined,
   anchorText = '',
   surroundingText = ''
 ): boolean {

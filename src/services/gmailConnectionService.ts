@@ -8,7 +8,7 @@
  * - gmailConnectionService.ts (OAuth persistent connection management and helper utils)
  */
 
-import { type GmailMessage, type GmailProfile } from '../types/message.types';
+import { type GmailMessage, type GmailProfile } from '../types/email.types';
 import { type GmailAliasSession } from '../types/storage.types';
 import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
@@ -20,13 +20,7 @@ const log = createLogger('GmailConnectionService');
 // ─── Part 1: aliasService.ts (Alias Generation Engine) ─────────────────
 // ═══════════════════════════════════════════════════════════════════════
 
-export interface AliasHistoryItem {
-  alias: string;
-  originalEmail: string;
-  type: 'combined';
-  website: string;
-  createdAt: number;
-}
+
 
 const RESERVED_DOMAIN_LABEL = 'general';
 const RANDOM_TAG_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -816,6 +810,16 @@ export async function clearGmailConnection(isManual: boolean): Promise<void> {
       // Ignore background communication errors on sign out
     }
   }
+  // If the current fill address points at Gmail, clear it so the content
+  // script stops auto-filling a revoked alias on subsequent forms.
+  try {
+    const currentEmail = await storageService.get('currentEmail');
+    if (currentEmail && currentEmail.service === 'gmail') {
+      await storageService.remove('currentEmail');
+    }
+  } catch {
+    /* ignore */
+  }
   await Promise.all([
     storageService.remove('gmailConnectedAt'),
     storageService.remove('gmailProfile'),
@@ -826,3 +830,4 @@ export async function clearGmailConnection(isManual: boolean): Promise<void> {
     clearGmailAliasSessions(),
   ]);
 }
+

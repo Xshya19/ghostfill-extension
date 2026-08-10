@@ -403,11 +403,12 @@ class SSEManager {
   }
 
   /**
-   * Schedule reconnection with exponential backoff
+   * Schedule reconnection with exponential backoff using alarms (MV3 safe)
    */
   private scheduleReconnect(account: EmailAccount): void {
     if (this.state.reconnectTimer) {
       clearTimeout(this.state.reconnectTimer);
+      this.state.reconnectTimer = null;
     }
 
     if (this.state.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
@@ -441,25 +442,66 @@ class SSEManager {
       `🔄 SSE reconnect scheduled in ${delay}ms (attempt ${this.state.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`
     );
 
+    // MV3 FIX: Register alarm so reconnect survives Service Worker suspension
+    if (typeof chrome !== 'undefined' && chrome.alarms?.create) {
+      try {
+        chrome.alarms.create('sse-reconnect', { when: Date.now() + delay });
+      } catch (e) {
+        log.debug('Failed to set sse-reconnect alarm', e);
+      }
+    }
+
     this.state.reconnectTimer = setTimeout(async () => {
       try {
-        // Refresh token before reconnecting to avoid 401 on stale tokens
-        if (account.service === 'mailtm' && account.fullEmail && account.password) {
-          try {
-            await mailTmService.authenticate(account.fullEmail, account.password);
-            const freshToken = mailTmService.getToken();
-            if (freshToken) {
-              account.token = freshToken;
-            }
-          } catch (e) {
-            log.warn('SSE reconnect: token refresh failed, using existing token', e);
-          }
+        if (typeof chrome !== 'undefined' && chrome.alarms?.clear) {
+          chrome.alarms.clear('sse-reconnect').catch(() => {});
         }
-        await this.connect(account);
+        await this.reconnectAccount(account);
       } catch (e) {
         log.error('SSE reconnect failed', e);
       }
     }, delay);
+  }
+
+  /**
+   * Reconnect to active Mail.tm account (called by timer or alarm)
+   */
+  async reconnect(): Promise<void> {
+    try {
+      const account = await emailService.getCurrentEmail();
+      if (account && account.service === 'mailtm' && account.id) {
+        await this.reconnectAccount(account);
+      }
+    } catch (e) {
+      log.error('SSE reconnect failed', e);
+    }
+  }
+
+  private async reconnectAccount(account: EmailAccount): Promise<void> {
+    if (account.service === 'mailtm' && account.fullEmail && account.password) {
+      try {
+        await mailTmService.authenticate(account.fullEmail, account.password);
+        const freshToken = mailTmService.getToken();
+        if (freshToken) {
+          account.token = freshToken;
+        }
+      } catch (e) {
+        log.warn('SSE reconnect: token refresh failed, using existing token', e);
+      }
+    }
+    await this.connect(account);
+  }
+
+  /**
+   * Check connection health (called periodically by alarms or timer)
+   */
+  checkHealth(): void {
+    const silentTime = Date.now() - this.state.lastEventTime;
+    if (silentTime > MAX_SILENT_MS && this.state.connected) {
+      log.warn('SSE silent for too long, reconnecting...', { silentTime });
+      this.disconnect();
+      this.reconnect().catch((e) => log.error('SSE health reconnect failed', e));
+    }
   }
 
   /**
@@ -469,25 +511,7 @@ class SSEManager {
     this.stopHealthCheck();
 
     this.state.healthCheckTimer = setInterval(() => {
-      const silentTime = Date.now() - this.state.lastEventTime;
-      if (silentTime > MAX_SILENT_MS && this.state.connected) {
-        log.warn('SSE silent for too long, reconnecting...', { silentTime });
-        this.disconnect();
-
-        emailService
-          .getCurrentEmail()
-          .then((account) => {
-            if (account && account.service === 'mailtm' && account.id) {
-              this.connect(account).catch((e) => log.error('SSE health reconnect failed', e));
-            } else {
-              log.debug('SSE health reconnect skipped because active account is not Mail.tm', {
-                service: account?.service,
-                hasId: Boolean(account?.id),
-              });
-            }
-          })
-          .catch(() => {});
-      }
+      this.checkHealth();
     }, HEALTH_CHECK_INTERVAL_MS);
   }
 

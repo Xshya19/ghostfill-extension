@@ -107,7 +107,19 @@ function redactSensitiveData(data: unknown, depth = 0): unknown {
     return '[MAX_DEPTH]';
   }
 
+  // PERF: Short-circuit for primitives that can never contain secrets.
+  // Numbers, booleans, null, undefined are the most common log arguments
+  // on hot paths (confidence scores, tab IDs, counts, flags).
+  if (data == null || typeof data === 'number' || typeof data === 'boolean') {
+    return data;
+  }
+
   if (typeof data === 'string') {
+    // PERF: Short strings (< 8 chars) can't match any sensitive pattern
+    // (shortest pattern match is ~10 chars). Covers OTP codes, status flags, etc.
+    if (data.length < 8) {
+      return data;
+    }
     let redacted = data;
     for (const { pattern, replacement } of SENSITIVE_PATTERNS) {
       redacted = redacted.replace(pattern, replacement);

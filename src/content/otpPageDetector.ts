@@ -344,17 +344,42 @@ function generateGroupId(prefix: string, hint?: string): string {
 //  §4  V I S I B I L I T Y   E N G I N E
 // ═══════════════════════════════════════════════════════════════
 
+class LayoutCache {
+  private rects = new WeakMap<Element, DOMRect>();
+  private styles = new WeakMap<Element, CSSStyleDeclaration>();
+
+  public capture(elements: Element[]): void {
+    // GRANDMASTER FIX: Force synchronous layout read ONCE per detection cycle
+    for (const el of elements) {
+      this.rects.set(el, el.getBoundingClientRect());
+    }
+  }
+
+  public getRect(el: Element): DOMRect {
+    return this.rects.get(el) || el.getBoundingClientRect();
+  }
+
+  public getStyle(el: HTMLElement): CSSStyleDeclaration {
+    let s = this.styles.get(el);
+    if (!s) {
+      s = window.getComputedStyle(el);
+      this.styles.set(el, s);
+    }
+    return s;
+  }
+}
+
 class VisibilityEngine {
   /**
    * Check if element is visible: non-zero dimensions + no CSS hiding
    * up to CONFIG.VISIBILITY_MAX_DEPTH ancestor levels.
    */
-  static isVisible(el: HTMLElement): boolean {
+  static isVisible(el: HTMLElement, cache: LayoutCache): boolean {
     if (!el.isConnected) {
       return false;
     }
 
-    const rect = el.getBoundingClientRect();
+    const rect = cache.getRect(el);
     if (rect.width <= 0 || rect.height <= 0) {
       return false;
     }
@@ -363,7 +388,7 @@ class VisibilityEngine {
     let depth = 0;
 
     while (current && depth < CONFIG.VISIBILITY_MAX_DEPTH) {
-      const style = safeGetComputedStyle(current);
+      const style = cache.getStyle(current);
       if (
         style.display === 'none' ||
         style.visibility === 'hidden' ||
@@ -612,7 +637,12 @@ class SelectorGenerator {
   }
 
   private static verify(selector: string, expected: HTMLInputElement): boolean {
+    // GRANDMASTER FIX: Fast paths for inherently unique selectors
+    if (selector.startsWith('#')) return true; // ID is unique
+    if (selector.includes('autocomplete="one-time-code"')) return true; // Usually unique
+    
     try {
+      // Only run expensive querySelectorAll for ambiguous selectors (classes, nth-of-type)
       const all = document.querySelectorAll<HTMLInputElement>(selector);
       return all.length === 1 && all[0] === expected;
     } catch {
@@ -747,7 +777,7 @@ class SplitDigitDetector {
   /**
    * Find groups of contiguous maxlength=1 inputs (split-digit OTP).
    */
-  static detect(inputs: HTMLInputElement[]): HTMLInputElement[][] {
+  static detect(inputs: HTMLInputElement[], cache: LayoutCache): HTMLInputElement[][] {
     const candidates = inputs.filter((i) => i.maxLength === 1 && !KeywordMatcher.isSearchInput(i));
 
     if (candidates.length < CONFIG.SPLIT_DIGIT_MIN) {
@@ -767,7 +797,7 @@ class SplitDigitDetector {
 
       const prev = currentGroup[currentGroup.length - 1]!;
 
-      if (this.areContiguous(prev, el)) {
+      if (this.areContiguous(prev, el, cache)) {
         currentGroup.push(el);
       } else {
         if (this.isValidGroupSize(currentGroup.length)) {
@@ -791,9 +821,9 @@ class SplitDigitDetector {
    * 2. Vertically within CONFIG.CONTIGUITY_V_DELTA_PX
    * 3. Share a common ancestor within CONFIG.CONTIGUITY_MAX_DEPTH levels
    */
-  private static areContiguous(a: HTMLElement, b: HTMLElement): boolean {
-    const ra = a.getBoundingClientRect();
-    const rb = b.getBoundingClientRect();
+  private static areContiguous(a: HTMLElement, b: HTMLElement, cache: LayoutCache): boolean {
+    const ra = cache.getRect(a);
+    const rb = cache.getRect(b);
 
     // Use zoom/retina-relative thresholds (1.5 * width for gap, 0.5 * height for vertical delta)
     const hGapLimit = Math.max(ra.width, 20) * 1.5;
@@ -838,9 +868,9 @@ class SmallInputClusterDetector {
   /**
    * Find clusters of small, equal-width inputs grouped by parent container.
    */
-  static detect(inputs: HTMLInputElement[]): HTMLInputElement[][] {
+  static detect(inputs: HTMLInputElement[], cache: LayoutCache): HTMLInputElement[][] {
     const small = inputs.filter((i) => {
-      const r = i.getBoundingClientRect();
+      const r = cache.getRect(i);
       return (
         r.width >= CONFIG.SMALL_INPUT_MIN_WIDTH &&
         r.width <= CONFIG.SMALL_INPUT_MAX_WIDTH &&
@@ -876,7 +906,7 @@ class SmallInputClusterDetector {
         continue;
       }
 
-      if (this.hasUniformWidth(group)) {
+      if (this.hasUniformWidth(group, cache)) {
         clusters.push(group);
       }
     }
@@ -884,8 +914,8 @@ class SmallInputClusterDetector {
     return clusters;
   }
 
-  private static hasUniformWidth(group: HTMLInputElement[]): boolean {
-    const widths = group.map((i) => i.getBoundingClientRect().width);
+  private static hasUniformWidth(group: HTMLInputElement[], cache: LayoutCache): boolean {
+    const widths = group.map((i) => cache.getRect(i).width);
     const avg = widths.reduce((a, b) => a + b, 0) / widths.length;
     return widths.every((w) => Math.abs(w - avg) <= CONFIG.SIZE_VARIANCE_PX);
   }
@@ -1185,7 +1215,12 @@ class ScoringEngine {
 
     // ── 1. Gather candidate inputs ────────────────────────
     const allInputs = document.querySelectorAll<HTMLInputElement>(CANDIDATE_INPUT_SELECTOR);
-    const visibleInputs = Array.from(allInputs).filter((el) => VisibilityEngine.isVisible(el));
+
+    // GRANDMASTER FIX: Batch all geometry reads BEFORE scoring
+    const cache = new LayoutCache();
+    cache.capture(Array.from(allInputs));
+
+    const visibleInputs = Array.from(allInputs).filter((el) => VisibilityEngine.isVisible(el, cache));
 
     if (visibleInputs.length === 0) {
       return {
@@ -1207,7 +1242,7 @@ class ScoringEngine {
     const urlMatch = cachedUrl ?? this.pageUrlHasKeyword();
 
     // ── 4. Split-digit group detection ────────────────────
-    const splitGroups = SplitDigitDetector.detect(visibleInputs);
+    const splitGroups = SplitDigitDetector.detect(visibleInputs, cache);
     for (const group of splitGroups) {
       const groupId = generateGroupId('split', group[0]?.name || group[0]?.id);
       signals.push(
@@ -1228,8 +1263,8 @@ class ScoringEngine {
     }
 
     // ── 5. Small-input cluster detection ──────────────────
-    const clusters = SmallInputClusterDetector.detect(visibleInputs);
-    for (const cluster of clusters) {
+    const smallClusters = SmallInputClusterDetector.detect(visibleInputs, cache);
+    for (const cluster of smallClusters) {
       // Don't double-count fields already found as split-digit
       const alreadyCounted = cluster.every((el) => {
         const f = fields.get(el);
@@ -1256,8 +1291,8 @@ class ScoringEngine {
     // ── 6. FormDetector agreement ─────────────────────────
     // This is the expensive shadow-piercing path, so only run it when cheap
     // signals suggest the page might actually be a verification flow.
-    if (fields.size > 0 || titleMatch || bodyMatch || urlMatch) {
-      this.scoreFormDetector(formDetector, fields, signals);
+    if (formDetector) {
+      this.scoreFormDetector(formDetector, fields, signals, cache);
     }
 
     // ── 7. AI container analysis (local fallback) ─────────
@@ -1466,7 +1501,8 @@ class ScoringEngine {
   private static scoreFormDetector(
     formDetector: FormDetector,
     fields: FieldRegistry,
-    signals: SignalCollector
+    signals: SignalCollector,
+    cache: LayoutCache
   ): void {
     try {
       const formAnalysis = formDetector.detectForms();
@@ -1483,7 +1519,7 @@ class ScoringEngine {
           for (const field of form.fields) {
             if (field.fieldType === 'otp') {
               const el = safeQuerySelector<HTMLInputElement>(document, field.selector);
-              if (el && VisibilityEngine.isVisible(el)) {
+              if (el && VisibilityEngine.isVisible(el, cache)) {
                 const existing = fields.get(el);
                 const score = (existing?.score ?? 0) + SIGNAL_WEIGHTS.FORM_DETECTOR_2FA;
                 fields.register(el, 'form-detector', score);
@@ -1496,7 +1532,7 @@ class ScoringEngine {
       for (const field of formAnalysis.standaloneFields) {
         if (field.fieldType === 'otp') {
           const el = safeQuerySelector<HTMLInputElement>(document, field.selector);
-          if (el && VisibilityEngine.isVisible(el)) {
+          if (el && VisibilityEngine.isVisible(el, cache)) {
             const existing = fields.get(el);
             const score =
               (existing?.score ?? 0) +
@@ -1732,9 +1768,29 @@ export class OTPPageDetector {
       }
 
       const relevant = mutations.some((m) => {
-        if (m.type === 'childList' && (m.addedNodes.length > 0 || m.removedNodes.length > 0)) {
-          return true;
+        if (m.type === 'childList') {
+          for (let i = 0; i < m.addedNodes.length; i++) {
+            const node = m.addedNodes[i];
+            if (node instanceof HTMLElement) {
+              // Ignore our own UI
+              if (
+                node.classList?.contains('ghostfill-container') ||
+                node.closest?.('.ghostfill-container')
+              ) {
+                continue;
+              }
+              // GRANDMASTER FIX: Ignore mutations that don't contain form elements
+              // If a div is added but it has no inputs/forms, it's likely just UI chrome
+              if (!node.querySelector?.('input, form, button, select, textarea') && 
+                  node.tagName !== 'INPUT' && node.tagName !== 'FORM') {
+                continue;
+              }
+              return true;
+            }
+          }
+          return m.removedNodes.length > 0; // Removed nodes might be the OTP field
         }
+        // Only care about attribute changes on actual inputs
         return m.type === 'attributes' && m.target instanceof HTMLInputElement;
       });
 
@@ -1779,19 +1835,13 @@ export class OTPPageDetector {
       this.titleObserver.observe(titleEl, { childList: true });
     }
 
-    // Fallback: Poll URL every 500ms for pushState navigations that don't touch the title
-    this.urlPollInterval = setInterval(() => {
-      if (typeof chrome === 'undefined' || !chrome.runtime?.id) {
-        this.destroy();
-        return;
-      }
+    // Modern event-driven SPA navigation handling (popstate)
+    this.popstateHandler = () => {
       if (location.href !== lastUrl) {
         lastUrl = location.href;
         this.onNavigate();
       }
-    }, 500);
-
-    this.popstateHandler = () => this.onNavigate();
+    };
     window.addEventListener('popstate', this.popstateHandler);
 
     this.unloadHandler = () => this.restoreHistoryMethods();
@@ -2062,7 +2112,7 @@ export class OTPPageDetector {
     this.metrics.aiRequested = true;
 
     try {
-      const snapshot = this.buildDOMSnapshot();
+      const snapshot = this.buildLightweightSnapshot();
 
       // ── DOM-hash cache ───────────────────────────────────────────────
       // Hash is a fast, deterministic fingerprint of the current form structure.
@@ -2127,72 +2177,42 @@ export class OTPPageDetector {
     return parts.join('::');
   }
 
-  private buildDOMSnapshot(): string {
+  private buildLightweightSnapshot(): string {
     const parts: string[] = [];
-
-    const forms = document.querySelectorAll('form');
-    for (const form of forms) {
-      parts.push(this.buildSanitizedSnapshot(form).substring(0, CONFIG.MAX_FORM_SNAPSHOT_CHARS));
-    }
-
-    const orphanInputs = document.querySelectorAll<HTMLInputElement>('input:not([type="hidden"])');
-    for (const input of orphanInputs) {
-      if (!input.closest('form')) {
-        parts.push(this.buildSanitizedSnapshot(input));
+    
+    const walk = (node: Node) => {
+      if (node.nodeType !== Node.ELEMENT_NODE) return;
+      const el = node as Element;
+      const tag = el.tagName.toLowerCase();
+      
+      // Skip heavy/non-form elements
+      if (['script', 'style', 'svg', 'path', 'iframe', 'object'].includes(tag)) return;
+      
+      if (tag === 'input' || tag === 'select' || tag === 'textarea' || tag === 'button') {
+        const type = el.getAttribute('type') || '';
+        const name = el.getAttribute('name') || '';
+        const id = el.getAttribute('id') || '';
+        const ph = el.getAttribute('placeholder') || '';
+        const ac = el.getAttribute('autocomplete') || '';
+        const ml = el.getAttribute('maxlength') || '';
+        // GRANDMASTER FIX: Build a tiny structural token instead of cloning HTML
+        parts.push(`[${tag} t="${type}" n="${name}" i="${id}" ph="${ph}" ac="${ac}" ml="${ml}"]`);
+      } else if (tag === 'form') {
+        parts.push(`<form action="${el.getAttribute('action') || ''}">`);
       }
-    }
-
-    return parts.join('\n').substring(0, CONFIG.MAX_DOM_SNAPSHOT_CHARS);
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  //  AUTO-FILL HANDLER
-  // ═══════════════════════════════════════════════════════════
-
-  private buildSanitizedSnapshot(element: Element): string {
-    const clone = element.cloneNode(true) as Element;
-
-    clone.querySelectorAll('script, style, iframe, object, embed, link, meta').forEach((node) => {
-      node.remove();
-    });
-
-    const scrubElement = (node: Element) => {
-      if (node instanceof HTMLInputElement) {
-        const type = node.type.toLowerCase();
-        if (type === 'hidden' || type === 'password' || type === 'file') {
-          node.remove();
-          return;
-        }
-        node.removeAttribute('value');
-        node.removeAttribute('checked');
-      }
-
-      if (
-        node instanceof HTMLTextAreaElement ||
-        node instanceof HTMLSelectElement ||
-        node instanceof HTMLOptionElement
-      ) {
-        node.textContent = '';
-        node.removeAttribute('value');
-        node.removeAttribute('selected');
-      }
-
-      node.removeAttribute('href');
-      node.removeAttribute('src');
-      node.removeAttribute('srcset');
-      node.removeAttribute('style');
-
-      for (const attr of Array.from(node.attributes)) {
-        if (/^(data|on)/i.test(attr.name)) {
-          node.removeAttribute(attr.name);
-        }
-      }
+      
+      Array.from(el.childNodes).forEach(walk);
     };
-
-    scrubElement(clone);
-    clone.querySelectorAll('*').forEach(scrubElement);
-
-    return clone.outerHTML;
+    
+    // Walk forms
+    document.querySelectorAll('form').forEach(f => walk(f));
+    
+    // Walk orphan inputs
+    document.querySelectorAll('input:not([type="hidden"])').forEach(i => {
+      if (!i.closest('form')) walk(i);
+    });
+    
+    return parts.join('\n').substring(0, CONFIG.MAX_DOM_SNAPSHOT_CHARS);
   }
 
   private async waitForOtpInput(timeoutMs = 10_000): Promise<boolean> {

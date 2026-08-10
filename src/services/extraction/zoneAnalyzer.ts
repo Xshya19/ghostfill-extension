@@ -212,6 +212,7 @@ export function analyzeEmailZones(html: string, plainText: string): EmailZone[] 
  * @returns The index where footer starts, or -1 if not found
  */
 function findFooterStart(lower: string): number {
+  if (typeof lower !== 'string') return -1;
   let earliest = -1;
 
   for (const signal of FOOTER_SIGNALS) {
@@ -233,6 +234,7 @@ function findFooterStart(lower: string): number {
  * @returns The index where header ends, or -1 if not found
  */
 function findHeaderEnd(lower: string): number {
+  if (typeof lower !== 'string') return -1;
   const signals = [/<h[12][^>]*>/i, /class\s*=\s*["'][^"']*(?:content|main|body)[^"']*["']/i];
 
   for (const signal of signals) {

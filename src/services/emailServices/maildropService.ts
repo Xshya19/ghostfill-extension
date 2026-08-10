@@ -4,6 +4,7 @@
 
 import { EmailAccount, Email } from '../../types';
 import { createLogger } from '../../utils/logger';
+import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 
 const log = createLogger('MaildropService');
 
@@ -61,17 +62,10 @@ class MaildropService {
   private lastError: string | null = null;
 
   /**
-   * Generate a unique mailbox name
+   * Generate a unique mailbox name using human-like names
    */
   private generateMailboxName(): string {
-    const adjectives = ['swift', 'quick', 'bright', 'calm', 'bold', 'keen', 'cool', 'fresh'];
-    const nouns = ['fox', 'owl', 'hawk', 'bear', 'wolf', 'lion', 'deer', 'seal'];
-    const rng = new Uint32Array(3);
-    crypto.getRandomValues(rng);
-    const adj = adjectives[rng[0]!]!;
-    const noun = nouns[rng[1]!]!;
-    const num = rng[2]! % 9999;
-    return `${adj}${noun}${num}`;
+    return generateHumanLikeUsername();
   }
 
   /**

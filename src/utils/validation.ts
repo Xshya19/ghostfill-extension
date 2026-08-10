@@ -31,6 +31,15 @@ const emailServiceSchema = z.enum([
   'tempmail',
   'custom',
   'driftz',
+  'evilmail',
+  'openinbox',
+  'catchmail',
+  'mailboxtemp',
+  'dropmail',
+  'tempmaillol',
+  'tempmailplus',
+  'mailcx',
+  'getnada',
 ]);
 
 const emailAccountServiceSchema = z.enum([
@@ -43,6 +52,15 @@ const emailAccountServiceSchema = z.enum([
   'custom',
   'gmail',
   'driftz',
+  'evilmail',
+  'openinbox',
+  'catchmail',
+  'mailboxtemp',
+  'dropmail',
+  'tempmaillol',
+  'tempmailplus',
+  'mailcx',
+  'getnada',
 ]);
 
 // ─── Email Account schema ─────────────────────────────────────────────────────
@@ -109,7 +127,7 @@ export const userSettingsSchema = z.object({
   }),
 
   // Email settings
-  preferredEmailService: emailServiceSchema.default('tempmail'),
+  preferredEmailService: emailServiceSchema.default('catchmail'),
   autoCheckInbox: safeBoolean.default(true),
   checkIntervalSeconds: safeNumber.min(3).max(60).default(5),
 
@@ -180,11 +198,30 @@ export const savePasswordPayloadSchema = z.object({
   notes: safeString.max(1000).optional().nullable(),
 });
 
+const safeBodyString = (maxLen: number) =>
+  z.preprocess((val) => {
+    if (typeof val === 'string') return val;
+    if (val === null || val === undefined) return undefined;
+    if (typeof val === 'object') {
+      const obj = val as Record<string, unknown>;
+      if (typeof obj.text === 'string') return obj.text;
+      if (typeof obj.html === 'string') return obj.html;
+      if (typeof obj.body === 'string') return obj.body;
+      if (typeof obj.content === 'string') return obj.content;
+      try {
+        return JSON.stringify(val);
+      } catch {
+        return String(val);
+      }
+    }
+    return String(val);
+  }, z.string().max(maxLen).optional());
+
 export const extractOTPPayloadSchema = z
   .object({
-    text: z.string().max(100000).optional(),
-    textBody: z.string().max(100000).optional(),
-    htmlBody: z.string().max(500000).optional(),
+    text: safeBodyString(100000),
+    textBody: safeBodyString(100000),
+    htmlBody: safeBodyString(500000),
     subject: safeString.optional().nullable(),
     source: safeString.optional().nullable(),
     emailId: z.union([safeString, safeNumber]).optional(),
@@ -354,6 +391,16 @@ export const messagePayloadSchemas: Record<string, z.ZodSchema> = {
   CHECK_OTP_NOW: z.undefined().optional(),
   PING: z.undefined().optional(),
   LINK_ACTIVATED: z.undefined().optional(),
+  ACTIVATE_LINK: z
+    .object({
+      emailId: z.union([safeString, safeNumber]),
+      linkUrl: safeString,
+      emailFrom: safeString.optional(),
+      subject: safeString.optional(),
+      emailDate: safeNumber.optional(),
+      bodySnippet: safeString.optional(),
+    })
+    .optional(),
   CHECK_OTP_FRESHNESS: z.undefined().optional(),
   WAIT_FOR_FRESH_OTP: z
     .object({

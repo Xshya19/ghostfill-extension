@@ -4,13 +4,14 @@ import React, { useEffect, useId, useRef, useState, useCallback, useMemo, Compon
 
 import gmailLogo from '../../assets/icons/gmail_icon.png';
 import ghostLogoImg from '../../assets/logo.png';
-import { type AliasHistoryItem } from '../../services/gmailConnectionService';
+
 import { Button, IconButton } from '../../shared/ui';
 import { springSoft, interactiveSurface, tweenIn, tweenOut, tweenTimerBar, springDigit } from '../../shared/ui/motion';
 import { EmailAccount, Email, PasswordOptions, GeneratedPassword, DEFAULT_PASSWORD_OPTIONS } from '../../types';
-import { type GmailMessage, type GeneratePasswordResponse } from '../../types/message.types';
+import { type GmailMessage, type AliasHistoryItem } from '../../types/email.types';
+import { type GeneratePasswordResponse } from '../../types/message.types';
 import { LastOTP } from '../../types/storage.types';
-import { TIMING, formatRelativeTime, copyToClipboard } from '../../utils/core';
+import { TIMING, formatRelativeTime, copyToClipboard, contentToString } from '../../utils/core';
 import { createLogger } from '../../utils/logger';
 import { safeSendMessage, safeSendTabMessage } from '../../utils/messaging';
 import { useStorageSubscription } from '../hooks/useStorageSubscription';
@@ -691,290 +692,6 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
   );
 };
 
-// --- DebugPanel.tsx ---
-/* eslint-disable no-console */
-
-
-// Allow CSS custom properties (e.g. "--debug-bg") in inline style objects without `any`.
-type StyleWithVars = React.CSSProperties & Record<`--${string}`, string>;
-
-interface CapturedError {
-  timestamp: Date;
-  message: string;
-  stack: string;
-  source: 'error' | 'warn' | 'info' | 'log';
-  context: string;
-}
-
-interface GhostFillDebugGlobal {
-  __GHOSTFILL_ERRORS__?: CapturedError[];
-  ghostfillDebug?: {
-    getErrors: () => CapturedError[];
-    getStats: () => { total: number; errors: number; warnings: number };
-  };
-}
-
-let stylesInjected = false;
-
-const DebugPanelStyles: React.FC = () => {
-  useEffect(() => {
-    if (stylesInjected) {
-      return;
-    }
-    const style = document.createElement('style');
-    style.textContent = `
-  .gf-debug-trigger {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    z-index: 99999;
-    color: var(--gf-ink);
-    background: var(--debug-bg, var(--gf-yellow));
-    border: 2px solid var(--gf-ink);
-    border-radius: 8px;
-    padding: 10px 16px;
-    font-size: 12px;
-    font-weight: 800;
-    font-family: 'IBM Plex Mono', monospace;
-    text-transform: uppercase;
-    cursor: pointer;
-    box-shadow: 3px 3px 0 var(--gf-ink);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    transition: transform 0.1s, box-shadow 0.1s;
-  }
-  .gf-debug-trigger:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--gf-ink); }
-  .gf-debug-trigger:active { transform: translate(2px, 2px); box-shadow: 0 0 0 var(--gf-ink); }
-  
-  .gf-debug-panel {
-    position: fixed;
-    bottom: 10px;
-    right: 10px;
-    z-index: 99999;
-    width: 400px;
-    max-height: 500px;
-    background: var(--gf-bg);
-    border: 2px solid var(--gf-ink);
-    border-radius: 12px;
-    box-shadow: 6px 6px 0 var(--gf-ink);
-    overflow: hidden;
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 12px;
-    color: var(--gf-cream);
-  }
-  .gf-debug-header {
-    background: var(--gf-magenta);
-    color: var(--gf-ink);
-    padding: 12px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 2px solid var(--gf-ink);
-  }
-  .gf-debug-title { font-weight: 800; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; }
-  .gf-debug-close {
-    background: var(--gf-ink);
-    border: 2px solid var(--gf-ink);
-    color: var(--gf-magenta);
-    border-radius: 4px;
-    padding: 4px 8px;
-    cursor: pointer;
-    font-weight: 800;
-  }
-  .gf-debug-stats { padding: 12px; border-bottom: 2px solid var(--gf-ink); background: var(--gf-surface); }
-  .gf-debug-stats-row { display: flex; gap: 12px; justify-content: center; font-weight: 700; }
-  .gf-debug-actions { padding: 8px; border-bottom: 2px solid var(--gf-ink); display: flex; gap: 8px; }
-  .gf-debug-btn {
-    flex: 1; padding: 8px; border: 2px solid var(--gf-ink); border-radius: 6px;
-    cursor: pointer; font-weight: 800; text-transform: uppercase; font-size: 10px;
-    box-shadow: 2px 2px 0 var(--gf-ink); transition: transform 0.1s, box-shadow 0.1s;
-  }
-  .gf-debug-btn:active { transform: translate(2px, 2px); box-shadow: none; }
-  .gf-debug-btn-refresh { background: var(--gf-cyan); color: var(--gf-ink); }
-  .gf-debug-btn-copy { background: var(--gf-mint); color: var(--gf-ink); }
-  .gf-debug-list { max-height: 300px; overflow-y: auto; padding: 8px; }
-  .gf-debug-empty { text-align: center; color: var(--gf-text-dim); padding: 20px; }
-  .gf-debug-error {
-    padding: 8px; margin-bottom: 8px; border-radius: 6px;
-    border: 2px solid var(--gf-ink); box-shadow: 2px 2px 0 var(--gf-ink);
-    background: var(--err-bg);
-    border-left: 4px solid var(--err-border-color);
-  }
-  .gf-debug-error-title { font-weight: 800; margin-bottom: 4px; text-transform: uppercase; }
-  .gf-debug-error-message { word-break: break-word; color: var(--gf-cream); }
-  .gf-debug-error-timestamp { font-size: 10px; color: var(--gf-text-dim); margin-top: 4px; }
-    `;
-    document.head.appendChild(style);
-    stylesInjected = true;
-  }, []);
-
-  return null;
-};
-
-export const DebugPanel: React.FC = () => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [errors, setErrors] = useState<CapturedError[]>([]);
-  const [stats, setStats] = useState({ total: 0, errors: 0, warnings: 0 });
-
-  const refreshErrors = useCallback(() => {
-    const global = window as unknown as GhostFillDebugGlobal;
-    if (global.ghostfillDebug) {
-      setErrors(global.ghostfillDebug.getErrors());
-      setStats(global.ghostfillDebug.getStats());
-    }
-  }, []);
-
-  useEffect(() => {
-    refreshErrors();
-    const interval = setInterval(refreshErrors, 2000);
-    return () => clearInterval(interval);
-  }, [refreshErrors]);
-
-  const copyReport = useCallback(() => {
-    const report = `GHOSTFILL ERROR REPORT
-${'='.repeat(50)}
-Date: ${new Date().toISOString()}
-Total Errors: ${errors.length}
-Errors: ${stats.errors}
-Warnings: ${stats.warnings}
-
-${errors
-  .map(
-    (err, i) => `
-[${i + 1}] ${err.timestamp.toISOString()}
-Type: ${err.source.toUpperCase()}
-Context: ${err.context || 'N/A'}
-Message: ${err.message}
-${err.stack ? 'Stack: ' + err.stack.split('\n').slice(0, 3).join('\n') : ''}
-${'-'.repeat(30)}
-`
-  )
-  .join('')}`;
-
-    navigator.clipboard
-      .writeText(report)
-      .then(() => {
-        console.log(
-          '%c✅ Error report copied! Paste it here to share.',
-          'color: var(--gf-mint); font-weight: bold'
-        );
-      })
-      .catch(() => {
-        console.log(
-          '%c❌ Failed to copy. Check console (F12)',
-          'color: var(--gf-coral); font-weight: bold'
-        );
-        console.log(report);
-      });
-  }, [errors, stats]);
-
-  if (!isOpen) {
-    return (
-      <>
-        <button
-          className="gf-debug-trigger"
-          onClick={() => setIsOpen(true)}
-          style={
-            {
-              '--debug-bg': errors.length > 0 ? 'var(--gf-coral)' : 'var(--gf-magenta)',
-            } as StyleWithVars
-          }
-          title="Debug Panel - Click to view errors"
-        >
-          🐛 Debug {errors.length > 0 && `(${errors.length})`}
-        </button>
-        <DebugPanelStyles />
-      </>
-    );
-  }
-
-  return (
-    <>
-      <div className="gf-debug-panel">
-        {/* Header */}
-        <div className="gf-debug-header">
-          <span className="gf-debug-title">🐛 GhostFill Debug</span>
-          <button
-            className="gf-debug-close"
-            onClick={() => setIsOpen(false)}
-            aria-label="Close debug panel"
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* Stats */}
-        <div className="gf-debug-stats">
-          <div className="gf-debug-stats-row">
-            <span className="neon-text-magenta">
-              Total: <b>{stats.total}</b>
-            </span>
-            <span className="neon-text-coral">
-              Errors: <b>{stats.errors}</b>
-            </span>
-            <span className="neon-text-yellow">
-              Warnings: <b>{stats.warnings}</b>
-            </span>
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div className="gf-debug-actions">
-          <button
-            className="gf-debug-btn gf-debug-btn-refresh"
-            onClick={refreshErrors}
-            aria-label="Refresh error list"
-          >
-            🔄 Refresh
-          </button>
-          <button
-            className="gf-debug-btn gf-debug-btn-copy"
-            onClick={copyReport}
-            aria-label="Copy debug report"
-          >
-            📋 Copy Report
-          </button>
-        </div>
-
-        {/* Error List */}
-        <div className="gf-debug-list">
-          {errors.length === 0 ? (
-            <div className="gf-debug-empty">✅ No errors captured</div>
-          ) : (
-            errors
-              .slice(-10)
-              .reverse()
-              .map((err, i) => (
-                <div
-                  key={`${err.timestamp.getTime()}-${i}`}
-                  className="gf-debug-error"
-                  style={
-                    {
-                      '--err-bg':
-                        err.source === 'error'
-                          ? 'rgba(var(--gf-coral-rgb, 255,122,92), 0.08)'
-                          : 'rgba(var(--gf-yellow-rgb, 255,229,92), 0.08)',
-                      '--err-border-color':
-                        err.source === 'error' ? 'var(--gf-coral)' : 'var(--gf-yellow)',
-                    } as StyleWithVars
-                  }
-                >
-                  <div className="gf-debug-error-title">
-                    {err.source === 'error' ? '🔴' : '🟡'} {err.context || 'Error'}
-                  </div>
-                  <div className="gf-debug-error-message">{err.message.slice(0, 100)}</div>
-                  <div className="gf-debug-error-timestamp">{err.timestamp.toISOString()}</div>
-                </div>
-              ))
-          )}
-        </div>
-      </div>
-      <DebugPanelStyles />
-    </>
-  );
-};
-
 // --- EmailAvatar.tsx ---
 interface EmailAvatarProps {
   from: string;
@@ -1225,9 +942,12 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
 
   const sender = message?.fromName || message?.from || '';
   const dateText = message ? formatDate(message) : '';
-  const rawHtml = message?.htmlBody || message?.body || message?.snippet || '';
+  const rawHtml = contentToString(
+    message?.htmlBody ?? message?.body ?? message?.snippet ?? ''
+  );
   const bodyText = rawHtml ? stripHtml(rawHtml.slice(0, MAX_BODY_CHARS)) : '';
   const isLong = bodyText.length > 1200;
+  const snippet = contentToString(message?.snippet ?? '');
 
   return (
     <AnimatePresence>
@@ -1287,8 +1007,8 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
                 </div>
               ) : (
                 <>
-                  {message.snippet && message.snippet !== bodyText.slice(0, 200) && (
-                    <div className="alias-message-modal-snippet">{message.snippet}</div>
+                  {snippet && snippet !== bodyText.slice(0, 200) && (
+                    <div className="alias-message-modal-snippet">{snippet}</div>
                   )}
                   <pre
                     className={
@@ -1382,11 +1102,11 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
   }
 
   private handleUnhandledRejection(event: PromiseRejectionEvent) {
+    // A rejected promise is not a UI crash. Log it so transient failures
+    // (storage timeouts, network hiccups, third-party listeners) don't nuke
+    // the whole popup into the crash screen. Only render errors that come
+    // through getDerivedStateFromError get the crash UI.
     console.error('Unhandled promise rejection:', event.reason);
-    this.setState({
-      hasError: true,
-      error: event.reason instanceof Error ? event.reason : new Error(String(event.reason)),
-    });
   }
 
   private handleGlobalError(event: ErrorEvent) {
@@ -1673,7 +1393,7 @@ const InboxListComponent: React.FC<InboxListProps> = ({
     emailItem: DisplayedEmail
   ) => {
     const target = e.target as HTMLElement;
-    if (e.type === 'click' && target.closest('button')) {
+    if (target.closest('button')) {
       return;
     }
     if (e.type === 'keydown' && (e as React.KeyboardEvent).key !== 'Enter' && (e as React.KeyboardEvent).key !== ' ') {
@@ -2610,3 +2330,4 @@ const QuickActionsComponent: React.FC<QuickActionsProps> = ({
 
 export const QuickActions = React.memo(QuickActionsComponent);
 QuickActions.displayName = 'QuickActions';
+

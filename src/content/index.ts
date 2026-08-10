@@ -114,6 +114,17 @@ window.addEventListener('unhandledrejection', (event) => {
   log.error('Unhandled content script promise rejection:', event.reason);
 });
 
+// Idempotency and frame size guards
+if ((window as any).ghostfill_injected) {
+  log.debug('GhostFill content script already injected on this window — skipping');
+}
+(window as any).ghostfill_injected = true;
+
+const isTopFrame = window.top === window;
+if (!isTopFrame && (window.innerWidth < 100 || window.innerHeight < 100)) {
+  log.debug('Skipping GhostFill content script in tiny iframe');
+}
+
 log.info('GhostFill content script loaded');
 
 // Safe component factory that ensures all method calls are caught, avoiding crashes

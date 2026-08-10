@@ -3,6 +3,7 @@
 import { EmailAccount, Email, MailTmDomain, MailTmAccount, MailTmMessage } from '../../types';
 import { API, fetchWithTimeout } from '../../utils/core';
 import { getRandomInt, getRandomString } from '../../utils/encryption';
+import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 
 const log = createLogger('MailTmService');
@@ -234,7 +235,7 @@ export class MailTmService {
       // Generate random address if not provided
       // Pick a random domain to increase chance of bypassing blacklists
       const domain = domains[getRandomInt(0, domains.length - 1)]!;
-      const login = address || getRandomString(10, 'abcdefghijklmnopqrstuvwxyz0123456789');
+      const login = address || generateHumanLikeUsername();
       const fullEmail = `${login}@${domain}`;
       const pwd =
         password ||
@@ -460,7 +461,35 @@ export class MailTmService {
   }
 
   /**
-   * Get messages (inbox)
+   * Fetch full body for a single message
+   */
+  private async fetchFullMessage(
+    messageId: string,
+    signal?: AbortSignal
+  ): Promise<{ text: string; html: string }> {
+    const response = await this.fetchWithRetry(
+      `${this.baseUrl}${API.MAIL_TM.ENDPOINTS.MESSAGES}/${messageId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${this.token}`,
+        },
+        signal: signal ?? null,
+      }
+    );
+
+    if (!response.ok) {
+      return { text: '', html: '' };
+    }
+
+    const msg: MailTmMessage = await response.json();
+    return {
+      text: msg.text || '',
+      html: Array.isArray(msg.html) ? msg.html.join('') : String(msg.html || ''),
+    };
+  }
+
+  /**
+   * Get messages (inbox) with full body for recent messages
    */
   async getMessages(signal?: AbortSignal): Promise<Email[]> {
     try {
@@ -498,7 +527,7 @@ export class MailTmService {
         const messages: MailTmMessage[] = data['hydra:member'] || [];
 
         this.consecutiveErrors = 0;
-        return messages.map((msg) => this.convertMessage(msg));
+        return this.enrichWithFullBody(messages, signal);
       }
 
       if (!response.ok) {
@@ -509,7 +538,7 @@ export class MailTmService {
       const messages: MailTmMessage[] = data['hydra:member'] || [];
 
       this.consecutiveErrors = 0;
-      return messages.map((msg) => this.convertMessage(msg));
+      return this.enrichWithFullBody(messages, signal);
     } catch (error) {
       this.consecutiveErrors++;
       const now = Date.now();
@@ -535,6 +564,40 @@ export class MailTmService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Enrich inbox messages with full body content (first 5 messages)
+   */
+  private async enrichWithFullBody(
+    messages: MailTmMessage[],
+    signal?: AbortSignal
+  ): Promise<Email[]> {
+    if (messages.length === 0) {
+      return [];
+    }
+
+    const recentMessages = messages.slice(0, 5);
+    const fullBodyResults = await Promise.all(
+      recentMessages.map(async (msg) => {
+        try {
+          return await this.fetchFullMessage(msg.id, signal);
+        } catch {
+          return { text: '', html: '' };
+        }
+      })
+    );
+
+    return messages.map((msg, idx) => {
+      const email = this.convertMessage(msg, idx < 5);
+      if (idx < 5 && fullBodyResults[idx]) {
+        const body = fullBodyResults[idx]!;
+        email.body = body.text || msg.intro || '';
+        email.textBody = body.text || '';
+        email.htmlBody = body.html || '';
+      }
+      return email;
+    });
   }
 
   /**

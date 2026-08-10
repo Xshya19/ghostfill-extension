@@ -33,9 +33,21 @@ const RAW_CONTENT_TAGS = new Set(['script', 'style', 'head', 'title', 'noscript'
 // ── Unicode / evasion-technique normalization ───────────────────────────
 // Handles zero-width chars, NBSP variants, full-width digits (NFKC),
 // smart quotes — the #1 silent-failure cause in banking/enterprise templates.
-export function normalizeForExtraction(input: string): string {
+export function normalizeForExtraction(input: unknown): string {
   if (!input) return '';
-  return input
+  const str =
+    typeof input === 'string'
+      ? input
+      : typeof input === 'object'
+        ? (input as Record<string, unknown>).text
+          ? String((input as Record<string, unknown>).text)
+          : (input as Record<string, unknown>).html
+            ? String((input as Record<string, unknown>).html)
+            : (input as Record<string, unknown>).body
+              ? String((input as Record<string, unknown>).body)
+              : JSON.stringify(input)
+        : String(input);
+  return str
     .replace(/[\u200B-\u200D\u2060\uFEFF\u00AD]/g, '')
     .replace(/[\u00A0\u2007\u202F]/g, ' ')
     .normalize('NFKC')

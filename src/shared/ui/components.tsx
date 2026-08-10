@@ -1,13 +1,14 @@
-# GhostFill Shared UI Component Library Code Dump
+import { AnimatePresence, motion } from 'framer-motion';
+import { Loader2 } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { springSoft } from './motion';
 
-This file contains the complete source code of all UI components located in the `src/shared/ui` directory.
+/** Tiny className joiner — filters out falsy values. */
+export function cx(...parts: Array<string | false | null | undefined>): string {
+  return parts.filter(Boolean).join(' ');
+}
 
----
-
-## 1. Badge.tsx
-```tsx
-import React from 'react';
-import { cx } from './cx';
+/* ── Badge & Dot ────────────────────────────────────────────────────────── */
 
 export type BadgeTone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger';
 
@@ -38,15 +39,8 @@ export type DotTone = 'success' | 'warning' | 'danger' | 'accent';
 export const Dot: React.FC<{ tone: DotTone; className?: string }> = ({ tone, className }) => (
   <span className={cx('gf-dot', `gf-dot--${tone}`, className)} aria-hidden />
 );
-```
 
----
-
-## 2. Button.tsx
-```tsx
-import { Loader2 } from 'lucide-react';
-import React from 'react';
-import { cx } from './cx';
+/* ── Button ────────────────────────────────────────────────────────────── */
 
 export type ButtonVariant = 'default' | 'primary' | 'danger' | 'soft' | 'ghost';
 export type ButtonSize = 'sm' | 'md' | 'lg';
@@ -98,91 +92,8 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function 
     </button>
   );
 });
-```
 
----
-
-## 3. Card.tsx
-```tsx
-import React from 'react';
-import { cx } from './cx';
-
-export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
-  interactive?: boolean;
-  flush?: boolean;
-  sunken?: boolean;
-}
-
-/** Neo-brutalist surface card (2px ink border, hard offset shadow). */
-export const Card = React.forwardRef<HTMLDivElement, CardProps>(function Card(
-  { interactive = false, flush = false, sunken = false, className, children, ...rest },
-  ref
-) {
-  return (
-    <div
-      ref={ref}
-      className={cx(
-        'gf-card',
-        interactive && 'gf-card--interactive',
-        flush && 'gf-card--flush',
-        sunken && 'gf-card--sunken',
-        className
-      )}
-      {...rest}
-    >
-      {children}
-    </div>
-  );
-});
-```
-
----
-
-## 4. cx.ts
-```typescript
-/** Tiny className joiner — filters out falsy values. */
-export function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(' ');
-}
-```
-
----
-
-## 5. EmptyState.tsx
-```tsx
-import React from 'react';
-import { cx } from './cx';
-
-export interface EmptyStateProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'title'> {
-  icon?: React.ReactNode;
-  title?: React.ReactNode;
-  description?: React.ReactNode;
-}
-
-/** Centered empty / placeholder state. */
-export const EmptyState: React.FC<EmptyStateProps> = ({
-  icon,
-  title,
-  description,
-  className,
-  children,
-  ...rest
-}) => (
-  <div className={cx('gf-empty', className)} {...rest}>
-    {icon}
-    {title && <span className="gf-empty__title">{title}</span>}
-    {description && <span className="gf-empty__desc">{description}</span>}
-    {children}
-  </div>
-);
-```
-
----
-
-## 6. IconButton.tsx
-```tsx
-import React from 'react';
-import { cx } from './cx';
+/* ── IconButton ─────────────────────────────────────────────────────────── */
 
 export type IconButtonVariant = 'default' | 'primary' | 'danger' | 'success' | 'plain';
 export type IconButtonSize = 'sm' | 'md';
@@ -217,47 +128,63 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(f
     </button>
   );
 });
-```
 
----
+/* ── Card ───────────────────────────────────────────────────────────────── */
 
-## 7. index.ts
-```typescript
-/**
- * GhostFill shared UI primitives — the single, neo-brutalist component vocabulary
- * used by the popup and options surfaces. Styling lives in
- * src/shared/styles/primitives.css.
- */
-export { Button } from './Button';
-export type { ButtonProps, ButtonVariant, ButtonSize } from './Button';
-export { IconButton } from './IconButton';
-export type { IconButtonProps, IconButtonVariant, IconButtonSize } from './IconButton';
-export { Card } from './Card';
-export type { CardProps } from './Card';
-export { Input, Field } from './Input';
-export type { InputProps, FieldProps } from './Input';
-export { Toggle } from './Toggle';
-export type { ToggleProps } from './Toggle';
-export { Badge, Dot } from './Badge';
-export type { BadgeProps, BadgeTone, DotTone } from './Badge';
-export { Spinner } from './Spinner';
-export type { SpinnerProps } from './Spinner';
-export { EmptyState } from './EmptyState';
-export type { EmptyStateProps } from './EmptyState';
-export { Modal } from './Modal';
-export type { ModalProps } from './Modal';
-export { Toast } from './Toast';
-export type { ToastProps } from './Toast';
-export { cx } from './cx';
-export * from './motion';
-```
+export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+  interactive?: boolean;
+  flush?: boolean;
+  sunken?: boolean;
+}
 
----
+/** Neo-brutalist surface card (2px ink border, hard offset shadow). */
+export const Card = React.forwardRef<HTMLDivElement, CardProps>(function Card(
+  { interactive = false, flush = false, sunken = false, className, children, ...rest },
+  ref
+) {
+  return (
+    <div
+      ref={ref}
+      className={cx(
+        'gf-card',
+        interactive && 'gf-card--interactive',
+        flush && 'gf-card--flush',
+        sunken && 'gf-card--sunken',
+        className
+      )}
+      {...rest}
+    >
+      {children}
+    </div>
+  );
+});
 
-## 8. Input.tsx
-```tsx
-import React from 'react';
-import { cx } from './cx';
+/* ── EmptyState ─────────────────────────────────────────────────────────── */
+
+export interface EmptyStateProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'title'> {
+  icon?: React.ReactNode;
+  title?: React.ReactNode;
+  description?: React.ReactNode;
+}
+
+/** Centered empty / placeholder state. */
+export const EmptyState: React.FC<EmptyStateProps> = ({
+  icon,
+  title,
+  description,
+  className,
+  children,
+  ...rest
+}) => (
+  <div className={cx('gf-empty', className)} {...rest}>
+    {icon}
+    {title && <span className="gf-empty__title">{title}</span>}
+    {description && <span className="gf-empty__desc">{description}</span>}
+    {children}
+  </div>
+);
+
+/* ── Input & Field ──────────────────────────────────────────────────────── */
 
 export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   mono?: boolean;
@@ -318,16 +245,8 @@ export const Field: React.FC<FieldProps> = ({ label, htmlFor, hint, error, class
     ) : null}
   </div>
 );
-```
 
----
-
-## 9. Modal.tsx
-```tsx
-import { AnimatePresence, motion } from 'framer-motion';
-import React, { useEffect } from 'react';
-import { cx } from './cx';
-import { springSoft } from './motion';
+/* ── Modal ──────────────────────────────────────────────────────────────── */
 
 export interface ModalProps {
   open: boolean;
@@ -405,184 +324,8 @@ export const Modal: React.FC<ModalProps> = ({
     </AnimatePresence>
   );
 };
-```
 
----
-
-## 10. motion.ts
-```typescript
-/**
- * Motion system — centralized spring + tween definitions (shared).
- *
- * Single source of truth for every animation across the popup and options.
- * One motion language, two families: spring for organic motion (buttons,
- * toggles, FAB), tween for state changes (entrance, exit, route changes).
- *
- * Coupled to the CSS tokens in shared/styles/design-tokens.css:
- *   --gf-dur-fast = 140ms · --gf-dur = 200ms · --gf-dur-slow = 360ms
- *   --gf-ease-out = cubic-bezier(0.16, 1, 0.3, 1)
- *   --gf-ease     = cubic-bezier(0.22, 1, 0.36, 1)
- *   --gf-ease-back = cubic-bezier(0.34, 1.56, 0.64, 1)
- */
-import type { Transition, Variants } from 'framer-motion';
-
-/* ── Springs ─────────────────────────────────────────────────────── */
-
-/** Default spring — buttons, toggles, FAB press. Fast, snappy. */
-export const springDefault: Transition = {
-  type: 'spring',
-  stiffness: 380,
-  damping: 35,
-  mass: 0.8,
-};
-
-/** Soft spring — page transitions, list reorder, sheet enter. */
-export const springSoft: Transition = {
-  type: 'spring',
-  stiffness: 260,
-  damping: 28,
-  mass: 0.85,
-};
-
-/** Tab pill spring — used for the sliding active-tab indicator (layoutId). */
-export const springTab: Transition = {
-  type: 'spring',
-  stiffness: 320,
-  damping: 28,
-  mass: 0.85,
-};
-
-/** Per-digit spring — tight, snappy entrance for OTP characters. */
-export const springDigit: Transition = {
-  type: 'spring',
-  stiffness: 300,
-  damping: 15,
-  mass: 0.7,
-};
-
-/** Playful spring with a small overshoot — success toasts, copy button. */
-export const springBounce: Transition = {
-  type: 'spring',
-  stiffness: 500,
-  damping: 22,
-  mass: 0.65,
-};
-
-/* ── Tweens (state transitions) ─────────────────────────────────── */
-
-/** Snappy entrance — toast, banner, modal. */
-export const tweenIn: Transition = {
-  duration: 0.22,
-  ease: [0.16, 1, 0.3, 1],
-};
-
-/** Slow entrance — page-level fade. */
-export const tweenFade: Transition = {
-  duration: 0.32,
-  ease: [0.22, 1, 0.36, 1],
-};
-
-/** Spring-back entrance. */
-export const tweenBack: Transition = {
-  duration: 0.4,
-  ease: [0.34, 1.56, 0.64, 1],
-};
-
-/** Quick exit. */
-export const tweenOut: Transition = {
-  duration: 0.16,
-  ease: [0.4, 0, 1, 1],
-};
-
-/** 1s smooth tween — used for the OTP timer bar width animation. */
-export const tweenTimerBar: Transition = {
-  duration: 1,
-  ease: 'linear',
-};
-
-/* ── Hover / Press / Focus (the interactive vocabulary) ──────────── */
-
-export const hoverLift = {
-  y: -2,
-  boxShadow: 'var(--gf-shadow-lg)',
-  transition: { type: 'spring', stiffness: 480, damping: 22 } as Transition,
-};
-
-export const pressDown = {
-  y: 1,
-  boxShadow: 'var(--gf-shadow-sm)',
-  transition: { type: 'spring', stiffness: 600, damping: 26 } as Transition,
-};
-
-export const rest = {
-  y: 0,
-  boxShadow: 'var(--gf-shadow)',
-  transition: { type: 'spring', stiffness: 360, damping: 28 } as Transition,
-};
-
-export const fabHover = {
-  scale: 1.06,
-  rotate: -3,
-  boxShadow: 'var(--gf-shadow-lg)',
-  transition: { type: 'spring', stiffness: 480, damping: 20 } as Transition,
-};
-
-export const fabPress = {
-  scale: 0.94,
-  rotate: 0,
-  boxShadow: 'var(--gf-shadow-sm)',
-  transition: { type: 'spring', stiffness: 640, damping: 24 } as Transition,
-};
-
-/* ── Page / view transitions ────────────────────────────────────── */
-
-export const viewFade: Variants = {
-  initial: { opacity: 0, y: 8, scale: 0.99 },
-  animate: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: { duration: 0.28, ease: [0.16, 1, 0.3, 1] },
-  },
-  exit: {
-    opacity: 0,
-    y: -6,
-    scale: 0.99,
-    transition: { duration: 0.16, ease: [0.4, 0, 1, 1] },
-  },
-};
-
-export const sheetUp: Variants = {
-  initial: { opacity: 0, y: 24 },
-  animate: { opacity: 1, y: 0, transition: { duration: 0.32, ease: [0.16, 1, 0.3, 1] } },
-  exit: { opacity: 0, y: 12, transition: { duration: 0.18, ease: [0.4, 0, 1, 1] } },
-};
-
-export const stagger: Variants = {
-  animate: { transition: { staggerChildren: 0.04, delayChildren: 0.04 } },
-};
-
-export const itemRise: Variants = {
-  initial: { opacity: 0, y: 6 },
-  animate: { opacity: 1, y: 0, transition: { duration: 0.24, ease: [0.16, 1, 0.3, 1] } },
-};
-
-/** Drop-in <motion.button> whileHover/whileTap preset. */
-export const interactiveSurface = {
-  whileHover: hoverLift,
-  whileTap: pressDown,
-  initial: rest,
-  animate: rest,
-};
-```
-
----
-
-## 11. Spinner.tsx
-```tsx
-import { Loader2 } from 'lucide-react';
-import React from 'react';
-import { cx } from './cx';
+/* ── Spinner ────────────────────────────────────────────────────────────── */
 
 export interface SpinnerProps {
   size?: number;
@@ -596,15 +339,8 @@ export const Spinner: React.FC<SpinnerProps> = ({ size = 18, className, label = 
     <Loader2 size={size} className="gf-spin" aria-hidden />
   </span>
 );
-```
 
----
-
-## 12. Toast.tsx
-```tsx
-import { AnimatePresence, motion } from 'framer-motion';
-import React from 'react';
-import { springSoft } from './motion';
+/* ── Toast ──────────────────────────────────────────────────────────────── */
 
 export interface ToastProps {
   message: string | null;
@@ -629,14 +365,8 @@ export const Toast: React.FC<ToastProps> = ({ message }) => (
     )}
   </AnimatePresence>
 );
-```
 
----
-
-## 13. Toggle.tsx
-```tsx
-import React from 'react';
-import { cx } from './cx';
+/* ── Toggle ─────────────────────────────────────────────────────────────── */
 
 export interface ToggleProps {
   checked: boolean;
@@ -673,4 +403,3 @@ export const Toggle: React.FC<ToggleProps> = ({
     {...aria}
   />
 );
-```

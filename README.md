@@ -62,25 +62,32 @@ Everything runs as a Chrome Manifest V3 extension. Email extraction and form fil
 
 Generate a throwaway address and use it on signup forms.
 
-- Multiple public temp-mail backends (auto-selected by health)
+- **Human-Like Username Generator**: Automatically creates realistic human email prefixes (`sarah.mitchell92`, `james.wilson`, `d.johnson47`) across all supported providers instead of suspicious random alphanumeric text.
+- Multiple public temp-mail backends (auto-selected by health and benchmark performance)
 - Provider **self-heal**: if one API is down or slow, GhostFill tries the next
 - Inbox polling in the background while you wait for verification
 - Preferred provider can be set in **Options → Email**
 
-**Supported services (built-in):**
+**Supported services (16 built-in providers, ordered by performance):**
 
-| Provider | Service key |
-| --- | --- |
-| Mail.tm | `mailtm` |
-| Driftz | `driftz` |
-| Mail.gw | `mailgw` |
-| Maildrop | `maildrop` |
-| Guerrilla Mail | `guerrilla` |
-| TempMail | `tempmail` |
-| 1secmail | `1secmail` |
-| Custom domain (advanced) | `custom` |
-
-> Public temp-mail providers are third-party. Availability, retention, and abuse policies are theirs — GhostFill only integrates their APIs and switches when health checks fail.
+| Provider | Service Key | Primary Domain(s) | Human Names | Highlights |
+| --- | --- | --- | --- | --- |
+| **CatchMail.io** | `catchmail` | `catchmail.io` | ✅ Yes | ⚡ **Fastest (939ms)** & 7-Day Retention |
+| **Mail.cx** | `mailcx` | `mail.cx` | ✅ Yes | Fast & SSE Real-time streaming |
+| **OpenInbox.io** | `openinbox` | `openinbox.io` | ✅ Yes | Fast & Webhook-ready for OTPs |
+| **MailboxTemp** | `mailboxtemp` | `mailboxtemp.com` | ✅ Yes | Fast & 24-hour retention |
+| **Dropmail.me** | `dropmail` | `dropmail.me`, `emlpro.com` | ❌ Server | GraphQL API & 4 rotating domains |
+| **Driftz.net** | `driftz` | `bbjbinin.mn`, `manornewtech.org` | ❌ Server | `.mn`/`.org` anti-disposable blocklist bypass |
+| **GetNada / Inboxes** | `getnada` | `getnada.com`, `nada.ltd`, `inboxes.com` | ✅ Yes | 4 multi-TLD domain options |
+| **Tempmail.plus** | `tempmailplus` | `tempmail.plus`, `mailto.plus` | ✅ Yes | 3 domain aliases |
+| **EvilMail.pro** | `evilmail` | `evilmail.dev`, `evilmail.pro` | ✅ Yes | REST API with TTL control |
+| **Guerrilla Mail** | `guerrilla` | `guerrillamail.com`, `sharklasers.com`, `grr.la`, `pokemail.net`, +6 more | ✅ Yes | **10 Stealth Domains** (sharklasers, grr.la) |
+| **Maildrop** | `maildrop` | `maildrop.cc` | ✅ Yes | Apollo GraphQL API |
+| **1secmail** | `tempmail` / `1secmail` | `1secmail.com`, `kzccv.com`, +7 more | ✅ Yes | 9 public domains |
+| **TempMail.lol** | `tempmaillol` | `tempmail.lol`, `disposable.com` | ✅ Yes | API v2 integration |
+| **Mail.tm** | `mailtm` | `web-library.net` | ✅ Yes | REST API with JWT Auth |
+| **Mail.gw** | `mailgw` | `exdonuts.com` | ✅ Yes | REST API with JWT Auth |
+| **Custom domain** | `custom` | *User-defined* | ✅ Yes | Private Cloudflare Worker / self-hosted API |
 
 ### 2. Gmail scrambler (dot & plus aliases)
 
@@ -407,7 +414,7 @@ Open the popup Hub → inbox list / full inbox to read messages, copy codes, or 
 ## Architecture (high level)
 
 ```text
-┌─────────────────────┐     messages      ┌──────────────────────────┐
+┌─────────────────────┐     messages     ┌──────────────────────────┐
 │  Content script     │ ◄──────────────► │  Service worker (BG)     │
 │  FAB, form detect,  │                  │  polling, Gmail, OTP     │
 │  OTP fill, SPA fix  │                  │  delivery, health mgmt   │

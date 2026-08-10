@@ -1,9 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { AliasHistoryItem } from '../../services/gmailConnectionService';
+
 import { storageService } from '../../services/storageService';
 import { EmailAccount } from '../../types';
-import { GmailMessage, GmailProfile } from '../../types/message.types';
+import { GmailMessage, GmailProfile, AliasHistoryItem } from '../../types/email.types';
 
 // Advanced State Management for GhostFill 3.0
 // Persisted state using Zustand
@@ -127,14 +127,14 @@ export const useAppStore = create<AppState>()(
       migrate: (persistedState) => {
         const state = persistedState as Partial<AppState> | undefined;
         return {
-          view: state?.view ?? 'hub',
+          view: 'hub',
           isFirstTime: state?.isFirstTime ?? false,
         };
       },
       partialize: (state) => ({
-        view: state.view,
         isFirstTime: state.isFirstTime,
       }),
     }
   )
 );
+

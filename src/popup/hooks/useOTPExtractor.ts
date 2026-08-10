@@ -72,15 +72,33 @@ export function useOTPExtractor(emails: Email[]): {
         }
 
         try {
+          const toSafeStr = (v: unknown): string => {
+            if (typeof v === 'string') return v;
+            if (!v) return '';
+            if (typeof v === 'object') {
+              const obj = v as Record<string, unknown>;
+              if (typeof obj.text === 'string') return obj.text;
+              if (typeof obj.html === 'string') return obj.html;
+              if (typeof obj.body === 'string') return obj.body;
+              if (typeof obj.content === 'string') return obj.content;
+              try { return JSON.stringify(v); } catch { return String(v); }
+            }
+            return String(v);
+          };
+
+          const rawBody = toSafeStr(email.body);
+          const rawTextBody = toSafeStr(email.textBody) || rawBody;
+          const rawHtmlBody = toSafeStr(email.htmlBody) || (rawBody.includes('<') ? rawBody : '');
+
           const response = (await safeSendMessage({
             action: 'EXTRACT_OTP',
             payload: {
-              subject: email.subject,
-              textBody: email.textBody || email.body || '',
-              htmlBody: email.htmlBody || (email.body?.includes('<') ? email.body : ''),
+              subject: typeof email.subject === 'string' ? email.subject : String(email.subject || ''),
+              textBody: rawTextBody,
+              htmlBody: rawHtmlBody,
               source: 'popup-inbox',
               emailId: email.id,
-              emailFrom: email.from,
+              emailFrom: typeof email.from === 'string' ? email.from : String(email.from || ''),
               emailDate: email.date,
               saveToLastOTP: false,
             },
@@ -90,18 +108,17 @@ export function useOTPExtractor(emails: Email[]): {
             const otpVal =
               response?.success && response?.otp ? normalizePopupOTP(response.otp) : null;
             const linkVal = response?.success && response?.link ? response.link : null;
-            otpsRef.current = { ...otpsRef.current, [email.id]: otpVal };
-            linksRef.current = { ...linksRef.current, [email.id]: linkVal };
-            setEmailOTPs((prev) => ({ ...prev, [email.id]: otpVal }));
-            setEmailLinks((prev) => ({ ...prev, [email.id]: linkVal }));
+            if (otpVal !== null) {
+              otpsRef.current = { ...otpsRef.current, [email.id]: otpVal };
+              setEmailOTPs((prev) => ({ ...prev, [email.id]: otpVal }));
+            }
+            if (linkVal !== null) {
+              linksRef.current = { ...linksRef.current, [email.id]: linkVal };
+              setEmailLinks((prev) => ({ ...prev, [email.id]: linkVal }));
+            }
           }
         } catch {
-          if (mounted) {
-            otpsRef.current = { ...otpsRef.current, [email.id]: null };
-            linksRef.current = { ...linksRef.current, [email.id]: null };
-            setEmailOTPs((prev) => ({ ...prev, [email.id]: null }));
-            setEmailLinks((prev) => ({ ...prev, [email.id]: null }));
-          }
+          // Keep the id unmarked so it is retried on the next pass instead of being cached as null
         }
       }
     };

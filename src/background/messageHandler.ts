@@ -16,6 +16,7 @@ import {
 } from '../services/gmailConnectionService';
 import { identityService } from '../services/identityService';
 import { extractAll } from '../services/intelligentExtractor';
+import { DEFAULT_SETTINGS } from '../types/storage.types';
 import { linkService } from '../services/linkService';
 import { otpService } from '../services/otpService';
 import { passwordService } from '../services/passwordService';
@@ -40,14 +41,20 @@ import {
   stopFastOTPPolling,
   triggerEventDrivenPolling,
   recordEmailReceived,
-  isActivationTab,
   getOTPWaitingTabs,
   resetEmailSession,
   suppressNextEmailTypeTransition,
   startGmailAliasFastPolling,
-  onContentScriptReady,
   extractEmailOnce,
+  deliverOTP,
+  type EmailContext,
 } from './pollingManager';
+import {
+  isActivationTab,
+  onContentScriptReady,
+} from './activationRegistry';
+import { ensureInitialized } from './initGuard';
+import { getBootState } from './serviceWorker';
 import { sseManager } from './sseManager';
 
 const log = createLogger('MessageHandler');
@@ -133,7 +140,7 @@ function normalizeEmailOTP(value: string | null | undefined): string | null {
   if (clean.length < 4 || clean.length > 10) {
     return null;
   }
-  if (!/\d/.test(clean) || !/^[A-Za-z0-9]+$/.test(clean)) {
+  if (!/^[A-Za-z0-9]+$/.test(clean)) {
     return null;
   }
 
@@ -228,6 +235,62 @@ async function saveExtractedOTPFromMessage(
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// activateDetectedLink
+//
+// Permanent, typed activation path shared by:
+//   - EXTRACT_OTP handler (popup opens email containing a link)
+//   - ACTIVATE_LINK handler (popup explicit "Open Link" button)
+//
+// Mirrors the polling engine flow exactly:
+//   1. Read autoConfirmLinks from settings
+//   2. Fetch current account for dedup keying
+//   3. Build a properly-typed Email object
+//   4. Delegate to linkService.handleDetectedLink() with full security gate
+// ─────────────────────────────────────────────────────────────────────────────
+async function activateDetectedLink(params: {
+  emailId: string | number;
+  linkUrl: string;
+  emailFrom?: string;
+  subject?: string;
+  emailDate?: number;
+  bodySnippet?: string;
+}): Promise<void> {
+  const rawSettings = await storageService.get('settings');
+  const autoConfirm = rawSettings?.autoConfirmLinks ?? DEFAULT_SETTINGS.autoConfirmLinks;
+  if (!autoConfirm) {
+    log.info('⏭️ autoConfirmLinks disabled — skipping link activation', {
+      emailId: params.emailId,
+    });
+    return;
+  }
+
+  const currentAccount = await emailService.getCurrentEmail().catch(() => null);
+  const accountId = currentAccount?.fullEmail;
+
+  // Construct a properly-typed Email so linkService can deduplicate,
+  // validate, and record the activation cleanly.
+  const email: import('../types').Email = {
+    id: params.emailId,
+    subject: params.subject || '',
+    from: params.emailFrom || '',
+    body: params.bodySnippet || '',
+    htmlBody: '',
+    to: accountId || '',
+    date: params.emailDate ?? Date.now(),
+    attachments: [],
+    read: true,
+  };
+
+  log.info('🔗 Delegating activation link to linkService (popup path)', {
+    emailId: params.emailId,
+    url: params.linkUrl.substring(0, 60),
+  });
+
+  await linkService.handleDetectedLink(email, params.linkUrl, accountId);
+}
+
+
 /**
  * Main message router for the background script.
  * Handles all core extension actions from popup and content scripts.
@@ -242,17 +305,50 @@ const HIGH_PRIORITY_ACTIONS = new Set([
   'GMAIL_GET_STATUS',
 ]);
 
+const MAX_DEDUP_HASH_AGE_MS = 2000;
+const MAX_DEDUP_MAP_SIZE = 100;
+
+function getPayloadFingerprint(payload: any): string {
+  if (!payload || typeof payload !== 'object') return '';
+  // GRANDMASTER FIX: Only hash stable, small identifiers. 
+  // NEVER stringify HTML, DOM, or Email bodies.
+  const keys = ['emailId', 'url', 'domain', 'service', 'messageId', 'alias', 'website'];
+  const parts = [];
+  for (const k of keys) {
+    if (payload[k] !== undefined) parts.push(`${k}:${payload[k]}`);
+  }
+  return parts.join('|');
+}
+
 function isMessageDuplicate(message: ExtensionMessage): boolean {
+  // Never deduplicate reads/queries, high priority actions, or explicit user mutation/generation actions
   if (
     HIGH_PRIORITY_ACTIONS.has(message.action) ||
     message.action.startsWith('GET_') ||
-    message.action.startsWith('CHECK_')
+    message.action.startsWith('CHECK_') ||
+    message.action.startsWith('GENERATE_') ||
+    message.action.startsWith('SAVE_') ||
+    message.action.startsWith('DELETE_') ||
+    message.action.startsWith('FILL_') ||
+    message.action.startsWith('REFRESH_') ||
+    message.action.startsWith('GMAIL_SIGN_')
   ) {
     return false;
   }
   try {
-    const hash = `${message.action}:${JSON.stringify((message as any).payload ?? {})}`;
+    // GRANDMASTER FIX: O(1) memory allocation. No JSON.stringify.
+    const hash = `${message.action}:${getPayloadFingerprint((message as any).payload)}`;
     const now = Date.now();
+
+    // Auto-prune map if it exceeds MAX_DEDUP_MAP_SIZE to prevent memory leaks (BUG-3)
+    if (lastProcessedMessageHashes.size > MAX_DEDUP_MAP_SIZE) {
+      for (const [k, ts] of lastProcessedMessageHashes.entries()) {
+        if (now - ts > MAX_DEDUP_HASH_AGE_MS) {
+          lastProcessedMessageHashes.delete(k);
+        }
+      }
+    }
+
     const lastTime = lastProcessedMessageHashes.get(hash);
     if (lastTime && now - lastTime < 500) {
       return true;
@@ -302,6 +398,13 @@ export function setupMessageHandler(): void {
       // Use IIFE for async handling in listener
       void (async () => {
         try {
+          // 🚨 CRITICAL FIX: Wait for cold boot process to finish before handling messages
+          await ensureInitialized();
+          if (getBootState() === 'failed') {
+            wrappedSendResponse({ success: false, error: 'Extension initialization failed.' });
+            return;
+          }
+
           const validation = validateMessage(message);
           if (!validation.valid) {
             log.warn('Blocked invalid message', {
@@ -682,14 +785,28 @@ async function handleMessage(
     // ── INTELLIGENCE LAYER ─────────────────────────────────────────
     case 'EXTRACT_OTP': {
       const payload = message.payload as ExtractOTPPayloadWithMetadata | undefined;
-      const subject = (payload?.subject as string) || '';
-      const source = (payload?.source as string) || '';
+      const toSafeStr = (v: unknown): string => {
+        if (typeof v === 'string') return v;
+        if (!v) return '';
+        if (typeof v === 'object') {
+          const obj = v as Record<string, unknown>;
+          if (typeof obj.text === 'string') return obj.text;
+          if (typeof obj.html === 'string') return obj.html;
+          if (typeof obj.body === 'string') return obj.body;
+          if (typeof obj.content === 'string') return obj.content;
+          try { return JSON.stringify(v); } catch { return String(v); }
+        }
+        return String(v);
+      };
+
+      const subject = toSafeStr(payload?.subject);
+      const source = toSafeStr(payload?.source);
 
       log.info(`🧠 Requesting off-main-thread OTP/Link extraction for source: ${source}`);
 
       const extractFn = async () => {
-        let textBody = (payload?.textBody as string) || (payload?.text as string) || '';
-        let htmlBody = (payload?.htmlBody as string) || '';
+        let textBody = toSafeStr(payload?.textBody) || toSafeStr(payload?.text);
+        let htmlBody = toSafeStr(payload?.htmlBody);
 
         // If the email lacks htmlBody or only contains snippet preview text (typical for list view snippets),
         // fetch the full email body first to allow high-accuracy extraction.
@@ -704,11 +821,13 @@ async function handleMessage(
                 String(payload.emailId),
                 currentAccount
               );
-              if (fullEmail.htmlBody) {
-                htmlBody = fullEmail.htmlBody;
+              const fetchedHtml = toSafeStr(fullEmail.htmlBody);
+              const fetchedBody = toSafeStr(fullEmail.body || fullEmail.textBody);
+              if (fetchedHtml) {
+                htmlBody = fetchedHtml;
               }
-              if (fullEmail.body || fullEmail.textBody) {
-                textBody = fullEmail.body || fullEmail.textBody || '';
+              if (fetchedBody) {
+                textBody = fetchedBody;
               }
             }
           } catch (e) {
@@ -716,7 +835,7 @@ async function handleMessage(
           }
         }
 
-        const senderEmail = payload?.emailFrom || 'noreply@ghostfill.ai';
+        const senderEmail = toSafeStr(payload?.emailFrom) || 'noreply@ghostfill.ai';
         const result = extractAll(subject, textBody, htmlBody, senderEmail);
         return {
           code: result.otp?.code ?? null,
@@ -748,11 +867,64 @@ async function handleMessage(
         });
       }
 
+      // ── OTP delivery to waiting tabs (popup path) ──────────────────
+      // The polling engine calls deliverOTP() when it finds an OTP.
+      // Mirror that here so popup-triggered extraction also fills any
+      // OTP field that is currently waiting.
+      // deliverOTP() returns false immediately when no tabs are waiting,
+      // so there is zero cost when the user is just browsing the inbox.
+      if (otpCode) {
+        const emailCtx: EmailContext = {
+          from: toSafeStr(payload?.emailFrom) || '',
+          subject: subject || '',
+          bodySnippet: (toSafeStr(payload?.textBody) || toSafeStr(payload?.text) || '').substring(0, 500),
+        };
+        void deliverOTP(otpCode, otpConfidence, emailCtx).catch((e) =>
+          log.warn('OTP delivery error (EXTRACT_OTP path)', e)
+        );
+      }
+
+      // ── Activation link (popup path) ───────────────────────────────
+      // Delegate to the ACTIVATE_LINK handler so we go through the
+      // same security gate, dedup, and linkService flow as the polling
+      // engine — not an inline fire-and-forget hack.
+      if (linkUrl && payload?.emailId) {
+        const fromStr = toSafeStr(payload?.emailFrom);
+        const bodyStr = (toSafeStr(payload?.textBody) || toSafeStr(payload?.text) || '').substring(0, 500);
+        void activateDetectedLink({
+          emailId: payload.emailId,
+          linkUrl,
+          ...(fromStr ? { emailFrom: fromStr } : {}),
+          ...(subject ? { subject } : {}),
+          ...(typeof payload?.emailDate === 'number' ? { emailDate: payload.emailDate } : {}),
+          ...(bodyStr ? { bodySnippet: bodyStr } : {}),
+        }).catch((e) => log.warn('Link activation error (EXTRACT_OTP path)', e));
+      }
+
       return {
         success: true,
         otp: otpCode ?? undefined,
         link: linkUrl ?? undefined,
       };
+    }
+
+    // ── ACTIVATE LINK (permanent, typed handler) ─────────────────────
+    // Called internally by EXTRACT_OTP and also directly by the popup
+    // when the user clicks an "Open Link" button.
+    // Routes through linkService with its full security gate + dedup.
+    case 'ACTIVATE_LINK': {
+      if (message.action === 'ACTIVATE_LINK' && message.payload) {
+        const p = message.payload;
+        await activateDetectedLink({
+          emailId: p.emailId,
+          linkUrl: p.linkUrl,
+          ...(p.emailFrom ? { emailFrom: p.emailFrom } : {}),
+          ...(p.subject ? { subject: p.subject } : {}),
+          ...(p.emailDate !== undefined ? { emailDate: p.emailDate } : {}),
+          ...(p.bodySnippet ? { bodySnippet: p.bodySnippet } : {}),
+        });
+      }
+      return { success: true };
     }
 
     // ── PASSWORD ACTIONS ──────────────────────────────────────────
@@ -836,99 +1008,14 @@ async function handleMessage(
         }
 
         if (baseEmail) {
-          try {
-            let domain = 'general';
-            if (sender.url) {
-              try {
-                const urlObj = new URL(sender.url);
-                let hostname = urlObj.hostname;
-                if (hostname.startsWith('www.')) {
-                  hostname = hostname.substring(4);
-                }
-                if (hostname) {
-                  domain = hostname;
-                }
-              } catch {
-                /* Intentionally ignored */
-              }
-            }
-
-            const aliasSession = await getOrCreateGmailAliasSessionByDomain(
-              baseEmail,
-              domain,
-              getRandomizedGmailAlias
-            );
-            const aliasEmail = aliasSession.alias;
-            identity.email = aliasEmail;
-
-            const currentEmail = await storageService.get('currentEmail');
-            const currentAlias =
-              currentEmail && typeof currentEmail === 'object' && currentEmail.service === 'gmail'
-                ? String(currentEmail.fullEmail || '').toLowerCase()
-                : '';
-            const isDifferentEmail = currentAlias !== aliasEmail.toLowerCase();
-
-            const currentEmailAcct: EmailAccount = {
-              id: `gmail_${aliasEmail.replace(/[@.+]/g, '_')}`,
-              fullEmail: aliasEmail,
-              domain: 'gmail.com',
-              service: 'gmail',
-              createdAt: aliasSession.startedAt,
-              expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
-              gmailBaseEmail: baseEmail,
-              gmailAliasSessionStartedAt: aliasSession.startedAt,
-            };
-
-            if (isDifferentEmail) {
-              log.info('🔄 Gmail alias transition in GET_IDENTITY — full session reset', {
-                old: currentEmail?.fullEmail,
-                new: aliasEmail,
-              });
-              await otpService.clearLastOTP();
-              resetEmailSession();
-              resetNotificationSession();
-              linkService.clearHistory();
-              await storageService.set('inbox', []);
-              invalidateGmailInboxFetches();
-              await storageService.set('gmailInbox', []);
-              await storageService.set('gmailSyncState', {});
-              chrome.tabs.query({}, (tabs) => {
-                for (const tab of tabs) {
-                  if (tab.id) {
-                    chrome.tabs.sendMessage(tab.id, { action: 'RESET_STATE' }).catch(() => {});
-                  }
-                }
-              });
-            }
-
-            sseManager.disconnect();
-            await storageService.setImmediate('currentEmail', currentEmailAcct);
-
-            if (isDifferentEmail) {
-              startEmailPolling();
-              triggerEventDrivenPolling('email_gen');
-            }
-
-            const history = (await storageService.get('aliasHistory')) ?? [];
-            const exists = history.some((h: any) => h.alias === aliasEmail && h.website === domain);
-            if (!exists) {
-              const newItem = {
-                alias: aliasEmail,
-                originalEmail: baseEmail,
-                type: 'combined' as const,
-                website: domain,
-                createdAt: Date.now(),
-              };
-              await storageService.set('aliasHistory', [newItem, ...history].slice(0, 500));
-            }
-            log.info('GET_IDENTITY fill source=gmail', {
-              aliasEmail,
-              domain,
-              preferredEmailType,
-            });
-            startGmailAliasFastPolling('gmail_alias_resolved');
-          } catch (e) {
-            log.warn('Failed to generate Gmail alias for identity', e);
+          // Read existing alias, DO NOT reset session if it mismatches
+          const aliasSession = await getMostRecentGmailAliasSession();
+          if (aliasSession) {
+            identity.email = aliasSession.alias;
+            log.info('GET_IDENTITY fill source=gmail', { aliasEmail: aliasSession.alias, preferredEmailType });
+          } else {
+            identity.email = ''; // Let the popup call GENERATE_GMAIL_ALIAS explicitly
+            log.info('GET_IDENTITY: Gmail tab active, no active alias session — email left empty');
           }
         } else {
           // Gmail tab active but not connected — never fall back to temp mail
@@ -944,8 +1031,6 @@ async function handleMessage(
           disposableEmail.domain !== 'gmail.com'
         ) {
           identity.email = disposableEmail.fullEmail;
-          // Keep currentEmail aligned so inbox/polling match the fill address
-          await storageService.setImmediate('currentEmail', disposableEmail);
           log.info('GET_IDENTITY fill source=disposable', {
             email: disposableEmail.fullEmail,
             preferredEmailType,

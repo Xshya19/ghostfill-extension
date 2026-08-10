@@ -13,7 +13,7 @@ import {
   GMAIL_API_BASE,
   OAUTH_USERINFO,
 } from '../utils/core';
-import { GmailMessage, GmailProfile } from '../types/message.types';
+import { GmailMessage, GmailProfile } from '../types/email.types';
 import type { GmailSyncStateEntry } from '../types/storage.types';
 import { createLogger } from '../utils/logger';
 import { storageService } from './storageService';
@@ -333,7 +333,15 @@ async function launchOAuth(interactive: boolean): Promise<string> {
   });
 }
 
-async function acquireToken(interactive: boolean): Promise<string> {
+// Single-flight token acquisition lock.
+// Coalesces concurrent ensureValidToken()/gmailFetch() calls so only ONE
+// OAuth window / chrome.identity token request is ever launched at a time.
+// Without this, several rapid inbox/OTP fetches on a cold service worker could
+// each start their own auth flow, spawning duplicate windows and racing on the
+// cached token / session storage.
+const pendingTokenAcquisitions = new Map<'silent' | 'interactive', Promise<string>>();
+
+async function doAcquireToken(interactive: boolean): Promise<string> {
   if (usesBundledClientId()) {
     try {
       const token = await requestChromeIdentityToken(interactive);
@@ -351,6 +359,23 @@ async function acquireToken(interactive: boolean): Promise<string> {
   const token = await launchOAuth(interactive);
   await persistToken(token);
   return token;
+}
+
+async function acquireToken(interactive: boolean): Promise<string> {
+  const key = interactive ? 'interactive' : 'silent';
+  const inFlight = pendingTokenAcquisitions.get(key);
+  if (inFlight) {
+    return inFlight;
+  }
+  const promise = doAcquireToken(interactive);
+  // Clear the lock slot only when THIS promise settles, so an overlapping
+  // caller see it as still-in-flight (and joins) rather than starting a new one.
+  promise.then(
+    () => { if (pendingTokenAcquisitions.get(key) === promise) pendingTokenAcquisitions.delete(key); },
+    () => { if (pendingTokenAcquisitions.get(key) === promise) pendingTokenAcquisitions.delete(key); }
+  );
+  pendingTokenAcquisitions.set(key, promise);
+  return promise;
 }
 
 function isTokenExpired(): boolean {
@@ -1055,8 +1080,8 @@ async function fetchMessagesByIds(
 }
 
 export async function fetchInbox(
-  query = 'in:inbox newer_than:3d',
-  maxResults = 5,
+  query = 'newer_than:3d',
+  maxResults = 15,
   options: { full?: boolean } = {}
 ): Promise<GmailMessage[]> {
   const cacheKey = `${query}::${maxResults}::${options.full ? 'full' : 'preview'}`;
@@ -1107,8 +1132,8 @@ export async function fetchInbox(
 }
 
 export async function syncInbox(
-  query = 'in:inbox newer_than:3d',
-  maxResults = 5,
+  query = 'newer_than:3d',
+  maxResults = 15,
   options: {
     alias?: string;
     forceFull?: boolean;
@@ -1243,3 +1268,4 @@ export async function listLabels(): Promise<Array<{ id: string; name: string; ty
     type: l.type || 'user',
   }));
 }
+

@@ -1,6 +1,6 @@
 // Message Passing Types
 
-import { EmailAccount, Email, EmailService } from './email.types';
+import { EmailAccount, Email, EmailService, GmailProfile, GmailMessage, GmailMessageHeader, GmailMessagePayload } from './email.types';
 import { DetectedForm, DetectedField } from './form.types';
 import { PasswordOptions, GeneratedPassword, PasswordHistoryItem } from './password.types';
 import { UserSettings } from './storage.types';
@@ -77,7 +77,9 @@ export type MessageAction =
   | 'GMAIL_GET_MESSAGE'
   | 'GMAIL_GET_STATUS'
   | 'GMAIL_SEARCH'
-  | 'GMAIL_LIST_LABELS';
+  | 'GMAIL_LIST_LABELS'
+  // Link activation
+  | 'ACTIVATE_LINK';
 
 // Base message interface
 export interface BaseMessage {
@@ -480,6 +482,26 @@ export interface LinkActivatedMessage extends BaseMessage {
   action: 'LINK_ACTIVATED';
 }
 
+/**
+ * Sent by the popup (or internally by EXTRACT_OTP) when an activation link
+ * has been detected and should be opened in a background tab.
+ * Goes through the full linkService security gate + dedup.
+ */
+export interface ActivateLinkMessage extends BaseMessage {
+  action: 'ACTIVATE_LINK';
+  payload: {
+    /** Email ID used for deduplication */
+    emailId: string | number;
+    /** The activation URL to open */
+    linkUrl: string;
+    emailFrom?: string;
+    subject?: string;
+    emailDate?: number;
+    /** Plain-text snippet for correlation; first ~500 chars */
+    bodySnippet?: string;
+  };
+}
+
 export interface CheckOTPFreshnessMessage extends BaseMessage {
   action: 'CHECK_OTP_FRESHNESS';
 }
@@ -533,48 +555,6 @@ export interface DiagnosticReportResponse {
 // Gmail API types
 // ─────────────────────────────────────────────────────────────────────────────
 
-export interface GmailProfile {
-  email: string;
-  name?: string;
-  picture?: string;
-  messagesTotal?: number;
-  historyId?: string;
-}
-
-export interface GmailMessageHeader {
-  name: string;
-  value: string;
-}
-
-export interface GmailMessagePayload {
-  headers: GmailMessageHeader[];
-  body?: { data?: string; size?: number };
-  parts?: GmailMessagePayload[];
-  mimeType?: string;
-}
-
-export interface GmailMessage {
-  id: string;
-  threadId: string;
-  snippet: string;
-  subject: string;
-  from: string;
-  fromEmail: string;
-  fromName: string;
-  to?: string;
-  cc?: string;
-  bcc?: string;
-  deliveredTo?: string;
-  xOriginalTo?: string;
-  headers?: Array<{ name: string; value: string }>;
-  date: number;
-  dateFormatted: string;
-  body?: string;
-  /** Separate HTML body for link detection — may differ from plain-text `body` */
-  htmlBody?: string;
-  isUnread: boolean;
-  labelIds: string[];
-}
 
 // Gmail sign-in message
 export interface GmailSignInMessage extends BaseMessage {
@@ -718,6 +698,7 @@ export type ExtensionMessage =
   | MarkOTPUsedMessage
   | PingMessage
   | LinkActivatedMessage
+  | ActivateLinkMessage
   | CheckOTPFreshnessMessage
   | WaitForFreshOTPMessage
   | FallbackDomainsUsedMessage

@@ -19,13 +19,10 @@
   if (typeof g.trustedTypes !== 'undefined') {
     try {
       g.trustedTypes.createPolicy('default', {
-        createHTML: (s: string) =>
-          s
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;'),
+        createHTML: (s: string) => {
+          // Strip dangerous script tags while allowing valid HTML markup for UI injection
+          return s.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+        },
         createScriptURL: (s: string) => {
           if (s.startsWith('chrome-extension://') || s.startsWith('/')) {
             return s;
@@ -67,6 +64,12 @@ import {
   dumpBootReport,
   onServiceWorkerAlarm,
 } from './serviceWorker';
+import {
+  registerInitCallbacks,
+  setInitialized as guardSetInitialized,
+  setActiveInitPromise as guardSetActiveInitPromise,
+} from './initGuard';
+export { ensureInitialized } from './initGuard';
 
 // Boot timing — logged via structured logger once it's initialized
 const __BACKGROUND_LOAD_START_EARLY__ = Date.now();
@@ -131,6 +134,25 @@ const log = createLogger('Background');
 errorTracker.init();
 performanceMonitor.init();
 
+// ━━━ Module state ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// IMPORTANT: These `let` bindings MUST be declared BEFORE the
+// `setupMessageHandler()` / `installListeners()` calls below run at module
+// load time. Those functions read (e.g. `listenersInstalled`) at the very
+// top of their bodies. If these declarations appear later in the file, the
+// reads hit the temporal-dead-zone (TDZ) of the `let` binding and throw:
+//   ReferenceError: Cannot access 'listenersInstalled' before initialization
+// which crashes the MV3 service worker and fails registration (status 15).
+let initialized = false;
+// NOTE: listenersInstalled tracks only the full listener suite from Phase 4.
+// The message handler itself is registered synchronously above at module load.
+let listenersInstalled = false;
+let healthFailures = 0;
+
+// ISSUE #12 FIX: Initialization lock to prevent race conditions.
+// This flag is checked BEFORE any async operations to prevent
+// simultaneous onInstalled/onStartup initialization.
+let activeInitPromise: Promise<void> | null = null;
+
 // ─── CRITICAL MV3 FIX ───────────────────────────────────────────────────────
 // In MV3, the service worker can wake from idle at ANY time (popup open, alarm,
 // incoming tab message, etc.) WITHOUT firing onInstalled or onStartup.
@@ -143,12 +165,13 @@ performanceMonitor.init();
 // work). The `listenersInstalled` guard prevents double-registration during
 // the subsequent initialize() Phase 4 call.
 setupMessageHandler();
-// Note: listenersInstalled guard (in setupMessageHandler) prevents double-registration
+installListeners();
+// Note: listenersInstalled guard prevents duplicate setup during later initialize() calls
 
 // Log successful module load
 const loadDuration = Date.now() - __BACKGROUND_LOAD_START_EARLY__;
 log.info(
-  `✅ Background module loaded in ${loadDuration}ms (message router registered synchronously)`
+  `✅ Background module loaded in ${loadDuration}ms (message router and event listeners registered synchronously)`
 );
 
 // ━━━ Types ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -195,17 +218,22 @@ const CONFIG = {
 
 // ━━━ State ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-let initialized = false;
-// NOTE: listenersInstalled now tracks only the full listener suite from Phase 4.
-// The message handler itself is registered synchronously above at module load.
-let listenersInstalled = false;
-let healthFailures = 0;
+// NOTE: `initialized`, `listenersInstalled`, `healthFailures` and
+// `activeInitPromise` are declared at the TOP of this module (see above).
+// They must be declared before `setupMessageHandler()` / `installListeners()`
+// run at module-load time, otherwise those functions read the `let` bindings
+// while they are still in the temporal dead zone -> ReferenceError:
+// "Cannot access 'X' before initialization" (crashes the service worker).
 
-// ISSUE #12 FIX: Initialization lock to prevent race conditions
-// This flag is checked BEFORE any async operations to prevent
-// simultaneous onInstalled/onStartup initialization
-let activeInitPromise: Promise<void> | null = null;
 const pendingTriggers = new Set<InitTrigger>();
+
+// Wire up initGuard so messageHandler.ts can import ensureInitialized
+// from initGuard.ts instead of index.ts, breaking the circular dep.
+registerInitCallbacks(
+  (trigger) => initialize(trigger as InitTrigger),
+  () => getBootState() as import('./initGuard').BootState
+);
+export { activeInitPromise };
 
 const metrics: BackgroundMetrics = {
   initStartedAt: null,
@@ -331,6 +359,8 @@ async function initialize(trigger: InitTrigger): Promise<void> {
         await onFreshInstall();
       } else if (mainTrigger === 'update') {
         await onUpdate();
+      } else if (mainTrigger === 'startup') {
+        await handleStartupSessionWipe();
       }
 
       // Phase 4: Event listeners (idempotent)
@@ -356,6 +386,7 @@ async function initialize(trigger: InitTrigger): Promise<void> {
       }
 
       initialized = true;
+      guardSetInitialized(true);
       metrics.initCompletedAt = Date.now();
       metrics.initDurationMs = Date.now() - t0;
 
@@ -382,8 +413,13 @@ async function initialize(trigger: InitTrigger): Promise<void> {
       throw error;
     } finally {
       activeInitPromise = null;
+      guardSetActiveInitPromise(null);
     }
   })();
+
+  // FIX: publish the REAL in-flight promise to initGuard AFTER the assignment,
+  // so ensureInitialized() genuinely awaits cold boot.
+  guardSetActiveInitPromise(activeInitPromise);
 
   await activeInitPromise;
 }
@@ -434,6 +470,36 @@ async function onUpdate(): Promise<void> {
     }
   } catch (error) {
     log.error('Migration failed during update', extractMsg(error));
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  STARTUP-SPECIFIC FLOWS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// When `clearOnClose` is enabled, wipe transient email session data on browser
+// startup. Persistent data (settings, email/password history, current identity,
+// gmail connection) is intentionally kept.
+async function handleStartupSessionWipe(): Promise<void> {
+  const { storageService } = await import('../services/storageService');
+  try {
+    const settings = await storageService.getSettings();
+    if (!settings.clearOnClose) {
+      return;
+    }
+
+    const { STORAGE_KEYS } = await import('../types');
+    const sessionKeys = [
+      STORAGE_KEYS.CURRENT_EMAIL,
+      STORAGE_KEYS.DISPOSABLE_EMAIL,
+      STORAGE_KEYS.LAST_OTP,
+      STORAGE_KEYS.INBOX,
+    ];
+    await Promise.all(sessionKeys.map((key) => storageService.remove(key)));
+    log.info('clearOnClose: session data wiped', { keys: sessionKeys });
+  } catch (error) {
+    // Never block startup on a failed wipe — log and continue.
+    log.warn('clearOnClose: session wipe failed', extractMsg(error));
   }
 }
 
@@ -499,6 +565,11 @@ function register(name: string, handler: () => Promise<void>): void {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function installListeners(): void {
+  if (listenersInstalled) {
+    return;
+  }
+  listenersInstalled = true;
+
   // Commands
   chrome.commands.onCommand.addListener((cmd) => {
     void handleCommand(cmd);
@@ -526,9 +597,9 @@ function installListeners(): void {
   // Suspend cleanup (SECURITY FIX C12)
   chrome.runtime.onSuspend.addListener(() => {
     log.info('Extension suspending, cleaning up resources');
+    import('./offscreenManager').then(({ closeOffscreenDocument }) => closeOffscreenDocument()).catch(() => {});
     import('./serviceWorker')
-      .then(({ closeOffscreenDocument, clearDeferredTimers }) => {
-        void closeOffscreenDocument();
+      .then(({ clearDeferredTimers }) => {
         clearDeferredTimers();
       })
       .catch((e) => log.warn('Suspend cleanup failed', extractMsg(e)));
@@ -539,6 +610,26 @@ function installListeners(): void {
 }
 
 async function handleCommand(cmd: string): Promise<void> {
+  // NOTE: The `_execute_action` command (extension popup) is handled natively
+  // by Chrome and never reaches this listener, so the keyboard-shortcuts
+  // toggle only gates the custom commands below (generate-email,
+  // generate-password, auto-fill, check-inbox).
+  try {
+    const { storageService } = await import('../services/storageService');
+    const settings = await storageService.getSettings();
+    if (settings.keyboardShortcuts === false) {
+      log.debug('Keyboard shortcuts disabled — ignoring command', { cmd });
+      return;
+    }
+  } catch (error) {
+    // Fail-open: if settings can't be read, run the command anyway rather
+    // than silently dropping a user-triggered shortcut.
+    log.warn('Failed to read settings for command gate, allowing command', {
+      cmd,
+      error: extractMsg(error),
+    });
+  }
+
   metrics.commandsExecuted++;
   const stats = metrics.byCommand[cmd];
   if (stats) {

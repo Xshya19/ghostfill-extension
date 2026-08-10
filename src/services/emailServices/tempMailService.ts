@@ -3,6 +3,7 @@
 import { EmailAccount, Email, TempMailMessage, TempMailFullMessage } from '../../types';
 import { API, TEMP_MAIL_DOMAINS } from '../../utils/core';
 import { getRandomInt } from '../../utils/encryption';
+import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 
 const log = createLogger('TempMailService');
@@ -192,34 +193,40 @@ class TempMailService {
         // Use custom prefix
         login = prefix.toLowerCase().replace(/[^a-z0-9]/g, '');
       } else {
-        // Generate random email from API
-        const response = await fetch(
-          `${this.baseUrl}?action=${API.TEMP_MAIL.ENDPOINTS.GEN_RANDOM}&count=1`,
-          {
-            headers: {
-              'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-              Accept: 'application/json',
-              'Sec-Ch-Ua': '"Google Chrome";v="123", "Not:A-Brand";v="8", "Chromium";v="123"',
-              'Sec-Ch-Ua-Mobile': '?0',
-              'Sec-Ch-Ua-Platform': '"Windows"',
-            },
-            ...(signal ? { signal } : {}),
+        // Try to generate random email from API first
+        try {
+          const response = await fetch(
+            `${this.baseUrl}?action=${API.TEMP_MAIL.ENDPOINTS.GEN_RANDOM}&count=1`,
+            {
+              headers: {
+                'User-Agent':
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+                Accept: 'application/json',
+                'Sec-Ch-Ua': '"Google Chrome";v="123", "Not:A-Brand";v="8", "Chromium";v="123"',
+                'Sec-Ch-Ua-Mobile': '?0',
+                'Sec-Ch-Ua-Platform': '"Windows"',
+              },
+              ...(signal ? { signal } : {}),
+            }
+          );
+
+          if (!response.ok) {
+            throw new Error(`HTTP error: ${response.status}`);
           }
-        );
 
-        if (!response.ok) {
-          throw new Error(`HTTP error: ${response.status}`);
+          const emails = await response.json();
+          if (!Array.isArray(emails) || typeof emails[0] !== 'string' || !emails[0].includes('@')) {
+            throw new Error('Invalid generated email API response structure');
+          }
+          const [generatedEmail] = emails;
+          const parts = generatedEmail.split('@');
+          login = parts[0] ?? '';
+          emailDomain = parts[1] ?? '';
+        } catch (e) {
+          // API random generation failed — use human-like name as fallback
+          log.debug('API random email generation failed, using human-like name fallback', e);
+          login = generateHumanLikeUsername();
         }
-
-        const emails = await response.json();
-        if (!Array.isArray(emails) || typeof emails[0] !== 'string' || !emails[0].includes('@')) {
-          throw new Error('Invalid generated email API response structure');
-        }
-        const [generatedEmail] = emails;
-        const parts = generatedEmail.split('@');
-        login = parts[0] ?? '';
-        emailDomain = parts[1] ?? '';
       }
 
       // Use provided domain or get from generated email or default
@@ -254,6 +261,7 @@ class TempMailService {
 
   /**
    * Check inbox for messages with rate limiting
+   * Fetches full body for first 5 messages
    */
   async checkInbox(login: string, domain: string, signal?: AbortSignal): Promise<Email[]> {
     await this.checkRateLimit();
@@ -292,7 +300,47 @@ class TempMailService {
         }
       }
 
-      return messages.map((msg) => this.convertMessage(msg, login, domain));
+      // Fetch full body for first 5 messages in parallel
+      const recentMessages = messages.slice(0, 5);
+      const fullBodyResults = await Promise.all(
+        recentMessages.map(async (msg) => {
+          try {
+            await this.checkRateLimit();
+            const fullResponse = await fetch(
+              `${this.baseUrl}?action=${API.TEMP_MAIL.ENDPOINTS.READ_MESSAGE}&login=${login}&domain=${domain}&id=${msg.id}`,
+              {
+                headers: {
+                  'User-Agent':
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+                },
+                ...(signal ? { signal } : {}),
+              }
+            );
+            if (!fullResponse.ok) {
+              return { body: '', htmlBody: '', textBody: '' };
+            }
+            const fullMsg: TempMailFullMessage = await fullResponse.json();
+            return {
+              body: fullMsg.body || fullMsg.textBody || '',
+              htmlBody: fullMsg.htmlBody || '',
+              textBody: fullMsg.textBody || fullMsg.body || '',
+            };
+          } catch {
+            return { body: '', htmlBody: '', textBody: '' };
+          }
+        })
+      );
+
+      return messages.map((msg, idx) => {
+        const email = this.convertMessage(msg, login, domain);
+        if (idx < 5 && fullBodyResults[idx]) {
+          const body = fullBodyResults[idx]!;
+          email.body = body.body;
+          email.htmlBody = body.htmlBody;
+          email.textBody = body.textBody;
+        }
+        return email;
+      });
     } catch (error) {
       log.error('Failed to check inbox', error);
       throw error;

@@ -11,6 +11,10 @@ export function useStorageSubscription<K extends keyof StorageSchema>(
   const refreshSeqRef = useRef(0);
 
   useEffect(() => {
+    initialValueRef.current = initialValue;
+  }, [initialValue]);
+
+  useEffect(() => {
     let isMounted = true;
     const refreshValue = async (): Promise<void> => {
       const seq = ++refreshSeqRef.current;
@@ -30,25 +34,18 @@ export function useStorageSubscription<K extends keyof StorageSchema>(
     // Load initial value
     void refreshValue();
 
-    // Listen for changes pushed from background runtime
-    const listener = (
-      changes: { [key: string]: chrome.storage.StorageChange },
-      areaName: string
-    ) => {
-      if (areaName === 'local' && changes[key as string]) {
+    // Listen via storageService so refreshValue() runs only after the internal
+    // cache is synced (including decrypted sensitive values), never against a
+    // stale or still-missing cache entry.
+    const unsubscribe = storageService.onChanged((changes) => {
+      if (changes[key as string]) {
         void refreshValue();
       }
-    };
-
-    if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
-      chrome.storage.onChanged.addListener(listener);
-    }
+    });
 
     return () => {
       isMounted = false;
-      if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
-        chrome.storage.onChanged.removeListener(listener);
-      }
+      unsubscribe();
     };
   }, [key]);
 

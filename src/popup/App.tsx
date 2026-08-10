@@ -3,7 +3,7 @@ import { ChevronLeft } from 'lucide-react';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { storageService } from '../services/storageService';
 import { Toast } from '../shared/ui';
-import { springSoft, viewFade } from '../shared/ui/motion';
+import { viewFade } from '../shared/ui/motion';
 import { EmailAccount } from '../types';
 import { withTimeout, withRetry } from '../utils/core';
 import { createLogger } from '../utils/logger';
@@ -131,9 +131,11 @@ const App: React.FC = () => {
     setLoading(true);
     try {
       log.info('Generating new identity...');
-      const res = await withTimeout(
-        withRetry(() => safeSendMessage({ action: 'GENERATE_EMAIL' }), 2, 1000),
-        45000 // 45 second absolute timeout to allow for fallback providers
+      // safeSendMessage has its own retry logic — don't wrap in withRetry
+      // which caused 7+ second freezes when the service worker was cold.
+      const res = await safeSendMessage(
+        { action: 'GENERATE_EMAIL' },
+        { timeout: 45_000 }
       );
       if (
         res &&
@@ -150,7 +152,7 @@ const App: React.FC = () => {
       }
     } catch (e: unknown) {
       log.error('Exception during identity generation:', e);
-      if ((e as any)?.message === 'Timeout') {
+      if ((e instanceof Error && e.message === 'Timeout') || (e as { message?: string })?.message === 'Timeout') {
         showToast('Server took too long. Try again.');
       } else {
         showToast(t('generationFailed'));
@@ -470,40 +472,15 @@ const App: React.FC = () => {
                 exit="exit"
               >
                 <div className="header detail-view-header">
-                  <div
-                    className="detail-view-header-left"
-                    style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}
-                  >
+                  <div className="detail-view-header-left">
                     <button
-                      className="icon-button"
-                      style={{
-                        width: 30,
-                        height: 30,
-                        borderRadius: '50%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
+                      className="icon-button detail-view-back-btn"
                       onClick={() => safeSetView('hub')}
                       aria-label="Go back to hub"
                     >
                       <ChevronLeft size={18} strokeWidth={2.5} />
                     </button>
-                    <span
-                      className="header-title"
-                      style={{
-                        fontSize: 15,
-                        fontWeight: 700,
-                        letterSpacing: '-0.02em',
-                        background:
-                          'linear-gradient(135deg, var(--gf-ink) 0%, rgba(var(--gf-ink-rgb), 0.75) 100%)',
-                        WebkitBackgroundClip: 'text',
-                        backgroundClip: 'text',
-                        WebkitTextFillColor: 'transparent',
-                        display: 'block',
-                        visibility: 'visible',
-                      }}
-                    >
+                    <span className="header-title detail-view-title-text">
                       {view === 'otp'
                         ? t('passcodeSync')
                         : view === 'aliases'

@@ -53,16 +53,52 @@ export class DriftzService {
     const data = await response.json();
     if (!data.success) {throw new Error(data.error || 'Failed to fetch messages');}
 
-    return data.result.items.map((msg: any) => ({
-      id: msg.id,
-      from: msg.fromAddress,
-      to: msg.toAddress,
-      subject: msg.subject || '',
-      date: msg.receivedAt * 1000,
-      body: '', // Body requires fetching the full email
-      read: false,
-      attachments: []
-    }));
+    const messages = data.result.items || [];
+
+    // Fetch full body for first 5 messages in parallel
+    const recentMessages = messages.slice(0, 5);
+    const fullBodyResults = await Promise.all(
+      recentMessages.map(async (msg: any) => {
+        try {
+          const msgResponse = await fetchWithTimeout(`${BASE_URL}/temp/${address}/${msg.id}`, { signal: signal ?? null });
+          if (!msgResponse.ok) {
+            return { body: '', htmlBody: '', textBody: '' };
+          }
+          const msgData = await msgResponse.json();
+          if (!msgData.success) {
+            return { body: '', htmlBody: '', textBody: '' };
+          }
+          const fullMsg = msgData.result;
+          return {
+            body: fullMsg.textContent || fullMsg.htmlContent || '',
+            htmlBody: fullMsg.htmlContent || fullMsg.textContent || '',
+            textBody: fullMsg.textContent || '',
+          };
+        } catch {
+          return { body: '', htmlBody: '', textBody: '' };
+        }
+      })
+    );
+
+    return messages.map((msg: any, idx: number) => {
+      const email: Email = {
+        id: msg.id,
+        from: msg.fromAddress,
+        to: msg.toAddress,
+        subject: msg.subject || '',
+        date: msg.receivedAt * 1000,
+        body: '',
+        read: false,
+        attachments: []
+      };
+      if (idx < 5 && fullBodyResults[idx]) {
+        const body = fullBodyResults[idx]!;
+        email.body = body.body;
+        email.htmlBody = body.htmlBody;
+        email.textBody = body.textBody;
+      }
+      return email;
+    });
   }
 
   async getMessage(address: string, emailId: string, signal?: AbortSignal): Promise<Email> {

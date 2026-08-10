@@ -2,6 +2,7 @@
 
 import { EmailAccount, Email } from '../../types';
 import { API } from '../../utils/core';
+import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 
 const log = createLogger('GuerrillaMailService');
@@ -27,6 +28,21 @@ class GuerrillaMailService {
   private baseUrl = API.GUERRILLA.BASE_URL;
   private sessionId: string | null = null;
   private emailAddress: string | null = null;
+
+  async getDomains(_signal?: AbortSignal): Promise<string[]> {
+    return [
+      'guerrillamail.com',
+      'sharklasers.com',
+      'grr.la',
+      'guerrillamailblock.com',
+      'pokemail.net',
+      'spam4.me',
+      'bccto.me',
+      'chacuo.net',
+      'ce3.de',
+      '0-mail.net',
+    ];
+  }
 
   // Rate limiting state
   private lastRequestTime = 0;
@@ -143,10 +159,11 @@ class GuerrillaMailService {
   }
 
   /**
-   * Create a new email session
+   * Create a new email session with a human-like username
    */
   async createAccount(signal?: AbortSignal): Promise<EmailAccount> {
     try {
+      // Step 1: Get a session from Guerrilla Mail
       const data = await this.executeRequest<GuerrillaSession>(
         {
           f: 'get_email_address',
@@ -159,16 +176,35 @@ class GuerrillaMailService {
       this.sessionId = data.sid_token;
       this.emailAddress = data.email_addr;
 
-      const parts = data.email_addr.split('@');
+      // Step 2: Set a human-like username via the set_email_user API
+      const humanUsername = generateHumanLikeUsername();
+      try {
+        const setUserData = await this.executeRequest<GuerrillaSession>(
+          {
+            f: 'set_email_user',
+            email_user: humanUsername,
+            lang: 'en',
+          },
+          signal
+        );
+
+        // Update with the new address returned by the API
+        this.emailAddress = setUserData.email_addr;
+      } catch (setUserError) {
+        // If set_email_user fails, fall back to the server-assigned address
+        log.warn('Failed to set human-like username, using server-assigned address', setUserError);
+      }
+
+      const parts = this.emailAddress!.split('@');
       const login = parts[0]!;
       const domain = parts[1]!;
       const now = Date.now();
 
       const account: EmailAccount = {
-        id: `guerrilla_${now}_${login}`, // Required for EmailAccount interface
+        id: `guerrilla_${now}_${login}`,
         login,
         domain,
-        fullEmail: data.email_addr,
+        fullEmail: this.emailAddress!,
         createdAt: now,
         expiresAt: now + 60 * 60 * 1000,
         service: 'guerrilla',
@@ -190,7 +226,7 @@ class GuerrillaMailService {
   }
 
   /**
-   * Get messages (inbox)
+   * Get messages (inbox) with full body for recent messages
    */
   async getMessages(sessionId?: string, signal?: AbortSignal): Promise<Email[]> {
     const sid = sessionId || this.sessionId;
@@ -209,7 +245,41 @@ class GuerrillaMailService {
       )) as { list: GuerrillaEmail[] };
 
       const messages: GuerrillaEmail[] = data.list || [];
-      return messages.map((msg) => this.convertMessage(msg));
+
+      // Fetch full body for first 5 messages (respecting rate limits)
+      const recentMessages = messages.slice(0, 5);
+      const fullBodyResults = await Promise.all(
+        recentMessages.map(async (msg) => {
+          try {
+            const fullData = await this.executeRequest<GuerrillaEmail>(
+              {
+                f: 'fetch_email',
+                sid_token: sid,
+                email_id: msg.mail_id,
+              },
+              signal
+            );
+            return {
+              body: fullData.mail_body || fullData.mail_excerpt || '',
+              htmlBody: fullData.mail_body || '',
+              textBody: fullData.mail_body || fullData.mail_excerpt || '',
+            };
+          } catch {
+            return { body: msg.mail_excerpt || '', htmlBody: '', textBody: msg.mail_excerpt || '' };
+          }
+        })
+      );
+
+      return messages.map((msg, idx) => {
+        const email = this.convertMessage(msg);
+        if (idx < 5 && fullBodyResults[idx]) {
+          const body = fullBodyResults[idx]!;
+          email.body = body.body;
+          email.htmlBody = body.htmlBody;
+          email.textBody = body.textBody;
+        }
+        return email;
+      });
     } catch (error) {
       log.error('Failed to get Guerrilla Mail messages', error);
       throw error;

@@ -3,6 +3,7 @@
 import { EmailAccount, Email, MailTmDomain, MailTmAccount, MailTmMessage } from '../../types';
 import { API, fetchWithTimeout } from '../../utils/core';
 import { getRandomInt, getRandomString } from '../../utils/encryption';
+import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 
 const log = createLogger('MailGwService');
@@ -173,7 +174,7 @@ class MailGwService {
       // Generate random address if not provided
       // Pick a random domain to increase chance of bypassing blacklists
       const domain = domains[getRandomInt(0, domains.length - 1)]!;
-      const login = address || getRandomString(10, 'abcdefghijklmnopqrstuvwxyz0123456789');
+      const login = address || generateHumanLikeUsername();
       const fullEmail = `${login}@${domain}`;
       const pwd =
         password ||
@@ -317,7 +318,39 @@ class MailGwService {
   }
 
   /**
-   * Get messages (inbox)
+   * Fetch full body for a single message
+   */
+  private async fetchFullMessage(
+    messageId: string,
+    signal?: AbortSignal
+  ): Promise<{ text: string; html: string }> {
+    try {
+      const response = await this.fetchWithRetry(
+        `${this.baseUrl}${API.MAIL_GW.ENDPOINTS.MESSAGES}/${messageId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.token}`,
+          },
+          signal: signal ?? null,
+        }
+      );
+
+      if (!response.ok) {
+        return { text: '', html: '' };
+      }
+
+      const msg: MailTmMessage = await response.json();
+      return {
+        text: msg.text || '',
+        html: Array.isArray(msg.html) ? msg.html.join('') : String(msg.html || ''),
+      };
+    } catch {
+      return { text: '', html: '' };
+    }
+  }
+
+  /**
+   * Get messages (inbox) with full body for recent messages
    */
   async getMessages(signal?: AbortSignal): Promise<Email[]> {
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -350,7 +383,22 @@ class MailGwService {
         const data = await response.json();
         const messages: MailTmMessage[] = data['hydra:member'] || [];
 
-        return messages.map((msg) => this.convertMessage(msg));
+        // Fetch full body for first 5 messages
+        const recentMessages = messages.slice(0, 5);
+        const fullBodyResults = await Promise.all(
+          recentMessages.map(async (msg) => this.fetchFullMessage(msg.id, signal))
+        );
+
+        return messages.map((msg, idx) => {
+          const email = this.convertMessage(msg, idx < 5);
+          if (idx < 5 && fullBodyResults[idx]) {
+            const body = fullBodyResults[idx]!;
+            email.body = body.text || msg.intro || '';
+            email.textBody = body.text || '';
+            email.htmlBody = body.html || '';
+          }
+          return email;
+        });
       } catch (error) {
         if (attempt === 1) {
           log.error('Failed to get Mail.gw messages', error);

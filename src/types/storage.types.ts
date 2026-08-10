@@ -3,10 +3,8 @@
 // SECURITY HARDENED: Session-based storage for sensitive data
 // ═══════════════════════════════════════════════════════════════════
 
-import { AliasHistoryItem } from '../services/gmailConnectionService';
-import { EmailAccount, EmailHistoryItem, Email, EmailService } from './email.types';
+import { EmailAccount, EmailHistoryItem, Email, EmailService, AliasHistoryItem, GmailProfile, GmailMessage } from './email.types';
 import { IdentityProfile } from './form.types';
-import { GmailProfile } from './message.types';
 import { PasswordOptions, PasswordHistoryItem } from './password.types';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -53,7 +51,16 @@ export interface UserSettings {
     | 'tempmail'
     | 'maildrop'
     | 'custom'
-    | 'driftz';
+    | 'driftz'
+    | 'evilmail'
+    | 'openinbox'
+    | 'catchmail'
+    | 'mailboxtemp'
+    | 'dropmail'
+    | 'tempmaillol'
+    | 'tempmailplus'
+    | 'mailcx'
+    | 'getnada';
   autoCheckInbox: boolean;
   checkIntervalSeconds: number;
 
@@ -140,7 +147,7 @@ export interface GmailSyncStateEntry {
   query: string;
   alias?: string;
   historyId?: string;
-  messages: import('./message.types').GmailMessage[];
+  messages: GmailMessage[];
   syncedAt: number;
 }
 
@@ -213,6 +220,9 @@ export interface StorageSchema {
   // Rate Limiting
   otpRateLimitTimestamps?: number[];
 
+  // Rejected / burned OTP codes by domain
+  burnedCodes?: Record<string, string[]>;
+
   // Gmail integration
   preferredEmailType?: 'disposable' | 'gmail';
   gmailProfile?: GmailProfile | null;
@@ -223,7 +233,7 @@ export interface StorageSchema {
   gmailAliasType?: 'combined';
   aliasHistory?: AliasHistoryItem[];
   gmailAliasSessions?: Record<string, GmailAliasSession>;
-  gmailInbox?: import('./message.types').GmailMessage[];
+  gmailInbox?: GmailMessage[];
   gmailSyncState?: Record<string, GmailSyncStateEntry>;
   gmailClientId?: string;
   performanceReport?: any;
@@ -243,7 +253,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
     minNumbers: 2,
     minSymbols: 2,
   },
-  preferredEmailService: 'mailtm',
+  preferredEmailService: 'catchmail',
   autoCheckInbox: true,
   checkIntervalSeconds: 5,
   darkMode: true,
@@ -311,14 +321,3 @@ export interface PatternMatch {
   endIndex: number;
 }
 
-export interface LastOTP {
-  code: string;
-  source: 'email' | 'sms' | 'manual';
-  extractedAt: number;
-  confidence: number;
-  usedAt?: number;
-  emailFrom?: string;
-  emailSubject?: string;
-  emailId?: string | number;
-  emailDate?: number;
-}

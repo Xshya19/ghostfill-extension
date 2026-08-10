@@ -1,5 +1,6 @@
 import { IEmailProvider, Email, EmailAccount } from '../../types';
 import { createLogger } from '../../utils/logger';
+import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { storageService } from '../storageService';
 import { providerHealth } from './providerHealthManager';
 
@@ -41,14 +42,7 @@ export class CustomDomainService implements IEmailProvider {
       throw new Error('Custom domain not configured');
     }
 
-    const rng = new Uint8Array(6);
-    crypto.getRandomValues(rng);
-    const prefix =
-      'ghost_' +
-      Array.from(rng)
-        .map((b) => b.toString(16).padStart(2, '0'))
-        .join('');
-
+    const prefix = generateHumanLikeUsername();
     // If the user provided an endpoint for generation, use it
     // Otherwise, simply assume catch-all routing
     const fullEmail = `${prefix}@${config.domain}`;

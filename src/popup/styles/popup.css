@@ -139,10 +139,13 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
   min-height: var(--header-h);
   padding: 0 var(--space-3);
   background: var(--gf-surface);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--gf-line);
   position: relative;
   z-index: var(--z-header);
   flex-shrink: 0;
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .header-left, .detail-view-header-left {
@@ -150,6 +153,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
+  flex: 1;
 }
 
 .logo-circle {
@@ -158,7 +162,10 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
   border-radius: var(--radius-xs);
   background: var(--gf-grad-cobalt);
   color: var(--gf-on-fill-light); flex-shrink: 0;
+  box-shadow: 0 2px 8px -2px rgba(var(--gf-primary-rgb), 0.45);
+  transition: transform var(--gf-dur-fast) var(--gf-ease);
 }
+.logo-circle:hover { transform: scale(1.05); }
 .logo-circle svg, .ghost-logo-img, .ghost-logo-svg { width: 22px; height: 22px; }
 
 .header-title-container { display: flex; flex-direction: column; min-width: 0; }
@@ -170,16 +177,24 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
 }
 
+.detail-view-title-text {
+  background: linear-gradient(135deg, var(--gf-ink) 0%, rgba(var(--gf-ink-rgb), 0.75) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: block;
+}
+
 .header-actions { display: flex; align-items: center; gap: var(--space-1); flex-shrink: 0; }
 
 .icon-button, .eye-button, .back-button, .detail-view-back-btn, .email-back-btn {
   width: 30px; height: 30px;
   display: grid; place-items: center;
-  border-radius: var(--radius-xs);
+  border-radius: 50%;
   background: var(--gf-surface-2);
   border: 1px solid var(--gf-line);
   color: var(--gf-ink-soft); cursor: pointer;
-  transition: color var(--gf-dur-fast) var(--gf-ease), background var(--gf-dur-fast) var(--gf-ease), border-color var(--gf-dur-fast) var(--gf-ease);
+  transition: color var(--gf-dur-fast) var(--gf-ease), background var(--gf-dur-fast) var(--gf-ease), border-color var(--gf-dur-fast) var(--gf-ease), transform var(--gf-dur-fast) var(--gf-ease);
 }
 .icon-button:hover, .eye-button:hover {
   color: var(--gf-primary);
@@ -191,7 +206,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
   background: rgba(var(--gf-primary-rgb), 0.08);
   border-color: rgba(var(--gf-primary-rgb), 0.18);
   color: var(--gf-primary);
-  transform: translateX(-1px);
+  transform: translateX(-2px);
 }
 .icon-button:active, .eye-button:active, .back-button:active { transform: scale(0.92); }
 
@@ -1306,15 +1321,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
 /* ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ 
    DEBUG PANEL
    ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ 
-   ── FIX #7: .hub-email-selector-label — tab icon + text alignment ───── */
-.hub-email-selector-label, .alias-tab-label {
-  position: relative;
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  pointer-events: none; /* clicks pass through to parent button */
-}
+
 
 .gf-debug-trigger {
   position: fixed;
@@ -1709,18 +1716,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disab
 }
 .icon-faded { opacity: 0.55; }
 
-/* ── Accessibility ────────────────────────────────────────────────────────── */
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
+
 
 .skip-link {
   position: absolute;

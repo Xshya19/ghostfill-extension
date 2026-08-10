@@ -15,13 +15,24 @@ import {
 import { storageService } from '../storageService';
 import { IProviderHealthManager } from '../types/email-services.types';
 
+import { catchmailService } from './catchmailService';
 import { CustomDomainService } from './customDomainService';
 import { driftzService } from './driftzService';
+import { dropmailService } from './dropmailService';
+import { evilmailService } from './evilmailService';
+import { getnadaService } from './getnadaService';
 import { guerrillaMailService } from './guerrillaMailService';
 import { maildropService } from './maildropService';
 import { mailGwService } from './mailGwService';
+import { mailinatorService } from './mailinatorService';
+import { mailnesiaService } from './mailnesiaService';
+import { mailboxtempService } from './mailboxtempService';
+import { mailCxService } from './mailCxService';
 import { mailTmService } from './mailTmService';
+import { openinboxService } from './openinboxService';
 import { providerHealth } from './providerHealthManager';
+import { tempMailLolService } from './tempMailLolService';
+import { tempmailPlusService } from './tempmailPlusService';
 import { tempMailService } from './tempMailService';
 
 const log = createLogger('EmailServiceAggregator');
@@ -29,12 +40,23 @@ const customDomainService = new CustomDomainService();
 
 class EmailServiceAggregator {
   private availableServices: EmailService[] = [
-    'mailtm',
+    'catchmail',
+    'mailcx',
+    'openinbox',
+    'mailboxtemp',
+    'dropmail',
     'driftz',
-    'mailgw',
-    'maildrop',
+    'getnada',
+    'tempmailplus',
+    'evilmail',
     'guerrilla',
+    'maildrop',
     'tempmail',
+    'tempmaillol',
+    'mailtm',
+    'mailgw',
+    'mailinator',
+    'mailnesia',
     '1secmail',
     'custom',
   ];
@@ -221,7 +243,7 @@ class EmailServiceAggregator {
 
       const settings = await storageService.getSettings();
       // Use preferred if valid/healthy, otherwise pick best healthy
-      let service = options.service || settings.preferredEmailService || 'mailtm';
+      let service = options.service || settings.preferredEmailService || 'catchmail';
 
       // Custom precedence
       if (settings.preferredEmailService === 'custom' && !options.service) {
@@ -303,6 +325,28 @@ class EmailServiceAggregator {
           return await guerrillaMailService.createAccount(signal);
         case 'driftz':
           return await driftzService.createAccount(signal);
+        case 'catchmail':
+          return await catchmailService.createAccount(options.prefix, signal);
+        case 'openinbox':
+          return await openinboxService.createAccount(options.prefix, signal);
+        case 'evilmail':
+          return await evilmailService.createAccount(options.prefix, signal);
+        case 'mailboxtemp':
+          return await mailboxtempService.createAccount(options.prefix, signal);
+        case 'dropmail':
+          return await dropmailService.createAccount(options.prefix, signal);
+        case 'tempmaillol':
+          return await tempMailLolService.createAccount(options.prefix, signal);
+        case 'tempmailplus':
+          return await tempmailPlusService.createAccount(options.prefix, signal);
+        case 'mailcx':
+          return await mailCxService.createAccount(options.prefix, signal);
+        case 'getnada':
+          return await getnadaService.createAccount(options.prefix, signal);
+        case 'mailinator':
+          return await mailinatorService.createAccount(options.prefix, signal);
+        case 'mailnesia':
+          return await mailnesiaService.createAccount(options.prefix, signal);
         case 'tempmail':
         case '1secmail':
           return await tempMailService.generateEmail(options.prefix, options.domain, signal);
@@ -645,6 +689,39 @@ class EmailServiceAggregator {
         case 'driftz':
           emails = await driftzService.getMessages(account.fullEmail, signal);
           break;
+        case 'catchmail':
+          emails = await catchmailService.getMessages(account.fullEmail, signal);
+          break;
+        case 'openinbox':
+          emails = await openinboxService.getMessages(account.fullEmail, signal);
+          break;
+        case 'evilmail':
+          emails = await evilmailService.getMessages(account.fullEmail, signal);
+          break;
+        case 'mailboxtemp':
+          emails = await mailboxtempService.getMessages(account.fullEmail, signal);
+          break;
+        case 'dropmail':
+          emails = await dropmailService.getMessages(account, signal);
+          break;
+        case 'tempmaillol':
+          emails = await tempMailLolService.getMessages(account.token || account.login || '', signal);
+          break;
+        case 'tempmailplus':
+          emails = await tempmailPlusService.getMessages(account.fullEmail, signal);
+          break;
+        case 'mailcx':
+          emails = await mailCxService.getMessages(account.fullEmail, signal);
+          break;
+        case 'getnada':
+          emails = await getnadaService.getMessages(account.fullEmail, signal);
+          break;
+        case 'mailinator':
+          emails = await mailinatorService.getMessages(account.fullEmail, signal);
+          break;
+        case 'mailnesia':
+          emails = await mailnesiaService.getMessages(account.fullEmail, signal);
+          break;
         case 'tempmail':
         case '1secmail':
         default: {
@@ -701,13 +778,12 @@ class EmailServiceAggregator {
         errorMsg.includes('ECONNREFUSED') ||
         errorMsg.includes('timeout');
 
+      // ALWAYS record provider failure so unresponsive/timed-out providers trip circuit breaker & trigger automatic fallback
+      this.healthManager.recordFailure(account.service, error as Error);
+
       if (isRateLimited) {
         log.warn(`Provider ${account.service} is rate-limited. Retrying later.`);
-        this.healthManager.recordFailure(account.service, error as Error);
-      }
-
-      // Don't spam error logs for network glitches
-      if (isNetworkError) {
+      } else if (isNetworkError) {
         log.warn(`Network error checking inbox for ${account.service}: ${errorMsg}`);
       } else {
         log.warn('Failed to check inbox (will retry)', {
@@ -800,6 +876,33 @@ class EmailServiceAggregator {
         case 'driftz':
           email = await driftzService.getMessage(account.fullEmail, emailId.toString(), signal);
           break;
+        case 'catchmail':
+          email = await catchmailService.getMessage(account.fullEmail, emailId.toString(), signal);
+          break;
+        case 'openinbox':
+          email = await openinboxService.getMessage(account.fullEmail, emailId.toString(), signal);
+          break;
+        case 'evilmail':
+          email = await evilmailService.getMessage(account.fullEmail, emailId.toString(), signal);
+          break;
+        case 'mailboxtemp':
+          email = await mailboxtempService.getMessage(account.fullEmail, emailId.toString(), signal);
+          break;
+        case 'dropmail':
+          email = await dropmailService.getMessage(account, emailId.toString(), signal);
+          break;
+        case 'tempmaillol':
+          email = await tempMailLolService.getMessage(account.token || account.login || '', emailId.toString(), signal);
+          break;
+        case 'tempmailplus':
+          email = await tempmailPlusService.getMessage(account.fullEmail, emailId.toString(), signal);
+          break;
+        case 'mailcx':
+          email = await mailCxService.getMessage(account.fullEmail, emailId.toString(), signal);
+          break;
+        case 'getnada':
+          email = await getnadaService.getMessage(account.fullEmail, emailId.toString(), signal);
+          break;
         case 'tempmail':
         case '1secmail':
         default:
@@ -844,6 +947,26 @@ class EmailServiceAggregator {
   }
 
   /**
+   * Pre-warm HTTP/2 TCP & TLS connections to primary provider APIs.
+   * Saves 100ms-300ms latency on the first fast-poll check.
+   */
+  private lastPrewarmTs = 0;
+  async prewarmConnections(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastPrewarmTs < 30_000) return;
+    this.lastPrewarmTs = now;
+
+    const endpoints = [
+      'https://api.mail.tm/domains',
+      'https://api.catchmail.io/v1/domains',
+    ];
+
+    for (const url of endpoints) {
+      fetch(url, { method: 'HEAD', cache: 'no-cache' }).catch(() => {});
+    }
+  }
+
+  /**
    * Get available domains for a service
    */
   async getDomains(service: EmailService = 'tempmail', signal?: AbortSignal): Promise<string[]> {
@@ -859,6 +982,24 @@ class EmailServiceAggregator {
           return mailTmService.getDomains(signal);
         case 'driftz':
           return driftzService.getDomains(signal);
+        case 'catchmail':
+          return catchmailService.getDomains(signal);
+        case 'openinbox':
+          return openinboxService.getDomains(signal);
+        case 'evilmail':
+          return evilmailService.getDomains(signal);
+        case 'mailboxtemp':
+          return mailboxtempService.getDomains(signal);
+        case 'dropmail':
+          return dropmailService.getDomains(signal);
+        case 'tempmaillol':
+          return tempMailLolService.getDomains(signal);
+        case 'tempmailplus':
+          return tempmailPlusService.getDomains(signal);
+        case 'mailcx':
+          return mailCxService.getDomains(signal);
+        case 'getnada':
+          return getnadaService.getDomains(signal);
         case 'tempmail':
         case '1secmail':
           return tempMailService.getDomains(signal);
@@ -909,5 +1050,14 @@ export { mailGwService } from './mailGwService';
 export { guerrillaMailService } from './guerrillaMailService';
 export { maildropService } from './maildropService';
 export { driftzService } from './driftzService';
+export { catchmailService } from './catchmailService';
+export { openinboxService } from './openinboxService';
+export { evilmailService } from './evilmailService';
+export { mailboxtempService } from './mailboxtempService';
+export { dropmailService } from './dropmailService';
+export { tempMailLolService } from './tempMailLolService';
+export { tempmailPlusService } from './tempmailPlusService';
+export { mailCxService } from './mailCxService';
+export { getnadaService } from './getnadaService';
 export { customDomainService };
 export { providerHealth } from './providerHealthManager';

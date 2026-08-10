@@ -94,7 +94,33 @@ class DedupService {
     }
   }
 
+  private readonly pendingRecords = new Map<string, number>();
+
+  async markPending(emailId: string | number, accountId: string, ttlMs = 60_000): Promise<void> {
+    const key = this.makeKey(emailId, accountId);
+    this.pendingRecords.set(key, Date.now() + ttlMs);
+  }
+
+  async clearPending(emailId: string | number, accountId: string): Promise<void> {
+    const key = this.makeKey(emailId, accountId);
+    this.pendingRecords.delete(key);
+  }
+
+  async isPending(emailId: string | number, accountId: string): Promise<boolean> {
+    const key = this.makeKey(emailId, accountId);
+    const expiresAt = this.pendingRecords.get(key);
+    if (!expiresAt) return false;
+    if (Date.now() >= expiresAt) {
+      this.pendingRecords.delete(key);
+      return false;
+    }
+    return true;
+  }
+
   async isProcessed(emailId: string | number, accountId: string): Promise<boolean> {
+    if (await this.isPending(emailId, accountId)) {
+      return true;
+    }
     return (await this.getRecord(emailId, accountId)) !== null;
   }
 
@@ -127,6 +153,7 @@ class DedupService {
     hadLink: boolean
   ): Promise<void> {
     await this.ensureReady();
+    await this.clearPending(emailId, accountId);
     this.maybePrune();
     const key = this.makeKey(emailId, accountId);
 

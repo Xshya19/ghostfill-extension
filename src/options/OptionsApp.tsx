@@ -1,19 +1,23 @@
+import { Sun, Moon, Search } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
 import { GhostLogo } from '../popup/components';
 import { storageService } from '../services/storageService';
+import { applyTheme, resolveTheme } from '../shared/theme';
 import { Button } from '../shared/ui';
 import { UserSettings, DEFAULT_SETTINGS } from '../types/storage.types';
 import { createLogger } from '../utils/logger';
 
-import Sidebar, { TabId } from './components/Sidebar';
-import AboutTab from './components/tabs/AboutTab';
-import AdvancedTab from './components/tabs/AdvancedTab';
-import AutomationTab from './components/tabs/AutomationTab';
-import EmailTab from './components/tabs/EmailTab';
-import GeneralTab from './components/tabs/GeneralTab';
-import PasswordTab from './components/tabs/PasswordTab';
-import PrivacyTab from './components/tabs/PrivacyTab';
+import {
+  AboutTab,
+  AdvancedTab,
+  AutomationTab,
+  EmailTab,
+  GeneralTab,
+  PasswordTab,
+  PrivacyTab,
+} from './components/OptionsTabs';
+import { Sidebar, TabId } from './components/OptionsUIComponents';
 
 const t = (key: string): string => {
   try {
@@ -22,13 +26,13 @@ const t = (key: string): string => {
     return key;
   }
 };
-const _t = t;
-
 const log = createLogger('OptionsApp');
 
 // ═══════════════════════════════════════════════════════════════
 //  §1  T Y P E S
 // ═══════════════════════════════════════════════════════════════
+
+export type SaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'failed';
 
 type SettingsFormErrors = Record<string, string> & {
   passwordDefaults?: Record<string, string>;
@@ -99,6 +103,19 @@ function validateSettings(s: UserSettings): SettingsFormErrors {
     errors.historyRetentionDays = t('historyRetentionRange');
   }
 
+  // customDomain: optional, but if non-empty must be a plain hostname
+  // (no scheme, no path, no query).
+  if (s.customDomain && s.customDomain.trim().length > 0) {
+    const domain = s.customDomain.trim();
+    if (/^https?:\/\//i.test(domain)) {
+      errors.customDomain = t('customDomainInvalid');
+    } else if (!/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/i.test(domain)) {
+      errors.customDomain = t('customDomainInvalid');
+    } else if (domain.includes('..')) {
+      errors.customDomain = t('customDomainInvalid');
+    }
+  }
+
   // customDomainUrl: optional, but if non-empty must be a valid
   // https URL pointing at the worker.
   if (s.customDomainUrl && s.customDomainUrl.trim().length > 0) {
@@ -123,6 +140,7 @@ const ALL_VALIDATED_FIELDS = new Set<string>([
   'checkIntervalSeconds',
   'historyRetentionDays',
   'passwordDefaults.length',
+  'customDomain',
   'customDomainUrl',
 ]);
 
@@ -205,13 +223,16 @@ const LoadingSpinner: React.FC = () => (
   </div>
 );
 
-/** Ambient decorative background. */
+/** Ambient decorative background with animated blobs. */
 const AmbientBackground: React.FC = () => (
   <>
-    <div className="material-grain" aria-hidden="true" />
-    <div className="ambient-scene" aria-hidden="true">
-      <div className="blob blob-1" />
-      <div className="blob blob-2" />
+    <div className="ambient-background">
+      <div className="ambient-bg-gradient" aria-hidden="true" />
+    </div>
+    <div className="ambient-blobs" aria-hidden="true">
+      <div className="ambient-blob ambient-blob-1" />
+      <div className="ambient-blob ambient-blob-2" />
+      <div className="ambient-blob ambient-blob-3" />
     </div>
   </>
 );
@@ -283,13 +304,6 @@ const OptionsApp: React.FC = () => {
     customDomainKey: '',
     llmApiKey: '',
   });
-  // PERMANENT FIX 2026-06-21: a tri-state machine replaces the
-  // boolean `saved`. Previously users had no signal during the 500ms
-  // auto-save debounce window that their change was in flight, and
-  // there was no way to know if a save failed. The machine exposes
-  // Idle / Pending / Saving / Saved / Failed in the header so the
-  // user always knows what's happening.
-  type SaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'failed';
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [loading, setLoading] = useState(true);
   const [formErrors, setFormErrors] = useState<SettingsFormErrors>({});
@@ -367,6 +381,10 @@ const OptionsApp: React.FC = () => {
   useEffect(() => {
     void loadSettings();
   }, [loadSettings]);
+
+  useEffect(() => {
+    applyTheme(resolveTheme(settings.darkMode));
+  }, [settings.darkMode]);
 
   // ═══════════════════════════════════════════════════════════
   //  §5.3  S A V E
@@ -738,7 +756,6 @@ const OptionsApp: React.FC = () => {
   return (
     <div className="options-app" aria-label="GhostFill Settings">
       <AmbientBackground />
-
       {/* ── Header ── */}
       <header className="options-header" role="banner">
         <div className="header-content">
@@ -749,6 +766,38 @@ const OptionsApp: React.FC = () => {
             <h1 className="spectral-title">{t('settingsTitle')}</h1>
             <p className="spectral-subtitle">{t('settingsSubtitle')}</p>
           </div>
+          <div className="header-actions">
+            <button
+              className="command-palette-trigger-btn"
+              onClick={() => setCommandPaletteOpen(true)}
+              type="button"
+              aria-label="Search settings"
+              title="Search settings (Ctrl+K)"
+            >
+              <Search size={15} />
+              <span>Search</span>
+              <kbd>⌘K</kbd>
+            </button>
+            <button
+              className="theme-toggle-header-btn"
+              onClick={() => {
+                const isCurrentlyDark = resolveTheme(settings.darkMode) === 'dark';
+                handleChange('darkMode', !isCurrentlyDark);
+              }}
+              type="button"
+              aria-label="Toggle theme mode"
+              title={`Switch to ${resolveTheme(settings.darkMode) === 'dark' ? 'Light' : 'Dark'} mode`}
+            >
+              {resolveTheme(settings.darkMode) === 'dark' ? (
+                <Sun size={17} className="theme-icon-sun" />
+              ) : (
+                <Moon size={17} className="theme-icon-moon" />
+              )}
+              <span className="theme-toggle-label">
+                {resolveTheme(settings.darkMode) === 'dark' ? 'Light' : 'Dark'}
+              </span>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -756,7 +805,11 @@ const OptionsApp: React.FC = () => {
       <div
         className="dashboard-layout"
         aria-hidden={confirmModal.open ? 'true' : undefined}
-        {...({ inert: confirmModal.open ? '' : undefined } as { inert?: string })}
+        ref={(el) => {
+          if (el) {
+            el.inert = confirmModal.open;
+          }
+        }}
       >
         <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
         <main className="options-main" role="main" id="main-content">
@@ -776,7 +829,7 @@ const OptionsApp: React.FC = () => {
       {saveState === 'saved' && <SavedToast />}
 
       {/* ── Save state indicator (always visible while a save is in flight) ── */}
-      <SaveStatusIndicator state={saveState} />
+      <SaveStatusIndicator state={saveState} onRetry={() => void saveSettings()} />
 
       {/* ── Ctrl+K command palette ── */}
       <CommandPalette
@@ -796,9 +849,10 @@ const OptionsApp: React.FC = () => {
 //  §12  S A V E   S T A T U S   I N D I C A T O R
 // ═══════════════════════════════════════════════════════════════
 
-const SaveStatusIndicator: React.FC<{ state: 'idle' | 'pending' | 'saving' | 'saved' | 'failed' }> = ({
-  state,
-}) => {
+const SaveStatusIndicator: React.FC<{
+  state: 'idle' | 'pending' | 'saving' | 'saved' | 'failed';
+  onRetry: () => void;
+}> = ({ state, onRetry }) => {
   if (state === 'idle') {
     return null;
   }
@@ -821,6 +875,14 @@ const SaveStatusIndicator: React.FC<{ state: 'idle' | 'pending' | 'saving' | 'sa
       label = 'Save failed — retry?';
       cls += 'options-save-indicator-failed';
       break;
+  }
+  if (state === 'failed') {
+    return (
+      <button type="button" className={cls} role="status" aria-live="polite" onClick={onRetry}>
+        <span className="options-save-indicator-dot" aria-hidden="true" />
+        <span>{label}</span>
+      </button>
+    );
   }
   return (
     <div className={cls} role="status" aria-live="polite">
@@ -854,6 +916,11 @@ const TAB_ORDER: Array<{ id: TabId; label: string; hint: string }> = [
 const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, activeTab, onSelectTab }) => {
   const [query, setQuery] = useState('');
   const [highlightIdx, setHighlightIdx] = useState(0);
+
+  const q = query.trim().toLowerCase();
+  const filtered = TAB_ORDER.filter(
+    (t) => !q || t.label.toLowerCase().includes(q) || t.hint.toLowerCase().includes(q)
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -889,17 +956,11 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, active
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, query, highlightIdx]);
+  }, [isOpen, query, highlightIdx, filtered, onClose, onSelectTab]);
 
   if (!isOpen) {
     return null;
   }
-
-  const q = query.trim().toLowerCase();
-  const filtered = TAB_ORDER.filter(
-    (t) => !q || t.label.toLowerCase().includes(q) || t.hint.toLowerCase().includes(q)
-  );
 
   return (
     <div

@@ -29,34 +29,25 @@ const OTP_FRESHNESS = {
 class OTPService {
   private rateLimitMutex: Promise<void> = Promise.resolve();
   private rateLimitTimestamps: number[] = [];
-  private hasInitializedRateLimits = false;
 
-  private async ensureRateLimitStateLoaded(): Promise<void> {
-    if (!this.hasInitializedRateLimits) {
-      this.rateLimitTimestamps = (await storageService.get('otpRateLimitTimestamps')) || [];
-      this.hasInitializedRateLimits = true;
-    }
-  }
+  // PERF: Rate-limit timestamps are ephemeral bookkeeping — no disk persistence needed.
+  // Removed storageService.get/set calls that triggered encryption + disk I/O per OTP save.
+  // Timestamps naturally reset on service worker restart (correct for rate limiting).
 
-  private async pruneRateLimitWindow(now: number): Promise<void> {
-    await this.ensureRateLimitStateLoaded();
-
+  private pruneRateLimitWindow(now: number): void {
     const filtered = this.rateLimitTimestamps.filter((ts) => now - ts < RATE_LIMIT.WINDOW_MS);
     if (filtered.length !== this.rateLimitTimestamps.length) {
       this.rateLimitTimestamps = filtered;
-      await storageService.set('otpRateLimitTimestamps', this.rateLimitTimestamps);
     }
   }
 
-  private async isRateLimitedLocked(now: number): Promise<boolean> {
-    await this.pruneRateLimitWindow(now);
+  private isRateLimitedLocked(now: number): boolean {
+    this.pruneRateLimitWindow(now);
     return this.rateLimitTimestamps.length >= RATE_LIMIT.MAX_SAVES_PER_MINUTE;
   }
 
-  private async recordSaveLocked(now: number): Promise<void> {
-    await this.ensureRateLimitStateLoaded();
+  private recordSaveLocked(now: number): void {
     this.rateLimitTimestamps.push(now);
-    await storageService.set('otpRateLimitTimestamps', this.rateLimitTimestamps);
   }
 
   /**
@@ -162,25 +153,15 @@ class OTPService {
 
   private async notifyRateLimitExceeded(retryAfterMs: number): Promise<void> {
     try {
-      const message = {
-        action: 'OTP_RATE_LIMIT_EXCEEDED',
-        payload: {
-          timestamp: Date.now(),
-          message: `OTP extraction temporarily paused. Try again in ${Math.round(retryAfterMs / 1000)}s.`,
-          retryAfterMs,
-        },
-      };
-
-      chrome.runtime.sendMessage(message, () => {
-        if (chrome.runtime.lastError) {
-          chrome.notifications.create({
-            type: 'basic',
-            iconUrl: 'assets/icons/icon128.png',
-            title: 'GhostFill: Too Many OTPs',
-            message: message.payload.message,
-          });
-        }
-      });
+      const msgText = `OTP extraction temporarily paused. Try again in ${Math.round(retryAfterMs / 1000)}s.`;
+      if (typeof chrome !== 'undefined' && chrome.notifications?.create) {
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: 'assets/icons/icon128.png',
+          title: 'GhostFill: Too Many OTPs',
+          message: msgText,
+        });
+      }
       log.debug('OTP rate limit notification handled', { retryAfterMs });
     } catch (error) {
       log.debug('Could not send OTP rate limit notification', error);
@@ -297,11 +278,8 @@ class SmartDetectionService {
   }
 
   private installCleanupHook(): void {
-    if (typeof window !== 'undefined') {
-      window.addEventListener('pagehide', () => {
-        this.destroyCache();
-      });
-    }
+    // Run an initial cache cleanup pass on SW boot
+    void this.cleanupExpiredCache();
   }
 
   private maybeCleanupExpiredCache(): void {
@@ -365,8 +343,7 @@ class SmartDetectionService {
       .map((domain) => domain.toLowerCase())
       .sort()
       .join(',');
-    const hashStr = await this.hash(`${sender}|${subject}|${body}|ctx:${contextKey}`);
-    const cacheKey = `det_${hashStr}`;
+    const cacheKey = this.fastCacheKey(sender, subject, body, contextKey);
     const cachedResult = await this.getCachedResult(cacheKey);
     if (cachedResult) {
       log.debug('[SmartDetection] Returning cached result');
@@ -422,9 +399,10 @@ class SmartDetectionService {
     }
     if (intelligentResult.link) {
       mergedResult.link = intelligentResult.link.url;
+      // FIX D4: intelligentResult.link.confidence is already in 0..1 scale
       mergedResult.confidence = Math.max(
         mergedResult.confidence,
-        intelligentResult.link.confidence / 100
+        intelligentResult.link.confidence > 1 ? intelligentResult.link.confidence / 100 : intelligentResult.link.confidence
       );
     }
 
@@ -437,6 +415,24 @@ class SmartDetectionService {
 
     await this.cacheResult(cacheKey, mergedResult);
     return mergedResult;
+  }
+
+  async burnCode(code: string, domain: string): Promise<void> {
+    if (!code || !domain) return;
+    const allBurned = (await storageService.get('burnedCodes')) ?? {};
+    const normalized = code.toUpperCase();
+    const domainList = allBurned[domain] ?? [];
+    if (!domainList.includes(normalized)) {
+      const updatedList = [...domainList, normalized].slice(-10);
+      await storageService.set('burnedCodes', { ...allBurned, [domain]: updatedList });
+      log.info(`🔥 Burned rejected code for ${domain}`, { code: normalized });
+    }
+  }
+
+  async getBurnedCodes(domain: string): Promise<string[]> {
+    if (!domain) return [];
+    const allBurned = (await storageService.get('burnedCodes')) ?? {};
+    return allBurned[domain] ?? [];
   }
 
   private cleanHTML(html: string): string {
@@ -457,12 +453,19 @@ class SmartDetectionService {
     return processedHtml.substring(0, 2000);
   }
 
-  private async hash(str: string): Promise<string> {
-    const msgUint8 = new TextEncoder().encode(str);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-    return hashHex;
+  // GRANDMASTER FIX: Synchronous 32-bit hash. Zero memory allocation.
+  private fastCacheKey(sender: string, subject: string, body: string, contextKey: string): string {
+    // Sample the first 1000 chars + length to prevent 5MB HTML hashing
+    const sample = `${sender}|${subject}|${body.substring(0, 1000)}|len:${body.length}|ctx:${contextKey}`;
+    let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+    for (let i = 0; i < sample.length; i++) {
+      const ch = sample.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761);
+      h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return `det_${(h2 >>> 0).toString(16).padStart(8, '0')}${(h1 >>> 0).toString(16).padStart(8, '0')}`;
   }
 
   private async getCachedResult(key: string): Promise<DetectionResult | null> {

@@ -290,6 +290,7 @@ export function isCTAButton(anchorHtml: string): boolean {
 }
 
 function extractAnchorHref(anchorHtml: string): string {
+  if (typeof anchorHtml !== 'string') return '';
   const quoted = anchorHtml.match(/\bhref\s*=\s*["']([^"']+)["']/i);
   if (quoted?.[1]) {
     return decodeHtmlEntities(quoted[1].trim());
@@ -342,6 +343,8 @@ function urlsReferToSameTarget(anchorHref: string, targetUrl: string): boolean {
 }
 
 function getReadableAnchorText(anchorInnerHtml: string, anchorHtml: string): string {
+  if (typeof anchorInnerHtml !== 'string') anchorInnerHtml = '';
+  if (typeof anchorHtml !== 'string') anchorHtml = '';
   const text = stripHtml(anchorInnerHtml).trim();
   if (text) {
     return text;
@@ -370,6 +373,7 @@ export function getAnchorInfo(
   anchorHtml: string;
   isCTA: boolean;
 } {
+  if (typeof html !== 'string') return { anchorText: '', anchorHtml: '', isCTA: false };
   const escaped = url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
   // Try strict match first

@@ -1,0 +1,8 @@
+{"id":"gh-001","provider":"github","subject":"[GitHub] Please verify your device","html":"<p>Your verification code is 113636</p>","expect":{"otp":"113636","action":"autofill"}}
+{"id":"tr-002","desc":"year trap","subject":"Verify","html":"<p>© 2024 Acme</p><p>Your code is 483920</p>","expect":{"otp":"483920","action":"autofill"}}
+{"id":"tr-003","desc":"legit year-valued OTP","html":"Your verification code is 2024","expect":{"otp":"2024","action":"autofill"}}
+{"id":"tr-004","desc":"11-char alnum","html":"A5EG382JW8W Enter the code above to complete verification","expect":{"otp":"A5EG382JW8W","action":"autofill"}}
+{"id":"tr-005","desc":"repeated digits are valid when labeled","html":"Your OTP: 111111","expect":{"otp":"111111","action":"autofill"}}
+{"id":"tr-006","desc":"ambiguous — must abstain","html":"Order 483920 shipped. Ref 771204.","expect":{"otp":null,"action":"abstain"}}
+{"id":"tr-007","desc":"sendgrid-wrapped verify","html":"<a href=\"https://ct.sendgrid.net/ls/click?url=https%3A%2F%2Fapp.foo.com%2Fverify%3Ft%3Dabc123456789\">Verify email</a>","expect":{"link":"https://app.foo.com/verify?t=abc123456789","action":"auto-open"}}
+{"id":"tr-008","desc":"marketing trap","html":"<a href=\"https://brand.com/welcome/?email=you@x.com\">Shop now</a>","expect":{"link":null,"action":"abstain"}}

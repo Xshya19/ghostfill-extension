@@ -98,6 +98,7 @@ const IMMEDIATE_WRITE_KEYS = new Set<keyof StorageSchema>([
   'lastOTP',
   'currentEmail',
   'disposableEmail',
+  'aliasHistory',
   'preferredEmailType',
   'inbox',
   'gmailInbox',
@@ -142,7 +143,7 @@ export class StorageService {
   private initPromise: Promise<void> | null = null;
   private readonly QUOTA_WARNING_THRESHOLD = 0.8;
   private readonly QUOTA_MAX_SIZE = 100 * 1024;
-  private writeQueue: Promise<void> = Promise.resolve();
+  // writeQueue removed (Grandmaster Fix: single-queue mutex)
   private pendingWrites: Map<string, unknown> = new Map();
   private writeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingResolvers: Array<{ resolve: () => void; reject: (err: unknown) => void }> = [];
@@ -857,112 +858,105 @@ export class StorageService {
       this.pendingWrites.clear();
       return;
     }
-    const performWrite = async () => {
-      await this.acquireWriteMutex();
-      const writesAttempted = Array.from(this.pendingWrites.keys());
 
-      try {
-        if (this.pendingWrites.size === 0) {
-          return;
-        }
+    // GRANDMASTER FIX: Removed `this.writeQueue` chain. 
+    // The Mutex alone guarantees sequential, non-dropping writes.
+    await this.acquireWriteMutex();
+    const writesAttempted = Array.from(this.pendingWrites.keys());
 
-        const writes = new Map(this.pendingWrites);
-        this.pendingWrites.clear();
-
-        // Cached quota check (avoids getBytesInUse on every micro-flush)
-        const usage = await this.getUsageCached();
-
-        if (usage.percentage >= this.QUOTA_WARNING_THRESHOLD * 100) {
-          log.error(`Storage quota at ${usage.percentage.toFixed(1)}% - pruning then writing`);
-          await this.pruneOldData();
-          for (const [pKey, pVal] of this.pendingWrites.entries()) {
-            writes.set(pKey, pVal);
-          }
-          this.pendingWrites.clear();
-          this.cachedUsage = null; // force refresh after prune
-        }
-
-        // Keep plaintext values for cache; encrypt copies for disk in parallel
-        const plaintextByKey = new Map(writes);
-        const masterKey = getMasterKey();
-
-        const encryptJobs = Array.from(writes.entries()).map(async ([key, value]) => {
-          // Rough size guard without full stringify of huge encrypted blobs
-          let approxSize = 0;
-          try {
-            approxSize = typeof value === 'string' ? value.length : JSON.stringify(value).length;
-          } catch {
-            approxSize = 0;
-          }
-          if (approxSize > this.QUOTA_MAX_SIZE) {
-            log.warn(`Large write detected for key ${key}`, { size: approxSize });
-            await this.pruneOldData();
-          }
-
-          if (SENSITIVE_KEYS.includes(key as keyof StorageSchema)) {
-            if (!masterKey) {
-              throw new Error('Encryption not initialized');
-            }
-            try {
-              const cipher = await encrypt(value, masterKey);
-              writes.set(key, cipher);
-            } catch (error) {
-              log.error(`Failed to encrypt ${key}`, error);
-              throw new Error('Failed to encrypt sensitive data');
-            }
-          }
-
-          // Cache always holds plaintext for instant subsequent reads
-          this.cache.set(key as keyof StorageSchema, plaintextByKey.get(key));
-        });
-
-        await Promise.all(encryptJobs);
-
-        await withStorageTimeout(
-          new Promise<void>((resolve, reject) => {
-            try {
-              const p: any = chrome.storage.local.set(Object.fromEntries(writes), () => {
-                if (chrome.runtime.lastError) {
-                  log.error('Chrome storage set failed', chrome.runtime.lastError);
-                  return reject(chrome.runtime.lastError);
-                }
-                resolve();
-              });
-              if (p && typeof p.then === 'function') {
-                p.then(resolve).catch(reject);
-              }
-            } catch (error) {
-              reject(error);
-            }
-          }),
-          `set:${writes.size}-keys`
-        );
-
-        // Bust usage cache after successful write
-        this.cachedUsage = null;
-        log.debug(`Batch saved ${writes.size} keys`);
-      } catch (error) {
-        log.error('Failed to flush pending writes', error);
-
-        for (const key of writesAttempted) {
-          this.pendingWrites.delete(key);
-          // Drop stale cache entries so next get reloads from disk
-          this.cache.delete(key as keyof StorageSchema);
-        }
-
-        throw error;
-      } finally {
-        this.releaseWriteMutex();
+    try {
+      if (this.pendingWrites.size === 0) {
+        return;
       }
-    };
 
-    const scheduledWrite = this.writeQueue.then(performWrite);
-    // Ensure writeQueue recovers even if the write fails
-    this.writeQueue = scheduledWrite.catch((e) => {
-      log.error('Write queue operation failed and was recovered', e);
-    });
+      const writes = new Map(this.pendingWrites);
+      this.pendingWrites.clear();
 
-    return scheduledWrite;
+      // Cached quota check (avoids getBytesInUse on every micro-flush)
+      const usage = await this.getUsageCached();
+
+      if (usage.percentage >= this.QUOTA_WARNING_THRESHOLD * 100) {
+        log.error(`Storage quota at ${usage.percentage.toFixed(1)}% - pruning then writing`);
+        await this.pruneOldData();
+        for (const [pKey, pVal] of this.pendingWrites.entries()) {
+          writes.set(pKey, pVal);
+        }
+        this.pendingWrites.clear();
+        this.cachedUsage = null; // force refresh after prune
+      }
+
+      // Keep plaintext values for cache; encrypt copies for disk in parallel
+      const plaintextByKey = new Map(writes);
+      const masterKey = getMasterKey();
+
+      const encryptJobs = Array.from(writes.entries()).map(async ([key, value]) => {
+        // Rough size guard without full stringify of huge encrypted blobs
+        let approxSize = 0;
+        try {
+          approxSize = typeof value === 'string' ? value.length : JSON.stringify(value).length;
+        } catch {
+          approxSize = 0;
+        }
+        if (approxSize > this.QUOTA_MAX_SIZE) {
+          log.warn(`Large write detected for key ${key}`, { size: approxSize });
+          await this.pruneOldData();
+        }
+
+        if (SENSITIVE_KEYS.includes(key as keyof StorageSchema)) {
+          if (!masterKey) {
+            throw new Error('Encryption not initialized');
+          }
+          try {
+            const cipher = await encrypt(value, masterKey);
+            writes.set(key, cipher);
+          } catch (error) {
+            log.error(`Failed to encrypt ${key}`, error);
+            throw new Error('Failed to encrypt sensitive data');
+          }
+        }
+
+        // Cache always holds plaintext for instant subsequent reads
+        this.cache.set(key as keyof StorageSchema, plaintextByKey.get(key));
+      });
+
+      await Promise.all(encryptJobs);
+
+      await withStorageTimeout(
+        new Promise<void>((resolve, reject) => {
+          try {
+            const p: any = chrome.storage.local.set(Object.fromEntries(writes), () => {
+              if (chrome.runtime.lastError) {
+                log.error('Chrome storage set failed', chrome.runtime.lastError);
+                return reject(chrome.runtime.lastError);
+              }
+              resolve();
+            });
+            if (p && typeof p.then === 'function') {
+              p.then(resolve).catch(reject);
+            }
+          } catch (error) {
+            reject(error);
+          }
+        }),
+        `set:${writes.size}-keys`
+      );
+
+      // Bust usage cache after successful write
+      this.cachedUsage = null;
+      log.debug(`Batch saved ${writes.size} keys`);
+    } catch (error) {
+      log.error('Failed to flush pending writes', error);
+
+      for (const key of writesAttempted) {
+        this.pendingWrites.delete(key);
+        // Drop stale cache entries so next get reloads from disk
+        this.cache.delete(key as keyof StorageSchema);
+      }
+
+      throw error;
+    } finally {
+      this.releaseWriteMutex();
+    }
   }
 
   /**

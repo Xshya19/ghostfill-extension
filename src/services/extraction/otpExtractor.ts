@@ -44,7 +44,7 @@ const CONFIG = {
   },
   limits: {
     minCodeLength: 4,
-    maxCodeLength: 10,
+    maxCodeLength: 12,
   },
   context: {
     nearRadius: 100,
@@ -105,6 +105,7 @@ function codeEntropy(code: string): number {
 
 /** Quality score for alphanumeric OTPs (Steam/Epic/Discord style). */
 function alnumQuality(code: string): number {
+  if (typeof code !== 'string') return 0;
   const hasUpper = /[A-Z]/.test(code);
   const hasLower = /[a-z]/.test(code);
   const hasDigit = /\d/.test(code);
@@ -125,6 +126,7 @@ function alnumQuality(code: string): number {
 }
 
 function isPlausibleOtpShape(code: string): boolean {
+  if (typeof code !== 'string') return false;
   if (code.length < CONFIG.limits.minCodeLength || code.length > CONFIG.limits.maxCodeLength) {
     return false;
   }
@@ -356,7 +358,88 @@ const EXTENDED_ANTI_PATTERNS: Array<{
     },
     severity: 'medium',
   },
+  {
+    name: 'email-embedded-code',
+    test: (v, ctx, idx) => {
+      if (!/^\d{2,12}$/.test(v)) return false;
+      const around =
+        idx !== undefined && idx >= 0
+          ? sliceAround(ctx, idx, v.length, 150)
+          : getContextAround(ctx, v, 150);
+      if (!isCodeEmbeddedInEmail(v, around)) return false;
+      return !/(?:code|otp|pin|passcode|verification|security code|one[ -]?time|enter|use|type|input)/i.test(
+        around
+      );
+    },
+    severity: 'critical',
+    reject: true,
+  },
+  {
+    name: 'email-embedded-code-penalty',
+    test: (v, ctx, idx) => {
+      if (!/^\d{2,12}$/.test(v)) return false;
+      const around =
+        idx !== undefined && idx >= 0
+          ? sliceAround(ctx, idx, v.length, 150)
+          : getContextAround(ctx, v, 150);
+      return isCodeEmbeddedInEmail(v, around);
+    },
+    severity: 'high',
+    reject: false,
+  },
 ];
+
+/**
+ * Detects whether a numeric candidate is a segment of an email address / user
+ * handle in the surrounding text, e.g. the "5561" in `mark.kennedy.5561@mail.com`
+ * or `user_5561@x.io`. Such numbers are address/identity artifacts and are never
+ * the real OTP. Used by both extractor engines as a hard false-positive gate.
+ */
+export function isCodeEmbeddedInEmail(code: string, text: string): boolean {
+  if (!/^\d{2,12}$/.test(code) || !text) return false;
+  const esc = code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const patterns = [
+    // ...<sep>CODE@domain  (code is the last token of the local part)
+    new RegExp(
+      `[a-z0-9_.,%+\-]+(?:[._%+\-]|@[a-z0-9.-]*[._%+\-])${esc}@[a-z0-9.-]+\.[a-z]{2,}`,
+      'i'
+    ),
+    // ...<sep>CODE<sep>rest...@domain  (code is an interior local-part segment)
+    new RegExp(
+      `[a-z0-9_.,%+\-]*${esc}[._%+\-][a-z0-9_.,%+\-]+@[a-z0-9.-]+\.[a-z]{2,}`,
+      'i'
+    ),
+    // CODE is the entire local part before @
+    new RegExp(`(?:^|[^a-z0-9_.,%+\-])${esc}@[a-z0-9.-]+\.[a-z]{2,}`, 'i'),
+    // numeric segment inside the domain after @
+    new RegExp(`@[a-z0-9_-]*${esc}[a-z0-9_-]*(?:\.[a-z]{2,})`, 'i'),
+  ];
+  return patterns.some((re) => re.test(text));
+}
+
+/**
+ * True if the code ALSO appears somewhere standalone (not inside an email
+ * address) with OTP instruction language beside it. Handles the rare "the same
+ * digits are both in the address AND are the real code" case.
+ */
+export function hasIsolatedOtpContext(code: string, text: string): boolean {
+  if (!text) return false;
+  const esc = code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`\\b${esc}\\b`, 'gi');
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const immediate =
+      text.slice(Math.max(0, m.index - 30), m.index) +
+      ' ' +
+      text.slice(m.index + code.length, m.index + code.length + 30);
+    const hasOtpLang = /(?:code|otp|pin|passcode|verification|security code|one[ -]?time|enter|use|type|input)/i.test(
+      immediate
+    );
+    if (hasOtpLang && !isCodeEmbeddedInEmail(code, immediate)) return true;
+    if (m.index === re.lastIndex) re.lastIndex++;
+  }
+  return false;
+}
 
 // ══════════════════════════════════════════
 //  ANTI-PATTERN CHECKING

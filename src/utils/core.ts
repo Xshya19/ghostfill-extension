@@ -138,7 +138,12 @@ export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 /**
- * Retries a function with exponential backoff (alias/alternative pattern).
+ * Retries a function with exponential backoff.
+ *
+ * IMPORTANT: Only retries when the function THROWS. Does NOT treat null
+ * returns as failures — callers like safeSendMessage() return null on
+ * permanent failures (context invalidated, validation failed) and those
+ * should NOT be retried.
  */
 export async function withRetry<T>(
   fn: () => Promise<T>,
@@ -148,18 +153,13 @@ export async function withRetry<T>(
   let lastError: Error | undefined;
   for (let i = 0; i < maxRetries; i++) {
     try {
-      const res = await fn();
-      if (res === null) {
-        throw new Error('Operation returned null');
-      }
-      if (res && typeof res === 'object' && 'error' in res) {
-        throw new Error(String((res as any).error));
-      }
-      return res;
+      return await fn();
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e));
-      const delay = baseDelay * Math.pow(2, i);
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      if (i < maxRetries - 1) {
+        const delay = baseDelay * Math.pow(2, i);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
     }
   }
   throw lastError || new Error('Max retries reached');
@@ -206,6 +206,42 @@ export function formatDate(timestamp: number | string | Date): string {
     month: 'short',
     day: 'numeric',
   });
+}
+
+/**
+ * Coerce arbitrary email-content payloads into a plain string.
+ *
+ * Provider APIs (and Gmail storage) sometimes hand the message body over as an
+ * OBJECT rather than a string, e.g. `{ text, html }`, `{ body, content }` or a
+ * raw JSON blob. Rendering code that blindly calls `.slice()` / `replace()` on
+ * such a value crashes the whole popup with:
+ *   TypeError: m.slice is not a function
+ * This helper guarantees a string is always returned so `.slice()` etc. are safe.
+ */
+export function contentToString(value: unknown, fallback = ''): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    // Prefer explicit content fields in a sensible priority order.
+    for (const key of ['text', 'html', 'body', 'content', 'textBody', 'htmlBody']) {
+      const field = obj[key];
+      if (typeof field === 'string') {
+        return field;
+      }
+    }
+    try {
+      const serialized = JSON.stringify(value);
+      return typeof serialized === 'string' ? serialized : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+  return String(value);
 }
 
 export function formatTime(timestamp: number | string | Date): string {

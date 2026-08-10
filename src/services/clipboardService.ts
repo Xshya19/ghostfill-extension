@@ -1,6 +1,6 @@
 // Clipboard Service
 
-import { ensureOffscreenDocument } from '../background/serviceWorker';
+import { ensureOffscreenDocument } from '../background/offscreenManager';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('ClipboardService');

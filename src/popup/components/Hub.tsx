@@ -13,7 +13,7 @@ import {
 } from '../../services/gmailConnectionService';
 import { storageService } from '../../services/storageService';
 import { itemRise, springTab, stagger } from '../../shared/ui/motion';
-import { EmailAccount, Email, type ExtractOTPResponse } from '../../types';
+import { EmailAccount, Email, type ExtractOTPResponse, type ReadEmailResponse } from '../../types';
 import { TIMING, copyToClipboard, openSafeUrl } from '../../utils/core';
 import { safeSendMessage } from '../../utils/messaging';
 import { useOTPExtractor } from '../hooks/useOTPExtractor';
@@ -28,6 +28,20 @@ const t = (key: string): string => {
   } catch {
     return key;
   }
+};
+
+const toSafeStr = (v: unknown): string => {
+  if (typeof v === 'string') return v;
+  if (!v) return '';
+  if (typeof v === 'object') {
+    const obj = v as Record<string, unknown>;
+    if (typeof obj.text === 'string') return obj.text;
+    if (typeof obj.html === 'string') return obj.html;
+    if (typeof obj.body === 'string') return obj.body;
+    if (typeof obj.content === 'string') return obj.content;
+    try { return JSON.stringify(v); } catch { return String(v); }
+  }
+  return String(v);
 };
 
 // Rate limit constants
@@ -566,15 +580,88 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
               };
             });
 
+            const bodyStr = toSafeStr(fullMsg.body ?? emailItem.body);
+            const htmlStr = toSafeStr(fullMsg.htmlBody);
+
             const extract = (await safeSendMessage({
               action: 'EXTRACT_OTP',
               payload: {
-                subject: fullMsg.subject ?? emailItem.subject,
-                text: fullMsg.body ?? emailItem.body ?? '',
-                textBody: fullMsg.body ?? emailItem.body ?? '',
-                htmlBody: fullMsg.htmlBody ?? '',
+                subject: toSafeStr(fullMsg.subject ?? emailItem.subject),
+                text: bodyStr,
+                textBody: bodyStr,
+                htmlBody: htmlStr,
                 emailId: emailItem.id,
-                emailFrom: fullMsg.from ?? emailItem.from,
+                emailFrom: toSafeStr(fullMsg.from ?? emailItem.from),
+              },
+            })) as ExtractOTPResponse | null;
+
+            if (lastOpenedEmailIdRef.current !== currentId) {
+              return;
+            }
+
+            if (extract?.success) {
+              if (typeof extract.otp === 'string' && extract.otp) {
+                setViewerOtp(extract.otp);
+              }
+              if (typeof extract.link === 'string' && extract.link) {
+                setViewerLink(extract.link);
+              }
+            }
+          } else if (res?.error) {
+            setViewerError(typeof res.error === 'string' ? res.error : 'Could not load message');
+          }
+        } else {
+          const account = emailAccount;
+          if (!account?.fullEmail) {
+            setViewerError('No active email account');
+            return;
+          }
+          const atIndex = account.fullEmail.indexOf('@');
+          const login = atIndex === -1 ? account.fullEmail : account.fullEmail.slice(0, atIndex);
+          const domain = atIndex === -1 ? '' : account.fullEmail.slice(atIndex + 1);
+
+          const res = (await safeSendMessage({
+            action: 'READ_EMAIL',
+            payload: { emailId: String(emailItem.id), login, domain, service: account.service },
+          })) as ReadEmailResponse | null;
+
+          if (lastOpenedEmailIdRef.current !== currentId) {
+            return;
+          }
+
+          if (res?.success && res.email) {
+            const fullMsg = res.email;
+            setViewerEmail((prev) => {
+              if (!prev || String(prev.id) !== currentId) {
+                return prev;
+              }
+              const next: DisplayedEmail = { ...prev, body: fullMsg.body ?? prev.body };
+              if (fullMsg.htmlBody !== undefined) {
+                next.htmlBody = fullMsg.htmlBody;
+              }
+              if (fullMsg.snippet !== undefined) {
+                next.snippet = fullMsg.snippet;
+              }
+              return next;
+            });
+
+            setViewerMeta((prev) => ({
+              ...prev,
+              ...(fullMsg.from ? { fromName: fullMsg.from } : {}),
+            }));
+
+            const bodyStr2 = toSafeStr(fullMsg.body ?? emailItem.body);
+            const htmlStr2 = toSafeStr(fullMsg.htmlBody);
+
+            const extract = (await safeSendMessage({
+              action: 'EXTRACT_OTP',
+              payload: {
+                subject: toSafeStr(fullMsg.subject ?? emailItem.subject),
+                text: bodyStr2,
+                textBody: bodyStr2,
+                htmlBody: htmlStr2,
+                emailId: emailItem.id,
+                emailFrom: toSafeStr(fullMsg.from ?? emailItem.from),
               },
             })) as ExtractOTPResponse | null;
 

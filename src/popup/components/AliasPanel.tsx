@@ -19,7 +19,6 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow';
 
 import {
-  type AliasHistoryItem,
   getDeterministicCombinedAlias,
   normalizeAliasDomain,
   rememberGmailAliasSession,
@@ -30,8 +29,8 @@ import {
   type GmailSignInResult,
 } from '../../services/gmailConnectionService';
 import { storageService } from '../../services/storageService';
-import { type GmailMessage, type GmailProfile } from '../../types/message.types';
-import { copyToClipboard, openSafeUrl } from '../../utils/core';
+import { type GmailMessage, type GmailProfile, type AliasHistoryItem } from '../../types/email.types';
+import { copyToClipboard, openSafeUrl, contentToString } from '../../utils/core';
 import { safeSendMessage } from '../../utils/messaging';
 import { useAppStore } from '../store/useAppStore';
 
@@ -762,15 +761,32 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
 
         if (res?.success && res.message) {
           setSelectedMessage(res.message);
+          const toSafeStr = (v: unknown): string => {
+            if (typeof v === 'string') return v;
+            if (!v) return '';
+            if (typeof v === 'object') {
+              const obj = v as Record<string, unknown>;
+              if (typeof obj.text === 'string') return obj.text;
+              if (typeof obj.html === 'string') return obj.html;
+              if (typeof obj.body === 'string') return obj.body;
+              if (typeof obj.content === 'string') return obj.content;
+              try { return JSON.stringify(v); } catch { return String(v); }
+            }
+            return String(v);
+          };
+
+          const textBodyStr = toSafeStr(res.message.body || res.message.snippet);
+          const htmlBodyStr = toSafeStr(res.message.htmlBody);
+
           const extraction = (await safeSendMessage({
             action: 'EXTRACT_OTP',
             payload: {
-              textBody: res.message.body || res.message.snippet || '',
-              htmlBody: res.message.htmlBody || '',
-              subject: res.message.subject,
+              textBody: textBodyStr,
+              htmlBody: htmlBodyStr,
+              subject: toSafeStr(res.message.subject),
               source: 'popup-inbox',
               emailId: res.message.id,
-              emailFrom: res.message.fromEmail || res.message.from,
+              emailFrom: toSafeStr(res.message.fromEmail || res.message.from),
               emailDate: res.message.date,
               saveToLastOTP: true,
             },
@@ -915,13 +931,6 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
     onToast,
   ]);
 
-  // ── Disconnected: auto-trigger sign-in, no intermediate page ──
-  useEffect(() => {
-    if (hydrated && !gmailConnected && !gmailProfile && !signingIn) {
-      void connectWithGoogle();
-    }
-  }, [hydrated, gmailConnected, gmailProfile, signingIn, connectWithGoogle]);
-
   if (!gmailConnected || !gmailProfile) {
     return (
       <div className="alias-panel">
@@ -966,12 +975,35 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
               <div className="alias-setup-logo">
                 <GmailLogo size={44} />
               </div>
-              <div
-                className="alias-signin-error-title"
-                style={{ justifyContent: 'center', marginTop: 8 }}
-              >
-                <RefreshCw size={14} className="spin" /> Connecting to Google...
-              </div>
+              {hydrated ? (
+                <>
+                  <div className="alias-setup-copy">
+                    <h3 className="alias-setup-title">Create Gmail aliases</h3>
+                    <p className="alias-setup-subtitle">
+                      Sign in to generate and track unlimited Gmail aliases.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => void connectWithGoogle()}
+                    disabled={signingIn}
+                    className="alias-connect-btn"
+                  >
+                    {signingIn ? (
+                      <RefreshCw size={14} className="spin" />
+                    ) : (
+                      <LogIn size={14} />
+                    )}
+                    <span>{signingIn ? 'Connecting…' : 'Connect with Google'}</span>
+                  </button>
+                </>
+              ) : (
+                <div
+                  className="alias-signin-error-title"
+                  style={{ justifyContent: 'center', marginTop: 8 }}
+                >
+                  <RefreshCw size={14} className="spin" /> Loading…
+                </div>
+              )}
             </>
           )}
         </motion.div>
@@ -1156,14 +1188,14 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
                 ) : (
                   <>
                     <div className="alias-message-modal-snippet">
-                      {selectedMessage.snippet || selectedMessage.body || 'No content available.'}
+                      {contentToString(selectedMessage.snippet ?? selectedMessage.body ?? '') || 'No content available.'}
                     </div>
                     <pre className="alias-message-modal-content">
                       {stripHtml(
-                        (
-                          selectedMessage.htmlBody ||
-                          selectedMessage.body ||
-                          selectedMessage.snippet ||
+                        contentToString(
+                          selectedMessage.htmlBody ??
+                          selectedMessage.body ??
+                          selectedMessage.snippet ??
                           ''
                         ).slice(0, MAX_MESSAGE_PREVIEW)
                       )}
@@ -1207,3 +1239,4 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
 };
 
 export default AliasPanel;
+

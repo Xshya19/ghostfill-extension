@@ -342,9 +342,15 @@ export class FieldAnalyzer {
 
     if (!siblings.includes(startElement)) siblings.push(startElement);
 
+    // GRANDMASTER FIX: Batch geometry reads BEFORE sorting to prevent O(N log N) reflows
+    const rectCache = new Map<HTMLInputElement, DOMRect>();
+    for (const sib of siblings) {
+      rectCache.set(sib, sib.getBoundingClientRect());
+    }
+
     siblings.sort((a, b) => {
-      const rectA = a.getBoundingClientRect();
-      const rectB = b.getBoundingClientRect();
+      const rectA = rectCache.get(a)!;
+      const rectB = rectCache.get(b)!;
       const tolerance = rectA.height * 0.5;
       if (Math.abs(rectA.top - rectB.top) > tolerance) {
         return rectA.top - rectB.top;
@@ -948,12 +954,19 @@ export class DOMObserver {
         this.stop();
         return;
       }
-      log.debug('DOM changed, re-detecting forms and icons');
-      this.formDetector.detectForms();
-      this.onDOMChanged().catch((error) => {
-        log.warn('Icon injection failed during DOM update', error);
-      });
-    }, 1500);
+      const runDetection = () => {
+        this.formDetector.detectForms();
+        this.onDOMChanged().catch((error) => {
+          log.warn('Icon injection failed during DOM update', error);
+        });
+      };
+
+      if ('requestIdleCallback' in window) {
+        window.requestIdleCallback(runDetection, { timeout: 400 });
+      } else {
+        setTimeout(runDetection, 0);
+      }
+    }, 250);
 
     this.debouncedHandler = debouncedUpdate as unknown as DebouncedMutationHandler;
 
@@ -965,6 +978,18 @@ export class DOMObserver {
           for (let i = 0; i < mutation.addedNodes.length; i++) {
             const node = mutation.addedNodes[i];
             if (node instanceof HTMLElement) {
+              // 🚨 CRITICAL FIX: Ignore GhostFill's own injected UI elements
+              if (
+                node.classList?.contains('ghostfill-container') ||
+                node.classList?.contains('ghostfill-fab') ||
+                node.classList?.contains('gf-fab') ||
+                node.tagName?.toLowerCase().startsWith('ghostfill-') ||
+                node.tagName?.toLowerCase().startsWith('gf-') ||
+                node.closest?.('.ghostfill-container')
+              ) {
+                continue;
+              }
+
               const tag = node.tagName;
               if (tag === 'FORM' || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
                 shouldRedetect = true;
@@ -1217,47 +1242,39 @@ export class UltraDetector {
     const singleDigitCandidates = candidates.filter((c) => {
       const el = c.element as HTMLInputElement;
       const rect = el.getBoundingClientRect();
-      return (
-        el.maxLength === 1 ||
-        el.getAttribute('maxlength') === '1' ||
-        rect.width <= 85
-      );
+      return el.maxLength === 1 || el.getAttribute('maxlength') === '1' || rect.width <= 85;
     });
 
     if (singleDigitCandidates.length < 4) return;
 
-    // Group single-digit inputs by common ancestor up to 3 levels deep
-    const groupsByAncestor = new Map<HTMLElement, FieldCandidate[]>();
+    // GRANDMASTER FIX: O(N) Ancestor grouping. Zero nested loops.
+    const ancestorMap = new Map<HTMLElement, FieldCandidate[]>();
+    
     for (const c of singleDigitCandidates) {
       let ancestor: HTMLElement | null = c.element.parentElement;
       let depth = 0;
       while (ancestor && depth < 3 && ancestor !== document.body) {
-        let count = 0;
-        for (const other of singleDigitCandidates) {
-          if (ancestor.contains(other.element)) {
-            count++;
-          }
+        let list = ancestorMap.get(ancestor);
+        if (!list) {
+          list = [];
+          ancestorMap.set(ancestor, list);
         }
-        if (count >= 4 && count <= 8) {
-          let list = groupsByAncestor.get(ancestor);
-          if (!list) {
-            list = [];
-            groupsByAncestor.set(ancestor, list);
-          }
-          if (!list.includes(c)) {
-            list.push(c);
-          }
-          break; // Found the lowest ancestor wrapping at least 4 digits
-        }
+        list.push(c);
         ancestor = ancestor.parentElement;
         depth++;
       }
     }
 
     let groupCounter = 1;
-    for (const [ancestor, list] of groupsByAncestor.entries()) {
+    const processedElements = new Set<FieldCandidate>();
+
+    // Find the lowest ancestor that contains exactly 4 to 8 digits
+    for (const [ancestor, list] of ancestorMap.entries()) {
       if (list.length >= 4 && list.length <= 8) {
-        // Sort by DOM left coordinate
+        // Ensure we don't double-group if a higher ancestor also matches
+        if (list.some(c => processedElements.has(c))) continue;
+
+        // Sort by cached or fresh rect (only 4-8 items, so 1 reflow is acceptable here)
         const sorted = list.sort((a, b) => {
           const rectA = a.element.getBoundingClientRect();
           const rectB = b.element.getBoundingClientRect();
@@ -1271,7 +1288,8 @@ export class UltraDetector {
           c.groupIndex = idx;
           c.groupSize = sorted.length;
           c.decision = 'FILL';
-          c.confidence = 0.99; // Highly confident since it is a structured OTP group
+          c.confidence = 0.99;
+          processedElements.add(c);
         });
       }
     }
@@ -1339,6 +1357,21 @@ export class ContextEngine {
     this.observer = new MutationObserver((mutations) => {
       let shouldRescan = false;
       for (const m of mutations) {
+        // GRANDMASTER FIX: Ignore GhostFill's own UI injections
+        if (m.target instanceof HTMLElement && 
+           (m.target.classList?.contains('ghostfill-container') || 
+            m.target.closest?.('.ghostfill-container'))) {
+          continue;
+        }
+
+        if (m.type === 'attributes') {
+          // ONLY rescan if an identity-changing attribute mutated.
+          // Ignore 'class', 'style', 'aria-expanded', etc. to prevent reflow loops.
+          if (!['type', 'hidden', 'disabled', 'readonly'].includes(m.attributeName || '')) {
+            continue;
+          }
+        }
+        
         if (m.addedNodes.length > 0 || m.removedNodes.length > 0 || m.type === 'attributes') {
           shouldRescan = true;
           break;
@@ -1354,7 +1387,7 @@ export class ContextEngine {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['type', 'style', 'class', 'hidden', 'disabled', 'readonly'],
+      attributeFilter: ['type', 'hidden', 'disabled', 'readonly'], // STRICT FILTER
     });
 
     window.addEventListener('popstate', this.handleNavigation);
@@ -1377,8 +1410,23 @@ export class ContextEngine {
 
   private getDOMFingerprint(): string {
     try {
-      const inputs = Array.from(document.querySelectorAll('input, textarea'));
-      return inputs.map(i => `${i.tagName}:${i.id}:${i.className}:${(i as any).disabled}:${(i as any).readOnly}:${(i as any).type}`).join(';');
+      // GRANDMASTER FIX: O(1) memory allocation. 
+      // We only care if the structural count or key identifiers changed.
+      const inputs = document.querySelectorAll('input, textarea');
+      let hash = inputs.length * 31; // Base hash on count
+      
+      // Sample the first 3 and last 3 inputs to detect major SPA shifts
+      const sampleSize = Math.min(3, inputs.length);
+      for (let i = 0; i < sampleSize; i++) {
+        const el = inputs[i] as HTMLInputElement;
+        hash = (hash * 33) ^ (el.type?.charCodeAt(0) || 0) ^ (el.name?.length || 0);
+      }
+      for (let i = Math.max(0, inputs.length - sampleSize); i < inputs.length; i++) {
+        const el = inputs[i] as HTMLInputElement;
+        hash = (hash * 33) ^ (el.type?.charCodeAt(0) || 0) ^ (el.name?.length || 0);
+      }
+      
+      return `${inputs.length}:${hash >>> 0}`;
     } catch {
       return '';
     }

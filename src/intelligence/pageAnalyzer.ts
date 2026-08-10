@@ -219,7 +219,7 @@ export class OTPDetectionCore {
 
 // ─── 3. MULTILINGUAL KEYWORD SNIFFER & VISUAL STATES (formerly detection.ts) ──
 
-export interface KeywordProfile {
+export interface KeywordProfileRaw {
   language: string;
   field_class: string;
   exact_matches: string[];
@@ -227,8 +227,27 @@ export interface KeywordProfile {
   negative_signals: string[];
 }
 
+export interface KeywordProfile {
+  language: string;
+  field_class: string;
+  exact_matches: Set<string>;
+  partial_patterns: RegExp;
+  negative_signals: RegExp;
+}
+
 export class MultilingualKeywordEngine {
   private static profiles: Map<string, KeywordProfile[]> = new Map();
+
+  private static addProfile(lang: string, profiles: KeywordProfileRaw[]): void {
+    const compiled = profiles.map(p => ({
+      language: p.language,
+      field_class: p.field_class,
+      exact_matches: new Set(p.exact_matches),
+      partial_patterns: p.partial_patterns.length > 0 ? new RegExp(p.partial_patterns.join('|'), 'i') : /(?!)/,
+      negative_signals: p.negative_signals.length > 0 ? new RegExp(p.negative_signals.join('|'), 'i') : /(?!)/,
+    }));
+    this.profiles.set(lang, compiled);
+  }
 
   static {
     this.addProfile('en', [
@@ -622,9 +641,7 @@ export class MultilingualKeywordEngine {
     ]);
   }
 
-  private static addProfile(lang: string, profs: KeywordProfile[]): void {
-    this.profiles.set(lang, profs);
-  }
+
 
   public static detectPageLanguage(): string {
     const htmlLang = document.documentElement.lang?.substring(0, 2).toLowerCase();
@@ -703,15 +720,16 @@ export class MultilingualKeywordEngine {
 
     const activeProfs = this.profiles.get(lang) || this.profiles.get('en')!;
 
+    // GRANDMASTER FIX: O(1) Set lookups and single Regex tests
     for (const signal of textSignals) {
       for (const prof of activeProfs) {
-        if (prof.exact_matches.some((m) => signal === m)) {
+        if (prof.exact_matches.has(signal)) {
           scores[prof.field_class]! += 1.0;
-        }
-        if (prof.partial_patterns.some((p) => signal.includes(p))) {
+        } else if (prof.partial_patterns.test(signal)) {
           scores[prof.field_class]! += 0.5;
         }
-        if (prof.negative_signals.some((n) => signal.includes(n))) {
+        
+        if (prof.negative_signals.test(signal)) {
           scores[prof.field_class]! -= 0.8;
         }
       }
@@ -774,6 +792,11 @@ export interface VisualState {
 export class VisualStateTracker {
   private styleCache = new Map<HTMLElement, CSSStyleDeclaration>();
 
+  // GRANDMASTER FIX: Call this ONCE at the start of your page analysis pass
+  public resetCache(): void {
+    this.styleCache.clear();
+  }
+
   private getCachedStyle(el: HTMLElement): CSSStyleDeclaration {
     let cached = this.styleCache.get(el);
     if (!cached) {
@@ -784,12 +807,17 @@ export class VisualStateTracker {
   }
 
   public getVisualState(el: HTMLElement): VisualState {
-    this.styleCache.clear();
+    // REMOVED: this.styleCache.clear(); <-- THE GUILLOTINE IS GONE
     const style = this.getCachedStyle(el);
     const rect = el.getBoundingClientRect();
 
     const isVisibleVal = this.checkVisibility(el, style);
-    const isObscuredVal = this.checkIfObscured(el, rect, style);
+    const inViewport = this.isInViewport(rect);
+    
+    // GRANDMASTER FIX: Only check obscuration if it's actually visible and in viewport
+    const isObscuredVal = isVisibleVal && inViewport 
+      ? this.checkIfObscured(el, rect, style) 
+      : false;
 
     return {
       isVisible: isVisibleVal,
@@ -1089,6 +1117,25 @@ function surroundingText(el: Fillable): string {
   return raw.slice(0, 300);
 }
 
+export class LayoutCache {
+  private rects = new WeakMap<Element, DOMRect>();
+  
+  public capture(elements: Element[]): void {
+    for (const el of elements) {
+      this.rects.set(el, el.getBoundingClientRect());
+    }
+  }
+  
+  public getRect(el: Element): DOMRect {
+    let rect = this.rects.get(el);
+    if (!rect) {
+      rect = el.getBoundingClientRect();
+      this.rects.set(el, rect);
+    }
+    return rect;
+  }
+}
+
 function isVisible(el: Fillable): {
   visible: boolean;
   opacityZero: boolean;
@@ -1111,18 +1158,18 @@ function isVisible(el: Fillable): {
   return { visible, opacityZero, offscreen, tiny, width: rect.width };
 }
 
-function countSameShapeSiblings(el: Fillable): number {
+function countSameShapeSiblings(el: Fillable, layoutCache?: LayoutCache): number {
   const form = (el.closest && el.closest('form,div,fieldset')) as HTMLElement | null;
   if (!form) {
     return 0;
   }
   const inputs = Array.from(form.querySelectorAll('input')) as HTMLInputElement[];
   const ml = (el as HTMLInputElement).maxLength;
-  const rectEl = el.getBoundingClientRect();
+  const rectEl = layoutCache ? layoutCache.getRect(el) : el.getBoundingClientRect();
   const widthEl = rectEl.width;
   let n = 0;
   for (const i of inputs) {
-    const rectI = i.getBoundingClientRect();
+    const rectI = layoutCache ? layoutCache.getRect(i) : i.getBoundingClientRect();
     const widthI = rectI.width;
     const inputModeMatches = i.getAttribute('inputmode') === el.getAttribute('inputmode');
     const widthMatches = Math.abs(widthI - widthEl) <= 5;
@@ -1133,7 +1180,7 @@ function countSameShapeSiblings(el: Fillable): number {
   return n;
 }
 
-export function extractFieldRecord(el: Fillable): RawFieldRecord {
+export function extractFieldRecord(el: Fillable, layoutCache?: LayoutCache): RawFieldRecord {
   const tag = el.tagName.toLowerCase();
   const type = ((el as HTMLInputElement).type || 'text').toLowerCase();
   const autocomplete = (el.getAttribute('autocomplete') || '').toLowerCase();
@@ -1212,7 +1259,7 @@ export function extractFieldRecord(el: Fillable): RawFieldRecord {
   };
   rec.structural = buildStructural(rec, {
     ...vis,
-    sameShape: countSameShapeSiblings(el),
+    sameShape: countSameShapeSiblings(el, layoutCache),
     inForm: !!el.closest?.('form'),
   });
   return rec;
@@ -1520,6 +1567,15 @@ interface IFrameMessage {
 export class IFrameProxyV2 {
   private static instance: IFrameProxyV2;
 
+  private static readonly TRUSTED_ORIGINS = [
+    { hostname: 'stripe.com', allowSubdomains: true },
+    { hostname: 'js.stripe.com', allowSubdomains: false },
+    { hostname: 'paypal.com', allowSubdomains: true },
+    { hostname: 'paypalobjects.com', allowSubdomains: false },
+    { hostname: 'auth0.com', allowSubdomains: true },
+    { hostname: 'google.com', allowSubdomains: true },
+    { hostname: 'apple.com', allowSubdomains: true },
+  ];
   public static init(): void {
     if (!this.instance) {
       this.instance = new IFrameProxyV2();
@@ -1567,22 +1623,14 @@ export class IFrameProxyV2 {
   }
 
   public listenForResults(callback: (results: any) => void): void {
-    const TRUSTED_ORIGINS = [
-      { hostname: 'stripe.com', allowSubdomains: true },
-      { hostname: 'js.stripe.com', allowSubdomains: false },
-      { hostname: 'paypal.com', allowSubdomains: true },
-      { hostname: 'paypalobjects.com', allowSubdomains: false },
-      { hostname: 'auth0.com', allowSubdomains: true },
-      { hostname: 'google.com', allowSubdomains: true },
-      { hostname: 'apple.com', allowSubdomains: true },
-    ];
-
     window.addEventListener('message', (event: MessageEvent) => {
       const origin = event.origin;
-      if (origin === window.location.origin) {
-        const message = event.data as IFrameMessage;
-        if (message && message.type === 'SENTINEL_RESULT') {
-          callback(message.payload);
+      
+      // GRANDMASTER FIX: Explicit guard against sandboxed/local "null" origins
+      if (origin === 'null' || origin === '' || origin === window.location.origin) {
+        if (origin === window.location.origin) {
+           const message = event.data as IFrameMessage;
+           if (message && message.type === 'SENTINEL_RESULT') callback(message.payload);
         }
         return;
       }
@@ -1593,7 +1641,7 @@ export class IFrameProxyV2 {
         if (url.protocol !== 'https:') return;
         const hostname = url.hostname;
 
-        isTrusted = TRUSTED_ORIGINS.some((trusted) => {
+        isTrusted = IFrameProxyV2.TRUSTED_ORIGINS.some((trusted) => {
           if (trusted.allowSubdomains) {
             return hostname === trusted.hostname || hostname.endsWith('.' + trusted.hostname);
           }
@@ -1748,14 +1796,21 @@ export class PageAnalyzer {
         if ((document as Document & { __vue_app__?: unknown }).__vue_app__) {
           return true;
         }
-        const allEls = document.body?.querySelectorAll('*');
-        if (!allEls) {
-          return false;
-        }
-        for (let i = 0, len = Math.min(allEls.length, 100); i < len; i++) {
-          if (allEls[i]!.getAttributeNames().some((a) => /^data-v-[a-f0-9]+$/.test(a))) {
-            return true;
+        if (!document.body) return false;
+        // GRANDMASTER FIX: Use TreeWalker to avoid querySelectorAll('*') memory spike
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+        let count = 0;
+        let node = walker.nextNode() as Element | null;
+        
+        while (node && count < 100) {
+          // Vue 2 and 3 add data-v-xxxxxxxx attributes to scoped elements
+          for (let i = 0; i < node.attributes.length; i++) {
+            if (node.attributes[i]!.name.startsWith('data-v-')) {
+              return true;
+            }
           }
+          node = walker.nextNode() as Element | null;
+          count++;
         }
         return false;
       },

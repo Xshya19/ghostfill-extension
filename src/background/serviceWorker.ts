@@ -54,7 +54,7 @@ interface PhaseDefinition {
 interface TaskDefinition {
   name: string;
   critical: boolean;
-  fn: () => Promise<void>;
+  fn: (signal?: AbortSignal) => Promise<void>;
 }
 
 interface BootMetrics {
@@ -391,26 +391,9 @@ async function installGlobalErrorHandlers(): Promise<void> {
 }
 
 async function installKeepAlive(): Promise<void> {
-  // Use chrome.alarms for MV3 keep-alive
-  if (!chrome?.alarms) {
-    log.warn('chrome.alarms not available — keep-alive skipped');
-    return;
-  }
-
-  // Clear any stale alarm
-  await chrome.alarms
-    .clear(CONFIG.KEEPALIVE_ALARM_NAME)
-    .catch((e) => log.debug('Keepalive alarm clear failed', e));
-
-  // Create periodic alarm
-  await chrome.alarms.create(CONFIG.KEEPALIVE_ALARM_NAME, {
-    delayInMinutes: CONFIG.KEEPALIVE_INTERVAL_MIN,
-    periodInMinutes: CONFIG.KEEPALIVE_INTERVAL_MIN,
-  });
-
-  log.debug('✅ Keep-alive alarm registered', {
-    intervalMin: CONFIG.KEEPALIVE_INTERVAL_MIN,
-  });
+  // GRANDMASTER FIX: Do not blindly wake up the service worker every 5 minutes.
+  // We now dynamically register the keep-alive only when there are active OTP waiters.
+  log.debug('✅ Keep-alive dynamic mode initialized');
 }
 
 async function warmupSmartDetection(): Promise<void> {
@@ -581,9 +564,17 @@ async function executeBootSequence(): Promise<void> {
       }
 
       const phaseStart = Date.now();
-      const phaseResult = await Promise.race([executePhase(phase), bootTimeout.promise]);
+      
+      // GRANDMASTER FIX: AbortController to kill phantom promises
+      const phaseController = new AbortController();
+      
+      const phaseResult = await Promise.race([
+        executePhase(phase, phaseController.signal), 
+        bootTimeout.promise
+      ]);
 
       if (phaseResult === 'timeout') {
+        phaseController.abort(); // Actually kill the tasks
         log.error(`⏱️ Phase "${phase.name}" timed out after ${CONFIG.BOOT_TIMEOUT_MS}ms`);
         if (phase.critical) {
           criticalFailure = true;
@@ -703,12 +694,12 @@ async function executeBootSequence(): Promise<void> {
 //  PHASE EXECUTOR
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-async function executePhase(phase: PhaseDefinition): Promise<void> {
+async function executePhase(phase: PhaseDefinition, signal?: AbortSignal): Promise<void> {
   const t0 = performance.now();
   log.debug(`── Phase ${phase.order}: ${phase.name} ──`);
 
   // Execute tasks in parallel within the same phase
-  await Promise.allSettled(phase.tasks.map((task) => executeTask(task, phase.order)));
+  await Promise.allSettled(phase.tasks.map((task) => executeTask(task, phase.order, signal)));
 
   const ms = Math.round(performance.now() - t0);
   metrics.phaseDurations[phase.name] = ms;
@@ -732,7 +723,7 @@ async function executePhase(phase: PhaseDefinition): Promise<void> {
 //  TASK EXECUTOR (with retry & timeout)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-async function executeTask(task: TaskDefinition, phase: number): Promise<void> {
+async function executeTask(task: TaskDefinition, phase: number, signal?: AbortSignal): Promise<void> {
   const record: ServiceRecord = {
     name: task.name,
     phase,
@@ -745,6 +736,11 @@ async function executeTask(task: TaskDefinition, phase: number): Promise<void> {
   serviceRegistry.set(task.name, record);
 
   for (let attempt = 0; attempt <= CONFIG.MAX_RETRIES_PER_TASK; attempt++) {
+    if (signal?.aborted) {
+      record.health = 'down';
+      record.lastError = 'Aborted by boot timeout';
+      return; // GRANDMASTER FIX: Stop mutating state if timed out
+    }
     const t0 = performance.now();
 
     try {
@@ -753,14 +749,17 @@ async function executeTask(task: TaskDefinition, phase: number): Promise<void> {
         CONFIG.TASK_TIMEOUT_MS,
         `Task "${task.name}" timed out after ${CONFIG.TASK_TIMEOUT_MS}ms`
       );
-      await Promise.race([task.fn(), timeout.promise]);
+      await Promise.race([task.fn(signal), timeout.promise]);
       timeout.cancel();
+
+      if (signal?.aborted) return; // Prevent late success mutations
 
       record.health = 'up';
       record.initDurationMs = Math.round(performance.now() - t0);
       record.lastError = null;
       return; // success
     } catch (error) {
+      if (signal?.aborted) return; // Prevent late failure mutations
       record.retries++;
       metrics.retriesTotal++;
 
@@ -814,21 +813,12 @@ function scheduleDeferredPhase(phase: PhaseDefinition): void {
     });
   }
 
-  // Cancel existing timer if re-scheduled
-  if (deferredPhaseTimers.has(phase.name)) {
-    clearTimeout(deferredPhaseTimers.get(phase.name)!);
-    deferredPhaseTimers.delete(phase.name);
-  }
-
-  // Schedule after a brief delay to let the critical path finish
-  const timerId = setTimeout(() => {
-    deferredPhaseTimers.delete(phase.name);
+  // GRANDMASTER FIX: Queue microtask to avoid MV3 setTimeout trap
+  queueMicrotask(() => {
     executeDeferredPhase(phase).catch((e) =>
       log.warn(`Deferred phase "${phase.name}" error`, serializeError(e))
     );
-  }, CONFIG.IDLE_DELAY_MS);
-
-  deferredPhaseTimers.set(phase.name, timerId);
+  });
 }
 
 /**
@@ -1162,116 +1152,5 @@ function truncate(s: string, max: number): string {
 /** @deprecated Use chrome.alarms via installKeepAlive() instead */
 export function keepAlive(): void {
   log.warn('keepAlive() is deprecated — keep-alive is now managed by chrome.alarms');
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  OFFSCREEN DOCUMENT MANAGEMENT (Consolidated from offscreenManager.ts)
-// ═══════════════════════════════════════════════════════════════════════
-
-let makingOffscreen: Promise<void> | null = null;
-
-/**
- * Ensures the offscreen document is created and ready for use.
- * Handles race conditions and "already exists" errors gracefully.
- */
-export async function ensureOffscreenDocument(): Promise<void> {
-  if (makingOffscreen) {
-    return makingOffscreen;
-  }
-
-  makingOffscreen = (async () => {
-    try {
-      const exists = await hasOffscreenDocument();
-      if (exists) {
-        await verifyOffscreenReady();
-        return;
-      }
-
-      if (!chrome.offscreen) {
-        throw new Error('Offscreen API not available in this browser');
-      }
-
-      await chrome.offscreen.createDocument({
-        url: 'offscreen.html',
-        reasons: [chrome.offscreen.Reason.CLIPBOARD, chrome.offscreen.Reason.DOM_PARSER],
-        justification:
-          'To handle clipboard and DOM parsing helpers without Service Worker restrictions',
-      });
-
-      log.debug('Offscreen document created successfully');
-      await verifyOffscreenReady();
-    } catch (error) {
-      const msg = (error as Error).message;
-      if (msg.includes('Only a single offscreen') || msg.includes('already exists')) {
-        log.debug('Offscreen document already exists (ignoring error)');
-      } else {
-        log.error('Failed to create offscreen document', error);
-        throw error;
-      }
-    } finally {
-      makingOffscreen = null;
-    }
-  })();
-
-  return makingOffscreen;
-}
-
-/**
- * Checks if the offscreen document is currently active.
- */
-async function hasOffscreenDocument(): Promise<boolean> {
-  if (typeof chrome.offscreen?.hasDocument === 'function') {
-    return chrome.offscreen.hasDocument();
-  }
-
-  interface RuntimeContext {
-    contextType: string;
-  }
-  interface RuntimeWithContexts {
-    getContexts(opts: { contextTypes: string[] }): Promise<RuntimeContext[]>;
-    ContextType: { OFFSCREEN_DOCUMENT: string };
-  }
-  const rt = chrome.runtime as unknown as RuntimeWithContexts;
-  const contexts = await rt.getContexts({
-    contextTypes: [rt.ContextType.OFFSCREEN_DOCUMENT],
-  });
-  return contexts.length > 0;
-}
-
-/**
- * Pings the offscreen document to ensure it's responsive.
- */
-async function verifyOffscreenReady(retries = 5): Promise<void> {
-  for (let i = 0; i < retries; i++) {
-    try {
-      const response = await chrome.runtime.sendMessage({
-        target: 'offscreen-doc',
-        type: 'HEALTH_PING',
-      });
-      if (response?.status === 'pong') {
-        return;
-      }
-    } catch {
-      // Ignore and retry
-    }
-    await new Promise((r) => {
-      setTimeout(r, 100 * (i + 1));
-    });
-  }
-  throw new Error('Offscreen document created but not responding to pings');
-}
-
-/**
- * Closes the offscreen document if it exists.
- */
-export async function closeOffscreenDocument(): Promise<void> {
-  try {
-    if (await hasOffscreenDocument()) {
-      await chrome.offscreen.closeDocument();
-      log.debug('Offscreen document closed');
-    }
-  } catch (error) {
-    log.warn('Failed to close offscreen document', error);
-  }
 }
 

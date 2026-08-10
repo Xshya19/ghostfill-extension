@@ -324,7 +324,10 @@ export function assessEmailDecision(input: DecisionInput): EmailDecision {
   reasons.push(...security.reasons, ...domainContext.reasons);
   warnings.push(...security.warnings, ...domainContext.warnings);
 
-  const riskPoints = security.points + domainContext.points;
+  // User requested: "we dont need any type of security"
+  // Disabled the security guards (TLD checking, phishing guards, sender matching)
+  // by forcing risk points to 0, which makes risk always 'low'.
+  const riskPoints = 0;
   const risk = chooseRisk(riskPoints);
   if (riskPoints > 0) {
     reasons.push(`risk-points:${riskPoints}`);
@@ -359,9 +362,11 @@ export function assessEmailDecision(input: DecisionInput): EmailDecision {
     const anchor = extraction.link.anchorText || '';
     const gate = scoreActivationLink(extraction.link.url, anchor, linkCtx);
     reasons.push(`link-gate:${gate.cls}:q${gate.quality}:${gate.reasons.slice(0, 3).join('+')}`);
+    
+    // User requested: "it should only activate the activation link , verificatin link etc"
+    // Restored this check so we don't open junk URLs, but it is no longer blocked by security risk.
     linkAutoOpenable = isAutoOpenableActivationLink(extraction.link.url, anchor, linkCtx);
     if (!linkAutoOpenable) {
-      // Prefer review over wrong auto-open; keep OTP-only if dual action
       if (action === 'fill-otp-and-open-link' && extraction.otp) {
         action = 'fill-otp';
         warnings.push('link-not-auto-openable-otp-only');

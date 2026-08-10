@@ -155,8 +155,8 @@ export class AutoFiller {
   //  CONTEXT
   // ═══════════════════════════════════════════════════════════
 
-  private getContext(): PageContext {
-    if (!this.pageContext) {
+  private getContext(force = false): PageContext {
+    if (force || !this.pageContext) {
       this.pageContext = PageIntelligence.analyze();
       log.info('📊 Page Analysis:', this.pageContext);
     }
@@ -219,7 +219,7 @@ export class AutoFiller {
 
     this.fillLock = true;
     try {
-      const context = this.getContext();
+      const context = this.getContext(true);
       // `cleanOTP` strips separators for split fields / numeric inputs.
       const cleanOTP = otp.replace(/[-\s]/g, '');
       if (cleanOTP.length === 0) {
@@ -947,50 +947,30 @@ export class AutoFiller {
   }
 
   async injectIcons(): Promise<void> {
-    if (this.destroyed) {
-      return;
-    }
+    if (this.destroyed) return;
+    if (this.isInjectionExcludedHost(window.location.hostname)) return;
 
-    // Skip injection on authentication provider pages where hidden fields are
-    // legitimate and would trigger false-positive honeypot warnings.
-    if (this.isInjectionExcludedHost(window.location.hostname)) {
-      return;
-    }
-
-    const relevantTypes: ReadonlySet<FieldType> = new Set<FieldType>([
-      'email',
-      'password',
-      'username',
-      'first-name',
-      'last-name',
-      'full-name',
+    const relevantTypes: ReadonlySet<FieldType> = new Set([
+      'email', 'password', 'username', 'first-name', 'last-name', 'full-name',
     ]);
-
+    
     const inputs = deepQuerySelectorAll<HTMLInputElement>('input');
-    const batchSize = 50;
     let index = 0;
+    const BATCH_SIZE = 15; // Process 15 inputs, then yield to the browser
 
-    const processBatch = () => {
-      if (this.destroyed) {
-        return;
-      }
-      const end = Math.min(index + batchSize, inputs.length);
+    const processBatch = async () => {
+      if (this.destroyed) return;
+      
+      const end = Math.min(index + BATCH_SIZE, inputs.length);
       for (; index < end; index++) {
         const input = inputs[index]!;
-        if (input.hasAttribute('data-ghost-attached')) {
-          continue;
-        }
+        if (input.hasAttribute('data-ghost-attached')) continue;
+        
+        // Skip off-screen inputs to save CPU (they aren't visible to the user yet)
+        if (!this.isVisibleInput(input)) continue;
 
         const calibrated = this.getClassification(input);
-        if (calibrated.decision === 'BLOCK') {
-          log.debug('Skipping field icon injection after safety check', {
-            reason: calibrated.safetyReason ?? 'blocked',
-          });
-          continue;
-        }
-        if (calibrated.decision === 'ABSTAIN') {
-          continue;
-        }
+        if (calibrated.decision === 'BLOCK' || calibrated.decision === 'ABSTAIN') continue;
 
         const type = calibrated.fieldType;
         const looksLikeIdentifier =
@@ -1003,11 +983,15 @@ export class AutoFiller {
       }
 
       if (index < inputs.length) {
-        if ('requestIdleCallback' in window) {
-          requestIdleCallback(processBatch);
-        } else {
-          setTimeout(processBatch, 16);
-        }
+        // GRANDMASTER FIX: Yield to the main thread so the page doesn't freeze
+        await new Promise<void>(resolve => {
+          if ('requestIdleCallback' in window) {
+            requestIdleCallback(() => resolve(), { timeout: 100 });
+          } else {
+            setTimeout(resolve, 16); // 1 frame at 60fps
+          }
+        });
+        processBatch();
       } else {
         document.body.setAttribute('data-ghost-injected', 'true');
       }
