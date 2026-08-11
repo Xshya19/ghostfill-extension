@@ -1,13 +1,13 @@
 import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import { ChevronLeft } from 'lucide-react';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { storageService } from '../services/storageService';
-import { Toast } from '../shared/ui';
-import { viewFade } from '../shared/ui/motion';
-import { EmailAccount } from '../types';
-import { withTimeout, withRetry } from '../utils/core';
-import { createLogger } from '../utils/logger';
-import { safeSendMessage } from '../utils/messaging';
+import { storageService } from '../../services/storageService';
+import { Toast } from '../ui';
+import { viewFade } from '../ui';
+import { EmailAccount } from '../../types';
+import { withTimeout, withRetry } from '../../utils/core';
+import { createLogger } from '../../utils/logger';
+import { safeSendMessage } from '../../utils/messaging';
 import {
   AliasPanel,
   AppSkeleton,
@@ -20,7 +20,7 @@ import {
   OTPDisplay,
   PasswordGenerator
 } from './components';
-import { useAppStore } from './store/useAppStore';
+import { useAppStore } from './store';
 
 const log = createLogger('App');
 

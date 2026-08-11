@@ -1,0 +1,1548 @@
+/**
+ * GhostFill options — Spectre console.
+ *
+ * Single authority for the settings page. Every value resolves from
+ * ../styles/globals.css: no local palette, no gradient except
+ * the primary button's sanctioned --gf-grad-cobalt, no decorative animation.
+ *
+ * Shape: sticky posture strip → rail nav + ledger rows.
+ */
+@import '../styles/globals.css';
+
+:root {
+  --rail-w: 240px;
+  --rail-pad-r: 20px;
+  --page-max: 1120px;
+  --gutter: 24px;
+  --posture-h: 41px;
+  --touch-min: 44px;
+}
+
+/* Only three local keyframes; modal + palette reuse gf-fade-scale-in and the
+   skeleton reuses gf-shimmer from globals.css. */
+@keyframes gf-status-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes gf-pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.8);
+  }
+}
+
+@keyframes gf-shake-x {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-3px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   RESET & PAGE
+   ════════════════════════════════════════════════════════════════════════ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: rgba(var(--gf-primary-rgb), 0.15);
+  color: var(--gf-ink);
+}
+
+body {
+  font-family: var(--gf-font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--gf-ink);
+  background: var(--gf-bg);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--gf-line);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--gf-line-2);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--gf-line) transparent;
+}
+
+.options-app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  /* Dot field instead of animated blobs — texture without motion. */
+  background:
+    var(--gf-pattern-dot) 0 0 / 22px 22px,
+    var(--gf-bg);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   HEADER  ·  identity left, affordances right, one hairline underneath
+   ════════════════════════════════════════════════════════════════════════ */
+.options-header {
+  position: relative;
+  z-index: var(--z-header);
+  background: var(--gf-surface);
+  border-bottom: 1px solid var(--gf-line);
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: 18px var(--gutter);
+}
+
+.logo-box {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 46px;
+  height: 46px;
+  background: var(--gf-sunken);
+  border: 1px solid var(--gf-line);
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 1px 0 var(--gf-hi);
+  overflow: hidden;
+}
+
+/* GhostLogo renders at size=32 (see OptionsApp) inside a 46px plate. */
+.logo-box--no-padding {
+  padding: 0;
+}
+
+.header-text-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.spectral-title {
+  font-family: var(--gf-font-display);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--gf-ink);
+}
+
+.spectral-subtitle {
+  font-size: 12.5px;
+  color: var(--gf-text-muted);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* Both header affordances share one silhouette. */
+.command-palette-trigger-btn,
+.theme-toggle-header-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 12px;
+  font-family: var(--gf-font-display);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--gf-ink-soft);
+  background: var(--gf-surface);
+  border: 1px solid var(--gf-line);
+  border-radius: var(--radius-md);
+  box-shadow:
+    var(--gf-shadow-xs),
+    inset 0 1px 0 var(--gf-hi);
+  cursor: pointer;
+  transition:
+    color var(--gf-dur-fast) var(--gf-ease),
+    border-color var(--gf-dur-fast) var(--gf-ease),
+    transform var(--gf-dur-fast) var(--gf-ease);
+}
+
+.command-palette-trigger-btn:hover,
+.theme-toggle-header-btn:hover {
+  color: var(--gf-ink);
+  border-color: var(--gf-line-2);
+  transform: translateY(-1px);
+}
+
+.command-palette-trigger-btn:focus-visible,
+.theme-toggle-header-btn:focus-visible {
+  outline: var(--gf-ring-width) solid var(--gf-primary);
+  outline-offset: var(--gf-ring-offset);
+}
+
+.command-palette-trigger-btn kbd {
+  margin-left: 2px;
+}
+
+.theme-icon-sun,
+.theme-icon-moon {
+  color: var(--gf-primary);
+}
+
+.theme-toggle-label {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   POSTURE STRIP  ·  the signature: a mono readout of what GhostFill will
+   do on this browser right now, assembled from live settings.
+   ════════════════════════════════════════════════════════════════════════ */
+.posture-strip {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-header);
+  background: var(--gf-sunken);
+  border-bottom: 1px solid var(--gf-line);
+}
+
+.posture-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: var(--page-max);
+  margin: 0 auto;
+  min-height: var(--posture-h);
+  padding: 0 var(--gutter);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.posture-inner::-webkit-scrollbar {
+  display: none;
+}
+
+.posture-label {
+  flex-shrink: 0;
+  font-family: var(--gf-font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: var(--tracking-ultra-wide);
+  text-transform: uppercase;
+  color: var(--gf-ink-dim);
+}
+
+.posture-list {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  list-style: none;
+}
+
+.posture-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 3px 9px 3px 7px;
+  font-family: var(--gf-font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--gf-ink-soft);
+  background: var(--gf-surface);
+  border: 1px solid var(--gf-line);
+  border-radius: var(--radius-pill);
+}
+
+.posture-item::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--gf-ink-dim);
+}
+
+.posture-item--on {
+  color: var(--gf-ink);
+}
+
+.posture-item--on::before {
+  background: var(--gf-success);
+  box-shadow: 0 0 0 3px rgba(var(--gf-mint-rgb), 0.16);
+}
+
+.posture-item--off::before {
+  background: var(--gf-line-2);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   LAYOUT  ·  rail + ledger. No wrapper card: the rail's right hairline is
+   the only division, so the page reads as one console, not nested boxes.
+   ════════════════════════════════════════════════════════════════════════ */
+.dashboard-layout {
+  display: grid;
+  grid-template-columns: var(--rail-w) minmax(0, 1fr);
+  gap: 0;
+  width: 100%;
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+  flex: 1 1 auto;
+  align-items: start;
+}
+
+/* ── Rail nav ─────────────────────────────────────────── */
+.settings-sidebar {
+  position: sticky;
+  top: calc(var(--posture-h) + 1px);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 26px var(--rail-pad-r) 26px 0;
+  border-right: 1px solid var(--gf-line);
+}
+
+.sidebar-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebar-nav-section-label {
+  padding: 0 10px 4px;
+  font-family: var(--gf-font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: var(--tracking-ultra-wide);
+  text-transform: uppercase;
+  color: var(--gf-ink-dim);
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-nav-divider {
+  display: none;
+}
+
+.sidebar-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  font-family: var(--gf-font-display);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+  color: var(--gf-ink-soft);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    color var(--gf-dur-fast) var(--gf-ease),
+    background-color var(--gf-dur-fast) var(--gf-ease);
+}
+
+.sidebar-nav-item:hover {
+  color: var(--gf-ink);
+  background: rgba(var(--gf-ink-rgb), 0.05);
+}
+
+.sidebar-nav-item:focus-visible {
+  outline: var(--gf-ring-width) solid var(--gf-primary);
+  outline-offset: -1px;
+}
+
+.sidebar-nav-item[aria-selected='true'] {
+  color: var(--gf-ink);
+  background: var(--gf-primary-soft);
+}
+
+/* Active marker hugs the pill's left edge, so highlight and marker read as one
+   object. (Sitting it in the rail hairline instead looked like a stray tick.) */
+.sidebar-nav-item::after {
+  content: '';
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  left: 0;
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+  background: transparent;
+}
+
+.sidebar-nav-item[aria-selected='true']::after {
+  background: var(--gf-primary);
+}
+
+.sidebar-nav-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--gf-ink-dim);
+  transition: color var(--gf-dur-fast) var(--gf-ease);
+}
+
+/* Tabs declare size={17} for the popup's larger type; 16px sits better against
+   the rail's 13.5px labels. CSS wins over the svg width/height attributes. */
+.sidebar-nav-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.sidebar-nav-item:hover .sidebar-nav-icon,
+.sidebar-nav-item[aria-selected='true'] .sidebar-nav-icon {
+  color: var(--gf-primary);
+}
+
+.sidebar-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Main column ──────────────────────────────────────── */
+.options-main {
+  min-width: 0;
+  padding: 26px 0 26px 28px;
+}
+
+/* One 160ms rise per tab switch — enough to say "this replaced that", short
+   enough not to sit between the click and the content. Killed by the
+   prefers-reduced-motion block at the end of this file. */
+.tab-panel {
+  animation: gf-status-in 160ms var(--gf-ease) both;
+}
+
+.tab-panel:focus {
+  outline: none;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   SECTION CARD  ·  machined plate, per globals.css .gf-card
+   ════════════════════════════════════════════════════════════════════════ */
+.ghost-card {
+  background: var(--gf-surface);
+  border: 1px solid var(--gf-line);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    var(--gf-shadow-sm),
+    inset 0 1px 0 var(--gf-hi);
+}
+
+.settings-section {
+  padding: 0 22px 18px;
+}
+
+.settings-section + .settings-section {
+  margin-top: 16px;
+}
+
+.settings-section.danger {
+  border-color: rgba(var(--gf-coral-rgb), 0.28);
+}
+
+/* Sunken header bar: the card's title band is tinted and carries the card's
+   own top radius, so each section reads as one plate with a masthead rather
+   than a bordered paragraph. */
+.settings-section h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 -22px 14px;
+  padding: 14px 22px;
+  font-family: var(--gf-font-display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--gf-ink);
+  background: var(--gf-sunken);
+  border-bottom: 1px solid var(--gf-line);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.section-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  color: var(--gf-primary);
+  background: var(--gf-primary-soft);
+  border-radius: var(--radius-sm);
+}
+
+.settings-section.danger h2 {
+  color: var(--gf-coral-text);
+}
+
+.settings-section.danger .section-icon {
+  color: var(--gf-coral-text);
+  background: var(--gf-danger-soft);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   LEDGER ROW  ·  label + description left, one control right, hairline
+   between. Every setting in the product uses this single shape.
+   ════════════════════════════════════════════════════════════════════════ */
+.setting-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 13px 0;
+  border-top: 1px solid var(--gf-line);
+}
+
+.setting-item:first-of-type {
+  border-top: none;
+}
+
+.setting-item.setting-item-col,
+.setting-item.vertical-group {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.setting-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.setting-info > label,
+.setting-info .fs-15-fw-600 {
+  font-family: var(--gf-font-display);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--gf-ink);
+}
+
+.setting-info p,
+.setting-info .fs-13 {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--gf-text-muted);
+}
+
+/* .fs-13 is also used on sub-labels inside .custom-domain-container, where
+   they must still read as labels rather than help text. */
+.setting-info label.fs-13 {
+  font-family: var(--gf-font-display);
+  font-weight: 600;
+  color: var(--gf-ink);
+}
+
+.coming-soon-label {
+  font-family: var(--gf-font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--gf-ink-dim);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   CONTROLS  ·  bare input/select/textarea inherit the .gf-input silhouette
+   ════════════════════════════════════════════════════════════════════════ */
+.options-app input[type='text'],
+.options-app input[type='number'],
+.options-app input[type='password'],
+.options-app input[type='email'],
+.options-app input[type='url'],
+.options-app select,
+.options-app textarea {
+  width: 100%;
+  padding: 9px 12px;
+  font-family: var(--gf-font-body);
+  font-size: 13.5px;
+  color: var(--gf-ink);
+  background-color: var(--gf-sunken);
+  border: 1px solid var(--gf-line);
+  border-radius: var(--radius-md);
+  transition:
+    border-color var(--gf-dur-fast) var(--gf-ease),
+    box-shadow var(--gf-dur-fast) var(--gf-ease),
+    background-color var(--gf-dur-fast) var(--gf-ease);
+}
+
+.options-app input::placeholder,
+.options-app textarea::placeholder {
+  color: var(--gf-ink-dim);
+}
+
+.options-app input:focus,
+.options-app select:focus,
+.options-app textarea:focus {
+  outline: none;
+  background-color: var(--gf-surface);
+  border-color: var(--gf-primary);
+  box-shadow: 0 0 0 3px rgba(var(--gf-primary-rgb), 0.18);
+}
+
+/* Keyboard users still get the ring even where :focus is suppressed. */
+.options-app input:focus-visible,
+.options-app select:focus-visible,
+.options-app textarea:focus-visible {
+  outline: var(--gf-ring-width) solid var(--gf-primary);
+  outline-offset: var(--gf-ring-offset);
+}
+
+.options-app input:disabled,
+.options-app select:disabled,
+.options-app textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.options-app input[aria-invalid='true'] {
+  border-color: var(--gf-danger);
+}
+
+.options-app input[aria-invalid='true']:focus {
+  box-shadow: 0 0 0 3px rgba(var(--gf-coral-rgb), 0.2);
+}
+
+/* Chevron drawn from two gradients so it inherits currentColor — replaces the
+   pair of data-URI SVGs that hardcoded one hex per theme. State rules above
+   use background-color, never the shorthand, so this image survives focus. */
+.options-app select {
+  cursor: pointer;
+  appearance: none;
+  padding-right: 34px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 19px) calc(50% - 1px),
+    calc(100% - 14px) calc(50% - 1px);
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.options-app select::-ms-expand {
+  display: none;
+}
+
+/* Mono numeric fields read as data, not prose. */
+.options-app input[type='number'] {
+  font-family: var(--gf-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Desktop: horizontal rows cap their control so long labels keep room. */
+/* One control width on wide screens, so every row's control edge lands on the
+   same column instead of hugging its own content. */
+@media (min-width: 861px) {
+  .options-main .setting-item:not(.vertical-group):not(.setting-item-col) > select,
+  .options-main .setting-item:not(.vertical-group):not(.setting-item-col) > input {
+    flex: 0 0 auto;
+    width: 220px;
+    max-width: 220px;
+    margin-top: 0;
+  }
+  .options-main .setting-item:not(.vertical-group):not(.setting-item-col) .setting-info > label {
+    white-space: normal;
+  }
+}
+
+.options-main .vertical-group > select,
+.options-main .vertical-group > input {
+  width: 100%;
+}
+
+/* ── Toggle ───────────────────────────────────────────────
+   Same geometry and the same calibrated --gf-primary-fill as .gf-toggle in
+   globals.css; this variant only exists because the markup nests a
+   .toggle-slider span instead of using ::after. */
+.toggle {
+  position: relative;
+  flex-shrink: 0;
+  width: 42px;
+  height: 24px;
+  padding: 0;
+  background: var(--gf-sunken);
+  border: 1px solid var(--gf-line);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition:
+    background-color var(--gf-dur) var(--gf-ease),
+    border-color var(--gf-dur) var(--gf-ease);
+}
+
+.toggle:focus-visible {
+  outline: var(--gf-ring-width) solid var(--gf-primary);
+  outline-offset: var(--gf-ring-offset);
+}
+
+.toggle-slider {
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  transform: translateY(-50%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: transform var(--gf-dur) var(--gf-ease-back);
+}
+
+.toggle[aria-checked='true'] {
+  background: var(--gf-primary-fill);
+  border-color: transparent;
+}
+
+.toggle[aria-checked='true'] .toggle-slider {
+  transform: translate(18px, -50%);
+}
+
+.toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Row-level feedback ───────────────────────────────── */
+.field-error {
+  display: block;
+  flex: 1 0 100%;
+  margin-top: 2px;
+  padding: 7px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--gf-coral-text);
+  background: var(--gf-danger-soft);
+  border: 1px solid rgba(var(--gf-coral-rgb), 0.25);
+  border-radius: var(--radius-sm);
+  animation: gf-shake-x 320ms var(--gf-ease) 1;
+}
+
+.security-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--gf-amber-text);
+  background: var(--gf-warning-soft);
+  border: 1px solid rgba(var(--gf-amber-rgb), 0.22);
+  border-radius: var(--radius-sm);
+}
+
+.security-note svg {
+  flex-shrink: 0;
+  color: var(--gf-warning);
+}
+
+.security-note-tab {
+  margin-left: 8px;
+  font-size: 11px;
+}
+
+/* ── Save button states (Button className passthrough) ── */
+.save-btn--saving {
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.save-btn--saved {
+  color: var(--gf-on-fill-dark);
+  background: var(--gf-success-fill);
+  border-color: transparent;
+}
+
+.gmail-client-id-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.custom-domain-container {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+  padding: 4px 14px 12px;
+  background: var(--gf-sunken);
+  border: 1px solid var(--gf-line);
+  border-radius: var(--radius-md);
+}
+
+.import-btn {
+  position: relative;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   PROVIDER HEALTH  ·  data, so mono numerals and a status dot
+   ════════════════════════════════════════════════════════════════════════ */
+/* Full-bleed rule, same as .settings-section h2 — a hairline that stops short
+   of the card edge reads as a mistake next to one that doesn't. */
+.provider-health-meter {
+  margin: 14px -22px 0;
+  padding: 14px 22px 0;
+  border-top: 1px solid var(--gf-line);
+}
+
+.health-empty {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--gf-text-muted);
+}
+
+.health-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-family: var(--gf-font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--gf-ink-dim);
+}
+
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+}
+
+.health-pill-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 38px;
+  padding: 8px 12px;
+  background: var(--gf-sunken);
+  border: 1px solid var(--gf-line);
+  border-radius: var(--radius-md);
+}
+
+.health-provider-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--gf-ink);
+}
+
+.health-status-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.health-percent {
+  font-family: var(--gf-font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--gf-ink-soft);
+}
+
+.health-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.health-dot.health-status-good {
+  background: var(--gf-success);
+  box-shadow: 0 0 0 3px rgba(var(--gf-mint-rgb), 0.18);
+}
+
+.health-dot.health-status-warning {
+  background: var(--gf-warning);
+  box-shadow: 0 0 0 3px rgba(var(--gf-amber-rgb), 0.18);
+}
+
+.health-dot.health-status-dead {
+  background: var(--gf-danger);
+  box-shadow: 0 0 0 3px rgba(var(--gf-coral-rgb), 0.18);
+  animation: gf-pulse-dot 1.6s var(--gf-ease) infinite;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   SHORTCUT REFERENCE
+   ════════════════════════════════════════════════════════════════════════ */
+.shortcut-reference {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: var(--gf-sunken);
+  border: 1px solid var(--gf-line);
+  border-radius: var(--radius-md);
+}
+
+.shortcut-reference-title {
+  margin-bottom: 8px;
+  font-family: var(--gf-font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--gf-ink-dim);
+}
+
+.shortcut-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-top: 1px solid var(--gf-line);
+}
+
+.shortcut-row:first-child {
+  border-top: none;
+}
+
+.shortcut-action {
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--gf-ink-soft);
+}
+
+.shortcut-note {
+  margin-top: 10px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--gf-text-muted);
+}
+
+.options-app kbd,
+.shortcut-keys {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  font-family: var(--gf-font-mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--gf-ink-soft);
+  background: var(--gf-surface);
+  border: 1px solid var(--gf-line-2);
+  border-radius: var(--radius-xs);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   ABOUT  ·  version, links, storage, stack
+   ════════════════════════════════════════════════════════════════════════ */
+.about-hero {
+  padding: 14px 0 12px;
+  text-align: center;
+}
+
+.about-version {
+  margin-bottom: 8px;
+}
+
+.version-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  font-family: var(--gf-font-mono);
+  font-size: 11.5px;
+  color: var(--gf-primary);
+  background: var(--gf-primary-soft);
+  border: 1px solid rgba(var(--gf-primary-rgb), 0.22);
+  border-radius: var(--radius-pill);
+}
+
+.about-tagline {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--gf-text-muted);
+}
+
+.about-links {
+  display: flex;
+  flex-direction: column;
+}
+
+.about-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 38px;
+  padding: 9px 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gf-ink-soft);
+  text-decoration: none;
+  border-top: 1px solid var(--gf-line);
+  transition: color var(--gf-dur-fast) var(--gf-ease);
+}
+
+.about-link:first-child {
+  border-top: none;
+}
+
+.about-link::after {
+  content: '↗';
+  font-family: var(--gf-font-mono);
+  font-size: 12px;
+  color: var(--gf-ink-dim);
+}
+
+.about-link:hover {
+  color: var(--gf-primary);
+}
+
+.about-link:hover::after {
+  color: var(--gf-primary);
+}
+
+.about-link:focus-visible {
+  outline: var(--gf-ring-width) solid var(--gf-primary);
+  outline-offset: var(--gf-ring-offset);
+}
+
+.storage-monitor {
+  padding: 4px 0 2px;
+}
+
+.storage-bar-wrapper {
+  height: 8px;
+  overflow: hidden;
+  background: var(--gf-sunken);
+  border: 1px solid var(--gf-line);
+  border-radius: var(--radius-pill);
+}
+
+.storage-bar-fill {
+  height: 100%;
+  background: var(--gf-primary-fill);
+  border-radius: var(--radius-pill);
+  transition: width var(--gf-dur) var(--gf-ease);
+}
+
+.storage-stats {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  font-family: var(--gf-font-mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--gf-text-muted);
+}
+
+.tech-pill-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0 2px;
+}
+
+/* One neutral chip family: the three -primary/-secondary/-accent variants
+   were three colors saying nothing different. */
+.tech-pill,
+.tech-pill-primary,
+.tech-pill-secondary,
+.tech-pill-accent {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  font-family: var(--gf-font-mono);
+  font-size: 11px;
+  color: var(--gf-ink-soft);
+  background: var(--gf-sunken);
+  border: 1px solid var(--gf-line);
+  border-radius: var(--radius-pill);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   FOOTER
+   ════════════════════════════════════════════════════════════════════════ */
+.options-footer {
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: 18px var(--gutter) 26px;
+  font-family: var(--gf-font-mono);
+  font-size: 11px;
+  color: var(--gf-ink-dim);
+  text-align: center;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   MODAL  ·  confirm dialog
+   ════════════════════════════════════════════════════════════════════════ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--gf-scrim);
+  backdrop-filter: blur(4px);
+}
+
+.modal-content {
+  width: 100%;
+  max-width: 400px;
+  padding: 22px;
+  background: var(--gf-surface);
+  border: 1px solid var(--gf-line);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    var(--gf-shadow-lg),
+    inset 0 1px 0 var(--gf-hi);
+  animation: gf-fade-scale-in var(--gf-dur) var(--gf-ease-out);
+}
+
+.modal-content h3 {
+  margin-bottom: 8px;
+  font-family: var(--gf-font-display);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--gf-ink);
+}
+
+.modal-content p {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--gf-text-muted);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   SAVE FEEDBACK  ·  one persistent indicator, all five states
+   ════════════════════════════════════════════════════════════════════════ */
+.options-save-indicator {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  z-index: var(--z-toast);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 13px;
+  font-family: var(--gf-font-mono);
+  font-size: 11.5px;
+  color: var(--gf-ink-soft);
+  background: var(--gf-surface);
+  border: 1px solid var(--gf-line);
+  border-radius: var(--radius-pill);
+  box-shadow:
+    var(--gf-shadow-sm),
+    inset 0 1px 0 var(--gf-hi);
+  animation: gf-status-in var(--gf-dur) var(--gf-ease-out);
+}
+
+/* The failed state is a retry button; everything else is a passive div. */
+button.options-save-indicator {
+  cursor: pointer;
+}
+
+.options-save-indicator:focus-visible {
+  outline: var(--gf-ring-width) solid var(--gf-primary);
+  outline-offset: var(--gf-ring-offset);
+}
+
+.options-save-indicator-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  background: var(--gf-ink-dim);
+  border-radius: 50%;
+}
+
+.options-save-indicator-pending .options-save-indicator-dot {
+  background: var(--gf-warning);
+}
+
+.options-save-indicator-saving .options-save-indicator-dot {
+  background: var(--gf-primary);
+  animation: gf-pulse-dot 1s var(--gf-ease) infinite;
+}
+
+.options-save-indicator-saved {
+  color: var(--gf-mint-text);
+  border-color: rgba(var(--gf-mint-rgb), 0.3);
+}
+
+.options-save-indicator-saved .options-save-indicator-dot {
+  background: var(--gf-success);
+}
+
+.options-save-indicator-failed {
+  color: var(--gf-coral-text);
+  border-color: rgba(var(--gf-coral-rgb), 0.3);
+}
+
+.options-save-indicator-failed .options-save-indicator-dot {
+  background: var(--gf-danger);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   COMMAND PALETTE  ·  ⌘K jump-to-section
+   ════════════════════════════════════════════════════════════════════════ */
+.command-palette-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12vh 24px 24px;
+  background: var(--gf-scrim);
+  backdrop-filter: blur(4px);
+}
+
+.command-palette {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 460px;
+  overflow: hidden;
+  background: var(--gf-surface);
+  border: 1px solid var(--gf-line-2);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    var(--gf-shadow-lg),
+    inset 0 1px 0 var(--gf-hi);
+  animation: gf-fade-scale-in var(--gf-dur) var(--gf-ease-out);
+}
+
+/* Full-bleed field: the palette frame is the input's border. */
+.options-app .command-palette-input {
+  padding: 14px 16px;
+  font-family: var(--gf-font-body);
+  font-size: 14px;
+  background-color: transparent;
+  border: none;
+  border-bottom: 1px solid var(--gf-line);
+  border-radius: 0;
+}
+
+.options-app .command-palette-input:focus {
+  background-color: transparent;
+  border-color: var(--gf-line);
+  box-shadow: none;
+}
+
+.command-palette-list {
+  max-height: 320px;
+  padding: 6px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.command-palette-empty {
+  padding: 18px 10px;
+  font-size: 13px;
+  color: var(--gf-ink-dim);
+  text-align: center;
+}
+
+.command-palette-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 8px 10px;
+  font-size: 13.5px;
+  color: var(--gf-ink-soft);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.command-palette-item-active {
+  color: var(--gf-ink);
+  background: var(--gf-primary-soft);
+}
+
+.command-palette-item-label {
+  font-family: var(--gf-font-display);
+  font-weight: 600;
+}
+
+.command-palette-item-hint {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--gf-text-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.command-palette-item-badge {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 2px 7px;
+  font-family: var(--gf-font-mono);
+  font-size: 10px;
+  color: var(--gf-primary);
+  background: var(--gf-primary-soft);
+  border-radius: var(--radius-pill);
+}
+
+.command-palette-item-active .command-palette-item-badge {
+  background: rgba(var(--gf-primary-rgb), 0.16);
+}
+
+.command-palette-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 14px;
+  font-family: var(--gf-font-mono);
+  font-size: 10.5px;
+  color: var(--gf-ink-dim);
+  background: var(--gf-sunken);
+  border-top: 1px solid var(--gf-line);
+}
+
+.command-palette-footer span {
+  margin-right: 6px;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   LOADING
+   ════════════════════════════════════════════════════════════════════════ */
+.loading {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  min-height: 100vh;
+  font-size: 13px;
+  color: var(--gf-text-muted);
+}
+
+.spinner {
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--gf-line);
+  border-top-color: var(--gf-primary);
+  border-radius: 50%;
+  animation: gf-spin 0.8s linear infinite;
+}
+
+/* Same recipe as .gf-skeleton in globals.css — gf-shimmer animates
+   background-position in px, so the 320px background-size must match. */
+.about-skeleton-row {
+  display: block;
+  height: 10px;
+  background: linear-gradient(
+    90deg,
+    var(--gf-sunken) 0%,
+    rgba(var(--gf-primary-rgb), 0.08) 50%,
+    var(--gf-sunken) 100%
+  );
+  background-size: 320px 100%;
+  border-radius: var(--radius-xs);
+  animation: gf-shimmer 1.6s linear infinite;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   UTILITIES  ·  the only nine classes the markup asks for
+   ════════════════════════════════════════════════════════════════════════ */
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.w-full {
+  width: 100%;
+}
+
+.setting-info-mb-8 {
+  margin-bottom: 8px;
+}
+
+.text-dimmed {
+  font-size: 12.5px;
+  color: var(--gf-text-muted);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   RESPONSIVE  ·  the rail folds into a chip row
+   ════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 860px) {
+  .dashboard-layout {
+    display: block;
+    padding: 0 var(--gutter);
+  }
+
+  .settings-sidebar {
+    position: static;
+    gap: 14px;
+    padding: 18px 0 16px;
+    border-right: none;
+    border-bottom: 1px solid var(--gf-line);
+  }
+
+  .sidebar-nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  /* Chips carry an inset ring instead of an edge marker. */
+  .sidebar-nav-item::after {
+    display: none;
+  }
+
+  .sidebar-nav-item[aria-selected='true'] {
+    box-shadow: inset 0 0 0 1px rgba(var(--gf-primary-rgb), 0.35);
+  }
+
+  .sidebar-tab-label {
+    max-width: 100%;
+  }
+
+  .options-main {
+    padding: 18px 0 24px;
+  }
+}
+
+@media (max-width: 560px) {
+  :root {
+    --gutter: 16px;
+  }
+
+  .header-content {
+    flex-wrap: wrap;
+    padding: 14px var(--gutter);
+  }
+
+  .header-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .command-palette-trigger-btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .sidebar-nav {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-section {
+    padding: 0 16px 14px;
+  }
+
+  .settings-section h2 {
+    margin: 0 -16px 12px;
+    padding: 13px 16px;
+  }
+
+  .provider-health-meter {
+    margin: 14px -16px 0;
+    padding: 14px 16px 0;
+  }
+
+  .setting-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .health-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .options-save-indicator {
+    right: var(--gutter);
+    left: var(--gutter);
+    justify-content: center;
+  }
+
+  .command-palette-overlay {
+    padding: 8vh 16px 16px;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   REDUCED MOTION  ·  keep the spinner readable, drop everything else
+   ════════════════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .spinner {
+    animation-duration: 1.6s !important;
+    animation-iteration-count: infinite !important;
+  }
+}

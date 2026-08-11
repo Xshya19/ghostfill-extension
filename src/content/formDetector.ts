@@ -10,7 +10,7 @@ import {
 } from '../types';
 import { getUniqueSelector, deepQuerySelectorAll, getElementLabel } from '../utils/core';
 import { createLogger } from '../utils/logger';
-import { safeGetComputedStyle } from './ui/safeStyles';
+import { safeGetComputedStyle } from '../shared/safeStyles';
 import { extractFieldRecord, resolveLabelText } from '../intelligence/pageAnalyzer';
 import { classifyField, classifyHeuristic, mapFieldClassToFieldType, IntelligenceCore } from '../intelligence/IntelligenceCore';
 import { debounce } from '../utils/debounce';

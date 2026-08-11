@@ -151,19 +151,23 @@ export const TOKENS = {
   surface2: '#1F232B',
   card: '#181B21',
   cardRgb: '24, 27, 33',
-  cardElevated: '#1C2330',
+  cardElevated: '#1f232b',
   sunken: '#0C0E12',
   sunkenRgb: '12, 14, 18',
-  line: 'rgba(255, 255, 255, 0.10)',
+  line: 'rgba(255, 255, 255, 0.08)',
+  line2: 'rgba(255, 255, 255, 0.13)',
   hi: 'rgba(255, 255, 255, 0.06)',
 
   // Ink (cool light on dark)
   ink: '#EEF1F6',
   inkRgb: '238, 241, 246',
   inkSoft: '#AAB2C0',
+  inkSoftRgb: '170, 178, 192',
   cream: '#EEF1F6',
   textMuted: '#AAB2C0',
-  textDim: '#727A88',
+  // #727a88 measures only 3.99:1 on `surface` and fails AA for the label text
+  // this token carries; #7d8492 clears 4.59:1 and looks identical.
+  textDim: '#7d8492',
 
   // Semantic legacy aliases → Spectre family
   mustard: '#F4B740',
@@ -193,6 +197,19 @@ export const TOKENS = {
   primaryRgb: '124, 131, 255',
   primaryDeep: '#5A61F0',
   primarySoft: '#1C2040',
+
+  // Solid-fill contrast pairs. The brightened Iris is only 3.21:1 behind white,
+  // so a solid fill uses primaryDeep (4.78:1). Mint/amber can never clear
+  // 4.5:1 with white in either theme, so they take dark ink instead.
+  primaryFillDeep: '#464cd6',
+  dangerFill: '#c73e43',
+  dangerFillDeep: '#a8353a',
+  onFillLight: '#ffffff',
+  successSoft: '#0f2a25',
+  warningSoft: '#2a2110',
+  dangerSoft: '#2c1414',
+  scrim: 'rgba(4, 5, 7, 0.7)',
+  fontMono: "'IBM Plex Mono', 'Space Mono', 'JetBrains Mono', ui-monospace, monospace",
 } as const;
 
 /**
@@ -255,11 +272,12 @@ export function generateHostTokens(): string {
     --gf-sunken: ${TOKENS.sunken};
     --gf-sunken-rgb: ${TOKENS.sunkenRgb};
     --gf-line: ${TOKENS.line};
-    --gf-line-2: ${TOKENS.line};
+    --gf-line-2: ${TOKENS.line2};
     --gf-hi: ${TOKENS.hi};
     --gf-ink: ${TOKENS.ink};
     --gf-ink-rgb: ${TOKENS.inkRgb};
     --gf-ink-soft: ${TOKENS.inkSoft};
+    --gf-ink-soft-rgb: ${TOKENS.inkSoftRgb};
     --gf-cream: ${TOKENS.cream};
     --gf-text-muted: ${TOKENS.textMuted};
     --gf-text-dim: ${TOKENS.textDim};
@@ -287,9 +305,9 @@ export function generateHostTokens(): string {
     --nb-surface: ${TOKENS.surface};
     --nb-ink: ${TOKENS.ink};
     --nb-border: 1px solid ${TOKENS.line};
-    --nb-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 8px 24px rgba(0, 0, 0, 0.55);
-    --nb-shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.04), 0 3px 10px rgba(0, 0, 0, 0.42);
-    --nb-shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.05), 0 18px 48px rgba(0, 0, 0, 0.66);
+    --nb-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.42), 0 16px 36px -12px rgba(0, 0, 0, 0.6);
+    --nb-shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.4);
+    --nb-shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 26px -8px rgba(0, 0, 0, 0.5), 0 40px 80px -20px rgba(0, 0, 0, 0.72);
     --nb-radius: 14px;
     --nb-radius-sm: 9px;
     --gf-paper: ${TOKENS.bg};
@@ -300,17 +318,49 @@ export function generateHostTokens(): string {
     --gf-primary-rgb: ${TOKENS.primaryRgb};
     --gf-primary-deep: ${TOKENS.primaryDeep};
     --gf-primary-soft: ${TOKENS.primarySoft};
+    --gf-on-primary: ${TOKENS.onFillLight};
     --gf-success: ${TOKENS.mint};
     --gf-warning: ${TOKENS.yellow};
     --gf-danger: ${TOKENS.coral};
     --gf-accent: ${TOKENS.violet};
-    --gf-grad-cobalt: linear-gradient(180deg, ${TOKENS.primary}, ${TOKENS.primaryDeep});
+    --gf-success-rgb: ${TOKENS.mintRgb};
+    --gf-warning-rgb: ${TOKENS.yellowRgb};
+    --gf-danger-rgb: ${TOKENS.coralRgb};
+    --gf-success-soft: ${TOKENS.successSoft};
+    --gf-warning-soft: ${TOKENS.warningSoft};
+    --gf-danger-soft: ${TOKENS.dangerSoft};
+    --gf-amber-rgb: ${TOKENS.yellowRgb};
+    --gf-mint-rgb: ${TOKENS.mintRgb};
+    /* On dark, the bright hues already clear 4.5:1 on their own *-soft chip,
+       so the -text tokens alias the hue rather than darkening it. */
+    --gf-mint-text: ${TOKENS.mint};
+    --gf-amber-text: ${TOKENS.yellow};
+    --gf-coral-text: ${TOKENS.coral};
+    --gf-danger-text: ${TOKENS.coral};
+    /* Solid fills + the ink guaranteed readable on each. */
+    --gf-primary-fill: ${TOKENS.primaryDeep};
+    --gf-primary-fill-deep: ${TOKENS.primaryFillDeep};
+    --gf-success-fill: ${TOKENS.mint};
+    --gf-warning-fill: ${TOKENS.yellow};
+    --gf-danger-fill: ${TOKENS.dangerFill};
+    --gf-danger-fill-deep: ${TOKENS.dangerFillDeep};
+    --gf-on-fill-light: ${TOKENS.onFillLight};
+    --gf-on-fill-dark: ${TOKENS.bg};
+    --gf-scrim: ${TOKENS.scrim};
+    --gf-font-mono: ${TOKENS.fontMono};
+    --brand-font-mono: ${TOKENS.fontMono};
+    --gf-grad-cobalt: linear-gradient(180deg, ${TOKENS.primaryDeep}, ${TOKENS.primaryFillDeep});
+    --gf-grad-cobalt-hover: linear-gradient(180deg, #8b91ff, #6a70f5);
     --gf-grad-mint: linear-gradient(180deg, #12b886, ${TOKENS.mint});
-    --gf-grad-coral: linear-gradient(180deg, #e0463f, ${TOKENS.coral});
+    --gf-grad-coral: linear-gradient(180deg, ${TOKENS.dangerFill}, ${TOKENS.dangerFillDeep});
     --gf-border: 1px solid ${TOKENS.line};
+    --gf-border-strong: 1px solid ${TOKENS.line2};
     --gf-border-thin: 1px solid ${TOKENS.line};
-    --gf-shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.04), 0 3px 10px rgba(0, 0, 0, 0.42);
-    --gf-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 8px 24px rgba(0, 0, 0, 0.55);
+    --gf-shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.4);
+    --gf-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.42), 0 16px 36px -12px rgba(0, 0, 0, 0.6);
+    --gf-shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 26px -8px rgba(0, 0, 0, 0.5), 0 40px 80px -20px rgba(0, 0, 0, 0.72);
+    --shadow-hard-sm: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.4);
+    --shadow-hard: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.42), 0 16px 36px -12px rgba(0, 0, 0, 0.6);
     --gf-radius: 14px;
     --gf-radius-sm: 9px;
   `.trim();

@@ -19,32 +19,32 @@ interface TabGroup {
     id: TabId;
     label: string;
     icon: React.ReactNode;
-    shortcut: string;
   }>;
 }
 
+// No per-row shortcut hint: the binding is Ctrl/Cmd+Alt+N, which "⌥N" states
+// wrongly on Windows — and U+2325 has no glyph in IBM Plex Mono, so it rendered
+// as a tofu box on every row. Ctrl+K search covers the same need, once.
 const TAB_GROUPS: TabGroup[] = [
   {
     title: 'Configuration',
     items: [
-      { id: 'general', label: 'General', icon: <Settings size={17} />, shortcut: '⌥1' },
-      { id: 'email', label: 'Email', icon: <Mail size={17} />, shortcut: '⌥2' },
-      { id: 'password', label: 'Passwords', icon: <Lock size={17} />, shortcut: '⌥3' },
-      { id: 'automation', label: 'Automation', icon: <Zap size={17} />, shortcut: '⌥4' },
+      { id: 'general', label: 'General', icon: <Settings size={17} /> },
+      { id: 'email', label: 'Email', icon: <Mail size={17} /> },
+      { id: 'password', label: 'Passwords', icon: <Lock size={17} /> },
+      { id: 'automation', label: 'Automation', icon: <Zap size={17} /> },
     ],
   },
   {
-    title: 'System & Privacy',
+    title: 'System & privacy',
     items: [
-      { id: 'privacy', label: 'Privacy', icon: <Shield size={17} />, shortcut: '⌥5' },
-      { id: 'advanced', label: 'Advanced', icon: <Brain size={17} />, shortcut: '⌥6' },
+      { id: 'privacy', label: 'Privacy', icon: <Shield size={17} /> },
+      { id: 'advanced', label: 'Advanced', icon: <Brain size={17} /> },
     ],
   },
   {
     title: 'Information',
-    items: [
-      { id: 'about', label: 'About', icon: <Info size={17} />, shortcut: '⌥7' },
-    ],
+    items: [{ id: 'about', label: 'About', icon: <Info size={17} /> }],
   },
 ];
 
@@ -105,9 +105,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
                     {tab.icon}
                   </span>
                   <span className="sidebar-tab-label">{tab.label}</span>
-                  <span className="sidebar-tab-shortcut" aria-hidden="true">
-                    {tab.shortcut}
-                  </span>
                 </button>
               );
             })}
@@ -142,7 +139,7 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
       <h2 id={`${id}-title`}>
         <span className="section-icon" aria-hidden="true">
           {icon}
-        </span>{' '}
+        </span>
         {title}
       </h2>
       {children}

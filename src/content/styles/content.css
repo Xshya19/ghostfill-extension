@@ -3,7 +3,7 @@
    In-page field highlights · soft luminous rings · Iris accent
    ───────────────────────────────────────────────────────────
    The FAB itself lives in a closed shadow root whose palette is
-   injected by generateHostTokens() (src/shared/tokens.ts), so the
+   injected by generateHostTokens() (src/shared/theme.ts), so the
    in-page UI matches the popup (graphite Spectre glass console).
    This file only needs the host container reset + the field-highlight
    classes that decorate elements on the *host page* (outside the shadow

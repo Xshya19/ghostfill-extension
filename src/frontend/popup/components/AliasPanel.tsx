@@ -27,16 +27,19 @@ import {
   isGmailSetupResponse,
   formatGmailSetupError,
   type GmailSignInResult,
-} from '../../services/gmailConnectionService';
-import { storageService } from '../../services/storageService';
-import { type GmailMessage, type GmailProfile, type AliasHistoryItem } from '../../types/email.types';
-import { copyToClipboard, openSafeUrl, contentToString } from '../../utils/core';
-import { safeSendMessage } from '../../utils/messaging';
-import { useAppStore } from '../store/useAppStore';
+} from '../../../services/gmailConnectionService';
+import { storageService } from '../../../services/storageService';
+import {
+  type GmailMessage,
+  type GmailProfile,
+  type AliasHistoryItem,
+} from '../../../types/email.types';
+import { copyToClipboard, openSafeUrl, contentToString } from '../../../utils/core';
+import { safeSendMessage } from '../../../utils/messaging';
+import { useAppStore } from '../store';
 
 // ─── Types ───────────────────────────────────────────────
 type AliasPanelTab = 'generator' | 'inbox' | 'history';
-
 
 interface StatusResponse {
   connected?: boolean;
@@ -102,30 +105,55 @@ const errorMessage = (e: unknown, fallback = 'Error'): string =>
   e instanceof Error ? e.message : fallback;
 
 const stripHtml = (html: string): string => {
-  if (!html) {return '';}
+  if (!html) {
+    return '';
+  }
   try {
     const doc = new DOMParser().parseFromString(html, 'text/html');
-    
+
     // Security: Nuke dangerous elements completely
-    doc.querySelectorAll('script, style, noscript, iframe, object, embed, link, meta')
-       .forEach(el => el.remove());
-    
+    doc
+      .querySelectorAll('script, style, noscript, iframe, object, embed, link, meta')
+      .forEach((el) => el.remove());
+
     // UX: Convert block elements to newlines for readability
-    const blockTags = new Set(['P', 'DIV', 'BR', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'TR', 'BLOCKQUOTE']);
+    const blockTags = new Set([
+      'P',
+      'DIV',
+      'BR',
+      'LI',
+      'H1',
+      'H2',
+      'H3',
+      'H4',
+      'H5',
+      'H6',
+      'TR',
+      'BLOCKQUOTE',
+    ]);
     let text = '';
-    const walker = document.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+    const walker = document.createTreeWalker(
+      doc.body,
+      NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT
+    );
     let node;
-    
+
     while ((node = walker.nextNode())) {
       if (node.nodeType === Node.TEXT_NODE) {
         text += node.textContent;
       } else if (node.nodeType === Node.ELEMENT_NODE) {
-        if (blockTags.has(node.nodeName)) {text += '\n';}
-        else if (node.nodeName === 'TD') {text += '\t';}
+        if (blockTags.has(node.nodeName)) {
+          text += '\n';
+        } else if (node.nodeName === 'TD') {
+          text += '\t';
+        }
       }
     }
-    
-    return text.replace(/&nbsp;/gi, ' ').replace(/\n{3,}/g, '\n\n').trim();
+
+    return text
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   } catch {
     // Fallback to regex stripping if DOMParser fails or isn't available
     return html
@@ -204,7 +232,7 @@ const GeneratorTab: React.FC<GeneratorTabProps> = ({
             value={domainInput}
             onChange={(e) => setDomainInput(e.target.value)}
             onKeyDown={onKeyDown}
-            className="ios-input generator-input alias-generator-input"
+            className="gf-input generator-input alias-generator-input"
             autoComplete="off"
           />
         </div>
@@ -332,7 +360,7 @@ const InboxTab: React.FC<InboxTabProps> = ({
       <div className="alias-inbox-header">
         <div className="alias-inbox-title-row">
           <Inbox size={15} className="alias-inbox-title-icon" />
-          <span className="alias-inbox-title">Recent Inbox</span>
+          <span className="alias-inbox-title">Recent inbox</span>
           {!isManual && inbox.length > 0 && (
             <span className="alias-inbox-count">{inbox.length}</span>
           )}
@@ -443,7 +471,7 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ history, onClear, onToast }) =>
     <div className="alias-history-header">
       <div className="alias-history-title-group">
         <Shield size={15} />
-        <span>Alias Tracker</span>
+        <span>Alias tracker</span>
         {history.length > 0 && <span className="alias-history-count">{history.length}</span>}
       </div>
       {history.length > 0 && (
@@ -770,7 +798,11 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
               if (typeof obj.html === 'string') return obj.html;
               if (typeof obj.body === 'string') return obj.body;
               if (typeof obj.content === 'string') return obj.content;
-              try { return JSON.stringify(v); } catch { return String(v); }
+              try {
+                return JSON.stringify(v);
+              } catch {
+                return String(v);
+              }
             }
             return String(v);
           };
@@ -966,7 +998,7 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
                   className="alias-connect-btn secondary-btn"
                 >
                   <Settings size={14} />
-                  <span>Gmail Settings</span>
+                  <span>Gmail settings</span>
                 </button>
               )}
             </>
@@ -988,11 +1020,7 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
                     disabled={signingIn}
                     className="alias-connect-btn"
                   >
-                    {signingIn ? (
-                      <RefreshCw size={14} className="spin" />
-                    ) : (
-                      <LogIn size={14} />
-                    )}
+                    {signingIn ? <RefreshCw size={14} className="spin" /> : <LogIn size={14} />}
                     <span>{signingIn ? 'Connecting…' : 'Connect with Google'}</span>
                   </button>
                 </>
@@ -1188,15 +1216,16 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
                 ) : (
                   <>
                     <div className="alias-message-modal-snippet">
-                      {contentToString(selectedMessage.snippet ?? selectedMessage.body ?? '') || 'No content available.'}
+                      {contentToString(selectedMessage.snippet ?? selectedMessage.body ?? '') ||
+                        'No content available.'}
                     </div>
                     <pre className="alias-message-modal-content">
                       {stripHtml(
                         contentToString(
                           selectedMessage.htmlBody ??
-                          selectedMessage.body ??
-                          selectedMessage.snippet ??
-                          ''
+                            selectedMessage.body ??
+                            selectedMessage.snippet ??
+                            ''
                         ).slice(0, MAX_MESSAGE_PREVIEW)
                       )}
                     </pre>
@@ -1239,4 +1268,3 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
 };
 
 export default AliasPanel;
-

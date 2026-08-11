@@ -1,6 +1,6 @@
 /* ══════════════════════════════════════════════════════════════
-   GhostFill 3.0 — Memphis Neon Archive — FAB Shadow DOM
-   Solid surfaces · Neon accents · Sharp geometry · Dark mode
+   GhostFill — Spectre — FAB Shadow DOM
+   Machined surfaces · One luminous accent · Hairline geometry · Dark-first
    ══════════════════════════════════════════════════════════════ */
 
 :host {
@@ -8,7 +8,7 @@
   font-family: "Space Grotesk", "Inter", sans-serif;
   isolation: isolate;
 
-  /* Memphis Neon Palette mapped to FAB */
+  /* Spectre palette mapped to FAB */
 
   --brand: var(--gf-primary);
   --brand-dark: var(--gf-primary-deep);

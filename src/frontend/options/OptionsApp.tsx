@@ -2,11 +2,11 @@ import { Sun, Moon, Search } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
 import { GhostLogo } from '../popup/components';
-import { storageService } from '../services/storageService';
-import { applyTheme, resolveTheme } from '../shared/theme';
-import { Button } from '../shared/ui';
-import { UserSettings, DEFAULT_SETTINGS } from '../types/storage.types';
-import { createLogger } from '../utils/logger';
+import { storageService } from '../../services/storageService';
+import { applyTheme, resolveTheme } from '../../shared/theme';
+import { Button } from '../ui';
+import { UserSettings, DEFAULT_SETTINGS } from '../../types/storage.types';
+import { createLogger } from '../../utils/logger';
 
 import {
   AboutTab,
@@ -215,6 +215,10 @@ function useModalFocusTrap(
 //  §4  S U B - C O M P O N E N T S
 // ═══════════════════════════════════════════════════════════════
 
+// The handler accepts both Ctrl and Cmd, so the hint has to name the one this
+// user actually has. Hardcoded "⌘K" was wrong on every Windows install.
+const MOD_KEY = navigator.userAgent.includes('Mac') ? '⌘' : 'Ctrl';
+
 /** Full-page loading spinner shown during initial data fetch. */
 const LoadingSpinner: React.FC = () => (
   <div className="loading" role="status" aria-live="polite">
@@ -223,26 +227,57 @@ const LoadingSpinner: React.FC = () => (
   </div>
 );
 
-/** Ambient decorative background with animated blobs. */
-const AmbientBackground: React.FC = () => (
-  <>
-    <div className="ambient-background">
-      <div className="ambient-bg-gradient" aria-hidden="true" />
-    </div>
-    <div className="ambient-blobs" aria-hidden="true">
-      <div className="ambient-blob ambient-blob-1" />
-      <div className="ambient-blob ambient-blob-2" />
-      <div className="ambient-blob ambient-blob-3" />
-    </div>
-  </>
-);
+/**
+ * Posture strip — a live readout of what GhostFill will do on this browser,
+ * assembled from settings already in state. No new data flow.
+ */
+const PostureStrip: React.FC<{ settings: UserSettings }> = ({ settings }) => {
+  const items: { text: string; on: boolean }[] = [
+    { text: `mail · ${settings.preferredEmailService}`, on: true },
+    {
+      text: settings.autoCheckInbox
+        ? `inbox · every ${settings.checkIntervalSeconds}s`
+        : 'inbox · on demand',
+      on: settings.autoCheckInbox,
+    },
+    {
+      text: settings.autoFillOTP ? 'codes · auto-fill' : 'codes · manual',
+      on: settings.autoFillOTP,
+    },
+    {
+      text: settings.showFloatingButton
+        ? `button · ${settings.floatingButtonPosition}`
+        : 'button · hidden',
+      on: settings.showFloatingButton,
+    },
+    {
+      text: settings.autoConfirmLinks ? 'links · auto-open' : 'links · ask first',
+      on: settings.autoConfirmLinks,
+    },
+    {
+      text: settings.saveHistory ? `history · ${settings.historyRetentionDays}d` : 'history · off',
+      on: settings.saveHistory,
+    },
+  ];
 
-/** Saved-state toast notification. */
-const SavedToast: React.FC = () => (
-  <div className="options-toast" role="alert" aria-live="assertive">
-    {t('changesSaved')}
-  </div>
-);
+  return (
+    <div className="posture-strip">
+      <div className="posture-inner">
+        <span className="posture-label">Right now</span>
+        <ul className="posture-list" aria-label="Current behavior summary">
+          {items.map((item) => (
+            <li
+              key={item.text}
+              className={`posture-item ${item.on ? 'posture-item--on' : 'posture-item--off'}`}
+            >
+              {item.text}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+};
 
 /** Accessible live region for screen readers. */
 const ScreenReaderAnnouncer: React.FC<{ saved: boolean }> = ({ saved }) => (
@@ -523,7 +558,15 @@ const OptionsApp: React.FC = () => {
       }
       if (mod && e.altKey && /^[1-7]$/.test(e.key)) {
         e.preventDefault();
-        const order: TabId[] = ['general', 'email', 'password', 'automation', 'privacy', 'advanced', 'about'];
+        const order: TabId[] = [
+          'general',
+          'email',
+          'password',
+          'automation',
+          'privacy',
+          'advanced',
+          'about',
+        ];
         const idx = parseInt(e.key, 10) - 1;
         const next = order[idx];
         if (next) {
@@ -755,12 +798,11 @@ const OptionsApp: React.FC = () => {
 
   return (
     <div className="options-app" aria-label="GhostFill Settings">
-      <AmbientBackground />
       {/* ── Header ── */}
       <header className="options-header" role="banner">
         <div className="header-content">
           <div className="ghost-card logo-box logo-box--no-padding">
-            <GhostLogo size={56} />
+            <GhostLogo size={32} />
           </div>
           <div className="header-text-group">
             <h1 className="spectral-title">{t('settingsTitle')}</h1>
@@ -772,11 +814,11 @@ const OptionsApp: React.FC = () => {
               onClick={() => setCommandPaletteOpen(true)}
               type="button"
               aria-label="Search settings"
-              title="Search settings (Ctrl+K)"
+              title={`Search settings (${MOD_KEY}+K)`}
             >
               <Search size={15} />
               <span>Search</span>
-              <kbd>⌘K</kbd>
+              <kbd>{MOD_KEY} K</kbd>
             </button>
             <button
               className="theme-toggle-header-btn"
@@ -801,6 +843,9 @@ const OptionsApp: React.FC = () => {
         </div>
       </header>
 
+      {/* ── Posture: what GhostFill will do right now ── */}
+      <PostureStrip settings={settings} />
+
       {/* ── Dashboard ── */}
       <div
         className="dashboard-layout"
@@ -813,7 +858,19 @@ const OptionsApp: React.FC = () => {
       >
         <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
         <main className="options-main" role="main" id="main-content">
-          {activeTabContent}
+          {/* The rail's tabs point at aria-controls="tabpanel-<id>", so the panel
+              has to exist. key= also remounts it, which replays the enter
+              animation on every tab switch. */}
+          <div
+            key={activeTab}
+            id={`tabpanel-${activeTab}`}
+            role="tabpanel"
+            aria-labelledby={`tab-${activeTab}`}
+            tabIndex={-1}
+            className="tab-panel"
+          >
+            {activeTabContent}
+          </div>
         </main>
       </div>
 
@@ -825,10 +882,7 @@ const OptionsApp: React.FC = () => {
       {/* ── Live Announcements ── */}
       <ScreenReaderAnnouncer saved={saveState === 'saved'} />
 
-      {/* ── Toast (only when actively saved) ── */}
-      {saveState === 'saved' && <SavedToast />}
-
-      {/* ── Save state indicator (always visible while a save is in flight) ── */}
+      {/* ── Save state, including the saved confirmation ── */}
       <SaveStatusIndicator state={saveState} onRetry={() => void saveSettings()} />
 
       {/* ── Ctrl+K command palette ── */}
@@ -906,14 +960,19 @@ interface CommandPaletteProps {
 const TAB_ORDER: Array<{ id: TabId; label: string; hint: string }> = [
   { id: 'general', label: 'General', hint: 'Appearance, polling, sounds' },
   { id: 'email', label: 'Email', hint: 'Service, custom domain, Gmail OAuth' },
-  { id: 'password', label: 'Password', hint: 'Generator defaults' },
+  { id: 'password', label: 'Passwords', hint: 'Generator defaults' },
   { id: 'automation', label: 'Automation', hint: 'Auto-fill, shortcuts' },
   { id: 'privacy', label: 'Privacy', hint: 'Telemetry, permissions' },
   { id: 'advanced', label: 'Advanced', hint: 'Cache, debugging, danger zone' },
   { id: 'about', label: 'About', hint: 'Version, storage, tech stack' },
 ];
 
-const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, activeTab, onSelectTab }) => {
+const CommandPalette: React.FC<CommandPaletteProps> = ({
+  isOpen,
+  onClose,
+  activeTab,
+  onSelectTab,
+}) => {
   const [query, setQuery] = useState('');
   const [highlightIdx, setHighlightIdx] = useState(0);
 
@@ -1004,9 +1063,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, active
               >
                 <span className="command-palette-item-label">{t.label}</span>
                 <span className="command-palette-item-hint">{t.hint}</span>
-                {t.id === activeTab && (
-                  <span className="command-palette-item-badge">current</span>
-                )}
+                {t.id === activeTab && <span className="command-palette-item-badge">current</span>}
               </li>
             ))
           )}

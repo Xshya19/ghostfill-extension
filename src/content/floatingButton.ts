@@ -24,10 +24,15 @@ import {
   PageContext,
   FieldType as ClassifierFieldType,
 } from '../shared/fieldClassifier';
-import { generateHostTokens } from '../shared/tokens';
+import { generateHostTokens } from '../shared/theme';
 import fabStyles from './floatingButton.shadow.css';
-import { IconSystem, menuIcon, type MenuIconName } from './fabIcons';
-import { FieldType, GenerateEmailResponse, GeneratePasswordResponse, GetLastOTPResponse } from '../types';
+import { IconSystem, menuIcon, type MenuIconName } from '../shared/icons';
+import {
+  FieldType,
+  GenerateEmailResponse,
+  GeneratePasswordResponse,
+  GetLastOTPResponse,
+} from '../types';
 import { TIMING } from '../utils/core';
 import { debounce } from '../utils/debounce';
 import { createLogger } from '../utils/logger';
@@ -357,7 +362,7 @@ class ContextualMenu {
     currentMode: ButtonMode,
     hasOTPReady: boolean
   ): MenuAction[] {
-    const noop = async (): Promise<void> => { };
+    const noop = async (): Promise<void> => {};
 
     const isIdentityCtx =
       currentMode === 'user' || analysis.hasNameFields || analysis.pageType === 'signup';
@@ -472,11 +477,11 @@ class ContextualMenu {
 //  §6  I C O N   S Y S T E M
 // ═══════════════════════════════════════════════════════════════
 //  Colors: exact hex from popup.css :root tokens
-//  Strokes: 1.5 primary | 0.8 detail (Memphis 2-weight system)
+//  Strokes: 1.5 primary | 0.8 detail (two-weight system)
 //  All SVGs: xmlns present, role="presentation", aria-hidden="true"
 // ═══════════════════════════════════════════════════════════════
 
-// NOTE: IconSystem is imported from './utils/fabIcons' instead of defined here locally.
+// NOTE: IconSystem is imported from '../shared/icons' instead of defined here locally.
 
 // ═══════════════════════════════════════════════════════════════
 //  §7  M A I N   F L O A T I N G   B U T T O N   C L A S S
@@ -795,7 +800,11 @@ export class FloatingButton {
     this.applyModeChrome();
     const tooltipMode = this.mode === 'magic' ? 'generic' : (this.mode as ClassifierFieldType);
     const baseLabel = getFieldTooltip(tooltipMode);
-    const armed = this.hasOTPReady ? ' · OTP ready' : this.isWaitingForOTP ? ' · waiting for code' : '';
+    const armed = this.hasOTPReady
+      ? ' · OTP ready'
+      : this.isWaitingForOTP
+        ? ' · waiting for code'
+        : '';
     this.button.setAttribute('aria-label', `${baseLabel}${armed}`);
     this.updateBadge();
     // Stay visible while the user is still on the field — only hide on focus leave
@@ -1558,9 +1567,7 @@ export class FloatingButton {
     if (this.destroyed) return;
 
     const preferred =
-      idResp?.preferredEmailType ||
-      idResp?.identity?.preferredEmailType ||
-      'disposable';
+      idResp?.preferredEmailType || idResp?.identity?.preferredEmailType || 'disposable';
     let email = idResp?.identity?.email?.trim() || '';
 
     // 2) Only generate a NEW disposable when Temp Mail tab is active and empty
@@ -1601,22 +1608,14 @@ export class FloatingButton {
     }
 
     // Block accidental disposable fill while Gmail tab is selected
-    if (
-      preferred === 'gmail' &&
-      email &&
-      !/@(gmail|googlemail)\.com$/i.test(email)
-    ) {
+    if (preferred === 'gmail' && email && !/@(gmail|googlemail)\.com$/i.test(email)) {
       log.warn('Blocked non-Gmail address while Gmail tab active', { email });
       pageStatus.error('Gmail tab active but got non-Gmail address', TIMING_MS.ERROR_DISPLAY);
       this.setState('error', 'Wrong email type');
       return;
     }
 
-    const filled = await this.autoFiller.fillFieldIntoTarget(
-      'email',
-      email,
-      this.currentField
-    );
+    const filled = await this.autoFiller.fillFieldIntoTarget('email', email, this.currentField);
 
     if (this.destroyed) return;
 
@@ -1664,11 +1663,11 @@ export class FloatingButton {
   private static readonly IDENTITY_FIELD_MAP: Readonly<
     Record<string, { key: string; label: string }>
   > = {
-      'fill-firstname': { key: 'firstName', label: 'First Name' },
-      'fill-lastname': { key: 'lastName', label: 'Last Name' },
-      'fill-fullname': { key: 'fullName', label: 'Full Name' },
-      'fill-username': { key: 'username', label: 'Username' },
-    };
+    'fill-firstname': { key: 'firstName', label: 'First Name' },
+    'fill-lastname': { key: 'lastName', label: 'Last Name' },
+    'fill-fullname': { key: 'fullName', label: 'Full Name' },
+    'fill-username': { key: 'username', label: 'Username' },
+  };
 
   private async actionFillIdentity(actionId: string): Promise<void> {
     const resp = (await safeSendMessage({ action: 'GET_IDENTITY' })) as IdentityResponse | null;
@@ -1871,9 +1870,7 @@ export class FloatingButton {
       // Only schedule hide if focus left the decorated field
       const field = this.currentFieldRef?.deref() ?? this.currentField;
       const leavingField =
-        !field ||
-        e.target === field ||
-        (e.target instanceof Node && field.contains(e.target));
+        !field || e.target === field || (e.target instanceof Node && field.contains(e.target));
       if (leavingField) {
         this.scheduleAutoHide();
       }
@@ -1963,7 +1960,7 @@ export class FloatingButton {
 
   private getStyles(): string {
     return `:host {
-  /* Memphis Neon Palette mapped to FAB */
+  /* Spectre palette mapped to FAB */
   ${generateHostTokens()}
 }
 ${fabStyles}`;
@@ -2230,8 +2227,6 @@ ${fabStyles}`;
     return this.getPageAnalysis().pageType;
   }
 
-
-
   // ── Public API ──────────────────────────────────────────
 
   show(): void {
@@ -2247,5 +2242,4 @@ ${fabStyles}`;
   isVisible(): boolean {
     return this.state !== 'hidden';
   }
-
 }

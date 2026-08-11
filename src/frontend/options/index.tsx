@@ -1,11 +1,10 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { initTheme } from '../shared/theme';
-import { initRemoteLogger } from '../utils/logger';
-import App from './App';
-import './styles/popup.css';
 
-initRemoteLogger('Popup');
+import { initTheme } from '../../shared/theme';
+import OptionsApp from './OptionsApp';
+import './options.css';
+
 initTheme();
 
 const container = document.getElementById('root');
@@ -13,7 +12,7 @@ if (container) {
   const root = createRoot(container);
   root.render(
     <React.StrictMode>
-      <App />
+      <OptionsApp />
     </React.StrictMode>
   );
 }

@@ -51,8 +51,6 @@ module.exports = (env, argv) => {
       extensions: ['.ts', '.tsx', '.js', '.jsx'],
       alias: {
         '@': path.resolve(__dirname, 'src'),
-        '@popup': path.resolve(__dirname, 'src/popup'),
-        '@components': path.resolve(__dirname, 'src/popup/components'),
         '@content': path.resolve(__dirname, 'src/content'),
         '@services': path.resolve(__dirname, 'src/services'),
         '@utils': path.resolve(__dirname, 'src/utils'),
@@ -190,8 +188,8 @@ module.exports = (env, argv) => {
     target: 'web', // Standard DOM environment
     entry: {
       content: [trustedTypesFallback, './src/content/index.ts'],
-      popup: [trustedTypesFallback, './src/popup/index.tsx'],
-      options: [trustedTypesFallback, './src/options/index.tsx'],
+      popup: [trustedTypesFallback, './src/frontend/popup/index.tsx'],
+      options: [trustedTypesFallback, './src/frontend/options/index.tsx'],
       offscreen: [trustedTypesFallback, './src/offscreen/offscreen.ts'],
     },
     output: {
@@ -236,7 +234,7 @@ module.exports = (env, argv) => {
       ...(!isDev ? [new CssMinifyPlugin()] : []),
 
       new HtmlWebpackPlugin({
-        template: './src/popup/index.html',
+        template: './src/frontend/popup/index.html',
         filename: 'popup.html',
         chunks: ['popup'],
         cache: false,
@@ -246,7 +244,7 @@ module.exports = (env, argv) => {
       }),
 
       new HtmlWebpackPlugin({
-        template: './src/options/index.html',
+        template: './src/frontend/options/index.html',
         filename: 'options.html',
         chunks: ['options'],
         cache: false,

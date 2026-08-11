@@ -16,7 +16,7 @@ import {
   getFieldTooltip,
   FieldType,
 } from '../../shared/fieldClassifier';
-import { generateHostTokens } from '../../shared/tokens';
+import { generateHostTokens } from '../../shared/theme';
 import { setHTML } from '../../utils/sanitization.core';
 
 const STYLES = `
@@ -49,7 +49,7 @@ const STYLES = `
   --error-rgb:       var(--gf-coral-rgb);
   
   --sticker-bg: var(--gf-grad-cobalt, linear-gradient(160deg, #7c83ff 0%, #5a61f0 100%));
-  --sticker-bg-hover: var(--gf-grad-cobalt, linear-gradient(160deg, #8b91ff 0%, #6a70f5 100%));
+  --sticker-bg-hover: var(--gf-grad-cobalt-hover, linear-gradient(160deg, #8b91ff 0%, #6a70f5 100%));
   --shadow-hard: 0 4px 14px -4px rgba(var(--gf-primary-rgb, 124, 131, 255), 0.7), 0 1px 0 rgba(255,255,255,0.28) inset;
 
   --ease-out-expo:   cubic-bezier(0.16, 1, 0.3, 1);

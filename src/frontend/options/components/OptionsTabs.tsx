@@ -18,14 +18,15 @@ import {
   Inbox,
   KeyRound,
   Mail,
+  Sparkles,
   X,
 } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
 
-import { storageService } from '../../services/storageService';
-import { Button } from '../../shared/ui';
-import { UserSettings, DEFAULT_SETTINGS } from '../../types/storage.types';
-import { createLogger } from '../../utils/logger';
+import { storageService } from '../../../services/storageService';
+import { Button } from '../../ui';
+import { UserSettings, DEFAULT_SETTINGS } from '../../../types/storage.types';
+import { createLogger } from '../../../utils/logger';
 
 import { SettingsSection, ToggleSwitch } from './OptionsUIComponents';
 
@@ -118,21 +119,14 @@ export const ProviderHealthMeter: React.FC = () => {
     );
   }
 
+  // A missing health report is an empty state, not a failure: the service
+  // worker simply hasn't recorded a call yet on a fresh profile. Only a real
+  // transport error earns the red treatment.
   if (error && healthData.length === 0) {
     return (
       <div className="provider-health-meter">
         <h4 className="health-title">{t('providerHealthTitle')}</h4>
-        <div
-          className="field-error"
-          style={{
-            padding: '10px 12px',
-            background: 'rgba(var(--gf-coral-rgb), 0.08)',
-            border: '1px solid rgba(var(--gf-coral-rgb), 0.25)',
-            borderRadius: '8px',
-          }}
-        >
-          {error}
-        </div>
+        <p className="health-empty">No calls recorded yet. Generate an email to start tracking.</p>
       </div>
     );
   }
@@ -474,7 +468,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
     setGmailClientIdError(null);
 
     if (nextClientId && !GMAIL_CLIENT_ID_PATTERN.test(nextClientId)) {
-      setGmailClientIdError('Enter a valid Google OAuth Client ID.');
+      setGmailClientIdError('Enter a valid Google OAuth client ID.');
       return;
     }
 
@@ -500,7 +494,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
         <div className="setting-item">
           <div className="setting-info">
             <label htmlFor="preferred-email-service" className="fs-15-fw-600">
-              Preferred Email Service
+              Preferred email service
             </label>
             <p>Choose the default service for generating temporary emails</p>
           </div>
@@ -523,7 +517,9 @@ export const EmailTab: React.FC<EmailTabProps> = ({
             <option value="getnada">GetNada / Inboxes.com (4 Domains)</option>
             <option value="tempmailplus">Tempmail.plus / Mailto.plus (3 Domains)</option>
             <option value="evilmail">EvilMail.pro (evilmail.dev)</option>
-            <option value="guerrilla">Guerrilla Mail (10 Stealth Domains: sharklasers, grr.la)</option>
+            <option value="guerrilla">
+              Guerrilla Mail (10 Stealth Domains: sharklasers, grr.la)
+            </option>
             <option value="maildrop">Maildrop.cc (GraphQL)</option>
             <option value="tempmail">1secmail.com (9 Domains)</option>
             <option value="tempmaillol">TempMail.lol (API v2)</option>
@@ -540,7 +536,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
             <div className="setting-item vertical-group">
               <div className="setting-info w-full">
                 <label htmlFor="custom-domain" className="fs-13">
-                  Custom Email Domain
+                  Custom email domain
                 </label>
               </div>
               <input
@@ -562,7 +558,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
             <div className="setting-item vertical-group">
               <div className="setting-info w-full">
                 <label htmlFor="custom-domain-url" className="fs-13">
-                  API Endpoint (Cloudflare Worker)
+                  API endpoint (Cloudflare Worker)
                 </label>
               </div>
               <input
@@ -586,7 +582,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
             <div className="setting-item vertical-group">
               <div className="setting-info w-full">
                 <label htmlFor="custom-domain-key" className="fs-13">
-                  API Key / Secret
+                  API key
                   <span className="security-note security-note-tab">
                     Stored in memory only (cleared on extension reload)
                   </span>
@@ -595,7 +591,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
               <input
                 id="custom-domain-key"
                 type="password"
-                placeholder="Secret Token"
+                placeholder="Secret token"
                 value={sessionSecrets.customDomainKey}
                 onChange={(e) => onSessionSecretChange('customDomainKey', e.target.value)}
                 autoComplete="off"
@@ -613,7 +609,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
         <div className="setting-item vertical-group">
           <div className="setting-info w-full">
             <label htmlFor="gmail-client-id" className="fs-15-fw-600">
-              OAuth Client ID
+              OAuth client ID
             </label>
             <p>Required for Gmail API sign-in.</p>
           </div>
@@ -690,7 +686,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
       >
         <div className="setting-item">
           <div className="setting-info">
-            <label id="auto-check-label">Auto-check Inbox</label>
+            <label id="auto-check-label">Auto-check inbox</label>
             <p>Automatically check for new emails in the background</p>
           </div>
           <ToggleSwitch
@@ -703,7 +699,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
 
         <div className="setting-item">
           <div className="setting-info">
-            <label htmlFor="check-interval">Check Interval</label>
+            <label htmlFor="check-interval">Check interval</label>
             <p>How often to check for new emails (seconds)</p>
           </div>
           <input
@@ -755,7 +751,7 @@ const FALLBACK_COMMANDS: CommandInfo[] = [
 const COMMAND_ORDER = ['_execute_action', 'generate-email', 'generate-password', 'auto-fill'];
 
 const COMMAND_LABEL_KEYS: Record<string, string> = {
-  '_execute_action': 'shortcutOpenGhostFill',
+  _execute_action: 'shortcutOpenGhostFill',
   'generate-email': 'shortcutGenerateEmail',
   'generate-password': 'shortcutGeneratePassword',
   'auto-fill': 'shortcutAutofillForm',
@@ -1044,7 +1040,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
       <SettingsSection id="developer" title={t('developerSection')} icon={<Terminal size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
-            <label id="debug-mode-label">Debug Mode</label>
+            <label id="debug-mode-label">Debug mode</label>
             <p>Enable verbose console logging for troubleshooting</p>
           </div>
           <ToggleSwitch
@@ -1056,9 +1052,11 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
         </div>
       </SettingsSection>
 
-      <SettingsSection id="llm" title="AI Assistance" icon={<Terminal size={18} />}>
-        <div className="setting-item">
-          <div className="setting-info">
+      <SettingsSection id="llm" title="AI assistance" icon={<Sparkles size={18} />}>
+        {/* vertical-group so the key field is as wide as the Gmail client ID
+            field: both are long opaque secrets, and a 220px box truncates them. */}
+        <div className="setting-item vertical-group">
+          <div className="setting-info w-full">
             <label htmlFor="llm-api-key">LLM API key</label>
             <p>Used to power AI-assisted replies. Stored only in this browser session.</p>
           </div>
@@ -1077,7 +1075,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
       <SettingsSection id="backup" title={t('backupRestoreSection')} icon={<Save size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
-            <label>Export Settings</label>
+            <label>Export settings</label>
             <p>Download your current settings as a JSON file</p>
           </div>
           <Button size="sm" type="button" onClick={handleExport}>
@@ -1087,7 +1085,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
 
         <div className="setting-item">
           <div className="setting-info">
-            <label htmlFor="import-settings">Import Settings</label>
+            <label htmlFor="import-settings">Import settings</label>
             <p>Load settings from a previously exported JSON file</p>
           </div>
           <button
@@ -1119,13 +1117,13 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
 
       <SettingsSection
         id="danger-zone"
-        title="Danger Zone"
+        title="Danger zone"
         icon={<AlertTriangle size={18} />}
         variant="danger"
       >
         <div className="setting-item">
           <div className="setting-info">
-            <label>Reset Settings</label>
+            <label>Reset settings</label>
             <p>Restore all settings to their defaults</p>
           </div>
           <Button
@@ -1140,7 +1138,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
 
         <div className="setting-item">
           <div className="setting-info">
-            <label>Clear All Data</label>
+            <label>Clear all data</label>
             <p>Delete all emails, passwords, and history</p>
           </div>
           <Button
@@ -1207,7 +1205,7 @@ export const AboutTab: React.FC = () => {
             rel="noopener noreferrer"
             className="about-link"
           >
-            GitHub Repository
+            Source on GitHub
           </a>
           <a
             href="https://github.com/Xshya19/ghostfill-extension/issues"
@@ -1215,7 +1213,7 @@ export const AboutTab: React.FC = () => {
             rel="noopener noreferrer"
             className="about-link"
           >
-            🐛 Report a Bug
+            Report an issue
           </a>
           <a
             href="https://github.com/Xshya19/ghostfill-extension/blob/main/LICENSE"
@@ -1223,12 +1221,12 @@ export const AboutTab: React.FC = () => {
             rel="noopener noreferrer"
             className="about-link"
           >
-            📄 MIT License
+            MIT license
           </a>
         </div>
       </SettingsSection>
 
-      <SettingsSection id="storage-usage" title="Storage Usage" icon={<Database size={18} />}>
+      <SettingsSection id="storage-usage" title="Storage usage" icon={<Database size={18} />}>
         {storageUsage ? (
           <div className="storage-monitor">
             <div className="storage-bar-wrapper">
@@ -1252,7 +1250,7 @@ export const AboutTab: React.FC = () => {
         )}
       </SettingsSection>
 
-      <SettingsSection id="tech-stack" title="Built With" icon={<Code size={18} />}>
+      <SettingsSection id="tech-stack" title="Built with" icon={<Code size={18} />}>
         <div className="tech-pill-container" role="list" aria-label="Technologies used">
           <span className="tech-pill tech-pill-primary" role="listitem">
             React

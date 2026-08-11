@@ -10,16 +10,27 @@ import {
   isGmailSetupResponse,
   formatGmailSetupError,
   type GmailSignInResult,
-} from '../../services/gmailConnectionService';
-import { storageService } from '../../services/storageService';
-import { itemRise, springTab, stagger } from '../../shared/ui/motion';
-import { EmailAccount, Email, type ExtractOTPResponse, type ReadEmailResponse } from '../../types';
-import { TIMING, copyToClipboard, openSafeUrl } from '../../utils/core';
-import { safeSendMessage } from '../../utils/messaging';
-import { useOTPExtractor } from '../hooks/useOTPExtractor';
-import { useStorageSubscription } from '../hooks/useStorageSubscription';
-import { useAppStore } from '../store/useAppStore';
-import { AccountCard, ConfirmModal, EmailViewerModal, InboxList, QuickActions, type DisplayedEmail } from './SharedComponents';
+} from '../../../services/gmailConnectionService';
+import { storageService } from '../../../services/storageService';
+import { itemRise, springTab, stagger } from '../../ui';
+import {
+  EmailAccount,
+  Email,
+  type ExtractOTPResponse,
+  type ReadEmailResponse,
+} from '../../../types';
+import { TIMING, copyToClipboard, openSafeUrl } from '../../../utils/core';
+import { safeSendMessage } from '../../../utils/messaging';
+import { useOTPExtractor, useStorageSubscription } from '../hooks';
+import { useAppStore } from '../store';
+import {
+  AccountCard,
+  ConfirmModal,
+  EmailViewerModal,
+  InboxList,
+  QuickActions,
+  type DisplayedEmail,
+} from './SharedComponents';
 
 // i18n helper
 const t = (key: string): string => {
@@ -39,7 +50,11 @@ const toSafeStr = (v: unknown): string => {
     if (typeof obj.html === 'string') return obj.html;
     if (typeof obj.body === 'string') return obj.body;
     if (typeof obj.content === 'string') return obj.content;
-    try { return JSON.stringify(v); } catch { return String(v); }
+    try {
+      return JSON.stringify(v);
+    } catch {
+      return String(v);
+    }
   }
   return String(v);
 };
@@ -491,8 +506,6 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     })();
   }, [onGenerate, onToast]);
 
-
-
   const handleGeneratePassword = useCallback(() => {
     void generatePassword();
   }, [generatePassword]);
@@ -842,7 +855,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
         >
           <span className="hub-email-selector-label">
             <Mail size={13} strokeWidth={2.5} />
-            <span>Temp Mail</span>
+            <span>Temp mail</span>
           </span>
         </button>
         <button
@@ -907,7 +920,8 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
         )}
       </motion.div>
 
-      {(preferredEmailType === 'disposable' || (preferredEmailType === 'gmail' && gmailConnected)) && (
+      {(preferredEmailType === 'disposable' ||
+        (preferredEmailType === 'gmail' && gmailConnected)) && (
         <InboxList
           preferredEmailType={preferredEmailType}
           gmailConnected={gmailConnected}
@@ -927,7 +941,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
 
       <ConfirmModal
         isOpen={showConfirmEmail}
-        title="Generate New Email?"
+        title="Generate a new email?"
         message="Your current temporary email and its inbox will be permanently lost. This action cannot be undone."
         confirmText="Generate"
         cancelText="Cancel"

@@ -20,8 +20,6 @@
     "baseUrl": "./src",
     "paths": {
       "@/*": ["./*"],
-      "@popup/*": ["popup/*"],
-      "@components/*": ["popup/components/*"],
       "@content/*": ["content/*"],
       "@services/*": ["services/*"],
       "@utils/*": ["utils/*"],

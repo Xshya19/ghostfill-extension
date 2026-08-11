@@ -1,14 +1,11 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Copy, RefreshCw, Inbox, Clock, ChevronRight, ChevronLeft, Zap } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Button } from '../../shared/ui';
-import { interactiveSurface, springSoft } from '../../shared/ui/motion';
-import { EmailAccount, Email } from '../../types';
-import { formatRelativeTime, copyToClipboard, openSafeUrl } from '../../utils/core';
-import { safeSendMessage } from '../../utils/messaging';
-import { useOTPExtractor } from '../hooks/useOTPExtractor';
-
-import { useStorageSubscription } from '../hooks/useStorageSubscription';
+import { Button, interactiveSurface, springSoft } from '../../ui';
+import { EmailAccount, Email } from '../../../types';
+import { formatRelativeTime, copyToClipboard, openSafeUrl } from '../../../utils/core';
+import { safeSendMessage } from '../../../utils/messaging';
+import { useOTPExtractor, useStorageSubscription } from '../hooks';
 import { ConfirmModal, EmailAvatar } from './SharedComponents';
 
 // i18n helper
@@ -412,7 +409,7 @@ const EmailGenerator: React.FC<Props> = ({
                                   onClick={(e) => void openActivationLink(e, activationLink)}
                                   {...interactiveSurface}
                                 >
-                                  <span className="otp-badge-code">Verify Link</span>
+                                  <span className="otp-badge-code">Verify link</span>
                                   <ChevronRight size={12} />
                                 </motion.button>
                               )}
@@ -523,11 +520,7 @@ const EmailGenerator: React.FC<Props> = ({
                         className="inbox-empty-container"
                       >
                         <div className="inbox-empty-icon">
-                          <Inbox
-                            size={32}
-                            strokeWidth={1.5}
-                            className="email-empty-icon"
-                          />
+                          <Inbox size={32} strokeWidth={1.5} className="email-empty-icon" />
                         </div>
                         <div className="inbox-empty-title">Inbox is Empty</div>
                         <div className="inbox-empty-desc">
@@ -562,7 +555,7 @@ const EmailGenerator: React.FC<Props> = ({
 
       <ConfirmModal
         isOpen={showConfirm}
-        title="Generate New Email?"
+        title="Generate a new email?"
         message="Your current temporary email and its inbox will be permanently lost. This action cannot be undone."
         confirmText="Generate"
         cancelText="Cancel"

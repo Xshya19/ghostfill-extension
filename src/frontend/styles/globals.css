@@ -1,0 +1,1192 @@
+/* ============================================================================
+   GHOSTFILL — GLOBAL STYLES & SHARED PRIMITIVES  ·  "SPECTRE"
+   ----------------------------------------------------------------------------
+   Merged entrypoint combining Design Tokens + Shared UI Primitives.
+   ========================================================================== */
+
+/* ============================================================================
+   SECTION 1: DESIGN TOKENS — single source of truth
+   "SPECTRE"  ·  graphite privacy console
+   ========================================================================== */
+
+/* ── @font-face ───────────────────────────────────────────────────────────
+   Space Grotesk  → UI + display (variable, 300–900)
+   IBM Plex Mono  → monospace data (regular + bold)
+   NOTE: variable fonts load through the standard `format('woff2')` hint in
+   all evergreen engines today. The old `format('woff2-variations')` hint is
+   non-standard; any engine that doesn't recognize it skips the whole `src`
+   with no fallback, which could silently fail the entire @font-face. */
+@font-face {
+   font-family: 'Space Grotesk';
+   font-style: normal;
+   font-weight: 300 900;
+   font-display: swap;
+   src: url('../../assets/fonts/SpaceGrotesk-Variable.woff2') format('woff2');
+}
+
+@font-face {
+   font-family: 'IBM Plex Mono';
+   font-style: normal;
+   font-weight: 400;
+   font-display: swap;
+   src: url('../../assets/fonts/IBMPlexMono-Regular.woff2') format('woff2');
+}
+
+@font-face {
+   font-family: 'IBM Plex Mono';
+   font-style: normal;
+   font-weight: 700;
+   font-display: swap;
+   src: url('../../assets/fonts/IBMPlexMono-Bold.woff2') format('woff2');
+}
+
+:root {
+   /* ── Canvas (Spectre light — cool paper) ─────────────────────────────── */
+   --gf-paper: #eef0f4;
+   --gf-paper-2: #f5f7fb;
+   --gf-bg: #eef0f4;
+   --gf-bg-rgb: 238, 240, 244;
+   --gf-surface: #ffffff;
+   --gf-surface-rgb: 255, 255, 255;
+   --gf-surface-2: #f5f7fb;
+   --gf-sunken: #e8ebf1;
+   --gf-sunken-rgb: 232, 235, 241;
+   --gf-card: #ffffff;
+   --gf-card-rgb: 255, 255, 255;
+   --gf-card-elevated: #ffffff;
+
+   /* ── Ink (cool near-black) ───────────────────────────────────────────── */
+   --gf-ink: #11151d;
+   --gf-ink-rgb: 17, 21, 29;
+   --gf-ink-soft: #4b5566;
+   --gf-ink-soft-rgb: 75, 85, 102;
+   --gf-ink-dim: #5e6573;
+   /* ~5.9:1 on white — AA-safe even for normal text */
+   --gf-line: rgba(16, 20, 30, 0.09);
+   --gf-line-2: rgba(16, 20, 30, 0.14);
+   --gf-hi: rgba(255, 255, 255, 0.9);
+   /* machined top-edge highlight */
+
+   /* FIX: these were separate hardcoded literals that happened to match the
+     canonical token — now true aliases, so they can never silently drift. */
+   --gf-cream: var(--gf-ink);
+   /* legacy alias: primary text */
+   --gf-text-muted: var(--gf-ink-soft);
+   --gf-text-dim: var(--gf-ink-dim);
+
+   /* ── Accent — the ONE hero color (Iris) ──────────────────────────────── */
+   --gf-primary: #5b54e8;
+   --gf-primary-rgb: 91, 84, 232;
+   --gf-primary-deep: #463cd0;
+   --gf-primary-soft: #e9e8fd;
+   --gf-on-primary: #ffffff;
+   /* general-purpose text/icon color on accent-tinted surfaces */
+
+   /* ── Status hues — safe as TEXT/ICON/BORDER on the page canvas ───────── */
+   --gf-mint: #0a9d72;
+   --gf-mint-rgb: 10, 157, 114;
+   --gf-mint-text: #06734f;
+   /* AA text on white/soft bg (~4.7:1); bright mint reserved for dots/fills/dark-canvas text */
+   --gf-amber: #c98209;
+   --gf-amber-rgb: 201, 130, 9;
+   --gf-amber-text: #9a6206;
+   /* AA text on white/soft bg (~4.8:1); bright amber reserved for dots/fills/dark-canvas text */
+   --gf-coral: #e0463f;
+   --gf-coral-rgb: 224, 70, 63;
+   /* FIX: mint/amber both had an AA-safe "-text" darkened counterpart for use
+     on their own *-soft pastel background — coral/danger had none, so every
+     danger badge in primitives.css was rendering at ~3.2:1 (fails AA 4.5:1).
+     #a8353a clears 4.5:1 against BOTH white and --gf-danger-soft. */
+   --gf-coral-text: #a8353a;
+   --gf-violet: #6a52d8;
+   /* rare tertiary accents only */
+   --gf-violet-rgb: 106, 82, 216;
+
+   /* Semantic aliases (generic naming) — aliased, not duplicated. */
+   --gf-success: var(--gf-mint);
+   --gf-success-rgb: var(--gf-mint-rgb);
+   --gf-success-soft: #dcf3ea;
+   --gf-warning: var(--gf-amber);
+   --gf-warning-rgb: var(--gf-amber-rgb);
+   --gf-warning-soft: #fbedd2;
+   --gf-danger: var(--gf-coral);
+   --gf-danger-rgb: var(--gf-coral-rgb);
+   --gf-danger-soft: #fadddb;
+   --gf-danger-text: var(--gf-coral-text);
+
+   /* ── Solid-fill contrast pairs ─────────────────────────────────────────
+     A different job from the hue tokens above: these are what a SOLID
+     button/icon fill should use as its background, paired with a foreground
+     ink that is guaranteed >= 4.5:1 (text) / 3:1 (icon) against it.
+       - primary / danger fills are dark enough for WHITE ink in both themes.
+       - success / warning fills (mint / amber) are light-luminance hues that
+         can NEVER clear 4.5:1 with white in either theme — they need DARK
+         ink instead. (Confirmed: white-on-mint 2.97:1, white-on-amber
+         2.72:1 in light theme; both far worse in the brightened dark theme.)
+     --gf-on-fill-dark deliberately reuses each theme's own darkest neutral
+     (ink in light mode, bg in dark mode) rather than inventing a new color —
+     both happen to be near-black and both measure >5.8:1 against mint/amber. */
+   --gf-primary-fill: var(--gf-primary);
+   /* light: white text @ ~5.4:1 */
+   --gf-primary-fill-deep: var(--gf-primary-deep);
+   --gf-success-fill: var(--gf-mint);
+   --gf-warning-fill: var(--gf-amber);
+   --gf-danger-fill: #c73e43;
+   /* white text @ ~5.0:1 in both themes */
+   --gf-danger-fill-deep: #a8353a;
+   /* white text @ ~6.5:1 */
+   --gf-on-fill-light: #ffffff;
+   --gf-on-fill-dark: var(--gf-ink);
+
+   /* ── Deprecated legacy aliases (map to canonical names — do not use) ────
+     Kept so existing rules keep rendering during the rebuild; new code uses the
+     semantic names above. Removed once all consumers are migrated.            */
+   --gf-mustard: var(--gf-amber);
+   --gf-mustard-rgb: var(--gf-amber-rgb);
+   --gf-yellow: var(--gf-amber);
+   --gf-yellow-rgb: var(--gf-amber-rgb);
+   --gf-sienna: var(--gf-coral);
+   --gf-sienna-rgb: var(--gf-coral-rgb);
+   --gf-teal: var(--gf-mint);
+   --gf-teal-rgb: var(--gf-mint-rgb);
+   --gf-cyan: var(--gf-primary);
+   --gf-cyan-rgb: var(--gf-primary-rgb);
+   --gf-magenta: var(--gf-primary);
+   --gf-magenta-rgb: var(--gf-primary-rgb);
+   --gf-coral-warm: var(--gf-violet);
+   --gf-coral-warm-rgb: var(--gf-violet-rgb);
+   --gf-accent: var(--gf-primary);
+   --gf-accent-soft: var(--gf-primary-soft);
+   --gf-detail-blue: var(--gf-primary);
+   --gf-detail-pink: var(--gf-violet);
+
+   /* Raw swatch aliases (200/300/400) — folded into the Iris family so any
+     stray direct usage stays coherent. Prefer the semantic names above.       */
+   --xxx-violet-200: var(--gf-primary-soft);
+   --xxx-violet-200-rgb: 233, 232, 253;
+   --xxx-violet-300: var(--gf-primary);
+   --xxx-violet-300-rgb: var(--gf-primary-rgb);
+   --xxx-violet-400: var(--gf-primary-deep);
+   --xxx-violet-400-rgb: 70, 60, 208;
+   --xxx-pink-200: var(--gf-primary-soft);
+   --xxx-pink-200-rgb: 233, 232, 253;
+   --xxx-pink-300: var(--gf-violet);
+   --xxx-pink-300-rgb: var(--gf-violet-rgb);
+   --xxx-pink-400: var(--gf-primary-deep);
+   --xxx-pink-400-rgb: 70, 60, 208;
+   --xxx-red-200: var(--gf-danger-soft);
+   --xxx-red-200-rgb: 250, 221, 219;
+   --xxx-red-300: var(--gf-danger);
+   --xxx-red-300-rgb: var(--gf-coral-rgb);
+   --xxx-red-400: var(--gf-coral-text);
+   --xxx-red-400-rgb: 168, 53, 58;
+   --xxx-orange-200: var(--gf-warning-soft);
+   --xxx-orange-200-rgb: 251, 237, 210;
+   --xxx-orange-300: var(--gf-warning);
+   --xxx-orange-300-rgb: var(--gf-amber-rgb);
+   --xxx-orange-400: var(--gf-amber-text);
+   --xxx-orange-400-rgb: 154, 98, 6;
+   --xxx-yellow-200: var(--gf-warning-soft);
+   --xxx-yellow-200-rgb: 251, 237, 210;
+   --xxx-yellow-300: var(--gf-warning);
+   --xxx-yellow-300-rgb: var(--gf-amber-rgb);
+   --xxx-yellow-400: var(--gf-amber-text);
+   --xxx-yellow-400-rgb: 154, 98, 6;
+   --xxx-lime-200: var(--gf-success-soft);
+   --xxx-lime-200-rgb: 220, 243, 234;
+   --xxx-lime-300: var(--gf-mint);
+   --xxx-lime-300-rgb: var(--gf-mint-rgb);
+   --xxx-lime-400: var(--gf-mint-text);
+   --xxx-lime-400-rgb: 6, 115, 79;
+   --xxx-cyan-200: var(--gf-primary-soft);
+   --xxx-cyan-200-rgb: 233, 232, 253;
+   --xxx-cyan-300: var(--gf-primary);
+   --xxx-cyan-300-rgb: var(--gf-primary-rgb);
+   --xxx-cyan-400: var(--gf-primary-deep);
+   --xxx-cyan-400-rgb: 70, 60, 208;
+
+   /* ── Gradients (accent hero only; semantic used sparingly) ───────────── */
+   --gf-grad-cobalt: linear-gradient(180deg, var(--gf-primary-fill), var(--gf-primary-fill-deep));
+   --gf-grad-cobalt-hover: linear-gradient(180deg, #6a64ee, var(--gf-primary));
+   --gf-grad-mint: linear-gradient(180deg, #12b886, var(--gf-mint));
+   --gf-grad-coral: linear-gradient(180deg, var(--gf-danger-fill), var(--gf-danger-fill-deep));
+   --gf-grad-amber: linear-gradient(180deg, #e0950f, var(--gf-amber));
+   --gf-grad-violet: linear-gradient(180deg, #7d66e6, var(--gf-violet));
+   --gf-grad-accent-bar: linear-gradient(90deg, var(--gf-primary), var(--gf-primary-deep));
+   --gf-grad-rainbow-stripe: linear-gradient(90deg, var(--gf-primary), var(--gf-primary-deep));
+   --xxx-spectrum: linear-gradient(90deg, var(--gf-primary), var(--gf-primary-deep));
+   --xxx-spectrum-tight: linear-gradient(90deg, var(--gf-primary), var(--gf-primary-deep));
+
+   /* ── Typography ──────────────────────────────────────────────────────── */
+   --font-display: 'Space Grotesk', 'Hanken Grotesk', system-ui, sans-serif;
+   --font-ui: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+   --font-mono: 'IBM Plex Mono', 'Space Mono', 'JetBrains Mono', ui-monospace, monospace;
+   --gf-font-display: var(--font-display);
+   --gf-font-body: var(--font-ui);
+   --gf-font-mono: var(--font-mono);
+   --gf-font-sign: var(--font-display);
+
+   /* ── Spacing scale ───────────────────────────────────────────────────── */
+   --space-1: 4px;
+   --space-2: 8px;
+   --space-3: 12px;
+   --space-4: 16px;
+   --space-5: 20px;
+   --space-6: 24px;
+   --space-7: 28px;
+   --space-8: 32px;
+   --space-9: 36px;
+   --space-10: 40px;
+
+   /* ── Radii ───────────────────────────────────────────────────────────── */
+   --radius-xs: 6px;
+   --radius-sm: 9px;
+   --radius-md: 12px;
+   --radius-lg: 16px;
+   --radius-xl: 20px;
+   --radius-pill: 999px;
+   --radius-button: 12px;
+   --gf-radius: 14px;
+   --gf-radius-sm: 9px;
+   --gf-radius-lg: 16px;
+   --gf-radius-pill: 999px;
+   --nb-radius: 14px;
+   --nb-radius-sm: 9px;
+
+   /* ── Borders (hairline) ──────────────────────────────────────────────── */
+   --gf-border: 1px solid var(--gf-line);
+   --gf-border-strong: 1px solid var(--gf-line-2);
+   --gf-border-thin: 1px solid var(--gf-line);
+   --nb-border: 1px solid var(--gf-line);
+
+   /* ── Soft layered shadows (light) ────────────────────────────────────── */
+   --shadow-hard-sm: 0 1px 2px rgba(20, 28, 46, 0.06), 0 4px 10px -2px rgba(20, 28, 46, 0.10);
+   --shadow-hard: 0 2px 6px rgba(20, 28, 46, 0.08), 0 14px 30px -10px rgba(20, 28, 46, 0.16);
+   --shadow-hard-lg: 0 8px 20px -6px rgba(20, 28, 46, 0.14), 0 30px 60px -16px rgba(20, 28, 46, 0.22);
+   --shadow-floating: 0 8px 20px -6px rgba(20, 28, 46, 0.14), 0 30px 60px -16px rgba(20, 28, 46, 0.22);
+   --shadow-card: 0 1px 2px rgba(20, 28, 46, 0.06), 0 4px 10px -2px rgba(20, 28, 46, 0.10);
+   --gf-shadow-xs: 0 1px 2px rgba(20, 28, 46, 0.06);
+   --gf-shadow-sm: 0 1px 2px rgba(20, 28, 46, 0.06), 0 4px 10px -2px rgba(20, 28, 46, 0.10);
+   --gf-shadow: 0 2px 6px rgba(20, 28, 46, 0.08), 0 14px 30px -10px rgba(20, 28, 46, 0.16);
+   --gf-shadow-lg: 0 8px 20px -6px rgba(20, 28, 46, 0.14), 0 30px 60px -16px rgba(20, 28, 46, 0.22);
+   --nb-shadow: 0 2px 6px rgba(20, 28, 46, 0.08), 0 14px 30px -10px rgba(20, 28, 46, 0.16);
+   --nb-shadow-sm: 0 1px 2px rgba(20, 28, 46, 0.06), 0 4px 10px -2px rgba(20, 28, 46, 0.10);
+   --nb-shadow-lg: 0 8px 20px -6px rgba(20, 28, 46, 0.14), 0 30px 60px -16px rgba(20, 28, 46, 0.22);
+
+   /* ── Focus ring (accent) ─────────────────────────────────────────────── */
+   --gf-ring-width: 2px;
+   --gf-ring-radius: 9px;
+   --gf-ring-offset: 2px;
+
+   /* ── Scrim (modal / overlay backdrop) ───────────────────────────────── */
+   --gf-scrim: rgba(8, 10, 14, 0.55);
+
+   /* ── Texture ─────────────────────────────────────────────────────────── */
+   --gf-pattern-dot: radial-gradient(rgba(var(--gf-ink-rgb), 0.04) 1px, transparent 1px);
+
+   /* ── Motion ──────────────────────────────────────────────────────────── */
+   --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+   --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+   --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+   --gf-ease: cubic-bezier(0.22, 1, 0.36, 1);
+   --gf-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+   --gf-ease-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+   --gf-dur-fast: 140ms;
+   --gf-dur: 220ms;
+   --gf-dur-slow: 380ms;
+   --gf-transition: all var(--gf-dur) var(--gf-ease);
+
+   /* ── Z-index ─────────────────────────────────────────────────────────── */
+   --z-base: 0;
+   --z-content: 1;
+   --z-header: 100;
+   --z-overlay: 200;
+   --z-toast: 300;
+   --z-skip: 400;
+
+   /* ── Letter-spacing ──────────────────────────────────────────────────── */
+   --tracking-ultra-wide: 0.14em;
+   --tracking-wide: 0.06em;
+   --tracking-normal: 0;
+}
+
+[data-theme='dark'] {
+   /* Canvas (Spectre — graphite, faint cool cast, NOT blue-black) */
+   --gf-paper: #101216;
+   --gf-paper-2: #181b21;
+   --gf-bg: #101216;
+   --gf-bg-rgb: 16, 18, 22;
+   --gf-surface: #181b21;
+   --gf-surface-rgb: 24, 27, 33;
+   --gf-surface-2: #1f232b;
+   --gf-sunken: #0c0e12;
+   --gf-sunken-rgb: 12, 14, 18;
+   --gf-card: #181b21;
+   --gf-card-rgb: 24, 27, 33;
+   --gf-card-elevated: #1f232b;
+
+   /* Ink (cool light) */
+   --gf-ink: #eef1f6;
+   --gf-ink-rgb: 238, 241, 246;
+   --gf-ink-soft: #aab2c0;
+   --gf-ink-soft-rgb: 170, 178, 192;
+   --gf-ink-dim: #7d8492;
+   --gf-line: rgba(255, 255, 255, 0.08);
+   --gf-line-2: rgba(255, 255, 255, 0.13);
+   --gf-hi: rgba(255, 255, 255, 0.06);
+   --gf-cream: var(--gf-ink);
+   --gf-text-muted: var(--gf-ink-soft);
+   --gf-text-dim: var(--gf-ink-dim);
+
+   --gf-primary: #7c83ff;
+   --gf-primary-rgb: 124, 131, 255;
+   --gf-primary-deep: #5a61f0;
+   --gf-primary-soft: #1c2040;
+   --gf-on-primary: #ffffff;
+
+   --gf-mint: #3fe0c5;
+   --gf-mint-rgb: 63, 224, 197;
+   --gf-mint-text: var(--gf-mint);
+   --gf-amber: #f4b740;
+   --gf-amber-rgb: 244, 183, 64;
+   --gf-amber-text: var(--gf-amber);
+   --gf-coral: #ff6b6b;
+   --gf-coral-rgb: 255, 107, 107;
+   --gf-coral-text: var(--gf-coral);
+   --gf-violet: #a78bff;
+   --gf-violet-rgb: 167, 139, 255;
+
+   --gf-success: var(--gf-mint);
+   --gf-success-rgb: var(--gf-mint-rgb);
+   --gf-success-soft: #0f2a25;
+   --gf-warning: var(--gf-amber);
+   --gf-warning-rgb: var(--gf-amber-rgb);
+   --gf-warning-soft: #2a2110;
+   --gf-danger: var(--gf-coral);
+   --gf-danger-rgb: var(--gf-coral-rgb);
+   --gf-danger-soft: #2c1414;
+   --gf-danger-text: var(--gf-coral-text);
+
+   --gf-primary-fill: var(--gf-primary-deep);
+   --gf-primary-fill-deep: #464cd6;
+   --gf-on-fill-dark: var(--gf-bg);
+
+   --shadow-hard-sm: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.4);
+   --shadow-hard: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.42), 0 16px 36px -12px rgba(0, 0, 0, 0.6);
+   --shadow-hard-lg: 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 26px -8px rgba(0, 0, 0, 0.5), 0 40px 80px -20px rgba(0, 0, 0, 0.72);
+   --shadow-floating: 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 26px -8px rgba(0, 0, 0, 0.5), 0 40px 80px -20px rgba(0, 0, 0, 0.72);
+   --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.4);
+   --gf-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+   --gf-shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.4);
+   --gf-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.42), 0 16px 36px -12px rgba(0, 0, 0, 0.6);
+   --gf-shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 26px -8px rgba(0, 0, 0, 0.5), 0 40px 80px -20px rgba(0, 0, 0, 0.72);
+   --nb-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.42), 0 16px 36px -12px rgba(0, 0, 0, 0.6);
+   --nb-shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.4);
+   --nb-shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 26px -8px rgba(0, 0, 0, 0.5), 0 40px 80px -20px rgba(0, 0, 0, 0.72);
+
+   --gf-scrim: rgba(4, 5, 7, 0.7);
+   --gf-grad-cobalt-hover: linear-gradient(180deg, #8b91ff, #6a70f5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+   :root,
+   [data-theme='dark'] {
+      --gf-dur-fast: 0ms;
+      --gf-dur: 0ms;
+      --gf-dur-slow: 0ms;
+   }
+}
+
+/* ============================================================================
+   SECTION 2: SHARED UI PRIMITIVES  ·  "SPECTRE"
+   ========================================================================== */
+
+/* ── Motion primitives ───────────────────────────────────────────────────── */
+@keyframes gf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.gf-spin {
+  animation: gf-spin 0.8s linear infinite;
+  display: inline-flex;
+}
+
+.gf-spinner {
+  display: inline-flex;
+  color: var(--gf-primary);
+  animation: gf-spin 0.8s linear infinite;
+}
+
+@keyframes gf-shimmer {
+  0% {
+    background-position: -320px 0;
+  }
+
+  100% {
+    background-position: 320px 0;
+  }
+}
+
+.gf-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(90deg,
+      var(--gf-sunken) 0%,
+      rgba(var(--gf-primary-rgb), 0.08) 50%,
+      var(--gf-sunken) 100%);
+  background-size: 320px 100%;
+  border-radius: var(--radius-sm);
+  animation: gf-shimmer 1.6s linear infinite;
+}
+
+@keyframes gf-fade-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes gf-toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gf-spin,
+  .gf-spinner {
+    animation-duration: 1.6s;
+  }
+}
+
+/* ── Focus ring (shared, accessible) ─────────────────────────────────────── */
+.gf-btn:focus-visible,
+.gf-icon-btn:focus-visible,
+.gf-input:focus-visible,
+.gf-toggle:focus-visible,
+.gf-tab:focus-visible,
+.gf-badge:focus-visible {
+  outline: var(--gf-ring-width) solid var(--gf-primary);
+  outline-offset: var(--gf-ring-offset);
+}
+
+/* ── BUTTON ────────────────────────────────────────────────────────────── */
+.gf-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 10px 16px;
+  font-family: var(--gf-font-display);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: var(--gf-ink);
+  background: var(--gf-surface);
+  border: var(--gf-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--gf-shadow-sm), inset 0 1px 0 var(--gf-hi);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  text-decoration: none;
+  transition:
+    transform var(--gf-dur-fast) var(--gf-ease),
+    box-shadow var(--gf-dur-fast) var(--gf-ease),
+    border-color var(--gf-dur-fast) var(--gf-ease),
+    background-color var(--gf-dur-fast) var(--gf-ease);
+}
+
+.gf-btn:hover {
+  transform: translateY(-1px);
+  border-color: var(--gf-line-2);
+  box-shadow: var(--gf-shadow), inset 0 1px 0 var(--gf-hi);
+}
+
+.gf-btn:active {
+  transform: translateY(0);
+  box-shadow: var(--gf-shadow-sm), inset 0 1px 0 var(--gf-hi);
+}
+
+.gf-btn:disabled,
+.gf-btn[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: var(--gf-shadow-sm);
+}
+
+.gf-btn>svg {
+  flex-shrink: 0;
+}
+
+.gf-btn--primary {
+  color: var(--gf-on-fill-light);
+  background: var(--gf-grad-cobalt);
+  border-color: transparent;
+  box-shadow:
+    0 8px 22px -10px rgba(var(--gf-primary-rgb), 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.gf-btn--primary:hover {
+  filter: brightness(1.06);
+  border-color: transparent;
+  box-shadow:
+    0 12px 28px -10px rgba(var(--gf-primary-rgb), 0.9),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.gf-btn--danger {
+  color: var(--gf-on-fill-light);
+  background: var(--gf-grad-coral);
+  border-color: transparent;
+  box-shadow:
+    0 8px 22px -10px rgba(var(--gf-coral-rgb), 0.7),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.gf-btn--danger:hover {
+  filter: brightness(1.06);
+}
+
+.gf-btn--success {
+  color: var(--gf-on-fill-dark);
+  background: linear-gradient(180deg, #12b886, var(--gf-success-fill));
+  border-color: transparent;
+  box-shadow:
+    0 8px 22px -10px rgba(var(--gf-mint-rgb), 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.gf-btn--success:hover {
+  filter: brightness(1.05);
+}
+
+.gf-btn--warning {
+  color: var(--gf-on-fill-dark);
+  background: linear-gradient(180deg, #e0950f, var(--gf-warning-fill));
+  border-color: transparent;
+  box-shadow:
+    0 8px 22px -10px rgba(var(--gf-amber-rgb), 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.gf-btn--warning:hover {
+  filter: brightness(1.05);
+}
+
+.gf-btn--soft {
+  background: var(--gf-primary-soft);
+  color: var(--gf-primary);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.gf-btn--soft-success {
+  background: var(--gf-success-soft);
+  color: var(--gf-mint-text);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.gf-btn--soft-warning {
+  background: var(--gf-warning-soft);
+  color: var(--gf-amber-text);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.gf-btn--soft-danger {
+  background: var(--gf-danger-soft);
+  color: var(--gf-coral-text);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.gf-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.gf-btn--ghost:hover {
+  background: rgba(var(--gf-ink-rgb), 0.06);
+  box-shadow: none;
+}
+
+.gf-btn--sm {
+  padding: 7px 12px;
+  font-size: 12.5px;
+}
+
+.gf-btn--lg {
+  padding: 13px 22px;
+  font-size: 15px;
+}
+
+.gf-btn--block {
+  display: flex;
+  width: 100%;
+}
+
+/* ── ICON BUTTON ───────────────────────────────────────────────────────── */
+.gf-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  color: var(--gf-ink-soft);
+  background: var(--gf-surface);
+  border: var(--gf-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--gf-shadow-xs), inset 0 1px 0 var(--gf-hi);
+  cursor: pointer;
+  transition:
+    transform var(--gf-dur-fast) var(--gf-ease),
+    box-shadow var(--gf-dur-fast) var(--gf-ease),
+    border-color var(--gf-dur-fast) var(--gf-ease),
+    background-color var(--gf-dur-fast) var(--gf-ease),
+    color var(--gf-dur-fast) var(--gf-ease);
+}
+
+.gf-icon-btn:hover {
+  color: var(--gf-ink);
+  border-color: var(--gf-line-2);
+  transform: translateY(-1px);
+  box-shadow: var(--gf-shadow-sm), inset 0 1px 0 var(--gf-hi);
+}
+
+.gf-icon-btn:active {
+  transform: translateY(0);
+}
+
+.gf-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.gf-icon-btn--sm {
+  width: 30px;
+  height: 30px;
+}
+
+.gf-icon-btn--primary {
+  background: var(--gf-primary-fill);
+  color: var(--gf-on-fill-light);
+  border-color: transparent;
+}
+
+.gf-icon-btn--danger {
+  background: var(--gf-danger-fill);
+  color: var(--gf-on-fill-light);
+  border-color: transparent;
+}
+
+.gf-icon-btn--success {
+  background: var(--gf-success-fill);
+  color: var(--gf-on-fill-dark);
+  border-color: transparent;
+}
+
+.gf-icon-btn--warning {
+  background: var(--gf-warning-fill);
+  color: var(--gf-on-fill-dark);
+  border-color: transparent;
+}
+
+.gf-icon-btn--plain {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.gf-icon-btn--plain:hover {
+  transform: none;
+  box-shadow: none;
+  background: rgba(var(--gf-ink-rgb), 0.07);
+}
+
+.gf-icon-btn--plain:active {
+  transform: none;
+  box-shadow: none;
+  background: rgba(var(--gf-ink-rgb), 0.12);
+}
+
+/* ── CARD ──────────────────────────────────────────────────────────────── */
+.gf-card {
+  background: var(--gf-surface);
+  border: var(--gf-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--gf-shadow), inset 0 1px 0 var(--gf-hi);
+  padding: var(--space-4);
+}
+
+.gf-card--flush {
+  padding: 0;
+}
+
+.gf-card--sunken {
+  background: var(--gf-sunken);
+  box-shadow: none;
+}
+
+.gf-card--interactive {
+  cursor: pointer;
+  transition:
+    transform var(--gf-dur-fast) var(--gf-ease),
+    border-color var(--gf-dur-fast) var(--gf-ease),
+    box-shadow var(--gf-dur-fast) var(--gf-ease);
+}
+
+.gf-card--interactive:hover {
+  transform: translateY(-1px);
+  border-color: var(--gf-line-2);
+  box-shadow: var(--gf-shadow-lg), inset 0 1px 0 var(--gf-hi);
+}
+
+.gf-card--interactive:active {
+  transform: translateY(0);
+}
+
+.gf-card--interactive:focus-visible {
+  outline: var(--gf-ring-width) solid var(--gf-primary);
+  outline-offset: var(--gf-ring-offset);
+}
+
+.gf-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.gf-card__title {
+  font-family: var(--gf-font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--gf-ink);
+}
+
+/* ── INPUT / FIELD ─────────────────────────────────────────────────────── */
+.gf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gf-field__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--gf-font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gf-ink-dim);
+}
+
+.gf-field__hint {
+  font-size: 11.5px;
+  color: var(--gf-text-muted);
+}
+
+.gf-field__error {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--gf-danger);
+}
+
+.gf-input {
+  width: 100%;
+  padding: 10px 12px;
+  font-family: var(--gf-font-body);
+  font-size: 14px;
+  color: var(--gf-ink);
+  background: var(--gf-sunken);
+  border: var(--gf-border);
+  border-radius: var(--radius-md);
+  transition:
+    border-color var(--gf-dur-fast) var(--gf-ease),
+    box-shadow var(--gf-dur-fast) var(--gf-ease),
+    background-color var(--gf-dur-fast) var(--gf-ease);
+}
+
+.gf-input::placeholder {
+  color: var(--gf-ink-dim);
+}
+
+.gf-input:focus {
+  outline: none;
+  background: var(--gf-surface);
+  border-color: var(--gf-primary);
+  box-shadow: 0 0 0 3px rgba(var(--gf-primary-rgb), 0.18);
+}
+
+.gf-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.gf-input--mono {
+  font-family: var(--gf-font-mono);
+  letter-spacing: 0.01em;
+}
+
+.gf-input--invalid,
+.gf-input[aria-invalid='true'] {
+  border-color: var(--gf-danger);
+}
+
+.gf-input--invalid:focus,
+.gf-input[aria-invalid='true']:focus {
+  box-shadow: 0 0 0 3px rgba(var(--gf-coral-rgb), 0.2);
+}
+
+.gf-input-group {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.gf-input-group__icon {
+  position: absolute;
+  left: 11px;
+  display: inline-flex;
+  color: var(--gf-ink-dim);
+  pointer-events: none;
+}
+
+.gf-input-group .gf-input {
+  padding-left: 34px;
+}
+
+/* ── TOGGLE (switch) ───────────────────────────────────────────────────── */
+.gf-toggle {
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 26px;
+  padding: 0;
+  background: var(--gf-sunken);
+  border: var(--gf-border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background-color var(--gf-dur) var(--gf-ease);
+}
+
+.gf-toggle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  background: #fff;
+  border-radius: 50%;
+  transform: translateY(-50%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: transform var(--gf-dur) var(--gf-ease-back);
+}
+
+.gf-toggle[aria-checked='true'],
+.gf-toggle.is-on {
+  background: var(--gf-primary-fill);
+  border-color: transparent;
+}
+
+.gf-toggle[aria-checked='true']::after,
+.gf-toggle.is-on::after {
+  transform: translate(18px, -50%);
+}
+
+.gf-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── BADGE ─────────────────────────────────────────────────────────────── */
+.gf-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  font-family: var(--gf-font-display);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--gf-ink-soft);
+  background: var(--gf-sunken);
+  border: var(--gf-border);
+  border-radius: var(--radius-pill);
+}
+
+.gf-badge--mono {
+  font-family: var(--gf-font-mono);
+  letter-spacing: 0.03em;
+}
+
+.gf-badge--accent {
+  background: rgba(var(--gf-primary-rgb), 0.12);
+  border-color: rgba(var(--gf-primary-rgb), 0.22);
+  color: var(--gf-primary);
+}
+
+.gf-badge--success {
+  background: var(--gf-success-soft);
+  border-color: rgba(var(--gf-mint-rgb), 0.3);
+  color: var(--gf-mint-text);
+}
+
+.gf-badge--warning {
+  background: var(--gf-warning-soft);
+  border-color: rgba(var(--gf-amber-rgb), 0.3);
+  color: var(--gf-amber-text);
+}
+
+.gf-badge--danger {
+  background: var(--gf-danger-soft);
+  border-color: rgba(var(--gf-coral-rgb), 0.3);
+  color: var(--gf-coral-text);
+}
+
+.gf-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.gf-dot--success {
+  background: var(--gf-success);
+  box-shadow: 0 0 0 3px rgba(var(--gf-mint-rgb), 0.18);
+}
+
+.gf-dot--warning {
+  background: var(--gf-warning);
+  box-shadow: 0 0 0 3px rgba(var(--gf-amber-rgb), 0.18);
+}
+
+.gf-dot--danger {
+  background: var(--gf-danger);
+  box-shadow: 0 0 0 3px rgba(var(--gf-coral-rgb), 0.18);
+}
+
+.gf-dot--accent {
+  background: var(--gf-primary);
+  box-shadow: 0 0 0 3px rgba(var(--gf-primary-rgb), 0.18);
+}
+
+/* ── TABS (segmented control) ──────────────────────────────────────────── */
+.gf-tabs {
+  position: relative;
+  display: inline-flex;
+  gap: 3px;
+  padding: 4px;
+  background: var(--gf-sunken);
+  border: var(--gf-border);
+  border-radius: var(--radius-md);
+}
+
+.gf-tab {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-family: var(--gf-font-display);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gf-ink-dim);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color var(--gf-dur-fast) var(--gf-ease);
+}
+
+.gf-tab[aria-selected='true'],
+.gf-tab.is-active {
+  color: var(--gf-ink);
+}
+
+.gf-tab:disabled,
+.gf-tab[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.gf-tab--chip[aria-selected='true'],
+.gf-tab--chip.is-active {
+  background: var(--gf-surface);
+  border: var(--gf-border);
+  box-shadow: var(--gf-shadow-sm), inset 0 1px 0 var(--gf-hi);
+}
+
+.gf-tabs__indicator {
+  position: absolute;
+  z-index: 0;
+  inset: 4px auto 4px 4px;
+  background: var(--gf-surface);
+  border: var(--gf-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--gf-shadow-sm), inset 0 1px 0 var(--gf-hi);
+  will-change: transform;
+}
+
+/* ── MODAL ─────────────────────────────────────────────────────────────── */
+.gf-modal__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: var(--gf-scrim);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+.gf-modal {
+  width: 100%;
+  max-width: 340px;
+  padding: var(--space-5);
+  background: var(--gf-surface);
+  border: var(--gf-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--gf-shadow-lg);
+  animation: gf-fade-scale-in var(--gf-dur) var(--gf-ease) both;
+}
+
+.gf-modal__title {
+  font-family: var(--gf-font-display);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--gf-ink);
+  margin: 0 0 var(--space-2);
+}
+
+.gf-modal__desc {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--gf-text-muted);
+  margin: 0 0 var(--space-5);
+}
+
+.gf-modal__actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+}
+
+.confirm-modal-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* ── TOAST ─────────────────────────────────────────────────────────────── */
+.gf-toast {
+  position: fixed;
+  bottom: var(--space-5);
+  left: 50%;
+  z-index: var(--z-toast);
+  transform: translateX(-50%);
+  max-width: calc(100% - var(--space-8));
+  padding: 10px 16px;
+  font-family: var(--gf-font-display);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gf-ink);
+  background: var(--gf-card-elevated);
+  border: var(--gf-border-strong);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--gf-toast-shadow, var(--gf-shadow-lg));
+  animation: gf-toast-in var(--gf-dur) var(--gf-ease-back) both;
+}
+
+/* ── EMPTY STATE / SPINNER / DIVIDER ──────────────────────────────────── */
+.gf-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+  color: var(--gf-text-muted);
+  background: var(--gf-sunken);
+  border: 1px dashed var(--gf-line-2);
+  border-radius: var(--radius-md);
+}
+
+.gf-empty__icon {
+  width: 36px;
+  height: 36px;
+  padding: 7px;
+  display: grid;
+  place-items: center;
+  background: rgba(var(--gf-primary-rgb), 0.10);
+  border: 1px solid rgba(var(--gf-primary-rgb), 0.22);
+  border-radius: var(--radius-sm);
+  color: var(--gf-primary);
+  margin-bottom: var(--space-1);
+}
+
+.gf-empty__title {
+  font-family: var(--gf-font-display);
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--gf-ink);
+}
+
+.gf-empty__desc {
+  font-size: 12px;
+  color: var(--gf-text-muted);
+}
+
+.gf-divider {
+  height: 1px;
+  border: none;
+  background: var(--gf-line);
+}
+
+/* ── Utilities ───────────────────────────────────────────────────────────── */
+.gf-mono {
+  font-family: var(--gf-font-mono);
+}
+
+.gf-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gf-break {
+  word-break: break-all;
+}

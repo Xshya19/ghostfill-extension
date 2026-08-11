@@ -1,20 +1,67 @@
 import { motion, AnimatePresence, useReducedMotion, type HTMLMotionProps } from 'framer-motion';
-import { Mail, RefreshCw, Copy, Check, LogOut, Shield, Clock, AlertCircle, Inbox, LogIn, ChevronRight, Link2, X, Settings, HelpCircle, Sparkles, Zap, ShieldCheck, Hash, Info, Lock, Eye, EyeOff } from 'lucide-react';
-import React, { useEffect, useId, useRef, useState, useCallback, useMemo, Component, ErrorInfo, ReactNode } from 'react';
+import {
+  Mail,
+  RefreshCw,
+  Copy,
+  Check,
+  LogOut,
+  Shield,
+  Clock,
+  AlertCircle,
+  Inbox,
+  LogIn,
+  ChevronRight,
+  Link2,
+  X,
+  Settings,
+  HelpCircle,
+  Sparkles,
+  Zap,
+  ShieldCheck,
+  Hash,
+  Info,
+  Lock,
+  Eye,
+  EyeOff,
+} from 'lucide-react';
+import React, {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useCallback,
+  useMemo,
+  Component,
+  ErrorInfo,
+  ReactNode,
+} from 'react';
 
-import gmailLogo from '../../assets/icons/gmail_icon.png';
-import ghostLogoImg from '../../assets/logo.png';
+import gmailLogo from '../../../assets/icons/gmail_icon.png';
+import ghostLogoImg from '../../../assets/logo.png';
 
-import { Button, IconButton } from '../../shared/ui';
-import { springSoft, interactiveSurface, tweenIn, tweenOut, tweenTimerBar, springDigit } from '../../shared/ui/motion';
-import { EmailAccount, Email, PasswordOptions, GeneratedPassword, DEFAULT_PASSWORD_OPTIONS } from '../../types';
-import { type GmailMessage, type AliasHistoryItem } from '../../types/email.types';
-import { type GeneratePasswordResponse } from '../../types/message.types';
-import { LastOTP } from '../../types/storage.types';
-import { TIMING, formatRelativeTime, copyToClipboard, contentToString } from '../../utils/core';
-import { createLogger } from '../../utils/logger';
-import { safeSendMessage, safeSendTabMessage } from '../../utils/messaging';
-import { useStorageSubscription } from '../hooks/useStorageSubscription';
+import { Button, IconButton } from '../../ui';
+import {
+  springSoft,
+  interactiveSurface,
+  tweenIn,
+  tweenOut,
+  tweenTimerBar,
+  springDigit,
+} from '../../ui';
+import {
+  EmailAccount,
+  Email,
+  PasswordOptions,
+  GeneratedPassword,
+  DEFAULT_PASSWORD_OPTIONS,
+} from '../../../types';
+import { type GmailMessage, type AliasHistoryItem } from '../../../types/email.types';
+import { type GeneratePasswordResponse } from '../../../types/message.types';
+import { LastOTP } from '../../../types/storage.types';
+import { TIMING, formatRelativeTime, copyToClipboard, contentToString } from '../../../utils/core';
+import { createLogger } from '../../../utils/logger';
+import { safeSendMessage, safeSendTabMessage } from '../../../utils/messaging';
+import { useStorageSubscription } from '../hooks';
 
 // i18n helper
 const t = (key: string): string => {
@@ -62,11 +109,7 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
   if (preferredEmailType === 'gmail' && !gmailConnected) {
     return (
       <div className="hub-gmail-not-connected">
-        <img
-          src={gmailLogo}
-          alt="Gmail Logo"
-          className="hub-gmail-logo-img"
-        />
+        <img src={gmailLogo} alt="Gmail Logo" className="hub-gmail-logo-img" />
         <span className="hub-gmail-title">Connect Gmail</span>
         <span className="hub-gmail-desc">
           Create site-specific aliases and sync OTP emails from your Gmail account.
@@ -95,7 +138,17 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
     <div className="identity-row">
       <div className="identity-icon">
         {preferredEmailType === 'gmail' && gmailProfile?.picture ? (
-          <img src={gmailProfile.picture} alt="" style={{ width: 20, height: 20, borderRadius: '50%', display: 'block', objectFit: 'cover' }} />
+          <img
+            src={gmailProfile.picture}
+            alt=""
+            style={{
+              width: 20,
+              height: 20,
+              borderRadius: '50%',
+              display: 'block',
+              objectFit: 'cover',
+            }}
+          />
         ) : (
           <Mail size={18} className="icon-premium" />
         )}
@@ -116,7 +169,11 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
           className={`identity-value hub-val hub-val-email break-all ${
             preferredEmailType === 'disposable' && !emailAccount ? 'shimmer' : ''
           }`}
-          title={preferredEmailType === 'gmail' ? activeEmailAddress || 'Connect Gmail' : emailAccount?.fullEmail || ''}
+          title={
+            preferredEmailType === 'gmail'
+              ? activeEmailAddress || 'Connect Gmail'
+              : emailAccount?.fullEmail || ''
+          }
         >
           {preferredEmailType === 'gmail'
             ? activeEmailAddress || 'Connect Gmail'
@@ -127,9 +184,7 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
           gmailBase &&
           activeEmailAddress &&
           activeEmailAddress !== gmailBase && (
-            <div className="identity-original-email">
-              Original: {gmailBase}
-            </div>
+            <div className="identity-original-email">Original: {gmailBase}</div>
           )}
       </div>
       <div className="identity-actions">
@@ -142,7 +197,7 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
         >
           {emailCopied ? <Check size={14} /> : <Copy size={14} />}
         </motion.button>
-        {(preferredEmailType === 'disposable') && (
+        {preferredEmailType === 'disposable' && (
           <motion.button
             className={`action-icon ${isGeneratingEmail ? 'action-loading' : ''} ${emailCooldown ? 'opacity-50' : ''}`}
             onClick={onGenerateEmail}
@@ -192,14 +247,11 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ history, onClear, onToast }) =>
     <div className="inbox-header-row">
       <div className="inbox-title-group">
         <Shield size={14} />
-        <span>Alias Tracker</span>
+        <span>Alias tracker</span>
         {history.length > 0 && <span className="inbox-count">{history.length}</span>}
       </div>
       {history.length > 0 && (
-        <button
-          className="alias-clear-history-btn"
-          onClick={onClear}
-        >
+        <button className="alias-clear-history-btn" onClick={onClear}>
           Clear All
         </button>
       )}
@@ -213,18 +265,13 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ history, onClear, onToast }) =>
         </div>
       ) : (
         history.map((item) => (
-          <div
-            key={`${item.website}-${item.alias}-${item.createdAt}`}
-            className="inbox-item"
-          >
+          <div key={`${item.website}-${item.alias}-${item.createdAt}`} className="inbox-item">
             <EmailAvatar from={item.website || '?'} className="inbox-item-avatar" />
             <div className="inbox-item-content">
               <div className="inbox-item-header">
                 <span className="inbox-item-from truncate">
                   {item.website || 'general'}
-                  <span className="alias-history-type-badge">
-                    {item.type}
-                  </span>
+                  <span className="alias-history-type-badge">{item.type}</span>
                 </span>
                 <span className="inbox-item-date">
                   <Clock size={10} />
@@ -252,8 +299,6 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ history, onClear, onToast }) =>
     </div>
   </div>
 );
-
-
 
 export { HistoryTab as AliasHistory };
 
@@ -290,10 +335,8 @@ const InboxTab: React.FC<InboxTabProps> = ({
       <div className="inbox-header-row">
         <div className="inbox-title-group">
           <Inbox size={14} />
-          <span>Recent Inbox</span>
-          {!isManual && inbox.length > 0 && (
-            <span className="inbox-count">{inbox.length}</span>
-          )}
+          <span>Recent inbox</span>
+          {!isManual && inbox.length > 0 && <span className="inbox-count">{inbox.length}</span>}
         </div>
         {!isManual && (
           <button
@@ -308,17 +351,30 @@ const InboxTab: React.FC<InboxTabProps> = ({
       </div>
 
       {isManual && (
-        <div className="hub-empty-state" style={{ flexDirection: 'column', textAlign: 'center', marginTop: 8 }}>
+        <div
+          className="hub-empty-state"
+          style={{ flexDirection: 'column', textAlign: 'center', marginTop: 8 }}
+        >
           <Inbox size={22} color="var(--gf-primary)" />
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            <span style={{ fontWeight: 600, color: 'var(--gf-ink)', fontSize: '12px' }}>Inbox needs Google sign-in</span>
+            <span style={{ fontWeight: 600, color: 'var(--gf-ink)', fontSize: '12px' }}>
+              Inbox needs Google sign-in
+            </span>
             <span style={{ fontSize: '10px' }}>Manual connection generates aliases only.</span>
           </div>
           <button
             onClick={onSignIn}
             disabled={signingIn}
             className="gf-btn gf-btn--primary"
-            style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '6px', marginTop: 8 }}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '8px',
+              fontSize: '11px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              marginTop: 8,
+            }}
           >
             {signingIn ? <RefreshCw size={13} className="spin" /> : <LogIn size={13} />}
             <span>{signingIn ? 'Connecting...' : 'Use Google sign-in'}</span>
@@ -327,7 +383,11 @@ const InboxTab: React.FC<InboxTabProps> = ({
       )}
 
       {error && (
-        <div className="hub-empty-state hub-empty-state--action" role="alert" style={{ marginTop: 8 }}>
+        <div
+          className="hub-empty-state hub-empty-state--action"
+          role="alert"
+          style={{ marginTop: 8 }}
+        >
           <AlertCircle size={16} strokeWidth={1.7} color="var(--gf-coral)" />
           <span className="hub-empty-text">{error}</span>
         </div>
@@ -365,20 +425,19 @@ const InboxTab: React.FC<InboxTabProps> = ({
               aria-label={`Open email from ${msg.fromName || msg.fromEmail}: ${msg.subject}`}
               aria-busy={openingMessageId === msg.id}
             >
-              <EmailAvatar from={msg.fromName || msg.fromEmail || '?'} className="inbox-item-avatar" />
+              <EmailAvatar
+                from={msg.fromName || msg.fromEmail || '?'}
+                className="inbox-item-avatar"
+              />
               <div className="inbox-item-content">
                 <div className="inbox-item-header">
-                  <span className="inbox-item-from truncate">
-                    {msg.fromName || msg.fromEmail}
-                  </span>
+                  <span className="inbox-item-from truncate">{msg.fromName || msg.fromEmail}</span>
                   <span className="inbox-item-date">
                     <Clock size={10} />
                     {msg.dateFormatted || formatRelativeTime(new Date(msg.date).getTime())}
                   </span>
                 </div>
-                <div className="inbox-item-subject truncate">
-                  {msg.subject || '(No subject)'}
-                </div>
+                <div className="inbox-item-subject truncate">{msg.subject || '(No subject)'}</div>
               </div>
               {openingMessageId === msg.id ? (
                 <RefreshCw size={14} className="inbox-item-open-chevron spin" aria-hidden="true" />
@@ -393,84 +452,82 @@ const InboxTab: React.FC<InboxTabProps> = ({
   );
 };
 
-
-
 export { InboxTab as AliasInbox };
 
 // --- AppSkeleton.tsx ---
-const AppSkeleton = React.forwardRef<HTMLDivElement, HTMLMotionProps<'div'>>(({ className, ...props }, ref) => {
-  return (
-    <motion.div
-      ref={ref}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className={`app-skeleton app-view-container ${className || ''}`}
-      aria-hidden="true"
-      {...props}
-    >
-      <div className="header skeleton-header-gap">
-        <div className="header-left">
-          <div className="skeleton-pulse app-skeleton-circle" />
-          <div className="header-title-container skeleton-title-gap">
-            <div className="skeleton-pulse app-skeleton-pill skeleton-w-80" />
-            <div className="skeleton-pulse app-skeleton-pill skeleton-w-40" />
+const AppSkeleton = React.forwardRef<HTMLDivElement, HTMLMotionProps<'div'>>(
+  ({ className, ...props }, ref) => {
+    return (
+      <motion.div
+        ref={ref}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className={`app-skeleton app-view-container ${className || ''}`}
+        aria-hidden="true"
+        {...props}
+      >
+        <div className="header skeleton-header-gap">
+          <div className="header-left">
+            <div className="skeleton-pulse app-skeleton-circle" />
+            <div className="header-title-container skeleton-title-gap">
+              <div className="skeleton-pulse app-skeleton-pill skeleton-w-80" />
+              <div className="skeleton-pulse app-skeleton-pill skeleton-w-40" />
+            </div>
+          </div>
+          <div className="header-actions">
+            <div className="skeleton-pulse app-skeleton-circle skeleton-icon" />
           </div>
         </div>
-        <div className="header-actions">
-          <div className="skeleton-pulse app-skeleton-circle skeleton-icon" />
-        </div>
-      </div>
 
-      <div className="ghost-dashboard skeleton-dashboard-pad">
-        <div className="memphis-card identity-card">
-          <div className="identity-row">
-            <div className="skeleton-pulse app-skeleton-circle skeleton-icon-lg" />
-            <div className="identity-content skeleton-content-gap">
+        <div className="ghost-dashboard skeleton-dashboard-pad">
+          <div className="memphis-card identity-card">
+            <div className="identity-row">
+              <div className="skeleton-pulse app-skeleton-circle skeleton-icon-lg" />
+              <div className="identity-content skeleton-content-gap">
+                <div className="skeleton-pulse app-skeleton-pill skeleton-w-60" />
+                <div className="skeleton-pulse app-skeleton-pill skeleton-w-150" />
+              </div>
+              <div className="identity-actions skeleton-actions-gap">
+                <div className="skeleton-pulse app-skeleton-circle skeleton-icon-sm" />
+                <div className="skeleton-pulse app-skeleton-circle skeleton-icon-sm" />
+              </div>
+            </div>
+            <div className="identity-row">
+              <div className="skeleton-pulse app-skeleton-circle skeleton-icon-lg" />
+              <div className="identity-content skeleton-content-gap">
+                <div className="skeleton-pulse app-skeleton-pill skeleton-w-80" />
+                <div className="skeleton-pulse app-skeleton-pill skeleton-w-120" />
+              </div>
+              <div className="identity-actions skeleton-actions-gap">
+                <div className="skeleton-pulse app-skeleton-circle skeleton-icon-sm" />
+                <div className="skeleton-pulse app-skeleton-circle skeleton-icon-sm" />
+              </div>
+            </div>
+          </div>
+
+          <div className="inbox-section skeleton-inbox-flex">
+            <div className="inbox-header-row">
+              <div className="inbox-title-group skeleton-title-gap">
+                <div className="skeleton-pulse app-skeleton-circle skeleton-icon-md" />
+                <div className="skeleton-pulse app-skeleton-pill skeleton-w-100" />
+              </div>
               <div className="skeleton-pulse app-skeleton-pill skeleton-w-60" />
-              <div className="skeleton-pulse app-skeleton-pill skeleton-w-150" />
             </div>
-            <div className="identity-actions skeleton-actions-gap">
-              <div className="skeleton-pulse app-skeleton-circle skeleton-icon-sm" />
-              <div className="skeleton-pulse app-skeleton-circle skeleton-icon-sm" />
-            </div>
-          </div>
-          <div className="identity-row">
-            <div className="skeleton-pulse app-skeleton-circle skeleton-icon-lg" />
-            <div className="identity-content skeleton-content-gap">
-              <div className="skeleton-pulse app-skeleton-pill skeleton-w-80" />
-              <div className="skeleton-pulse app-skeleton-pill skeleton-w-120" />
-            </div>
-            <div className="identity-actions skeleton-actions-gap">
-              <div className="skeleton-pulse app-skeleton-circle skeleton-icon-sm" />
-              <div className="skeleton-pulse app-skeleton-circle skeleton-icon-sm" />
+            <div className="inbox-list skeleton-mt-10">
+              <div className="shimmer hub-empty-state">
+                <div className="skeleton-pulse app-skeleton-circle skeleton-icon-md" />
+                <div className="skeleton-pulse app-skeleton-pill skeleton-w-80" />
+              </div>
             </div>
           </div>
         </div>
-
-        <div className="inbox-section skeleton-inbox-flex">
-          <div className="inbox-header-row">
-            <div className="inbox-title-group skeleton-title-gap">
-              <div className="skeleton-pulse app-skeleton-circle skeleton-icon-md" />
-              <div className="skeleton-pulse app-skeleton-pill skeleton-w-100" />
-            </div>
-            <div className="skeleton-pulse app-skeleton-pill skeleton-w-60" />
-          </div>
-          <div className="inbox-list skeleton-mt-10">
-            <div className="shimmer hub-empty-state">
-              <div className="skeleton-pulse app-skeleton-circle skeleton-icon-md" />
-              <div className="skeleton-pulse app-skeleton-pill skeleton-w-80" />
-            </div>
-          </div>
-        </div>
-      </div>
-    </motion.div>
-  );
-});
+      </motion.div>
+    );
+  }
+);
 
 AppSkeleton.displayName = 'AppSkeleton';
-
-
 
 export { AppSkeleton as AppSkeleton };
 
@@ -823,30 +880,55 @@ export interface EmailViewerModalProps {
 const MAX_BODY_CHARS = 18_000;
 
 const stripHtml = (html: string): string => {
-  if (!html) {return '';}
+  if (!html) {
+    return '';
+  }
   try {
     const doc = new DOMParser().parseFromString(html, 'text/html');
-    
+
     // Security: Nuke dangerous elements completely
-    doc.querySelectorAll('script, style, noscript, iframe, object, embed, link, meta')
-       .forEach(el => el.remove());
-    
+    doc
+      .querySelectorAll('script, style, noscript, iframe, object, embed, link, meta')
+      .forEach((el) => el.remove());
+
     // UX: Convert block elements to newlines for readability
-    const blockTags = new Set(['P', 'DIV', 'BR', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'TR', 'BLOCKQUOTE']);
+    const blockTags = new Set([
+      'P',
+      'DIV',
+      'BR',
+      'LI',
+      'H1',
+      'H2',
+      'H3',
+      'H4',
+      'H5',
+      'H6',
+      'TR',
+      'BLOCKQUOTE',
+    ]);
     let text = '';
-    const walker = document.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+    const walker = document.createTreeWalker(
+      doc.body,
+      NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT
+    );
     let node;
-    
+
     while ((node = walker.nextNode())) {
       if (node.nodeType === Node.TEXT_NODE) {
         text += node.textContent;
       } else if (node.nodeType === Node.ELEMENT_NODE) {
-        if (blockTags.has(node.nodeName)) {text += '\n';}
-        else if (node.nodeName === 'TD') {text += '\t';}
+        if (blockTags.has(node.nodeName)) {
+          text += '\n';
+        } else if (node.nodeName === 'TD') {
+          text += '\t';
+        }
       }
     }
-    
-    return text.replace(/&nbsp;/gi, ' ').replace(/\n{3,}/g, '\n\n').trim();
+
+    return text
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   } catch {
     // Fallback to regex stripping if DOMParser fails or isn't available
     return html
@@ -942,9 +1024,7 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
 
   const sender = message?.fromName || message?.from || '';
   const dateText = message ? formatDate(message) : '';
-  const rawHtml = contentToString(
-    message?.htmlBody ?? message?.body ?? message?.snippet ?? ''
-  );
+  const rawHtml = contentToString(message?.htmlBody ?? message?.body ?? message?.snippet ?? '');
   const bodyText = rawHtml ? stripHtml(rawHtml.slice(0, MAX_BODY_CHARS)) : '';
   const isLong = bodyText.length > 1200;
   const snippet = contentToString(message?.snippet ?? '');
@@ -1135,7 +1215,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
             <div className="error-icon-box">
               <span className="error-icon-large">⚠️</span>
             </div>
-            <h2 className="error-title">System Error</h2>
+            <h2 className="error-title">System error</h2>
             <p className="error-message-box">
               The popup interface failed to render. Reset the interface to reload GhostFill.
             </p>
@@ -1156,8 +1236,6 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
     return this.props.children;
   }
 }
-
-
 
 export { ErrorBoundary as ErrorBoundary };
 
@@ -1215,7 +1293,6 @@ const GhostLogo: React.FC<GhostLogoProps> = React.memo(({ size = 24, className =
 
 GhostLogo.displayName = 'GhostLogo';
 
-
 export { GhostLogo as GhostLogo };
 
 // --- Header.tsx ---
@@ -1236,7 +1313,7 @@ const Header: React.FC<HeaderProps> = React.memo(({ onOpenSettings, onOpenHelp }
         </div>
       </div>
       <div className="header-actions">
-        <IconButton label="Open help center" title="Help Center" onClick={onOpenHelp}>
+        <IconButton label="Open help center" title="Help center" onClick={onOpenHelp}>
           <HelpCircle size={20} strokeWidth={2} />
         </IconButton>
         <IconButton label="Open settings" title="Settings" onClick={onOpenSettings}>
@@ -1247,8 +1324,6 @@ const Header: React.FC<HeaderProps> = React.memo(({ onOpenSettings, onOpenHelp }
   );
 });
 Header.displayName = 'Header';
-
-
 
 export { Header as Header };
 
@@ -1344,8 +1419,6 @@ const HelpModal: React.FC<HelpModalProps> = ({ open, onClose }) => {
   );
 };
 
-
-
 export { HelpModal as HelpModal };
 
 // --- InboxList.tsx ---
@@ -1388,36 +1461,39 @@ const InboxListComponent: React.FC<InboxListProps> = ({
   onOpenEmail,
   onFetchGmailInbox,
 }) => {
-  const handleEmailInteraction = useCallback((
-    e: React.MouseEvent | React.KeyboardEvent,
-    emailItem: DisplayedEmail
-  ) => {
-    const target = e.target as HTMLElement;
-    if (target.closest('button')) {
-      return;
-    }
-    if (e.type === 'keydown' && (e as React.KeyboardEvent).key !== 'Enter' && (e as React.KeyboardEvent).key !== ' ') {
-      return;
-    }
-    e.preventDefault();
-    if (onOpenEmail) {
-      onOpenEmail(emailItem);
-    } else if (preferredEmailType === 'gmail') {
-      onNavigate('aliases', { aliasTab: 'inbox' });
-    } else {
-      onNavigate('email');
-    }
-  }, [onOpenEmail, onNavigate, preferredEmailType]);
+  const handleEmailInteraction = useCallback(
+    (e: React.MouseEvent | React.KeyboardEvent, emailItem: DisplayedEmail) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('button')) {
+        return;
+      }
+      if (
+        e.type === 'keydown' &&
+        (e as React.KeyboardEvent).key !== 'Enter' &&
+        (e as React.KeyboardEvent).key !== ' '
+      ) {
+        return;
+      }
+      e.preventDefault();
+      if (onOpenEmail) {
+        onOpenEmail(emailItem);
+      } else if (preferredEmailType === 'gmail') {
+        onNavigate('aliases', { aliasTab: 'inbox' });
+      } else {
+        onNavigate('email');
+      }
+    },
+    [onOpenEmail, onNavigate, preferredEmailType]
+  );
 
-  const canOpenInbox =
-    (preferredEmailType !== 'gmail' && inboxCount > 0);
+  const canOpenInbox = preferredEmailType !== 'gmail' && inboxCount > 0;
 
   return (
     <motion.div className="inbox-section">
       <div className="inbox-header-row">
         <div className="inbox-title-group">
-          <Inbox size={22} />
-          <span>Inbox</span>
+          <Inbox size={15} className="inbox-title-icon" />
+          <span className="inbox-title-text">Inbox</span>
           {inboxCount > 0 && <span className="inbox-count">{inboxCount}</span>}
         </div>
         {canOpenInbox && (
@@ -1537,11 +1613,7 @@ const InboxListComponent: React.FC<InboxListProps> = ({
                       </div>
                     )}
                   </div>
-                  <ChevronRight
-                    size={14}
-                    className="inbox-item-open-chevron"
-                    aria-hidden="true"
-                  />
+                  <ChevronRight size={14} className="inbox-item-open-chevron" aria-hidden="true" />
                 </motion.div>
               );
             })}
@@ -1652,8 +1724,6 @@ const Onboarding: React.FC<OnboardingProps> = ({ onDismiss, version }) => {
     </motion.div>
   );
 };
-
-
 
 export { Onboarding as Onboarding };
 
@@ -1936,8 +2006,6 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
 };
 
 OTPDisplay.displayName = 'OTPDisplay';
-
-
 
 export { OTPDisplay as OTPDisplay };
 
@@ -2252,8 +2320,6 @@ const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({ onToast, currentP
   );
 };
 
-
-
 export { PasswordGenerator as PasswordGenerator };
 
 // --- QuickActions.tsx ---
@@ -2330,4 +2396,3 @@ const QuickActionsComponent: React.FC<QuickActionsProps> = ({
 
 export const QuickActions = React.memo(QuickActionsComponent);
 QuickActions.displayName = 'QuickActions';
-

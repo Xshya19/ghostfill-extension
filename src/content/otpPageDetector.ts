@@ -22,7 +22,7 @@
 // │               Notify background → start fast OTP polling        │
 // │               Listen for AUTO_FILL_OTP → fill → feedback        │
 // └──────────────────────────────────────────────────────────────────┘
-import { generateHostTokens } from '../shared/tokens';
+import { generateHostTokens } from '../shared/theme';
 import { PageAnalyzer } from '../intelligence/pageAnalyzer';
 import { ExtensionMessage } from '../types';
 import { getRandomString } from '../utils/encryption';
@@ -32,7 +32,7 @@ import { setHTML } from '../utils/sanitization.core';
 import { AutoFiller } from './autoFiller';
 import { FormDetector } from './formDetector';
 import { pageStatus } from './ui/pageStatus';
-import { safeGetComputedStyle } from './ui/safeStyles';
+import { safeGetComputedStyle } from '../shared/safeStyles';
 
 const log = createLogger('OTPDetector');
 
