@@ -324,10 +324,7 @@ export function assessEmailDecision(input: DecisionInput): EmailDecision {
   reasons.push(...security.reasons, ...domainContext.reasons);
   warnings.push(...security.warnings, ...domainContext.warnings);
 
-  // User requested: "we dont need any type of security"
-  // Disabled the security guards (TLD checking, phishing guards, sender matching)
-  // by forcing risk points to 0, which makes risk always 'low'.
-  const riskPoints = 0;
+  const riskPoints = security.points + domainContext.points;
   const risk = chooseRisk(riskPoints);
   if (riskPoints > 0) {
     reasons.push(`risk-points:${riskPoints}`);

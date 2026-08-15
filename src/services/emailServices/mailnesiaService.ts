@@ -1,5 +1,5 @@
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout } from '../../utils/core';
+import { fetchWithTimeout, contentToString } from '../../utils/core';
 import { getRandomInt } from '../../utils/encryption';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
@@ -89,29 +89,61 @@ export class MailnesiaService {
 
       return items.map((msg: any) => {
         const msgDate = msg.pubDate ? new Date(msg.pubDate).getTime() : Date.now();
+        const safeBody = contentToString(msg.description);
         return {
-          id: msg.id,
-          threadId: msg.id,
-          snippet: msg.title || 'No snippet',
-          subject: msg.title || 'No Subject',
-          from: msg.from,
-          fromEmail: msg.from,
-          fromName: msg.from,
+          id: String(msg.id),
+          from: contentToString(msg.from, 'Unknown Sender'),
+          to: fullEmail,
+          subject: contentToString(msg.title, '(No Subject)'),
           date: msgDate,
-          dateFormatted: new Date(msgDate).toISOString(),
-          isUnread: false,
-          labelIds: [],
-          attachments: [],
+          body: safeBody,
+          htmlBody: safeBody,
+          textBody: safeBody,
           read: true,
-          body: String(msg.description || ''),
-          htmlBody: String(msg.description || ''),
-          textBody: String(msg.description || ''),
+          attachments: [],
         };
       });
     } catch (error) {
       log.warn('mailnesia getMessages error', error);
       return [];
     }
+  }
+
+  async getMessage(fullEmail: string, emailId: string, signal?: AbortSignal): Promise<Email> {
+    try {
+      const [login] = fullEmail.split('@');
+      // Direct raw message fetch if available
+      const response = await fetchWithTimeout(
+        `${BASE_URL}/mailbox/${encodeURIComponent(login || '')}/${encodeURIComponent(emailId)}`,
+        { signal: signal ?? null }
+      );
+
+      if (response.ok) {
+        const html = await response.text();
+        const safeHtml = contentToString(html);
+        return {
+          id: String(emailId),
+          from: 'Unknown Sender',
+          to: fullEmail,
+          subject: '(No Subject)',
+          date: Date.now(),
+          body: safeHtml,
+          htmlBody: safeHtml,
+          textBody: safeHtml,
+          read: true,
+          attachments: [],
+        };
+      }
+    } catch (e) {
+      log.debug('Mailnesia direct message fetch failed, falling back to RSS list', e);
+    }
+
+    const messages = await this.getMessages(fullEmail, signal);
+    const found = messages.find((m) => String(m.id) === String(emailId));
+    if (!found) {
+      throw new Error(`Message ${emailId} not found in Mailnesia inbox`);
+    }
+    return { ...found, read: true };
   }
 }
 

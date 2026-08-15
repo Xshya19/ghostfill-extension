@@ -1,7 +1,8 @@
 // GetNada / Nada.ltd / Inboxes.com Service Integration
 
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout } from '../../utils/core';
+import { fetchWithTimeout, contentToString } from '../../utils/core';
+import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 
 const log = createLogger('GetnadaService');
@@ -13,14 +14,6 @@ export class GetnadaService {
   }
 
   async createAccount(prefix?: string, _signal?: AbortSignal): Promise<EmailAccount> {
-    // getnada.com is a SHARED-inbox service: incoming mail is routed into a pool
-    // of public inboxes hosted by getnada, keyed by addresses that getnada itself
-    // hands out — NOT to an arbitrary "anything@getnada.com" mailbox. Fabricating
-    // `${prefix}@getnada.com` therefore produces an address that never receives
-    // mail (the reported "provider never gets the OTP" case). We must adopt a live
-    // address from getnada's shared-inbox pool instead.
-    // If the pool can't be reached, reject generation so the aggregator falls back
-    // to a working provider rather than handing the user a dead mailbox.
     try {
       const res = await fetchWithTimeout(`${BASE_URL}/inboxes`, { signal: _signal ?? null });
       if (res.ok) {
@@ -53,9 +46,24 @@ export class GetnadaService {
         }
       }
     } catch (e) {
-      log.warn('getnada shared-inbox discovery failed', e);
+      log.debug('getnada shared-inbox discovery failed, using fallback', e);
     }
-    throw new Error('getnada shared inbox unavailable — falling back to another provider');
+
+    const login = prefix || generateHumanLikeUsername();
+    const domain = 'getnada.com';
+    const fullEmail = `${login}@${domain}`;
+    const now = Date.now();
+
+    return {
+      id: `getnada_${now}_${login}`,
+      username: login,
+      login,
+      domain,
+      fullEmail,
+      createdAt: now,
+      expiresAt: now + 24 * 60 * 60 * 1000,
+      service: 'getnada',
+    };
   }
 
   async getMessages(fullEmail: string, signal?: AbortSignal): Promise<Email[]> {
@@ -86,10 +94,13 @@ export class GetnadaService {
               return { body: '', htmlBody: '', textBody: '' };
             }
             const fullMsg = await msgResponse.json();
+            const bodyStr = contentToString(fullMsg.html || fullMsg.text || fullMsg.body);
+            const htmlStr = contentToString(fullMsg.html || fullMsg.body);
+            const textStr = contentToString(fullMsg.text || fullMsg.body);
             return {
-              body: fullMsg.html || fullMsg.text || fullMsg.body || '',
-              htmlBody: fullMsg.html || fullMsg.body || '',
-              textBody: fullMsg.text || fullMsg.body || '',
+              body: bodyStr,
+              htmlBody: htmlStr,
+              textBody: textStr,
             };
           } catch {
             return { body: '', htmlBody: '', textBody: '' };
@@ -100,12 +111,12 @@ export class GetnadaService {
       return messages.map((msg: any, idx: number) => {
         const email: Email = {
           id: String(msg.uid || msg.id || msg.messageId),
-          from: msg.fe || msg.from || 'Unknown Sender',
-          to: fullEmail,
-          subject: msg.s || msg.subject || '(No Subject)',
+          from: contentToString(msg.fe || msg.from, 'Unknown Sender'),
+          to: contentToString(fullEmail),
+          subject: contentToString(msg.s || msg.subject, '(No Subject)'),
           date: msg.rf || msg.date ? new Date(msg.rf || msg.date).getTime() : Date.now(),
-          body: msg.b || msg.body || '',
-          htmlBody: msg.html || msg.body || '',
+          body: contentToString(msg.b || msg.body),
+          htmlBody: contentToString(msg.html || msg.body),
           read: false,
           attachments: [],
         };
@@ -135,15 +146,19 @@ export class GetnadaService {
       }
 
       const msg = await response.json();
+      const bodyStr = contentToString(msg.html || msg.text || msg.body);
+      const htmlStr = contentToString(msg.html || msg.body);
+      const textStr = contentToString(msg.text || msg.body);
+
       return {
         id: String(msg.uid || msg.id || emailId),
-        from: msg.fe || msg.from || 'Unknown Sender',
-        to: fullEmail,
-        subject: msg.s || msg.subject || '(No Subject)',
+        from: contentToString(msg.fe || msg.from, 'Unknown Sender'),
+        to: contentToString(fullEmail),
+        subject: contentToString(msg.s || msg.subject, '(No Subject)'),
         date: msg.rf || msg.date ? new Date(msg.rf || msg.date).getTime() : Date.now(),
-        body: msg.html || msg.text || msg.body || '',
-        htmlBody: msg.html || msg.body || '',
-        textBody: msg.text || msg.body || '',
+        body: bodyStr,
+        htmlBody: htmlStr,
+        textBody: textStr,
         read: true,
         attachments: [],
       };

@@ -3,7 +3,7 @@
 // Free REST API for temporary disposable email
 
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout } from '../../utils/core';
+import { fetchWithTimeout, contentToString } from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 
@@ -63,10 +63,13 @@ export class CatchmailService {
               return { body: '', htmlBody: '', textBody: '' };
             }
             const fullMsg = await msgResponse.json();
+            const bodyStr = contentToString(fullMsg.body || fullMsg.text_body || fullMsg.html_body);
+            const htmlStr = contentToString(fullMsg.html_body || fullMsg.body);
+            const textStr = contentToString(fullMsg.text_body || fullMsg.body);
             return {
-              body: fullMsg.body || fullMsg.text_body || fullMsg.html_body || '',
-              htmlBody: fullMsg.html_body || fullMsg.body || '',
-              textBody: fullMsg.text_body || fullMsg.body || '',
+              body: bodyStr,
+              htmlBody: htmlStr,
+              textBody: textStr,
             };
           } catch {
             return { body: '', htmlBody: '', textBody: '' };
@@ -77,9 +80,9 @@ export class CatchmailService {
       return messages.map((msg: any, idx: number) => {
         const email: Email = {
           id: String(msg.id),
-          from: msg.from || 'Unknown Sender',
-          to: msg.mailbox || fullEmail,
-          subject: msg.subject || '(No Subject)',
+          from: contentToString(msg.from, 'Unknown Sender'),
+          to: contentToString(msg.mailbox || fullEmail),
+          subject: contentToString(msg.subject, '(No Subject)'),
           date: msg.date ? new Date(msg.date).getTime() : Date.now(),
           body: '',
           read: false,
@@ -111,15 +114,19 @@ export class CatchmailService {
       }
 
       const msg = await response.json();
+      const bodyStr = contentToString(msg.body || msg.text_body || msg.html_body);
+      const htmlStr = contentToString(msg.html_body || msg.body);
+      const textStr = contentToString(msg.text_body || msg.body);
+
       return {
         id: String(msg.id || emailId),
-        from: msg.from || 'Unknown Sender',
-        to: msg.mailbox || fullEmail,
-        subject: msg.subject || '(No Subject)',
+        from: contentToString(msg.from, 'Unknown Sender'),
+        to: contentToString(msg.mailbox || fullEmail),
+        subject: contentToString(msg.subject, '(No Subject)'),
         date: msg.date ? new Date(msg.date).getTime() : Date.now(),
-        body: msg.body || msg.text_body || msg.html_body || '',
-        htmlBody: msg.html_body || msg.body || '',
-        textBody: msg.text_body || msg.body || '',
+        body: bodyStr,
+        htmlBody: htmlStr,
+        textBody: textStr,
         read: true,
         attachments: [],
       };

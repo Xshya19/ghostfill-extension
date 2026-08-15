@@ -1031,24 +1031,35 @@ class LinkService {
    *   - Rejected because it would require a shared event bus module
    *   - Message passing is more explicit and debuggable
    */
+  private activationListeners: Array<() => void> = [];
+
+  public onActivationComplete(listener: () => void): () => void {
+    this.activationListeners.push(listener);
+    return () => {
+      this.activationListeners = this.activationListeners.filter((l) => l !== listener);
+    };
+  }
+
   private async signalPollingComplete(): Promise<void> {
+    for (const listener of this.activationListeners) {
+      try {
+        listener();
+      } catch (e) {
+        log.warn('Activation listener error', e);
+      }
+    }
+
     try {
-      // Use Chrome runtime message passing to avoid circular dependency
-      // pollingManager listens for this action and calls stopEmailPolling()
-      await chrome.runtime.sendMessage({
+      chrome.runtime.sendMessage({
         action: 'LINK_ACTIVATED',
         payload: {
           timestamp: Date.now(),
           source: 'linkService',
         },
-      });
-      log.debug('📡 Signaled polling manager (LINK_ACTIVATED)');
-    } catch (error) {
-      // Message passing failed - polling manager may be unloaded
-      // This is non-fatal; polling will continue on its normal schedule
-      log.debug('⚠️ Could not signal polling manager', {
-        error: errorMessage(error),
-      });
+      }).catch(() => {});
+      log.debug('📡 Signaled activation complete');
+    } catch {
+      // Ignored if no external extension listeners are active
     }
   }
 }

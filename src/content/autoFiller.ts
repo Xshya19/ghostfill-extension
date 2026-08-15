@@ -126,6 +126,14 @@ export class AutoFiller {
   /** The most recent OTP request received while a fill was already running. */
   private latestPendingOTP: PendingOTPRequest | null = null;
 
+  /** Content-side identity cache to deduplicate rapid GET_IDENTITY + GET_LAST_OTP calls. */
+  private static readonly IDENTITY_CACHE_TTL_MS = 500;
+  private identityCache: {
+    identity: IdentityWithCredentials | null;
+    otpCode: string | null;
+    ts: number;
+  } | null = null;
+
   private detector = new UltraDetector();
   private filler = new UniversalFiller();
   private loop = new VerificationLoop();
@@ -656,7 +664,8 @@ export class AutoFiller {
       );
       await this.delay(OTP_DISCOVERY_RETRY_DELAY_MS);
 
-      const group = OTPFieldDiscovery.discover(context);
+      const freshContext = this.getContext(true);
+      const group = OTPFieldDiscovery.discover(freshContext);
       if (group) {
         log.info(`✅ OTP field found on retry attempt ${attempt}/${OTP_DISCOVERY_RETRIES}`);
         return group;
@@ -1221,6 +1230,14 @@ export class AutoFiller {
     identity: IdentityWithCredentials | null;
     otpCode: string | null;
   }> {
+    // Short-lived cache: deduplicates rapid-fire calls within 500ms
+    if (
+      this.identityCache &&
+      Date.now() - this.identityCache.ts < AutoFiller.IDENTITY_CACHE_TTL_MS
+    ) {
+      return this.identityCache;
+    }
+
     const [idRes, otpRes] = await Promise.all([
       safeSendMessage({ action: 'GET_IDENTITY' }) as Promise<{
         success?: boolean;
@@ -1238,10 +1255,12 @@ export class AutoFiller {
       (identity as { preferredEmailType?: string }).preferredEmailType = idRes.preferredEmailType;
     }
 
-    return {
+    const result = {
       identity,
       otpCode: otpRes?.lastOTP?.code ?? null,
     };
+    this.identityCache = { ...result, ts: Date.now() };
+    return result;
   }
 
   private getValueForFieldType(

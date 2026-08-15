@@ -1,7 +1,7 @@
 // Mail.tm Service - Alternative email API with JWT auth
 
 import { EmailAccount, Email, MailTmDomain, MailTmAccount, MailTmMessage } from '../../types';
-import { API, fetchWithTimeout } from '../../utils/core';
+import { API, fetchWithTimeout, contentToString } from '../../utils/core';
 import { getRandomInt, getRandomString } from '../../utils/encryption';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
@@ -703,22 +703,25 @@ export class MailTmService {
    * Convert Mail.tm message to our Email type
    */
   private convertMessage(msg: MailTmMessage, includeBody: boolean = false): Email {
+    const rawBody = includeBody ? msg.text || msg.intro || '' : msg.intro || '';
+    const bodyStr = contentToString(rawBody);
+    const textStr = contentToString(msg.text || rawBody);
+    const htmlStr = includeBody && msg.html
+      ? contentToString(Array.isArray(msg.html) ? msg.html.join('') : msg.html)
+      : '';
+
     const result: Email = {
-      id: msg.id,
-      from: msg.from.address,
-      to: msg.to[0]?.address ?? '',
-      subject: msg.subject,
+      id: String(msg.id),
+      from: contentToString(msg.from.address, 'Unknown Sender'),
+      to: contentToString(msg.to[0]?.address ?? ''),
+      subject: contentToString(msg.subject, '(No Subject)'),
       date: new Date(msg.createdAt).getTime(),
-      body: includeBody ? msg.text || msg.intro || '' : msg.intro || '',
+      body: bodyStr,
+      htmlBody: htmlStr || bodyStr,
+      textBody: textStr,
       attachments: [],
-      read: msg.seen,
+      read: Boolean(msg.seen),
     };
-    if (includeBody && msg.html) {
-      result.htmlBody = Array.isArray(msg.html) ? msg.html.join('') : String(msg.html);
-    }
-    if (msg.text) {
-      result.textBody = msg.text;
-    }
     return result;
   }
 }

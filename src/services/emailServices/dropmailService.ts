@@ -1,6 +1,7 @@
 // Dropmail.me Service - GraphQL Integration
 
 import { EmailAccount, Email } from '../../types';
+import { fetchWithTimeout, contentToString } from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 
@@ -42,11 +43,11 @@ export class DropmailService {
 
   async createAccount(_prefix?: string, signal?: AbortSignal): Promise<EmailAccount> {
     try {
-      const response = await fetch(GRAPHQL_ENDPOINT, {
+      const response = await fetchWithTimeout(GRAPHQL_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ query: INTRODUCE_SESSION_MUTATION }),
-        ...(signal ? { signal } : {}),
+        signal: signal ?? null,
       });
 
       if (!response.ok) {
@@ -103,14 +104,14 @@ export class DropmailService {
     }
 
     try {
-      const response = await fetch(GRAPHQL_ENDPOINT, {
+      const response = await fetchWithTimeout(GRAPHQL_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({
           query: GET_SESSION_MAILS_QUERY,
           variables: { id: sessionId },
         }),
-        ...(signal ? { signal } : {}),
+        signal: signal ?? null,
       });
 
       if (!response.ok) {
@@ -120,18 +121,23 @@ export class DropmailService {
       const resJson = await response.json();
       const mails = resJson.data?.session?.mails || [];
 
-      return mails.map((m: any) => ({
-        id: String(m.id),
-        from: m.fromAddr || 'Unknown Sender',
-        to: m.toAddr || account.fullEmail,
-        subject: m.headerSubject || '(No Subject)',
-        date: m.receivedAt ? new Date(m.receivedAt).getTime() : Date.now(),
-        body: m.text || m.html || '',
-        htmlBody: m.html || m.text || '',
-        textBody: m.text || '',
-        read: false,
-        attachments: [],
-      }));
+      return mails.map((m: any) => {
+        const bodyStr = contentToString(m.text || m.html);
+        const htmlStr = contentToString(m.html || m.text);
+        const textStr = contentToString(m.text || m.html);
+        return {
+          id: String(m.id),
+          from: contentToString(m.fromAddr, 'Unknown Sender'),
+          to: contentToString(m.toAddr || account.fullEmail),
+          subject: contentToString(m.headerSubject, '(No Subject)'),
+          date: m.receivedAt ? new Date(m.receivedAt).getTime() : Date.now(),
+          body: bodyStr,
+          htmlBody: htmlStr,
+          textBody: textStr,
+          read: false,
+          attachments: [],
+        };
+      });
     } catch (error) {
       log.warn('Failed to fetch Dropmail messages', error);
       return [];

@@ -1,7 +1,7 @@
 // Mail.cx Service Integration
 
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout } from '../../utils/core';
+import { fetchWithTimeout, contentToString } from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 
@@ -59,10 +59,13 @@ export class MailCxService {
               return { body: '', htmlBody: '', textBody: '' };
             }
             const fullMsg = await msgResponse.json();
+            const bodyStr = contentToString(fullMsg.body || fullMsg.text || fullMsg.html);
+            const htmlStr = contentToString(fullMsg.html || fullMsg.body);
+            const textStr = contentToString(fullMsg.text || fullMsg.body);
             return {
-              body: fullMsg.body || fullMsg.text || fullMsg.html || '',
-              htmlBody: fullMsg.html || fullMsg.body || '',
-              textBody: fullMsg.text || fullMsg.body || '',
+              body: bodyStr,
+              htmlBody: htmlStr,
+              textBody: textStr,
             };
           } catch {
             return { body: '', htmlBody: '', textBody: '' };
@@ -73,12 +76,12 @@ export class MailCxService {
       return messages.map((msg: any, idx: number) => {
         const email: Email = {
           id: String(msg.id || msg.messageId),
-          from: msg.from || msg.sender || 'Unknown Sender',
-          to: msg.to || fullEmail,
-          subject: msg.subject || '(No Subject)',
+          from: contentToString(msg.from || msg.sender, 'Unknown Sender'),
+          to: contentToString(msg.to || fullEmail),
+          subject: contentToString(msg.subject, '(No Subject)'),
           date: msg.date || msg.createdAt ? new Date(msg.date || msg.createdAt).getTime() : Date.now(),
-          body: msg.body || msg.text || msg.html || '',
-          htmlBody: msg.html || msg.body || '',
+          body: contentToString(msg.body || msg.text || msg.html),
+          htmlBody: contentToString(msg.html || msg.body),
           read: Boolean(msg.read),
           attachments: [],
         };
@@ -108,15 +111,19 @@ export class MailCxService {
       }
 
       const msg = await response.json();
+      const bodyStr = contentToString(msg.body || msg.text || msg.html);
+      const htmlStr = contentToString(msg.html || msg.body);
+      const textStr = contentToString(msg.text || msg.body);
+
       return {
         id: String(msg.id || emailId),
-        from: msg.from || msg.sender || 'Unknown Sender',
-        to: msg.to || fullEmail,
-        subject: msg.subject || '(No Subject)',
+        from: contentToString(msg.from || msg.sender, 'Unknown Sender'),
+        to: contentToString(msg.to || fullEmail),
+        subject: contentToString(msg.subject, '(No Subject)'),
         date: msg.date || msg.createdAt ? new Date(msg.date || msg.createdAt).getTime() : Date.now(),
-        body: msg.body || msg.text || msg.html || '',
-        htmlBody: msg.html || msg.body || '',
-        textBody: msg.text || msg.body || '',
+        body: bodyStr,
+        htmlBody: htmlStr,
+        textBody: textStr,
         read: true,
         attachments: [],
       };

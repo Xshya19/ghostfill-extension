@@ -5,6 +5,7 @@
 import { EmailAccount, Email } from '../../types';
 import { createLogger } from '../../utils/logger';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
+import { fetchWithTimeout, contentToString } from '../../utils/core';
 
 const log = createLogger('MaildropService');
 
@@ -91,11 +92,9 @@ class MaildropService {
             'apollo-require-preflight': 'true',
           },
           body: JSON.stringify({ query, variables }),
+          signal: signal ?? null,
         };
-        if (signal) {
-          fetchInit.signal = signal;
-        }
-        const response = await fetch(MAILDROP_API, fetchInit);
+        const response = await fetchWithTimeout(MAILDROP_API, fetchInit);
 
         if (!response.ok) {
           // If 429 or 5xx, retry
@@ -140,43 +139,56 @@ class MaildropService {
       }
     }
 
-    this.lastError = lastError instanceof Error ? lastError.message : String(lastError);
-    log.error('GraphQL query failed after maximum retries', lastError);
-    throw lastError;
+    const finalError =
+      lastError instanceof Error ? lastError : new Error('Maildrop GraphQL request failed');
+    this.lastError = finalError.message;
+    throw finalError;
   }
 
   /**
-   * Health check - ping the API
+   * Health check / ping the API
    */
-  async ping(): Promise<boolean> {
+  async ping(signal?: AbortSignal): Promise<boolean> {
     try {
-      const data = await this.executeGraphQL<{ ping: string }>(PING_QUERY);
+      const data = await this.executeGraphQL<{ ping: string }>(PING_QUERY, {}, signal, 1);
       return data.ping === 'pong';
-    } catch {
+    } catch (error) {
+      log.debug('Maildrop ping failed', error);
       return false;
     }
   }
 
   /**
-   * Create a new email account (generate mailbox name)
+   * Get available domains
+   * Maildrop supports multiple domains, but maildrop.cc is primary
+   */
+  async getDomains(signal?: AbortSignal): Promise<string[]> {
+    // Check health first with quick timeout
+    const isHealthy = await this.ping(signal);
+    if (!isHealthy) {
+      log.warn('Maildrop API appears down during domains check');
+    }
+
+    // Known Maildrop domains
+    return ['maildrop.cc'];
+  }
+
+  /**
+   * Create a new disposable email account
+   * Maildrop doesn't require registration - just generate a mailbox name
    */
   async createAccount(prefix?: string, signal?: AbortSignal): Promise<EmailAccount> {
     try {
-      const mailbox = prefix || this.generateMailboxName();
+      const mailbox = prefix ? prefix.toLowerCase().replace(/[^a-z0-9]/g, '') : this.generateMailboxName();
       const domain = 'maildrop.cc';
       const fullEmail = `${mailbox}@${domain}`;
       const now = Date.now();
 
-      // Maildrop doesn't require account creation - just use any mailbox name
-      // But we'll ping to verify the service is up
-      const data = await this.executeGraphQL<{ ping: string }>(PING_QUERY, {}, signal);
-      const isUp = data?.ping === 'pong';
-      if (!isUp) {
-        throw new Error('Maildrop API is not responding');
-      }
+      // Quick health check to ensure API is reachable
+      await this.ping(signal);
 
       const account: EmailAccount = {
-        id: `maildrop_${now}_${Array.from(crypto.getRandomValues(new Uint8Array(5)))
+        id: `maildrop_${now}_${Array.from(crypto.getRandomValues(new Uint8Array(4)))
           .map((b) => b.toString(16).padStart(2, '0'))
           .join('')}`,
         username: mailbox,
@@ -253,7 +265,7 @@ class MaildropService {
   }
 
   /**
-   * Get a specific message with full content
+   * Get a specific message by ID
    */
   async getMessage(emailId: string, account: EmailAccount, signal?: AbortSignal): Promise<Email> {
     try {
@@ -294,9 +306,9 @@ class MaildropService {
   private convertMessage(msg: MaildropInboxMessage, toEmail: string): Email {
     return {
       id: msg.id,
-      from: msg.headerfrom || msg.mailfrom,
+      from: contentToString(msg.headerfrom || msg.mailfrom, 'Unknown Sender'),
       to: toEmail,
-      subject: msg.subject || '(no subject)',
+      subject: contentToString(msg.subject, '(no subject)'),
       date: new Date(msg.date).getTime(),
       body: '',
       attachments: [],
@@ -308,15 +320,18 @@ class MaildropService {
    * Convert full message to Email type
    */
   private convertFullMessage(msg: MaildropFullMessage, toEmail: string): Email {
+    const bodyStr = contentToString(msg.data);
+    const htmlStr = contentToString(msg.html);
+    const textStr = contentToString(msg.data);
     return {
       id: msg.id,
-      from: msg.headerfrom || msg.mailfrom,
+      from: contentToString(msg.headerfrom || msg.mailfrom, 'Unknown Sender'),
       to: toEmail,
-      subject: msg.subject || '(no subject)',
+      subject: contentToString(msg.subject, '(no subject)'),
       date: new Date(msg.date).getTime(),
-      body: msg.data || '',
-      htmlBody: msg.html || '',
-      textBody: msg.data || '',
+      body: bodyStr,
+      htmlBody: htmlStr,
+      textBody: textStr,
       attachments: [],
       read: true,
     };

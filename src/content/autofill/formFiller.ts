@@ -477,9 +477,12 @@ export class FieldSetter {
     }
 
     const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-    const writeValue = (v: string) => nativeSetter ? nativeSetter.call(element, v) : (element.value = v);
+    const writeValue = (v: string) => (nativeSetter ? nativeSetter.call(element, v) : (element.value = v));
 
     try {
+      element.focus({ preventScroll: true });
+      const tracker = (element as any)._valueTracker;
+      if (tracker) tracker.setValue('');
       writeValue('');
       element.dispatchEvent(new Event('input', { bubbles: true }));
 
@@ -492,6 +495,7 @@ export class FieldSetter {
       const beforeInput = new InputEvent('beforeinput', { data: char, inputType: 'insertText', bubbles: true, cancelable: true });
       if (!element.dispatchEvent(beforeInput)) return false;
 
+      if (tracker) tracker.setValue('');
       writeValue(char);
       element.dispatchEvent(new InputEvent('input', { data: char, inputType: 'insertText', bubbles: true }));
       element.dispatchEvent(new KeyboardEvent('keyup', { key: char, code, keyCode, bubbles: true }));
@@ -501,6 +505,8 @@ export class FieldSetter {
     } catch (err) {
       log.warn('setCharDirect failed', err);
       writeValue(char);
+      const tracker = (element as any)._valueTracker;
+      if (tracker) tracker.setValue('');
       element.dispatchEvent(new Event('input', { bubbles: true }));
       return element.value === char;
     }

@@ -1618,6 +1618,10 @@ export class OTPPageDetector {
   private lastUrl = '';
   private destroyed = false;
 
+  // ── Leave grace period: prevents OTP detector oscillation ──
+  private leaveGraceStart: number | null = null;
+  private static readonly LEAVE_GRACE_MS = 3_000;
+
   // ── AI fallback guards ──
   private aiRequested = false;
   private aiResponded = false;
@@ -1788,7 +1792,15 @@ export class OTPPageDetector {
               return true;
             }
           }
-          return m.removedNodes.length > 0; // Removed nodes might be the OTP field
+          return m.removedNodes.length > 0 && Array.from(m.removedNodes).some((node) => {
+            if (!(node instanceof HTMLElement)) return false;
+            return (
+              node.tagName === 'INPUT' ||
+              node.tagName === 'FORM' ||
+              node.tagName === 'TEXTAREA' ||
+              !!node.querySelector?.('input, form, textarea')
+            );
+          }); // Only rescan when removed nodes contain form elements
         }
         // Only care about attribute changes on actual inputs
         return m.type === 'attributes' && m.target instanceof HTMLInputElement;
@@ -2075,6 +2087,8 @@ export class OTPPageDetector {
 
     // ── State transitions ─────────────────────────────────
     if (this.verdict !== 'not-otp' && prevVerdict === 'not-otp') {
+      // Clear any pending leave grace — we're back on an OTP page
+      this.leaveGraceStart = null;
       log.info('✅ OTP page detected', {
         trigger,
         verdict: this.verdict,
@@ -2084,8 +2098,20 @@ export class OTPPageDetector {
       });
       void this.notifyBackground('OTP_PAGE_DETECTED');
     } else if (this.verdict === 'not-otp' && prevVerdict !== 'not-otp') {
-      log.info('OTP page status cleared', { trigger });
-      void this.notifyBackground('OTP_PAGE_LEFT');
+      // Grace period: don't send OTP_PAGE_LEFT immediately.
+      // Brief DOM fluctuations (React re-renders, overlays) can
+      // temporarily hide OTP fields; wait 3s before declaring left.
+      if (!this.leaveGraceStart) {
+        this.leaveGraceStart = Date.now();
+        log.debug('OTP leave grace started — waiting before declaring left', { trigger });
+      } else if (Date.now() - this.leaveGraceStart >= OTPPageDetector.LEAVE_GRACE_MS) {
+        this.leaveGraceStart = null;
+        log.info('OTP page status cleared', { trigger });
+        void this.notifyBackground('OTP_PAGE_LEFT');
+      }
+    } else if (this.verdict !== 'not-otp') {
+      // Still on an OTP page — reset any pending grace
+      this.leaveGraceStart = null;
     }
 
     // ── AI fallback ───────────────────────────────────────
@@ -2215,22 +2241,25 @@ export class OTPPageDetector {
     return parts.join('\n').substring(0, CONFIG.MAX_DOM_SNAPSHOT_CHARS);
   }
 
-  private async waitForOtpInput(timeoutMs = 10_000): Promise<boolean> {
+  private async waitForOtpInput(timeoutMs = 1500): Promise<boolean> {
     const find = () =>
       document.querySelector<HTMLInputElement>(
-        'input[autocomplete="one-time-code"], input[name*="otp" i], input[name*="code" i], input[type="tel"]'
+        'input[autocomplete="one-time-code"], input[name*="otp" i], input[name*="code" i], input[type="tel"], input[type="text"][maxlength="1"], input[type="text"][maxlength="6"], input[type="text"][maxlength="8"], input[inputmode="numeric"]'
       );
 
     const check = () => {
-      if (!find()) {
-        return false;
+      if (find()) {
+        return true;
       }
-      const { result } = ScoringEngine.score(
+      const { result, titleMatch, bodyMatch, urlMatch } = ScoringEngine.score(
         this.formDetector,
         this.cachedTitleKeyword,
         this.cachedBodyKeyword,
         this.cachedUrlKeyword
       );
+      this.cachedTitleKeyword = titleMatch;
+      this.cachedBodyKeyword = bodyMatch;
+      this.cachedUrlKeyword = urlMatch;
       return result.verdict !== 'not-otp' && result.fields.length > 0;
     };
 
@@ -2274,15 +2303,20 @@ export class OTPPageDetector {
 
     let selectors = fieldSelectors?.filter(Boolean) ?? [];
 
-    // Run detection with progressive retries if we were not given explicit selectors.
+    // Run detection immediately if we don't have fields or selectors yet
+    if (selectors.length === 0 && this.fields.length === 0) {
+      this.runDetection('auto-fill-trigger-immediate');
+    }
+
+    // Run detection with fast progressive retries if fields are still not indexed.
     if (selectors.length === 0 && this.fields.length === 0) {
       log.info('⏳ No fields found initially, waiting for OTP input via MutationObserver...');
-      const foundInput = await this.waitForOtpInput(10000);
+      const foundInput = await this.waitForOtpInput(1500);
       if (foundInput) {
         log.info('✨ OTP input detected via MutationObserver');
         this.runDetection('auto-fill-trigger-mutated');
       } else {
-        const delays = [0, 700, 2000];
+        const delays = [0, 200, 500];
         for (let i = 0; i < delays.length; i++) {
           const delay = delays[i];
           if (delay && delay > 0) {

@@ -508,6 +508,13 @@ export class FloatingButton {
   private pageAnalysis: PageAnalysis | null = null;
   private destroyed = false;
 
+  // ── Cache ────────────────────────────────────────────────
+  private static readonly IDENTITY_CACHE_TTL_MS = 500;
+  private identityCache: {
+    response: any;
+    ts: number;
+  } | null = null;
+
   // ── OTP Waiting Indicator ────────────────────────────────
   private otpWaitingIndicator: HTMLDivElement | null = null;
   private otpWaitingInterval: ReturnType<typeof setInterval> | null = null;
@@ -1551,13 +1558,25 @@ export class FloatingButton {
    * - Gmail tab → Gmail alias / base (never generate disposable)
    * - Temp Mail tab → existing disposable, or generate one if allowed
    */
+  private async fetchIdentityCached(): Promise<any> {
+    if (
+      this.identityCache &&
+      Date.now() - this.identityCache.ts < FloatingButton.IDENTITY_CACHE_TTL_MS
+    ) {
+      return this.identityCache.response;
+    }
+    const resp = await safeSendMessage({ action: 'GET_IDENTITY' });
+    this.identityCache = { response: resp, ts: Date.now() };
+    return resp;
+  }
+
   private async actionFillActiveEmail(
     opts: { allowGenerateDisposable?: boolean } = {}
   ): Promise<void> {
     const { allowGenerateDisposable = false } = opts;
 
     // 1) Resolve identity for the active popup tab (GET_IDENTITY is tab-aware)
-    const idResp = (await safeSendMessage({ action: 'GET_IDENTITY' })) as {
+    const idResp = (await this.fetchIdentityCached()) as {
       success?: boolean;
       identity?: { email?: string; preferredEmailType?: 'disposable' | 'gmail' };
       preferredEmailType?: 'disposable' | 'gmail';
@@ -1670,7 +1689,7 @@ export class FloatingButton {
   };
 
   private async actionFillIdentity(actionId: string): Promise<void> {
-    const resp = (await safeSendMessage({ action: 'GET_IDENTITY' })) as IdentityResponse | null;
+    const resp = (await this.fetchIdentityCached()) as IdentityResponse | null;
 
     if (this.destroyed) {
       return;

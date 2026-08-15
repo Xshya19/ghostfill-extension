@@ -260,7 +260,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
         action: 'GMAIL_FETCH_INBOX',
         payload: {
           ...(activeGmailAlias ? { alias: activeGmailAlias } : {}),
-          maxResults: 10,
+          maxResults: 20,
         },
       })) as any;
       if (res?.success && Array.isArray(res.messages)) {

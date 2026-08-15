@@ -119,8 +119,11 @@ body {
 .options-header {
   position: relative;
   z-index: var(--z-header);
-  background: var(--gf-surface);
-  border-bottom: 1px solid var(--gf-line);
+  background: var(--gf-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--gf-glass-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .header-content {
@@ -136,13 +139,17 @@ body {
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  width: 46px;
-  height: 46px;
+  width: 48px;
+  height: 48px;
   background: var(--gf-sunken);
   border: 1px solid var(--gf-line);
   border-radius: var(--radius-md);
-  box-shadow: inset 0 1px 0 var(--gf-hi);
+  box-shadow: inset 0 1px 0 var(--gf-hi), var(--gf-shadow-xs);
   overflow: hidden;
+  transition: transform var(--gf-dur-fast) var(--gf-ease);
+}
+.logo-box:hover {
+  transform: scale(1.04);
 }
 
 /* GhostLogo renders at size=32 (see OptionsApp) inside a 46px plate. */
@@ -159,15 +166,15 @@ body {
 
 .spectral-title {
   font-family: var(--gf-font-display);
-  font-size: 21px;
+  font-size: 22px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
   line-height: 1.15;
   color: var(--gf-ink);
 }
 
 .spectral-subtitle {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--gf-text-muted);
 }
 
@@ -184,8 +191,8 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  min-height: 34px;
-  padding: 0 12px;
+  min-height: 36px;
+  padding: 0 14px;
   font-family: var(--gf-font-display);
   font-size: 12.5px;
   font-weight: 600;
@@ -200,6 +207,7 @@ body {
   transition:
     color var(--gf-dur-fast) var(--gf-ease),
     border-color var(--gf-dur-fast) var(--gf-ease),
+    background-color var(--gf-dur-fast) var(--gf-ease),
     transform var(--gf-dur-fast) var(--gf-ease);
 }
 
@@ -207,6 +215,7 @@ body {
 .theme-toggle-header-btn:hover {
   color: var(--gf-ink);
   border-color: var(--gf-line-2);
+  background-color: var(--gf-sunken);
   transform: translateY(-1px);
 }
 
@@ -218,6 +227,11 @@ body {
 
 .command-palette-trigger-btn kbd {
   margin-left: 2px;
+  padding: 2px 5px;
+  font-size: 10.5px;
+  border-radius: 4px;
+  background: var(--gf-sunken);
+  border: 1px solid var(--gf-line);
 }
 
 .theme-icon-sun,
@@ -230,15 +244,16 @@ body {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   POSTURE STRIP  ·  the signature: a mono readout of what GhostFill will
-   do on this browser right now, assembled from live settings.
+   POSTURE STRIP  ·  a mono readout of GhostFill's live security posture
    ════════════════════════════════════════════════════════════════════════ */
 .posture-strip {
   position: sticky;
   top: 0;
   z-index: var(--z-header);
-  background: var(--gf-sunken);
-  border-bottom: 1px solid var(--gf-line);
+  background: var(--gf-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--gf-glass-border);
 }
 
 .posture-inner {
@@ -280,7 +295,7 @@ body {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
-  padding: 3px 9px 3px 7px;
+  padding: 4px 10px 4px 8px;
   font-family: var(--gf-font-mono);
   font-size: 11px;
   line-height: 1.5;
@@ -289,23 +304,25 @@ body {
   background: var(--gf-surface);
   border: 1px solid var(--gf-line);
   border-radius: var(--radius-pill);
+  box-shadow: var(--gf-shadow-xs);
 }
 
 .posture-item::before {
   content: '';
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--gf-ink-dim);
 }
 
 .posture-item--on {
   color: var(--gf-ink);
+  border-color: rgba(var(--gf-mint-rgb), 0.3);
 }
 
 .posture-item--on::before {
   background: var(--gf-success);
-  box-shadow: 0 0 0 3px rgba(var(--gf-mint-rgb), 0.16);
+  box-shadow: 0 0 0 3px rgba(var(--gf-mint-rgb), 0.2);
 }
 
 .posture-item--off::before {
@@ -313,8 +330,7 @@ body {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   LAYOUT  ·  rail + ledger. No wrapper card: the rail's right hairline is
-   the only division, so the page reads as one console, not nested boxes.
+   LAYOUT  ·  rail + ledger console
    ════════════════════════════════════════════════════════════════════════ */
 .dashboard-layout {
   display: grid;
@@ -358,7 +374,7 @@ body {
 .sidebar-nav {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .sidebar-nav-divider {
@@ -371,8 +387,8 @@ body {
   align-items: center;
   gap: 10px;
   width: 100%;
-  min-height: 36px;
-  padding: 7px 10px;
+  min-height: 38px;
+  padding: 8px 12px;
   font-family: var(--gf-font-display);
   font-size: 13.5px;
   font-weight: 600;
@@ -380,16 +396,18 @@ body {
   color: var(--gf-ink-soft);
   background: transparent;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition:
     color var(--gf-dur-fast) var(--gf-ease),
-    background-color var(--gf-dur-fast) var(--gf-ease);
+    background-color var(--gf-dur-fast) var(--gf-ease),
+    transform var(--gf-dur-fast) var(--gf-ease);
 }
 
 .sidebar-nav-item:hover {
   color: var(--gf-ink);
-  background: rgba(var(--gf-ink-rgb), 0.05);
+  background: rgba(var(--gf-ink-rgb), 0.06);
+  transform: translateX(2px);
 }
 
 .sidebar-nav-item:focus-visible {
@@ -400,18 +418,17 @@ body {
 .sidebar-nav-item[aria-selected='true'] {
   color: var(--gf-ink);
   background: var(--gf-primary-soft);
+  font-weight: 700;
 }
 
-/* Active marker hugs the pill's left edge, so highlight and marker read as one
-   object. (Sitting it in the rail hairline instead looked like a stray tick.) */
 .sidebar-nav-item::after {
   content: '';
   position: absolute;
-  top: 7px;
-  bottom: 7px;
+  top: 8px;
+  bottom: 8px;
   left: 0;
-  width: 2px;
-  border-radius: 0 2px 2px 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
   background: transparent;
 }
 
@@ -421,16 +438,16 @@ body {
 
 .sidebar-nav-icon {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   color: var(--gf-ink-dim);
   transition: color var(--gf-dur-fast) var(--gf-ease);
 }
 
-/* Tabs declare size={17} for the popup's larger type; 16px sits better against
-   the rail's 13.5px labels. CSS wins over the svg width/height attributes. */
 .sidebar-nav-icon svg {
-  width: 16px;
-  height: 16px;
+  width: 17px;
+  height: 17px;
 }
 
 .sidebar-nav-item:hover .sidebar-nav-icon,
@@ -451,11 +468,8 @@ body {
   padding: 26px 0 26px 28px;
 }
 
-/* One 160ms rise per tab switch — enough to say "this replaced that", short
-   enough not to sit between the click and the content. Killed by the
-   prefers-reduced-motion block at the end of this file. */
 .tab-panel {
-  animation: gf-status-in 160ms var(--gf-ease) both;
+  animation: gf-status-in 200ms var(--gf-ease) both;
 }
 
 .tab-panel:focus {
@@ -463,40 +477,42 @@ body {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   SECTION CARD  ·  machined plate, per globals.css .gf-card
+   SECTION CARD  ·  frosted titanium plate
    ════════════════════════════════════════════════════════════════════════ */
 .ghost-card {
-  background: var(--gf-surface);
-  border: 1px solid var(--gf-line);
+  background: var(--gf-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--gf-glass-border);
   border-radius: var(--radius-lg);
   box-shadow:
-    var(--gf-shadow-sm),
+    var(--shadow-card),
     inset 0 1px 0 var(--gf-hi);
+  transition:
+    border-color var(--gf-dur) var(--gf-ease),
+    box-shadow var(--gf-dur) var(--gf-ease);
 }
 
 .settings-section {
-  padding: 0 22px 18px;
+  padding: 0 24px 20px;
 }
 
 .settings-section + .settings-section {
-  margin-top: 16px;
+  margin-top: 20px;
 }
 
 .settings-section.danger {
-  border-color: rgba(var(--gf-coral-rgb), 0.28);
+  border-color: rgba(var(--gf-coral-rgb), 0.35);
 }
 
-/* Sunken header bar: the card's title band is tinted and carries the card's
-   own top radius, so each section reads as one plate with a masthead rather
-   than a bordered paragraph. */
 .settings-section h2 {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 0 -22px 14px;
-  padding: 14px 22px;
+  margin: 0 -24px 16px;
+  padding: 16px 24px;
   font-family: var(--gf-font-display);
-  font-size: 14px;
+  font-size: 14.5px;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--gf-ink);
@@ -509,8 +525,8 @@ body {
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   color: var(--gf-primary);
   background: var(--gf-primary-soft);
   border-radius: var(--radius-sm);

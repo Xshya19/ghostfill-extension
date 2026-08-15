@@ -364,7 +364,9 @@ function installPassiveMessageListener(): void {
     }
 
     if (action === 'PING') {
-      sendResponse({ success: true, alive: true, lazy: true, verdict: 'not-otp' });
+      safeInit(true);
+      const verdict = otpPageDetector ? otpPageDetector.getStatus().verdict : 'not-otp';
+      sendResponse({ success: true, alive: true, lazy: false, verdict });
       return false;
     }
 

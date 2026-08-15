@@ -1,7 +1,7 @@
 // MailboxTemp Service - mailboxtemp.com API integration
 
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout } from '../../utils/core';
+import { fetchWithTimeout, contentToString } from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 
@@ -63,10 +63,13 @@ export class MailboxtempService {
             }
             const fullMsg = await msgResponse.json();
             const item = fullMsg.result || fullMsg;
+            const bodyStr = contentToString(item.body || item.text || item.html);
+            const htmlStr = contentToString(item.html || item.body);
+            const textStr = contentToString(item.text || item.body);
             return {
-              body: item.body || item.text || item.html || '',
-              htmlBody: item.html || item.body || '',
-              textBody: item.text || item.body || '',
+              body: bodyStr,
+              htmlBody: htmlStr,
+              textBody: textStr,
             };
           } catch {
             return { body: '', htmlBody: '', textBody: '' };
@@ -77,12 +80,12 @@ export class MailboxtempService {
       return messages.map((msg: any, idx: number) => {
         const email: Email = {
           id: String(msg.id || msg.messageId),
-          from: msg.from || msg.sender || 'Unknown Sender',
-          to: msg.to || fullEmail,
-          subject: msg.subject || '(No Subject)',
+          from: contentToString(msg.from || msg.sender, 'Unknown Sender'),
+          to: contentToString(msg.to || fullEmail),
+          subject: contentToString(msg.subject, '(No Subject)'),
           date: msg.date || msg.createdAt ? new Date(msg.date || msg.createdAt).getTime() : Date.now(),
-          body: msg.body || msg.text || msg.html || '',
-          htmlBody: msg.html || msg.body || '',
+          body: contentToString(msg.body || msg.text || msg.html),
+          htmlBody: contentToString(msg.html || msg.body),
           read: Boolean(msg.read),
           attachments: [],
         };
@@ -113,15 +116,19 @@ export class MailboxtempService {
 
       const msg = await response.json();
       const item = msg.result || msg;
+      const bodyStr = contentToString(item.body || item.text || item.html);
+      const htmlStr = contentToString(item.html || item.body);
+      const textStr = contentToString(item.text || item.body);
+
       return {
         id: String(item.id || emailId),
-        from: item.from || item.sender || 'Unknown Sender',
-        to: item.to || fullEmail,
-        subject: item.subject || '(No Subject)',
+        from: contentToString(item.from || item.sender, 'Unknown Sender'),
+        to: contentToString(item.to || fullEmail),
+        subject: contentToString(item.subject, '(No Subject)'),
         date: item.date || item.createdAt ? new Date(item.date || item.createdAt).getTime() : Date.now(),
-        body: item.body || item.text || item.html || '',
-        htmlBody: item.html || item.body || '',
-        textBody: item.text || item.body || '',
+        body: bodyStr,
+        htmlBody: htmlStr,
+        textBody: textStr,
         read: true,
         attachments: [],
       };

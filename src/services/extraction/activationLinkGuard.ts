@@ -144,9 +144,12 @@ export function scoreActivationLink(
   const hardUrlHit = HARD_REJECT_URL.test(url);
   const hardAnchorHit = HARD_REJECT_ANCHOR.test(anchorText);
   const pathStrongEarly = STRONG_PATH_RE.test(url);
+  const queryStrongEarly = STRONG_QUERY.test(url);
+  const tokenEarly = hasAuthToken(url);
+  const anchorStrongEarly = STRONG_ANCHOR_RE.test(anchorText);
 
-  // Allow hard-reject URL hits only when a strong activation path coexists
-  if (hardAnchorHit && !pathStrongEarly) {
+  // Allow hard-reject URL hits only when a strong activation path/query/token/anchor coexists
+  if (hardAnchorHit && !pathStrongEarly && !queryStrongEarly && !tokenEarly) {
     return {
       cls: 'reject',
       quality: 0,
@@ -155,7 +158,7 @@ export function scoreActivationLink(
       canAutoOpen: false,
     };
   }
-  if (hardUrlHit && !pathStrongEarly) {
+  if (hardUrlHit && !pathStrongEarly && !queryStrongEarly && !tokenEarly && !anchorStrongEarly) {
     return {
       cls: 'reject',
       quality: 0,

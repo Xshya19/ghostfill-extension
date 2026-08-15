@@ -1,7 +1,7 @@
 // Guerrilla Mail Service - With Robust Rate Limiting
 
 import { EmailAccount, Email } from '../../types';
-import { API } from '../../utils/core';
+import { API, contentToString } from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 
@@ -339,23 +339,24 @@ class GuerrillaMailService {
    * Convert Guerrilla Mail message to our Email type
    */
   private convertMessage(msg: GuerrillaEmail, includeBody: boolean = false): Email {
+    const rawBody = includeBody ? msg.mail_body || msg.mail_excerpt : msg.mail_excerpt;
+    const bodyStr = contentToString(rawBody);
+    const textStr = contentToString(msg.mail_body || rawBody);
+    const htmlStr = includeBody && msg.mail_body ? contentToString(msg.mail_body) : '';
+
     const email: Email = {
-      id: msg.mail_id,
-      from: msg.mail_from,
-      subject: msg.mail_subject,
-      date: parseInt(msg.mail_timestamp, 10) * 1000,
-      body: includeBody ? msg.mail_body || msg.mail_excerpt : msg.mail_excerpt,
+      id: String(msg.mail_id),
+      from: contentToString(msg.mail_from, 'Unknown Sender'),
+      subject: contentToString(msg.mail_subject, '(No Subject)'),
+      date: parseInt(msg.mail_timestamp, 10) * 1000 || Date.now(),
+      body: bodyStr,
+      htmlBody: htmlStr || bodyStr,
+      textBody: textStr,
       attachments: [],
       read: msg.mail_read === 1,
     };
     if (this.emailAddress) {
-      email.to = this.emailAddress;
-    }
-    if (includeBody && msg.mail_body) {
-      email.htmlBody = msg.mail_body;
-    }
-    if (msg.mail_body) {
-      email.textBody = msg.mail_body;
+      email.to = contentToString(this.emailAddress);
     }
     return email;
   }

@@ -1,7 +1,7 @@
 // TempMail Service - 1secmail.com API integration
 
 import { EmailAccount, Email, TempMailMessage, TempMailFullMessage } from '../../types';
-import { API, TEMP_MAIL_DOMAINS } from '../../utils/core';
+import { API, TEMP_MAIL_DOMAINS, fetchWithTimeout, contentToString } from '../../utils/core';
 import { getRandomInt } from '../../utils/encryption';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
@@ -387,9 +387,9 @@ class TempMailService {
   private convertMessage(msg: TempMailMessage, login: string, domain: string): Email {
     return {
       id: msg.id,
-      from: msg.from,
+      from: contentToString(msg.from, 'Unknown Sender'),
       to: `${login}@${domain}`,
-      subject: msg.subject,
+      subject: contentToString(msg.subject, '(No Subject)'),
       date: new Date(msg.date).getTime(),
       body: '',
       attachments: [],
@@ -401,15 +401,19 @@ class TempMailService {
    * Convert API full message to our Email type
    */
   private convertFullMessage(msg: TempMailFullMessage, login: string, domain: string): Email {
+    const rawBody = msg.body || msg.textBody || '';
+    const bodyStr = contentToString(rawBody);
+    const htmlStr = contentToString(msg.htmlBody);
+    const textStr = contentToString(msg.textBody || rawBody);
     return {
       id: msg.id,
-      from: msg.from,
+      from: contentToString(msg.from, 'Unknown Sender'),
       to: `${login}@${domain}`,
-      subject: msg.subject,
+      subject: contentToString(msg.subject, '(No Subject)'),
       date: new Date(msg.date).getTime(),
-      body: msg.body || msg.textBody || '',
-      htmlBody: msg.htmlBody,
-      textBody: msg.textBody,
+      body: bodyStr,
+      htmlBody: htmlStr || bodyStr,
+      textBody: textStr,
       attachments:
         msg.attachments?.map((att) => ({
           filename: att.filename,

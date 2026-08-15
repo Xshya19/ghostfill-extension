@@ -1,7 +1,7 @@
 // TempMail.lol Service Integration
 
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout } from '../../utils/core';
+import { fetchWithTimeout, contentToString } from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 
@@ -80,17 +80,22 @@ export class TempMailLolService {
       const data = await response.json();
       const emails = data.emails || [];
 
-      return emails.map((msg: any, idx: number) => ({
-        id: String(msg.id || idx),
-        from: msg.from || 'Unknown Sender',
-        to: msg.to || '',
-        subject: msg.subject || '(No Subject)',
-        date: msg.date ? new Date(msg.date).getTime() : Date.now(),
-        body: msg.body || msg.html || '',
-        htmlBody: msg.html || msg.body || '',
-        read: false,
-        attachments: [],
-      }));
+      return emails.map((msg: any, idx: number) => {
+        const bodyStr = contentToString(msg.body || msg.html);
+        const htmlStr = contentToString(msg.html || msg.body);
+        return {
+          id: String(msg.id || idx),
+          from: contentToString(msg.from, 'Unknown Sender'),
+          to: contentToString(msg.to),
+          subject: contentToString(msg.subject, '(No Subject)'),
+          date: msg.date ? new Date(msg.date).getTime() : Date.now(),
+          body: bodyStr,
+          htmlBody: htmlStr,
+          textBody: bodyStr,
+          read: false,
+          attachments: [],
+        };
+      });
     } catch (error) {
       log.warn('Failed to fetch TempMail.lol messages', error);
       return [];

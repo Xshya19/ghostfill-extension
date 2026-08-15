@@ -39,6 +39,7 @@ import {
   startEmailPolling,
   startFastOTPPolling,
   stopFastOTPPolling,
+  startFastWatchBurst,
   triggerEventDrivenPolling,
   recordEmailReceived,
   getOTPWaitingTabs,
@@ -340,12 +341,10 @@ function isMessageDuplicate(message: ExtensionMessage): boolean {
     const hash = `${message.action}:${getPayloadFingerprint((message as any).payload)}`;
     const now = Date.now();
 
-    // Auto-prune map if it exceeds MAX_DEDUP_MAP_SIZE to prevent memory leaks (BUG-3)
-    if (lastProcessedMessageHashes.size > MAX_DEDUP_MAP_SIZE) {
-      for (const [k, ts] of lastProcessedMessageHashes.entries()) {
-        if (now - ts > MAX_DEDUP_HASH_AGE_MS) {
-          lastProcessedMessageHashes.delete(k);
-        }
+    // Continuously prune expired entries to maintain minimal memory footprint
+    for (const [k, ts] of lastProcessedMessageHashes.entries()) {
+      if (now - ts > MAX_DEDUP_HASH_AGE_MS) {
+        lastProcessedMessageHashes.delete(k);
       }
     }
 
@@ -506,21 +505,11 @@ async function handleMessage(
 
       // 7. Always start polling immediately when email is generated.
       // SSE is a bonus push layer — polling is the reliable fallback.
-      triggerEventDrivenPolling('email_gen');
+      startFastWatchBurst('email_gen');
 
       if (email?.service === 'mailtm') {
         sseManager.setOnEmailReceived(() => {
-          // When SSE detects a new email, trigger inbox check
           recordEmailReceived();
-          // Force immediate inbox check
-          emailService
-            .getCurrentEmail()
-            .then((acct) => {
-              if (acct) {
-                emailService.checkInbox(acct).catch(() => {});
-              }
-            })
-            .catch(() => {});
         });
         sseManager.connect(email).catch((e) => {
           log.debug('SSE connection failed — polling is already running', e);
@@ -621,7 +610,7 @@ async function handleMessage(
 
       // 8. Always start polling immediately
       startEmailPolling();
-      triggerEventDrivenPolling('email_gen');
+      startFastWatchBurst('gmail_alias_gen');
 
       log.info('✅ New Gmail alias generated', { alias: aliasEmail });
       return { success: true, email: currentEmailAcct };
@@ -770,7 +759,7 @@ async function handleMessage(
     // ── EVENT-DRIVEN POLLING TRIGGERS ─────────────────────────────
     case 'REGISTRATION_FORM_SUBMITTED': {
       log.info('⚡ Registration form submitted — triggering ultra polling');
-      triggerEventDrivenPolling('form_submit');
+      startFastWatchBurst('form_submit');
 
       const currentEmail = await storageService.get('currentEmail');
       if (currentEmail && typeof currentEmail === 'object' && currentEmail.service === 'gmail') {
@@ -967,6 +956,10 @@ async function handleMessage(
 
     // ── IDENTITY ACTIONS ─────────────────────────────────────────
     case 'GET_IDENTITY': {
+      // User is filling identity on a tab right now — arm fast-watch burst so
+      // incoming verification emails or links are caught within 2-3s without waiting.
+      startFastWatchBurst('identity_fill');
+
       // Popup Temp Mail / Gmail tab is source of truth via preferredEmailType.
       // Never cross-fill: disposable tab → temp mail only; Gmail tab → gmail only.
       // getFresh avoids stale SW cache after popup tab switch.
@@ -1024,7 +1017,22 @@ async function handleMessage(
         }
       } else {
         // ── Temp Mail tab: force disposable only ──
-        const disposableEmail = await storageService.get('disposableEmail');
+        let disposableEmail = await storageService.get('disposableEmail');
+        if (
+          !disposableEmail?.fullEmail ||
+          disposableEmail.service === 'gmail' ||
+          disposableEmail.domain === 'gmail.com'
+        ) {
+          const currentEmail = await storageService.get('currentEmail');
+          if (
+            currentEmail?.fullEmail &&
+            currentEmail.service !== 'gmail' &&
+            currentEmail.domain !== 'gmail.com'
+          ) {
+            disposableEmail = currentEmail;
+          }
+        }
+
         if (
           disposableEmail?.fullEmail &&
           disposableEmail.service !== 'gmail' &&
@@ -1239,6 +1247,14 @@ async function handleMessage(
         await storageService.set('gmailInbox', []).catch(() => {});
         await storageService.set('gmailSyncState', {}).catch(() => {});
         await clearGmailAliasSessions().catch(() => {});
+        // Seed an initial alias session for the base email so that
+        // GMAIL_FETCH_INBOX calls arriving immediately after sign-in
+        // can find an active session (fixes race condition).
+        await rememberGmailAliasSession(
+          profile.email,
+          profile.email,
+          'global',
+        ).catch(() => {});
         log.info('Gmail sign-in completed', { email: profile.email });
         return { success: true, profile };
       } catch (e: unknown) {

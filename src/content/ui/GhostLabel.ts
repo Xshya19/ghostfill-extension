@@ -48,13 +48,13 @@ const STYLES = `
   --error:           var(--gf-coral);
   --error-rgb:       var(--gf-coral-rgb);
   
-  --sticker-bg: var(--gf-grad-cobalt, linear-gradient(160deg, #7c83ff 0%, #5a61f0 100%));
-  --sticker-bg-hover: var(--gf-grad-cobalt-hover, linear-gradient(160deg, #8b91ff 0%, #6a70f5 100%));
-  --shadow-hard: 0 4px 14px -4px rgba(var(--gf-primary-rgb, 124, 131, 255), 0.7), 0 1px 0 rgba(255,255,255,0.28) inset;
+  --sticker-bg: var(--gf-grad-cobalt, linear-gradient(160deg, #6366f1 0%, #4f46e5 100%));
+  --sticker-bg-hover: var(--gf-grad-cobalt-hover, linear-gradient(160deg, #7175f7 0%, #5950ee 100%));
+  --shadow-hard: 0 4px 14px -4px rgba(var(--gf-primary-rgb, 99, 102, 241), 0.7), 0 1px 0 rgba(255,255,255,0.28) inset;
 
   --ease-out-expo:   cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-spring:     cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  --ease-bounce:     cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  --ease-spring:     cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-bounce:     cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .ghost-icon-container {
@@ -65,7 +65,7 @@ const STYLES = `
   height: 100%;
   border-radius: 9px;
   background: var(--sticker-bg);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   box-shadow: var(--shadow-hard);
   overflow: hidden;
   opacity: 1;
@@ -76,22 +76,22 @@ const STYLES = `
 
 .ghost-icon-container:hover {
   background: var(--sticker-bg-hover);
-  transform: translateY(-1px) scale(1.04);
-  box-shadow: 0 8px 20px -6px rgba(var(--brand-rgb, 124,131,255), 0.8), 0 1px 0 rgba(255,255,255,0.06) inset;
-  filter: brightness(1.05);
+  transform: translateY(-1px) scale(1.06);
+  box-shadow: 0 8px 20px -6px rgba(var(--brand-rgb, 99, 102, 241), 0.8), 0 1px 0 rgba(255,255,255,0.12) inset;
+  filter: brightness(1.06);
 }
 
 .ghost-icon-container:active {
   transform: translateY(0) scale(0.96);
-  box-shadow: 0 3px 10px -4px rgba(var(--gf-primary-rgb, 124, 131, 255), 0.7), 0 1px 2px rgba(0,0,0,0.25) inset;
+  box-shadow: 0 3px 10px -4px rgba(var(--gf-primary-rgb, 99, 102, 241), 0.7), 0 1px 2px rgba(0,0,0,0.25) inset;
 }
 
 .ghost-icon-container:focus-visible {
   outline: none;
   box-shadow:
-    0 0 0 2px var(--gf-bg, #181B21),
-    0 0 0 4px var(--gf-primary, #7C83FF),
-    0 3px 10px -4px rgba(var(--gf-primary-rgb, 124, 131, 255), 0.7);
+    0 0 0 2px var(--gf-bg, #0c0f14),
+    0 0 0 4px var(--gf-primary, #818cf8),
+    0 3px 10px -4px rgba(var(--gf-primary-rgb, 99, 102, 241), 0.7);
 }
 
 /* ── SVG Icons ── */

@@ -252,10 +252,10 @@ export const otpPageDetectedPayloadSchema = z.object({
 
 export const autoFillOTPPayloadSchema = z.object({
   otp: safeString.regex(
-    /^[A-Za-z0-9\-_]{4,64}$/,
-    'OTP must be 4-64 alphanumeric characters, hyphens or underscores'
+    /^[\sA-Za-z0-9\-_]{4,64}$/,
+    'OTP must be 4-64 alphanumeric characters, spaces, hyphens or underscores'
   ),
-  source: z.enum(['email', 'sms', 'manual', 'url-extracted']),
+  source: safeString.optional().default('email'),
   confidence: safeNumber.min(0).max(1),
   fieldSelectors: z.array(safeString).max(MAX_ARRAY_LENGTH).optional(),
   isBackgroundTab: z.boolean().optional(),
@@ -390,15 +390,20 @@ export const messagePayloadSchemas: Record<string, z.ZodSchema> = {
   CAPTURE_SITE_CONTEXT: captureSiteContextPayloadSchema,
   CHECK_OTP_NOW: z.undefined().optional(),
   PING: z.undefined().optional(),
-  LINK_ACTIVATED: z.undefined().optional(),
+  LINK_ACTIVATED: z
+    .object({
+      timestamp: safeNumber.optional(),
+      source: safeString.optional(),
+    })
+    .optional(),
   ACTIVATE_LINK: z
     .object({
       emailId: z.union([safeString, safeNumber]),
       linkUrl: safeString,
-      emailFrom: safeString.optional(),
-      subject: safeString.optional(),
-      emailDate: safeNumber.optional(),
-      bodySnippet: safeString.optional(),
+      emailFrom: safeString.optional().nullable(),
+      subject: safeString.optional().nullable(),
+      emailDate: safeNumber.optional().nullable(),
+      bodySnippet: safeString.optional().nullable(),
     })
     .optional(),
   CHECK_OTP_FRESHNESS: z.undefined().optional(),

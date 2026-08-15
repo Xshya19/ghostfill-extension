@@ -12,6 +12,20 @@ import type { DetectionResult, EncryptedCacheEntry } from './types/extraction.ty
 
 const log = createLogger('OTPService');
 
+function toSafeString(v: unknown): string {
+  if (typeof v === 'string') return v;
+  if (!v) return '';
+  if (typeof v === 'object') {
+    const obj = v as Record<string, unknown>;
+    if (typeof obj.text === 'string') return obj.text;
+    if (typeof obj.html === 'string') return obj.html;
+    if (typeof obj.body === 'string') return obj.body;
+    if (typeof obj.content === 'string') return obj.content;
+    try { return JSON.stringify(v); } catch { return String(v); }
+  }
+  return String(v);
+}
+
 // ━━━ Rate Limiting Configuration ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const RATE_LIMIT = {
@@ -204,33 +218,18 @@ class OTPService {
       return this.getLastOTP();
     }
 
-    return new Promise((resolve) => {
-      const unsubscribe = storageService.onChanged(async (changes) => {
-        if (!changes.lastOTP) {
-          return;
-        }
-        try {
-          const newOTP = await storageService.get('lastOTP');
-          if (
-            newOTP &&
-            !newOTP.usedAt &&
-            Date.now() - newOTP.extractedAt < OTP_FRESHNESS.FRESH_WINDOW_MS
-          ) {
-            unsubscribe();
-            clearTimeout(timeoutId);
-            resolve(newOTP);
-          }
-        } catch {
-          // Ignore read errors
-        }
-      });
-
-      const timeoutId = setTimeout(() => {
-        unsubscribe();
-        log.debug('Timeout waiting for fresh OTP');
-        this.getLastOTP().then(resolve);
-      }, maxWaitMs);
-    });
+    // MV3-resilient yielding loop: checks storage at steady intervals
+    // without risking hanging promise listeners across SW suspension.
+    const startTime = Date.now();
+    while (Date.now() - startTime < maxWaitMs) {
+      await new Promise((r) => setTimeout(r, 500));
+      const otp = await this.getLastOTP();
+      if (otp && !otp.usedAt && Date.now() - otp.extractedAt < OTP_FRESHNESS.FRESH_WINDOW_MS) {
+        return otp;
+      }
+    }
+    log.debug('Timeout waiting for fresh OTP');
+    return this.getLastOTP();
   }
 
   async markAsUsed(): Promise<void> {
@@ -331,38 +330,43 @@ class SmartDetectionService {
   }
 
   async detect(
-    subject: string,
-    body: string,
-    htmlBody: string = '',
-    sender: string = '',
+    subject: unknown = '',
+    body: unknown = '',
+    htmlBody: unknown = '',
+    sender: unknown = '',
     expectedDomains: string[] = []
   ): Promise<DetectionResult> {
+    const sSubject = toSafeString(subject);
+    const sBody = toSafeString(body);
+    const sHtml = toSafeString(htmlBody);
+    const sSender = toSafeString(sender);
+
     this.maybeCleanupExpiredCache();
 
-    const contextKey = expectedDomains
-      .map((domain) => domain.toLowerCase())
+    const contextKey = (expectedDomains || [])
+      .map((domain) => toSafeString(domain).toLowerCase())
       .sort()
       .join(',');
-    const cacheKey = this.fastCacheKey(sender, subject, body, contextKey);
+    const cacheKey = this.fastCacheKey(sSender, sSubject, sBody, contextKey);
     const cachedResult = await this.getCachedResult(cacheKey);
     if (cachedResult) {
       log.debug('[SmartDetection] Returning cached result');
       return cachedResult;
     }
 
-    let intelligentResult = extractAll(subject, body, htmlBody, sender, expectedDomains);
+    let intelligentResult = extractAll(sSubject, sBody, sHtml, sSender, expectedDomains);
     
-    if ((!intelligentResult.otp && !intelligentResult.link) && htmlBody) {
+    if ((!intelligentResult.otp && !intelligentResult.link) && sHtml) {
       log.info('[SmartDetection] Primary extraction returned nothing. Trying HTML fallback...');
-      const fallbackPlain = this.cleanHTML(htmlBody);
-      if (fallbackPlain && fallbackPlain !== body) {
-        intelligentResult = extractAll(subject, fallbackPlain, htmlBody, sender, expectedDomains);
+      const fallbackPlain = this.cleanHTML(sHtml);
+      if (fallbackPlain && fallbackPlain !== sBody) {
+        intelligentResult = extractAll(sSubject, fallbackPlain, sHtml, sSender, expectedDomains);
       }
     }
 
     const decision = assessEmailDecision({
       extraction: intelligentResult,
-      sender,
+      sender: sSender,
       expectedDomains,
     });
 
@@ -435,12 +439,13 @@ class SmartDetectionService {
     return allBurned[domain] ?? [];
   }
 
-  private cleanHTML(html: string): string {
-    if (!html) {
+  private cleanHTML(html: unknown): string {
+    const sHtml = toSafeString(html);
+    if (!sHtml) {
       return '';
     }
 
-    const sanitized = sanitizeText(html);
+    const sanitized = sanitizeText(sHtml);
 
     const processedHtml = sanitized
       .replace(/&nbsp;/gi, ' ')
@@ -454,9 +459,13 @@ class SmartDetectionService {
   }
 
   // GRANDMASTER FIX: Synchronous 32-bit hash. Zero memory allocation.
-  private fastCacheKey(sender: string, subject: string, body: string, contextKey: string): string {
+  private fastCacheKey(sender: unknown, subject: unknown, body: unknown, contextKey: unknown): string {
+    const sSender = toSafeString(sender);
+    const sSubject = toSafeString(subject);
+    const sBody = toSafeString(body);
+    const sContext = toSafeString(contextKey);
     // Sample the first 1000 chars + length to prevent 5MB HTML hashing
-    const sample = `${sender}|${subject}|${body.substring(0, 1000)}|len:${body.length}|ctx:${contextKey}`;
+    const sample = `${sSender}|${sSubject}|${sBody.substring(0, 1000)}|len:${sBody.length}|ctx:${sContext}`;
     let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
     for (let i = 0; i < sample.length; i++) {
       const ch = sample.charCodeAt(i);
@@ -517,14 +526,18 @@ class SmartDetectionService {
           return;
         }
 
-        const allKeys = await chrome.storage.session.get(null);
-        const cacheKeys = Object.keys(allKeys).filter(k => k.startsWith('det_'));
-        if (cacheKeys.length >= 100) {
-          const entries = cacheKeys.map(k => ({ key: k, ts: (allKeys[k] as any).timestamp }));
-          entries.sort((a, b) => a.ts - b.ts);
-          const toRemove = entries.slice(0, 10).map(e => e.key);
+        // Maintain a lightweight index array in session storage (O(1) memory footprint)
+        const sessionData = await chrome.storage.session.get('det_index');
+        let index = (sessionData?.det_index as string[]) || [];
+
+        if (index.length >= 100) {
+          const toRemove = index.splice(0, 10);
           await chrome.storage.session.remove(toRemove);
-          log.debug(`Evicted 10 oldest cache entries due to size limit.`);
+          log.debug(`Evicted 10 oldest cache entries via index.`);
+        }
+
+        if (!index.includes(key)) {
+          index.push(key);
         }
 
         const encryptedData = await encrypt(result, this.cacheKey);
@@ -536,7 +549,10 @@ class SmartDetectionService {
           ttl: this.CACHE_TTL,
         };
 
-        await chrome.storage.session.set({ [key]: encryptedEntry });
+        await chrome.storage.session.set({
+          [key]: encryptedEntry,
+          det_index: index,
+        });
         log.debug(`Cached detection result (encrypted): ${key}`);
       } catch (e) {
         log.warn('MV3 Session Cache write/encrypt failed', e);

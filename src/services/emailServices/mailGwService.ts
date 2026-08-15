@@ -1,7 +1,7 @@
 // Mail.gw Service - Free temporary email API (similar to Mail.tm)
 
 import { EmailAccount, Email, MailTmDomain, MailTmAccount, MailTmMessage } from '../../types';
-import { API, fetchWithTimeout } from '../../utils/core';
+import { API, fetchWithTimeout, contentToString } from '../../utils/core';
 import { getRandomInt, getRandomString } from '../../utils/encryption';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
@@ -292,6 +292,8 @@ class MailGwService {
     return Boolean(this.token) && Date.now() < this.tokenExpiry;
   }
 
+  private tokenRefreshPromise: Promise<string> | null = null;
+
   /**
    * Ensure we have a valid token, re-authenticating if necessary
    */
@@ -300,21 +302,27 @@ class MailGwService {
       return;
     }
 
-    // Check if we have credentials in storage to re-authenticate
-    try {
-      const { storageService } = await import('../storageService');
-      const currentEmail = await storageService.get('currentEmail');
-
-      if (currentEmail && currentEmail.service === 'mailgw' && currentEmail.password) {
-        log.info('Token expired, re-authenticating...');
-        await this.authenticate(currentEmail.fullEmail, currentEmail.password, signal);
-        return;
-      }
-    } catch (error) {
-      log.warn('Failed to retrieve credentials for re-authentication', error);
+    if (this.tokenRefreshPromise) {
+      await this.tokenRefreshPromise;
+      return;
     }
 
-    throw new Error('Not authenticated and cannot refresh token');
+    this.tokenRefreshPromise = (async () => {
+      try {
+        const { storageService } = await import('../storageService');
+        const currentEmail = await storageService.get('currentEmail');
+
+        if (currentEmail && currentEmail.service === 'mailgw' && currentEmail.password) {
+          log.info('Token expired, re-authenticating...');
+          return await this.authenticate(currentEmail.fullEmail, currentEmail.password, signal);
+        }
+        throw new Error('Not authenticated and cannot refresh token');
+      } finally {
+        this.tokenRefreshPromise = null;
+      }
+    })();
+
+    await this.tokenRefreshPromise;
   }
 
   /**
@@ -496,24 +504,27 @@ class MailGwService {
    * Convert Mail.gw message to our Email type
    */
   private convertMessage(msg: MailTmMessage, includeBody: boolean = false): Email {
+    const rawBody = includeBody ? msg.text || msg.intro || '' : msg.intro || '';
+    const bodyStr = contentToString(rawBody);
+    const textStr = contentToString(msg.text || rawBody);
+    const htmlStr = includeBody && msg.html
+      ? contentToString(Array.isArray(msg.html) ? msg.html.join('') : msg.html)
+      : '';
+
     const email: Email = {
-      id: msg.id,
-      from: msg.from.address,
-      subject: msg.subject,
+      id: String(msg.id),
+      from: contentToString(msg.from.address, 'Unknown Sender'),
+      subject: contentToString(msg.subject, '(No Subject)'),
       date: new Date(msg.createdAt).getTime(),
-      body: includeBody ? msg.text || msg.intro || '' : msg.intro || '',
+      body: bodyStr,
+      htmlBody: htmlStr || bodyStr,
+      textBody: textStr,
       attachments: [],
-      read: msg.seen,
+      read: Boolean(msg.seen),
     };
     const toAddress = msg.to[0]?.address;
     if (toAddress) {
-      email.to = toAddress;
-    }
-    if (includeBody && msg.html) {
-      email.htmlBody = Array.isArray(msg.html) ? msg.html.join('') : String(msg.html);
-    }
-    if (msg.text) {
-      email.textBody = msg.text;
+      email.to = contentToString(toAddress);
     }
     return email;
   }

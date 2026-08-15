@@ -41,184 +41,91 @@
 }
 
 :root {
-   /* ── Canvas (Spectre light — cool paper) ─────────────────────────────── */
-   --gf-paper: #eef0f4;
-   --gf-paper-2: #f5f7fb;
-   --gf-bg: #eef0f4;
-   --gf-bg-rgb: 238, 240, 244;
+   /* ── Canvas (Titanium light — crisp slate paper) ───────────────────────── */
+   --gf-paper: #f8fafc;
+   --gf-paper-2: #f1f5f9;
+   --gf-bg: #f8fafc;
+   --gf-bg-rgb: 248, 250, 252;
    --gf-surface: #ffffff;
    --gf-surface-rgb: 255, 255, 255;
-   --gf-surface-2: #f5f7fb;
-   --gf-sunken: #e8ebf1;
-   --gf-sunken-rgb: 232, 235, 241;
-   --gf-card: #ffffff;
+   --gf-surface-2: #f1f5f9;
+   --gf-sunken: #edf2f7;
+   --gf-sunken-rgb: 237, 242, 247;
+   --gf-card: rgba(255, 255, 255, 0.85);
    --gf-card-rgb: 255, 255, 255;
    --gf-card-elevated: #ffffff;
+   --gf-glass: rgba(255, 255, 255, 0.78);
+   --gf-glass-border: rgba(15, 23, 42, 0.08);
 
-   /* ── Ink (cool near-black) ───────────────────────────────────────────── */
-   --gf-ink: #11151d;
-   --gf-ink-rgb: 17, 21, 29;
-   --gf-ink-soft: #4b5566;
-   --gf-ink-soft-rgb: 75, 85, 102;
-   --gf-ink-dim: #5e6573;
-   /* ~5.9:1 on white — AA-safe even for normal text */
-   --gf-line: rgba(16, 20, 30, 0.09);
-   --gf-line-2: rgba(16, 20, 30, 0.14);
-   --gf-hi: rgba(255, 255, 255, 0.9);
-   /* machined top-edge highlight */
+   /* ── Ink (deep crisp slate) ───────────────────────────────────────────── */
+   --gf-ink: #0f172a;
+   --gf-ink-rgb: 15, 23, 42;
+   --gf-ink-soft: #475569;
+   --gf-ink-soft-rgb: 71, 85, 105;
+   --gf-ink-dim: #64748b;
+   --gf-line: rgba(15, 23, 42, 0.08);
+   --gf-line-2: rgba(15, 23, 42, 0.14);
+   --gf-hi: rgba(255, 255, 255, 0.95);
 
-   /* FIX: these were separate hardcoded literals that happened to match the
-     canonical token — now true aliases, so they can never silently drift. */
    --gf-cream: var(--gf-ink);
-   /* legacy alias: primary text */
    --gf-text-muted: var(--gf-ink-soft);
    --gf-text-dim: var(--gf-ink-dim);
 
-   /* ── Accent — the ONE hero color (Iris) ──────────────────────────────── */
-   --gf-primary: #5b54e8;
-   --gf-primary-rgb: 91, 84, 232;
-   --gf-primary-deep: #463cd0;
-   --gf-primary-soft: #e9e8fd;
+   /* ── Accent — Modern Indigo ───────────────────────────────────────────── */
+   --gf-primary: #6366f1;
+   --gf-primary-rgb: 99, 102, 241;
+   --gf-primary-deep: #4f46e5;
+   --gf-primary-soft: rgba(99, 102, 241, 0.10);
    --gf-on-primary: #ffffff;
-   /* general-purpose text/icon color on accent-tinted surfaces */
 
-   /* ── Status hues — safe as TEXT/ICON/BORDER on the page canvas ───────── */
-   --gf-mint: #0a9d72;
-   --gf-mint-rgb: 10, 157, 114;
-   --gf-mint-text: #06734f;
-   /* AA text on white/soft bg (~4.7:1); bright mint reserved for dots/fills/dark-canvas text */
-   --gf-amber: #c98209;
-   --gf-amber-rgb: 201, 130, 9;
-   --gf-amber-text: #9a6206;
-   /* AA text on white/soft bg (~4.8:1); bright amber reserved for dots/fills/dark-canvas text */
-   --gf-coral: #e0463f;
-   --gf-coral-rgb: 224, 70, 63;
-   /* FIX: mint/amber both had an AA-safe "-text" darkened counterpart for use
-     on their own *-soft pastel background — coral/danger had none, so every
-     danger badge in primitives.css was rendering at ~3.2:1 (fails AA 4.5:1).
-     #a8353a clears 4.5:1 against BOTH white and --gf-danger-soft. */
-   --gf-coral-text: #a8353a;
-   --gf-violet: #6a52d8;
-   /* rare tertiary accents only */
-   --gf-violet-rgb: 106, 82, 216;
+   /* ── Status hues ──────────────────────────────────────────────────────── */
+   --gf-mint: #10b981;
+   --gf-mint-rgb: 16, 185, 129;
+   --gf-mint-text: #047857;
+   --gf-amber: #f59e0b;
+   --gf-amber-rgb: 245, 158, 11;
+   --gf-amber-text: #b45309;
+   --gf-coral: #ef4444;
+   --gf-coral-rgb: 239, 68, 68;
+   --gf-coral-text: #b91c1c;
+   --gf-violet: #8b5cf6;
+   --gf-violet-rgb: 139, 92, 246;
 
-   /* Semantic aliases (generic naming) — aliased, not duplicated. */
+   /* Semantic aliases */
    --gf-success: var(--gf-mint);
    --gf-success-rgb: var(--gf-mint-rgb);
-   --gf-success-soft: #dcf3ea;
+   --gf-success-soft: #ecfdf5;
    --gf-warning: var(--gf-amber);
    --gf-warning-rgb: var(--gf-amber-rgb);
-   --gf-warning-soft: #fbedd2;
+   --gf-warning-soft: #fffbeb;
    --gf-danger: var(--gf-coral);
    --gf-danger-rgb: var(--gf-coral-rgb);
-   --gf-danger-soft: #fadddb;
+   --gf-danger-soft: #fef2f2;
    --gf-danger-text: var(--gf-coral-text);
 
-   /* ── Solid-fill contrast pairs ─────────────────────────────────────────
-     A different job from the hue tokens above: these are what a SOLID
-     button/icon fill should use as its background, paired with a foreground
-     ink that is guaranteed >= 4.5:1 (text) / 3:1 (icon) against it.
-       - primary / danger fills are dark enough for WHITE ink in both themes.
-       - success / warning fills (mint / amber) are light-luminance hues that
-         can NEVER clear 4.5:1 with white in either theme — they need DARK
-         ink instead. (Confirmed: white-on-mint 2.97:1, white-on-amber
-         2.72:1 in light theme; both far worse in the brightened dark theme.)
-     --gf-on-fill-dark deliberately reuses each theme's own darkest neutral
-     (ink in light mode, bg in dark mode) rather than inventing a new color —
-     both happen to be near-black and both measure >5.8:1 against mint/amber. */
    --gf-primary-fill: var(--gf-primary);
-   /* light: white text @ ~5.4:1 */
    --gf-primary-fill-deep: var(--gf-primary-deep);
    --gf-success-fill: var(--gf-mint);
    --gf-warning-fill: var(--gf-amber);
-   --gf-danger-fill: #c73e43;
-   /* white text @ ~5.0:1 in both themes */
-   --gf-danger-fill-deep: #a8353a;
-   /* white text @ ~6.5:1 */
+   --gf-danger-fill: #dc2626;
+   --gf-danger-fill-deep: #b91c1c;
    --gf-on-fill-light: #ffffff;
    --gf-on-fill-dark: var(--gf-ink);
 
-   /* ── Deprecated legacy aliases (map to canonical names — do not use) ────
-     Kept so existing rules keep rendering during the rebuild; new code uses the
-     semantic names above. Removed once all consumers are migrated.            */
-   --gf-mustard: var(--gf-amber);
-   --gf-mustard-rgb: var(--gf-amber-rgb);
-   --gf-yellow: var(--gf-amber);
-   --gf-yellow-rgb: var(--gf-amber-rgb);
-   --gf-sienna: var(--gf-coral);
-   --gf-sienna-rgb: var(--gf-coral-rgb);
-   --gf-teal: var(--gf-mint);
-   --gf-teal-rgb: var(--gf-mint-rgb);
-   --gf-cyan: var(--gf-primary);
-   --gf-cyan-rgb: var(--gf-primary-rgb);
-   --gf-magenta: var(--gf-primary);
-   --gf-magenta-rgb: var(--gf-primary-rgb);
-   --gf-coral-warm: var(--gf-violet);
-   --gf-coral-warm-rgb: var(--gf-violet-rgb);
-   --gf-accent: var(--gf-primary);
-   --gf-accent-soft: var(--gf-primary-soft);
-   --gf-detail-blue: var(--gf-primary);
-   --gf-detail-pink: var(--gf-violet);
-
-   /* Raw swatch aliases (200/300/400) — folded into the Iris family so any
-     stray direct usage stays coherent. Prefer the semantic names above.       */
-   --xxx-violet-200: var(--gf-primary-soft);
-   --xxx-violet-200-rgb: 233, 232, 253;
-   --xxx-violet-300: var(--gf-primary);
-   --xxx-violet-300-rgb: var(--gf-primary-rgb);
-   --xxx-violet-400: var(--gf-primary-deep);
-   --xxx-violet-400-rgb: 70, 60, 208;
-   --xxx-pink-200: var(--gf-primary-soft);
-   --xxx-pink-200-rgb: 233, 232, 253;
-   --xxx-pink-300: var(--gf-violet);
-   --xxx-pink-300-rgb: var(--gf-violet-rgb);
-   --xxx-pink-400: var(--gf-primary-deep);
-   --xxx-pink-400-rgb: 70, 60, 208;
-   --xxx-red-200: var(--gf-danger-soft);
-   --xxx-red-200-rgb: 250, 221, 219;
-   --xxx-red-300: var(--gf-danger);
-   --xxx-red-300-rgb: var(--gf-coral-rgb);
-   --xxx-red-400: var(--gf-coral-text);
-   --xxx-red-400-rgb: 168, 53, 58;
-   --xxx-orange-200: var(--gf-warning-soft);
-   --xxx-orange-200-rgb: 251, 237, 210;
-   --xxx-orange-300: var(--gf-warning);
-   --xxx-orange-300-rgb: var(--gf-amber-rgb);
-   --xxx-orange-400: var(--gf-amber-text);
-   --xxx-orange-400-rgb: 154, 98, 6;
-   --xxx-yellow-200: var(--gf-warning-soft);
-   --xxx-yellow-200-rgb: 251, 237, 210;
-   --xxx-yellow-300: var(--gf-warning);
-   --xxx-yellow-300-rgb: var(--gf-amber-rgb);
-   --xxx-yellow-400: var(--gf-amber-text);
-   --xxx-yellow-400-rgb: 154, 98, 6;
-   --xxx-lime-200: var(--gf-success-soft);
-   --xxx-lime-200-rgb: 220, 243, 234;
-   --xxx-lime-300: var(--gf-mint);
-   --xxx-lime-300-rgb: var(--gf-mint-rgb);
-   --xxx-lime-400: var(--gf-mint-text);
-   --xxx-lime-400-rgb: 6, 115, 79;
-   --xxx-cyan-200: var(--gf-primary-soft);
-   --xxx-cyan-200-rgb: 233, 232, 253;
-   --xxx-cyan-300: var(--gf-primary);
-   --xxx-cyan-300-rgb: var(--gf-primary-rgb);
-   --xxx-cyan-400: var(--gf-primary-deep);
-   --xxx-cyan-400-rgb: 70, 60, 208;
-
-   /* ── Gradients (accent hero only; semantic used sparingly) ───────────── */
-   --gf-grad-cobalt: linear-gradient(180deg, var(--gf-primary-fill), var(--gf-primary-fill-deep));
-   --gf-grad-cobalt-hover: linear-gradient(180deg, #6a64ee, var(--gf-primary));
-   --gf-grad-mint: linear-gradient(180deg, #12b886, var(--gf-mint));
-   --gf-grad-coral: linear-gradient(180deg, var(--gf-danger-fill), var(--gf-danger-fill-deep));
-   --gf-grad-amber: linear-gradient(180deg, #e0950f, var(--gf-amber));
-   --gf-grad-violet: linear-gradient(180deg, #7d66e6, var(--gf-violet));
-   --gf-grad-accent-bar: linear-gradient(90deg, var(--gf-primary), var(--gf-primary-deep));
-   --gf-grad-rainbow-stripe: linear-gradient(90deg, var(--gf-primary), var(--gf-primary-deep));
-   --xxx-spectrum: linear-gradient(90deg, var(--gf-primary), var(--gf-primary-deep));
-   --xxx-spectrum-tight: linear-gradient(90deg, var(--gf-primary), var(--gf-primary-deep));
+   /* ── Gradients ────────────────────────────────────────────────────────── */
+   --gf-grad-cobalt: linear-gradient(180deg, #6366f1 0%, #4f46e5 100%);
+   --gf-grad-cobalt-hover: linear-gradient(180deg, #7175f7 0%, #5950ee 100%);
+   --gf-grad-mint: linear-gradient(180deg, #34d399 0%, #10b981 100%);
+   --gf-grad-coral: linear-gradient(180deg, #f87171 0%, #ef4444 100%);
+   --gf-grad-amber: linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%);
+   --gf-grad-violet: linear-gradient(180deg, #a78bfa 0%, #8b5cf6 100%);
+   --gf-grad-accent-bar: linear-gradient(90deg, #6366f1, #8b5cf6);
+   --gf-grad-rainbow-stripe: linear-gradient(90deg, #6366f1, #8b5cf6);
+   --xxx-spectrum: linear-gradient(90deg, #6366f1, #8b5cf6);
+   --xxx-spectrum-tight: linear-gradient(90deg, #6366f1, #8b5cf6);
 
    /* ── Typography ──────────────────────────────────────────────────────── */
-   --font-display: 'Space Grotesk', 'Hanken Grotesk', system-ui, sans-serif;
+   --font-display: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
    --font-ui: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
    --font-mono: 'IBM Plex Mono', 'Space Mono', 'JetBrains Mono', ui-monospace, monospace;
    --gf-font-display: var(--font-display);
@@ -260,41 +167,41 @@
    --nb-border: 1px solid var(--gf-line);
 
    /* ── Soft layered shadows (light) ────────────────────────────────────── */
-   --shadow-hard-sm: 0 1px 2px rgba(20, 28, 46, 0.06), 0 4px 10px -2px rgba(20, 28, 46, 0.10);
-   --shadow-hard: 0 2px 6px rgba(20, 28, 46, 0.08), 0 14px 30px -10px rgba(20, 28, 46, 0.16);
-   --shadow-hard-lg: 0 8px 20px -6px rgba(20, 28, 46, 0.14), 0 30px 60px -16px rgba(20, 28, 46, 0.22);
-   --shadow-floating: 0 8px 20px -6px rgba(20, 28, 46, 0.14), 0 30px 60px -16px rgba(20, 28, 46, 0.22);
-   --shadow-card: 0 1px 2px rgba(20, 28, 46, 0.06), 0 4px 10px -2px rgba(20, 28, 46, 0.10);
-   --gf-shadow-xs: 0 1px 2px rgba(20, 28, 46, 0.06);
-   --gf-shadow-sm: 0 1px 2px rgba(20, 28, 46, 0.06), 0 4px 10px -2px rgba(20, 28, 46, 0.10);
-   --gf-shadow: 0 2px 6px rgba(20, 28, 46, 0.08), 0 14px 30px -10px rgba(20, 28, 46, 0.16);
-   --gf-shadow-lg: 0 8px 20px -6px rgba(20, 28, 46, 0.14), 0 30px 60px -16px rgba(20, 28, 46, 0.22);
-   --nb-shadow: 0 2px 6px rgba(20, 28, 46, 0.08), 0 14px 30px -10px rgba(20, 28, 46, 0.16);
-   --nb-shadow-sm: 0 1px 2px rgba(20, 28, 46, 0.06), 0 4px 10px -2px rgba(20, 28, 46, 0.10);
-   --nb-shadow-lg: 0 8px 20px -6px rgba(20, 28, 46, 0.14), 0 30px 60px -16px rgba(20, 28, 46, 0.22);
+   --shadow-hard-sm: 0 1px 2px rgba(15, 23, 42, 0.05), 0 3px 8px -2px rgba(15, 23, 42, 0.08);
+   --shadow-hard: 0 2px 5px rgba(15, 23, 42, 0.06), 0 12px 28px -8px rgba(15, 23, 42, 0.12);
+   --shadow-hard-lg: 0 6px 18px -4px rgba(15, 23, 42, 0.10), 0 24px 48px -12px rgba(15, 23, 42, 0.18);
+   --shadow-floating: 0 6px 18px -4px rgba(15, 23, 42, 0.10), 0 24px 48px -12px rgba(15, 23, 42, 0.18);
+   --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.05), 0 6px 16px -4px rgba(15, 23, 42, 0.08);
+   --gf-shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
+   --gf-shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.05), 0 4px 10px -2px rgba(15, 23, 42, 0.08);
+   --gf-shadow: 0 2px 5px rgba(15, 23, 42, 0.06), 0 12px 28px -8px rgba(15, 23, 42, 0.12);
+   --gf-shadow-lg: 0 6px 18px -4px rgba(15, 23, 42, 0.10), 0 24px 48px -12px rgba(15, 23, 42, 0.18);
+   --nb-shadow: 0 2px 5px rgba(15, 23, 42, 0.06), 0 12px 28px -8px rgba(15, 23, 42, 0.12);
+   --nb-shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.05), 0 4px 10px -2px rgba(15, 23, 42, 0.08);
+   --nb-shadow-lg: 0 6px 18px -4px rgba(15, 23, 42, 0.10), 0 24px 48px -12px rgba(15, 23, 42, 0.18);
 
    /* ── Focus ring (accent) ─────────────────────────────────────────────── */
    --gf-ring-width: 2px;
    --gf-ring-radius: 9px;
    --gf-ring-offset: 2px;
 
-   /* ── Scrim (modal / overlay backdrop) ───────────────────────────────── */
-   --gf-scrim: rgba(8, 10, 14, 0.55);
+   /* ── Scrim ───────────────────────────────────────────────────────────── */
+   --gf-scrim: rgba(15, 23, 42, 0.45);
 
    /* ── Texture ─────────────────────────────────────────────────────────── */
-   --gf-pattern-dot: radial-gradient(rgba(var(--gf-ink-rgb), 0.04) 1px, transparent 1px);
+   --gf-pattern-dot: radial-gradient(rgba(var(--gf-ink-rgb), 0.05) 1px, transparent 1px);
 
-   /* ── Motion ──────────────────────────────────────────────────────────── */
-   --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+   /* ── Motion (Spring-physics based) ───────────────────────────────────── */
+   --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
    --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
    --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
-   --gf-ease: cubic-bezier(0.22, 1, 0.36, 1);
+   --gf-ease: cubic-bezier(0.16, 1, 0.3, 1);
    --gf-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
    --gf-ease-back: cubic-bezier(0.34, 1.56, 0.64, 1);
-   --gf-dur-fast: 140ms;
-   --gf-dur: 220ms;
-   --gf-dur-slow: 380ms;
+   --gf-dur-fast: 120ms;
+   --gf-dur: 200ms;
+   --gf-dur-slow: 340ms;
    --gf-transition: all var(--gf-dur) var(--gf-ease);
 
    /* ── Z-index ─────────────────────────────────────────────────────────── */
@@ -306,87 +213,89 @@
    --z-skip: 400;
 
    /* ── Letter-spacing ──────────────────────────────────────────────────── */
-   --tracking-ultra-wide: 0.14em;
-   --tracking-wide: 0.06em;
+   --tracking-ultra-wide: 0.12em;
+   --tracking-wide: 0.05em;
    --tracking-normal: 0;
 }
 
 [data-theme='dark'] {
-   /* Canvas (Spectre — graphite, faint cool cast, NOT blue-black) */
-   --gf-paper: #101216;
-   --gf-paper-2: #181b21;
-   --gf-bg: #101216;
-   --gf-bg-rgb: 16, 18, 22;
-   --gf-surface: #181b21;
-   --gf-surface-rgb: 24, 27, 33;
-   --gf-surface-2: #1f232b;
-   --gf-sunken: #0c0e12;
-   --gf-sunken-rgb: 12, 14, 18;
-   --gf-card: #181b21;
-   --gf-card-rgb: 24, 27, 33;
-   --gf-card-elevated: #1f232b;
+   /* Canvas (Modern Titanium Dark — deep obsidian with subtle cool slate cast) */
+   --gf-paper: #0c0f14;
+   --gf-paper-2: #141820;
+   --gf-bg: #0c0f14;
+   --gf-bg-rgb: 12, 15, 20;
+   --gf-surface: #141820;
+   --gf-surface-rgb: 20, 24, 32;
+   --gf-surface-2: #1b212c;
+   --gf-sunken: #080a0e;
+   --gf-sunken-rgb: 8, 10, 14;
+   --gf-card: rgba(20, 24, 32, 0.82);
+   --gf-card-rgb: 20, 24, 32;
+   --gf-card-elevated: #1e2432;
+   --gf-glass: rgba(20, 24, 32, 0.72);
+   --gf-glass-border: rgba(255, 255, 255, 0.09);
 
-   /* Ink (cool light) */
-   --gf-ink: #eef1f6;
-   --gf-ink-rgb: 238, 241, 246;
-   --gf-ink-soft: #aab2c0;
-   --gf-ink-soft-rgb: 170, 178, 192;
-   --gf-ink-dim: #7d8492;
+   /* Ink (Arctic White + Titanium Slate) */
+   --gf-ink: #f4f6fa;
+   --gf-ink-rgb: 244, 246, 250;
+   --gf-ink-soft: #949cb0;
+   --gf-ink-soft-rgb: 148, 156, 176;
+   --gf-ink-dim: #697386;
    --gf-line: rgba(255, 255, 255, 0.08);
-   --gf-line-2: rgba(255, 255, 255, 0.13);
-   --gf-hi: rgba(255, 255, 255, 0.06);
+   --gf-line-2: rgba(255, 255, 255, 0.14);
+   --gf-hi: rgba(255, 255, 255, 0.08);
    --gf-cream: var(--gf-ink);
    --gf-text-muted: var(--gf-ink-soft);
    --gf-text-dim: var(--gf-ink-dim);
 
-   --gf-primary: #7c83ff;
-   --gf-primary-rgb: 124, 131, 255;
-   --gf-primary-deep: #5a61f0;
-   --gf-primary-soft: #1c2040;
+   --gf-primary: #818cf8;
+   --gf-primary-rgb: 129, 140, 248;
+   --gf-primary-deep: #6366f1;
+   --gf-primary-soft: rgba(99, 102, 241, 0.15);
    --gf-on-primary: #ffffff;
 
-   --gf-mint: #3fe0c5;
-   --gf-mint-rgb: 63, 224, 197;
+   --gf-mint: #34d399;
+   --gf-mint-rgb: 52, 211, 153;
    --gf-mint-text: var(--gf-mint);
-   --gf-amber: #f4b740;
-   --gf-amber-rgb: 244, 183, 64;
+   --gf-amber: #fbbf24;
+   --gf-amber-rgb: 251, 191, 36;
    --gf-amber-text: var(--gf-amber);
-   --gf-coral: #ff6b6b;
-   --gf-coral-rgb: 255, 107, 107;
+   --gf-coral: #f87171;
+   --gf-coral-rgb: 248, 113, 113;
    --gf-coral-text: var(--gf-coral);
-   --gf-violet: #a78bff;
-   --gf-violet-rgb: 167, 139, 255;
+   --gf-violet: #a78bfa;
+   --gf-violet-rgb: 167, 139, 250;
 
    --gf-success: var(--gf-mint);
    --gf-success-rgb: var(--gf-mint-rgb);
-   --gf-success-soft: #0f2a25;
+   --gf-success-soft: rgba(16, 185, 129, 0.14);
    --gf-warning: var(--gf-amber);
    --gf-warning-rgb: var(--gf-amber-rgb);
-   --gf-warning-soft: #2a2110;
+   --gf-warning-soft: rgba(245, 158, 11, 0.14);
    --gf-danger: var(--gf-coral);
    --gf-danger-rgb: var(--gf-coral-rgb);
-   --gf-danger-soft: #2c1414;
+   --gf-danger-soft: rgba(239, 68, 68, 0.14);
    --gf-danger-text: var(--gf-coral-text);
 
-   --gf-primary-fill: var(--gf-primary-deep);
-   --gf-primary-fill-deep: #464cd6;
+   --gf-primary-fill: #4f46e5;
+   --gf-primary-fill-deep: #4338ca;
    --gf-on-fill-dark: var(--gf-bg);
 
-   --shadow-hard-sm: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.4);
-   --shadow-hard: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.42), 0 16px 36px -12px rgba(0, 0, 0, 0.6);
-   --shadow-hard-lg: 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 26px -8px rgba(0, 0, 0, 0.5), 0 40px 80px -20px rgba(0, 0, 0, 0.72);
-   --shadow-floating: 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 26px -8px rgba(0, 0, 0, 0.5), 0 40px 80px -20px rgba(0, 0, 0, 0.72);
-   --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.4);
-   --gf-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
-   --gf-shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.4);
-   --gf-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.42), 0 16px 36px -12px rgba(0, 0, 0, 0.6);
-   --gf-shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 26px -8px rgba(0, 0, 0, 0.5), 0 40px 80px -20px rgba(0, 0, 0, 0.72);
-   --nb-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.42), 0 16px 36px -12px rgba(0, 0, 0, 0.6);
-   --nb-shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.4);
-   --nb-shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 26px -8px rgba(0, 0, 0, 0.5), 0 40px 80px -20px rgba(0, 0, 0, 0.72);
+   --shadow-hard-sm: 0 1px 0 rgba(255, 255, 255, 0.05), 0 2px 6px rgba(0, 0, 0, 0.45);
+   --shadow-hard: 0 1px 0 rgba(255, 255, 255, 0.06), 0 3px 8px rgba(0, 0, 0, 0.5), 0 16px 36px -10px rgba(0, 0, 0, 0.65);
+   --shadow-hard-lg: 0 1px 0 rgba(255, 255, 255, 0.07), 0 10px 28px -6px rgba(0, 0, 0, 0.6), 0 36px 72px -16px rgba(0, 0, 0, 0.8);
+   --shadow-floating: 0 1px 0 rgba(255, 255, 255, 0.07), 0 10px 28px -6px rgba(0, 0, 0, 0.6), 0 36px 72px -16px rgba(0, 0, 0, 0.8);
+   --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.05), 0 2px 8px rgba(0, 0, 0, 0.45);
+   --gf-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.45);
+   --gf-shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.05), 0 2px 6px rgba(0, 0, 0, 0.45);
+   --gf-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), 0 3px 8px rgba(0, 0, 0, 0.5), 0 16px 36px -10px rgba(0, 0, 0, 0.65);
+   --gf-shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.07), 0 10px 28px -6px rgba(0, 0, 0, 0.6), 0 36px 72px -16px rgba(0, 0, 0, 0.8);
+   --nb-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), 0 3px 8px rgba(0, 0, 0, 0.5), 0 16px 36px -10px rgba(0, 0, 0, 0.65);
+   --nb-shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.05), 0 2px 6px rgba(0, 0, 0, 0.45);
+   --nb-shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.07), 0 10px 28px -6px rgba(0, 0, 0, 0.6), 0 36px 72px -16px rgba(0, 0, 0, 0.8);
 
-   --gf-scrim: rgba(4, 5, 7, 0.7);
-   --gf-grad-cobalt-hover: linear-gradient(180deg, #8b91ff, #6a70f5);
+   --gf-scrim: rgba(5, 7, 10, 0.75);
+   --gf-grad-cobalt-hover: linear-gradient(180deg, #939bf8, #7175f7);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,6 +1,7 @@
 import { IEmailProvider, Email, EmailAccount } from '../../types';
 import { createLogger } from '../../utils/logger';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
+import { fetchWithTimeout, contentToString } from '../../utils/core';
 import { storageService } from '../storageService';
 import { providerHealth } from './providerHealthManager';
 
@@ -60,11 +61,9 @@ export class CustomDomainService implements IEmailProvider {
           method: 'POST',
           headers,
           body: JSON.stringify({ action: 'create', prefix, domain: config.domain, fullEmail }),
+          signal: signal ?? null,
         };
-        if (signal) {
-          fetchInit.signal = signal;
-        }
-        const response = await fetch(generationUrl.toString(), fetchInit);
+        const response = await fetchWithTimeout(generationUrl.toString(), fetchInit);
 
         if (!response.ok) {
           const details = await response.text().catch(() => '');
@@ -133,11 +132,9 @@ export class CustomDomainService implements IEmailProvider {
       const fetchInit: RequestInit = {
         method: 'GET',
         headers,
+        signal: signal ?? null,
       };
-      if (signal) {
-        fetchInit.signal = signal;
-      }
-      const response = await fetch(url.toString(), fetchInit);
+      const response = await fetchWithTimeout(url.toString(), fetchInit);
 
       if (!response.ok) {
         const error = new Error(`Custom API returned ${response.status}`);
@@ -159,16 +156,22 @@ export class CustomDomainService implements IEmailProvider {
           date?: string | number;
         }
 
-        return data.messages.map((msg: CustomMessage) => ({
-          id: msg.id || String(Date.now()),
-          from: msg.from,
-          subject: msg.subject,
-          body: msg.body || '',
-          htmlBody: msg.htmlBody,
-          date: msg.date ? new Date(msg.date).getTime() : Date.now(),
-          attachments: [],
-          read: false,
-        }));
+        return data.messages.map((msg: CustomMessage) => {
+          const bodyStr = contentToString(msg.body);
+          const htmlStr = contentToString(msg.htmlBody || msg.body);
+          return {
+            id: msg.id || String(Date.now()),
+            from: contentToString(msg.from, 'Unknown Sender'),
+            to: account.fullEmail,
+            subject: contentToString(msg.subject, '(No Subject)'),
+            body: bodyStr,
+            htmlBody: htmlStr,
+            textBody: bodyStr,
+            date: msg.date ? new Date(msg.date).getTime() : Date.now(),
+            attachments: [],
+            read: false,
+          };
+        });
       }
 
       return [];

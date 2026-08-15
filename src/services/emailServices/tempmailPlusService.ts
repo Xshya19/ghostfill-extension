@@ -1,7 +1,7 @@
 // Tempmail.plus / Mailto.plus Service Integration
 
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout } from '../../utils/core';
+import { fetchWithTimeout, contentToString } from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 
@@ -48,12 +48,13 @@ export class TempmailPlusService {
 
       return mailList.map((msg: any) => ({
         id: String(msg.mail_id || msg.id),
-        from: msg.from_mail || msg.from || 'Unknown Sender',
+        from: contentToString(msg.from_mail || msg.from, 'Unknown Sender'),
         to: fullEmail,
-        subject: msg.subject || '(No Subject)',
+        subject: contentToString(msg.subject, '(No Subject)'),
         date: msg.date ? new Date(msg.date).getTime() : Date.now(),
-        body: msg.text || msg.body || '',
-        htmlBody: msg.html || msg.body || '',
+        body: contentToString(msg.text || msg.body),
+        htmlBody: contentToString(msg.html || msg.body),
+        textBody: contentToString(msg.text || msg.body),
         read: Boolean(msg.is_read),
         attachments: [],
       }));
@@ -76,15 +77,19 @@ export class TempmailPlusService {
       }
 
       const msg = await response.json();
+      const bodyStr = contentToString(msg.text || msg.body || msg.html);
+      const htmlStr = contentToString(msg.html || msg.body);
+      const textStr = contentToString(msg.text || msg.body);
+
       return {
         id: String(msg.mail_id || msg.id || emailId),
-        from: msg.from_mail || msg.from || 'Unknown Sender',
+        from: contentToString(msg.from_mail || msg.from, 'Unknown Sender'),
         to: fullEmail,
-        subject: msg.subject || '(No Subject)',
+        subject: contentToString(msg.subject, '(No Subject)'),
         date: msg.date ? new Date(msg.date).getTime() : Date.now(),
-        body: msg.text || msg.body || msg.html || '',
-        htmlBody: msg.html || msg.body || '',
-        textBody: msg.text || msg.body || '',
+        body: bodyStr,
+        htmlBody: htmlStr,
+        textBody: textStr,
         read: true,
         attachments: [],
       };
