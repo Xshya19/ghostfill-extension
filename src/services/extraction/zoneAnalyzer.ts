@@ -93,23 +93,25 @@ const FOOTER_SIGNALS = [
  * @param plainText - Optional pre-computed plain text
  * @returns Array of identified zones with content and weights
  */
-export function analyzeEmailZones(html: string, plainText: string): EmailZone[] {
+export function analyzeEmailZones(html: string = '', plainText: string = ''): EmailZone[] {
+  const safeHtml = typeof html === 'string' ? html : '';
+  const safeText = typeof plainText === 'string' ? plainText : '';
   const zones: EmailZone[] = [];
 
-  if (!html || html.trim().length === 0) {
+  if (!safeHtml || safeHtml.trim().length === 0) {
     return [
       {
         zone: 'body-primary',
-        content: plainText,
-        htmlContent: plainText,
+        content: safeText,
+        htmlContent: safeText,
         weight: ZONE_WEIGHTS['body-primary'],
         startIndex: 0,
-        endIndex: plainText.length,
+        endIndex: safeText.length,
       },
     ];
   }
 
-  const decoded = decodeHtmlEntities(html);
+  const decoded = decodeHtmlEntities(safeHtml);
   const lower = decoded.toLowerCase();
 
   // Extract preheaders
@@ -212,7 +214,7 @@ export function analyzeEmailZones(html: string, plainText: string): EmailZone[] 
  * @returns The index where footer starts, or -1 if not found
  */
 function findFooterStart(lower: string): number {
-  if (typeof lower !== 'string') return -1;
+  if (typeof lower !== 'string') {return -1;}
   let earliest = -1;
 
   for (const signal of FOOTER_SIGNALS) {
@@ -234,7 +236,7 @@ function findFooterStart(lower: string): number {
  * @returns The index where header ends, or -1 if not found
  */
 function findHeaderEnd(lower: string): number {
-  if (typeof lower !== 'string') return -1;
+  if (typeof lower !== 'string') {return -1;}
   const signals = [/<h[12][^>]*>/i, /class\s*=\s*["'][^"']*(?:content|main|body)[^"']*["']/i];
 
   for (const signal of signals) {
@@ -274,7 +276,10 @@ function findBlockStart(html: string, idx: number): number {
  * @param pos - Position to find zone for
  * @returns The containing zone or null
  */
-export function getZoneForPosition(zones: EmailZone[], pos: number): EmailZone | null {
+export function getZoneForPosition(zones: EmailZone[] | null | undefined, pos: number): EmailZone | null {
+  if (!Array.isArray(zones) || zones.length === 0) {
+    return null;
+  }
   let best: EmailZone | null = null;
   let bestSize = Infinity;
 

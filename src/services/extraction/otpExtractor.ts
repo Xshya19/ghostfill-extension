@@ -4,7 +4,6 @@
 //  Multi-strategy · Never-wrong · Alnum-safe
 // ══════════════════════════════════════════
 import { createLogger } from '../../utils/logger';
-import { KnowledgeBase } from './knowledge';
 import type {
   ProviderKnowledge,
   EmailZone,
@@ -17,6 +16,7 @@ import type {
   ExtractionStrategy,
   OTPSignal,
 } from '../types/extraction.types';
+import { KnowledgeBase } from './knowledge';
 import { decodeHtmlEntities, getZoneForPosition, getContextAround } from './zoneAnalyzer';
 
 const log = createLogger('OTPExtractor');
@@ -65,12 +65,12 @@ const CONFIG = {
 // ══════════════════════════════════════════
 
 function sliceAround(text: string, index: number, length: number, radius: number): string {
-  if (!text || index < 0) return '';
+  if (!text || index < 0) {return '';}
   return text.slice(Math.max(0, index - radius), Math.min(text.length, index + length + radius));
 }
 
 function isInsideUrlLikeSpan(text: string, index: number, length: number): boolean {
-  if (!text || index < 0) return false;
+  if (!text || index < 0) {return false;}
 
   const start = Math.max(0, index - 160);
   const window = text.slice(start, Math.min(text.length, index + length + 160));
@@ -82,7 +82,7 @@ function isInsideUrlLikeSpan(text: string, index: number, length: number): boole
   while ((m = urlRegex.exec(window)) !== null) {
     const urlStart = m.index;
     const urlEnd = m.index + m[0].length;
-    if (localIndex >= urlStart && localEnd <= urlEnd) return true;
+    if (localIndex >= urlStart && localEnd <= urlEnd) {return true;}
   }
 
   const before = window.slice(Math.max(0, localIndex - 50), localIndex).toLowerCase();
@@ -91,9 +91,9 @@ function isInsideUrlLikeSpan(text: string, index: number, length: number): boole
 
 /** Shannon-ish entropy — random OTPs score higher than 111111 / ABABAB. */
 function codeEntropy(code: string): number {
-  if (!code) return 0;
+  if (!code) {return 0;}
   const freq = new Map<string, number>();
-  for (const ch of code) freq.set(ch, (freq.get(ch) || 0) + 1);
+  for (const ch of code) {freq.set(ch, (freq.get(ch) || 0) + 1);}
   let h = 0;
   for (const c of freq.values()) {
     const p = c / code.length;
@@ -105,37 +105,37 @@ function codeEntropy(code: string): number {
 
 /** Quality score for alphanumeric OTPs (Steam/Epic/Discord style). */
 function alnumQuality(code: string): number {
-  if (typeof code !== 'string') return 0;
+  if (typeof code !== 'string') {return 0;}
   const hasUpper = /[A-Z]/.test(code);
   const hasLower = /[a-z]/.test(code);
   const hasDigit = /\d/.test(code);
   const letters = (code.match(/[A-Za-z]/g) || []).length;
   const digits = (code.match(/\d/g) || []).length;
-  if (!hasDigit || letters === 0) return 0;
+  if (!hasDigit || letters === 0) {return 0;}
 
   let q = 0;
   // Mixed character classes are strong OTP signals
-  if (hasDigit && (hasUpper || hasLower)) q += 8;
-  if (hasUpper && hasDigit) q += 6;
-  if (digits >= 2 && letters >= 2) q += 6;
+  if (hasDigit && (hasUpper || hasLower)) {q += 8;}
+  if (hasUpper && hasDigit) {q += 6;}
+  if (digits >= 2 && letters >= 2) {q += 6;}
   // Avoid dictionary-looking pure words with a trailing digit (e.g. "code1")
-  if (/^[A-Za-z]{4,}\d$/.test(code)) q -= 10;
+  if (/^[A-Za-z]{4,}\d$/.test(code)) {q -= 10;}
   // Avoid hex-color-like
-  if (/^[0-9a-f]{6}$/i.test(code) && !hasUpper) q -= 4;
+  if (/^[0-9a-f]{6}$/i.test(code) && !hasUpper) {q -= 4;}
   return q;
 }
 
 function isPlausibleOtpShape(code: string): boolean {
-  if (typeof code !== 'string') return false;
+  if (typeof code !== 'string') {return false;}
   if (code.length < CONFIG.limits.minCodeLength || code.length > CONFIG.limits.maxCodeLength) {
     return false;
   }
   // Must contain at least one digit — pure words are never OTPs
-  if (!/\d/.test(code)) return false;
+  if (!/\d/.test(code)) {return false;}
   // Reject pure hex colors with #
-  if (code.startsWith('#')) return false;
+  if (code.startsWith('#')) {return false;}
   // Reject mostly-separator garbage
-  if ((code.match(/[A-Za-z0-9]/g) || []).length < 4) return false;
+  if ((code.match(/[A-Za-z0-9]/g) || []).length < 4) {return false;}
   return true;
 }
 
@@ -159,13 +159,13 @@ const LABEL_PATTERNS = [
   // type-prefixed
   /(?:confirmation|verification|security|one.?time|login|sign.?in|access|authentication)\s+code\s*[-:–—]?\s*([A-Za-z0-9]{4,10})\b/gi,
   // bracket-wrapped
-  /[\[({]\s*([A-Za-z0-9]{4,10})\s*[\])}]/g,
+  /[[({]\s*([A-Za-z0-9]{4,10})\s*[\])}]/g,
   // line-start labels
   /(?:^|[.!?\n]\s*)(?:code|pin|otp|token|passcode)\s*[:=]\s*([A-Za-z0-9]{4,10})\b/gim,
   // standalone number on its own line
   /^\s*(\d{4,8})\s*$/gm,
   // dash/space separated groups (123 456 / 12-34-56 / AB-12-CD)
-  /(?:code|pin|otp|passcode|token)\s*[:\s]\s*([A-Za-z0-9][A-Za-z0-9\s-]{2,14}[A-Za-z0-9])/gi,
+  /(?:code|pin|otp|passcode|token)\s*(?:is|:|=)\s*([A-Za-z0-9][A-Za-z0-9\s-]{2,14}[A-Za-z0-9])/gi,
   // Multilingual common labels
   /(?:código|kennwort|code de|認証コード|验证码|인증번호|код|رمز|كود|şifre)\s*(?:is|:|=|は|为|：)?\s*([A-Za-z0-9]{4,10})/gi,
 ] as const;
@@ -212,12 +212,12 @@ const EXTENDED_ANTI_PATTERNS: Array<{
   {
     name: 'year',
     test: (v, ctx, idx) => {
-      if (!/^(?:19|20)\d{2}$/.test(v)) return false;
+      if (!/^(?:19|20)\d{2}$/.test(v)) {return false;}
       const before =
         idx !== undefined && idx >= 0
           ? sliceAround(ctx, idx, v.length, 15).toLowerCase().substring(0, 15)
           : getContextAround(ctx, v, 15).toLowerCase().split(v)[0] || '';
-      if (/(?:©|copyright|\(c\)|copr\.)/.test(before)) return true;
+      if (/(?:©|copyright|\(c\)|copr\.)/.test(before)) {return true;}
       const near =
         idx !== undefined && idx >= 0
           ? sliceAround(ctx, idx, v.length, 40).toLowerCase()
@@ -305,14 +305,14 @@ const EXTENDED_ANTI_PATTERNS: Array<{
     name: 'sequential',
     test: (v, ctx, idx) => {
       const d = v.replace(/\D/g, '');
-      if (d.length < 4 || d.length !== v.length) return false; // only pure-digit sequential
+      if (d.length < 4 || d.length !== v.length) {return false;} // only pure-digit sequential
       let asc = true;
       let desc = true;
       for (let i = 1; i < d.length; i++) {
-        if (parseInt(d[i]!, 10) !== (parseInt(d[i - 1]!, 10) + 1) % 10) asc = false;
-        if (parseInt(d[i]!, 10) !== (parseInt(d[i - 1]!, 10) - 1 + 10) % 10) desc = false;
+        if (parseInt(d[i]!, 10) !== (parseInt(d[i - 1]!, 10) + 1) % 10) {asc = false;}
+        if (parseInt(d[i]!, 10) !== (parseInt(d[i - 1]!, 10) - 1 + 10) % 10) {desc = false;}
       }
-      if (!(asc || desc)) return false;
+      if (!(asc || desc)) {return false;}
       // Soft: only hard-reject sequential when NO otp language nearby
       const near =
         idx !== undefined && idx >= 0
@@ -349,7 +349,7 @@ const EXTENDED_ANTI_PATTERNS: Array<{
   {
     name: 'bare-id-no-context',
     test: (v, ctx, idx) => {
-      if (!/^\d{8,10}$/.test(v)) return false;
+      if (!/^\d{8,10}$/.test(v)) {return false;}
       const near =
         idx !== undefined && idx >= 0
           ? sliceAround(ctx, idx, v.length, 60).toLowerCase()
@@ -361,12 +361,12 @@ const EXTENDED_ANTI_PATTERNS: Array<{
   {
     name: 'email-embedded-code',
     test: (v, ctx, idx) => {
-      if (!/^\d{2,12}$/.test(v)) return false;
+      if (!/^\d{2,12}$/.test(v)) {return false;}
       const around =
         idx !== undefined && idx >= 0
           ? sliceAround(ctx, idx, v.length, 150)
           : getContextAround(ctx, v, 150);
-      if (!isCodeEmbeddedInEmail(v, around)) return false;
+      if (!isCodeEmbeddedInEmail(v, around)) {return false;}
       return !/(?:code|otp|pin|passcode|verification|security code|one[ -]?time|enter|use|type|input)/i.test(
         around
       );
@@ -377,7 +377,7 @@ const EXTENDED_ANTI_PATTERNS: Array<{
   {
     name: 'email-embedded-code-penalty',
     test: (v, ctx, idx) => {
-      if (!/^\d{2,12}$/.test(v)) return false;
+      if (!/^\d{2,12}$/.test(v)) {return false;}
       const around =
         idx !== undefined && idx >= 0
           ? sliceAround(ctx, idx, v.length, 150)
@@ -396,23 +396,23 @@ const EXTENDED_ANTI_PATTERNS: Array<{
  * the real OTP. Used by both extractor engines as a hard false-positive gate.
  */
 export function isCodeEmbeddedInEmail(code: string, text: string): boolean {
-  if (!/^\d{2,12}$/.test(code) || !text) return false;
+  if (!/^\d{2,12}$/.test(code) || !text) {return false;}
   const esc = code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const patterns = [
     // ...<sep>CODE@domain  (code is the last token of the local part)
     new RegExp(
-      `[a-z0-9_.,%+\-]+(?:[._%+\-]|@[a-z0-9.-]*[._%+\-])${esc}@[a-z0-9.-]+\.[a-z]{2,}`,
+      `[a-z0-9_.,%+-]+(?:[._%+-]|@[a-z0-9.-]*[._%+-])${esc}@[a-z0-9.-]+\\.[a-z]{2,}`,
       'i'
     ),
     // ...<sep>CODE<sep>rest...@domain  (code is an interior local-part segment)
     new RegExp(
-      `[a-z0-9_.,%+\-]*${esc}[._%+\-][a-z0-9_.,%+\-]+@[a-z0-9.-]+\.[a-z]{2,}`,
+      `[a-z0-9_.,%+-]*${esc}[._%+-][a-z0-9_.,%+-]+@[a-z0-9.-]+\\.[a-z]{2,}`,
       'i'
     ),
     // CODE is the entire local part before @
-    new RegExp(`(?:^|[^a-z0-9_.,%+\-])${esc}@[a-z0-9.-]+\.[a-z]{2,}`, 'i'),
+    new RegExp(`(?:^|[^a-z0-9_.,%+-])${esc}@[a-z0-9.-]+\\.[a-z]{2,}`, 'i'),
     // numeric segment inside the domain after @
-    new RegExp(`@[a-z0-9_-]*${esc}[a-z0-9_-]*(?:\.[a-z]{2,})`, 'i'),
+    new RegExp(`@[a-z0-9_-]*${esc}[a-z0-9_-]*(?:\\.[a-z]{2,})`, 'i'),
   ];
   return patterns.some((re) => re.test(text));
 }
@@ -423,7 +423,7 @@ export function isCodeEmbeddedInEmail(code: string, text: string): boolean {
  * digits are both in the address AND are the real code" case.
  */
 export function hasIsolatedOtpContext(code: string, text: string): boolean {
-  if (!text) return false;
+  if (!text) {return false;}
   const esc = code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const re = new RegExp(`\\b${esc}\\b`, 'gi');
   let m: RegExpExecArray | null;
@@ -435,8 +435,8 @@ export function hasIsolatedOtpContext(code: string, text: string): boolean {
     const hasOtpLang = /(?:code|otp|pin|passcode|verification|security code|one[ -]?time|enter|use|type|input)/i.test(
       immediate
     );
-    if (hasOtpLang && !isCodeEmbeddedInEmail(code, immediate)) return true;
-    if (m.index === re.lastIndex) re.lastIndex++;
+    if (hasOtpLang && !isCodeEmbeddedInEmail(code, immediate)) {return true;}
+    if (m.index === re.lastIndex) {re.lastIndex++;}
   }
   return false;
 }
@@ -467,14 +467,14 @@ export function checkAntiPatterns(
 
   for (const anti of KnowledgeBase.antiPatterns) {
     const fresh = new RegExp(anti.pattern.source, anti.pattern.flags.replace('g', ''));
-    if (!fresh.test(value)) continue;
+    if (!fresh.test(value)) {continue;}
 
     if (anti.name === 'year-4digit' || anti.name === 'year-2digit') {
       const near =
         valueIndex !== undefined && valueIndex >= 0
           ? sliceAround(fullText, valueIndex, value.length, 30).toLowerCase()
           : getContextAround(fullText, value, 30).toLowerCase();
-      if (/(?:code|pin|otp|password|token|passcode)/.test(near)) continue;
+      if (/(?:code|pin|otp|password|token|passcode)/.test(near)) {continue;}
     }
 
     const shouldReject =
@@ -492,7 +492,7 @@ export function checkAntiPatterns(
 
   const CONTEXTUAL_REJECT = new Set(['order', 'tracking', 'reference', 'account', 'promo-code']);
   for (const anti of EXTENDED_ANTI_PATTERNS) {
-    if (!anti.test(value, fullText, valueIndex)) continue;
+    if (!anti.test(value, fullText, valueIndex)) {continue;}
     const shouldReject =
       anti.reject === true || anti.severity === 'critical' || CONTEXTUAL_REJECT.has(anti.name);
     consider(
@@ -501,8 +501,8 @@ export function checkAntiPatterns(
     );
   }
 
-  if (rejectHit) return rejectHit;
-  if (penaltyHit) return penaltyHit;
+  if (rejectHit) {return rejectHit;}
+  if (penaltyHit) {return penaltyHit;}
   return { isRejected: false, reason: '', severity: 'none', pattern: '' };
 }
 
@@ -526,7 +526,7 @@ export function validateContext(
   if (decodedHtml) {
     htmlValIdx = decodedHtml.toLowerCase().indexOf(value.toLowerCase());
   }
-  if (htmlValIdx === -1) htmlValIdx = valIdx;
+  if (htmlValIdx === -1) {htmlValIdx = valIdx;}
 
   const nearCtx = sliceAround(fullText, valIdx, anchorLen, CONFIG.context.nearRadius).toLowerCase();
   const midCtx = sliceAround(fullText, valIdx, anchorLen, CONFIG.context.midRadius).toLowerCase();
@@ -566,16 +566,16 @@ export function validateContext(
       let tIdx = lower.indexOf(term, from);
       while (tIdx !== -1) {
         const d = Math.abs(tIdx - valIdx);
-        if (d < semanticDistance) semanticDistance = d;
+        if (d < semanticDistance) {semanticDistance = d;}
         from = tIdx + term.length;
         tIdx = lower.indexOf(term, from);
       }
     }
   }
 
-  if (semanticDistance < 40) score += 14;
-  else if (semanticDistance < 100) score += 9;
-  else if (semanticDistance < 200) score += 5;
+  if (semanticDistance < 40) {score += 14;}
+  else if (semanticDistance < 100) {score += 9;}
+  else if (semanticDistance < 200) {score += 5;}
 
   const rg: RelationshipGraph = {
     hasInstructionVerb: /(?:enter|use|type|input|provide|submit|copy|paste|click|tap|press)/i.test(nearCtx),
@@ -588,9 +588,9 @@ export function validateContext(
     hasCTAProximity: false,
   };
 
-  if (rg.hasInstructionVerb) score += 8;
-  if (rg.hasValidityPeriod) score += 6;
-  if (rg.hasSecurityWarning) score += 6;
+  if (rg.hasInstructionVerb) {score += 8;}
+  if (rg.hasValidityPeriod) {score += 6;}
+  if (rg.hasSecurityWarning) {score += 6;}
 
   if (category === 'otp' && valIdx > 0) {
     const before = fullText.substring(Math.max(0, valIdx - 80), valIdx);
@@ -640,16 +640,16 @@ export function validateContext(
     }
   }
 
-  if (matched.length >= 5) score += 15;
-  else if (matched.length >= 3) score += 10;
-  else if (matched.length >= 2) score += 5;
+  if (matched.length >= 5) {score += 15;}
+  else if (matched.length >= 3) {score += 10;}
+  else if (matched.length >= 2) {score += 5;}
 
   if (htmlValIdx !== -1) {
     const zone = getZoneForPosition(zones, htmlValIdx);
     if (zone) {
-      if (zone.zone === 'body-primary' || zone.zone === 'cta') score += 8;
-      else if (zone.zone === 'footer') score -= 15;
-      else if (zone.zone === 'preheader') score += 3;
+      if (zone.zone === 'body-primary' || zone.zone === 'cta') {score += 8;}
+      else if (zone.zone === 'footer') {score -= 15;}
+      else if (zone.zone === 'preheader') {score += 3;}
     }
   }
 
@@ -683,27 +683,27 @@ export function calculateIsolationScore(
   const lineStart = text.lastIndexOf('\n', pos);
   const lineEnd = text.indexOf('\n', pos + code.length);
   const line = text.substring(lineStart + 1, lineEnd === -1 ? text.length : lineEnd).trim();
-  if (line === code || line === (rawMatch ?? code)) score += 40;
-  else if (line.length < code.length * 3) score += 20;
+  if (line === code || line === (rawMatch ?? code)) {score += 40;}
+  else if (line.length < code.length * 3) {score += 20;}
 
   const before = pos > 0 ? (text[pos - 1] ?? ' ') : ' ';
   const after = pos + code.length < text.length ? (text[pos + code.length] ?? ' ') : ' ';
-  if (/\s/.test(before) && /\s/.test(after)) score += 15;
+  if (/\s/.test(before) && /\s/.test(after)) {score += 15;}
 
   if (html) {
     let htmlIdx = rawMatch ? html.indexOf(rawMatch) : -1;
-    if (htmlIdx === -1) htmlIdx = html.indexOf(code);
+    if (htmlIdx === -1) {htmlIdx = html.indexOf(code);}
     if (htmlIdx !== -1) {
       const surrounding = html.substring(
         Math.max(0, htmlIdx - 250),
         Math.min(html.length, htmlIdx + code.length + 60)
       );
-      if (/letter-spacing/i.test(surrounding)) score += 25;
-      if (/font-size\s*:\s*(?:1[8-9]|[2-9]\d|1\d{2})/i.test(surrounding)) score += 20;
-      if (/font-weight\s*:\s*(?:bold|[6-9]\d\d)/i.test(surrounding)) score += 15;
-      if (/<(?:strong|b)\b/i.test(surrounding)) score += 15;
-      if (/text-align\s*:\s*center/i.test(surrounding)) score += 10;
-      if (/<(?:code|pre|tt|samp|kbd)\b/i.test(surrounding)) score += 20;
+      if (/letter-spacing/i.test(surrounding)) {score += 25;}
+      if (/font-size\s*:\s*(?:1[8-9]|[2-9]\d|1\d{2})/i.test(surrounding)) {score += 20;}
+      if (/font-weight\s*:\s*(?:bold|[6-9]\d\d)/i.test(surrounding)) {score += 15;}
+      if (/<(?:strong|b)\b/i.test(surrounding)) {score += 15;}
+      if (/text-align\s*:\s*center/i.test(surrounding)) {score += 10;}
+      if (/<(?:code|pre|tt|samp|kbd)\b/i.test(surrounding)) {score += 20;}
     }
   }
 
@@ -711,10 +711,10 @@ export function calculateIsolationScore(
 }
 
 function strategyLabel(patternName: string): ExtractionStrategy {
-  if (patternName.startsWith('provider')) return 'explicit-label';
-  if (patternName === 'styled-code' || patternName === 'td-cell-isolated') return 'html-prominent';
-  if (patternName === 'label-adjacent') return 'explicit-label';
-  if (patternName === 'semantic-proximity') return 'proximity-inference';
+  if (patternName.startsWith('provider')) {return 'explicit-label';}
+  if (patternName === 'styled-code' || patternName === 'td-cell-isolated') {return 'html-prominent';}
+  if (patternName === 'label-adjacent') {return 'explicit-label';}
+  if (patternName === 'semantic-proximity') {return 'proximity-inference';}
   return 'explicit-label';
 }
 
@@ -727,14 +727,15 @@ interface ExtractedOTPCandidate extends OTPCandidate {
 
 // ══════════════════════════════════════════
 //  MAIN OTP EXTRACTION
-// ══════════════════════════════════════════
 export function extractOTP(
-  fullText: string,
-  htmlBody: string,
-  provider: ProviderKnowledge | null,
-  zones: EmailZone[],
-  intent: IntentResult
+  rawFullText: string,
+  rawHtmlBody: string = '',
+  provider: ProviderKnowledge | null = null,
+  zones: EmailZone[] = [],
+  intent?: IntentResult
 ): ExtractedOTP | null {
+  const fullText = (rawFullText || '').replace(/[\u200B-\u200D\uFEFF\u200E\u200F\u2060]/g, '');
+  const htmlBody = (rawHtmlBody || '').replace(/[\u200B-\u200D\uFEFF\u200E\u200F\u2060]/g, '');
   const candidates: ExtractedOTPCandidate[] = [];
   const rejected: Array<{ code: string; reason: string }> = [];
   const decodedHtml = decodeHtmlEntities(htmlBody);
@@ -749,7 +750,7 @@ export function extractOTP(
   ) => {
     // Normalize separators out of spaced/dashed codes
     const cleanCode = code.replace(/[\s-]/g, '').trim();
-    if (!isPlausibleOtpShape(cleanCode)) return;
+    if (!isPlausibleOtpShape(cleanCode)) {return;}
 
     occurrenceCounts.set(cleanCode, (occurrenceCounts.get(cleanCode) || 0) + 1);
 
@@ -775,7 +776,7 @@ export function extractOTP(
     } else {
       plainTextIndex = matchIndex;
       htmlIndex = decodedHtml.indexOf(rawMatch);
-      if (htmlIndex === -1) htmlIndex = decodedHtml.indexOf(cleanCode);
+      if (htmlIndex === -1) {htmlIndex = decodedHtml.indexOf(cleanCode);}
     }
 
     const anchorIdx = plainTextIndex >= 0 ? plainTextIndex : -1;
@@ -877,7 +878,7 @@ export function extractOTP(
       let m: RegExpExecArray | null;
       while ((m = rx.exec(decodedHtml)) !== null) {
         const code = m[1]!.replace(/[\s-]/g, '').trim();
-        if (!/\d/.test(code)) continue;
+        if (!/\d/.test(code)) {continue;}
         addCandidate(code, m[1]!.trim(), 'styled-code', 70, m.index);
       }
     }
@@ -894,7 +895,7 @@ export function extractOTP(
       const raw = m[0];
       const clean = raw.replace(/[-\s]/g, '');
       addCandidate(clean, raw, pattern.name, pattern.baseConfidence, m.index);
-      if (m.index === rx.lastIndex) rx.lastIndex++;
+      if (m.index === rx.lastIndex) {rx.lastIndex++;}
     }
   }
 
@@ -904,10 +905,10 @@ export function extractOTP(
     let m: RegExpExecArray | null;
     while ((m = rx.exec(fullText)) !== null) {
       const captured = (m[1] ?? '').replace(/[\s-]/g, '').trim();
-      if (!captured) continue;
+      if (!captured) {continue;}
       const capIdx = m.index + m[0].indexOf(m[1]!.trim());
       addCandidate(captured, m[1]!.trim(), 'label-adjacent', 75, capIdx >= 0 ? capIdx : m.index);
-      if (m.index === rx.lastIndex) rx.lastIndex++;
+      if (m.index === rx.lastIndex) {rx.lastIndex++;}
     }
   }
 
@@ -940,12 +941,12 @@ export function extractOTP(
 
     for (let i = 0; i < tokens.length; i++) {
       const tok = tokens[i];
-      if (!tok?.isNumeric) continue;
+      if (!tok?.isNumeric) {continue;}
       let highestGravity = 0;
       const windowStart = Math.max(0, i - 10);
       const windowEnd = Math.min(tokens.length - 1, i + 10);
       for (let j = windowStart; j <= windowEnd; j++) {
-        if (i === j) continue;
+        if (i === j) {continue;}
         if (tokens[j]?.isAnchor) {
           const distance = Math.abs(i - j);
           highestGravity = Math.max(highestGravity, 100 / (distance * 1.5));
@@ -954,7 +955,7 @@ export function extractOTP(
       if (highestGravity > 45) {
         const nearby = sliceAround(fullText, tok.pos, tok.text.length, 30);
         const hasExplicitLabel = /(?:code|otp|pin|passcode|password|token)\b/i.test(nearby);
-        if (!hasExplicitLabel) continue;
+        if (!hasExplicitLabel) {continue;}
         const semanticConfidence = Math.min(55 + highestGravity / 2, 72);
         addCandidate(tok.text, tok.text, 'semantic-proximity', semanticConfidence, tok.pos);
       }
@@ -967,7 +968,7 @@ export function extractOTP(
     let tdMatch: RegExpExecArray | null;
     while ((tdMatch = tdPattern.exec(htmlBody)) !== null) {
       const code = tdMatch[1]!.trim();
-      if (!/\d/.test(code)) continue;
+      if (!/\d/.test(code)) {continue;}
       const surroundHtml = htmlBody.substring(
         Math.max(0, tdMatch.index - 600),
         Math.min(htmlBody.length, tdMatch.index + tdMatch[0].length + 600)
@@ -1012,14 +1013,14 @@ export function extractOTP(
   for (const c of candidates) {
     let score = c.confidence;
 
-    if (c.providerMatch) score += CONFIG.scoring.providerLengthMatch;
-    if (c.lengthMatch) score += CONFIG.scoring.lengthMatch;
-    if (provider && c.formatMatch) score += CONFIG.scoring.formatMatch;
+    if (c.providerMatch) {score += CONFIG.scoring.providerLengthMatch;}
+    if (c.lengthMatch) {score += CONFIG.scoring.lengthMatch;}
+    if (provider && c.formatMatch) {score += CONFIG.scoring.formatMatch;}
 
     score += Math.min(c.contextScore, CONFIG.scoring.contextContributionMax);
     score += Math.min(c.isolationScore / 5, CONFIG.scoring.isolationBonusMax);
 
-    if (intent.intent === 'verification') score += CONFIG.scoring.verificationIntentBonus;
+    if (intent?.intent === 'verification') {score += CONFIG.scoring.verificationIntentBonus;}
 
     // Entropy / randomness — real OTPs look random
     const ent = codeEntropy(c.code);
@@ -1030,13 +1031,13 @@ export function extractOTP(
     score += Math.min(aq, CONFIG.scoring.alnumQualityBonus);
 
     // Frequency consensus — same code seen via multiple strategies/locations
-    if ((c.occurrenceCount || 1) >= 2) score += CONFIG.scoring.frequencyBonus;
-    if ((c.occurrenceCount || 1) >= 3) score += 6;
+    if ((c.occurrenceCount || 1) >= 2) {score += CONFIG.scoring.frequencyBonus;}
+    if ((c.occurrenceCount || 1) >= 3) {score += 6;}
 
     // Zone penalties
-    if (c.zone === 'footer') score -= 22;
-    else if (c.zone === 'header' || c.zone === 'preheader') score -= 8;
-    else if (c.zone === 'unknown' && c.contextScore < 18) score -= 5;
+    if (c.zone === 'footer') {score -= 22;}
+    else if (c.zone === 'header' || c.zone === 'preheader') {score -= 8;}
+    else if (c.zone === 'unknown' && c.contextScore < 18) {score -= 5;}
 
     // Weak-signal penalty
     if (
@@ -1073,7 +1074,7 @@ export function extractOTP(
 
   candidates.sort((a, b) => b.rawScore - a.rawScore);
   const best = candidates[0];
-  if (!best) return null;
+  if (!best) {return null;}
 
   // Absolute floor — refuse to return garbage
   if (best.rawScore < CONFIG.absoluteMinRawScore) {

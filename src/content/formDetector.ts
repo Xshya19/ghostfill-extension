@@ -1,3 +1,7 @@
+import { harvestPageJsonl } from '../intelligence/eval/harvest';
+import { classifyField, classifyHeuristic, mapFieldClassToFieldType, IntelligenceCore } from '../intelligence/IntelligenceCore';
+import { extractFieldRecord, resolveLabelText } from '../intelligence/pageAnalyzer';
+import { safeGetComputedStyle } from '../shared/safeStyles';
 import {
   FormType,
   FieldType,
@@ -9,12 +13,8 @@ import {
   FormInputElement,
 } from '../types';
 import { getUniqueSelector, deepQuerySelectorAll, getElementLabel } from '../utils/core';
-import { createLogger } from '../utils/logger';
-import { safeGetComputedStyle } from '../shared/safeStyles';
-import { extractFieldRecord, resolveLabelText } from '../intelligence/pageAnalyzer';
-import { classifyField, classifyHeuristic, mapFieldClassToFieldType, IntelligenceCore } from '../intelligence/IntelligenceCore';
 import { debounce } from '../utils/debounce';
-import { harvestPageJsonl } from '../intelligence/eval/harvest';
+import { createLogger } from '../utils/logger';
 import { pageStatus } from './ui/pageStatus';
 
 const log = createLogger('FormDetector');
@@ -24,7 +24,7 @@ const log = createLogger('FormDetector');
 // ─────────────────────────────────────────────────────────────
 
 const DOM_EXTRACTION_CHAR_LIMIT = 2000;
-const MAX_LABEL_TEXT_LENGTH = 120;
+const _MAX_LABEL_TEXT_LENGTH = 120;
 const OTP_MIN_LENGTH = 4;
 const OTP_MAX_LENGTH = 8;
 const HIGHLIGHT_DURATION_MS = 2000;
@@ -63,7 +63,7 @@ const CLASSIFICATION_WEIGHTS = {
 
 type SubmitElement = HTMLButtonElement | HTMLInputElement;
 
-interface AICacheEntry {
+interface _AICacheEntry {
   prediction: { label: string; confidence: number };
   timestamp: number;
 }
@@ -90,7 +90,7 @@ function escapeCSS(value: string): string {
   }
 }
 
-function safeQuerySelector<T extends Element>(root: ParentNode, selector: string): T | null {
+function _safeQuerySelector<T extends Element>(root: ParentNode, selector: string): T | null {
   try {
     return root.querySelector<T>(selector);
   } catch {
@@ -108,9 +108,9 @@ function combineTextSignals(...parts: (string | null | undefined)[]): string {
 
 class VisibilityCheck {
   static isVisible(element: HTMLElement): boolean {
-    if (!element.isConnected) return false;
+    if (!element.isConnected) {return false;}
     const rect = element.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return false;
+    if (rect.width <= 0 || rect.height <= 0) {return false;}
     const style = safeGetComputedStyle(element);
     return style.display !== 'none' && style.visibility !== 'hidden' && parseFloat(style.opacity || '1') > 0.01;
   }
@@ -147,7 +147,7 @@ class OTPDetector {
 
     const hasExplicitSignal = this.OTP_TEXT_PATTERN.test(textToCheck);
 
-    if (this.CAPTCHA_PATTERN.test(textToCheck)) return false;
+    if (this.CAPTCHA_PATTERN.test(textToCheck)) {return false;}
 
     if (element.maxLength === 1) {
       return (
@@ -166,7 +166,7 @@ class OTPDetector {
       return true;
     }
 
-    if (element.autocomplete === 'one-time-code') return true;
+    if (element.autocomplete === 'one-time-code') {return true;}
 
     if (
       element instanceof HTMLInputElement &&
@@ -211,18 +211,18 @@ class OTPDetector {
       element.getAttribute('aria-label')
     );
 
-    if (this.CAPTCHA_PATTERN.test(textToCheck)) return 0;
+    if (this.CAPTCHA_PATTERN.test(textToCheck)) {return 0;}
 
-    if (/otp/i.test(textToCheck)) confidence += CONFIDENCE.OTP_NAME_OTP;
-    if (/code/i.test(textToCheck)) confidence += CONFIDENCE.OTP_NAME_CODE;
-    if (/verify/i.test(textToCheck)) confidence += CONFIDENCE.OTP_NAME_VERIFY;
+    if (/otp/i.test(textToCheck)) {confidence += CONFIDENCE.OTP_NAME_OTP;}
+    if (/code/i.test(textToCheck)) {confidence += CONFIDENCE.OTP_NAME_CODE;}
+    if (/verify/i.test(textToCheck)) {confidence += CONFIDENCE.OTP_NAME_VERIFY;}
 
     return clampConfidence(confidence);
   }
 
   private static hasSplitCluster(element: FormInputElement): boolean {
     const parent = element.parentElement;
-    if (!parent) return false;
+    if (!parent) {return false;}
 
     const siblings = Array.from(parent.querySelectorAll<HTMLInputElement>('input')).filter(
       (input) => input !== element && input.maxLength === 1 && VisibilityCheck.isVisible(input)
@@ -287,8 +287,8 @@ export class FieldAnalyzer {
       const isCentered = Math.abs(window.innerWidth / 2 - (rect.left + rect.width / 2)) < 200;
 
       if (fieldType === 'otp') {
-        if (isSquare) spatialConfidence += 0.3;
-        if (isCentered) spatialConfidence += 0.2;
+        if (isSquare) {spatialConfidence += 0.3;}
+        if (isCentered) {spatialConfidence += 0.2;}
       }
     } catch {
       /* ignore */
@@ -321,7 +321,7 @@ export class FieldAnalyzer {
     const otpFields: DetectedField[] = [];
 
     for (const input of inputs) {
-      if (!VisibilityCheck.isVisible(input)) continue;
+      if (!VisibilityCheck.isVisible(input)) {continue;}
       if (OTPDetector.isLikelyOTP(input)) {
         otpFields.push(this.analyzeField(input));
       }
@@ -333,14 +333,14 @@ export class FieldAnalyzer {
 
   findOTPInputGroup(startElement: HTMLInputElement): HTMLInputElement[] {
     const parent = startElement.parentElement;
-    if (!parent) return [startElement];
+    if (!parent) {return [startElement];}
 
     const siblings = Array.from(parent.querySelectorAll<HTMLInputElement>('input')).filter(
       (input) =>
         input.maxLength === 1 && VisibilityCheck.isVisible(input) && OTPDetector.isLikelyOTP(input)
     );
 
-    if (!siblings.includes(startElement)) siblings.push(startElement);
+    if (!siblings.includes(startElement)) {siblings.push(startElement);}
 
     // GRANDMASTER FIX: Batch geometry reads BEFORE sorting to prevent O(N log N) reflows
     const rectCache = new Map<HTMLInputElement, DOMRect>();
@@ -378,12 +378,14 @@ export class FieldAnalyzer {
           // Cross-origin iframe
         }
       }
-    } catch {}
+    } catch {
+      // ignore iframe query errors
+    }
 
     const fields: DetectedField[] = [];
 
     for (const element of elements) {
-      if (!VisibilityCheck.isVisible(element)) continue;
+      if (!VisibilityCheck.isVisible(element)) {continue;}
       fields.push(this.analyzeField(element, elements));
     }
 
@@ -449,7 +451,7 @@ export class FieldAnalyzer {
       const parts: string[] = [];
       for (const el of elements) {
         const line = this.extractElementLine(el);
-        if (line) parts.push(line);
+        if (line) {parts.push(line);}
       }
 
       const result = parts.join('\n');
@@ -463,8 +465,8 @@ export class FieldAnalyzer {
   }
 
   private extractElementLine(el: HTMLElement): string | null {
-    if (el instanceof HTMLInputElement) return this.extractInputLine(el);
-    if (el instanceof HTMLLabelElement) return this.extractLabelLine(el);
+    if (el instanceof HTMLInputElement) {return this.extractInputLine(el);}
+    if (el instanceof HTMLLabelElement) {return this.extractLabelLine(el);}
     if (el instanceof HTMLButtonElement || el.getAttribute('role') === 'button') {
       return this.extractButtonLine(el);
     }
@@ -472,16 +474,16 @@ export class FieldAnalyzer {
   }
 
   private extractInputLine(el: HTMLInputElement): string | null {
-    if (FieldAnalyzer.EXCLUDED_INPUT_TYPES.has(el.type)) return null;
+    if (FieldAnalyzer.EXCLUDED_INPUT_TYPES.has(el.type)) {return null;}
 
     const attrs: string[] = [];
-    if (el.type) attrs.push(`type="${this.sanitizeAttr(el.type)}"`);
-    if (el.id) attrs.push(`id="${this.sanitizeAttr(el.id)}"`);
-    if (el.name) attrs.push(`name="${this.sanitizeAttr(el.name)}"`);
-    if (el.placeholder) attrs.push(`ph="${this.sanitizeAttr(el.placeholder)}"`);
+    if (el.type) {attrs.push(`type="${this.sanitizeAttr(el.type)}"`);}
+    if (el.id) {attrs.push(`id="${this.sanitizeAttr(el.id)}"`);}
+    if (el.name) {attrs.push(`name="${this.sanitizeAttr(el.name)}"`);}
+    if (el.placeholder) {attrs.push(`ph="${this.sanitizeAttr(el.placeholder)}"`);}
 
     const labelText = LabelResolver.resolve(el);
-    if (labelText) attrs.push(`label="${this.sanitizeAttr(labelText)}"`);
+    if (labelText) {attrs.push(`label="${this.sanitizeAttr(labelText)}"`);}
 
     const selector = el.id
       ? `#${escapeCSS(el.id)}`
@@ -493,11 +495,11 @@ export class FieldAnalyzer {
   }
 
   private extractLabelLine(el: HTMLLabelElement): string | null {
-    if (el.querySelector('input')) return null;
+    if (el.querySelector('input')) {return null;}
 
     const forAttr = el.getAttribute('for') ?? '';
     const text = (el.textContent ?? '').trim();
-    if (!text) return null;
+    if (!text) {return null;}
 
     return `<label for="${this.sanitizeAttr(forAttr)}">${this.sanitizeAttr(text)}</label>`;
   }
@@ -540,7 +542,7 @@ class FormClassifier {
     const formText = this.buildFormContext(form);
 
     for (const [fType, indicators] of Object.entries(FORM_INDICATORS)) {
-      if (fType === 'unknown') continue;
+      if (fType === 'unknown') {continue;}
 
       let confidence = 0;
 
@@ -573,9 +575,9 @@ class FormClassifier {
   private static buildFormContext(form: HTMLElement): string {
     const parts: string[] = [];
 
-    if (form.className && typeof form.className === 'string') parts.push(form.className);
-    if (form.id) parts.push(form.id);
-    if (form instanceof HTMLFormElement && form.action) parts.push(form.action);
+    if (form.className && typeof form.className === 'string') {parts.push(form.className);}
+    if (form.id) {parts.push(form.id);}
+    if (form instanceof HTMLFormElement && form.action) {parts.push(form.action);}
 
     const textContent = form.textContent;
     if (textContent) {
@@ -635,13 +637,13 @@ class FormClassifier {
     const candidates: SubmitElement[] = [];
 
     for (const button of form.querySelectorAll<HTMLButtonElement>('button')) {
-      if (VisibilityCheck.isVisible(button) && !button.disabled) candidates.push(button);
+      if (VisibilityCheck.isVisible(button) && !button.disabled) {candidates.push(button);}
     }
 
     for (const input of form.querySelectorAll<HTMLInputElement>(
       'input[type="submit"], input[type="button"]'
     )) {
-      if (VisibilityCheck.isVisible(input) && !input.disabled) candidates.push(input);
+      if (VisibilityCheck.isVisible(input) && !input.disabled) {candidates.push(input);}
     }
 
     for (const el of form.querySelectorAll<HTMLElement>('[role="button"]')) {
@@ -664,10 +666,10 @@ class FormClassifier {
           .toLowerCase() ?? '';
 
       let score = 0;
-      if (candidate instanceof HTMLButtonElement && candidate.type === 'submit') score += 5;
-      if (candidate instanceof HTMLInputElement && candidate.type === 'submit') score += 5;
-      if (this.SUBMIT_TEXT_PATTERN.test(text)) score += 4;
-      if (this.SECONDARY_ACTION_PATTERN.test(text)) score -= 6;
+      if (candidate instanceof HTMLButtonElement && candidate.type === 'submit') {score += 5;}
+      if (candidate instanceof HTMLInputElement && candidate.type === 'submit') {score += 5;}
+      if (this.SUBMIT_TEXT_PATTERN.test(text)) {score += 4;}
+      if (this.SECONDARY_ACTION_PATTERN.test(text)) {score -= 6;}
 
       if (score > bestScore) {
         bestScore = score;
@@ -724,7 +726,7 @@ export class FormDetector {
     const fields: DetectedField[] = [];
 
     for (const input of inputs) {
-      if (!VisibilityCheck.isVisible(input)) continue;
+      if (!VisibilityCheck.isVisible(input)) {continue;}
 
       const field = this.fieldAnalyzer.analyzeField(input);
       if (field.confidence > MIN_FIELD_CONFIDENCE) {
@@ -759,21 +761,21 @@ export class FormDetector {
   }
 
   findFieldsByType(type: FieldType): DetectedField[] {
-    if (!this.lastAnalysis) this.detectForms();
+    if (!this.lastAnalysis) {this.detectForms();}
 
     const analysis = this.lastAnalysis;
-    if (!analysis) return [];
+    if (!analysis) {return [];}
 
     const fields: DetectedField[] = [];
 
     for (const form of analysis.forms) {
       for (const field of form.fields) {
-        if (field.fieldType === type) fields.push(field);
+        if (field.fieldType === type) {fields.push(field);}
       }
     }
 
     for (const field of analysis.standaloneFields) {
-      if (field.fieldType === type) fields.push(field);
+      if (field.fieldType === type) {fields.push(field);}
     }
 
     return fields;
@@ -784,7 +786,7 @@ export class FormDetector {
 
     for (const field of fields) {
       const element = field.element;
-      if (!element.isConnected) continue;
+      if (!element.isConnected) {continue;}
 
       const originalOutline = element.style.outline;
       const originalBoxShadow = element.style.boxShadow;
@@ -807,10 +809,10 @@ export class FormDetector {
 
   getActiveForm(): DetectedForm | null {
     const activeElement = document.activeElement;
-    if (!(activeElement instanceof HTMLElement)) return null;
+    if (!(activeElement instanceof HTMLElement)) {return null;}
 
     const form = activeElement.closest('form');
-    if (!form) return null;
+    if (!form) {return null;}
 
     return this.lastAnalysis?.forms.find((f) => f.element === form) ?? null;
   }
@@ -825,11 +827,11 @@ export class FormDetector {
     }
 
     const analysis = this.lastAnalysis;
-    if (!analysis) return null;
+    if (!analysis) {return null;}
 
     for (const form of analysis.forms) {
       const field = form.fields.find((f) => f.element === activeElement);
-      if (field) return field;
+      if (field) {return field;}
     }
 
     return analysis.standaloneFields.find((f) => f.element === activeElement) ?? null;
@@ -845,14 +847,14 @@ export class FormDetector {
 
     for (const form of formElements) {
       const detectedForm = this.analyzeForm(form);
-      if (detectedForm.fields.length > 0) forms.push(detectedForm);
+      if (detectedForm.fields.length > 0) {forms.push(detectedForm);}
     }
 
     return forms;
   }
 
   private detectVirtualForms(standaloneFields: DetectedField[]): DetectedForm[] {
-    if (standaloneFields.length === 0) return [];
+    if (standaloneFields.length === 0) {return [];}
 
     const virtualForms: DetectedForm[] = [];
     const ancestorToFields = new Map<HTMLElement, DetectedField[]>();
@@ -918,7 +920,7 @@ export class FormDetector {
 
     const standaloneFields: DetectedField[] = [];
     for (const field of allFields) {
-      if (formFieldElements.has(field.element)) continue;
+      if (formFieldElements.has(field.element)) {continue;}
       if (field.confidence > MIN_STANDALONE_CONFIDENCE) {
         standaloneFields.push(field);
       }
@@ -947,7 +949,7 @@ export class DOMObserver {
   }
 
   start(): void {
-    if (this.isObserving) return;
+    if (this.isObserving) {return;}
 
     const debouncedUpdate = debounce(() => {
       if (typeof chrome === 'undefined' || !chrome.runtime?.id) {
@@ -1004,7 +1006,7 @@ export class DOMObserver {
             }
           }
         }
-        if (shouldRedetect) break;
+        if (shouldRedetect) {break;}
       }
 
       if (shouldRedetect && typeof chrome !== 'undefined' && chrome.runtime?.id) {
@@ -1043,7 +1045,7 @@ export class DOMObserver {
   };
 
   private handleSpaNavigation = (): void => {
-    if (location.href === this.lastUrl) return;
+    if (location.href === this.lastUrl) {return;}
     this.lastUrl = location.href;
     log.debug('SPA navigation detected, restarting observer');
     this.restart();
@@ -1181,7 +1183,9 @@ export class UltraDetector {
           if (document.querySelectorAll(classes).length === 1) {
             return classes;
           }
-        } catch {}
+        } catch {
+          // invalid selector syntax
+        }
       }
     }
 
@@ -1245,7 +1249,7 @@ export class UltraDetector {
       return el.maxLength === 1 || el.getAttribute('maxlength') === '1' || rect.width <= 85;
     });
 
-    if (singleDigitCandidates.length < 4) return;
+    if (singleDigitCandidates.length < 4) {return;}
 
     // GRANDMASTER FIX: O(N) Ancestor grouping. Zero nested loops.
     const ancestorMap = new Map<HTMLElement, FieldCandidate[]>();
@@ -1269,10 +1273,10 @@ export class UltraDetector {
     const processedElements = new Set<FieldCandidate>();
 
     // Find the lowest ancestor that contains exactly 4 to 8 digits
-    for (const [ancestor, list] of ancestorMap.entries()) {
+    for (const [_ancestor, list] of ancestorMap.entries()) {
       if (list.length >= 4 && list.length <= 8) {
         // Ensure we don't double-group if a higher ancestor also matches
-        if (list.some(c => processedElements.has(c))) continue;
+        if (list.some(c => processedElements.has(c))) {continue;}
 
         // Sort by cached or fresh rect (only 4-8 items, so 1 reflow is acceptable here)
         const sorted = list.sort((a, b) => {
@@ -1302,11 +1306,11 @@ export class UltraDetector {
     let otpCount = 0;
 
     for (const c of candidates) {
-      if (c.decision === 'BLOCK' || c.decision === 'ABSTAIN') continue;
-      if (c.fieldType === 'email') emailCount++;
-      if (c.fieldType === 'password') passwordCount++;
-      if (c.fieldType === 'confirm-password') confirmPasswordCount++;
-      if (c.fieldType === 'otp') otpCount++;
+      if (c.decision === 'BLOCK' || c.decision === 'ABSTAIN') {continue;}
+      if (c.fieldType === 'email') {emailCount++;}
+      if (c.fieldType === 'password') {passwordCount++;}
+      if (c.fieldType === 'confirm-password') {confirmPasswordCount++;}
+      if (c.fieldType === 'otp') {otpCount++;}
     }
 
     if (otpCount > 0) {
@@ -1322,15 +1326,15 @@ export class UltraDetector {
   }
 
   private calculatePageConfidence(candidates: FieldCandidate[], verdict: DetectionResult['verdict']): number {
-    if (verdict === 'default') return 0.5;
+    if (verdict === 'default') {return 0.5;}
     const relevant = candidates.filter((c) => {
-      if (verdict === '2fa' || verdict === 'verification') return c.fieldType === 'otp';
-      if (verdict === 'signup') return c.fieldType === 'confirm-password' || c.fieldType === 'password' || c.fieldType === 'email';
-      if (verdict === 'login') return c.fieldType === 'password' || c.fieldType === 'email';
+      if (verdict === '2fa' || verdict === 'verification') {return c.fieldType === 'otp';}
+      if (verdict === 'signup') {return c.fieldType === 'confirm-password' || c.fieldType === 'password' || c.fieldType === 'email';}
+      if (verdict === 'login') {return c.fieldType === 'password' || c.fieldType === 'email';}
       return false;
     });
 
-    if (relevant.length === 0) return 0.5;
+    if (relevant.length === 0) {return 0.5;}
     const sum = relevant.reduce((acc, c) => acc + c.confidence, 0);
     return sum / relevant.length;
   }

@@ -3,9 +3,9 @@
 // Features: No auth required, 24h retention, Heluna spam filters
 
 import { EmailAccount, Email } from '../../types';
-import { createLogger } from '../../utils/logger';
+import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
-import { fetchWithTimeout, contentToString } from '../../utils/core';
+import { createLogger } from '../../utils/logger';
 
 const log = createLogger('MaildropService');
 
@@ -309,7 +309,7 @@ class MaildropService {
       from: contentToString(msg.headerfrom || msg.mailfrom, 'Unknown Sender'),
       to: toEmail,
       subject: contentToString(msg.subject, '(no subject)'),
-      date: new Date(msg.date).getTime(),
+      date: safeParseDate(msg.date),
       body: '',
       attachments: [],
       read: false,
@@ -328,7 +328,7 @@ class MaildropService {
       from: contentToString(msg.headerfrom || msg.mailfrom, 'Unknown Sender'),
       to: toEmail,
       subject: contentToString(msg.subject, '(no subject)'),
-      date: new Date(msg.date).getTime(),
+      date: safeParseDate(msg.date),
       body: bodyStr,
       htmlBody: htmlStr,
       textBody: textStr,

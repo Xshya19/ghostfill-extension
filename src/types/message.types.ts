@@ -1,6 +1,6 @@
 // Message Passing Types
 
-import { EmailAccount, Email, EmailService, GmailProfile, GmailMessage, GmailMessageHeader, GmailMessagePayload } from './email.types';
+import { EmailAccount, Email, EmailService, GmailProfile, GmailMessage } from './email.types';
 import { DetectedForm, DetectedField } from './form.types';
 import { PasswordOptions, GeneratedPassword, PasswordHistoryItem } from './password.types';
 import { UserSettings } from './storage.types';

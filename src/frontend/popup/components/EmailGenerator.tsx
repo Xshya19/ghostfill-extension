@@ -1,10 +1,10 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Copy, RefreshCw, Inbox, Clock, ChevronRight, ChevronLeft, Zap } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Button, interactiveSurface, springSoft } from '../../ui';
 import { EmailAccount, Email } from '../../../types';
 import { formatRelativeTime, copyToClipboard, openSafeUrl } from '../../../utils/core';
 import { safeSendMessage } from '../../../utils/messaging';
+import { Button, interactiveSurface, springSoft } from '../../ui';
 import { useOTPExtractor, useStorageSubscription } from '../hooks';
 import { ConfirmModal, EmailAvatar } from './SharedComponents';
 

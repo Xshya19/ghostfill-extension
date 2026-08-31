@@ -12,7 +12,6 @@ import {
   type GmailSignInResult,
 } from '../../../services/gmailConnectionService';
 import { storageService } from '../../../services/storageService';
-import { itemRise, springTab, stagger } from '../../ui';
 import {
   EmailAccount,
   Email,
@@ -21,6 +20,7 @@ import {
 } from '../../../types';
 import { TIMING, copyToClipboard, openSafeUrl } from '../../../utils/core';
 import { safeSendMessage } from '../../../utils/messaging';
+import { itemRise, springTab, stagger } from '../../ui';
 import { useOTPExtractor, useStorageSubscription } from '../hooks';
 import { useAppStore } from '../store';
 import {
@@ -42,14 +42,14 @@ const t = (key: string): string => {
 };
 
 const toSafeStr = (v: unknown): string => {
-  if (typeof v === 'string') return v;
-  if (!v) return '';
+  if (typeof v === 'string') {return v;}
+  if (!v) {return '';}
   if (typeof v === 'object') {
     const obj = v as Record<string, unknown>;
-    if (typeof obj.text === 'string') return obj.text;
-    if (typeof obj.html === 'string') return obj.html;
-    if (typeof obj.body === 'string') return obj.body;
-    if (typeof obj.content === 'string') return obj.content;
+    if (typeof obj.text === 'string') {return obj.text;}
+    if (typeof obj.html === 'string') {return obj.html;}
+    if (typeof obj.body === 'string') {return obj.body;}
+    if (typeof obj.content === 'string') {return obj.content;}
     try {
       return JSON.stringify(v);
     } catch {

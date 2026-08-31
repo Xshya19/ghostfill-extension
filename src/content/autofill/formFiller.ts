@@ -1,6 +1,6 @@
 import { FormInputElement, FrameworkType } from '../../types/form.types';
-import { createLogger } from '../../utils/logger';
 import { getRandomInt } from '../../utils/encryption';
+import { createLogger } from '../../utils/logger';
 import { FieldCandidate } from '../formDetector';
 
 export interface OTPFieldGroup {
@@ -62,14 +62,14 @@ function safeQuerySelector<T extends Element>(root: ParentNode, selector: string
 
 export class VisibilityEngine {
   static isVisible(element: HTMLElement): boolean {
-    if (!element.isConnected) return false;
+    if (!element.isConnected) {return false;}
     const rect = element.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return false;
+    if (rect.width <= 0 || rect.height <= 0) {return false;}
     const style = window.getComputedStyle(element);
     return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
   }
   static isVisibleRelaxed(element: HTMLElement): boolean {
-    if (!element.isConnected) return false;
+    if (!element.isConnected) {return false;}
     const style = window.getComputedStyle(element);
     return style.display !== 'none';
   }
@@ -146,20 +146,20 @@ class KeyMapper {
   };
 
   static getCode(char: string): string {
-    if (/^[a-zA-Z]$/.test(char)) return `Key${char.toUpperCase()}`;
-    if (/^[0-9]$/.test(char)) return `Digit${char}`;
-    if (this.SPECIAL_CHARS[char]) return this.SPECIAL_CHARS[char];
-    if (char.charCodeAt(0) > 127) return 'Unidentified';
+    if (/^[a-zA-Z]$/.test(char)) {return `Key${char.toUpperCase()}`;}
+    if (/^[0-9]$/.test(char)) {return `Digit${char}`;}
+    if (this.SPECIAL_CHARS[char]) {return this.SPECIAL_CHARS[char];}
+    if (char.charCodeAt(0) > 127) {return 'Unidentified';}
     return `Key${char.toUpperCase()}`;
   }
 
   static requiresShift(char: string): boolean {
-    if (/^[A-Z]$/.test(char)) return true;
+    if (/^[A-Z]$/.test(char)) {return true;}
     return '~!@#$%^&*()_+{}|:"<>?'.includes(char);
   }
 }
 
-class NativeValueWriter {
+export class NativeValueWriter {
   static setValue(element: FormInputElement, value: string): void {
     if (element instanceof HTMLInputElement && nativeInputSetter) {
       nativeInputSetter.call(element, value);
@@ -171,7 +171,7 @@ class NativeValueWriter {
   }
 }
 
-class EventFactory {
+export class EventFactory {
   static keyboard(
     type: 'keydown' | 'keypress' | 'keyup',
     char: string,
@@ -277,14 +277,14 @@ export class PhantomTyper {
     const isActive = (): boolean => this.sessionMap.get(element) === sessionId && element.isConnected;
 
     try {
-      if (!this.dispatchPointerEngagement(element, isActive)) return;
+      if (!this.dispatchPointerEngagement(element, isActive)) {return;}
 
-      if (!isActive()) return;
+      if (!isActive()) {return;}
       element.focus({ preventScroll: true });
       element.dispatchEvent(EventFactory.focus('focus'));
       element.dispatchEvent(EventFactory.focus('focusin'));
 
-      if (!isActive()) return;
+      if (!isActive()) {return;}
 
       NativeValueWriter.setValue(element, '');
       element.dispatchEvent(EventFactory.generic('input', { bubbles: true }));
@@ -309,7 +309,7 @@ export class PhantomTyper {
         }
       }
 
-      if (!isActive()) return;
+      if (!isActive()) {return;}
 
       element.dispatchEvent(EventFactory.generic('change', { bubbles: true }));
       element.dispatchEvent(EventFactory.pointer('pointerout'));
@@ -330,11 +330,11 @@ export class PhantomTyper {
     ];
 
     for (const [type, opts] of pointerEvents) {
-      if (!isActive()) return false;
+      if (!isActive()) {return false;}
       element.dispatchEvent(EventFactory.pointer(type, opts));
     }
 
-    if (!isActive()) return false;
+    if (!isActive()) {return false;}
     element.dispatchEvent(EventFactory.mouse('mousedown', { buttons: 1 }));
     return true;
   }
@@ -375,7 +375,7 @@ export class FieldSetter {
       {
         name: 'PhantomTyper',
         fn: async () => {
-          if (isBackgroundTab) return false;
+          if (isBackgroundTab) {return false;}
           await PhantomTyper.typeSimulatedString(element, value);
           return element.value === value;
         },
@@ -470,7 +470,7 @@ export class FieldSetter {
     char: string,
     isBackgroundTab: boolean = false
   ): Promise<boolean> {
-    if (!element.isConnected) return false;
+    if (!element.isConnected) {return false;}
 
     if (isBackgroundTab) {
       return this.setViaNativeSetter(element, char);
@@ -482,7 +482,7 @@ export class FieldSetter {
     try {
       element.focus({ preventScroll: true });
       const tracker = (element as any)._valueTracker;
-      if (tracker) tracker.setValue('');
+      if (tracker) {tracker.setValue('');}
       writeValue('');
       element.dispatchEvent(new Event('input', { bubbles: true }));
 
@@ -493,9 +493,9 @@ export class FieldSetter {
       element.dispatchEvent(new KeyboardEvent('keypress', { key: char, code, keyCode, charCode: keyCode, bubbles: true }));
 
       const beforeInput = new InputEvent('beforeinput', { data: char, inputType: 'insertText', bubbles: true, cancelable: true });
-      if (!element.dispatchEvent(beforeInput)) return false;
+      if (!element.dispatchEvent(beforeInput)) {return false;}
 
-      if (tracker) tracker.setValue('');
+      if (tracker) {tracker.setValue('');}
       writeValue(char);
       element.dispatchEvent(new InputEvent('input', { data: char, inputType: 'insertText', bubbles: true }));
       element.dispatchEvent(new KeyboardEvent('keyup', { key: char, code, keyCode, bubbles: true }));
@@ -506,7 +506,7 @@ export class FieldSetter {
       log.warn('setCharDirect failed', err);
       writeValue(char);
       const tracker = (element as any)._valueTracker;
-      if (tracker) tracker.setValue('');
+      if (tracker) {tracker.setValue('');}
       element.dispatchEvent(new Event('input', { bubbles: true }));
       return element.value === char;
     }
@@ -520,7 +520,7 @@ export class FieldSetter {
     if (!nativeSetter) {
       element.value = value;
       const tracker = (element as any)._valueTracker;
-      if (tracker) tracker.setValue(oldValue);
+      if (tracker) {tracker.setValue(oldValue);}
       element.dispatchEvent(new Event('input', { bubbles: true }));
       element.dispatchEvent(new Event('change', { bubbles: true }));
       return element.value === value;
@@ -529,7 +529,7 @@ export class FieldSetter {
     element.focus();
     nativeSetter.call(element, value);
     const tracker = (element as any)._valueTracker;
-    if (tracker) tracker.setValue(oldValue);
+    if (tracker) {tracker.setValue(oldValue);}
     element.dispatchEvent(new Event('input', { bubbles: true }));
     element.dispatchEvent(new Event('change', { bubbles: true }));
     return element.value === value;
@@ -561,7 +561,7 @@ export class FieldSetter {
 
   private static async setViaClipboardPaste(element: FormInputElement, value: string): Promise<boolean> {
     try {
-      if (!navigator.clipboard) return false;
+      if (!navigator.clipboard) {return false;}
       element.focus();
 
       const dataTransfer = new DataTransfer();
@@ -600,15 +600,15 @@ export class FieldSetter {
         }
       }
 
-      if (!reactElement) return false;
+      if (!reactElement) {return false;}
 
       const fiberKeyFound = Object.keys(reactElement).find(
         (key) => key.startsWith('__reactFiber$') || key.startsWith('__reactInternalInstance$')
       );
-      if (!fiberKeyFound) return false;
+      if (!fiberKeyFound) {return false;}
 
       const fiber = (reactElement as any)[fiberKeyFound];
-      if (!fiber || !fiber.memoizedProps) return false;
+      if (!fiber || !fiber.memoizedProps) {return false;}
 
       const onChange = fiber.memoizedProps.onChange;
       if (typeof onChange === 'function') {
@@ -656,7 +656,7 @@ export class FieldSetter {
   private static setViaContentEditable(element: FormInputElement, value: string): boolean {
     try {
       const editableEl = this.findEditableAncestor(element);
-      if (!editableEl) return false;
+      if (!editableEl) {return false;}
 
       editableEl.focus();
       editableEl.textContent = '';
@@ -719,7 +719,7 @@ export class AutoSubmitDetector {
 
   private static findButton(group: OTPFieldGroup): HTMLElement | null {
     const field = group.fields[0];
-    if (!field) return null;
+    if (!field) {return null;}
 
     const container =
       field.closest('form') ??
@@ -727,7 +727,7 @@ export class AutoSubmitDetector {
       field.closest('[class*="verify"]') ??
       field.parentElement?.parentElement?.parentElement;
 
-    if (!container) return null;
+    if (!container) {return null;}
 
     for (const selector of this.SELECTORS) {
       const button = safeQuerySelector<HTMLElement>(container, selector);
@@ -801,10 +801,10 @@ export class ReactFiberStrategy extends FillStrategy {
         }
       }
 
-      if (!reactElement || !fiberKey) return false;
+      if (!reactElement || !fiberKey) {return false;}
 
       const fiber = (reactElement as any)[fiberKey];
-      if (!fiber || !fiber.memoizedProps) return false;
+      if (!fiber || !fiber.memoizedProps) {return false;}
 
       const onChange = fiber.memoizedProps.onChange;
       if (typeof onChange === 'function') {
@@ -863,7 +863,7 @@ export class VueReactivityStrategy extends FillStrategy {
     try {
       const keys = Object.keys(element);
       const vueKey = keys.find((k) => k.startsWith('__vue__') || k.startsWith('__vue_app__') || k.startsWith('__vueParentComponent'));
-      if (!vueKey) return false;
+      if (!vueKey) {return false;}
 
       element.value = value;
       element.dispatchEvent(new Event('input', { bubbles: true }));
@@ -978,7 +978,7 @@ export class NativeSetterStrategy extends FillStrategy {
       if (!nativeSetter) {
         element.value = value;
         const tracker = (element as any)._valueTracker;
-        if (tracker) tracker.setValue(oldValue);
+        if (tracker) {tracker.setValue(oldValue);}
         element.dispatchEvent(new Event('input', { bubbles: true }));
         element.dispatchEvent(new Event('change', { bubbles: true }));
         return element.value === value;
@@ -987,7 +987,7 @@ export class NativeSetterStrategy extends FillStrategy {
       element.focus();
       (nativeSetter as any).call(element, value);
       const tracker = (element as any)._valueTracker;
-      if (tracker) tracker.setValue(oldValue);
+      if (tracker) {tracker.setValue(oldValue);}
       element.dispatchEvent(new Event('input', { bubbles: true }));
       element.dispatchEvent(new Event('change', { bubbles: true }));
       return element.value === value;
@@ -1066,7 +1066,7 @@ export class ContentEditableStrategy extends FillStrategy {
   async execute(element: HTMLInputElement | HTMLTextAreaElement, value: string): Promise<boolean> {
     try {
       const editableEl = element.isContentEditable ? element : element.closest<HTMLElement>('[contenteditable="true"]');
-      if (!editableEl) return false;
+      if (!editableEl) {return false;}
 
       editableEl.focus();
       
@@ -1114,7 +1114,7 @@ export class UniversalFiller {
     const el = field.element;
 
     for (const strategy of this.strategies) {
-      if (!strategy.supports(el)) continue;
+      if (!strategy.supports(el)) {continue;}
 
       try {
         const success = await strategy.execute(el, value);

@@ -82,14 +82,14 @@ export function useOTPExtractor(emails: Email[]): {
 
         try {
           const toSafeStr = (v: unknown): string => {
-            if (typeof v === 'string') return v;
-            if (!v) return '';
+            if (typeof v === 'string') {return v;}
+            if (!v) {return '';}
             if (typeof v === 'object') {
               const obj = v as Record<string, unknown>;
-              if (typeof obj.text === 'string') return obj.text;
-              if (typeof obj.html === 'string') return obj.html;
-              if (typeof obj.body === 'string') return obj.body;
-              if (typeof obj.content === 'string') return obj.content;
+              if (typeof obj.text === 'string') {return obj.text;}
+              if (typeof obj.html === 'string') {return obj.html;}
+              if (typeof obj.body === 'string') {return obj.body;}
+              if (typeof obj.content === 'string') {return obj.content;}
               try { return JSON.stringify(v); } catch { return String(v); }
             }
             return String(v);

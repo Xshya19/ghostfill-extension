@@ -1,7 +1,7 @@
 // GetNada / Nada.ltd / Inboxes.com Service Integration
 
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout, contentToString } from '../../utils/core';
+import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 
@@ -114,7 +114,7 @@ export class GetnadaService {
           from: contentToString(msg.fe || msg.from, 'Unknown Sender'),
           to: contentToString(fullEmail),
           subject: contentToString(msg.s || msg.subject, '(No Subject)'),
-          date: msg.rf || msg.date ? new Date(msg.rf || msg.date).getTime() : Date.now(),
+          date: safeParseDate(msg.rf || msg.date),
           body: contentToString(msg.b || msg.body),
           htmlBody: contentToString(msg.html || msg.body),
           read: false,
@@ -155,7 +155,7 @@ export class GetnadaService {
         from: contentToString(msg.fe || msg.from, 'Unknown Sender'),
         to: contentToString(fullEmail),
         subject: contentToString(msg.s || msg.subject, '(No Subject)'),
-        date: msg.rf || msg.date ? new Date(msg.rf || msg.date).getTime() : Date.now(),
+        date: safeParseDate(msg.rf || msg.date),
         body: bodyStr,
         htmlBody: htmlStr,
         textBody: textStr,

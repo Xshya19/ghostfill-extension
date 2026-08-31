@@ -200,14 +200,14 @@ export const savePasswordPayloadSchema = z.object({
 
 const safeBodyString = (maxLen: number) =>
   z.preprocess((val) => {
-    if (typeof val === 'string') return val;
-    if (val === null || val === undefined) return undefined;
+    if (typeof val === 'string') {return val;}
+    if (val === null || val === undefined) {return undefined;}
     if (typeof val === 'object') {
       const obj = val as Record<string, unknown>;
-      if (typeof obj.text === 'string') return obj.text;
-      if (typeof obj.html === 'string') return obj.html;
-      if (typeof obj.body === 'string') return obj.body;
-      if (typeof obj.content === 'string') return obj.content;
+      if (typeof obj.text === 'string') {return obj.text;}
+      if (typeof obj.html === 'string') {return obj.html;}
+      if (typeof obj.body === 'string') {return obj.body;}
+      if (typeof obj.content === 'string') {return obj.content;}
       try {
         return JSON.stringify(val);
       } catch {

@@ -6,6 +6,27 @@
 // would still throw. The 'default' policy is the browser's built-in
 // fallback — it is invoked automatically whenever an untrusted string
 // is assigned to a sink and no named policy was used.
+import { errorTracker, performanceMonitor } from '../services/performanceService';
+import { sleep } from '../utils/core';
+import { createLogger, initRemoteLogger } from '../utils/logger';
+import { safeSendTabMessage } from '../utils/messaging';
+
+import { dumpMenuStats } from './contextMenu';
+import {
+  registerInitCallbacks,
+  setInitialized as guardSetInitialized,
+  setActiveInitPromise as guardSetActiveInitPromise,
+} from './initGuard';
+import { dumpRouterStats, setupMessageHandler } from './messageHandler';
+import { initNotifications, dumpNotificationStats } from './notifications';
+import { getPollingMetrics, onPollingAlarm } from './pollingManager';
+import {
+  initServiceWorker,
+  getBootState,
+  dumpBootReport,
+  onServiceWorkerAlarm,
+} from './serviceWorker';
+
 {
   interface GlobalWithTrustedTypes {
     trustedTypes?: {
@@ -49,26 +70,6 @@
     clearTimeout(id);
   };
 }
-import { sleep } from '../utils/core';
-import { createLogger, initRemoteLogger } from '../utils/logger';
-import { safeSendTabMessage } from '../utils/messaging';
-
-import { errorTracker, performanceMonitor } from '../services/performanceService';
-import { dumpMenuStats } from './contextMenu';
-import { dumpRouterStats, setupMessageHandler } from './messageHandler';
-import { initNotifications, dumpNotificationStats } from './notifications';
-import { getPollingMetrics, onPollingAlarm } from './pollingManager';
-import {
-  initServiceWorker,
-  getBootState,
-  dumpBootReport,
-  onServiceWorkerAlarm,
-} from './serviceWorker';
-import {
-  registerInitCallbacks,
-  setInitialized as guardSetInitialized,
-  setActiveInitPromise as guardSetActiveInitPromise,
-} from './initGuard';
 export { ensureInitialized } from './initGuard';
 
 // Boot timing — logged via structured logger once it's initialized

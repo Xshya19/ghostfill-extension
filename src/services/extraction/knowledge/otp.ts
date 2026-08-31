@@ -48,7 +48,7 @@ export const OTP_PATTERN_DATABASE: OtpPattern[] = [
   {
     // Bracket-wrapped: [123456], (123456), {123456}
     // Very common in marketing platform transactional emails
-    pattern: /[\[({]\s*(\d{4,8})\s*[\])}]/g,
+    pattern: /[[({]\s*(\d{4,8})\s*[\])}]/g,
     name: 'bracket-wrapped',
     baseConfidence: 88,
     minLength: 4,

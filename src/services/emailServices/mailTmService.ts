@@ -1,7 +1,7 @@
 // Mail.tm Service - Alternative email API with JWT auth
 
 import { EmailAccount, Email, MailTmDomain, MailTmAccount, MailTmMessage } from '../../types';
-import { API, fetchWithTimeout, contentToString } from '../../utils/core';
+import { API, fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
 import { getRandomInt, getRandomString } from '../../utils/encryption';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
@@ -715,7 +715,7 @@ export class MailTmService {
       from: contentToString(msg.from.address, 'Unknown Sender'),
       to: contentToString(msg.to[0]?.address ?? ''),
       subject: contentToString(msg.subject, '(No Subject)'),
-      date: new Date(msg.createdAt).getTime(),
+      date: safeParseDate(msg.createdAt),
       body: bodyStr,
       htmlBody: htmlStr || bodyStr,
       textBody: textStr,

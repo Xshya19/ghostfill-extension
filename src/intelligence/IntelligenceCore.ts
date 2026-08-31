@@ -1,5 +1,5 @@
-import { FieldType } from '../types/form.types';
 import { storageService } from '../services/storageService';
+import { FieldType } from '../types/form.types';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('IntelligenceCore');
@@ -541,7 +541,7 @@ const IDP_SUBDOMAIN_PATTERNS: readonly RegExp[] = [
   /(?:^|\.)[a-z0-9-]+\.workos\.com$/i,
 ];
 
-function looksLikeOAuthFlow(url: string): boolean {
+function _looksLikeOAuthFlow(url: string): boolean {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -742,9 +742,9 @@ export function detectHardNegative(r: RawFieldRecord): HardNegative | undefined 
   
   if (r.dataAttributes) {
     const dataText = Object.values(r.dataAttributes).join(' ').toLowerCase();
-    if (matchesAny(dataText, 'search')) return 'Search';
-    if (matchesAny(dataText, 'captcha')) return 'Captcha';
-    if (matchesAny(dataText, 'coupon')) return 'Coupon';
+    if (matchesAny(dataText, 'search')) {return 'Search';}
+    if (matchesAny(dataText, 'captcha')) {return 'Captcha';}
+    if (matchesAny(dataText, 'coupon')) {return 'Coupon';}
   }
 
   if (
@@ -1073,7 +1073,7 @@ export class IntelligenceCore {
 
     for (let i = 0; i < results.length; i++) {
       const current = results[i];
-      if (!current) continue;
+      if (!current) {continue;}
 
       if (i > 0) {
         const prev = results[i - 1];
@@ -1427,7 +1427,7 @@ export class AdaptiveStrategyEngine {
   }
 
   async init(): Promise<void> {
-    if (this.initialized) return;
+    if (this.initialized) {return;}
     try {
       const stored = await storageService.get(this.STORAGE_KEY as any);
       if (stored && typeof stored === 'object') {
@@ -1446,7 +1446,7 @@ export class AdaptiveStrategyEngine {
           this.successRates.set(siteKey, innerMap);
         }
       }
-    } catch (e) {
+    } catch {
       // safe fallback
     }
     this.initialized = true;
@@ -1475,7 +1475,7 @@ export class AdaptiveStrategyEngine {
     }
 
     stats.attempts++;
-    if (success) stats.successes++;
+    if (success) {stats.successes++;}
     stats.lastUsed = Date.now();
 
     stats.avgLatency = stats.avgLatency === 0 ? latencyMs : stats.avgLatency * 0.9 + latencyMs * 0.1;
@@ -1538,7 +1538,7 @@ export class AdaptiveStrategyEngine {
         }
       }
       await storageService.set(this.STORAGE_KEY as any, plainObj);
-    } catch (e) {
+    } catch {
       // safe fallback
     }
   }
@@ -1599,7 +1599,7 @@ export class VerificationLoop {
 
   private deepVerify(candidate: any, expected: string): boolean {
     const el = candidate.element;
-    if (!el.isConnected) return false;
+    if (!el.isConnected) {return false;}
 
     if (el.isContentEditable) {
       const actualText = el.textContent || '';

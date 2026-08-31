@@ -22,12 +22,12 @@ import { dropmailService } from './dropmailService';
 import { evilmailService } from './evilmailService';
 import { getnadaService } from './getnadaService';
 import { guerrillaMailService } from './guerrillaMailService';
+import { mailboxtempService } from './mailboxtempService';
+import { mailCxService } from './mailCxService';
 import { maildropService } from './maildropService';
 import { mailGwService } from './mailGwService';
 import { mailinatorService } from './mailinatorService';
 import { mailnesiaService } from './mailnesiaService';
-import { mailboxtempService } from './mailboxtempService';
-import { mailCxService } from './mailCxService';
 import { mailTmService } from './mailTmService';
 import { openinboxService } from './openinboxService';
 import { providerHealth } from './providerHealthManager';
@@ -222,6 +222,10 @@ class EmailServiceAggregator {
       signal?: AbortSignal;
     } = {}
   ): Promise<EmailAccount> {
+    if (this.generateEmailPromise) {
+      return this.generateEmailPromise;
+    }
+
     const now = Date.now();
     const diff = this.GENERATION_COOLDOWN_MS - (now - this.lastGenerationTime);
     if (diff > 0) {
@@ -229,10 +233,6 @@ class EmailServiceAggregator {
       throw new Error(`Rate limit: wait ${waitSec}s before retry.`);
     }
     this.lastGenerationTime = now;
-
-    if (this.generateEmailPromise) {
-      return this.generateEmailPromise;
-    }
 
     this.generateEmailPromise = (async () => {
       // Ensure we have a list of healthy services
@@ -953,7 +953,7 @@ class EmailServiceAggregator {
   private lastPrewarmTs = 0;
   async prewarmConnections(): Promise<void> {
     const now = Date.now();
-    if (now - this.lastPrewarmTs < 30_000) return;
+    if (now - this.lastPrewarmTs < 30_000) {return;}
     this.lastPrewarmTs = now;
 
     const endpoints = [
@@ -977,32 +977,32 @@ class EmailServiceAggregator {
         case 'guerrilla':
           return ['guerrillamail.com'];
         case 'mailgw':
-          return mailGwService.getDomains(signal);
+          return await mailGwService.getDomains(signal);
         case 'mailtm':
-          return mailTmService.getDomains(signal);
+          return await mailTmService.getDomains(signal);
         case 'driftz':
-          return driftzService.getDomains(signal);
+          return await driftzService.getDomains(signal);
         case 'catchmail':
-          return catchmailService.getDomains(signal);
+          return await catchmailService.getDomains(signal);
         case 'openinbox':
-          return openinboxService.getDomains(signal);
+          return await openinboxService.getDomains(signal);
         case 'evilmail':
-          return evilmailService.getDomains(signal);
+          return await evilmailService.getDomains(signal);
         case 'mailboxtemp':
-          return mailboxtempService.getDomains(signal);
+          return await mailboxtempService.getDomains(signal);
         case 'dropmail':
-          return dropmailService.getDomains(signal);
+          return await dropmailService.getDomains(signal);
         case 'tempmaillol':
-          return tempMailLolService.getDomains(signal);
+          return await tempMailLolService.getDomains(signal);
         case 'tempmailplus':
-          return tempmailPlusService.getDomains(signal);
+          return await tempmailPlusService.getDomains(signal);
         case 'mailcx':
-          return mailCxService.getDomains(signal);
+          return await mailCxService.getDomains(signal);
         case 'getnada':
-          return getnadaService.getDomains(signal);
+          return await getnadaService.getDomains(signal);
         case 'tempmail':
         case '1secmail':
-          return tempMailService.getDomains(signal);
+          return await tempMailService.getDomains(signal);
         default:
           return ['unknown.com'];
       }

@@ -465,7 +465,7 @@ export async function initializeSecureEncryption(): Promise<void> {
           await chrome.storage.local.set({
             masterKeySeed: btoa(String.fromCharCode(...masterSeed)),
           });
-        } catch (e) {
+        } catch {
           storageAccessFailed = true;
           log.debug('Failed to persist master encryption seed (sandboxed context).');
         }
@@ -488,9 +488,11 @@ export async function initializeSecureEncryption(): Promise<void> {
       chrome.storage?.session
     ) {
       try {
-        await chrome.storage.session
-          .setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' })
-          .catch(() => {});
+        if (typeof chrome.storage.session.setAccessLevel === 'function') {
+          await chrome.storage.session
+            .setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' })
+            .catch(() => {});
+        }
         const sessionData = await chrome.storage.session.get([
           'sessionKeySeed',
           'encryptionSalt',

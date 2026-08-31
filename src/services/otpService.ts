@@ -2,25 +2,25 @@
 // Consolidates local OTP store and background Smart Detection pipeline.
 
 import { PatternMatch, LastOTP } from '../types';
-import { createLogger } from '../utils/logger';
-import { storageService } from './storageService';
 import { encrypt, decrypt } from '../utils/encryption';
+import { createLogger } from '../utils/logger';
 import { sanitizeText } from '../utils/sanitization.core';
 import { assessEmailDecision } from './emailDecisionEngine';
 import { extractAll } from './intelligentExtractor';
+import { storageService } from './storageService';
 import type { DetectionResult, EncryptedCacheEntry } from './types/extraction.types';
 
 const log = createLogger('OTPService');
 
 function toSafeString(v: unknown): string {
-  if (typeof v === 'string') return v;
-  if (!v) return '';
+  if (typeof v === 'string') {return v;}
+  if (!v) {return '';}
   if (typeof v === 'object') {
     const obj = v as Record<string, unknown>;
-    if (typeof obj.text === 'string') return obj.text;
-    if (typeof obj.html === 'string') return obj.html;
-    if (typeof obj.body === 'string') return obj.body;
-    if (typeof obj.content === 'string') return obj.content;
+    if (typeof obj.text === 'string') {return obj.text;}
+    if (typeof obj.html === 'string') {return obj.html;}
+    if (typeof obj.body === 'string') {return obj.body;}
+    if (typeof obj.content === 'string') {return obj.content;}
     try { return JSON.stringify(v); } catch { return String(v); }
   }
   return String(v);
@@ -127,7 +127,7 @@ class OTPService {
     try {
       const now = Date.now();
 
-      if (await this.isRateLimitedLocked(now)) {
+      if (this.isRateLimitedLocked(now)) {
         const msg = `OTP save rate limited - maximum ${RATE_LIMIT.MAX_SAVES_PER_MINUTE} requests per minute allowed`;
         const retryAfterMs = RATE_LIMIT.WINDOW_MS;
 
@@ -157,7 +157,7 @@ class OTPService {
       }
 
       await storageService.set('lastOTP', lastOTP);
-      await this.recordSaveLocked(now);
+      this.recordSaveLocked(now);
       log.info('Last OTP saved', { source });
       return { saved: true };
     } finally {
@@ -422,7 +422,7 @@ class SmartDetectionService {
   }
 
   async burnCode(code: string, domain: string): Promise<void> {
-    if (!code || !domain) return;
+    if (!code || !domain) {return;}
     const allBurned = (await storageService.get('burnedCodes')) ?? {};
     const normalized = code.toUpperCase();
     const domainList = allBurned[domain] ?? [];
@@ -434,7 +434,7 @@ class SmartDetectionService {
   }
 
   async getBurnedCodes(domain: string): Promise<string[]> {
-    if (!domain) return [];
+    if (!domain) {return [];}
     const allBurned = (await storageService.get('burnedCodes')) ?? {};
     return allBurned[domain] ?? [];
   }
@@ -512,7 +512,9 @@ class SmartDetectionService {
         log.warn('MV3 Session Cache read/decrypt failed', e);
         try {
           await chrome.storage.session.remove(key);
-        } catch {}
+        } catch {
+          // ignore cleanup error
+        }
       }
     }
     return null;
@@ -528,7 +530,7 @@ class SmartDetectionService {
 
         // Maintain a lightweight index array in session storage (O(1) memory footprint)
         const sessionData = await chrome.storage.session.get('det_index');
-        let index = (sessionData?.det_index as string[]) || [];
+        const index = (sessionData?.det_index as string[]) || [];
 
         if (index.length >= 100) {
           const toRemove = index.splice(0, 10);

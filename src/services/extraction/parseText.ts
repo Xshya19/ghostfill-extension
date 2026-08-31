@@ -11,7 +11,7 @@ const NAMED: Record<string, string> = {
 };
 
 export function decodeEntities(s: string): string {
-  if (!s) return '';
+  if (!s) {return '';}
   let out = s;
   // Bounded multi-pass: emails double-encode (&amp;#39;)
   for (let i = 0; i < 3; i++) {
@@ -19,14 +19,14 @@ export function decodeEntities(s: string): string {
       .replace(/&#x([0-9a-f]+);?/gi, (_, h) => safeCp(parseInt(h, 16)))
       .replace(/&#(\d+);?/g, (_, d) => safeCp(parseInt(d, 10)))
       .replace(/&([a-z]+);/gi, (m, n) => NAMED[n.toLowerCase()] ?? m);
-    if (next === out) break;
+    if (next === out) {break;}
     out = next;
   }
   return out;
 }
 
 function safeCp(n: number): string {
-  if (!Number.isFinite(n) || n < 0 || n > 0x10ffff) return '';
+  if (!Number.isFinite(n) || n < 0 || n > 0x10ffff) {return '';}
   try { return String.fromCodePoint(n); } catch { return ''; }
 }
 

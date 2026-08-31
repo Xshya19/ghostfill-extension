@@ -1,3 +1,4 @@
+import { isAutoOpenableActivationLink, scoreActivationLink } from './extraction/activationLinkGuard';
 import type {
   EmailDecision,
   EmailDecisionAction,
@@ -6,7 +7,6 @@ import type {
   EmailIntent,
   ExtractionResult,
 } from './types/extraction.types';
-import { isAutoOpenableActivationLink, scoreActivationLink } from './extraction/activationLinkGuard';
 
 interface DecisionInput {
   extraction: ExtractionResult;

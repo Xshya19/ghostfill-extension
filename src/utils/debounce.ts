@@ -137,7 +137,7 @@ export function debounce<F extends (...args: unknown[]) => unknown>(
         if (timeoutId === null) {
           timeoutId = setTimeout(timerExpired, wait);
         }
-        return invokeFunc(lastCallTime);
+        return undefined;
       }
     }
 

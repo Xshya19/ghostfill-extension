@@ -72,8 +72,8 @@ class IdentityService {
     domain?: string;
     fullEmail?: string;
   } | null | undefined): boolean {
-    if (!account) return false;
-    if (account.service === 'gmail' || account.domain === 'gmail.com') return true;
+    if (!account) {return false;}
+    if (account.service === 'gmail' || account.domain === 'gmail.com') {return true;}
     const email = (account.fullEmail || '').toLowerCase();
     return email.endsWith('@gmail.com') || email.endsWith('@googlemail.com');
   }

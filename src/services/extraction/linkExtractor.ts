@@ -5,8 +5,6 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { createLogger } from '../../utils/logger';
-import { KnowledgeBase } from './knowledge';
-
 import type {
   ProviderKnowledge,
   EmailZone,
@@ -15,6 +13,12 @@ import type {
   IntentResult,
   ExtractedLink,
 } from '../types/extraction.types';
+import {
+  scoreActivationLink,
+  SELECT_MIN_QUALITY,
+} from './activationLinkGuard';
+import { KnowledgeBase } from './knowledge';
+
 import {
   normalizeUrl,
   analyzeUrlParams,
@@ -29,10 +33,6 @@ import {
   getZoneForPosition,
   getContextAround,
 } from './zoneAnalyzer'; // eslint-disable-line @typescript-eslint/no-unused-vars
-import {
-  scoreActivationLink,
-  SELECT_MIN_QUALITY,
-} from './activationLinkGuard';
 
 const log = createLogger('LinkExtractor');
 
@@ -290,7 +290,7 @@ export function isCTAButton(anchorHtml: string): boolean {
 }
 
 function extractAnchorHref(anchorHtml: string): string {
-  if (typeof anchorHtml !== 'string') return '';
+  if (typeof anchorHtml !== 'string') {return '';}
   const quoted = anchorHtml.match(/\bhref\s*=\s*["']([^"']+)["']/i);
   if (quoted?.[1]) {
     return decodeHtmlEntities(quoted[1].trim());
@@ -343,8 +343,8 @@ function urlsReferToSameTarget(anchorHref: string, targetUrl: string): boolean {
 }
 
 function getReadableAnchorText(anchorInnerHtml: string, anchorHtml: string): string {
-  if (typeof anchorInnerHtml !== 'string') anchorInnerHtml = '';
-  if (typeof anchorHtml !== 'string') anchorHtml = '';
+  if (typeof anchorInnerHtml !== 'string') {anchorInnerHtml = '';}
+  if (typeof anchorHtml !== 'string') {anchorHtml = '';}
   const text = stripHtml(anchorInnerHtml).trim();
   if (text) {
     return text;
@@ -373,7 +373,7 @@ export function getAnchorInfo(
   anchorHtml: string;
   isCTA: boolean;
 } {
-  if (typeof html !== 'string') return { anchorText: '', anchorHtml: '', isCTA: false };
+  if (typeof html !== 'string') {return { anchorText: '', anchorHtml: '', isCTA: false };}
   const escaped = url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
   // Try strict match first

@@ -49,8 +49,8 @@
 // ─────────────────────────────────────────────────────────────────────
 
 import { storageService } from '../services/storageService';
-import { getRandomString } from '../utils/encryption';
 import { sleep } from '../utils/core';
+import { getRandomString } from '../utils/encryption';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('Notifications');
@@ -313,14 +313,20 @@ function installEventListeners(): void {
     log.warn('chrome.notifications API not available');
     return;
   }
-
-  chrome.notifications.onClicked.addListener((id) => {
-    void onNotificationClicked(id);
-  });
-  chrome.notifications.onButtonClicked.addListener((id, index) => {
-    void onButtonClicked(id, index);
-  });
-  chrome.notifications.onClosed.addListener(onNotificationClosed);
+  // Hardened: onClicked/onButtonClicked/onClosed may be missing in test/jsdom or restricted contexts
+  if (chrome.notifications.onClicked?.addListener) {
+    chrome.notifications.onClicked.addListener((id) => {
+      void onNotificationClicked(id);
+    });
+  }
+  if (chrome.notifications.onButtonClicked?.addListener) {
+    chrome.notifications.onButtonClicked.addListener((id, index) => {
+      void onButtonClicked(id, index);
+    });
+  }
+  if (chrome.notifications.onClosed?.addListener) {
+    chrome.notifications.onClosed.addListener(onNotificationClosed);
+  }
 }
 
 async function onNotificationClicked(notificationId: string): Promise<void> {

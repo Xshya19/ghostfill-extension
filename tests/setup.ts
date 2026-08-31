@@ -16,6 +16,7 @@ const chromeMock = {
       remove: vi.fn().mockResolvedValue(undefined),
       clear: vi.fn().mockResolvedValue(undefined),
       getBytesInUse: vi.fn().mockResolvedValue(0),
+      setAccessLevel: vi.fn().mockResolvedValue(undefined),
     },
     sync: {
       get: vi.fn().mockResolvedValue({}),
@@ -71,6 +72,9 @@ const chromeMock = {
   notifications: {
     create: vi.fn().mockResolvedValue(true),
     clear: vi.fn().mockResolvedValue(true),
+    onClicked: { addListener: vi.fn(), removeListener: vi.fn(), hasListener: vi.fn() },
+    onButtonClicked: { addListener: vi.fn(), removeListener: vi.fn(), hasListener: vi.fn() },
+    onClosed: { addListener: vi.fn(), removeListener: vi.fn(), hasListener: vi.fn() },
   },
   action: {
     setBadgeText: vi.fn(),

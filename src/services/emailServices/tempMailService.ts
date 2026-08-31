@@ -1,7 +1,7 @@
 // TempMail Service - 1secmail.com API integration
 
 import { EmailAccount, Email, TempMailMessage, TempMailFullMessage } from '../../types';
-import { API, TEMP_MAIL_DOMAINS, fetchWithTimeout, contentToString } from '../../utils/core';
+import { API, TEMP_MAIL_DOMAINS, contentToString, safeParseDate } from '../../utils/core';
 import { getRandomInt } from '../../utils/encryption';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
@@ -390,7 +390,7 @@ class TempMailService {
       from: contentToString(msg.from, 'Unknown Sender'),
       to: `${login}@${domain}`,
       subject: contentToString(msg.subject, '(No Subject)'),
-      date: new Date(msg.date).getTime(),
+      date: safeParseDate(msg.date),
       body: '',
       attachments: [],
       read: false,
@@ -410,7 +410,7 @@ class TempMailService {
       from: contentToString(msg.from, 'Unknown Sender'),
       to: `${login}@${domain}`,
       subject: contentToString(msg.subject, '(No Subject)'),
-      date: new Date(msg.date).getTime(),
+      date: safeParseDate(msg.date),
       body: bodyStr,
       htmlBody: htmlStr || bodyStr,
       textBody: textStr,

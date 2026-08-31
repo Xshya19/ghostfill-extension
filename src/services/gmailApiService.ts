@@ -7,14 +7,14 @@
  * Calls the official Gmail REST API at:
  * https://www.googleapis.com/gmail/v1/users/me
  */
+import { GmailMessage, GmailProfile } from '../types/email.types';
+import type { GmailSyncStateEntry } from '../types/storage.types';
 import {
   GMAIL_CLIENT_ID,
   GMAIL_SCOPES,
   GMAIL_API_BASE,
   OAUTH_USERINFO,
 } from '../utils/core';
-import { GmailMessage, GmailProfile } from '../types/email.types';
-import type { GmailSyncStateEntry } from '../types/storage.types';
 import { createLogger } from '../utils/logger';
 import { storageService } from './storageService';
 
@@ -371,8 +371,8 @@ async function acquireToken(interactive: boolean): Promise<string> {
   // Clear the lock slot only when THIS promise settles, so an overlapping
   // caller see it as still-in-flight (and joins) rather than starting a new one.
   promise.then(
-    () => { if (pendingTokenAcquisitions.get(key) === promise) pendingTokenAcquisitions.delete(key); },
-    () => { if (pendingTokenAcquisitions.get(key) === promise) pendingTokenAcquisitions.delete(key); }
+    () => { if (pendingTokenAcquisitions.get(key) === promise) {pendingTokenAcquisitions.delete(key);} },
+    () => { if (pendingTokenAcquisitions.get(key) === promise) {pendingTokenAcquisitions.delete(key);} }
   );
   pendingTokenAcquisitions.set(key, promise);
   return promise;

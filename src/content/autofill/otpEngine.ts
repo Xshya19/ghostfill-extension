@@ -1,9 +1,9 @@
-import { FrameworkType, PageContext } from '../../types/form.types';
-import { OTP_PATTERNS, OTP_CONSTANTS } from '../../intelligence/pageAnalyzer';
-import { createLogger } from '../../utils/logger';
 import { verifyFill } from '../../intelligence/IntelligenceCore';
-import { OTPFieldGroup, OTPFillOutcome } from './formFiller';
-import { FieldSetter, PhantomTyper, delay, VisibilityEngine } from './formFiller';
+import { OTP_PATTERNS, OTP_CONSTANTS } from '../../intelligence/pageAnalyzer';
+import { FrameworkType, PageContext } from '../../types/form.types';
+import { createLogger } from '../../utils/logger';
+import { OTPFieldGroup, OTPFillOutcome , FieldSetter, PhantomTyper, delay, VisibilityEngine } from './formFiller';
+
 
 const log = createLogger('AutofillOTPEngine');
 
@@ -323,12 +323,12 @@ export class OTPFieldDiscovery {
 
       if (strategy.name === 'S4:inputmode-numeric-short') {
         const filtered = fields.filter((f) => {
-          if (this.hasStrongOTPSignal(f, context)) return true;
+          if (this.hasStrongOTPSignal(f, context)) {return true;}
 
           const hasVerificationContext = context.isVerificationPage || context.is2FAPage || context.hasOTPLanguage;
-          if (!hasVerificationContext) return false;
+          if (!hasVerificationContext) {return false;}
 
-          if (f.maxLength >= 4 && f.maxLength <= 8) return true;
+          if (f.maxLength >= 4 && f.maxLength <= 8) {return true;}
 
           const width = f.offsetWidth;
           const numericish =
@@ -336,7 +336,7 @@ export class OTPFieldDiscovery {
             f.getAttribute('inputmode') === 'numeric' ||
             f.type === 'number' ||
             f.type === 'tel';
-          if (numericish && width > 0 && width < 140) return true;
+          if (numericish && width > 0 && width < 140) {return true;}
 
           return false;
         });
@@ -359,18 +359,18 @@ export class OTPFieldDiscovery {
     }
 
     const split = this.findSplitDigitFields();
-    if (split) return split;
+    if (split) {return split;}
 
     const singleInputSplit = this.findSingleInputSplitOTP();
-    if (singleInputSplit) return singleInputSplit;
+    if (singleInputSplit) {return singleInputSplit;}
 
     const shadowResult = this.discoverInShadowRoots(context);
-    if (shadowResult) return shadowResult;
+    if (shadowResult) {return shadowResult;}
 
     return null;
   }
 
-  private static discoverInShadowRoots(context: PageContext): OTPFieldGroup | null {
+  private static discoverInShadowRoots(_context: PageContext): OTPFieldGroup | null {
     const shadowStrategies = [
       {
         name: 'SD:autocomplete-one-time-code',
@@ -456,7 +456,7 @@ export class OTPFieldDiscovery {
 
   private static findSplitDigitFields(): OTPFieldGroup | null {
     const candidates = this.queryVisible('input[maxlength="1"]');
-    if (candidates.length < this.MIN_SPLIT_FIELDS) return null;
+    if (candidates.length < this.MIN_SPLIT_FIELDS) {return null;}
     
     const sortedWithRects = candidates
       .map(el => ({ el, rect: el.getBoundingClientRect() }))
@@ -496,7 +496,7 @@ export class OTPFieldDiscovery {
     );
 
     for (const input of candidates) {
-      if (NegativePatternMatcher.isLikelyNotOTP(input)) continue;
+      if (NegativePatternMatcher.isLikelyNotOTP(input)) {continue;}
 
       const style = window.getComputedStyle(input);
       const hasSplitStyling =
@@ -528,9 +528,9 @@ export class OTPFieldDiscovery {
     const name = input.name.toLowerCase();
     const id = input.id.toLowerCase();
 
-    if (input.autocomplete.toLowerCase() === 'one-time-code') return true;
-    if (this.OTP_EXACT_FIELD_NAMES.has(name) || this.OTP_EXACT_FIELD_NAMES.has(id)) return true;
-    if (this.STRONG_OTP_DESCRIPTOR_PATTERN.test(descriptor)) return true;
+    if (input.autocomplete.toLowerCase() === 'one-time-code') {return true;}
+    if (this.OTP_EXACT_FIELD_NAMES.has(name) || this.OTP_EXACT_FIELD_NAMES.has(id)) {return true;}
+    if (this.STRONG_OTP_DESCRIPTOR_PATTERN.test(descriptor)) {return true;}
 
     const numericish =
       input.inputMode === 'numeric' ||
@@ -600,7 +600,7 @@ export class OTPFiller {
     framework: FrameworkType,
     isBackgroundTab: boolean = false
   ): Promise<OTPFillOutcome> {
-    if (!field) return { success: false, filledCount: 0, strategy: 'single-field' };
+    if (!field) {return { success: false, filledCount: 0, strategy: 'single-field' };}
 
     const cleanOTP = otp.replace(/[-\s]/g, '');
     const valueToSet = field.type === 'number' ? cleanOTP : otp;
@@ -645,13 +645,13 @@ export class OTPFiller {
 
     for (let i = 0; i < fields.length; i++) {
       const field = fields[i];
-      if (!field) continue;
+      if (!field) {continue;}
 
       if (i < total) {
         const success = isBackgroundTab
           ? await FieldSetter.setCharDirect(field, digits[i]!, true)
           : await this.typeIntoSplitField(field, digits[i]!);
-        if (success) filledCount++;
+        if (success) {filledCount++;}
       }
 
       if (i < fields.length - 1) {
@@ -659,7 +659,7 @@ export class OTPFiller {
         if (!isBackgroundTab && !autoAdvances && document.activeElement === field) {
           field.blur();
           const nextField = fields[i + 1];
-          if (nextField) nextField.focus({ preventScroll: true });
+          if (nextField) {nextField.focus({ preventScroll: true });}
         }
       }
     }
@@ -683,7 +683,7 @@ export class OTPFiller {
 
     for (let i = 0; i < fields.length; i++) {
       const field = fields[i];
-      if (!field) continue;
+      if (!field) {continue;}
 
       if (i < total) {
         const char = digits[i]!;
@@ -695,7 +695,7 @@ export class OTPFiller {
         field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: char }));
         field.dispatchEvent(new Event('change', { bubbles: true }));
 
-        if (field.textContent === char) filledCount++;
+        if (field.textContent === char) {filledCount++;}
       }
 
       if (i < fields.length - 1) {
@@ -703,7 +703,7 @@ export class OTPFiller {
         if (document.activeElement === field) {
           field.blur();
           const nextField = fields[i + 1];
-          if (nextField) nextField.focus({ preventScroll: true });
+          if (nextField) {nextField.focus({ preventScroll: true });}
         }
       }
     }
@@ -718,7 +718,7 @@ export class OTPFiller {
   }
 
   private static async detectAutoAdvance(field: HTMLInputElement | undefined): Promise<boolean> {
-    if (!field) return false;
+    if (!field) {return false;}
     try {
       const originalValue = field.value;
       const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
@@ -754,7 +754,7 @@ export class OTPFiller {
 
   private static async tryPasteDistributedCode(digits: string, fields: HTMLInputElement[]): Promise<boolean> {
     const target = fields[0];
-    if (!target) return false;
+    if (!target) {return false;}
 
     const originalValues = fields.map((f) => f.value);
 
@@ -822,7 +822,7 @@ export class FieldWatcher {
 
   async watch(otp: string, context: PageContext, timeoutMs: number): Promise<boolean> {
     return new Promise((resolve) => {
-      if (this.isActive) this.stop();
+      if (this.isActive) {this.stop();}
 
       this.isActive = true;
       this.pendingOTP = otp;
@@ -830,7 +830,7 @@ export class FieldWatcher {
 
       let resolved = false;
       const resolveOnce = (result: boolean): void => {
-        if (resolved) return;
+        if (resolved) {return;}
         resolved = true;
         this.pendingResolve = null;
         this.stop();
@@ -839,10 +839,10 @@ export class FieldWatcher {
       this.pendingResolve = resolveOnce;
 
       const checkFields = async (): Promise<void> => {
-        if (!this.pendingOTP || !this.pendingContext || resolved) return;
+        if (!this.pendingOTP || !this.pendingContext || resolved) {return;}
 
         const group = OTPFieldDiscovery.discover(this.pendingContext);
-        if (!group) return;
+        if (!group) {return;}
 
         const otpToFill = this.pendingOTP;
         const framework = this.pendingContext.framework;
@@ -868,7 +868,7 @@ export class FieldWatcher {
 
       this.pollingInterval = setInterval(() => {
         void checkFields();
-        if (document.body) this.scanAndObserveShadowRoots(document.body, checkFields);
+        if (document.body) {this.scanAndObserveShadowRoots(document.body, checkFields);}
       }, 1000);
 
       this.safetyTimeout = setTimeout(() => {
@@ -878,15 +878,15 @@ export class FieldWatcher {
   }
 
   private onMutation(checkFields: () => Promise<void>): void {
-    if (this.debounceTimeout) clearTimeout(this.debounceTimeout);
+    if (this.debounceTimeout) {clearTimeout(this.debounceTimeout);}
     this.debounceTimeout = setTimeout(() => {
       void this.handleMutationTick(checkFields);
     }, 250);
   }
 
   private async handleMutationTick(checkFields: () => Promise<void>): Promise<void> {
-    if (!this.pendingContext || !this.pendingOTP) return;
-    if (document.body) this.scanAndObserveShadowRoots(document.body, checkFields);
+    if (!this.pendingContext || !this.pendingOTP) {return;}
+    if (document.body) {this.scanAndObserveShadowRoots(document.body, checkFields);}
     void checkFields();
   }
 

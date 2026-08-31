@@ -1,5 +1,10 @@
+import {
+  IntelligenceCore,
+  HistoryManager,
+  VerificationLoop,
+  AdaptiveStrategyEngine,
+} from '../intelligence/IntelligenceCore';
 import { extractFieldRecord } from '../intelligence/pageAnalyzer';
-import { FieldClass } from '../intelligence/IntelligenceCore';
 import {
   PageContext,
   FormInputElement,
@@ -16,16 +21,9 @@ import {
   FieldSetter,
   PhantomTyper,
   OTPFieldGroup,
-} from './autofill/formFiller';
+ UniversalFiller } from './autofill/formFiller';
 import { PageIntelligence, OTPFieldDiscovery, OTPFiller, FieldWatcher } from './autofill/otpEngine';
-import {
-  IntelligenceCore,
-  HistoryManager,
-  mapFieldClassToFieldType,
-} from '../intelligence/IntelligenceCore';
 import { UltraDetector, ContextEngine } from './formDetector';
-import { UniversalFiller } from './autofill/formFiller';
-import { VerificationLoop, AdaptiveStrategyEngine } from '../intelligence/IntelligenceCore';
 
 const log = createLogger('AutoFiller');
 
@@ -715,7 +713,8 @@ export class AutoFiller {
     }
 
     // Ensure credentials exist for signup/login flows
-    let { identity, otpCode } = await this.fetchIdentityAndOTP();
+    const { identity: fetchedIdentity, otpCode } = await this.fetchIdentityAndOTP();
+    let identity = fetchedIdentity;
     const needsAuthMaterial =
       !otpCode || Boolean(context.isSignupPage) || Boolean(context.isLoginPage);
     if (needsAuthMaterial) {
@@ -728,10 +727,10 @@ export class AutoFiller {
       let hasPasswordField = false;
       for (const input of inputs) {
         const calibrated = this.getClassification(input);
-        if (calibrated.decision === 'BLOCK') continue;
+        if (calibrated.decision === 'BLOCK') {continue;}
         const type = calibrated.fieldType;
-        if (type === 'email' || type === 'username') hasEmailOrIdentifierField = true;
-        if (type === 'password' || type === 'confirm-password') hasPasswordField = true;
+        if (type === 'email' || type === 'username') {hasEmailOrIdentifierField = true;}
+        if (type === 'password' || type === 'confirm-password') {hasPasswordField = true;}
       }
 
       // Auto-generate disposable email only when Temp Mail tab is active.
@@ -753,7 +752,7 @@ export class AutoFiller {
             );
             if (genResp?.success && (genResp as any).email?.fullEmail) {
               const refetched = await this.fetchIdentityAndOTP();
-              if (refetched.identity) identity = refetched.identity;
+              if (refetched.identity) {identity = refetched.identity;}
             }
           } catch (e) {
             log.warn('Failed to auto-generate email during Smart Fill', e);
@@ -776,7 +775,7 @@ export class AutoFiller {
           );
           if (genPass?.success) {
             const refetched = await this.fetchIdentityAndOTP();
-            if (refetched.identity) identity = refetched.identity;
+            if (refetched.identity) {identity = refetched.identity;}
           }
         } catch (e) {
           log.warn('Failed to auto-generate password during Smart Fill', e);
@@ -985,8 +984,8 @@ export class AutoFiller {
   }
 
   async injectIcons(): Promise<void> {
-    if (this.destroyed) return;
-    if (this.isInjectionExcludedHost(window.location.hostname)) return;
+    if (this.destroyed) {return;}
+    if (this.isInjectionExcludedHost(window.location.hostname)) {return;}
 
     const relevantTypes: ReadonlySet<FieldType> = new Set([
       'email',
@@ -1002,18 +1001,18 @@ export class AutoFiller {
     const BATCH_SIZE = 15; // Process 15 inputs, then yield to the browser
 
     const processBatch = async () => {
-      if (this.destroyed) return;
+      if (this.destroyed) {return;}
 
       const end = Math.min(index + BATCH_SIZE, inputs.length);
       for (; index < end; index++) {
         const input = inputs[index]!;
-        if (input.hasAttribute('data-ghost-attached')) continue;
+        if (input.hasAttribute('data-ghost-attached')) {continue;}
 
         // Skip off-screen inputs to save CPU (they aren't visible to the user yet)
-        if (!this.isVisibleInput(input)) continue;
+        if (!this.isVisibleInput(input)) {continue;}
 
         const calibrated = this.getClassification(input);
-        if (calibrated.decision === 'BLOCK' || calibrated.decision === 'ABSTAIN') continue;
+        if (calibrated.decision === 'BLOCK' || calibrated.decision === 'ABSTAIN') {continue;}
 
         const type = calibrated.fieldType;
         const looksLikeIdentifier =
@@ -1099,7 +1098,8 @@ export class AutoFiller {
   }
 
   private async handleIconClick(input: HTMLInputElement, type: FieldType): Promise<void> {
-    let { identity, otpCode } = await this.fetchIdentityAndOTP();
+    const { identity: fetchedIdentity, otpCode } = await this.fetchIdentityAndOTP();
+    let identity = fetchedIdentity;
     const context = this.getContext();
     if (this.shouldPreserveExistingValue(input, type)) {
       log.debug('Skipping icon fill because field already has a value', { fieldType: type });
@@ -1528,7 +1528,7 @@ export class AutoFiller {
 
     for (const input of allInputs) {
       const calibrated = this.getClassification(input);
-      if (calibrated.decision === 'BLOCK') continue;
+      if (calibrated.decision === 'BLOCK') {continue;}
       const type = calibrated.fieldType;
 
       if (fieldType === 'email' && type === 'username') {
@@ -1684,7 +1684,7 @@ export class AutoFiller {
     if (selectors) {
       const searchRoots: ParentNode[] = [];
       const form = contextHint?.closest?.('form');
-      if (form) searchRoots.push(form);
+      if (form) {searchRoots.push(form);}
       searchRoots.push(document);
 
       for (const root of searchRoots) {
@@ -1731,7 +1731,7 @@ export class AutoFiller {
       if (rect.width <= 0 || rect.height <= 0) {
         const style = window.getComputedStyle(el);
         const isAnimating = style.animationName !== 'none' || style.transitionProperty !== 'none';
-        if (!isAnimating) return false;
+        if (!isAnimating) {return false;}
       }
       const style = window.getComputedStyle(el);
       return (

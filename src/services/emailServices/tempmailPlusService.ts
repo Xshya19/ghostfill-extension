@@ -1,7 +1,7 @@
 // Tempmail.plus / Mailto.plus Service Integration
 
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout, contentToString } from '../../utils/core';
+import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 
@@ -51,7 +51,7 @@ export class TempmailPlusService {
         from: contentToString(msg.from_mail || msg.from, 'Unknown Sender'),
         to: fullEmail,
         subject: contentToString(msg.subject, '(No Subject)'),
-        date: msg.date ? new Date(msg.date).getTime() : Date.now(),
+        date: safeParseDate(msg.date),
         body: contentToString(msg.text || msg.body),
         htmlBody: contentToString(msg.html || msg.body),
         textBody: contentToString(msg.text || msg.body),
@@ -86,7 +86,7 @@ export class TempmailPlusService {
         from: contentToString(msg.from_mail || msg.from, 'Unknown Sender'),
         to: fullEmail,
         subject: contentToString(msg.subject, '(No Subject)'),
-        date: msg.date ? new Date(msg.date).getTime() : Date.now(),
+        date: safeParseDate(msg.date),
         body: bodyStr,
         htmlBody: htmlStr,
         textBody: textStr,

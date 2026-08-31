@@ -24,9 +24,9 @@ import {
 import React, { useState, useEffect, useRef } from 'react';
 
 import { storageService } from '../../../services/storageService';
-import { Button } from '../../ui';
 import { UserSettings, DEFAULT_SETTINGS } from '../../../types/storage.types';
 import { createLogger } from '../../../utils/logger';
+import { Button } from '../../ui';
 
 import { SettingsSection, ToggleSwitch } from './OptionsUIComponents';
 

@@ -34,7 +34,7 @@ const RAW_CONTENT_TAGS = new Set(['script', 'style', 'head', 'title', 'noscript'
 // Handles zero-width chars, NBSP variants, full-width digits (NFKC),
 // smart quotes — the #1 silent-failure cause in banking/enterprise templates.
 export function normalizeForExtraction(input: unknown): string {
-  if (!input) return '';
+  if (!input) {return '';}
   const str =
     typeof input === 'string'
       ? input
@@ -77,17 +77,17 @@ function parseStyleAttr(styleStr: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const decl of styleStr.split(';')) {
     const idx = decl.indexOf(':');
-    if (idx === -1) continue;
+    if (idx === -1) {continue;}
     const prop = decl.slice(0, idx).trim().toLowerCase();
     const val = decl.slice(idx + 1).trim().toLowerCase();
-    if (prop && val) out[prop] = val;
+    if (prop && val) {out[prop] = val;}
   }
   return out;
 }
 
 function parseAttrs(attrStr: string): Record<string, string> {
   const attrs: Record<string, string> = {};
-  if (!attrStr) return attrs;
+  if (!attrStr) {return attrs;}
   const re = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*(?:=\s*("([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(attrStr)) !== null) {
@@ -136,10 +136,10 @@ export function buildDom(html: string): DOMNode {
     }
     lastIndex = idx + full.length;
 
-    if (full.startsWith('<!--') || full.startsWith('<![CDATA[')) continue;
+    if (full.startsWith('<!--') || full.startsWith('<![CDATA[')) {continue;}
 
     if (rawSwallowTag) {
-      if (closing && tagName === rawSwallowTag) rawSwallowTag = null;
+      if (closing && tagName === rawSwallowTag) {rawSwallowTag = null;}
       continue;
     }
 
@@ -160,7 +160,7 @@ export function buildDom(html: string): DOMNode {
       type: 'element', tag: tagName, attrs: parseAttrs(attrStr),
       children: [], parent, startIndex: idx, endIndex: idx + full.length,
     };
-    if (node.attrs?.style) node.ownStyle = parseStyleAttr(node.attrs.style);
+    if (node.attrs?.style) {node.ownStyle = parseStyleAttr(node.attrs.style);}
     parent.children.push(node);
 
     if (RAW_CONTENT_TAGS.has(tagName) && !selfClose) {
@@ -189,7 +189,7 @@ export function buildDom(html: string): DOMNode {
 // ── Tree traversal utilities ─────────────────────────────────────────────
 
 export function getFlattenedText(node: DOMNode): string {
-  if (node.type === 'text') return node.text || '';
+  if (node.type === 'text') {return node.text || '';}
   let out = '';
   for (const child of node.children) {
     out += getFlattenedText(child);
@@ -202,16 +202,16 @@ export function getFlattenedText(node: DOMNode): string {
 
 export function* walkTextNodes(node: DOMNode): Generator<DOMNode> {
   if (node.type === 'text') {
-    if ((node.text || '').trim()) yield node;
+    if ((node.text || '').trim()) {yield node;}
     return;
   }
-  for (const child of node.children) yield* walkTextNodes(child);
+  for (const child of node.children) {yield* walkTextNodes(child);}
 }
 
 export function* walkElements(node: DOMNode, tags?: Set<string>): Generator<DOMNode> {
   if (node.type === 'element') {
-    if (!tags || tags.has(node.tag || '')) yield node;
-    for (const child of node.children) yield* walkElements(child, tags);
+    if (!tags || tags.has(node.tag || '')) {yield node;}
+    for (const child of node.children) {yield* walkElements(child, tags);}
   }
 }
 
@@ -232,7 +232,7 @@ export function getEffectiveStyle(node: DOMNode, prop: string): string | null {
   let cur: DOMNode | null = node.type === 'text' ? node.parent : node;
   let depth = 0;
   while (cur && depth < 12) {
-    if (cur.ownStyle?.[prop]) return cur.ownStyle[prop];
+    if (cur.ownStyle?.[prop]) {return cur.ownStyle[prop];}
     cur = cur.parent;
     depth++;
   }
@@ -256,7 +256,7 @@ export function findAncestorTag(node: DOMNode, tag: string, maxDepth = 6): DOMNo
   let cur = node.parent;
   let depth = 0;
   while (cur && depth < maxDepth) {
-    if (cur.tag === tag) return cur;
+    if (cur.tag === tag) {return cur;}
     cur = cur.parent;
     depth++;
   }
@@ -266,10 +266,10 @@ export function findAncestorTag(node: DOMNode, tag: string, maxDepth = 6): DOMNo
 /** Is this text node the sole meaningful content of its parent element? */
 export function isIsolatedInParent(node: DOMNode): boolean {
   const parent = node.parent;
-  if (!parent) return false;
+  if (!parent) {return false;}
   const meaningfulSiblings = parent.children.filter((c) => {
-    if (c === node) return false;
-    if (c.type === 'text') return (c.text || '').trim().length > 0;
+    if (c === node) {return false;}
+    if (c.type === 'text') {return (c.text || '').trim().length > 0;}
     return true; // element siblings count against isolation
   });
   return meaningfulSiblings.length === 0;

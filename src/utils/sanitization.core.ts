@@ -257,7 +257,7 @@ function secondaryValidation(html: string): string {
     }
   }
 
-  let decoded = html;
+  let decoded = sanitized;
   let previous = '';
   let iter = 0;
 

@@ -110,7 +110,7 @@ function redactSensitiveData(data: unknown, depth = 0): unknown {
   // PERF: Short-circuit for primitives that can never contain secrets.
   // Numbers, booleans, null, undefined are the most common log arguments
   // on hot paths (confidence scores, tab IDs, counts, flags).
-  if (data == null || typeof data === 'number' || typeof data === 'boolean') {
+  if (data === null || data === undefined || typeof data === 'number' || typeof data === 'boolean') {
     return data;
   }
 

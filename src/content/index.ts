@@ -4,13 +4,13 @@
 // Initialize debug console FIRST to capture all errors
 import './dev/debugConsole';
 
+import { errorTracker, performanceMonitor } from '../services/performanceService';
 import { FieldType } from '../types/form.types';
 import { deepQuerySelectorAll } from '../utils/core';
 import { createLogger, initRemoteLogger } from '../utils/logger';
-import { errorTracker, performanceMonitor } from '../services/performanceService';
 import { AutoFiller } from './autoFiller';
-import { FormDetector, FieldAnalyzer, DOMObserver, collectFieldDiagnostics } from './formDetector';
 import { FloatingButton } from './floatingButton';
+import { FormDetector, FieldAnalyzer, DOMObserver, collectFieldDiagnostics } from './formDetector';
 import { OTPPageDetector } from './otpPageDetector';
 import { pageStatus } from './ui/pageStatus';
 import './styles/content.css';

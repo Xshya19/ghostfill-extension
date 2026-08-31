@@ -6,15 +6,16 @@ import {
   sanitizeOTP,
   sanitizeActivationLink,
 } from '../utils/sanitization.core';
+import { pickBestActivationLink, isSelectableActivationLink } from './extraction/activationLinkGuard';
+import { extractLinkCognitive } from './extraction/cognitiveLinkExtractor';
+import { extractOTPCognitive } from './extraction/cognitiveOtpExtractor';
+import { normalizeForExtraction } from './extraction/domEngine';
+import intentModel from './extraction/knowledge/intent_model.json';
+import { extractLink } from './extraction/linkExtractor';
+import { extractOTP, isCodeEmbeddedInEmail, hasIsolatedOtpContext } from './extraction/otpExtractor';
+import { detectProvider } from './extraction/providerDetector';
 import { extractUrls } from './extraction/urlExtractor';
 import { analyzeEmailZones, stripHtmlPreserveStructure } from './extraction/zoneAnalyzer';
-import { detectProvider } from './extraction/providerDetector';
-import { extractOTP, isCodeEmbeddedInEmail, hasIsolatedOtpContext } from './extraction/otpExtractor';
-import { extractLink } from './extraction/linkExtractor';
-import { normalizeForExtraction } from './extraction/domEngine';
-import { extractOTPCognitive } from './extraction/cognitiveOtpExtractor';
-import { extractLinkCognitive } from './extraction/cognitiveLinkExtractor';
-import { pickBestActivationLink, isSelectableActivationLink } from './extraction/activationLinkGuard';
 import type {
   ExtractionResult,
   EmailIntent,
@@ -27,7 +28,6 @@ import type {
   IntentSignal,
 } from './types/extraction.types';
 
-import intentModel from './extraction/knowledge/intent_model.json';
 
 interface ModelData {
   priors: Record<string, number>;
@@ -87,7 +87,7 @@ export class IntentClassifier {
     );
 
     const sorted = Object.entries(finalProbs).sort((a, b) => b[1] - a[1]);
-    if (sorted.length === 0) return { intent: 'unknown', confidence: 0 };
+    if (sorted.length === 0) {return { intent: 'unknown', confidence: 0 };}
     
     const [bestIntent, confidence] = sorted[0]!;
     return { intent: bestIntent, confidence };
@@ -312,8 +312,8 @@ function calculateAdaptiveThresholds(
  * Layer 3: Security Guard — Calculates trust score based on phishing markers
  */
 function calculateSecurityScore(
-  allUrls: string[],
-  body: string
+  _allUrls: string[],
+  _body: string
 ): { score: number; risk: 'low' | 'medium' | 'high' } {
   // USER DIRECTIVE: Bypass all security checks. 
   // Always return maximum trust.
@@ -425,7 +425,7 @@ function appearsAsStandaloneCode(code: string, plainText: string, sanitizedBody:
   const regex = new RegExp(`(?:^|[\\s>])(${escaped})(?=$|[\\s<,;!?.])`, 'gm');
 
   const checkText = (text: string): boolean => {
-    if (!text) return false;
+    if (!text) {return false;}
     regex.lastIndex = 0; // CRITICAL: Reset index for global regex reuse on new string
     let match: RegExpExecArray | null;
     while ((match = regex.exec(text)) !== null) {
@@ -531,8 +531,8 @@ export function extractAll(
   const cogOtp = extractOTPCognitive(plainText, sanitizedHtmlBody, provider, zones, intentResult, sanitizedSubject);
   const tradOtp = extractOTP(plainText, sanitizedHtmlBody, provider, zones, intentResult);
 
-  if (cogOtp) cogOtp.code = sanitizeOTP(cogOtp.code);
-  if (tradOtp) tradOtp.code = sanitizeOTP(tradOtp.code);
+  if (cogOtp) {cogOtp.code = sanitizeOTP(cogOtp.code);}
+  if (tradOtp) {tradOtp.code = sanitizeOTP(tradOtp.code);}
 
   let otp: typeof cogOtp = null;
 

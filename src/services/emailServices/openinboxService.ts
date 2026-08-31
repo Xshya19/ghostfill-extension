@@ -2,7 +2,7 @@
 // Disposable email service for automated inbox and OTP extraction
 
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout, contentToString } from '../../utils/core';
+import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 
@@ -83,7 +83,7 @@ export class OpeninboxService {
           from: contentToString(msg.from || msg.sender, 'Unknown Sender'),
           to: contentToString(msg.to || fullEmail),
           subject: contentToString(msg.subject, '(No Subject)'),
-          date: msg.createdAt || msg.date ? new Date(msg.createdAt || msg.date).getTime() : Date.now(),
+          date: safeParseDate(msg.createdAt || msg.date),
           body: contentToString(msg.body || msg.text || msg.html),
           htmlBody: contentToString(msg.html || msg.body),
           read: Boolean(msg.read),
@@ -124,7 +124,7 @@ export class OpeninboxService {
         from: contentToString(msg.from || msg.sender, 'Unknown Sender'),
         to: contentToString(msg.to || fullEmail),
         subject: contentToString(msg.subject, '(No Subject)'),
-        date: msg.createdAt || msg.date ? new Date(msg.createdAt || msg.date).getTime() : Date.now(),
+        date: safeParseDate(msg.createdAt || msg.date),
         body: bodyStr,
         htmlBody: htmlStr,
         textBody: textStr,

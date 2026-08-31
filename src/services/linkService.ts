@@ -15,6 +15,11 @@
 // └──────────────────────────────────────────────────────────────────┘
 // ─────────────────────────────────────────────────────────────────────
 
+import {
+  registerActivationTab,
+  unregisterActivationTab,
+  isActivationTab,
+} from '../background/activationRegistry';
 import { Email } from '../types';
 import { DEFAULT_SETTINGS } from '../types/storage.types';
 import { sleep } from '../utils/core';
@@ -24,14 +29,6 @@ import { safeSendMessage } from '../utils/messaging';
 import { dedupService } from './dedupService';
 import { smartDetectionService } from './otpService';
 import { storageService } from './storageService';
-import { isAutoOpenableActivationLink } from './extraction/activationLinkGuard';
-import {
-  registerActivationTab,
-  unregisterActivationTab,
-  isActivationTab,
-  onContentScriptReady,
-  waitForContentScript,
-} from '../background/activationRegistry';
 
 const log = createLogger('LinkEngine');
 

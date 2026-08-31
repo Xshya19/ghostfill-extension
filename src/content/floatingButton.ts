@@ -16,6 +16,7 @@
 // └────────────────────────────────────────────────────────────────────────┘
 // ═══════════════════════════════════════════════════════════════════════════════
 
+import { PageAnalyzer, type PageType, type PageAnalysis } from '../intelligence/pageAnalyzer';
 import {
   classifyField,
   shouldDecorateField,
@@ -24,9 +25,8 @@ import {
   PageContext,
   FieldType as ClassifierFieldType,
 } from '../shared/fieldClassifier';
+import { IconSystem, menuIcon, type MenuIconName as _MenuIconName } from '../shared/icons';
 import { generateHostTokens } from '../shared/theme';
-import fabStyles from './floatingButton.shadow.css';
-import { IconSystem, menuIcon, type MenuIconName } from '../shared/icons';
 import {
   FieldType,
   GenerateEmailResponse,
@@ -39,9 +39,9 @@ import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
 import { setHTML, clearHTML } from '../utils/sanitization.core';
 import { AutoFiller } from './autoFiller';
+import fabStyles from './floatingButton.shadow.css';
 import { FieldAnalyzer, collectFieldDiagnostics } from './formDetector';
 import { pageStatus } from './ui/pageStatus';
-import { PageAnalyzer, type PageType, type PageAnalysis } from '../intelligence/pageAnalyzer';
 
 const log = createLogger('FloatingButton');
 
@@ -153,7 +153,7 @@ function escapeHTML(str: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function escapeCSS(value: string): string {
+function _escapeCSS(value: string): string {
   try {
     return CSS.escape(value);
   } catch {
@@ -373,10 +373,10 @@ class ContextualMenu {
       analysis.hasOTPField ||
       hasOTPReady;
 
-    const showEmail =
+    const _showEmail =
       analysis.hasEmailField || analysis.pageType === 'signup' || analysis.pageType === 'login';
 
-    const showPassword =
+    const _showPassword =
       analysis.hasPasswordField ||
       analysis.pageType === 'signup' ||
       analysis.pageType === 'password-reset';
@@ -834,10 +834,10 @@ export class FloatingButton {
       'gf-mode-user',
       'gf-otp-armed'
     );
-    if (this.mode === 'otp') this.button.classList.add('gf-mode-otp');
-    else if (this.mode === 'email') this.button.classList.add('gf-mode-email');
-    else if (this.mode === 'password') this.button.classList.add('gf-mode-password');
-    else if (this.mode === 'user') this.button.classList.add('gf-mode-user');
+    if (this.mode === 'otp') {this.button.classList.add('gf-mode-otp');}
+    else if (this.mode === 'email') {this.button.classList.add('gf-mode-email');}
+    else if (this.mode === 'password') {this.button.classList.add('gf-mode-password');}
+    else if (this.mode === 'user') {this.button.classList.add('gf-mode-user');}
 
     if (this.hasOTPReady || this.isWaitingForOTP) {
       this.button.classList.add('gf-otp-armed');
@@ -1583,7 +1583,7 @@ export class FloatingButton {
       error?: string;
     } | null;
 
-    if (this.destroyed) return;
+    if (this.destroyed) {return;}
 
     const preferred =
       idResp?.preferredEmailType || idResp?.identity?.preferredEmailType || 'disposable';
@@ -1594,7 +1594,7 @@ export class FloatingButton {
       const gen = (await safeSendMessage({
         action: 'GENERATE_EMAIL',
       })) as GenerateEmailResponse | null;
-      if (this.destroyed) return;
+      if (this.destroyed) {return;}
       if (gen?.success && gen.email?.fullEmail) {
         email = gen.email.fullEmail;
       } else {
@@ -1636,7 +1636,7 @@ export class FloatingButton {
 
     const filled = await this.autoFiller.fillFieldIntoTarget('email', email, this.currentField);
 
-    if (this.destroyed) return;
+    if (this.destroyed) {return;}
 
     if (filled) {
       const tag = preferred === 'gmail' ? 'Gmail' : 'Temp Mail';
@@ -1664,7 +1664,7 @@ export class FloatingButton {
         resp.result.password,
         this.currentField
       );
-      if (this.destroyed) return;
+      if (this.destroyed) {return;}
 
       if (filled) {
         pageStatus.success('Password filled!', TIMING_MS.SUCCESS_DISPLAY);
@@ -1711,17 +1711,17 @@ export class FloatingButton {
 
     if (value) {
       let resolvedType: FieldType = 'unknown';
-      if (actionId === 'fill-firstname') resolvedType = 'first-name';
-      else if (actionId === 'fill-lastname') resolvedType = 'last-name';
-      else if (actionId === 'fill-fullname') resolvedType = 'full-name';
-      else if (actionId === 'fill-username') resolvedType = 'username';
+      if (actionId === 'fill-firstname') {resolvedType = 'first-name';}
+      else if (actionId === 'fill-lastname') {resolvedType = 'last-name';}
+      else if (actionId === 'fill-fullname') {resolvedType = 'full-name';}
+      else if (actionId === 'fill-username') {resolvedType = 'username';}
 
       const filled = await this.autoFiller.fillFieldIntoTarget(
         resolvedType,
         value,
         this.currentField
       );
-      if (this.destroyed) return;
+      if (this.destroyed) {return;}
 
       if (filled) {
         pageStatus.success(`${mapping.label} filled!`, TIMING_MS.SUCCESS_DISPLAY);

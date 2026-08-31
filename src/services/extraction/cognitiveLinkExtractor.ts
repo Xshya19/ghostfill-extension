@@ -7,12 +7,12 @@
 
 import { createLogger } from '../../utils/logger';
 import type { EmailIntent, ExtractedLink, IntentResult, ProviderKnowledge, EmailZone } from '../types/extraction.types';
-import { buildDom, getFlattenedText, walkAllElementsExported, getAncestorChain, normalizeForExtraction, type DOMNode } from './domEngine';
-import { normalizeUrl, analyzeUrlParams } from './urlExtractor';
 import {
   scoreActivationLink,
   SELECT_MIN_QUALITY,
 } from './activationLinkGuard';
+import { buildDom, getFlattenedText, walkAllElementsExported, getAncestorChain, normalizeForExtraction, type DOMNode } from './domEngine';
+import { normalizeUrl, analyzeUrlParams } from './urlExtractor';
 import { getContextAround } from './zoneAnalyzer';
 
 const log = createLogger('CognitiveLink');
@@ -39,7 +39,7 @@ const PATH_SCORE_MAP: Array<[RegExp, number, EmailIntent]> = [
 
 /** Cycle-safe recursive unwrapper — fixes the missing-cycle-guard bug. */
 export function recursiveUnwrap(url: string, depth = 0, seen: Set<string> = new Set()): string {
-  if (depth > 6 || !url || seen.has(url)) return url;
+  if (depth > 6 || !url || seen.has(url)) {return url;}
   seen.add(url);
 
   let candidate: string | null = null;
@@ -62,7 +62,7 @@ export function recursiveUnwrap(url: string, depth = 0, seen: Set<string> = new 
       if (upn) {
         try {
           const decoded = atob(upn.replace(/-/g, '+').replace(/_/g, '/'));
-          if (decoded.startsWith('http')) candidate = decoded;
+          if (decoded.startsWith('http')) {candidate = decoded;}
         } catch { /* not base64 */ }
       }
     }
@@ -82,25 +82,25 @@ export function recursiveUnwrap(url: string, depth = 0, seen: Set<string> = new 
 
     if (!candidate && host.includes('safelinks.protection.outlook.com')) {
       const safeUrl = u.searchParams.get('url');
-      if (safeUrl) candidate = decodeURIComponent(safeUrl);
+      if (safeUrl) {candidate = decodeURIComponent(safeUrl);}
     }
   } catch {
     return url;
   }
 
-  if (!candidate || candidate === url) return url;
+  if (!candidate || candidate === url) {return url;}
   return recursiveUnwrap(candidate, depth + 1, seen);
 }
 
 function isCtaLike(anchor: DOMNode): boolean {
   const chain = [anchor, ...getAncestorChain(anchor, 2)];
   for (const node of chain) {
-    if (node.attrs?.role === 'button') return true;
+    if (node.attrs?.role === 'button') {return true;}
     const cls = node.attrs?.class || '';
-    if (/\b(btn|button|cta)\b/i.test(cls)) return true;
+    if (/\b(btn|button|cta)\b/i.test(cls)) {return true;}
     const style = node.ownStyle;
-    if (style && (style['background-color'] || style['background']) && style['padding']) return true;
-    if (node.attrs?.bgcolor) return true;
+    if (style && (style['background-color'] || style['background']) && style['padding']) {return true;}
+    if (node.attrs?.bgcolor) {return true;}
   }
   return false;
 }
@@ -120,9 +120,9 @@ export function extractLinkCognitive(
   // Map href -> anchor node(s) for O(1)-ish lookup with multi-mention support.
   const anchorsByHref = new Map<string, DOMNode[]>();
   for (const el of walkAllElementsExported(root)) {
-    if (el.tag !== 'a' || !el.attrs?.href) continue;
+    if (el.tag !== 'a' || !el.attrs?.href) {continue;}
     const href = el.attrs.href;
-    if (!anchorsByHref.has(href)) anchorsByHref.set(href, []);
+    if (!anchorsByHref.has(href)) {anchorsByHref.set(href, []);}
     anchorsByHref.get(href)!.push(el);
   }
 
@@ -143,7 +143,7 @@ export function extractLinkCognitive(
   const bodyText = fullText || getFlattenedText(root);
 
   for (const rawUrl of urls) {
-    if (!rawUrl?.startsWith('http')) continue;
+    if (!rawUrl?.startsWith('http')) {continue;}
     const workingUrl = recursiveUnwrap(rawUrl);
     let normalized: string;
     try { normalized = normalizeUrl(workingUrl); } catch { continue; }
@@ -154,8 +154,8 @@ export function extractLinkCognitive(
     let isCTA = false;
     for (const anchor of anchorNodes) {
       const text = getFlattenedText(anchor).trim();
-      if (text) anchorText = text;
-      if (isCtaLike(anchor)) isCTA = true;
+      if (text) {anchorText = text;}
+      if (isCtaLike(anchor)) {isCTA = true;}
     }
 
     // Smart local context: sentence/paragraph around this URL or its CTA text
@@ -189,17 +189,17 @@ export function extractLinkCognitive(
       for (const [re, score, type] of PATH_SCORE_MAP) {
         if (re.test(path)) {
           points += score * 0.45; // secondary structural hint only
-          if (detectedType === 'other') detectedType = type;
+          if (detectedType === 'other') {detectedType = type;}
           break;
         }
       }
 
       const paramAn = analyzeUrlParams(workingUrl);
       // Token alone is weak; only boost when path/anchor already prove action
-      if (paramAn.hasToken && detectedType !== 'other') points += 14;
-      else if (paramAn.hasToken) points += 3;
-      if (paramAn.hasCode && detectedType !== 'other') points += 10;
-      if (paramAn.tokenLength > 30 && detectedType !== 'other') points += 8;
+      if (paramAn.hasToken && detectedType !== 'other') {points += 14;}
+      else if (paramAn.hasToken) {points += 3;}
+      if (paramAn.hasCode && detectedType !== 'other') {points += 10;}
+      if (paramAn.tokenLength > 30 && detectedType !== 'other') {points += 8;}
 
       // Origin binding is a soft trust signal only — never required for selection
       if (expectedDomains.length > 0) {
@@ -208,19 +208,19 @@ export function extractLinkCognitive(
           const dom = d.toLowerCase().replace(/^\.+/, '');
           return host === dom || host.endsWith(`.${dom}`);
         });
-        if (bound) points += 12;
-        else points -= 6;
+        if (bound) {points += 12;}
+        else {points -= 6;}
       }
     } catch { continue; }
 
-    if (GENERIC_FOOTER_RE.test(anchorText)) points -= 60;
-    else if (ACTION_ANCHOR_RE.test(anchorText)) points += 22;
-    if (isCTA && ACTION_ANCHOR_RE.test(anchorText)) points += 14;
-    else if (isCTA) points += 3;
+    if (GENERIC_FOOTER_RE.test(anchorText)) {points -= 60;}
+    else if (ACTION_ANCHOR_RE.test(anchorText)) {points += 22;}
+    if (isCTA && ACTION_ANCHOR_RE.test(anchorText)) {points += 14;}
+    else if (isCTA) {points += 3;}
 
     // Intent alignment is soft — extraction must still work without knowing the brand
-    if (intent.intent === detectedType) points += 10;
-    if (intent.intent === 'activation' && detectedType === 'activation') points += 6;
+    if (intent.intent === detectedType) {points += 10;}
+    if (intent.intent === 'activation' && detectedType === 'activation') {points += 6;}
 
     // Drop weak "other" candidates — they cause wrong auto-opens
     if (detectedType === 'other' && gate.quality < SELECT_MIN_QUALITY) {
@@ -242,9 +242,9 @@ export function extractLinkCognitive(
     if (existing) {
       existing.mentions += 1;
       existing.points = Math.max(existing.points, points) + 8;
-      if (anchorText) existing.anchorText = existing.anchorText || anchorText;
+      if (anchorText) {existing.anchorText = existing.anchorText || anchorText;}
       existing.isCTA = existing.isCTA || isCTA;
-      if (surroundingText) existing.surrounding = existing.surrounding || surroundingText;
+      if (surroundingText) {existing.surrounding = existing.surrounding || surroundingText;}
       existing.gateQuality = Math.max(existing.gateQuality, gate.quality);
     } else {
       byUrl.set(normalized, {
@@ -261,21 +261,21 @@ export function extractLinkCognitive(
     }
   }
 
-  if (byUrl.size === 0) return null;
+  if (byUrl.size === 0) {return null;}
 
   // Rank by activation quality first (smart), then points — never by brand list
   const sorted = [...byUrl.values()]
     .filter((c) => c.type !== 'other' || c.gateQuality >= SELECT_MIN_QUALITY)
     .sort((a, b) => {
-      if (Math.abs(a.gateQuality - b.gateQuality) > 6) return b.gateQuality - a.gateQuality;
+      if (Math.abs(a.gateQuality - b.gateQuality) > 6) {return b.gateQuality - a.gateQuality;}
       const aAct = a.type !== 'other' ? 1 : 0;
       const bAct = b.type !== 'other' ? 1 : 0;
-      if (aAct !== bAct) return bAct - aAct;
+      if (aAct !== bAct) {return bAct - aAct;}
       return b.points - a.points;
     });
 
   const best = sorted[0];
-  if (!best) return null;
+  if (!best) {return null;}
 
   const finalGate = scoreActivationLink(best.url, best.anchorText, best.surrounding || '');
   if (finalGate.hardReject || finalGate.quality < SELECT_MIN_QUALITY) {

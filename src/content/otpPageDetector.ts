@@ -22,8 +22,9 @@
 // │               Notify background → start fast OTP polling        │
 // │               Listen for AUTO_FILL_OTP → fill → feedback        │
 // └──────────────────────────────────────────────────────────────────┘
-import { generateHostTokens } from '../shared/theme';
 import { PageAnalyzer } from '../intelligence/pageAnalyzer';
+import { safeGetComputedStyle as _safeGetComputedStyle } from '../shared/safeStyles';
+import { generateHostTokens } from '../shared/theme';
 import { ExtensionMessage } from '../types';
 import { getRandomString } from '../utils/encryption';
 import { createLogger } from '../utils/logger';
@@ -32,7 +33,6 @@ import { setHTML } from '../utils/sanitization.core';
 import { AutoFiller } from './autoFiller';
 import { FormDetector } from './formDetector';
 import { pageStatus } from './ui/pageStatus';
-import { safeGetComputedStyle } from '../shared/safeStyles';
 
 const log = createLogger('OTPDetector');
 
@@ -124,7 +124,7 @@ interface AIContainerResult {
   readonly groupSize: number;
 }
 
-let AUTO_FILL_TIMEOUT_MS = 5_000;
+const _AUTO_FILL_TIMEOUT_MS = 5_000;
 
 // ═══════════════════════════════════════════════════════════════
 //  §1  C O N S T A N T S
@@ -638,8 +638,8 @@ class SelectorGenerator {
 
   private static verify(selector: string, expected: HTMLInputElement): boolean {
     // GRANDMASTER FIX: Fast paths for inherently unique selectors
-    if (selector.startsWith('#')) return true; // ID is unique
-    if (selector.includes('autocomplete="one-time-code"')) return true; // Usually unique
+    if (selector.startsWith('#')) {return true;} // ID is unique
+    if (selector.includes('autocomplete="one-time-code"')) {return true;} // Usually unique
     
     try {
       // Only run expensive querySelectorAll for ambiguous selectors (classes, nth-of-type)
@@ -1572,7 +1572,9 @@ class ScoringEngine {
           break;
         }
       }
-    } catch {}
+    } catch {
+      // ignore query error
+    }
 
     return matchesContext || hasTimer || hasResend || hasHeadingKeyword;
   }
@@ -1793,7 +1795,7 @@ export class OTPPageDetector {
             }
           }
           return m.removedNodes.length > 0 && Array.from(m.removedNodes).some((node) => {
-            if (!(node instanceof HTMLElement)) return false;
+            if (!(node instanceof HTMLElement)) {return false;}
             return (
               node.tagName === 'INPUT' ||
               node.tagName === 'FORM' ||
@@ -2207,12 +2209,12 @@ export class OTPPageDetector {
     const parts: string[] = [];
     
     const walk = (node: Node) => {
-      if (node.nodeType !== Node.ELEMENT_NODE) return;
+      if (node.nodeType !== Node.ELEMENT_NODE) {return;}
       const el = node as Element;
       const tag = el.tagName.toLowerCase();
       
       // Skip heavy/non-form elements
-      if (['script', 'style', 'svg', 'path', 'iframe', 'object'].includes(tag)) return;
+      if (['script', 'style', 'svg', 'path', 'iframe', 'object'].includes(tag)) {return;}
       
       if (tag === 'input' || tag === 'select' || tag === 'textarea' || tag === 'button') {
         const type = el.getAttribute('type') || '';
@@ -2235,7 +2237,7 @@ export class OTPPageDetector {
     
     // Walk orphan inputs
     document.querySelectorAll('input:not([type="hidden"])').forEach(i => {
-      if (!i.closest('form')) walk(i);
+      if (!i.closest('form')) {walk(i);}
     });
     
     return parts.join('\n').substring(0, CONFIG.MAX_DOM_SNAPSHOT_CHARS);

@@ -6,8 +6,8 @@
 //   const rows = harvestPage();
 //   console.log(rows.map(r => JSON.stringify(r)).join('\n'));
 
-import { extractFieldRecord } from '../pageAnalyzer';
 import type { RawFieldRecord } from '../IntelligenceCore';
+import { extractFieldRecord } from '../pageAnalyzer';
 
 const FILLABLE = 'input, textarea';
 const SKIP_TYPES = new Set([

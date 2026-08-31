@@ -39,15 +39,6 @@ import React, {
 import gmailLogo from '../../../assets/icons/gmail_icon.png';
 import ghostLogoImg from '../../../assets/logo.png';
 
-import { Button, IconButton } from '../../ui';
-import {
-  springSoft,
-  interactiveSurface,
-  tweenIn,
-  tweenOut,
-  tweenTimerBar,
-  springDigit,
-} from '../../ui';
 import {
   EmailAccount,
   Email,
@@ -61,6 +52,14 @@ import { LastOTP } from '../../../types/storage.types';
 import { TIMING, formatRelativeTime, copyToClipboard, contentToString } from '../../../utils/core';
 import { createLogger } from '../../../utils/logger';
 import { safeSendMessage, safeSendTabMessage } from '../../../utils/messaging';
+import {
+  springSoft,
+  interactiveSurface,
+  tweenIn,
+  tweenOut,
+  tweenTimerBar,
+  springDigit,
+ Button, IconButton } from '../../ui';
 import { useStorageSubscription } from '../hooks';
 
 // i18n helper

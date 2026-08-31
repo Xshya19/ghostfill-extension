@@ -33,7 +33,7 @@ const STORAGE_KEYS = {
 export async function persistWaiters<T extends Omit<PersistedTabRegistration, 'tabId'>>(
   map: Map<number, T>
 ): Promise<void> {
-  if (typeof chrome === 'undefined' || !chrome.storage?.session) return;
+  if (typeof chrome === 'undefined' || !chrome.storage?.session) {return;}
   try {
     const list: PersistedTabRegistration[] = Array.from(map.entries()).map(([tabId, reg]) => ({
       tabId,
@@ -54,11 +54,11 @@ export async function rehydrateWaiters<T extends Omit<PersistedTabRegistration, 
   map: Map<number, T>,
   staleTabMs: number
 ): Promise<boolean> {
-  if (typeof chrome === 'undefined' || !chrome.storage?.session) return false;
+  if (typeof chrome === 'undefined' || !chrome.storage?.session) {return false;}
   try {
     const data = await chrome.storage.session.get(STORAGE_KEYS.OTP_WAITERS);
     const list = data[STORAGE_KEYS.OTP_WAITERS] as PersistedTabRegistration[] | undefined;
-    if (!Array.isArray(list) || list.length === 0) return false;
+    if (!Array.isArray(list) || list.length === 0) {return false;}
 
     const now = Date.now();
     let rehydratedCount = 0;
@@ -73,7 +73,7 @@ export async function rehydrateWaiters<T extends Omit<PersistedTabRegistration, 
       if (chrome.tabs) {
         try {
           const tab = await chrome.tabs.get(item.tabId);
-          if (!tab) continue;
+          if (!tab) {continue;}
         } catch {
           log.debug(`Tab ${item.tabId} no longer exists, discarding waiter`);
           continue;
@@ -97,7 +97,7 @@ export async function rehydrateWaiters<T extends Omit<PersistedTabRegistration, 
  * Persist activation link tabs to session storage
  */
 export async function persistActivationTabs(tabs: Set<number>): Promise<void> {
-  if (typeof chrome === 'undefined' || !chrome.storage?.session) return;
+  if (typeof chrome === 'undefined' || !chrome.storage?.session) {return;}
   try {
     await chrome.storage.session.set({ [STORAGE_KEYS.ACTIVATION_TABS]: Array.from(tabs) });
   } catch (error) {
@@ -109,7 +109,7 @@ export async function persistActivationTabs(tabs: Set<number>): Promise<void> {
  * Rehydrate activation link tabs from session storage
  */
 export async function rehydrateActivationTabs(tabs: Set<number>): Promise<void> {
-  if (typeof chrome === 'undefined' || !chrome.storage?.session) return;
+  if (typeof chrome === 'undefined' || !chrome.storage?.session) {return;}
   try {
     const data = await chrome.storage.session.get(STORAGE_KEYS.ACTIVATION_TABS);
     const list = data[STORAGE_KEYS.ACTIVATION_TABS] as number[] | undefined;

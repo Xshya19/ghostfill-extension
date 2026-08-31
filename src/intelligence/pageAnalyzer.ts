@@ -1,16 +1,11 @@
-import { deepQuerySelectorAll } from '../utils/core';
 import { FieldType } from '../types/form.types';
-import { createLogger } from '../utils/logger';
-import { storageService } from '../services/storageService';
+import { deepQuerySelectorAll } from '../utils/core';
 import {
   NUM_STRUCTURAL_FEATURES,
   STRUCT,
   emptyStructural,
   RawFieldRecord,
-  emptyStructural as legacyEmptyStructural,
 } from './IntelligenceCore';
-
-const log = createLogger('PageAnalyzer');
 
 type Fillable = HTMLInputElement | HTMLTextAreaElement;
 
@@ -832,15 +827,15 @@ export class VisualStateTracker {
   }
 
   private checkVisibility(el: HTMLElement, style: CSSStyleDeclaration): boolean {
-    if (style.display === 'none') return false;
-    if (style.visibility === 'hidden') return false;
-    if (parseFloat(style.opacity) < 0.01) return false;
-    if (el.offsetWidth <= 0 || el.offsetHeight <= 0) return false;
+    if (style.display === 'none') {return false;}
+    if (style.visibility === 'hidden') {return false;}
+    if (parseFloat(style.opacity) < 0.01) {return false;}
+    if (el.offsetWidth <= 0 || el.offsetHeight <= 0) {return false;}
 
     let curr: HTMLElement | null = el.parentElement;
     while (curr) {
       const pStyle = this.getCachedStyle(curr);
-      if (pStyle.display === 'none') return false;
+      if (pStyle.display === 'none') {return false;}
       if (pStyle.overflow === 'hidden' && (curr.offsetWidth === 0 || curr.offsetHeight === 0)) {
         return false;
       }
@@ -850,7 +845,7 @@ export class VisualStateTracker {
   }
 
   private checkIfObscured(el: HTMLElement, rect: DOMRect, style: CSSStyleDeclaration): boolean {
-    if (rect.width === 0 || rect.height === 0) return false;
+    if (rect.width === 0 || rect.height === 0) {return false;}
 
     const points = [
       { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
@@ -868,7 +863,7 @@ export class VisualStateTracker {
         continue;
       }
       const elementAtPoint = document.elementFromPoint(pt.x, pt.y);
-      if (!elementAtPoint) continue;
+      if (!elementAtPoint) {continue;}
       if (elementAtPoint !== el && !el.contains(elementAtPoint) && !elementAtPoint.contains(el)) {
         const obsStyle = this.getCachedStyle(elementAtPoint as HTMLElement);
         const obsZ = parseInt(obsStyle.zIndex, 10) || 0;
@@ -897,7 +892,7 @@ export class VisualStateTracker {
   }
 
   private predictFutureVisibility(el: HTMLElement, style: CSSStyleDeclaration): boolean {
-    if (this.checkVisibility(el, style)) return true;
+    if (this.checkVisibility(el, style)) {return true;}
     const transition = style.transitionProperty || '';
     if (parseFloat(style.opacity) === 0 && (transition.includes('opacity') || transition.includes('all'))) {
       return true;
@@ -914,7 +909,7 @@ export class VisualStateTracker {
       ) {
         return true;
       }
-      if (curr.tagName === 'DIALOG') return true;
+      if (curr.tagName === 'DIALOG') {return true;}
       curr = curr.parentElement;
     }
 
@@ -949,7 +944,7 @@ export class FuzzyFormFingerprint {
 
     const l2 = inputs
       .map((el) => {
-        if (el.tagName === 'SELECT') return 'select';
+        if (el.tagName === 'SELECT') {return 'select';}
         return (el as HTMLInputElement).type || 'text';
       })
       .join(',');
@@ -970,8 +965,8 @@ export class FuzzyFormFingerprint {
 
     for (const hist of history) {
       let score = 0;
-      if (current.l1 === hist.l1) score += 0.5;
-      if (current.l2 === hist.l2) score += 0.3;
+      if (current.l1 === hist.l1) {score += 0.5;}
+      if (current.l2 === hist.l2) {score += 0.3;}
 
       if (current.l3 && hist.l3) {
         const currTokens = current.l3.split(',');
@@ -1600,13 +1595,13 @@ export class IFrameProxyV2 {
 
   private sendProbe(iframe: HTMLIFrameElement): void {
     const target = iframe.contentWindow;
-    if (!target) return;
+    if (!target) {return;}
 
     let targetOrigin: string;
     try {
       if (iframe.src) {
         targetOrigin = new URL(iframe.src).origin;
-        if (targetOrigin === 'null') return;
+        if (targetOrigin === 'null') {return;}
       } else {
         targetOrigin = window.location.origin;
       }
@@ -1630,7 +1625,7 @@ export class IFrameProxyV2 {
       if (origin === 'null' || origin === '' || origin === window.location.origin) {
         if (origin === window.location.origin) {
            const message = event.data as IFrameMessage;
-           if (message && message.type === 'SENTINEL_RESULT') callback(message.payload);
+           if (message && message.type === 'SENTINEL_RESULT') {callback(message.payload);}
         }
         return;
       }
@@ -1638,7 +1633,7 @@ export class IFrameProxyV2 {
       let isTrusted = false;
       try {
         const url = new URL(origin);
-        if (url.protocol !== 'https:') return;
+        if (url.protocol !== 'https:') {return;}
         const hostname = url.hostname;
 
         isTrusted = IFrameProxyV2.TRUSTED_ORIGINS.some((trusted) => {
@@ -1651,7 +1646,7 @@ export class IFrameProxyV2 {
         return;
       }
 
-      if (!isTrusted) return;
+      if (!isTrusted) {return;}
 
       const message = event.data as IFrameMessage;
       if (message && message.type === 'SENTINEL_RESULT') {
@@ -1796,7 +1791,7 @@ export class PageAnalyzer {
         if ((document as Document & { __vue_app__?: unknown }).__vue_app__) {
           return true;
         }
-        if (!document.body) return false;
+        if (!document.body) {return false;}
         // GRANDMASTER FIX: Use TreeWalker to avoid querySelectorAll('*') memory spike
         const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
         let count = 0;

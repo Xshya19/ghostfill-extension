@@ -1,7 +1,7 @@
 // Mail.gw Service - Free temporary email API (similar to Mail.tm)
 
 import { EmailAccount, Email, MailTmDomain, MailTmAccount, MailTmMessage } from '../../types';
-import { API, fetchWithTimeout, contentToString } from '../../utils/core';
+import { API, fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
 import { getRandomInt, getRandomString } from '../../utils/encryption';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
@@ -515,7 +515,7 @@ class MailGwService {
       id: String(msg.id),
       from: contentToString(msg.from.address, 'Unknown Sender'),
       subject: contentToString(msg.subject, '(No Subject)'),
-      date: new Date(msg.createdAt).getTime(),
+      date: safeParseDate(msg.createdAt),
       body: bodyStr,
       htmlBody: htmlStr || bodyStr,
       textBody: textStr,

@@ -220,7 +220,7 @@ export function scoreActivationLink(
     if (softPath) {
       quality -= 18;
       reasons.push('token-with-soft-path-only');
-      if (cls === 'unknown') cls = 'activation';
+      if (cls === 'unknown') {cls = 'activation';}
     } else {
       quality -= 40;
       reasons.push('token-without-action-proof');
@@ -298,9 +298,9 @@ export function pickBestActivationLink<
   T extends { url: string; anchorText?: string; context?: string; confidence?: number },
 >(a: T | null | undefined, b: T | null | undefined): T | null {
   const score = (c: T | null | undefined) => {
-    if (!c?.url) return -1;
+    if (!c?.url) {return -1;}
     const g = scoreActivationLink(c.url, c.anchorText || '', c.context || '');
-    if (g.hardReject || g.cls === 'unknown' || g.quality < SELECT_MIN_QUALITY) return -1;
+    if (g.hardReject || g.cls === 'unknown' || g.quality < SELECT_MIN_QUALITY) {return -1;}
     const conf =
       typeof c.confidence === 'number'
         ? c.confidence > 1
@@ -311,7 +311,7 @@ export function pickBestActivationLink<
   };
   const sa = score(a);
   const sb = score(b);
-  if (sa < 0 && sb < 0) return null;
-  if (sa >= sb) return a ?? null;
+  if (sa < 0 && sb < 0) {return null;}
+  if (sa >= sb) {return a ?? null;}
   return b ?? null;
 }

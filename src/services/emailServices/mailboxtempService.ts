@@ -1,7 +1,7 @@
 // MailboxTemp Service - mailboxtemp.com API integration
 
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout, contentToString } from '../../utils/core';
+import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 
@@ -83,7 +83,7 @@ export class MailboxtempService {
           from: contentToString(msg.from || msg.sender, 'Unknown Sender'),
           to: contentToString(msg.to || fullEmail),
           subject: contentToString(msg.subject, '(No Subject)'),
-          date: msg.date || msg.createdAt ? new Date(msg.date || msg.createdAt).getTime() : Date.now(),
+          date: safeParseDate(msg.date || msg.createdAt),
           body: contentToString(msg.body || msg.text || msg.html),
           htmlBody: contentToString(msg.html || msg.body),
           read: Boolean(msg.read),
@@ -125,7 +125,7 @@ export class MailboxtempService {
         from: contentToString(item.from || item.sender, 'Unknown Sender'),
         to: contentToString(item.to || fullEmail),
         subject: contentToString(item.subject, '(No Subject)'),
-        date: item.date || item.createdAt ? new Date(item.date || item.createdAt).getTime() : Date.now(),
+        date: safeParseDate(item.date || item.createdAt),
         body: bodyStr,
         htmlBody: htmlStr,
         textBody: textStr,

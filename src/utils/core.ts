@@ -47,6 +47,23 @@ export function generateRandomString(length: number, charset: string): string {
   return result;
 }
 
+// ─── Date & Timestamp Utilities ──────────────────────────────────────────
+
+/**
+ * Safely parse a date/timestamp input into a valid Unix timestamp (ms).
+ * Returns the fallback (default: Date.now()) if parsing yields NaN or invalid date.
+ */
+export function safeParseDate(val: unknown, fallback: number = Date.now()): number {
+  if (typeof val === 'number') {
+    return Number.isFinite(val) && !Number.isNaN(val) ? val : fallback;
+  }
+  if (!val || (typeof val !== 'string' && !(val instanceof Date))) {
+    return fallback;
+  }
+  const parsed = new Date(val).getTime();
+  return Number.isNaN(parsed) || !Number.isFinite(parsed) ? fallback : parsed;
+}
+
 // ─── Object & Data Utilities ─────────────────────────────────────────
 
 /**
@@ -294,22 +311,22 @@ export function stripHtml(html: string): string {
 }
 
 export function formatPasswordStrength(score: number): string {
-  if (score < 20) return 'Very Weak';
-  if (score < 40) return 'Weak';
-  if (score < 60) return 'Fair';
-  if (score < 80) return 'Strong';
+  if (score < 20) {return 'Very Weak';}
+  if (score < 40) {return 'Weak';}
+  if (score < 60) {return 'Fair';}
+  if (score < 80) {return 'Strong';}
   return 'Very Strong';
 }
 
 export function formatCrackTime(seconds: number): string {
-  if (seconds < 1) return 'instant';
-  if (seconds < 60) return `${Math.floor(seconds)} seconds`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours`;
-  if (seconds < 2592000) return `${Math.floor(seconds / 86400)} days`;
-  if (seconds < 31536000) return `${Math.floor(seconds / 2592000)} months`;
-  if (seconds < 3153600000) return `${Math.floor(seconds / 31536000)} years`;
-  if (seconds < 3153600000000) return `${Math.floor(seconds / 3153600000)} centuries`;
+  if (seconds < 1) {return 'instant';}
+  if (seconds < 60) {return `${Math.floor(seconds)} seconds`;}
+  if (seconds < 3600) {return `${Math.floor(seconds / 60)} minutes`;}
+  if (seconds < 86400) {return `${Math.floor(seconds / 3600)} hours`;}
+  if (seconds < 2592000) {return `${Math.floor(seconds / 86400)} days`;}
+  if (seconds < 31536000) {return `${Math.floor(seconds / 2592000)} months`;}
+  if (seconds < 3153600000) {return `${Math.floor(seconds / 31536000)} years`;}
+  if (seconds < 3153600000000) {return `${Math.floor(seconds / 3153600000)} centuries`;}
   return 'forever';
 }
 
@@ -377,12 +394,11 @@ export function rootDomain(hostname: string): string {
   if (parts.length <= 2) {
     return parts.join('.');
   }
-  const lastTwo = parts.slice(-2).join('.');
   const tld = parts.slice(-2).join('.');
   if (COMMON_SECOND_LEVEL_TLDS.has(tld) && parts.length >= 3) {
     return parts.slice(-3).join('.');
   }
-  return lastTwo;
+  return tld;
 }
 
 export function isSubdomainOf(hostname: string, root: string): boolean {
@@ -724,7 +740,7 @@ export function deepQuerySelectorAll<T extends Element>(
 }
 
 export function openSafeUrl(url: string): void {
-  if (!url) return;
+  if (!url) {return;}
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
@@ -995,7 +1011,7 @@ export class LRUCache<K extends string, V> {
 
   get(key: K): V | undefined {
     const entry = this.cache.get(key);
-    if (!entry) return undefined;
+    if (!entry) {return undefined;}
     if (Date.now() - entry.timestamp > this.ttlMs) {
       this.cache.delete(key);
       return undefined;
@@ -1023,7 +1039,7 @@ export class LRUCache<K extends string, V> {
 
   has(key: K): boolean {
     const entry = this.cache.get(key);
-    if (!entry) return false;
+    if (!entry) {return false;}
     if (Date.now() - entry.timestamp > this.ttlMs) {
       this.cache.delete(key);
       return false;
@@ -1067,7 +1083,7 @@ export class LRUCache<K extends string, V> {
 // ─── Extractors Consolidation ────────────────────────────────────────
 
 export function extractOTP(text: string): string | null {
-  if (!text) return null;
+  if (!text) {return null;}
   const lowerText = text.toLowerCase();
   const otpKeywords = [
     'verification code', 'verify code', 'security code', 'confirmation code',
@@ -1107,18 +1123,18 @@ export function extractOTP(text: string): string | null {
     candidates.push({ value: value!, index: index!, context });
   }
 
-  if (candidates.length === 0) return null;
+  if (candidates.length === 0) {return null;}
 
   const scoredCandidates = candidates
     .filter(({ value, context }) => {
       for (const anti of antiPatterns) {
-        if (anti.regex.test(value)) return false;
+        if (anti.regex.test(value)) {return false;}
       }
-      if (/[$€£¥₹]|price|cost|total|amount|fee|usd|eur/i.test(context)) return false;
-      if (/(?:order|tracking|shipment|package|delivery|fedex|ups|usps|dhl)\s*(?:#|number|no)/i.test(context)) return false;
-      if (/(?:reference|ref|ticket|case|invoice|receipt|transaction)\s*(?:#|number|no|id)/i.test(context)) return false;
-      if (/(?:account|acct|member|customer|user|client)\s*(?:#|number|no|id)/i.test(context)) return false;
-      if (/(?:zip|postal|area)\s*(?:code)?/i.test(context)) return false;
+      if (/[$€£¥₹]|price|cost|total|amount|fee|usd|eur/i.test(context)) {return false;}
+      if (/(?:order|tracking|shipment|package|delivery|fedex|ups|usps|dhl)\s*(?:#|number|no)/i.test(context)) {return false;}
+      if (/(?:reference|ref|ticket|case|invoice|receipt|transaction)\s*(?:#|number|no|id)/i.test(context)) {return false;}
+      if (/(?:account|acct|member|customer|user|client)\s*(?:#|number|no|id)/i.test(context)) {return false;}
+      if (/(?:zip|postal|area)\s*(?:code)?/i.test(context)) {return false;}
       return true;
     })
     .map(({ value, index, context }) => {
@@ -1129,22 +1145,22 @@ export function extractOTP(text: string): string | null {
           break;
         }
       }
-      if (/(?:enter|use|type|input|provide|submit|copy|paste)/i.test(context)) score += 10;
-      if (/(?:valid for|expires? in|good for|active for|\d+\s*(?:min|hour))/i.test(context)) score += 8;
-      if (/(?:do not share|don't share|never share|confidential)/i.test(context)) score += 8;
-      if (value.length === 6) score += 5;
-      if (/(?:unsubscribe|privacy policy|terms|copyright|footer)/i.test(context)) score -= 20;
+      if (/(?:enter|use|type|input|provide|submit|copy|paste)/i.test(context)) {score += 10;}
+      if (/(?:valid for|expires? in|good for|active for|\d+\s*(?:min|hour))/i.test(context)) {score += 8;}
+      if (/(?:do not share|don't share|never share|confidential)/i.test(context)) {score += 8;}
+      if (value.length === 6) {score += 5;}
+      if (/(?:unsubscribe|privacy policy|terms|copyright|footer)/i.test(context)) {score -= 20;}
       return { value, score, index };
     })
     .filter((c) => c.score >= 60)
     .sort((a, b) => b.score - a.score);
 
-  if (scoredCandidates.length === 0) return null;
+  if (scoredCandidates.length === 0) {return null;}
   return scoredCandidates[0]!.value;
 }
 
 export function extractActivationLink(text: string): string | null {
-  if (!text) return null;
+  if (!text) {return null;}
   const lowerText = text.toLowerCase();
   const knownProviderDomains = [
     'google.com', 'gmail.com', 'accounts.google.com', 'microsoft.com',
@@ -1220,7 +1236,7 @@ export function extractActivationLink(text: string): string | null {
     allUrls.push({ url, score });
   }
 
-  if (allUrls.length === 0) return null;
+  if (allUrls.length === 0) {return null;}
 
   const candidates = allUrls.filter((u) => u.score >= 60);
   if (candidates.length === 0) {

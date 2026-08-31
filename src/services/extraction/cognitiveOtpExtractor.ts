@@ -7,13 +7,13 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { createLogger } from '../../utils/logger';
-import { KnowledgeBase } from './knowledge';
 import type { ProviderKnowledge, EmailZone, ExtractedOTP, IntentResult, OTPSignal } from '../types/extraction.types';
 import {
   buildDom, getFlattenedText, walkTextNodes, getEffectiveStyle,
   getAncestorChain, isIsolatedInParent, normalizeForExtraction,
   type DOMNode,
 } from './domEngine';
+import { KnowledgeBase } from './knowledge';
 
 const log = createLogger('CognitiveOTP');
 
@@ -54,15 +54,15 @@ function styleProminence(node: DOMNode): number {
     const px = parseFloat(fontSize);
     const unit = fontSize.replace(/[\d.]/g, '');
     const normalizedPx = unit === 'pt' ? px * 1.333 : unit === 'em' || unit === 'rem' ? px * 16 : px;
-    if (normalizedPx >= 24) score += 22;
-    else if (normalizedPx >= 18) score += 15;
-    else if (normalizedPx >= 14) score += 6;
+    if (normalizedPx >= 24) {score += 22;}
+    else if (normalizedPx >= 18) {score += 15;}
+    else if (normalizedPx >= 14) {score += 6;}
   }
-  if (getEffectiveStyle(node, 'letter-spacing')) score += 12;
+  if (getEffectiveStyle(node, 'letter-spacing')) {score += 12;}
   const weight = getEffectiveStyle(node, 'font-weight');
-  if (weight && (weight === 'bold' || parseInt(weight, 10) >= 600)) score += 10;
+  if (weight && (weight === 'bold' || parseInt(weight, 10) >= 600)) {score += 10;}
   const align = getEffectiveStyle(node, 'text-align');
-  if (align === 'center') score += 6;
+  if (align === 'center') {score += 6;}
 
   const chain = [node.parent, ...getAncestorChain(node, 4)].filter(Boolean) as DOMNode[];
   for (const anc of chain) {
@@ -101,8 +101,8 @@ function relationalAntiCheck(node: DOMNode, localText: string): { reject: boolea
   const wideScopes = getAncestorChain(node, 6);
   const wideText = wideScopes.map(getFlattenedText).join(' ').slice(0, 2000);
   let softPenalty = 0;
-  if (ANTI_ORDER_RE.test(wideText) && !OTP_INTENT_RE.test(localText)) softPenalty += 8;
-  if (ANTI_PRICE_RE.test(wideText) && !OTP_INTENT_RE.test(localText)) softPenalty += 6;
+  if (ANTI_ORDER_RE.test(wideText) && !OTP_INTENT_RE.test(localText)) {softPenalty += 8;}
+  if (ANTI_PRICE_RE.test(wideText) && !OTP_INTENT_RE.test(localText)) {softPenalty += 6;}
 
   return { reject: false, penalty: softPenalty, reason: '' };
 }
@@ -115,11 +115,11 @@ function findSplitDigitCodes(root: DOMNode): Candidate[] {
   const containerTags = new Set(['tr', 'div', 'p', 'td', 'table']);
 
   for (const container of walkAllElements(root)) {
-    if (!containerTags.has(container.tag || '')) continue;
+    if (!containerTags.has(container.tag || '')) {continue;}
     const cellLike = container.children.filter(
       (c) => c.type === 'element' && /^(td|th|span|div|li)$/i.test(c.tag || '')
     );
-    if (cellLike.length < 4 || cellLike.length > 8) continue;
+    if (cellLike.length < 4 || cellLike.length > 8) {continue;}
 
     const chars: string[] = [];
     let allSingle = true;
@@ -128,10 +128,10 @@ function findSplitDigitCodes(root: DOMNode): Candidate[] {
       if (!/^[A-Za-z0-9]{1,2}$/.test(t)) { allSingle = false; break; }
       chars.push(t);
     }
-    if (!allSingle) continue;
+    if (!allSingle) {continue;}
 
     const code = chars.join('');
-    if (code.length < 4 || code.length > 8 || !/\d/.test(code)) continue;
+    if (code.length < 4 || code.length > 8 || !/\d/.test(code)) {continue;}
 
     results.push({
       code, points: 0, isolated: true, fromSplit: true, fromSubjectMatch: false,
@@ -144,7 +144,7 @@ function findSplitDigitCodes(root: DOMNode): Candidate[] {
 function* walkAllElements(node: DOMNode): Generator<DOMNode> {
   if (node.type === 'element') {
     yield node;
-    for (const c of node.children) yield* walkAllElements(c);
+    for (const c of node.children) {yield* walkAllElements(c);}
   }
 }
 
@@ -169,7 +169,7 @@ export function extractOTPCognitive(
   const byCode = new Map<string, Candidate>();
   const upsert = (c: Candidate) => {
     const existing = byCode.get(c.code);
-    if (!existing || c.points > existing.points) byCode.set(c.code, c);
+    if (!existing || c.points > existing.points) {byCode.set(c.code, c);}
   };
 
   // ── Strategy A: text-node scan with relational scoping ─────────────────
@@ -179,9 +179,9 @@ export function extractOTPCognitive(
     let m: RegExpExecArray | null;
     while ((m = CODE_RE.exec(text)) !== null) {
       const code = m[1]!;
-      if (!/\d/.test(code)) continue;
-      if (/^(\d)\1{3,}$/.test(code)) continue; // repeated digits
-      if (/^(?:0123|1234|2345|3456|4567|5678|6789|9876|8765|7654|6543|5432|4321|3210)\d*$/.test(code)) continue;
+      if (!/\d/.test(code)) {continue;}
+      if (/^(\d)\1{3,}$/.test(code)) {continue;} // repeated digits
+      if (/^(?:0123|1234|2345|3456|4567|5678|6789|9876|8765|7654|6543|5432|4321|3210)\d*$/.test(code)) {continue;}
 
       // Reject years (e.g. 2026) if preceded by copyright or not explicitly labeled as OTP
       if (/^(?:19|20)\d{2}$/.test(code)) {
@@ -203,20 +203,20 @@ export function extractOTPCognitive(
       const relationalText = rowAncestor ? getFlattenedText(rowAncestor) : localText;
 
       const anti = relationalAntiCheck(textNode, localText);
-      if (anti.reject) continue;
+      if (anti.reject) {continue;}
 
       let points = 30; // base: plausible code shape
-      if (OTP_INTENT_RE.test(relationalText)) points += 36;
-      if (ACTION_INTENT_RE.test(relationalText)) points += 14;
-      if (DIRECT_ASSIGN_RE.test(relationalText)) points += 28;
+      if (OTP_INTENT_RE.test(relationalText)) {points += 36;}
+      if (ACTION_INTENT_RE.test(relationalText)) {points += 14;}
+      if (DIRECT_ASSIGN_RE.test(relationalText)) {points += 28;}
       points += styleProminence(textNode.parent!);
-      if (isIsolatedInParent(textNode)) points += 24;
+      if (isIsolatedInParent(textNode)) {points += 24;}
       points -= anti.penalty;
-      if (provider?.otpLength === code.length) points += 24;
-      if (intent.intent === 'verification') points += 18;
+      if (provider?.otpLength === code.length) {points += 24;}
+      if (intent.intent === 'verification') {points += 18;}
       // Classic 6-digit codes dominate real OTP mail — slight prior
-      if (/^\d{6}$/.test(code)) points += 8;
-      else if (/^\d{4}$/.test(code) || /^\d{8}$/.test(code)) points += 4;
+      if (/^\d{6}$/.test(code)) {points += 8;}
+      else if (/^\d{4}$/.test(code) || /^\d{8}$/.test(code)) {points += 4;}
 
       // Run curated KnowledgeBase label patterns against the LOCAL block only
       // (not the whole email) — keeps their precision, drops their false-proximity risk.
@@ -238,9 +238,9 @@ export function extractOTPCognitive(
   for (const split of findSplitDigitCodes(root)) {
     const relationalText = split.contextSample;
     let points = 65; // structurally near-unfakeable signal
-    if (OTP_INTENT_RE.test(relationalText)) points += 24;
+    if (OTP_INTENT_RE.test(relationalText)) {points += 24;}
     const anti = relationalAntiCheck(split.node!, relationalText);
-    if (anti.reject) continue;
+    if (anti.reject) {continue;}
     points -= anti.penalty;
     upsert({ ...split, points });
   }
@@ -277,9 +277,9 @@ export function extractOTPCognitive(
   const confidence = ambiguous ? Math.min(sigmoid(best.points), 0.49) : sigmoid(best.points);
 
   const matchedSignals: OTPSignal[] = [];
-  if (best.fromSubjectMatch) matchedSignals.push({ name: 'subject-body-agreement', points: 35, layer: 'cross-source', detail: 'Code independently confirmed in subject line' });
-  if (best.fromSplit) matchedSignals.push({ name: 'split-digit-reconstruction', points: 55, layer: 'structural', detail: 'Reconstructed from per-character DOM cells' });
-  if (best.isolated) matchedSignals.push({ name: 'dom-isolation', points: 20, layer: 'isolation', detail: 'Sole content of its DOM parent' });
+  if (best.fromSubjectMatch) {matchedSignals.push({ name: 'subject-body-agreement', points: 35, layer: 'cross-source', detail: 'Code independently confirmed in subject line' });}
+  if (best.fromSplit) {matchedSignals.push({ name: 'split-digit-reconstruction', points: 55, layer: 'structural', detail: 'Reconstructed from per-character DOM cells' });}
+  if (best.isolated) {matchedSignals.push({ name: 'dom-isolation', points: 20, layer: 'isolation', detail: 'Sole content of its DOM parent' });}
 
   log.info(`Cognitive OTP: ${best.code} (${(confidence * 100).toFixed(0)}%) points=${best.points.toFixed(1)} ambiguous=${ambiguous}`);
 
@@ -327,7 +327,7 @@ function findAncestorTagName(node: DOMNode, tag: string, maxDepth: number): DOMN
   let cur = node.parent;
   let depth = 0;
   while (cur && depth < maxDepth) {
-    if (cur.tag === tag) return cur;
+    if (cur.tag === tag) {return cur;}
     cur = cur.parent;
     depth++;
   }

@@ -3,7 +3,7 @@
 // Free REST API for temporary disposable email
 
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout, contentToString } from '../../utils/core';
+import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 
@@ -83,7 +83,7 @@ export class CatchmailService {
           from: contentToString(msg.from, 'Unknown Sender'),
           to: contentToString(msg.mailbox || fullEmail),
           subject: contentToString(msg.subject, '(No Subject)'),
-          date: msg.date ? new Date(msg.date).getTime() : Date.now(),
+          date: safeParseDate(msg.date),
           body: '',
           read: false,
           attachments: [],
@@ -123,7 +123,7 @@ export class CatchmailService {
         from: contentToString(msg.from, 'Unknown Sender'),
         to: contentToString(msg.mailbox || fullEmail),
         subject: contentToString(msg.subject, '(No Subject)'),
-        date: msg.date ? new Date(msg.date).getTime() : Date.now(),
+        date: safeParseDate(msg.date),
         body: bodyStr,
         htmlBody: htmlStr,
         textBody: textStr,

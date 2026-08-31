@@ -1,7 +1,7 @@
 // Mail.cx Service Integration
 
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout, contentToString } from '../../utils/core';
+import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 
@@ -79,7 +79,7 @@ export class MailCxService {
           from: contentToString(msg.from || msg.sender, 'Unknown Sender'),
           to: contentToString(msg.to || fullEmail),
           subject: contentToString(msg.subject, '(No Subject)'),
-          date: msg.date || msg.createdAt ? new Date(msg.date || msg.createdAt).getTime() : Date.now(),
+          date: safeParseDate(msg.date || msg.createdAt),
           body: contentToString(msg.body || msg.text || msg.html),
           htmlBody: contentToString(msg.html || msg.body),
           read: Boolean(msg.read),
@@ -120,7 +120,7 @@ export class MailCxService {
         from: contentToString(msg.from || msg.sender, 'Unknown Sender'),
         to: contentToString(msg.to || fullEmail),
         subject: contentToString(msg.subject, '(No Subject)'),
-        date: msg.date || msg.createdAt ? new Date(msg.date || msg.createdAt).getTime() : Date.now(),
+        date: safeParseDate(msg.date || msg.createdAt),
         body: bodyStr,
         htmlBody: htmlStr,
         textBody: textStr,

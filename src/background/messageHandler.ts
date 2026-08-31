@@ -11,12 +11,10 @@ import {
   getMostRecentGmailAliasSession,
   rememberGmailAliasSession,
   setGmailConnectedAt,
-  getOrCreateGmailAliasSessionByDomain,
   messageMatchesGmailAlias,
 } from '../services/gmailConnectionService';
 import { identityService } from '../services/identityService';
 import { extractAll } from '../services/intelligentExtractor';
-import { DEFAULT_SETTINGS } from '../types/storage.types';
 import { linkService } from '../services/linkService';
 import { otpService } from '../services/otpService';
 import { passwordService } from '../services/passwordService';
@@ -30,17 +28,22 @@ import {
   GmailMessage,
   EmailAccount,
 } from '../types';
+import { DEFAULT_SETTINGS } from '../types/storage.types';
 import { createLogger, diag } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
 import { validateMessage } from '../utils/validation';
+import {
+  isActivationTab,
+  onContentScriptReady,
+} from './activationRegistry';
 import { updateOTPMenuItem } from './contextMenu';
+import { ensureInitialized } from './initGuard';
 import { notifySuccess, notifyError, resetNotificationSession } from './notifications';
 import {
   startEmailPolling,
   startFastOTPPolling,
   stopFastOTPPolling,
   startFastWatchBurst,
-  triggerEventDrivenPolling,
   recordEmailReceived,
   getOTPWaitingTabs,
   resetEmailSession,
@@ -50,11 +53,6 @@ import {
   deliverOTP,
   type EmailContext,
 } from './pollingManager';
-import {
-  isActivationTab,
-  onContentScriptReady,
-} from './activationRegistry';
-import { ensureInitialized } from './initGuard';
 import { getBootState } from './serviceWorker';
 import { sseManager } from './sseManager';
 
@@ -307,16 +305,16 @@ const HIGH_PRIORITY_ACTIONS = new Set([
 ]);
 
 const MAX_DEDUP_HASH_AGE_MS = 2000;
-const MAX_DEDUP_MAP_SIZE = 100;
+const _MAX_DEDUP_MAP_SIZE = 100;
 
 function getPayloadFingerprint(payload: any): string {
-  if (!payload || typeof payload !== 'object') return '';
+  if (!payload || typeof payload !== 'object') {return '';}
   // GRANDMASTER FIX: Only hash stable, small identifiers. 
   // NEVER stringify HTML, DOM, or Email bodies.
   const keys = ['emailId', 'url', 'domain', 'service', 'messageId', 'alias', 'website'];
   const parts = [];
   for (const k of keys) {
-    if (payload[k] !== undefined) parts.push(`${k}:${payload[k]}`);
+    if (payload[k] !== undefined) {parts.push(`${k}:${payload[k]}`);}
   }
   return parts.join('|');
 }
@@ -775,14 +773,14 @@ async function handleMessage(
     case 'EXTRACT_OTP': {
       const payload = message.payload as ExtractOTPPayloadWithMetadata | undefined;
       const toSafeStr = (v: unknown): string => {
-        if (typeof v === 'string') return v;
-        if (!v) return '';
+        if (typeof v === 'string') {return v;}
+        if (!v) {return '';}
         if (typeof v === 'object') {
           const obj = v as Record<string, unknown>;
-          if (typeof obj.text === 'string') return obj.text;
-          if (typeof obj.html === 'string') return obj.html;
-          if (typeof obj.body === 'string') return obj.body;
-          if (typeof obj.content === 'string') return obj.content;
+          if (typeof obj.text === 'string') {return obj.text;}
+          if (typeof obj.html === 'string') {return obj.html;}
+          if (typeof obj.body === 'string') {return obj.body;}
+          if (typeof obj.content === 'string') {return obj.content;}
           try { return JSON.stringify(v); } catch { return String(v); }
         }
         return String(v);

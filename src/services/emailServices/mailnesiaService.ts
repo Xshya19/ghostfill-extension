@@ -1,5 +1,5 @@
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout, contentToString } from '../../utils/core';
+import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
 import { getRandomInt } from '../../utils/encryption';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
@@ -56,8 +56,8 @@ export class MailnesiaService {
       while ((match = itemRegex.exec(xmlText)) !== null) {
         const itemContent = match[1];
         
-        const titleMatch = /<title><\!\[CDATA\[([\s\S]*?)\]\]><\/title>|<title>([\s\S]*?)<\/title>/.exec(itemContent || '');
-        const descMatch = /<description><\!\[CDATA\[([\s\S]*?)\]\]><\/description>|<description>([\s\S]*?)<\/description>/.exec(itemContent || '');
+        const titleMatch = /<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>|<title>([\s\S]*?)<\/title>/.exec(itemContent || '');
+        const descMatch = /<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>|<description>([\s\S]*?)<\/description>/.exec(itemContent || '');
         const linkMatch = /<link>([\s\S]*?)<\/link>/.exec(itemContent || '');
         const pubDateMatch = /<pubDate>([\s\S]*?)<\/pubDate>/.exec(itemContent || '');
         
@@ -88,7 +88,7 @@ export class MailnesiaService {
       }
 
       return items.map((msg: any) => {
-        const msgDate = msg.pubDate ? new Date(msg.pubDate).getTime() : Date.now();
+        const msgDate = safeParseDate(msg.pubDate);
         const safeBody = contentToString(msg.description);
         return {
           id: String(msg.id),

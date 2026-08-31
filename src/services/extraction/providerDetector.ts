@@ -5,9 +5,9 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { createLogger } from '../../utils/logger';
+import type { ProviderKnowledge, ProviderDetectionResult } from '../types/extraction.types';
 import { KnowledgeBase } from './knowledge';
 
-import type { ProviderKnowledge, ProviderDetectionResult } from '../types/extraction.types';
 
 const log = createLogger('ProviderDetector');
 

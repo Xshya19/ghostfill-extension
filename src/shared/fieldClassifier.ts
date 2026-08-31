@@ -9,8 +9,8 @@
  * in isolation. DOM access is confined to label discovery and visibility checks,
  * each guarded against cross-origin / detached-node exceptions.
  */
-import { extractFieldRecord } from '../intelligence/pageAnalyzer';
 import { IntelligenceCore } from '../intelligence/IntelligenceCore';
+import { extractFieldRecord } from '../intelligence/pageAnalyzer';
 
 const intelligence = new IntelligenceCore();
 
@@ -43,7 +43,7 @@ const EXCLUDED_INPUT_TYPES = new Set([
 // (exact match) rather than via an anchored alternative, which never worked
 // reliably inside a multi-token descriptor string.
 const SEARCH_PATTERN = /search|query|filter|find/i;
-const CAPTCHA_PATTERN =
+const _CAPTCHA_PATTERN =
   /captcha|recaptcha|hcaptcha|turnstile|anti[-_\s]?bot|bot[-_\s]?check|robot/i;
 // Non-auth / content field patterns — these signals are never decorated with the FAB
 const NON_AUTH_SIGNALS_PATTERN = /newsletter|subscribe|coupon|promo|discount|referral|voucher/i;
@@ -51,26 +51,26 @@ const CONTENT_FIELD_PATTERN =
   /\bcomment\b|\bmessage\b|\bfeedback\b|\breview\b|\bnote\b|\bbio\b|\bdescription\b|\babout\b|\bsubject\b|\bbody\b|\bcompose\b/i;
 
 // ── Detection Patterns ────────────────────────────────
-const OTP_COMBINED =
+const _OTP_COMBINED =
   /otp|one[-_\s]?time|verification[-_\s]?code|passcode|security[-_\s]?code|check[-_\s]?code|verify[-_\s]?code/i;
-const OTP_EXACT_NAMES = new Set(['code', 'pin', 'token', 'checkcode', 'verifycode']);
-const EMAIL_NAME = /e[-_]?mail/i;
-const PASSWORD_NAME = /password|passwd|pwd/i;
-const USERNAME_NAME = /user[-_]?name|login[-_]?name|login[-_]?id/i;
-const NAME_FIELD =
+const _OTP_EXACT_NAMES = new Set(['code', 'pin', 'token', 'checkcode', 'verifycode']);
+const _EMAIL_NAME = /e[-_]?mail/i;
+const _PASSWORD_NAME = /password|passwd|pwd/i;
+const _USERNAME_NAME = /user[-_]?name|login[-_]?name|login[-_]?id/i;
+const _NAME_FIELD =
   /first[-_]?name|last[-_]?name|full[-_]?name|given[-_]?name|family[-_]?name|surname|display[-_]?name|^first$|^last$|fname|lname/i;
-const CREDIT_CARD = /card[-_]?number|cvc|cvv|ccv|expiration|expiry/i;
-const ADDRESS = /street|address|city|country|state|zip|postal/i;
+const _CREDIT_CARD = /card[-_]?number|cvc|cvv|ccv|expiration|expiry/i;
+const _ADDRESS = /street|address|city|country|state|zip|postal/i;
 // "name" catch-all should never fire for these clearly non-person fields.
-const NON_PERSON_NAME = /user|company|file|host|domain|nick|brand|product|folder/i;
+const _NON_PERSON_NAME = /user|company|file|host|domain|nick|brand|product|folder/i;
 
 // Autocomplete is a space-separated token list (e.g. "section-foo billing email").
 // Match against individual tokens rather than the whole attribute string.
-const OTP_AUTOCOMPLETE_TOKENS = new Set(['one-time-code', 'one-time-password']);
-const EMAIL_AUTOCOMPLETE_TOKENS = new Set(['email']);
-const USERNAME_AUTOCOMPLETE_TOKENS = new Set(['username']);
-const PASSWORD_AUTOCOMPLETE_TOKENS = new Set(['current-password', 'new-password']);
-const CREDIT_CARD_AUTOCOMPLETE_TOKENS = new Set([
+const _OTP_AUTOCOMPLETE_TOKENS = new Set(['one-time-code', 'one-time-password']);
+const _EMAIL_AUTOCOMPLETE_TOKENS = new Set(['email']);
+const _USERNAME_AUTOCOMPLETE_TOKENS = new Set(['username']);
+const _PASSWORD_AUTOCOMPLETE_TOKENS = new Set(['current-password', 'new-password']);
+const _CREDIT_CARD_AUTOCOMPLETE_TOKENS = new Set([
   'cc-number',
   'cc-csc',
   'cc-exp',
@@ -98,7 +98,7 @@ const CREDIT_CARD_AUTOCOMPLETE_TOKENS = new Set([
  */
 export function classifyField(
   input: HTMLInputElement,
-  pageContext: PageContext = 'default'
+  _pageContext: PageContext = 'default'
 ): FieldType {
   try {
     const record = extractFieldRecord(input);
@@ -227,16 +227,16 @@ export function isHighValueField(type: FieldType): boolean {
 }
 
 // ── Internal Helpers ────────────────────────────────
-function tokenize(value: string): string[] {
+function _tokenize(value: string): string[] {
   return value.split(/\s+/).filter(Boolean);
 }
 
-function hasAnyToken(tokens: string[], set: Set<string>): boolean {
+function _hasAnyToken(tokens: string[], set: Set<string>): boolean {
   return tokens.some((token) => set.has(token));
 }
 
 /** True when the input constrains entry to a short numeric code (e.g. pattern="[0-9]{6}"). */
-function isShortNumericPattern(input: HTMLInputElement): boolean {
+function _isShortNumericPattern(input: HTMLInputElement): boolean {
   const pattern = input.getAttribute('pattern');
   if (!pattern) {
     return false;
@@ -252,7 +252,7 @@ function isShortNumericPattern(input: HTMLInputElement): boolean {
  * 3. Ancestor `<label>` wrapping
  * 4. `aria-label` attribute
  */
-function findLabelText(input: HTMLInputElement): string {
+function _findLabelText(input: HTMLInputElement): string {
   // 1. Standard label[for] association
   if (input.id) {
     try {
@@ -260,7 +260,7 @@ function findLabelText(input: HTMLInputElement): string {
         `label[for="${CSS.escape(input.id)}"]`
       );
       if (label?.textContent) {
-        return normalizeWhitespace(label.textContent);
+        return _normalizeWhitespace(label.textContent);
       }
     } catch {
       /* skip on cross-origin or restricted DOM */
@@ -279,7 +279,7 @@ function findLabelText(input: HTMLInputElement): string {
     });
     const text = parts.filter(Boolean).join(' ');
     if (text) {
-      return normalizeWhitespace(text);
+      return _normalizeWhitespace(text);
     }
   }
 
@@ -287,7 +287,7 @@ function findLabelText(input: HTMLInputElement): string {
   try {
     const parent = input.closest('label');
     if (parent?.textContent) {
-      return normalizeWhitespace(parent.textContent);
+      return _normalizeWhitespace(parent.textContent);
     }
   } catch {
     /* skip */
@@ -297,6 +297,6 @@ function findLabelText(input: HTMLInputElement): string {
   return input.getAttribute('aria-label') || '';
 }
 
-function normalizeWhitespace(text: string): string {
+function _normalizeWhitespace(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }

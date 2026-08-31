@@ -38,7 +38,7 @@ export function unwrapUrl(rawUrl: string): { url: string; hops: number; opaqueTr
   const isTracker = (u: string) => TRACKING_WRAPPERS.some((r) => r.test(u));
 
   for (; hops < 6; hops++) {
-    if (!isTracker(url)) break;
+    if (!isTracker(url)) {break;}
     opaque = true;
 
     // Try common query parameters containing target URL
@@ -112,7 +112,7 @@ export function extractAnchors(html: string): Anchor[] {
   while ((m = re.exec(html)) !== null) {
     const hrefMatch = m[1]!.match(/href\s*=\s*["']([^"']+)["']/i);
     const href = hrefMatch?.[1];
-    if (!href || !/^https?:/i.test(href)) continue;
+    if (!href || !/^https?:/i.test(href)) {continue;}
 
     const text = m[2]!.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
     const ctxPre = html.slice(Math.max(0, m.index - 400), m.index);
@@ -161,7 +161,7 @@ export function pickActivationLink(
   for (const u of plainUrls) {
     const key = canonical(unwrapUrl(u).url);
     const g = groups.get(key);
-    if (g) g.hits++;
+    if (g) {g.hits++;}
   }
 
   let best: { url: string; nats: number; reasons: string[] } | null = null;
@@ -172,27 +172,27 @@ export function pickActivationLink(
     const rs: string[] = [];
     const put = (w: number, r: string) => { s += w; rs.push(r); };
 
-    if (STRONG_PATH_RE.test(g.raw))            put(2.6, 'path');
-    if (STRICT_STRONG_QUERY.test(g.raw))       put(1.4, 'query');
-    if (hasHighEntropyToken(g.raw))            put(1.5, 'entropy-token');
-    if (STRONG_ANCHOR_RE.test(anchorText))     put(2.4, 'anchor');
-    if (g.a.some((x) => x.isButton))           put(1.1, 'button');
-    if (g.hits >= 2)                           put(0.9, 'repeated-cta');
-    if (intent === 'activation' || intent === 'password-reset') put(0.8, 'intent');
+    if (STRONG_PATH_RE.test(g.raw))            {put(2.6, 'path');}
+    if (STRICT_STRONG_QUERY.test(g.raw))       {put(1.4, 'query');}
+    if (hasHighEntropyToken(g.raw))            {put(1.5, 'entropy-token');}
+    if (STRONG_ANCHOR_RE.test(anchorText))     {put(2.4, 'anchor');}
+    if (g.a.some((x) => x.isButton))           {put(1.1, 'button');}
+    if (g.hits >= 2)                           {put(0.9, 'repeated-cta');}
+    if (intent === 'activation' || intent === 'password-reset') {put(0.8, 'intent');}
 
-    if (HARD_REJECT_ANCHOR.test(anchorText))   put(-4.0, 'marketing-anchor');
-    if (HARD_REJECT_URL.test(g.raw) && !STRONG_PATH_RE.test(g.raw)) put(-4.0, 'marketing-url');
-    if (g.opaque && !STRONG_ANCHOR_RE.test(anchorText)) put(-1.6, 'opaque-no-anchor');
-    if (g.opaque && STRONG_ANCHOR_RE.test(anchorText))  put(0.4, 'opaque-but-anchored');
-    if (!/^https:/i.test(g.raw))               put(-1.5, 'non-https');
+    if (HARD_REJECT_ANCHOR.test(anchorText))   {put(-4.0, 'marketing-anchor');}
+    if (HARD_REJECT_URL.test(g.raw) && !STRONG_PATH_RE.test(g.raw)) {put(-4.0, 'marketing-url');}
+    if (g.opaque && !STRONG_ANCHOR_RE.test(anchorText)) {put(-1.6, 'opaque-no-anchor');}
+    if (g.opaque && STRONG_ANCHOR_RE.test(anchorText))  {put(0.4, 'opaque-but-anchored');}
+    if (!/^https:/i.test(g.raw))               {put(-1.5, 'non-https');}
 
-    if (!best || s > best.nats) best = { url: g.raw, nats: s, reasons: rs };
+    if (!best || s > best.nats) {best = { url: g.raw, nats: s, reasons: rs };}
   }
 
   const p = 1 / (1 + Math.exp(-(best?.nats ?? -99)));
   let action: LinkVerdict['action'] = 'abstain';
-  if (p >= 0.90) action = 'auto-open';
-  else if (p >= 0.60) action = 'suggest';
+  if (p >= 0.90) {action = 'auto-open';}
+  else if (p >= 0.60) {action = 'suggest';}
 
   return {
     url: best?.url ?? null,

@@ -1,7 +1,7 @@
 import { IEmailProvider, Email, EmailAccount } from '../../types';
-import { createLogger } from '../../utils/logger';
+import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
-import { fetchWithTimeout, contentToString } from '../../utils/core';
+import { createLogger } from '../../utils/logger';
 import { storageService } from '../storageService';
 import { providerHealth } from './providerHealthManager';
 
@@ -167,7 +167,7 @@ export class CustomDomainService implements IEmailProvider {
             body: bodyStr,
             htmlBody: htmlStr,
             textBody: bodyStr,
-            date: msg.date ? new Date(msg.date).getTime() : Date.now(),
+            date: safeParseDate(msg.date),
             attachments: [],
             read: false,
           };

@@ -14,7 +14,8 @@ import {
   STORAGE_KEYS,
   SessionSecrets,
 } from '../types';
-import { deepMerge } from '../utils/core';
+import { deepMerge , LRUCache } from '../utils/core';
+
 import {
   encrypt,
   decrypt,
@@ -30,7 +31,6 @@ import { createLogger } from '../utils/logger';
  * Map provides O(1) get/set/delete
  * Access order is maintained by Map's insertion order (ES2015+ guarantee)
  */
-import { LRUCache } from '../utils/core';
 
 const log = createLogger('StorageService');
 
@@ -406,7 +406,7 @@ export class StorageService {
     sessionSecretsInitialized = true;
 
     // Sync to chrome.storage.session so it survives SW restart using an isolated namespace
-    if (chrome.storage.session) {
+    if (typeof chrome !== 'undefined' && chrome.storage?.session) {
       await chrome.storage.session.set({ [`ghostfill_secret_${key}`]: value }).catch((e) => {
         log.warn('Failed to sync session secret to storage', { key, error: e });
       });
@@ -423,7 +423,7 @@ export class StorageService {
     delete sessionSecrets[key];
 
     // Sync to chrome.storage.session using isolated namespace
-    if (chrome.storage.session) {
+    if (typeof chrome !== 'undefined' && chrome.storage?.session) {
       await chrome.storage.session.remove(`ghostfill_secret_${String(key)}`).catch((e) => {
         log.warn('Failed to clear session secret from storage', { key, error: e });
       });
@@ -572,7 +572,7 @@ export class StorageService {
           }
 
           // Restore session secrets using isolated namespace from chrome.storage.session first
-          if (chrome.storage.session) {
+          if (typeof chrome !== 'undefined' && chrome.storage?.session) {
             // Also enforce TRUSTED_CONTEXTS to prevent non-extension components from reading secrets (PA3)
             if (typeof chrome.storage.session.setAccessLevel === 'function') {
               await chrome.storage.session
@@ -614,16 +614,29 @@ export class StorageService {
 
           const data = await this.getAllInternal(); // Use internal method to avoid recursive waiting
 
+          const writesToFlush: Array<[string, unknown]> = [];
           if (!data.settings) {
-            // Use internal set to bypass initialization check
-            await this.setInternal(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
+            writesToFlush.push([STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS]);
+            this.cache.set(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
           }
 
           if (!data.installDate) {
-            await this.setInternal('installDate', Date.now());
+            const now = Date.now();
+            writesToFlush.push(['installDate', now]);
+            this.cache.set('installDate', now);
           }
 
-          await this.setInternal('extensionVersion', chrome.runtime.getManifest().version);
+          const version = chrome.runtime.getManifest().version;
+          writesToFlush.push(['extensionVersion', version]);
+          this.cache.set('extensionVersion', version);
+
+          for (const [k, v] of writesToFlush) {
+            this.pendingWrites.set(k, v);
+          }
+
+          if (this.pendingWrites.size > 0) {
+            await this.flushNow();
+          }
 
           this.initialized = true;
           log.debug('Storage initialized with secure encryption');
@@ -808,27 +821,25 @@ export class StorageService {
       return this.flushNow();
     }
 
-    if (this.writeDebounceTimer) {
-      clearTimeout(this.writeDebounceTimer);
-    }
-
     return new Promise((resolve, reject) => {
       this.pendingResolvers.push({ resolve, reject });
 
-      this.writeDebounceTimer = setTimeout(() => {
-        this.writeDebounceTimer = null;
-        // Atomically capture and clear to prevent race condition
-        const resolvers = this.pendingResolvers;
-        this.pendingResolvers = [];
+      if (!this.writeDebounceTimer) {
+        this.writeDebounceTimer = setTimeout(() => {
+          this.writeDebounceTimer = null;
+          // Atomically capture and clear to prevent race condition
+          const resolvers = this.pendingResolvers;
+          this.pendingResolvers = [];
 
-        this.flushPendingWrites()
-          .then(() => {
-            resolvers.forEach((r) => r.resolve());
-          })
-          .catch((err) => {
-            resolvers.forEach((r) => r.reject(err));
-          });
-      }, this.WRITE_BATCH_DELAY);
+          this.flushPendingWrites()
+            .then(() => {
+              resolvers.forEach((r) => r.resolve());
+            })
+            .catch((err) => {
+              resolvers.forEach((r) => r.reject(err));
+            });
+        }, this.WRITE_BATCH_DELAY);
+      }
     });
   }
 
@@ -922,22 +933,7 @@ export class StorageService {
       await Promise.all(encryptJobs);
 
       await withStorageTimeout(
-        new Promise<void>((resolve, reject) => {
-          try {
-            const p: any = chrome.storage.local.set(Object.fromEntries(writes), () => {
-              if (chrome.runtime.lastError) {
-                log.error('Chrome storage set failed', chrome.runtime.lastError);
-                return reject(chrome.runtime.lastError);
-              }
-              resolve();
-            });
-            if (p && typeof p.then === 'function') {
-              p.then(resolve).catch(reject);
-            }
-          } catch (error) {
-            reject(error);
-          }
-        }),
+        chrome.storage.local.set(Object.fromEntries(writes)),
         `set:${writes.size}-keys`
       );
 
@@ -1321,25 +1317,27 @@ export class StorageService {
       return this.cachedUsage;
     }
 
-    return new Promise((resolve) => {
-      if (!this.storageAvailable || typeof chrome === 'undefined' || !chrome.storage?.local) {
+    try {
+      if (!this.storageAvailable || typeof chrome === 'undefined' || !chrome.storage?.local?.getBytesInUse) {
         const empty = { used: 0, total: 10485760, percentage: 0, ts: Date.now() };
         this.cachedUsage = empty;
-        resolve(empty);
-        return;
+        return empty;
       }
-      chrome.storage.local.getBytesInUse(null, (bytesInUse) => {
-        const total = chrome.storage.local.QUOTA_BYTES || 10485760;
-        const snap = {
-          used: bytesInUse,
-          total,
-          percentage: (bytesInUse / total) * 100,
-          ts: Date.now(),
-        };
-        this.cachedUsage = snap;
-        resolve(snap);
-      });
-    });
+      const bytesInUse = await chrome.storage.local.getBytesInUse(null);
+      const total = chrome.storage.local.QUOTA_BYTES || 10485760;
+      const snap = {
+        used: bytesInUse || 0,
+        total,
+        percentage: ((bytesInUse || 0) / total) * 100,
+        ts: Date.now(),
+      };
+      this.cachedUsage = snap;
+      return snap;
+    } catch {
+      const empty = { used: 0, total: 10485760, percentage: 0, ts: Date.now() };
+      this.cachedUsage = empty;
+      return empty;
+    }
   }
 
   /**

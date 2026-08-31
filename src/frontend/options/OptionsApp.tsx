@@ -1,12 +1,12 @@
 import { Sun, Moon, Search } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
-import { GhostLogo } from '../popup/components';
 import { storageService } from '../../services/storageService';
 import { applyTheme, resolveTheme } from '../../shared/theme';
-import { Button } from '../ui';
 import { UserSettings, DEFAULT_SETTINGS } from '../../types/storage.types';
 import { createLogger } from '../../utils/logger';
+import { GhostLogo } from '../popup/components';
+import { Button } from '../ui';
 
 import {
   AboutTab,

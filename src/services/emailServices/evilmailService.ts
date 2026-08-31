@@ -1,7 +1,7 @@
 // Evilmail Service - evilmail.dev / evilmail.pro REST API integration
 
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout, contentToString } from '../../utils/core';
+import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 
@@ -83,7 +83,7 @@ export class EvilmailService {
           from: contentToString(msg.from || msg.sender, 'Unknown Sender'),
           to: contentToString(msg.to || fullEmail),
           subject: contentToString(msg.subject, '(No Subject)'),
-          date: msg.timestamp || msg.date ? new Date(msg.timestamp || msg.date).getTime() : Date.now(),
+          date: safeParseDate(msg.timestamp || msg.date),
           body: contentToString(msg.body || msg.text || msg.html),
           htmlBody: contentToString(msg.html || msg.body),
           read: Boolean(msg.read),
@@ -125,7 +125,7 @@ export class EvilmailService {
         from: contentToString(item.from || item.sender, 'Unknown Sender'),
         to: contentToString(item.to || fullEmail),
         subject: contentToString(item.subject, '(No Subject)'),
-        date: item.timestamp || item.date ? new Date(item.timestamp || item.date).getTime() : Date.now(),
+        date: safeParseDate(item.timestamp || item.date),
         body: bodyStr,
         htmlBody: htmlStr,
         textBody: textStr,

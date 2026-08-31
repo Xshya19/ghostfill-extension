@@ -117,6 +117,7 @@ class PasswordService {
 
     if (opts.customCharset) {
       charsetArrays.length = 0; // Clear array
+      requiredChars.length = 0; // Clear standard required chars
       charsetArrays.push(opts.customCharset.split(''));
     }
 
@@ -233,6 +234,16 @@ class PasswordService {
     // Penalize repetitive patterns
     if (/(.)\1{2,}/.test(password)) {
       score -= STRENGTH_SCORING.REPETITIVE_PATTERN_PENALTY;
+    }
+
+    // Penalize low unique character diversity (e.g. repeated single characters)
+    if (password.length > 0) {
+      const uniqueRatio = new Set(password.split('')).size / password.length;
+      if (uniqueRatio < 0.25) {
+        score -= 30;
+      } else if (uniqueRatio < 0.5) {
+        score -= 15;
+      }
     }
 
     // Penalize sequential characters

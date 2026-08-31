@@ -1,7 +1,7 @@
 // Dropmail.me Service - GraphQL Integration
 
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout, contentToString } from '../../utils/core';
+import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 
@@ -75,7 +75,7 @@ export class DropmailService {
         fullEmail,
         token: sessionData.id, // Store session ID as token
         createdAt: now,
-        expiresAt: sessionData.expiresAt ? new Date(sessionData.expiresAt).getTime() : now + 60 * 60 * 1000,
+        expiresAt: safeParseDate(sessionData.expiresAt, now + 60 * 60 * 1000),
         service: 'dropmail',
       };
     } catch (error) {
@@ -130,7 +130,7 @@ export class DropmailService {
           from: contentToString(m.fromAddr, 'Unknown Sender'),
           to: contentToString(m.toAddr || account.fullEmail),
           subject: contentToString(m.headerSubject, '(No Subject)'),
-          date: m.receivedAt ? new Date(m.receivedAt).getTime() : Date.now(),
+          date: safeParseDate(m.receivedAt),
           body: bodyStr,
           htmlBody: htmlStr,
           textBody: textStr,

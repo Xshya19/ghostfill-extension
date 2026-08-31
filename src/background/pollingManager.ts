@@ -15,26 +15,26 @@
 
 import { dedupService } from '../services/dedupService';
 import { emailService } from '../services/emailServices';
-import { linkService } from '../services/linkService';
-import { otpService } from '../services/otpService';
-import { smartDetectionService } from '../services/otpService';
-import { storageService } from '../services/storageService';
 import { isAutoOpenableActivationLink } from '../services/extraction/activationLinkGuard';
+import { linkService } from '../services/linkService';
+import { otpService , smartDetectionService } from '../services/otpService';
+
+import { storageService } from '../services/storageService';
 import type { DetectionResult } from '../services/types/extraction.types';
 import { Email, EmailAccount } from '../types';
 import { createLogger, diag } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
 
-import { updateOTPMenuItem } from './contextMenu';
-import { notifyNewEmail } from './notifications';
-import { sseManager } from './sseManager';
-import { persistWaiters, rehydrateWaiters } from './waiterStore';
 import {
   unregisterActivationTab,
   rehydrateActivationRegistry,
   getActivationTabsSet,
 } from './activationRegistry';
+import { updateOTPMenuItem } from './contextMenu';
 import { ensureInitialized } from './initGuard';
+import { notifyNewEmail } from './notifications';
+import { sseManager } from './sseManager';
+import { persistWaiters, rehydrateWaiters } from './waiterStore';
 
 // Live reference to the activation-tabs set managed by activationRegistry.
 // Using a getter avoids holding a stale reference after the registry clears.
@@ -42,14 +42,14 @@ const getActivationTabs = (): ReadonlySet<number> => getActivationTabsSet();
 
 
 function toSafeString(v: unknown): string {
-  if (typeof v === 'string') return v;
-  if (!v) return '';
+  if (typeof v === 'string') {return v;}
+  if (!v) {return '';}
   if (typeof v === 'object') {
     const obj = v as Record<string, unknown>;
-    if (typeof obj.text === 'string') return obj.text;
-    if (typeof obj.html === 'string') return obj.html;
-    if (typeof obj.body === 'string') return obj.body;
-    if (typeof obj.content === 'string') return obj.content;
+    if (typeof obj.text === 'string') {return obj.text;}
+    if (typeof obj.html === 'string') {return obj.html;}
+    if (typeof obj.body === 'string') {return obj.body;}
+    if (typeof obj.content === 'string') {return obj.content;}
     try { return JSON.stringify(v); } catch { return String(v); }
   }
   return String(v);
@@ -392,10 +392,10 @@ class SlidingRateLimiter {
    * expired entries in one operation.
    */
   private prune(): void {
-    if (this.timestamps.length === 0) return;
+    if (this.timestamps.length === 0) {return;}
     const cutoff = Date.now() - RATE.WINDOW_MS;
     // Fast path: oldest entry is still within window
-    if (this.timestamps[0]! >= cutoff) return;
+    if (this.timestamps[0]! >= cutoff) {return;}
     // Fast path: all entries expired
     if (this.timestamps[this.timestamps.length - 1]! < cutoff) {
       this.timestamps.length = 0;
@@ -773,7 +773,7 @@ class DomainMatcher {
   // ─── Domain utilities ───────────────────────────────────────
 
   private static getRootDomain(hostname: string): string {
-    if (!hostname) return '';
+    if (!hostname) {return '';}
     // Defensive exit for raw IPv4 or IPv6 addresses
     if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) || hostname.includes(':')) {
       return hostname;
@@ -905,11 +905,11 @@ class OTPCodeExtractor {
    * 4. Emergency regex patterns
    */
   static isPlausibleOtp(v: string): boolean {
-    if (!v || v.length < 4 || v.length > 10) return false;
-    if (!/\d/.test(v)) return false;
-    if (/^(19|20)\d{2}$/.test(v)) return false;
+    if (!v || v.length < 4 || v.length > 10) {return false;}
+    if (!/\d/.test(v)) {return false;}
+    if (/^(19|20)\d{2}$/.test(v)) {return false;}
     const lower = v.toLowerCase();
-    if (lower === 'true' || lower === 'false' || lower === 'null' || lower === 'undefined') return false;
+    if (lower === 'true' || lower === 'false' || lower === 'null' || lower === 'undefined') {return false;}
     return true;
   }
 
@@ -1020,7 +1020,6 @@ let generalTimer: ReturnType<typeof setTimeout> | null = null;
 let lastGlobalCheckTime = 0;
 let initialized = false;
 let priorityCounter = 0;
-let checkInProgress = false;
 let pendingCheckMode: CheckMode | null = null;
 let pendingCheckTimer: ReturnType<typeof setTimeout> | null = null;
 let emailTypeTransitionPromise: Promise<void> | null = null;
@@ -1099,7 +1098,7 @@ function runHealthSweep(): void {
   if (pollingActive && now - lastGlobalCheckTime > 2 * 60 * 1000) {
     log.warn('💔 Heartbeat: Polling is active but no checks run in 2m. Restarting alarms.');
     void performCheck('general').then(() => {
-      if (generalTimer) clearTimeout(generalTimer);
+      if (generalTimer) {clearTimeout(generalTimer);}
       void scheduleGeneralPoll();
     });
   }
@@ -1225,7 +1224,6 @@ async function performCheck(mode: CheckMode): Promise<void> {
     return;
   }
 
-  checkInProgress = true;
   const t0 = Date.now();
   metrics.totalChecks++;
   rateLimiter.stamp();
@@ -1317,7 +1315,6 @@ async function performCheck(mode: CheckMode): Promise<void> {
     finalDetail = 'Inbox check failed';
   } finally {
     activeCheckPromise = null;
-    checkInProgress = false;
 
     const elapsed = Date.now() - t0;
     metrics.avgCheckMs =
@@ -2009,7 +2006,7 @@ async function scheduleGeneralPoll(): Promise<void> {
   const mode: CheckMode = waitingForOtp ? 'fast' : 'general';
 
   // Calculate adaptive interval (e.g. 1.2-4s for fast, 3-5s for active general)
-  let interval = AdaptiveScheduler.calculateInterval(mode, otpWaitingTabs);
+  const interval = AdaptiveScheduler.calculateInterval(mode, otpWaitingTabs);
 
   try {
     const settings = await storageService.getSettings();
@@ -2226,7 +2223,6 @@ export function destroyPollingManager(): void {
   rateLimiter.reset();
   initialized = false;
   priorityCounter = 0;
-  checkInProgress = false;
   pendingCheckMode = null;
 
   updateKeepAliveAlarm();

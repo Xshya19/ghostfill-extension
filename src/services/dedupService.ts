@@ -109,7 +109,7 @@ class DedupService {
   async isPending(emailId: string | number, accountId: string): Promise<boolean> {
     const key = this.makeKey(emailId, accountId);
     const expiresAt = this.pendingRecords.get(key);
-    if (!expiresAt) return false;
+    if (!expiresAt) {return false;}
     if (Date.now() >= expiresAt) {
       this.pendingRecords.delete(key);
       return false;
