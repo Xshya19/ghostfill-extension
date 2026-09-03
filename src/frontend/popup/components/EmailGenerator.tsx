@@ -2,11 +2,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Copy, RefreshCw, Inbox, Clock, ChevronRight, ChevronLeft, Zap } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { EmailAccount, Email } from '../../../types';
-import { formatRelativeTime, copyToClipboard, openSafeUrl } from '../../../utils/core';
+import { formatRelativeTime, copyToClipboard, openSafeUrl, contentToString } from '../../../utils/core';
 import { safeSendMessage } from '../../../utils/messaging';
 import { Button, interactiveSurface, springSoft } from '../../ui';
 import { useOTPExtractor, useStorageSubscription } from '../hooks';
-import { ConfirmModal, EmailAvatar } from './SharedComponents';
+import { ConfirmModal, EmailAvatar, EmailViewerModal } from './SharedComponents';
 
 // i18n helper
 const t = (key: string): string => {
@@ -69,6 +69,89 @@ const EmailGenerator: React.FC<Props> = ({
   // Memoize top 50 emails and asynchronously fetch their OTPs
   const latestInbox = React.useMemo(() => inbox.slice(0, 50), [inbox]);
   const { otps: emailOTPs, links: emailLinks } = useOTPExtractor(latestInbox);
+
+  // Local email viewer state (declared after the extractor maps above —
+  // the opener below reads them, so order matters).
+  const [viewerEmail, setViewerEmail] = useState<Email | null>(null);
+  const [viewerOtp, setViewerOtp] = useState<string | null>(null);
+  const [viewerLink, setViewerLink] = useState<string | null>(null);
+  const [viewerError, setViewerError] = useState<string | null>(null);
+  const [viewerLoading, setViewerLoading] = useState(false);
+  const viewerSeqRef = useRef(0);
+
+  const openEmailInViewer = useCallback(
+    async (item: Email) => {
+      const seq = ++viewerSeqRef.current;
+      const currentId = String(item.id);
+      setViewerEmail(item);
+      setViewerError(null);
+      setViewerOtp(emailOTPs[item.id] ?? null);
+      setViewerLink(emailLinks[item.id] ?? null);
+      setViewerLoading(true);
+      try {
+        if (!emailAccount?.fullEmail || !emailAccount.fullEmail.includes('@')) {
+          throw new Error('No active email account');
+        }
+        const [login = '', domain = ''] = emailAccount.fullEmail.split('@');
+        const res = (await safeSendMessage({
+          action: 'READ_EMAIL',
+          payload: { emailId: currentId, login, domain, service: emailAccount.service },
+        })) as { success?: boolean; email?: Email; error?: unknown } | null;
+        if (viewerSeqRef.current !== seq) {
+          return;
+        }
+        if (res?.success && res.email) {
+          const full = res.email;
+          setViewerEmail((prev) => (prev && String(prev.id) === currentId ? full : prev));
+          const extract = (await safeSendMessage({
+            action: 'EXTRACT_OTP',
+            payload: {
+              subject: contentToString(full.subject ?? item.subject),
+              text: contentToString(full.body ?? item.body),
+              textBody: contentToString(full.body ?? item.body),
+              htmlBody: contentToString((full as Email).htmlBody ?? (item as Email).htmlBody),
+              emailId: currentId,
+              emailFrom: contentToString(full.from ?? item.from),
+            },
+          })) as { success?: boolean; otp?: unknown; link?: unknown } | null;
+          if (viewerSeqRef.current !== seq) {
+            return;
+          }
+          if (extract?.success) {
+            if (typeof extract.otp === 'string' && extract.otp) {
+              setViewerOtp(extract.otp);
+            }
+            if (typeof extract.link === 'string' && extract.link) {
+              setViewerLink(extract.link);
+            }
+          }
+        } else if (res?.error) {
+          setViewerError(typeof res.error === 'string' ? res.error : 'Could not load message');
+        } else {
+          setViewerError('Could not load message');
+        }
+      } catch (err) {
+        if (viewerSeqRef.current === seq) {
+          setViewerError(err instanceof Error ? err.message : 'Failed to load message');
+        }
+      } finally {
+        if (viewerSeqRef.current === seq) {
+          setViewerLoading(false);
+        }
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [emailAccount?.fullEmail, emailAccount?.service, emailOTPs, emailLinks]
+  );
+
+  const closeViewer = useCallback(() => {
+    viewerSeqRef.current += 1;
+    setViewerEmail(null);
+    setViewerError(null);
+    setViewerOtp(null);
+    setViewerLink(null);
+    setViewerLoading(false);
+  }, []);
 
   const checkInbox = useCallback(
     async (showToast = true): Promise<boolean> => {
@@ -245,10 +328,12 @@ const EmailGenerator: React.FC<Props> = ({
               <div className="identity-content-wrapper">
                 <div className="identity-email-info">
                   {/* Email Display - Terminal Style */}
-                  <div className={`truncate terminal-prefix ${!emailAccount ? 'shimmer' : ''}`}>
-                    {emailAccount.fullEmail.split('@')[0]}
+                  <div className={`terminal-prefix ${!emailAccount ? 'shimmer' : ''}`}>
+                    {emailAccount.fullEmail.split('@')[0] ?? ''}
                   </div>
-                  <div className="terminal-domain">@{emailAccount.fullEmail.split('@')[1]}</div>
+                  <div className="terminal-domain">
+                    @{emailAccount.fullEmail.split('@')[1] ?? ''}
+                  </div>
 
                   {/* Status Badges */}
                   <div className="identity-status-badges">
@@ -365,6 +450,25 @@ const EmailGenerator: React.FC<Props> = ({
                         <motion.div
                           key={item.id}
                           className="inbox-item"
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`Open email from ${item.from}: ${item.subject}`}
+                          onClick={(e) => {
+                            if ((e.target as HTMLElement).closest('button')) {
+                              return;
+                            }
+                            void openEmailInViewer(item);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key !== 'Enter' && e.key !== ' ') {
+                              return;
+                            }
+                            if ((e.target as HTMLElement).closest('button')) {
+                              return;
+                            }
+                            e.preventDefault();
+                            void openEmailInViewer(item);
+                          }}
                           initial={{ opacity: 0, y: 16 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{
@@ -419,7 +523,7 @@ const EmailGenerator: React.FC<Props> = ({
                       );
                     })
                   ) : (
-                    <div className="inbox-empty inbox-empty-large shimmer">
+                    <div className="inbox-empty inbox-empty-large">
                       <div className="inbox-empty-icon-wrapper">
                         <Mail size={30} color="var(--gf-primary)" strokeWidth={1.5} />
                       </div>
@@ -565,6 +669,27 @@ const EmailGenerator: React.FC<Props> = ({
         }}
         onCancel={() => setShowConfirm(false)}
         isDestructive={true}
+      />
+
+      <EmailViewerModal
+        message={
+          viewerEmail
+            ? {
+                subject: viewerEmail.subject,
+                from: viewerEmail.from,
+                date: viewerEmail.date,
+                snippet: viewerEmail.snippet,
+                body: viewerEmail.body,
+                htmlBody: viewerEmail.htmlBody,
+                otp: viewerOtp,
+                link: viewerLink,
+              }
+            : null
+        }
+        loading={viewerLoading}
+        error={viewerError}
+        onClose={closeViewer}
+        onToast={onToast}
       />
     </div>
   );

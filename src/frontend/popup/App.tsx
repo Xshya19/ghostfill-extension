@@ -55,11 +55,17 @@ const App: React.FC = () => {
   const emailAccount = useAppStore((s) => s.emailAccount);
   const setEmailAccount = useAppStore((s) => s.setEmailAccount);
 
-  // Gmail / Alias store hooks
+  // Real Mail Provider store hooks
+  const selectedRealProvider = useAppStore((s) => s.selectedRealProvider);
+  const setSelectedRealProvider = useAppStore((s) => s.setSelectedRealProvider);
   const setGmailConnected = useAppStore((s) => s.setGmailConnected);
   const setGmailProfile = useAppStore((s) => s.setGmailProfile);
   const setGmailBase = useAppStore((s) => s.setGmailBase);
   const setGmailIsManual = useAppStore((s) => s.setGmailIsManual);
+  const setZohoConnected = useAppStore((s) => s.setZohoConnected);
+  const setZohoProfile = useAppStore((s) => s.setZohoProfile);
+  const setMicrosoftConnected = useAppStore((s) => s.setMicrosoftConnected);
+  const setMicrosoftProfile = useAppStore((s) => s.setMicrosoftProfile);
   const setPreferredEmailType = useAppStore((s) => s.setPreferredEmailType);
   const setAliasHistory = useAppStore((s) => s.setAliasHistory);
   const setGmailInbox = useAppStore((s) => s.setGmailInbox);
@@ -188,6 +194,11 @@ const App: React.FC = () => {
             storedBase,
             storedIsManual,
             storedPreferredType,
+            storedSelectedRealProvider,
+            storedZohoConnected,
+            storedZohoProfile,
+            storedMicrosoftConnected,
+            storedMicrosoftProfile,
             storedHistory,
             storedGmailInbox,
           ] = await Promise.all([
@@ -196,6 +207,11 @@ const App: React.FC = () => {
             storageService.get('gmailBase'),
             storageService.get('gmailIsManual'),
             storageService.get('preferredEmailType'),
+            storageService.get('selectedRealProvider'),
+            storageService.get('zohoConnected'),
+            storageService.get('zohoProfile'),
+            storageService.get('microsoftConnected'),
+            storageService.get('microsoftProfile'),
             storageService.get('aliasHistory'),
             storageService.get('gmailInbox'),
           ]);
@@ -214,7 +230,22 @@ const App: React.FC = () => {
               setGmailIsManual(Boolean(storedIsManual));
             }
             if (storedPreferredType !== undefined) {
-              setPreferredEmailType(storedPreferredType as 'disposable' | 'gmail');
+              setPreferredEmailType(storedPreferredType as any);
+            }
+            if (storedSelectedRealProvider !== undefined) {
+              setSelectedRealProvider(storedSelectedRealProvider as any);
+            }
+            if (storedZohoConnected !== undefined) {
+              setZohoConnected(Boolean(storedZohoConnected));
+            }
+            if (storedZohoProfile !== undefined) {
+              setZohoProfile(storedZohoProfile as any);
+            }
+            if (storedMicrosoftConnected !== undefined) {
+              setMicrosoftConnected(Boolean(storedMicrosoftConnected));
+            }
+            if (storedMicrosoftProfile !== undefined) {
+              setMicrosoftProfile(storedMicrosoftProfile as any);
             }
             if (Array.isArray(storedHistory)) {
               setAliasHistory(storedHistory);
@@ -224,7 +255,7 @@ const App: React.FC = () => {
             }
           }
         } catch (e) {
-          log.warn('Failed to hydrate Gmail state from storageService', e);
+          log.warn('Failed to hydrate Real Provider state from storageService', e);
         }
 
         try {
@@ -245,9 +276,6 @@ const App: React.FC = () => {
         } catch (e) {
           log.warn('Failed to sync initial email from storageService', e);
         }
-
-        // Removed aggressive auto-generation block.
-        // Generates identity ONLY upon explicit user onboarding dismiss or manual generation.
       } catch (e) {
         log.error('Failed to initialize app', e);
       } finally {
@@ -259,24 +287,7 @@ const App: React.FC = () => {
 
     void initializeApp();
 
-    return () => {
-      mounted = false;
-    };
-  }, [
-    setIsFirstTime,
-    setEmailAccount,
-    setGmailConnected,
-    setGmailProfile,
-    setGmailBase,
-    setGmailIsManual,
-    setPreferredEmailType,
-    setAliasHistory,
-    setGmailInbox,
-  ]);
-
-  useEffect(() => {
-    let mounted = true;
-
+    // Listen for storage changes from background or other extension pages
     const unsubscribe = storageService.onChanged((changes) => {
       void (async () => {
         try {
@@ -304,10 +315,40 @@ const App: React.FC = () => {
               setGmailIsManual(Boolean(val));
             }
           }
+          if (changes.zohoConnected) {
+            const val = await storageService.get('zohoConnected');
+            if (mounted) {
+              setZohoConnected(Boolean(val));
+            }
+          }
+          if (changes.zohoProfile) {
+            const val = await storageService.get('zohoProfile');
+            if (mounted) {
+              setZohoProfile(val as any);
+            }
+          }
+          if (changes.microsoftConnected) {
+            const val = await storageService.get('microsoftConnected');
+            if (mounted) {
+              setMicrosoftConnected(Boolean(val));
+            }
+          }
+          if (changes.microsoftProfile) {
+            const val = await storageService.get('microsoftProfile');
+            if (mounted) {
+              setMicrosoftProfile(val as any);
+            }
+          }
+          if (changes.selectedRealProvider) {
+            const val = await storageService.get('selectedRealProvider');
+            if (mounted) {
+              setSelectedRealProvider(val as any);
+            }
+          }
           if (changes.preferredEmailType) {
             const val = await storageService.get('preferredEmailType');
             if (mounted) {
-              setPreferredEmailType(val as 'disposable' | 'gmail');
+              setPreferredEmailType(val as any);
             }
           }
           if (changes.aliasHistory) {
@@ -482,7 +523,11 @@ const App: React.FC = () => {
                       {view === 'otp'
                         ? t('passcodeSync')
                         : view === 'aliases'
-                          ? 'Gmail Aliases'
+                          ? selectedRealProvider === 'zoho'
+                            ? 'Zoho Mail Aliases'
+                            : selectedRealProvider === 'microsoft'
+                              ? 'Outlook Aliases'
+                              : 'Gmail Aliases'
                           : t('vaultSettings')}
                     </span>
                   </div>

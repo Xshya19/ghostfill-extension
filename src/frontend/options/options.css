@@ -16,6 +16,7 @@
   --gutter: 24px;
   --posture-h: 41px;
   --touch-min: 44px;
+  color-scheme: light dark;
 }
 
 /* Only three local keyframes; modal + palette reuse gf-fade-scale-in and the
@@ -139,12 +140,14 @@ body {
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  width: 48px;
-  height: 48px;
+  width: 58px;
+  height: 58px;
   background: var(--gf-sunken);
   border: 1px solid var(--gf-line);
   border-radius: var(--radius-md);
-  box-shadow: inset 0 1px 0 var(--gf-hi), var(--gf-shadow-xs);
+  box-shadow:
+    inset 0 1px 0 var(--gf-hi),
+    var(--gf-shadow-xs);
   overflow: hidden;
   transition: transform var(--gf-dur-fast) var(--gf-ease);
 }
@@ -152,7 +155,7 @@ body {
   transform: scale(1.04);
 }
 
-/* GhostLogo renders at size=32 (see OptionsApp) inside a 46px plate. */
+/* GhostLogo renders at size=52 (see OptionsApp) inside a 58px plate. */
 .logo-box--no-padding {
   padding: 0;
 }
@@ -628,6 +631,42 @@ body {
     background-color var(--gf-dur-fast) var(--gf-ease);
 }
 
+.setting-item:not(.setting-item-col):not(.vertical-group) > input[type='number'] {
+  width: 90px;
+  max-width: 110px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.setting-item:not(.setting-item-col):not(.vertical-group) > .gf-custom-select {
+  width: auto;
+  min-width: 240px;
+  max-width: 320px;
+  flex-shrink: 0;
+}
+
+.client-id-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-family: var(--gf-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+.client-id-status-badge--configured {
+  color: var(--gf-mint);
+  background: rgba(var(--gf-mint-rgb), 0.12);
+  border: 1px solid rgba(var(--gf-mint-rgb), 0.28);
+}
+.client-id-status-badge--none {
+  color: var(--gf-ink-dim);
+  background: var(--gf-sunken);
+  border: 1px solid var(--gf-line);
+}
+
 .options-app input::placeholder,
 .options-app textarea::placeholder {
   color: var(--gf-ink-dim);
@@ -639,15 +678,23 @@ body {
   outline: none;
   background-color: var(--gf-surface);
   border-color: var(--gf-primary);
+}
+
+/* Mouse / touch focus: subtle glow. Keyboard focus gets the crisp outline
+   instead — never both at once (the stacking caused the thick double ring
+   seen in the screenshot). */
+.options-app input:focus:not(:focus-visible),
+.options-app select:focus:not(:focus-visible),
+.options-app textarea:focus:not(:focus-visible) {
   box-shadow: 0 0 0 3px rgba(var(--gf-primary-rgb), 0.18);
 }
 
-/* Keyboard users still get the ring even where :focus is suppressed. */
 .options-app input:focus-visible,
 .options-app select:focus-visible,
 .options-app textarea:focus-visible {
   outline: var(--gf-ring-width) solid var(--gf-primary);
   outline-offset: var(--gf-ring-offset);
+  box-shadow: none;
 }
 
 .options-app input:disabled,
@@ -662,7 +709,14 @@ body {
 }
 
 .options-app input[aria-invalid='true']:focus {
+  border-color: var(--gf-danger);
   box-shadow: 0 0 0 3px rgba(var(--gf-coral-rgb), 0.2);
+}
+
+.options-app input[aria-invalid='true']:focus-visible {
+  border-color: var(--gf-danger);
+  outline-color: var(--gf-danger);
+  box-shadow: none;
 }
 
 /* Chevron drawn from two gradients so it inherits currentColor — replaces the
@@ -686,6 +740,210 @@ body {
   display: none;
 }
 
+/* Native popup theming — without an explicit color-scheme the browser paints
+   the dropdown white even when the page is dark (and uses its own light-blue
+   hover that clashes with the indigo system). The popup itself is OS-rendered
+   so only background/color/checked-state are reliably styleable, but that is
+   enough to fix the screenshot: dark popup in dark mode, indigo highlight. */
+.options-app select {
+  color-scheme: light dark;
+}
+[data-theme='dark'] .options-app select {
+  color-scheme: dark;
+}
+[data-theme='light'] .options-app select {
+  color-scheme: light;
+}
+.options-app select option {
+  background-color: var(--gf-surface);
+  color: var(--gf-ink);
+}
+.options-app select option:checked {
+  background-color: var(--gf-primary);
+  color: var(--gf-on-primary);
+}
+
+/* ── Custom select — in-DOM replacement for the OS popup ────────────────
+   Fixes the screenshot: trigger and panel share the same radius, border,
+   and shadow so there is no floating white rectangle with a mismatched
+   blue hover. Panel styling intentionally mirrors .ghost-card. */
+.gf-custom-select {
+  position: relative;
+  width: 100%;
+}
+
+.gf-custom-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 38px;
+  padding: 9px 12px;
+  font-family: var(--gf-font-body);
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--gf-ink);
+  text-align: left;
+  background-color: var(--gf-sunken);
+  border: 1px solid var(--gf-line);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    border-color var(--gf-dur-fast) var(--gf-ease),
+    background-color var(--gf-dur-fast) var(--gf-ease),
+    box-shadow var(--gf-dur-fast) var(--gf-ease);
+}
+
+.gf-custom-select-trigger:hover {
+  border-color: var(--gf-line-2);
+}
+
+.gf-custom-select-trigger:focus {
+  outline: none;
+  background-color: var(--gf-surface);
+  border-color: var(--gf-primary);
+}
+
+.gf-custom-select-trigger:focus:not(:focus-visible) {
+  box-shadow: 0 0 0 3px rgba(var(--gf-primary-rgb), 0.18);
+}
+
+.gf-custom-select-trigger:focus-visible {
+  outline: var(--gf-ring-width) solid var(--gf-primary);
+  outline-offset: var(--gf-ring-offset);
+  box-shadow: none;
+}
+
+.gf-custom-select[data-open='true'] .gf-custom-select-trigger {
+  background-color: var(--gf-surface);
+  border-color: var(--gf-primary);
+  box-shadow: 0 0 0 3px rgba(var(--gf-primary-rgb), 0.18);
+}
+
+.gf-custom-select[data-open='true'] .gf-custom-select-trigger:focus-visible {
+  box-shadow: none;
+}
+
+.gf-custom-select-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+}
+
+.gf-custom-select-chevron {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  margin-left: 8px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    0 calc(50% - 1px),
+    5px calc(50% - 1px);
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  opacity: 0.7;
+  transition: transform var(--gf-dur-fast) var(--gf-ease);
+}
+
+.gf-custom-select[data-open='true'] .gf-custom-select-chevron {
+  transform: rotate(180deg);
+}
+
+.gf-custom-select-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: var(--z-overlay);
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 6px;
+  margin: 0;
+  list-style: none;
+  background: var(--gf-surface);
+  border: 1px solid var(--gf-line);
+  border-radius: var(--radius-md);
+  box-shadow:
+    var(--gf-shadow-lg),
+    inset 0 1px 0 var(--gf-hi);
+  animation: gf-fade-scale-in var(--gf-dur-fast) var(--gf-ease-out);
+}
+
+/* Flipped variant: opens above the trigger when there is no room below
+   (measured in CustomSelect — needs enough space above too). */
+.gf-custom-select[data-open-up='true'] .gf-custom-select-panel {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+.gf-custom-select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px 10px;
+  font-size: 13.5px;
+  color: var(--gf-ink-soft);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color var(--gf-dur-fast) var(--gf-ease),
+    color var(--gf-dur-fast) var(--gf-ease);
+}
+
+.gf-custom-select-option.is-highlighted {
+  color: var(--gf-ink);
+  background: var(--gf-primary-soft);
+}
+
+.gf-custom-select-option.is-selected {
+  color: var(--gf-ink);
+  font-weight: 600;
+  background: var(--gf-primary-soft);
+}
+
+.gf-custom-select-option.is-highlighted.is-selected {
+  background: rgba(var(--gf-primary-rgb), 0.18);
+}
+
+/* Preferred-service picker: the trigger keeps the 220px ledger column, but
+   the in-DOM panel is allowed to grow so 16 long provider labels never clip
+   the way the old native OS popup did in the screenshot. */
+.email-service-select {
+  min-width: 0;
+}
+.email-service-select .gf-custom-select-panel {
+  left: auto;
+  right: 0;
+  width: max-content;
+  min-width: 100%;
+  max-width: min(340px, 72vw);
+}
+.email-service-select .gf-custom-select-option-label {
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.gf-custom-select-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gf-custom-select-check {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--gf-primary);
+}
+
 /* Mono numeric fields read as data, not prose. */
 .options-app input[type='number'] {
   font-family: var(--gf-font-mono);
@@ -697,7 +955,9 @@ body {
    same column instead of hugging its own content. */
 @media (min-width: 861px) {
   .options-main .setting-item:not(.vertical-group):not(.setting-item-col) > select,
-  .options-main .setting-item:not(.vertical-group):not(.setting-item-col) > input {
+  .options-main .setting-item:not(.vertical-group):not(.setting-item-col) > input,
+  .options-main .setting-item:not(.vertical-group):not(.setting-item-col) > .gf-custom-select,
+  .options-main .setting-item:not(.vertical-group):not(.setting-item-col) > .email-service-select {
     flex: 0 0 auto;
     width: 220px;
     max-width: 220px;
@@ -709,7 +969,8 @@ body {
 }
 
 .options-main .vertical-group > select,
-.options-main .vertical-group > input {
+.options-main .vertical-group > input,
+.options-main .vertical-group > .gf-custom-select {
   width: 100%;
 }
 
@@ -762,6 +1023,23 @@ body {
 .toggle:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Load-failure banner: settings failed to load, form shows defaults. */
+.settings-load-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: var(--page-max);
+  margin: 12px auto 0;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--gf-coral-text);
+  background: var(--gf-danger-soft);
+  border: 1px solid rgba(var(--gf-coral-rgb), 0.3);
+  border-radius: var(--radius-md);
 }
 
 /* ── Row-level feedback ───────────────────────────────── */
@@ -841,8 +1119,8 @@ body {
 /* Full-bleed rule, same as .settings-section h2 — a hairline that stops short
    of the card edge reads as a mistake next to one that doesn't. */
 .provider-health-meter {
-  margin: 14px -22px 0;
-  padding: 14px 22px 0;
+  margin: 14px -24px 0;
+  padding: 14px 24px 0;
   border-top: 1px solid var(--gf-line);
 }
 
@@ -851,6 +1129,13 @@ body {
   font-size: 12px;
   line-height: 1.5;
   color: var(--gf-text-muted);
+}
+
+.health-hint {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--gf-ink-dim);
 }
 
 .health-title {
@@ -868,17 +1153,19 @@ body {
 
 .health-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 8px;
+  min-width: 0;
 }
 
 .health-pill-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
+  min-width: 0;
   min-height: 38px;
-  padding: 8px 12px;
+  padding: 8px 10px;
   background: var(--gf-sunken);
   border: 1px solid var(--gf-line);
   border-radius: var(--radius-md);
@@ -886,10 +1173,11 @@ body {
 
 .health-provider-name {
   min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--gf-ink);
 }
@@ -897,15 +1185,16 @@ body {
 .health-status-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
 .health-percent {
   font-family: var(--gf-font-mono);
-  font-size: 12px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
   color: var(--gf-ink-soft);
+  white-space: nowrap;
 }
 
 .health-dot {
@@ -913,6 +1202,11 @@ body {
   height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
+}
+
+.health-dot.health-status-unknown {
+  background: var(--gf-ink-dim);
+  opacity: 0.45;
 }
 
 .health-dot.health-status-good {

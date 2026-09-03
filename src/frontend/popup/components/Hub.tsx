@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Mail } from 'lucide-react';
+import { Mail, Globe } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   getDeterministicCombinedAlias,
@@ -17,6 +17,8 @@ import {
   Email,
   type ExtractOTPResponse,
   type ReadEmailResponse,
+  type PasswordOptions,
+  DEFAULT_PASSWORD_OPTIONS,
 } from '../../../types';
 import { TIMING, copyToClipboard, openSafeUrl } from '../../../utils/core';
 import { safeSendMessage } from '../../../utils/messaging';
@@ -49,14 +51,8 @@ const toSafeStr = (v: unknown): string => {
     if (typeof obj.text === 'string') {return obj.text;}
     if (typeof obj.html === 'string') {return obj.html;}
     if (typeof obj.body === 'string') {return obj.body;}
-    if (typeof obj.content === 'string') {return obj.content;}
-    try {
-      return JSON.stringify(v);
-    } catch {
-      return String(v);
-    }
   }
-  return String(v);
+  return '';
 };
 
 // Rate limit constants
@@ -69,13 +65,10 @@ const RATE_LIMIT_MS = {
 const HUB_INBOX_PREVIEW_LIMIT = 2;
 
 interface Props {
-  onNavigate: (
-    tab: 'email' | 'password' | 'otp' | 'aliases',
-    options?: { aliasTab?: 'generator' | 'inbox' | 'history' }
-  ) => void;
-  emailAccount: EmailAccount | null;
-  onGenerate: () => void;
-  onToast: (message: string) => void;
+  readonly onNavigate: (tab: 'email' | 'password' | 'otp' | 'aliases') => void;
+  readonly emailAccount: EmailAccount | null;
+  readonly onGenerate: () => void;
+  readonly onToast: (msg: string) => void;
 }
 
 const formatGmailSignInFailure = (res: GmailSignInResult | undefined): string => {
@@ -88,6 +81,8 @@ const formatGmailSignInFailure = (res: GmailSignInResult | undefined): string =>
 const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast }) => {
   const preferredEmailType = useAppStore((s) => s.preferredEmailType);
   const setPreferredEmailType = useAppStore((s) => s.setPreferredEmailType);
+  const selectedRealProvider = useAppStore((s) => s.selectedRealProvider);
+  const setSelectedRealProvider = useAppStore((s) => s.setSelectedRealProvider);
   const gmailConnected = useAppStore((s) => s.gmailConnected);
   const setGmailConnected = useAppStore((s) => s.setGmailConnected);
   const gmailBase = useAppStore((s) => s.gmailBase);
@@ -102,10 +97,20 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
   const setGmailIsManual = useAppStore((state) => state.setGmailIsManual);
   const setGmailProfile = useAppStore((state) => state.setGmailProfile);
   const gmailProfile = useAppStore((state) => state.gmailProfile);
+  const zohoConnected = useAppStore((s) => s.zohoConnected);
+  const setZohoConnected = useAppStore((s) => s.setZohoConnected);
+  const zohoProfile = useAppStore((s) => s.zohoProfile);
+  const setZohoProfile = useAppStore((s) => s.setZohoProfile);
+  const microsoftConnected = useAppStore((s) => s.microsoftConnected);
+  const setMicrosoftConnected = useAppStore((s) => s.setMicrosoftConnected);
+  const microsoftProfile = useAppStore((s) => s.microsoftProfile);
+  const setMicrosoftProfile = useAppStore((s) => s.setMicrosoftProfile);
   const setCurrentTabHostname = useAppStore((state) => state.setCurrentTabHostname);
 
-  // Direct Gmail sign-in state
+  // Direct Provider sign-in states
   const [gmailSigningIn, setGmailSigningIn] = useState(false);
+  const [zohoSigningIn, setZohoSigningIn] = useState(false);
+  const [microsoftSigningIn, setMicrosoftSigningIn] = useState(false);
   const gmailInboxRequestSeqRef = useRef(0);
   const lastOpenedEmailIdRef = useRef<string | null>(null);
 
@@ -113,6 +118,25 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
   const [emailCopied, setEmailCopied] = useState(false);
   const [passwordCopied, setPasswordCopied] = useState(false);
   const [password, setPassword] = useState<string>('');
+  // Password recipe from Options > Passwords. Loaded once per popup open;
+  // falls back to service defaults when settings are unreachable.
+  const [passwordDefaults, setPasswordDefaults] = useState<PasswordOptions | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    storageService
+      .getSettings()
+      .then((s) => {
+        if (!cancelled && s?.passwordDefaults) {
+          setPasswordDefaults({ ...s.passwordDefaults });
+        }
+      })
+      .catch(() => {
+        // defaults stay null → service-side defaults apply
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [showPassword, setShowPassword] = useState(false);
   const [isGeneratingPassword, setIsGeneratingPassword] = useState(false);
   const [isGeneratingEmail, setIsGeneratingEmail] = useState(false);
@@ -231,7 +255,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
   const rawInbox = useStorageSubscription('inbox', []);
 
   const inboxEmails = React.useMemo(() => {
-    if (preferredEmailType === 'gmail') {
+    if (preferredEmailType !== 'disposable') {
       return (gmailInbox || []).map((msg) => ({
         id: msg.id,
         from: msg.fromName || msg.from,
@@ -246,59 +270,145 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     return Array.isArray(rawInbox) ? rawInbox : [];
   }, [preferredEmailType, gmailInbox, rawInbox]);
 
-  const fetchGmailInbox = useCallback(async () => {
+  const fetchProviderInbox = useCallback(async () => {
     const requestSeq = ++gmailInboxRequestSeqRef.current;
-    if (!gmailConnected || gmailIsManual) {
-      setGmailInboxLoading(false);
+    if (preferredEmailType === 'disposable') {
       return;
     }
 
-    setGmailInboxLoading(true);
-    setGmailInboxError(null);
-    try {
-      const res = (await safeSendMessage({
-        action: 'GMAIL_FETCH_INBOX',
-        payload: {
-          ...(activeGmailAlias ? { alias: activeGmailAlias } : {}),
-          maxResults: 20,
-        },
-      })) as any;
-      if (res?.success && Array.isArray(res.messages)) {
-        if (requestSeq === gmailInboxRequestSeqRef.current) {
-          setGmailInbox(res.messages);
-        }
-      } else {
-        if (requestSeq === gmailInboxRequestSeqRef.current) {
+    if (preferredEmailType === 'gmail') {
+      if (!gmailConnected || gmailIsManual) {
+        setGmailInboxLoading(false);
+        return;
+      }
+
+      setGmailInboxLoading(true);
+      setGmailInboxError(null);
+      try {
+        const res = (await safeSendMessage({
+          action: 'GMAIL_FETCH_INBOX',
+          payload: {
+            ...(activeGmailAlias ? { alias: activeGmailAlias } : {}),
+            maxResults: 20,
+          },
+        })) as any;
+        if (res?.success && Array.isArray(res.messages)) {
+          if (requestSeq === gmailInboxRequestSeqRef.current) {
+            setGmailInbox(res.messages);
+          }
+        } else if (requestSeq === gmailInboxRequestSeqRef.current) {
           setGmailInboxError(res?.error || 'Failed to fetch Gmail inbox');
         }
+      } catch (e: unknown) {
+        if (requestSeq === gmailInboxRequestSeqRef.current) {
+          setGmailInboxError(e instanceof Error ? e.message : 'Failed to fetch Gmail inbox');
+        }
+      } finally {
+        if (requestSeq === gmailInboxRequestSeqRef.current) {
+          setGmailInboxLoading(false);
+        }
       }
-    } catch (e: unknown) {
-      if (requestSeq === gmailInboxRequestSeqRef.current) {
-        setGmailInboxError(e instanceof Error ? e.message : 'Failed to fetch Gmail inbox');
-      }
-    } finally {
-      if (requestSeq === gmailInboxRequestSeqRef.current) {
+    } else if (preferredEmailType === 'zoho') {
+      if (!zohoConnected) {
         setGmailInboxLoading(false);
+        return;
+      }
+
+      setGmailInboxLoading(true);
+      setGmailInboxError(null);
+      try {
+        const res = (await safeSendMessage({
+          action: 'ZOHO_SEARCH_INBOX',
+          payload: {
+            alias: activeEmailAddress || zohoProfile?.email || '',
+          },
+        })) as any;
+        if (res?.success && Array.isArray(res.messages)) {
+          if (requestSeq === gmailInboxRequestSeqRef.current) {
+            setGmailInbox(res.messages);
+          }
+        } else if (requestSeq === gmailInboxRequestSeqRef.current) {
+          setGmailInboxError(res?.error || 'Failed to fetch Zoho Mail inbox');
+        }
+      } catch (e: unknown) {
+        if (requestSeq === gmailInboxRequestSeqRef.current) {
+          setGmailInboxError(e instanceof Error ? e.message : 'Failed to fetch Zoho Mail inbox');
+        }
+      } finally {
+        if (requestSeq === gmailInboxRequestSeqRef.current) {
+          setGmailInboxLoading(false);
+        }
+      }
+    } else if (preferredEmailType === 'microsoft') {
+      if (!microsoftConnected) {
+        setGmailInboxLoading(false);
+        return;
+      }
+
+      setGmailInboxLoading(true);
+      setGmailInboxError(null);
+      try {
+        const res = (await safeSendMessage({
+          action: 'MICROSOFT_SEARCH_INBOX',
+          payload: {
+            alias: activeEmailAddress || microsoftProfile?.email || '',
+          },
+        })) as any;
+        if (res?.success && Array.isArray(res.messages)) {
+          if (requestSeq === gmailInboxRequestSeqRef.current) {
+            setGmailInbox(res.messages);
+          }
+        } else if (requestSeq === gmailInboxRequestSeqRef.current) {
+          setGmailInboxError(res?.error || 'Failed to fetch Outlook inbox');
+        }
+      } catch (e: unknown) {
+        if (requestSeq === gmailInboxRequestSeqRef.current) {
+          setGmailInboxError(e instanceof Error ? e.message : 'Failed to fetch Outlook inbox');
+        }
+      } finally {
+        if (requestSeq === gmailInboxRequestSeqRef.current) {
+          setGmailInboxLoading(false);
+        }
       }
     }
   }, [
+    activeEmailAddress,
     activeGmailAlias,
     gmailConnected,
     gmailIsManual,
+    microsoftConnected,
+    microsoftProfile?.email,
+    preferredEmailType,
     setGmailInbox,
     setGmailInboxError,
     setGmailInboxLoading,
+    zohoConnected,
+    zohoProfile?.email,
   ]);
 
   useEffect(() => {
-    if (preferredEmailType === 'gmail' && gmailConnected && !gmailIsManual) {
-      void fetchGmailInbox();
+    if (
+      (preferredEmailType === 'gmail' && gmailConnected && !gmailIsManual) ||
+      (preferredEmailType === 'zoho' && zohoConnected) ||
+      (preferredEmailType === 'microsoft' && microsoftConnected)
+    ) {
+      void fetchProviderInbox();
     }
-  }, [fetchGmailInbox, activeGmailAlias, gmailConnected, gmailIsManual, preferredEmailType]);
+  }, [
+    fetchProviderInbox,
+    activeGmailAlias,
+    gmailConnected,
+    gmailIsManual,
+    zohoConnected,
+    microsoftConnected,
+    preferredEmailType,
+  ]);
 
-  // Generate strong 16-char password with rate limiting
+  // Generate password with the Options > Passwords recipe when loaded,
+  // otherwise the service defaults (length 20).
   const generatePassword = useCallback(async () => {
     setIsGeneratingPassword(true);
+    const recipe: PasswordOptions = passwordDefaults ?? DEFAULT_PASSWORD_OPTIONS;
     try {
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
         const { lastGeneratePasswordTime } = await chrome.storage.local.get(
@@ -323,7 +433,14 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
 
       const response = await safeSendMessage({
         action: 'GENERATE_PASSWORD',
-        payload: { length: 16, uppercase: true, lowercase: true, numbers: true, symbols: true },
+        payload: {
+          length: recipe.length,
+          uppercase: recipe.uppercase,
+          lowercase: recipe.lowercase,
+          numbers: recipe.numbers,
+          symbols: recipe.symbols,
+          excludeAmbiguous: recipe.excludeAmbiguous,
+        },
       });
       if (response && 'result' in response && response.result && 'password' in response.result) {
         setPassword(response.result.password);
@@ -333,7 +450,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     } finally {
       setIsGeneratingPassword(false);
     }
-  }, [onToast]);
+  }, [onToast, passwordDefaults]);
 
   // Check inbox with rate limiting
   const checkInbox = useCallback(async () => {
@@ -343,6 +460,11 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
         const lastTime = parseInt(lastCheckInboxTime || '0', 10);
         const now = Date.now();
         if (now - lastTime < RATE_LIMIT_MS.CHECK_INBOX) {
+          const waitS = Math.max(
+            1,
+            Math.ceil((RATE_LIMIT_MS.CHECK_INBOX - (now - lastTime)) / 1000)
+          );
+          onToast(`Sync cooling down — retry in ${waitS}s`);
           return; // Rate limited
         }
         await chrome.storage.local.set({ lastCheckInboxTime: now.toString() });
@@ -401,6 +523,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
   // Handlers
   const copyEmail = useCallback(async () => {
     if (!activeEmailAddress) {
+      onToast('No email address yet — generate one first');
       return;
     }
 
@@ -425,6 +548,8 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
 
   const copyPassword = useCallback(async () => {
     if (!password) {
+      onToast('No password yet — generating one…');
+      void generatePassword();
       return;
     }
 
@@ -763,9 +888,80 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     setPreferredEmailType,
   ]);
 
+  const handleZohoSignIn = useCallback(async () => {
+    setZohoSigningIn(true);
+    try {
+      const res = (await safeSendMessage({ action: 'ZOHO_CONNECT' })) as any;
+      if (res?.success && res?.profile) {
+        setZohoConnected(true);
+        setZohoProfile(res.profile);
+        onToast(`Zoho Mail connected: ${res.profile.email}`);
+      } else {
+        onToast(res?.error || 'Zoho sign-in failed');
+      }
+    } catch (e) {
+      onToast(e instanceof Error ? e.message : 'Zoho sign-in failed');
+    } finally {
+      setZohoSigningIn(false);
+    }
+  }, [onToast, setZohoConnected, setZohoProfile]);
+
+  const handleZohoSignOut = useCallback(async () => {
+    try {
+      await safeSendMessage({ action: 'ZOHO_DISCONNECT' });
+      setZohoConnected(false);
+      setZohoProfile(null);
+      onToast('Zoho Mail disconnected');
+    } catch {
+      onToast('Failed to disconnect Zoho Mail');
+    }
+  }, [onToast, setZohoConnected, setZohoProfile]);
+
+  const handleMicrosoftSignIn = useCallback(async () => {
+    setMicrosoftSigningIn(true);
+    try {
+      const res = (await safeSendMessage({ action: 'MICROSOFT_CONNECT' })) as any;
+      if (res?.success && res?.profile) {
+        setMicrosoftConnected(true);
+        setMicrosoftProfile(res.profile);
+        onToast(`Outlook connected: ${res.profile.email}`);
+      } else {
+        onToast(res?.error || 'Microsoft sign-in failed');
+      }
+    } catch (e) {
+      onToast(e instanceof Error ? e.message : 'Microsoft sign-in failed');
+    } finally {
+      setMicrosoftSigningIn(false);
+    }
+  }, [onToast, setMicrosoftConnected, setMicrosoftProfile]);
+
+  const handleMicrosoftSignOut = useCallback(async () => {
+    try {
+      await safeSendMessage({ action: 'MICROSOFT_DISCONNECT' });
+      setMicrosoftConnected(false);
+      setMicrosoftProfile(null);
+      onToast('Microsoft Outlook disconnected');
+    } catch {
+      onToast('Failed to disconnect Microsoft Outlook');
+    }
+  }, [onToast, setMicrosoftConnected, setMicrosoftProfile]);
+
+  const handleSelectProvider = useCallback(
+    (provider: 'gmail' | 'zoho' | 'microsoft') => {
+      setSelectedRealProvider(provider);
+      void (async () => {
+        await storageService.setImmediate('selectedRealProvider', provider);
+        // Always propagate: the two keys mean the same thing and a split
+        // pair (selector says zoho, fill still uses gmail) mis-fills forms.
+        // Switching back to Temp Mail is explicit via handleSwitchToDisposable.
+        await storageService.setImmediate('preferredEmailType', provider);
+        setPreferredEmailType(provider);
+      })();
+    },
+    [setSelectedRealProvider, setPreferredEmailType]
+  );
+
   // ── Tab-switch: popup tab IS the fill source of truth ──
-  // Temp Mail tab → fill disposable only; Gmail tab → fill gmail only.
-  // Await storage writes so fill never races a stale preferredEmailType.
   const handleSwitchToDisposable = useCallback(() => {
     void (async () => {
       await storageService.setImmediate('preferredEmailType', 'disposable');
@@ -781,56 +977,28 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     })();
   }, [setPreferredEmailType, emailAccount, onToast]);
 
-  const handleSwitchToGmail = useCallback(() => {
+  const handleSwitchToRealProvider = useCallback(() => {
     void (async () => {
-      await storageService.setImmediate('preferredEmailType', 'gmail');
-      setPreferredEmailType('gmail');
-      const alias = activeGmailAlias || gmailBase;
-      if (gmailConnected && alias && gmailBase) {
-        const session = await rememberGmailAliasSession(
-          alias,
-          gmailBase,
-          currentTabDomain || 'general'
-        );
-        await storageService.setImmediate('currentEmail', {
-          id: `gmail_${alias.replace(/[@.+]/g, '_')}`,
-          fullEmail: alias,
-          domain: 'gmail.com',
-          service: 'gmail',
-          createdAt: session.startedAt,
-          expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
-          gmailBaseEmail: gmailBase,
-          gmailAliasSessionStartedAt: session.startedAt,
-        });
-        onToast(`Gmail active: ${alias}`);
-      } else if (gmailConnected && gmailBase) {
-        await storageService.setImmediate('currentEmail', {
-          id: `gmail_${gmailBase.replace(/[@.+]/g, '_')}`,
-          fullEmail: gmailBase,
-          domain: 'gmail.com',
-          service: 'gmail',
-          createdAt: Date.now(),
-          expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
-          gmailBaseEmail: gmailBase,
-        });
-        onToast(`Gmail active: ${gmailBase}`);
+      await storageService.setImmediate('preferredEmailType', selectedRealProvider);
+      setPreferredEmailType(selectedRealProvider);
+      if (activeEmailAddress) {
+        onToast(`${selectedRealProvider.toUpperCase()} active: ${activeEmailAddress}`);
       } else {
-        onToast('Gmail tab active — connect Gmail in popup to fill');
+        onToast('Mail Provider active — select or connect your account');
       }
     })();
-  }, [
-    setPreferredEmailType,
-    gmailConnected,
-    activeGmailAlias,
-    gmailBase,
-    currentTabDomain,
-    onToast,
-  ]);
+  }, [setPreferredEmailType, selectedRealProvider, activeEmailAddress, onToast]);
+
+  const isRealNotConnected =
+    preferredEmailType !== 'disposable' &&
+    ((selectedRealProvider === 'gmail' && !gmailConnected) ||
+      (selectedRealProvider === 'zoho' && !zohoConnected) ||
+      (selectedRealProvider === 'microsoft' && !microsoftConnected));
 
   return (
     <motion.div className="ghost-dashboard" variants={stagger} initial="initial" animate="animate">
       {/* ───────────────────────────────────────────────────────────
-                 📊 EMAIL TYPE SELECTOR (Disposable vs Gmail)
+                 📊 EMAIL TYPE SELECTOR (Temp Mail vs Mail Provider)
                ─────────────────────────────────────────────────────────── */}
       <div className="hub-email-selector" role="tablist">
         <motion.div
@@ -860,13 +1028,13 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
         </button>
         <button
           role="tab"
-          aria-selected={preferredEmailType === 'gmail'}
-          className={`hub-email-selector-btn ${preferredEmailType === 'gmail' ? 'hub-email-selector-btn--active' : ''}`}
-          onClick={handleSwitchToGmail}
+          aria-selected={preferredEmailType !== 'disposable'}
+          className={`hub-email-selector-btn ${preferredEmailType !== 'disposable' ? 'hub-email-selector-btn--active' : ''}`}
+          onClick={handleSwitchToRealProvider}
         >
           <span className="hub-email-selector-label">
-            <Mail size={13} strokeWidth={2.5} />
-            <span>Gmail</span>
+            <Globe size={13} strokeWidth={2.5} />
+            <span>Mail Provider</span>
           </span>
         </button>
       </div>
@@ -877,9 +1045,17 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       <motion.div className="memphis-card identity-card" variants={itemRise}>
         <AccountCard
           preferredEmailType={preferredEmailType}
+          selectedRealProvider={selectedRealProvider}
+          onSelectRealProvider={handleSelectProvider}
           gmailConnected={gmailConnected}
           gmailSigningIn={gmailSigningIn}
           gmailBase={gmailBase}
+          zohoConnected={zohoConnected}
+          zohoSigningIn={zohoSigningIn}
+          zohoBase={zohoProfile?.email || null}
+          microsoftConnected={microsoftConnected}
+          microsoftSigningIn={microsoftSigningIn}
+          microsoftBase={microsoftProfile?.email || null}
           activeEmailAddress={activeEmailAddress}
           emailAccount={emailAccount}
           emailCopied={emailCopied}
@@ -888,7 +1064,8 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
           onCopyEmail={copyEmail}
           onGenerateEmail={handleGenerateEmail}
           onGmailSignIn={handleGmailSignIn}
-          gmailProfile={gmailProfile}
+          onZohoSignIn={handleZohoSignIn}
+          onMicrosoftSignIn={handleMicrosoftSignIn}
           onSignOut={async () => {
             try {
               if (typeof chrome !== 'undefined' && chrome.identity) {
@@ -899,14 +1076,18 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
               setGmailProfile(null);
               setGmailBase(null);
               setGmailIsManual(false);
-              setPreferredEmailType('disposable');
               onToast('Gmail disconnected');
             } catch {
               onToast('Failed to disconnect Gmail');
             }
           }}
+          onZohoSignOut={handleZohoSignOut}
+          onMicrosoftSignOut={handleMicrosoftSignOut}
+          gmailProfile={gmailProfile}
+          zohoProfile={zohoProfile}
+          microsoftProfile={microsoftProfile}
         />
-        {!(preferredEmailType === 'gmail' && !gmailConnected) && (
+        {!isRealNotConnected && (
           <QuickActions
             password={password}
             passwordCopied={passwordCopied}
@@ -916,25 +1097,30 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
             onCopyPassword={copyPassword}
             onToggleShowPassword={() => setShowPassword((s) => !s)}
             onGeneratePassword={handleGeneratePassword}
+            onOpenVault={() => onNavigate('password')}
           />
         )}
       </motion.div>
 
       {(preferredEmailType === 'disposable' ||
-        (preferredEmailType === 'gmail' && gmailConnected)) && (
+        (preferredEmailType === 'gmail' && gmailConnected) ||
+        (preferredEmailType === 'zoho' && zohoConnected) ||
+        (preferredEmailType === 'microsoft' && microsoftConnected)) && (
         <InboxList
           preferredEmailType={preferredEmailType}
           gmailConnected={gmailConnected}
           gmailIsManual={gmailIsManual}
           gmailInboxLoading={gmailInboxLoading}
           gmailInboxError={gmailInboxError}
+          zohoConnected={zohoConnected}
+          microsoftConnected={microsoftConnected}
           inboxCount={inboxEmails.length}
           displayedEmails={displayedEmails}
           openingEmailId={openingEmailId}
           onNavigate={onNavigate}
           onCopyOTP={handleCopyOTP}
           onOpenLink={handleOpenLink}
-          onFetchGmailInbox={fetchGmailInbox}
+          onFetchGmailInbox={fetchProviderInbox}
           onOpenEmail={handleOpenEmail}
         />
       )}

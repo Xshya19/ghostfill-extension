@@ -10,7 +10,7 @@
 :root {
   --popup-w: 375px;
   --popup-h: 400px;
-  --header-h: 44px;
+  --header-h: 48px;
 }
 
 /* ── 2. KEYFRAMES (Popup-specific only; base spin/shimmer in primitives) ─ */
@@ -280,22 +280,23 @@ textarea:disabled,
 }
 
 .logo-circle {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-xs);
-  background: var(--gf-grad-cobalt);
-  color: var(--gf-on-fill-light);
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
-  box-shadow: 0 2px 8px -2px rgba(var(--gf-primary-rgb), 0.45);
-  transition: transform var(--gf-dur-fast) var(--gf-ease);
+  background: transparent;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.22));
+  transition:
+    transform var(--gf-dur-fast) var(--gf-ease),
+    filter var(--gf-dur-fast) var(--gf-ease);
 }
 .logo-circle:hover {
-  transform: scale(1.05);
+  transform: scale(1.08);
+  filter: drop-shadow(0 3px 10px rgba(var(--gf-primary-rgb), 0.45));
 }
 .logo-circle svg,
-.ghost-logo-img,
 .ghost-logo-svg {
   width: 22px;
   height: 22px;
@@ -411,6 +412,7 @@ textarea:disabled,
 .alias-history-card,
 .email-generator-card,
 .hub-gmail-not-connected,
+.hub-provider-not-connected,
 .efficiency-tip-card,
 .alias-setup-card,
 .inbox-section {
@@ -419,7 +421,9 @@ textarea:disabled,
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--gf-glass-border);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-card), inset 0 1px 0 var(--gf-hi);
+  box-shadow:
+    var(--shadow-card),
+    inset 0 1px 0 var(--gf-hi);
   position: relative;
   transition:
     border-color var(--gf-dur) var(--gf-ease),
@@ -437,7 +441,9 @@ textarea:disabled,
 }
 .identity-card:hover {
   border-color: var(--gf-line-2);
-  box-shadow: var(--shadow-hard), inset 0 1px 0 var(--gf-hi);
+  box-shadow:
+    var(--shadow-hard),
+    inset 0 1px 0 var(--gf-hi);
 }
 .alias-setup-card {
   display: flex;
@@ -597,6 +603,48 @@ textarea:disabled,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.identity-value.hub-val-email {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  white-space: normal;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 1.28;
+  letter-spacing: -0.01em;
+  max-width: 100%;
+  cursor: pointer;
+  text-overflow: clip;
+  overflow: visible;
+  padding: 1px 0;
+  border-radius: var(--radius-xs);
+  transition: color var(--gf-dur-fast) var(--gf-ease);
+}
+
+.identity-value.hub-val-email:hover {
+  color: var(--gf-primary);
+}
+
+.identity-value.hub-val-email:focus-visible {
+  outline: 2px solid var(--gf-primary);
+  outline-offset: 2px;
+}
+
+.hub-email-prefix {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  color: var(--gf-ink);
+  font-weight: 500;
+}
+
+.hub-email-domain {
+  color: var(--gf-primary);
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 .identity-original-email {
   font-family: var(--gf-font-body);
   font-size: 9.5px;
@@ -667,7 +715,9 @@ textarea:disabled,
   color: var(--gf-ink-soft);
   cursor: pointer;
   position: relative;
-  box-shadow: var(--gf-shadow-xs), inset 0 1px 0 var(--gf-hi);
+  box-shadow:
+    var(--gf-shadow-xs),
+    inset 0 1px 0 var(--gf-hi);
   transition:
     color var(--gf-dur-fast) var(--gf-ease),
     border-color var(--gf-dur-fast) var(--gf-ease),
@@ -680,7 +730,9 @@ textarea:disabled,
   border-color: var(--gf-line-2);
   background: var(--gf-sunken);
   transform: translateY(-1px);
-  box-shadow: var(--gf-shadow-sm), inset 0 1px 0 var(--gf-hi);
+  box-shadow:
+    var(--gf-shadow-sm),
+    inset 0 1px 0 var(--gf-hi);
 }
 .action-icon:active {
   transform: scale(0.94);
@@ -919,13 +971,15 @@ textarea:disabled,
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  margin-left: auto;
-  flex-shrink: 0;
+  margin-top: 4px;
+  flex-wrap: wrap;
 }
 .inbox-item-open-chevron {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  align-self: center;
+  flex-shrink: 0;
   width: 18px;
   height: 18px;
   color: var(--gf-ink-dim);
@@ -1701,6 +1755,14 @@ textarea:disabled,
   );
 }
 
+/* The 12px edge fade clips focus rings of edge controls (domain input,
+   copy button) — keyboard users lose visible focus. Lift the mask while
+   focus is inside so the ring always paints. */
+.alias-tab-content-area:focus-within {
+  mask-image: none;
+  -webkit-mask-image: none;
+}
+
 .alias-gen-card,
 .alias-inbox-card,
 .alias-history-card {
@@ -2207,9 +2269,10 @@ textarea:disabled,
   position: absolute;
   inset: 0;
   z-index: var(--z-overlay);
-  display: grid;
-  place-items: center;
-  padding: var(--space-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
   background: var(--gf-scrim);
   -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
@@ -2217,8 +2280,9 @@ textarea:disabled,
 
 .alias-message-modal {
   width: 100%;
-  max-width: 340px;
-  max-height: 80%;
+  max-width: 100%;
+  height: auto;
+  max-height: 98%;
   display: flex;
   flex-direction: column;
   background: var(--gf-surface);
@@ -2233,16 +2297,21 @@ textarea:disabled,
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-3) var(--space-2);
+  padding: 10px 12px;
   border-bottom: var(--gf-border);
+  background: var(--gf-surface);
 }
 
 .alias-message-modal-title-group {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-2);
   min-width: 0;
   flex: 1;
+}
+
+.email-viewer-avatar {
+  flex-shrink: 0;
 }
 
 .alias-message-modal-titles {
@@ -2258,6 +2327,7 @@ textarea:disabled,
   font-weight: 600;
   font-size: 13px;
   color: var(--gf-ink);
+  line-height: 1.3;
 }
 
 .alias-message-modal-meta {
@@ -2268,9 +2338,48 @@ textarea:disabled,
   max-width: 100%;
 }
 
+.alias-message-modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.alias-message-modal-view-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--gf-surface-2);
+  border: var(--gf-border);
+  border-radius: var(--radius-xs);
+}
+
+.alias-view-toggle-btn {
+  padding: 2px 6px;
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--gf-ink-dim);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all var(--gf-dur-fast) var(--gf-ease);
+}
+
+.alias-view-toggle-btn:hover {
+  color: var(--gf-ink);
+}
+
+.alias-view-toggle-btn--active {
+  background: var(--gf-surface);
+  color: var(--gf-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
 .alias-message-modal-close {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   display: grid;
   place-items: center;
   border-radius: var(--radius-xs);
@@ -2286,11 +2395,130 @@ textarea:disabled,
 }
 
 .alias-message-modal-body {
-  padding: var(--space-3);
+  padding: 10px 12px 12px;
   overflow-y: auto;
-  font-size: 12px;
-  line-height: 1.5;
+  overflow-x: hidden;
+  font-size: 12.5px;
+  line-height: 1.6;
   color: var(--gf-ink-soft);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 120px;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+/* ── Hero Banners: OTP & Link ────────────────────────────────────────── */
+.email-hero-otp-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    135deg,
+    rgba(var(--gf-primary-rgb), 0.15) 0%,
+    rgba(var(--gf-accent-rgb), 0.08) 100%
+  );
+  border: 1px solid rgba(var(--gf-primary-rgb), 0.3);
+  box-shadow: 0 2px 8px rgba(var(--gf-primary-rgb), 0.08);
+}
+
+.email-hero-otp-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.email-hero-otp-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--gf-primary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.email-hero-otp-code {
+  font-family: var(--gf-font-mono);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: var(--gf-ink);
+}
+
+.email-hero-otp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--gf-primary);
+  border: none;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: opacity var(--gf-dur-fast) var(--gf-ease);
+}
+.email-hero-otp-btn:hover {
+  opacity: 0.9;
+}
+
+.email-hero-link-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(var(--gf-primary-rgb), 0.08);
+  border: 1px solid rgba(var(--gf-primary-rgb), 0.22);
+}
+
+.email-hero-link-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.email-hero-link-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--gf-primary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.email-hero-link-url {
+  font-family: var(--gf-font-mono);
+  font-size: 10px;
+  color: var(--gf-ink-dim);
+}
+
+.email-hero-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--gf-primary);
+  border: none;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 .alias-message-modal-snippet {
@@ -2301,6 +2529,144 @@ textarea:disabled,
   color: var(--gf-ink);
   font-size: 11px;
   line-height: 1.4;
+}
+
+/* ── Rich HTML Container & CSS Styling ─────────────────────────────────
+   Best-fit reader: the iframe NEVER scrolls itself (scrolling="no" +
+   overflow hidden in srcDoc). fitIframeToContent() grows it to content
+   height so the modal body owns the single scrollbar. */
+.alias-message-modal-html-container {
+  background: #ffffff;
+  color: #1a1a1a;
+  border: var(--gf-border);
+  border-radius: var(--radius-sm);
+  padding: 0;
+  overflow: hidden;
+  max-width: 100%;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.email-html-iframe {
+  width: 100%;
+  min-height: 160px;
+  max-height: 560px;
+  height: 240px;
+  border: none;
+  display: block;
+  background: #ffffff;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.email-html-body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--gf-ink);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.email-html-body * {
+  max-width: 100% !important;
+  box-sizing: border-box;
+}
+
+.email-html-body table {
+  width: 100% !important;
+  max-width: 100% !important;
+  border-collapse: collapse;
+  margin: 6px 0;
+}
+
+.email-html-body th,
+.email-html-body td {
+  padding: 5px 6px;
+  border: 1px solid var(--gf-border);
+  font-size: 11.5px;
+}
+
+.email-html-body img {
+  max-width: 100% !important;
+  height: auto !important;
+  border-radius: var(--radius-xs);
+  display: inline-block;
+  margin: 4px 0;
+}
+
+.email-html-body a {
+  color: var(--gf-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+  cursor: pointer;
+}
+
+.email-html-body a:hover {
+  opacity: 0.85;
+}
+
+.email-html-body p {
+  margin: 0 0 8px 0;
+}
+
+.email-html-body h1,
+.email-html-body h2,
+.email-html-body h3,
+.email-html-body h4 {
+  color: var(--gf-ink);
+  margin: 10px 0 4px 0;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.email-html-body h1 {
+  font-size: 15px;
+}
+.email-html-body h2 {
+  font-size: 14px;
+}
+.email-html-body h3 {
+  font-size: 13px;
+}
+.email-html-body h4 {
+  font-size: 12px;
+}
+
+.email-html-body ul,
+.email-html-body ol {
+  padding-left: 18px;
+  margin: 6px 0;
+}
+
+.email-html-body li {
+  margin-bottom: 3px;
+}
+
+.email-html-body blockquote {
+  margin: 6px 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--gf-primary);
+  background: var(--gf-surface-2);
+  border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
+  color: var(--gf-ink-soft);
+  font-style: italic;
+}
+
+.email-html-body hr {
+  border: none;
+  border-top: 1px solid var(--gf-border);
+  margin: 10px 0;
+}
+
+.email-html-body pre,
+.email-html-body code {
+  font-family: var(--gf-font-mono);
+  font-size: 10.5px;
+  background: var(--gf-sunken);
+  padding: 2px 4px;
+  border-radius: var(--radius-xs);
 }
 
 .alias-message-modal-content {
@@ -2319,11 +2685,25 @@ textarea:disabled,
   max-width: 100%;
 }
 
+/* Plain-text fallback reads as prose, not code: sans, roomier, no ink glare. */
+.email-viewer-text-body {
+  font-family: var(--gf-font-sans, -apple-system, 'Segoe UI', Roboto, sans-serif);
+  font-size: 12.5px;
+  line-height: 1.65;
+  background: #ffffff;
+  color: #232323;
+  padding: 12px;
+}
+
 .alias-message-modal-actions {
   display: flex;
   gap: var(--space-2);
   padding: 10px 12px;
   border-top: var(--gf-border);
+  background: var(--gf-surface);
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
 }
 
 .alias-message-action-btn {
@@ -2348,6 +2728,15 @@ textarea:disabled,
 .alias-message-action-btn:hover {
   color: var(--gf-ink);
   border-color: var(--gf-line-2);
+}
+.alias-message-action-btn--primary {
+  background: var(--gf-primary);
+  color: #fff;
+  border-color: var(--gf-primary);
+}
+.alias-message-action-btn--primary:hover {
+  color: #fff;
+  opacity: 0.9;
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -2518,9 +2907,9 @@ textarea:disabled,
   inset: 0;
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
+/* ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ 
    EMAIL GENERATOR (detail view)
-   ────────────────────────────────────────────────────────────────────────── */
+   ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─  */
 .email-generator-card,
 .email-generator-flow .memphis-card {
   background: var(--gf-surface);
@@ -2573,9 +2962,11 @@ textarea:disabled,
    definitions live at lines ~311, ~309, ~287 respectively. */
 .identity-email-info {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 1px;
   min-width: 0;
+  max-width: 100%;
 }
 .identity-status-badges {
   display: flex;
@@ -2605,6 +2996,17 @@ textarea:disabled,
 .terminal-prefix {
   color: var(--gf-text-dim);
   font-family: var(--gf-font-mono);
+  font-size: 11.5px;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.terminal-domain {
+  color: var(--gf-primary);
+  font-family: var(--gf-font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .copy-button {
@@ -3277,6 +3679,133 @@ textarea:disabled,
 
 .skip-link:focus {
   top: 0;
+}
+
+/* ============================================================================
+   REAL MAIL PROVIDER SELECTOR & CONNECT CARDS
+   ========================================================================== */
+.hub-provider-selector {
+  display: flex;
+  gap: var(--space-1);
+  padding: 4px;
+  background: var(--gf-sunken);
+  border: 1px solid var(--gf-line);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-2);
+}
+
+.hub-provider-pill {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 8px;
+  font-family: var(--gf-font-display);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gf-ink-soft);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: all var(--gf-dur-fast) var(--gf-ease);
+}
+
+.hub-provider-pill:hover:not(.hub-provider-pill--active) {
+  color: var(--gf-ink);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.hub-provider-pill--active {
+  color: var(--gf-ink);
+  font-weight: 700;
+  background: var(--gf-surface);
+  border-color: var(--gf-line-2);
+  box-shadow: var(--gf-shadow-xs);
+}
+
+.hub-provider-not-connected {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--space-4) var(--space-3);
+  gap: var(--space-2);
+}
+
+.hub-provider-logo-img {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  margin-bottom: var(--space-2);
+}
+
+.hub-provider-pill img {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.hub-provider-pill img.hub-zoho-logo {
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.identity-icon img.hub-zoho-logo {
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.hub-provider-logo-img.hub-zoho-logo {
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.hub-provider-title {
+  font-family: var(--gf-font-display);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--gf-ink);
+}
+
+.hub-provider-desc {
+  font-size: 11px;
+  color: var(--gf-ink-soft);
+  line-height: 1.4;
+  max-width: 280px;
+}
+
+.hub-provider-connect-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--gf-font-display);
+  background: var(--gf-primary-fill);
+  color: var(--gf-on-fill-light);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--gf-dur-fast) var(--gf-ease);
+  margin-top: 2px;
+}
+
+.hub-provider-connect-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  filter: brightness(1.08);
+}
+
+.hub-provider-connect-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* ============================================================================

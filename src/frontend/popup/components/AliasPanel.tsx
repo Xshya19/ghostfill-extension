@@ -34,9 +34,11 @@ import {
   type GmailProfile,
   type AliasHistoryItem,
 } from '../../../types/email.types';
-import { copyToClipboard, openSafeUrl, contentToString } from '../../../utils/core';
+import { copyToClipboard, openSafeUrl } from '../../../utils/core';
 import { safeSendMessage } from '../../../utils/messaging';
 import { useAppStore } from '../store';
+import { GmailLogo } from './ProviderLogos';
+import { EmailViewerModal } from './SharedComponents';
 
 // ─── Types ───────────────────────────────────────────────
 type AliasPanelTab = 'generator' | 'inbox' | 'history';
@@ -75,7 +77,6 @@ const SPRING: Transition = { type: 'spring', stiffness: 260, damping: 25, mass: 
 const TAB_TRANSITION = { duration: 0.2, ease: [0.16, 1, 0.3, 1] as const };
 const TABS: readonly AliasPanelTab[] = ['generator', 'inbox', 'history'] as const;
 const COPY_RESET_MS = 2000;
-const MAX_MESSAGE_PREVIEW = 18_000;
 
 // ─── Pure helpers ────────────────────────────────────────
 function openOptionsPage(): void {
@@ -86,8 +87,8 @@ function openOptionsPage(): void {
   }
   const optionsUrl =
     hasChrome && chrome.runtime?.getURL
-      ? chrome.runtime.getURL('options/options.html')
-      : 'options/options.html';
+      ? chrome.runtime.getURL('options.html')
+      : 'options.html';
   openSafeUrl(optionsUrl);
 }
 
@@ -104,84 +105,8 @@ const formatHistoryDate = (ts: number): string => {
 const errorMessage = (e: unknown, fallback = 'Error'): string =>
   e instanceof Error ? e.message : fallback;
 
-const stripHtml = (html: string): string => {
-  if (!html) {
-    return '';
-  }
-  try {
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-
-    // Security: Nuke dangerous elements completely
-    doc
-      .querySelectorAll('script, style, noscript, iframe, object, embed, link, meta')
-      .forEach((el) => el.remove());
-
-    // UX: Convert block elements to newlines for readability
-    const blockTags = new Set([
-      'P',
-      'DIV',
-      'BR',
-      'LI',
-      'H1',
-      'H2',
-      'H3',
-      'H4',
-      'H5',
-      'H6',
-      'TR',
-      'BLOCKQUOTE',
-    ]);
-    let text = '';
-    const walker = document.createTreeWalker(
-      doc.body,
-      NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT
-    );
-    let node;
-
-    while ((node = walker.nextNode())) {
-      if (node.nodeType === Node.TEXT_NODE) {
-        text += node.textContent;
-      } else if (node.nodeType === Node.ELEMENT_NODE) {
-        if (blockTags.has(node.nodeName)) {
-          text += '\n';
-        } else if (node.nodeName === 'TD') {
-          text += '\t';
-        }
-      }
-    }
-
-    return text
-      .replace(/&nbsp;/gi, ' ')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
-  } catch {
-    // Fallback to regex stripping if DOMParser fails or isn't available
-    return html
-      .replace(/<style[\s\S]*?<\/style>/gi, '')
-      .replace(/<script[\s\S]*?<\/script>/gi, '')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/&nbsp;/gi, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-};
-
-// ─── Brand ───────────────────────────────────────────────
-const GmailLogo: React.FC<{ size?: number }> = ({ size = 48 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <path
-      d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2z"
-      fill="#F2F2F2"
-    />
-    <path d="M22 6v12c0 1.1-.9 2-2 2h-3V8l5-2z" fill="#34A853" />
-    <path
-      d="M20 4H17L12 8L7 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h3V8l5 4l5-4v12h3c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2z"
-      fill="#EA4335"
-    />
-    <path d="M2 6v12c0 1.1.9 2 2 2h3V8l-5-2z" fill="#4285F4" />
-    <path d="M7 8v12h10V8L12 12L7 8z" fill="#FBBC05" />
-  </svg>
-);
+// ─── Brand Logos ──────────────────────────────────────────
+export { GmailLogo, ZohoLogo, OutlookLogo } from './ProviderLogos';
 
 // ═════════════════════════════════════════════════════════
 // Sub-components
@@ -1165,104 +1090,28 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {selectedMessage && (
-          <motion.div
-            className="alias-message-modal-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setSelectedMessage(null)}
-          >
-            <motion.div
-              className="alias-message-modal"
-              initial={{ y: 12, opacity: 0, scale: 0.98 }}
-              animate={{ y: 0, opacity: 1, scale: 1 }}
-              exit={{ y: 12, opacity: 0, scale: 0.98 }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="alias-message-modal-header">
-                <div className="alias-message-modal-title-group">
-                  <Inbox size={16} />
-                  <div className="alias-message-modal-titles">
-                    <div className="alias-message-modal-title truncate">
-                      {selectedMessage.subject || '(No subject)'}
-                    </div>
-                    <div className="alias-message-modal-meta truncate">
-                      {selectedMessage.fromName || selectedMessage.from}
-                      {' - '}
-                      {selectedMessage.dateFormatted ||
-                        new Date(selectedMessage.date).toLocaleString()}
-                    </div>
-                  </div>
-                </div>
-                <button
-                  className="alias-message-modal-close"
-                  onClick={() => setSelectedMessage(null)}
-                  aria-label="Close message"
-                >
-                  <ChevronLeft size={16} />
-                </button>
-              </div>
-
-              {messageError && <div className="alias-inbox-error">{messageError}</div>}
-
-              <div className="alias-message-modal-body">
-                {messageLoading ? (
-                  <div className="alias-inbox-loading">
-                    <RefreshCw size={20} className="spin-icon" />
-                    <span>Loading message...</span>
-                  </div>
-                ) : (
-                  <>
-                    <div className="alias-message-modal-snippet">
-                      {contentToString(selectedMessage.snippet ?? selectedMessage.body ?? '') ||
-                        'No content available.'}
-                    </div>
-                    <pre className="alias-message-modal-content">
-                      {stripHtml(
-                        contentToString(
-                          selectedMessage.htmlBody ??
-                            selectedMessage.body ??
-                            selectedMessage.snippet ??
-                            ''
-                        ).slice(0, MAX_MESSAGE_PREVIEW)
-                      )}
-                    </pre>
-                  </>
-                )}
-              </div>
-
-              {(messageAction?.otp || messageAction?.link) && (
-                <div className="alias-message-modal-actions">
-                  {messageAction.otp && (
-                    <button
-                      className="alias-message-action-btn"
-                      onClick={() =>
-                        void copyToClipboard(messageAction.otp ?? '').then((ok) =>
-                          onToast(ok ? 'OTP copied' : 'Failed to copy OTP')
-                        )
-                      }
-                    >
-                      <Copy size={14} />
-                      <span>{messageAction.otp}</span>
-                    </button>
-                  )}
-                  {messageAction.link && (
-                    <button
-                      className="alias-message-action-btn"
-                      onClick={() => openSafeUrl(messageAction.link ?? '')}
-                    >
-                      <Check size={14} />
-                      <span>Open link</span>
-                    </button>
-                  )}
-                </div>
-              )}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <EmailViewerModal
+        message={
+          selectedMessage
+            ? {
+                subject: selectedMessage.subject,
+                from: selectedMessage.from,
+                fromName: selectedMessage.fromName,
+                date: selectedMessage.date,
+                dateFormatted: selectedMessage.dateFormatted,
+                snippet: selectedMessage.snippet,
+                body: selectedMessage.body,
+                htmlBody: selectedMessage.htmlBody,
+                otp: messageAction?.otp,
+                link: messageAction?.link,
+              }
+            : null
+        }
+        loading={messageLoading}
+        error={messageError}
+        onClose={() => setSelectedMessage(null)}
+        onToast={onToast}
+      />
     </div>
   );
 };

@@ -28,8 +28,12 @@ export interface AppState {
   clearAliasHistory: () => void;
   gmailAliasType: 'combined';
   setGmailAliasType: (type: 'combined') => void;
-  preferredEmailType: 'disposable' | 'gmail';
-  setPreferredEmailType: (type: 'disposable' | 'gmail') => void;
+  preferredEmailType: 'disposable' | 'gmail' | 'zoho' | 'microsoft';
+  setPreferredEmailType: (type: 'disposable' | 'gmail' | 'zoho' | 'microsoft') => void;
+
+  // Selected Real Email Provider (Gmail, Zoho Mail, Microsoft Outlook)
+  selectedRealProvider: 'gmail' | 'zoho' | 'microsoft';
+  setSelectedRealProvider: (provider: 'gmail' | 'zoho' | 'microsoft') => void;
 
   // Gmail OAuth2 connection states
   gmailConnected: boolean;
@@ -44,6 +48,18 @@ export interface AppState {
   setGmailInboxError: (error: string | null) => void;
   gmailIsManual: boolean;
   setGmailIsManual: (isManual: boolean) => void;
+
+  // Zoho Mail connection states
+  zohoConnected: boolean;
+  setZohoConnected: (connected: boolean) => void;
+  zohoProfile: { accountId: string; email: string; displayName: string } | null;
+  setZohoProfile: (profile: { accountId: string; email: string; displayName: string } | null) => void;
+
+  // Microsoft Outlook connection states
+  microsoftConnected: boolean;
+  setMicrosoftConnected: (connected: boolean) => void;
+  microsoftProfile: { userId: string; email: string; displayName: string } | null;
+  setMicrosoftProfile: (profile: { userId: string; email: string; displayName: string } | null) => void;
 
   // Current tab hostname (read once on mount by Hub)
   currentTabHostname: string | null;
@@ -94,9 +110,16 @@ export const useAppStore = create<AppState>()(
       preferredEmailType: 'disposable',
       setPreferredEmailType: (preferredEmailType) => {
         // Write to chrome.storage immediately so service-worker GET_IDENTITY
-        // sees Gmail/Temp Mail preference before the next fill.
+        // sees Provider/Temp Mail preference before the next fill.
         void storageService.setImmediate('preferredEmailType', preferredEmailType);
         set({ preferredEmailType });
+      },
+
+      // Selected Real Provider
+      selectedRealProvider: 'gmail',
+      setSelectedRealProvider: (selectedRealProvider) => {
+        void storageService.setImmediate('selectedRealProvider', selectedRealProvider);
+        set({ selectedRealProvider });
       },
 
       // Gmail OAuth2 initial states
@@ -116,6 +139,18 @@ export const useAppStore = create<AppState>()(
           void storageService.setImmediate('gmailIsManual', gmailIsManual);
           return { gmailIsManual };
         }),
+
+      // Zoho Mail initial states
+      zohoConnected: false,
+      setZohoConnected: (zohoConnected) => set({ zohoConnected }),
+      zohoProfile: null,
+      setZohoProfile: (zohoProfile) => set({ zohoProfile }),
+
+      // Microsoft Outlook initial states
+      microsoftConnected: false,
+      setMicrosoftConnected: (microsoftConnected) => set({ microsoftConnected }),
+      microsoftProfile: null,
+      setMicrosoftProfile: (microsoftProfile) => set({ microsoftProfile }),
 
       // Current tab hostname
       currentTabHostname: null,

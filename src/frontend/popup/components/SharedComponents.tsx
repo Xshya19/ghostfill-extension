@@ -23,6 +23,7 @@ import {
   Lock,
   Eye,
   EyeOff,
+  Globe,
 } from 'lucide-react';
 import React, {
   useEffect,
@@ -36,9 +37,9 @@ import React, {
   ReactNode,
 } from 'react';
 
-import gmailLogo from '../../../assets/icons/gmail_icon.png';
 import ghostLogoImg from '../../../assets/logo.png';
 
+import { storageService } from '../../../services/storageService';
 import {
   EmailAccount,
   Email,
@@ -52,6 +53,7 @@ import { LastOTP } from '../../../types/storage.types';
 import { TIMING, formatRelativeTime, copyToClipboard, contentToString } from '../../../utils/core';
 import { createLogger } from '../../../utils/logger';
 import { safeSendMessage, safeSendTabMessage } from '../../../utils/messaging';
+import { sanitizeEmailBody } from '../../../utils/sanitization.core';
 import {
   springSoft,
   interactiveSurface,
@@ -59,8 +61,11 @@ import {
   tweenOut,
   tweenTimerBar,
   springDigit,
- Button, IconButton } from '../../ui';
+  Button,
+  IconButton,
+} from '../../ui';
 import { useStorageSubscription } from '../hooks';
+import { GmailLogo, ZohoLogo, OutlookLogo } from './ProviderLogos';
 
 // i18n helper
 const t = (key: string): string => {
@@ -73,10 +78,18 @@ const t = (key: string): string => {
 
 // --- AccountCard.tsx ---
 export interface AccountCardProps {
-  readonly preferredEmailType: 'disposable' | 'gmail';
+  readonly preferredEmailType: 'disposable' | 'real' | 'gmail' | 'zoho' | 'microsoft';
+  readonly selectedRealProvider?: 'gmail' | 'zoho' | 'microsoft';
+  readonly onSelectRealProvider?: (provider: 'gmail' | 'zoho' | 'microsoft') => void;
   readonly gmailConnected: boolean;
   readonly gmailSigningIn: boolean;
   readonly gmailBase: string | null;
+  readonly zohoConnected?: boolean;
+  readonly zohoSigningIn?: boolean;
+  readonly zohoBase?: string | null;
+  readonly microsoftConnected?: boolean;
+  readonly microsoftSigningIn?: boolean;
+  readonly microsoftBase?: string | null;
   readonly activeEmailAddress: string;
   readonly emailAccount: EmailAccount | null;
   readonly emailCopied: boolean;
@@ -85,15 +98,29 @@ export interface AccountCardProps {
   readonly onCopyEmail: () => void;
   readonly onGenerateEmail: () => void;
   readonly onGmailSignIn: () => void | Promise<void>;
+  readonly onZohoSignIn?: () => void | Promise<void>;
+  readonly onMicrosoftSignIn?: () => void | Promise<void>;
   readonly onSignOut?: () => void;
+  readonly onZohoSignOut?: () => void;
+  readonly onMicrosoftSignOut?: () => void;
   readonly gmailProfile?: any;
+  readonly zohoProfile?: any;
+  readonly microsoftProfile?: any;
 }
 
 const AccountCardComponent: React.FC<AccountCardProps> = ({
   preferredEmailType,
+  selectedRealProvider = 'gmail',
+  onSelectRealProvider,
   gmailConnected,
   gmailSigningIn,
   gmailBase,
+  zohoConnected = false,
+  zohoSigningIn = false,
+  zohoBase,
+  microsoftConnected = false,
+  microsoftSigningIn = false,
+  microsoftBase,
   activeEmailAddress,
   emailAccount,
   emailCopied,
@@ -102,122 +129,281 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
   onCopyEmail,
   onGenerateEmail,
   onGmailSignIn,
+  onZohoSignIn,
+  onMicrosoftSignIn,
   onSignOut,
+  onZohoSignOut,
+  onMicrosoftSignOut,
   gmailProfile,
+  zohoProfile,
+  microsoftProfile,
 }) => {
-  if (preferredEmailType === 'gmail' && !gmailConnected) {
+  const isReal = preferredEmailType !== 'disposable';
+
+  const providerSelector = isReal && onSelectRealProvider && (
+    <div className="hub-provider-selector">
+      <button
+        type="button"
+        className={`hub-provider-pill ${selectedRealProvider === 'gmail' ? 'hub-provider-pill--active' : ''}`}
+        onClick={() => onSelectRealProvider('gmail')}
+      >
+        <GmailLogo size={14} />
+        <span>Gmail</span>
+      </button>
+      <button
+        type="button"
+        className={`hub-provider-pill ${selectedRealProvider === 'zoho' ? 'hub-provider-pill--active' : ''}`}
+        onClick={() => onSelectRealProvider('zoho')}
+      >
+        <ZohoLogo size={14} />
+        <span>Zoho Mail</span>
+      </button>
+      <button
+        type="button"
+        className={`hub-provider-pill ${selectedRealProvider === 'microsoft' ? 'hub-provider-pill--active' : ''}`}
+        onClick={() => onSelectRealProvider('microsoft')}
+      >
+        <OutlookLogo size={14} />
+        <span>Outlook</span>
+      </button>
+    </div>
+  );
+
+  // 1. Gmail not connected
+  if (isReal && selectedRealProvider === 'gmail' && !gmailConnected) {
     return (
-      <div className="hub-gmail-not-connected">
-        <img src={gmailLogo} alt="Gmail Logo" className="hub-gmail-logo-img" />
-        <span className="hub-gmail-title">Connect Gmail</span>
-        <span className="hub-gmail-desc">
-          Create site-specific aliases and sync OTP emails from your Gmail account.
-        </span>
-        <motion.button
-          onClick={() => {
-            void onGmailSignIn();
-          }}
-          className="hub-gmail-connect-btn"
-          {...interactiveSurface}
-          disabled={gmailSigningIn}
-        >
-          {gmailSigningIn ? (
-            <span>
-              <RefreshCw size={14} className="spin" /> Connecting...
-            </span>
-          ) : (
-            <span>Connect Gmail</span>
-          )}
-        </motion.button>
+      <div>
+        {providerSelector}
+        <div className="hub-gmail-not-connected">
+          <GmailLogo size={44} className="hub-gmail-logo-img" />
+          <span className="hub-gmail-title">Connect Gmail</span>
+          <span className="hub-gmail-desc">
+            Create site-specific aliases and sync OTP emails from your Gmail account.
+          </span>
+          <motion.button
+            onClick={() => {
+              void onGmailSignIn();
+            }}
+            className="hub-gmail-connect-btn"
+            {...interactiveSurface}
+            disabled={gmailSigningIn}
+          >
+            {gmailSigningIn ? (
+              <span>
+                <RefreshCw size={14} className="spin" /> Connecting...
+              </span>
+            ) : (
+              <span>Connect Gmail</span>
+            )}
+          </motion.button>
+        </div>
       </div>
     );
   }
 
-  return (
-    <div className="identity-row">
-      <div className="identity-icon">
-        {preferredEmailType === 'gmail' && gmailProfile?.picture ? (
-          <img
-            src={gmailProfile.picture}
-            alt=""
-            style={{
-              width: 20,
-              height: 20,
-              borderRadius: '50%',
-              display: 'block',
-              objectFit: 'cover',
-            }}
-          />
-        ) : (
-          <Mail size={18} className="icon-premium" />
-        )}
-      </div>
-      <div className="identity-content">
-        <div className="identity-label-group">
-          <span className="identity-label">
-            {preferredEmailType === 'gmail' ? 'Gmail Alias' : t('emailLabel')}
+  // 2. Zoho Mail not connected
+  if (isReal && selectedRealProvider === 'zoho' && !zohoConnected) {
+    return (
+      <div>
+        {providerSelector}
+        <div className="hub-provider-not-connected">
+          <ZohoLogo size={44} className="hub-provider-logo-img" />
+          <span className="hub-provider-title">Connect Zoho Mail</span>
+          <span className="hub-provider-desc">
+            Create aliases and auto-fill OTPs directly from your Zoho Mail inbox (Auto-detects
+            US/EU/IN/AU/JP/CN).
           </span>
-          {preferredEmailType === 'disposable' && (
-            <CountdownTimer
-              expiresAt={emailAccount?.expiresAt}
-              expiredLabel={t('expiredLabel') || 'Expired'}
-            />
+          <motion.button
+            onClick={() => {
+              void onZohoSignIn?.();
+            }}
+            className="hub-provider-connect-btn"
+            {...interactiveSurface}
+            disabled={zohoSigningIn}
+          >
+            {zohoSigningIn ? (
+              <span>
+                <RefreshCw size={14} className="spin" /> Connecting...
+              </span>
+            ) : (
+              <span>Connect Zoho Mail</span>
+            )}
+          </motion.button>
+        </div>
+      </div>
+    );
+  }
+
+  // 3. Microsoft Outlook not connected
+  if (isReal && selectedRealProvider === 'microsoft' && !microsoftConnected) {
+    return (
+      <div>
+        {providerSelector}
+        <div className="hub-provider-not-connected">
+          <OutlookLogo size={44} className="hub-provider-logo-img" />
+          <span className="hub-provider-title">Connect Microsoft Outlook</span>
+          <span className="hub-provider-desc">
+            Create aliases and auto-fill OTPs from your @outlook.com, @hotmail.com, or @live.com
+            account.
+          </span>
+          <motion.button
+            onClick={() => {
+              void onMicrosoftSignIn?.();
+            }}
+            className="hub-provider-connect-btn"
+            {...interactiveSurface}
+            disabled={microsoftSigningIn}
+          >
+            {microsoftSigningIn ? (
+              <span>
+                <RefreshCw size={14} className="spin" /> Connecting...
+              </span>
+            ) : (
+              <span>Connect Outlook</span>
+            )}
+          </motion.button>
+        </div>
+      </div>
+    );
+  }
+
+  const currentOriginalBase =
+    selectedRealProvider === 'gmail'
+      ? gmailBase
+      : selectedRealProvider === 'zoho'
+        ? zohoBase || zohoProfile?.email
+        : microsoftBase || microsoftProfile?.email;
+
+  const currentDisconnectHandler =
+    selectedRealProvider === 'gmail'
+      ? onSignOut
+      : selectedRealProvider === 'zoho'
+        ? onZohoSignOut
+        : onMicrosoftSignOut;
+
+  const providerLabel = !isReal
+    ? t('emailLabel')
+    : selectedRealProvider === 'gmail'
+      ? 'Gmail Alias'
+      : selectedRealProvider === 'zoho'
+        ? 'Zoho Alias'
+        : 'Outlook Alias';
+
+  return (
+    <div>
+      {providerSelector}
+      <div className="identity-row">
+        <div className="identity-icon">
+          {isReal && selectedRealProvider === 'gmail' ? (
+            gmailProfile?.picture ? (
+              <img
+                src={gmailProfile.picture}
+                alt=""
+                style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: '50%',
+                  display: 'block',
+                  objectFit: 'cover',
+                }}
+              />
+            ) : (
+              <GmailLogo size={18} />
+            )
+          ) : isReal && selectedRealProvider === 'zoho' ? (
+            <ZohoLogo size={18} />
+          ) : isReal && selectedRealProvider === 'microsoft' ? (
+            <OutlookLogo size={18} />
+          ) : (
+            <Mail size={18} className="icon-premium" />
           )}
         </div>
-        <span
-          className={`identity-value hub-val hub-val-email break-all ${
-            preferredEmailType === 'disposable' && !emailAccount ? 'shimmer' : ''
-          }`}
-          title={
-            preferredEmailType === 'gmail'
-              ? activeEmailAddress || 'Connect Gmail'
-              : emailAccount?.fullEmail || ''
-          }
-        >
-          {preferredEmailType === 'gmail'
-            ? activeEmailAddress || 'Connect Gmail'
-            : emailAccount?.fullEmail || t('syncingIdentity')}
-        </span>
-        {preferredEmailType === 'gmail' &&
-          gmailConnected &&
-          gmailBase &&
-          activeEmailAddress &&
-          activeEmailAddress !== gmailBase && (
-            <div className="identity-original-email">Original: {gmailBase}</div>
+        <div className="identity-content">
+          <div className="identity-label-group">
+            <span className="identity-label">{providerLabel}</span>
+            {!isReal && (
+              <CountdownTimer
+                expiresAt={emailAccount?.expiresAt}
+                expiredLabel={t('expiredLabel') || 'Expired'}
+              />
+            )}
+          </div>
+          {(() => {
+            const rawEmail = isReal
+              ? activeEmailAddress || 'Connected'
+              : emailAccount?.fullEmail || t('syncingIdentity');
+            const atIndex = rawEmail.indexOf('@');
+            const hasAt = atIndex !== -1;
+            const prefix = hasAt ? rawEmail.slice(0, atIndex) : rawEmail;
+            const domain = hasAt ? rawEmail.slice(atIndex) : '';
+
+            return (
+              <span
+                className={`identity-value hub-val hub-val-email ${
+                  !isReal && !emailAccount ? 'shimmer' : ''
+                }`}
+                title={`Click to copy: ${rawEmail}`}
+                onClick={onCopyEmail}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onCopyEmail();
+                  }
+                }}
+              >
+                {hasAt ? (
+                  <>
+                    <span className="hub-email-prefix">{prefix}</span>
+                    <span className="hub-email-domain">{domain}</span>
+                  </>
+                ) : (
+                  rawEmail
+                )}
+              </span>
+            );
+          })()}
+          {isReal &&
+            currentOriginalBase &&
+            activeEmailAddress &&
+            activeEmailAddress !== currentOriginalBase && (
+              <div className="identity-original-email">Original: {currentOriginalBase}</div>
+            )}
+        </div>
+        <div className="identity-actions">
+          <motion.button
+            className={`action-icon ${emailCopied ? 'success' : ''}`}
+            onClick={onCopyEmail}
+            {...interactiveSurface}
+            title="Copy email"
+            aria-label="Copy email address to clipboard"
+          >
+            {emailCopied ? <Check size={14} /> : <Copy size={14} />}
+          </motion.button>
+          {!isReal && (
+            <motion.button
+              className={`action-icon ${isGeneratingEmail ? 'action-loading' : ''} ${emailCooldown ? 'opacity-50' : ''}`}
+              onClick={onGenerateEmail}
+              {...interactiveSurface}
+              title={'New identity'}
+              aria-label={'Generate new disposable email'}
+            >
+              <RefreshCw size={14} className={isGeneratingEmail ? 'spin' : ''} />
+            </motion.button>
           )}
-      </div>
-      <div className="identity-actions">
-        <motion.button
-          className={`action-icon ${emailCopied ? 'success' : ''}`}
-          onClick={onCopyEmail}
-          {...interactiveSurface}
-          title="Copy email"
-          aria-label="Copy email address to clipboard"
-        >
-          {emailCopied ? <Check size={14} /> : <Copy size={14} />}
-        </motion.button>
-        {preferredEmailType === 'disposable' && (
-          <motion.button
-            className={`action-icon ${isGeneratingEmail ? 'action-loading' : ''} ${emailCooldown ? 'opacity-50' : ''}`}
-            onClick={onGenerateEmail}
-            {...interactiveSurface}
-            title={'New identity'}
-            aria-label={'Generate new disposable email'}
-          >
-            <RefreshCw size={14} className={isGeneratingEmail ? 'spin' : ''} />
-          </motion.button>
-        )}
-        {preferredEmailType === 'gmail' && gmailConnected && (
-          <motion.button
-            className="action-icon"
-            onClick={onSignOut}
-            {...interactiveSurface}
-            title="Disconnect Gmail"
-            aria-label="Disconnect Gmail"
-          >
-            <LogOut size={14} />
-          </motion.button>
-        )}
+          {isReal && currentDisconnectHandler && (
+            <motion.button
+              className="action-icon"
+              onClick={currentDisconnectHandler}
+              {...interactiveSurface}
+              title="Disconnect account"
+              aria-label="Disconnect email account"
+            >
+              <LogOut size={14} />
+            </motion.button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -798,16 +984,17 @@ const extractDomain = (emailStr: string): string | null => {
 
 export const EmailAvatar: React.FC<EmailAvatarProps> = React.memo(
   ({ from, className = '', style, children }) => {
-    const domain = useMemo(() => extractDomain(from), [from]);
+    const safeFrom = contentToString(from);
+    const domain = useMemo(() => extractDomain(safeFrom), [safeFrom]);
 
     const firstLetter = useMemo(() => {
       // Prefer the display name's first letter; fall back to the email/domain so we
       // never render a meaningless "?" when only an address is available.
-      const displayName = from.replace(/<[^>]+>/, '').trim();
-      const source = displayName || domain || from.trim();
+      const displayName = safeFrom.replace(/<[^>]+>/, '').trim();
+      const source = displayName || domain || safeFrom.trim();
       const firstChar = source.charAt(0);
       return /[a-z0-9]/i.test(firstChar) ? firstChar.toUpperCase() : '?';
-    }, [from, domain]);
+    }, [safeFrom, domain]);
 
     return (
       <div className={className} style={style} title={domain || undefined}>
@@ -878,7 +1065,8 @@ export interface EmailViewerModalProps {
 
 const MAX_BODY_CHARS = 18_000;
 
-const stripHtml = (html: string): string => {
+const stripHtml = (htmlInput: unknown): string => {
+  const html = contentToString(htmlInput);
   if (!html) {
     return '';
   }
@@ -969,10 +1157,167 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
   onToast,
 }) => {
   const [bodyExpanded, setBodyExpanded] = useState(false);
+  const [copiedOtp, setCopiedOtp] = useState(false);
+  const [copiedText, setCopiedText] = useState(false);
   const modalRef = useRef<HTMLDivElement | null>(null);
   const openerRef = useRef<HTMLElement | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const iframeFitTimers = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+
+  // Best-fit: grow the iframe to its content height so the modal body owns
+  // the ONLY scrollbar.
+  //
+  // Deliberately NO ResizeObserver here: observing the iframe body while
+  // writing the iframe height creates a feedback loop on %-height mail
+  // content (Chrome: "ResizeObserver loop completed with undelivered
+  // notifications"). Instead we fit on load, re-fit when in-iframe images
+  // settle (finite events), and run a short fixed series of delayed fits
+  // for late-loading content — then stop touching the DOM entirely.
+  // Every write is also delta-guarded (≤1px changes are skipped).
+  const clearIframeFitTimers = useCallback(() => {
+    for (const t of iframeFitTimers.current) {
+      clearTimeout(t);
+    }
+    iframeFitTimers.current = [];
+  }, []);
+
+  const fitIframeToContent = useCallback(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) {
+      return;
+    }
+    try {
+      const doc = iframe.contentDocument;
+      if (!doc?.documentElement) {
+        return;
+      }
+      const el = doc.documentElement;
+      const body = doc.body;
+      if (!body) {
+        return;
+      }
+      const contentH = Math.max(
+        body.scrollHeight,
+        body.offsetHeight,
+        el.scrollHeight,
+        el.offsetHeight
+      );
+      if (!Number.isFinite(contentH) || contentH <= 0) {
+        return;
+      }
+      // Tall enough to read, short enough to keep hero + footer visible.
+      // The modal body scrolls past this — never the iframe itself.
+      const fitted = Math.min(Math.max(contentH + 8, 160), 560);
+      const current = parseFloat(iframe.style.height) || iframe.clientHeight || 0;
+      if (Math.abs(fitted - current) <= 1) {
+        return;
+      }
+      iframe.style.height = `${Math.round(fitted)}px`;
+    } catch {
+      // Cross-origin or not-yet-ready — leave the default height.
+    }
+  }, []);
+
+  const handleIframeLoad = useCallback(() => {
+    clearIframeFitTimers();
+    // Drop to the floor first so a tall previous mail can't pin a short
+    // new one tall; the fits below grow it back to the real height.
+    if (iframeRef.current) {
+      iframeRef.current.style.height = '160px';
+    }
+    fitIframeToContent();
+    try {
+      const doc = iframeRef.current?.contentDocument;
+      const imgs = doc ? Array.from(doc.images ?? []) : [];
+      const hideIfBroken = (img: HTMLImageElement) => {
+        try {
+          if (img.naturalWidth === 0) {
+            (img as HTMLElement).style.display = 'none';
+            return true;
+          }
+        } catch {
+          // ignore — visibility check is best-effort
+        }
+        return false;
+      };
+      for (const img of imgs) {
+        // Remote sender assets routinely fail in the sandbox; a broken
+        // glyph in the middle of the mail reads as corruption, so hide it.
+        if (!img.complete) {
+          img.addEventListener(
+            'load',
+            () => {
+              if (!hideIfBroken(img)) {
+                fitIframeToContent();
+              }
+            },
+            { once: true }
+          );
+          img.addEventListener(
+            'error',
+            () => {
+              (img as unknown as HTMLElement).style.display = 'none';
+              fitIframeToContent();
+            },
+            { once: true }
+          );
+        } else if (!hideIfBroken(img)) {
+          fitIframeToContent();
+        }
+      }
+    } catch {
+      // ignore — timed fits below still run
+    }
+    // Short fixed series for late-loading/remote content, then silence.
+    // No observers, no rAF loops — nothing left to feed a resize cycle.
+    for (const delay of [120, 350, 900, 2000]) {
+      iframeFitTimers.current.push(setTimeout(() => fitIframeToContent(), delay));
+    }
+  }, [clearIframeFitTimers, fitIframeToContent]);
+
+  useEffect(() => {
+    return () => clearIframeFitTimers();
+  }, [clearIframeFitTimers]);
+
+  useEffect(() => {
+    // Re-fit when switching messages so stale heights never linger.
+    // (HTML-string changes also re-fire the iframe onLoad above, which
+    // resets to the floor and refits; this covers the text-mode path.)
+    const iframe = iframeRef.current;
+    if (iframe) {
+      iframe.style.height = '160px';
+    }
+    fitIframeToContent();
+  }, [message, fitIframeToContent]);
+
+  const rawHtml = contentToString(message?.htmlBody ?? message?.body ?? '');
+  const hasHtml = Boolean(
+    message?.htmlBody ||
+    (/<[a-z][\s\S]*>/i.test(rawHtml) &&
+      (rawHtml.includes('<p') ||
+        rawHtml.includes('<div') ||
+        rawHtml.includes('<table') ||
+        rawHtml.includes('<br') ||
+        rawHtml.includes('<a') ||
+        rawHtml.includes('<span') ||
+        rawHtml.includes('<html') ||
+        rawHtml.includes('<body') ||
+        rawHtml.includes('<center') ||
+        rawHtml.includes('<style')))
+  );
+
+  const [viewMode, setViewMode] = useState<'html' | 'text'>(hasHtml ? 'html' : 'text');
+
+  useEffect(() => {
+    if (message) {
+      setViewMode(hasHtml ? 'html' : 'text');
+      setBodyExpanded(false);
+      setCopiedOtp(false);
+      setCopiedText(false);
+    }
+  }, [message, hasHtml]);
 
   // ESC closes; Tab is trapped inside the dialog; focus enters on open and
   // returns to the opener on close (WCAG 2.4.3 / 2.1.2).
@@ -1023,10 +1368,240 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
 
   const sender = message?.fromName || message?.from || '';
   const dateText = message ? formatDate(message) : '';
-  const rawHtml = contentToString(message?.htmlBody ?? message?.body ?? message?.snippet ?? '');
-  const bodyText = rawHtml ? stripHtml(rawHtml.slice(0, MAX_BODY_CHARS)) : '';
-  const isLong = bodyText.length > 1200;
+
+  const sanitizedHtml = useMemo(() => {
+    if (!hasHtml || !rawHtml) {
+      return '';
+    }
+    return sanitizeEmailBody(rawHtml.slice(0, 150_000), undefined, { allowStyleTag: true });
+  }, [hasHtml, rawHtml]);
+
+  const iframeSrcDoc = useMemo(() => {
+    const htmlString = contentToString(sanitizedHtml);
+    if (!htmlString) {
+      return '';
+    }
+    const hasHead = /<head[\s>]/i.test(htmlString);
+    const hasBody = /<body[\s>]/i.test(htmlString);
+    const baseTargetTag = '<base target="_blank" rel="noopener noreferrer">';
+    // Best-fit reader: single centered column, no inner scrollbars, no
+    // clipped tables/buttons. The iframe is sized to content (see
+    // fitIframeToContent) and the modal body owns the only scrollbar.
+    const responsiveStyle = `
+      <style>
+        html {
+          overflow: hidden !important;
+          background: #ffffff;
+        }
+        html, body {
+          margin: 0 !important;
+          padding: 0 !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          min-width: 0 !important;
+          overflow-x: hidden !important;
+          overflow-y: hidden !important;
+          box-sizing: border-box !important;
+          word-break: break-word !important;
+          overflow-wrap: anywhere !important;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+          font-size: 13.5px;
+          line-height: 1.6;
+          color: #1a1a1a;
+          background: #ffffff;
+        }
+        body {
+          padding: 12px !important;
+          margin: 0 auto !important;
+          max-width: 100% !important;
+        }
+        *, *::before, *::after {
+          box-sizing: border-box !important;
+        }
+        /* Make all tables and block containers responsive */
+        table, tbody, tr, td, th, div, center, section, article, p {
+          max-width: 100% !important;
+          box-sizing: border-box !important;
+          min-width: 0 !important;
+        }
+        table {
+          width: 100% !important;
+          table-layout: fixed !important;
+          margin-left: auto !important;
+          margin-right: auto !important;
+        }
+        td, th {
+          word-break: break-word !important;
+          overflow-wrap: anywhere !important;
+        }
+        table[width], td[width], th[width], div[width],
+        table[style*="width"], td[style*="width"], div[style*="width"] {
+          width: 100% !important;
+          max-width: 100% !important;
+          min-width: 0 !important;
+        }
+        /* Center fixed-width marketing wrappers instead of left-clipping */
+        center > table, body > table, body > center {
+          margin-left: auto !important;
+          margin-right: auto !important;
+        }
+        /* Reclaim wide marketing padding: centered 600px cards routinely
+           carry 30-40px side padding, which in a ~330px reader leaves a
+           narrow text column with big white gutters (see Qwen mails).
+           Clamp top-level and common container padding to 12px so the
+           copy uses the full width. Centering is preserved. */
+        body > div, body > center {
+          padding-left: 12px !important;
+          padding-right: 12px !important;
+        }
+        div[class*="container" i], div[class*="wrapper" i],
+        div[class*="content" i], td[class*="container" i] {
+          padding-left: 12px !important;
+          padding-right: 12px !important;
+        }
+        /* Wrap and gracefully scale headings so they never clip or truncate */
+        h1, h2, h3, h4, h5, h6 {
+          white-space: normal !important;
+          word-break: break-word !important;
+          overflow-wrap: anywhere !important;
+        }
+        h1 { font-size: clamp(16px, 5.2vw, 22px) !important; line-height: 1.25 !important; margin: 8px 0 !important; }
+        h2 { font-size: clamp(14px, 4.6vw, 19px) !important; line-height: 1.3 !important; margin: 6px 0 !important; }
+        h3 { font-size: clamp(13px, 4vw, 16px) !important; line-height: 1.35 !important; margin: 4px 0 !important; }
+        p, span, td, div {
+          white-space: normal !important;
+          word-break: break-word !important;
+          overflow-wrap: anywhere !important;
+        }
+        img {
+          max-width: 100% !important;
+          height: auto !important;
+          display: block;
+          margin: 8px auto;
+        }
+        /* Remote sender assets (logos, pixels) often fail inside the
+           sandboxed frame — never show a broken-image glyph. Sourceless
+           images are hidden by CSS; failed loads are hidden by script
+           (see handleIframeLoad) since :broken isn't standard. */
+        img[src=""], img:not([src]) {
+          display: none !important;
+        }
+        a {
+          color: #2563eb;
+          word-break: break-word !important;
+          overflow-wrap: anywhere !important;
+        }
+        /* Buttons should fit within viewport and not clip */
+        a[style*="background"], a[class*="btn"], a[class*="button"], button {
+          display: inline-block !important;
+          max-width: 100% !important;
+          white-space: normal !important;
+          box-sizing: border-box !important;
+          text-align: center !important;
+          overflow-wrap: anywhere !important;
+        }
+      </style>
+    `;
+
+    if (hasHead) {
+      return htmlString.replace(
+        /<head[\s>]/i,
+        (match) => `${match}\n${baseTargetTag}\n${responsiveStyle}\n`
+      );
+    } else if (hasBody) {
+      return htmlString.replace(
+        /<body[\s>]/i,
+        (match) => `\n<head>\n${baseTargetTag}\n${responsiveStyle}\n</head>\n${match}`
+      );
+    } else {
+      return `<!DOCTYPE html><html><head><meta charset="utf-8">${baseTargetTag}${responsiveStyle}</head><body>${htmlString}</body></html>`;
+    }
+  }, [sanitizedHtml]);
+
+  const plainTextBody = useMemo(() => {
+    if (message?.body && !/<[a-z][\s\S]*>/i.test(message.body)) {
+      return contentToString(message.body).slice(0, MAX_BODY_CHARS);
+    }
+    return rawHtml ? stripHtml(rawHtml.slice(0, MAX_BODY_CHARS)) : '';
+  }, [message, rawHtml]);
+
+  const isLong = plainTextBody.length > 1200;
   const snippet = contentToString(message?.snippet ?? '');
+
+  // Presentation-layer safety net: the modal must surface the code + link
+  // whenever they are visible in the mail, even if backend extraction
+  // missed them (empty/slow/failed EXTRACT_OTP for this message). Backend
+  // values win when present; these lightweight local detectors only fill
+  // the gaps — heroes and footer therefore always agree with each other.
+  const fallbackDetection = useMemo(() => {
+    const text = `${plainTextBody}\n${snippet}`;
+    let otp: string | null = null;
+    // Standalone 6–8 digit code (authenticator style). Deliberately NOT
+    // 4–5 digits here: years, ports and fragments false-positive too often
+    // at this layer; the backend engine owns those cases.
+    const codeMatch = /(?:^|[^\d])(\d{6,8})(?:[^\d]|$)/.exec(text);
+    if (codeMatch?.[1]) {
+      otp = codeMatch[1];
+    }
+    let link: string | null = null;
+    const urlRe = /https?:\/\/[^\s"'<>)]+/gi;
+    const candidates: string[] = [];
+    const pushUrls = (s: string) => {
+      if (!s) {
+        return;
+      }
+      urlRe.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = urlRe.exec(s)) !== null) {
+        candidates.push(m[0].replace(/[.,;!?]+$/, ''));
+      }
+    };
+    pushUrls(rawHtml);
+    pushUrls(text);
+    const scored = candidates
+      .map((url) => {
+        const lower = url.toLowerCase();
+        let score = 0;
+        if (
+          /activat|verify|confirm|magic|auth|signin|sign-in|login|validate|callback/.test(lower)
+        ) {
+          score += 3;
+        }
+        if (/[?&](token|id|code|key|hash|signature|t|u|email)=[^&]{4,}/.test(lower)) {
+          score += 3;
+        }
+        if (
+          /unsubscribe|preferences|privacy|terms|help|support|twitter|facebook|linkedin|instagram/.test(
+            lower
+          )
+        ) {
+          score -= 4;
+        }
+        return { url, score };
+      })
+      .filter((c) => c.score > 0)
+      .sort((a, b) => b.score - a.score);
+    if (scored[0]) {
+      link = scored[0].url;
+    }
+    return { otp, link };
+  }, [plainTextBody, snippet, rawHtml]);
+
+  const effectiveOtp = message?.otp || fallbackDetection.otp || null;
+  const effectiveLink = message?.link || fallbackDetection.link || null;
+
+  const handleCopyBody = () => {
+    const textToCopy = plainTextBody || snippet || rawHtml;
+    void copyToClipboard(textToCopy).then((ok) => {
+      if (ok) {
+        setCopiedText(true);
+        setTimeout(() => setCopiedText(false), 2000);
+        onToast?.('Email content copied');
+      } else {
+        onToast?.('Failed to copy');
+      }
+    });
+  };
 
   return (
     <AnimatePresence>
@@ -1051,9 +1626,13 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
           >
             <div className="alias-message-modal-header">
               <div className="alias-message-modal-title-group">
-                <Inbox size={16} />
+                <EmailAvatar from={sender || message.from || '?'} className="email-viewer-avatar" />
                 <div className="alias-message-modal-titles">
-                  <div id="email-viewer-subject" className="alias-message-modal-title truncate">
+                  <div
+                    id="email-viewer-subject"
+                    className="alias-message-modal-title truncate"
+                    title={message.subject || '(No subject)'}
+                  >
                     {message.subject || '(No subject)'}
                   </div>
                   <div className="alias-message-modal-meta truncate">
@@ -1067,13 +1646,36 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
                   </div>
                 </div>
               </div>
-              <button
-                className="alias-message-modal-close"
-                onClick={onClose}
-                aria-label="Close message"
-              >
-                <X size={16} />
-              </button>
+
+              <div className="alias-message-modal-header-actions">
+                {hasHtml && (
+                  <div className="alias-message-modal-view-toggle">
+                    <button
+                      type="button"
+                      className={`alias-view-toggle-btn ${viewMode === 'html' ? 'alias-view-toggle-btn--active' : ''}`}
+                      onClick={() => setViewMode('html')}
+                      title="View rich HTML email"
+                    >
+                      <span>HTML</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={`alias-view-toggle-btn ${viewMode === 'text' ? 'alias-view-toggle-btn--active' : ''}`}
+                      onClick={() => setViewMode('text')}
+                      title="View plain text"
+                    >
+                      <span>Text</span>
+                    </button>
+                  </div>
+                )}
+                <button
+                  className="alias-message-modal-close"
+                  onClick={onClose}
+                  aria-label="Close message"
+                >
+                  <X size={16} />
+                </button>
+              </div>
             </div>
 
             {error && <div className="alias-inbox-error">{error}</div>}
@@ -1086,57 +1688,119 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
                 </div>
               ) : (
                 <>
-                  {snippet && snippet !== bodyText.slice(0, 200) && (
+                  {/* Hero OTP Card (backend value or local fallback) */}
+                  {effectiveOtp && (
+                    <div className="email-hero-otp-banner">
+                      <div className="email-hero-otp-info">
+                        <div className="email-hero-otp-label">
+                          <Zap size={12} />
+                          <span>Verification Code</span>
+                        </div>
+                        <div className="email-hero-otp-code">{effectiveOtp}</div>
+                      </div>
+                      <button
+                        type="button"
+                        className="email-hero-otp-btn"
+                        onClick={() => {
+                          void copyToClipboard(effectiveOtp ?? '').then((ok) => {
+                            if (ok) {
+                              setCopiedOtp(true);
+                              setTimeout(() => setCopiedOtp(false), 2000);
+                              onToast?.('Verification code copied!');
+                            }
+                          });
+                        }}
+                      >
+                        {copiedOtp ? <Check size={13} /> : <Copy size={13} />}
+                        <span>{copiedOtp ? 'Copied' : 'Copy'}</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Hero Link Card — always visible when a link exists so the
+                      primary action is never hidden behind the OTP state. */}
+                  {effectiveLink && (
+                    <div className="email-hero-link-banner">
+                      <div className="email-hero-link-info">
+                        <div className="email-hero-link-label">
+                          <Link2 size={12} />
+                          <span>Activation Link</span>
+                        </div>
+                        <div className="email-hero-link-url truncate" title={effectiveLink}>
+                          {effectiveLink}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="email-hero-link-btn"
+                        onClick={() => openUrlInTab(effectiveLink ?? '')}
+                      >
+                        <Globe size={13} />
+                        <span>Open Link</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {snippet && snippet !== plainTextBody.slice(0, 200) && !hasHtml && (
                     <div className="alias-message-modal-snippet">{snippet}</div>
                   )}
-                  <pre
-                    className={
-                      isLong && !bodyExpanded
-                        ? 'alias-message-modal-content email-viewer-truncated'
-                        : 'alias-message-modal-content'
-                    }
-                  >
-                    {bodyText || 'No content available.'}
-                  </pre>
-                  {isLong && (
-                    <button
-                      type="button"
-                      className="email-viewer-expand-btn"
-                      onClick={() => setBodyExpanded((b) => !b)}
-                    >
-                      {bodyExpanded ? 'Show less' : `Show full message (${bodyText.length} chars)`}
-                    </button>
+
+                  {viewMode === 'html' && hasHtml && sanitizedHtml ? (
+                    <div className="alias-message-modal-html-container">
+                      <iframe
+                        ref={iframeRef}
+                        title={message.subject || 'Email content'}
+                        className="email-html-iframe"
+                        sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin"
+                        srcDoc={iframeSrcDoc}
+                        scrolling="no"
+                        onLoad={handleIframeLoad}
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <pre
+                        className={
+                          isLong && !bodyExpanded
+                            ? 'alias-message-modal-content email-viewer-text-body email-viewer-truncated'
+                            : 'alias-message-modal-content email-viewer-text-body'
+                        }
+                      >
+                        {plainTextBody || snippet || 'No content available.'}
+                      </pre>
+                      {isLong && (
+                        <button
+                          type="button"
+                          className="email-viewer-expand-btn"
+                          onClick={() => setBodyExpanded((b) => !b)}
+                        >
+                          {bodyExpanded
+                            ? 'Show less'
+                            : `Show full message (${plainTextBody.length} chars)`}
+                        </button>
+                      )}
+                    </>
                   )}
                 </>
               )}
             </div>
 
-            {(message.otp || message.link) && (
-              <div className="alias-message-modal-actions">
-                {message.otp && (
-                  <button
-                    className="alias-message-action-btn"
-                    onClick={() =>
-                      void copyToClipboard(message.otp ?? '').then((ok) =>
-                        onToast?.(ok ? 'OTP copied' : 'Failed to copy OTP')
-                      )
-                    }
-                  >
-                    <Copy size={14} />
-                    <span>{message.otp}</span>
-                  </button>
-                )}
-                {message.link && (
-                  <button
-                    className="alias-message-action-btn"
-                    onClick={() => openUrlInTab(message.link ?? '')}
-                  >
-                    {message.otp ? <Link2 size={14} /> : <Check size={14} />}
-                    <span>Open link</span>
-                  </button>
-                )}
-              </div>
-            )}
+            <div className="alias-message-modal-actions">
+              <button type="button" className="alias-message-action-btn" onClick={handleCopyBody}>
+                {copiedText ? <Check size={14} /> : <Copy size={14} />}
+                <span>{copiedText ? 'Copied' : 'Copy text'}</span>
+              </button>
+              {effectiveLink && (
+                <button
+                  type="button"
+                  className="alias-message-action-btn alias-message-action-btn--primary"
+                  onClick={() => openUrlInTab(effectiveLink ?? '')}
+                >
+                  <Link2 size={14} />
+                  <span>Open link</span>
+                </button>
+              )}
+            </div>
           </motion.div>
         </motion.div>
       )}
@@ -1305,7 +1969,7 @@ const Header: React.FC<HeaderProps> = React.memo(({ onOpenSettings, onOpenHelp }
     <header className="header">
       <div className="header-left">
         <div className="logo-circle">
-          <GhostLogo size={32} />
+          <GhostLogo size={42} />
         </div>
         <div className="header-title-container">
           <span className="header-title">GhostFill</span>
@@ -1427,11 +2091,13 @@ export type DisplayedEmail = Email & {
 };
 
 export interface InboxListProps {
-  readonly preferredEmailType: 'disposable' | 'gmail';
+  readonly preferredEmailType: 'disposable' | 'gmail' | 'zoho' | 'microsoft';
   readonly gmailConnected: boolean;
   readonly gmailIsManual: boolean;
   readonly gmailInboxLoading: boolean;
   readonly gmailInboxError: string | null;
+  readonly zohoConnected?: boolean;
+  readonly microsoftConnected?: boolean;
   readonly inboxCount: number;
   readonly displayedEmails: DisplayedEmail[];
   readonly openingEmailId?: string | null;
@@ -1451,6 +2117,8 @@ const InboxListComponent: React.FC<InboxListProps> = ({
   gmailIsManual,
   gmailInboxLoading,
   gmailInboxError,
+  zohoConnected = false,
+  microsoftConnected = false,
   inboxCount,
   displayedEmails,
   openingEmailId,
@@ -1476,7 +2144,7 @@ const InboxListComponent: React.FC<InboxListProps> = ({
       e.preventDefault();
       if (onOpenEmail) {
         onOpenEmail(emailItem);
-      } else if (preferredEmailType === 'gmail') {
+      } else if (preferredEmailType !== 'disposable') {
         onNavigate('aliases', { aliasTab: 'inbox' });
       } else {
         onNavigate('email');
@@ -1485,7 +2153,11 @@ const InboxListComponent: React.FC<InboxListProps> = ({
     [onOpenEmail, onNavigate, preferredEmailType]
   );
 
-  const canOpenInbox = preferredEmailType !== 'gmail' && inboxCount > 0;
+  const canOpenInbox = preferredEmailType === 'disposable' && inboxCount > 0;
+  // Real providers have no 'email' detail view — their manager lives in the
+  // aliases view. Without this button that view is unreachable from the Hub
+  // (row taps open the viewer directly).
+  const canOpenAliases = preferredEmailType !== 'disposable';
 
   return (
     <motion.div className="inbox-section">
@@ -1506,6 +2178,17 @@ const InboxListComponent: React.FC<InboxListProps> = ({
             <ChevronRight size={15} />
           </motion.button>
         )}
+        {canOpenAliases && (
+          <motion.button
+            className="view-all-btn"
+            onClick={() => onNavigate('aliases')}
+            whileHover={{ x: 2 }}
+            aria-label="Open alias manager"
+          >
+            Aliases
+            <ChevronRight size={15} />
+          </motion.button>
+        )}
       </div>
 
       <div className="inbox-list">
@@ -1514,19 +2197,33 @@ const InboxListComponent: React.FC<InboxListProps> = ({
             <AlertCircle size={18} strokeWidth={1.7} color="var(--gf-coral)" />
             <span className="hub-empty-text">Connect Gmail above to sync OTP emails.</span>
           </div>
+        ) : preferredEmailType === 'zoho' && !zohoConnected ? (
+          <div className="hub-empty-state hub-empty-state--action">
+            <AlertCircle size={18} strokeWidth={1.7} color="var(--gf-coral)" />
+            <span className="hub-empty-text">Connect Zoho Mail above to sync OTP emails.</span>
+          </div>
+        ) : preferredEmailType === 'microsoft' && !microsoftConnected ? (
+          <div className="hub-empty-state hub-empty-state--action">
+            <AlertCircle size={18} strokeWidth={1.7} color="var(--gf-coral)" />
+            <span className="hub-empty-text">Connect Outlook above to sync OTP emails.</span>
+          </div>
         ) : preferredEmailType === 'gmail' && gmailIsManual ? (
           <div className="hub-empty-state hub-empty-state--action">
-            <AlertCircle size={18} strokeWidth={1.7} color="var(--gf-yellow)" />
+            <AlertCircle size={18} strokeWidth={1.7} color="var(--gf-amber)" />
             <span className="hub-empty-text">
               Use Google sign-in to sync messages automatically.
             </span>
           </div>
         ) : preferredEmailType === 'gmail' && gmailInboxLoading && inboxCount === 0 ? (
           <div className="shimmer hub-empty-state">
-            <RefreshCw size={18} strokeWidth={1.5} className="spin" color="var(--gf-cyan)" />
+            <RefreshCw size={18} strokeWidth={1.5} className="spin" color="var(--gf-primary)" />
             <span>Syncing Gmail</span>
           </div>
-        ) : preferredEmailType === 'gmail' && gmailInboxError ? (
+        ) : gmailInboxError ? (
+          // NOTE: despite the prop name, this carries Zoho/Outlook fetch
+          // errors too (Hub writes all provider failures here). Render for
+          // every provider — previously non-Gmail failures fell through to
+          // the generic empty state and looked like "no mail".
           <button
             className="hub-empty-state hub-empty-state--action"
             onClick={() => void onFetchGmailInbox()}
@@ -1536,9 +2233,15 @@ const InboxListComponent: React.FC<InboxListProps> = ({
           </button>
         ) : inboxCount === 0 ? (
           <div className="hub-empty-state">
-            <Mail size={18} strokeWidth={1.5} color="var(--gf-cyan)" />
+            <Mail size={18} strokeWidth={1.5} color="var(--gf-primary)" />
             <span>
-              {preferredEmailType === 'gmail' ? 'No Gmail messages yet.' : t('listening')}
+              {preferredEmailType === 'gmail'
+                ? 'No Gmail messages yet.'
+                : preferredEmailType === 'zoho'
+                  ? 'No Zoho messages yet.'
+                  : preferredEmailType === 'microsoft'
+                    ? 'No Outlook messages yet.'
+                    : t('listening')}
             </span>
           </div>
         ) : (
@@ -1899,7 +2602,7 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
               whileTap={{ x: 2, y: 2 }}
               role="button"
               tabIndex={0}
-              aria-label="Copy OTP code"
+              aria-label={`Copy OTP code ${lastOTP.code.split('').join(' ')}`}
             >
               {lastOTP.code.split('').map((char: string, i: number) => (
                 <motion.span
@@ -1931,7 +2634,7 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
                         lastOTP.confidence >= 0.9
                           ? 'var(--gf-mint)'
                           : lastOTP.confidence >= 0.7
-                            ? 'var(--gf-yellow)'
+                            ? 'var(--gf-amber)'
                             : 'var(--gf-coral)',
                     }}
                   />
@@ -2082,6 +2785,27 @@ const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({ onToast, currentP
   const [showPassword, setShowPassword] = useState(false);
   const [copied, setCopied] = useState(false);
   const [localLength, setLocalLength] = useState(options.length);
+
+  // Seed from Options > Passwords so the page reflects the saved recipe.
+  // Runs once per mount (the popup remounts on every open).
+  useEffect(() => {
+    let cancelled = false;
+    storageService
+      .getSettings()
+      .then((s) => {
+        if (!cancelled && s?.passwordDefaults) {
+          const stored = { ...s.passwordDefaults };
+          setOptions(stored);
+          setLocalLength(stored.length);
+        }
+      })
+      .catch(() => {
+        // service defaults stand
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const generatePassword = useCallback(async () => {
     setLoading(true);
@@ -2331,6 +3055,9 @@ export interface QuickActionsProps {
   readonly onCopyPassword: () => void;
   readonly onToggleShowPassword: () => void;
   readonly onGeneratePassword: () => void;
+  // Opens the full password-vault detail view (length slider, options).
+  // Without this the App 'password' view is unreachable from the Hub.
+  readonly onOpenVault?: () => void;
 }
 
 const QuickActionsComponent: React.FC<QuickActionsProps> = ({
@@ -2342,6 +3069,7 @@ const QuickActionsComponent: React.FC<QuickActionsProps> = ({
   onCopyPassword,
   onToggleShowPassword,
   onGeneratePassword,
+  onOpenVault,
 }) => {
   return (
     <div className="identity-row">
@@ -2388,6 +3116,20 @@ const QuickActionsComponent: React.FC<QuickActionsProps> = ({
         >
           <RefreshCw size={14} className={isGeneratingPassword ? 'spin' : ''} />
         </motion.button>
+        {onOpenVault && (
+          <>
+            <div className="action-separator" />
+            <motion.button
+              className="action-icon"
+              onClick={onOpenVault}
+              {...interactiveSurface}
+              title="Open password vault"
+              aria-label="Open full password generator"
+            >
+              <ChevronRight size={14} />
+            </motion.button>
+          </>
+        )}
       </div>
     </div>
   );

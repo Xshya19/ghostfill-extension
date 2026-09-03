@@ -16,7 +16,6 @@ import {
   Code,
   Check,
   Inbox,
-  KeyRound,
   Mail,
   Sparkles,
   X,
@@ -26,8 +25,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { storageService } from '../../../services/storageService';
 import { UserSettings, DEFAULT_SETTINGS } from '../../../types/storage.types';
 import { createLogger } from '../../../utils/logger';
+import { GmailLogo, ZohoLogo, OutlookLogo } from '../../popup/components/ProviderLogos';
 import { Button } from '../../ui';
 
+import { CustomSelect } from './CustomSelect';
 import { SettingsSection, ToggleSwitch } from './OptionsUIComponents';
 
 const t = (key: string): string => {
@@ -41,6 +42,23 @@ const t = (key: string): string => {
 const log = createLogger('OptionsTabs');
 const GMAIL_CLIENT_ID_PATTERN = /^[a-z0-9-]+\.apps\.googleusercontent\.com$/i;
 const SAVE_FEEDBACK_MS = 1800;
+
+// Single source of truth for the preferred-service picker. Labels stay short
+// so the in-DOM CustomSelect panel never clips; the retention/auth hint is
+// the differentiator users actually choose on.
+// Exported so OptionsApp can validate membership before saving (a service the
+// backend zod enum doesn't know would otherwise fail as "backend rejected").
+export const EMAIL_SERVICE_OPTIONS = [
+  { value: 'driftz', label: 'Driftz.net — Blocklist bypass (@bbjbinin.mn default) (Recommended)' },
+  { value: 'catchmail', label: 'CatchMail.io — Fast · 7-day retention' },
+  { value: 'throwawaymail', label: 'Throwawaymail.app — Fast REST API · Instant delivery' },
+  { value: 'tempmailplus', label: 'Tempmail.plus — Multi-domain · Fast sync' },
+  { value: 'mailtm', label: 'Mail.tm — Encrypted account · High uptime' },
+  { value: 'mailgw', label: 'Mail.gw — Dedicated domain pool' },
+  { value: 'guerrilla', label: 'Guerrilla Mail — 10 stealth domains' },
+  { value: 'maildrop', label: 'Maildrop.cc — Free GraphQL disposable mail' },
+  { value: 'custom', label: 'Custom infrastructure (private)' },
+] as const;
 
 // ─── Provider Health Meter Component ──────────────────────────────────────────
 interface ProviderHealthStatus {
@@ -121,51 +139,84 @@ export const ProviderHealthMeter: React.FC = () => {
 
   // A missing health report is an empty state, not a failure: the service
   // worker simply hasn't recorded a call yet on a fresh profile. Only a real
-  // transport error earns the red treatment.
+  // transport error earns the red treatment — and it keeps its message
+  // instead of collapsing into the empty text.
   if (error && healthData.length === 0) {
     return (
       <div className="provider-health-meter">
         <h4 className="health-title">{t('providerHealthTitle')}</h4>
-        <p className="health-empty">No calls recorded yet. Generate an email to start tracking.</p>
+        <p className="health-empty" role="alert">
+          Couldn&apos;t reach the service worker ({error}). Generate an email to start tracking.
+        </p>
       </div>
     );
   }
 
   if (healthData.length === 0) {
-    return null;
+    return (
+      <div className="provider-health-meter">
+        <h4 className="health-title">{t('providerHealthTitle')}</h4>
+        <div className="health-grid">
+          {['driftz', 'catchmail', 'throwawaymail', 'tempmailplus', 'mailtm', 'mailgw', 'guerrilla', 'maildrop'].map((name) => (
+            <div key={name} className="health-pill-card" title="No calls recorded yet">
+              <span className="health-provider-name">{name}</span>
+              <div className="health-status-group">
+                <span className="health-percent">—</span>
+                <span className="health-dot health-status-unknown" aria-hidden="true" />
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="health-hint">Generate an email to start tracking live status.</p>
+      </div>
+    );
   }
 
   return (
     <div className="provider-health-meter">
       <h4 className="health-title">{t('providerHealthTitle')}</h4>
       <div className="health-grid">
-        {healthData.map((h) => {
-          const isWarning = h.successRate <= 0.7 && h.successRate > 0 && !h.circuitOpen;
+        {healthData
+          .filter((h) =>
+            ['driftz', 'catchmail', 'throwawaymail', 'tempmailplus', 'mailtm', 'mailgw', 'guerrilla', 'maildrop', 'custom'].includes(h.name)
+          )
+          .map((h) => {
+          const pct = Math.round(h.successRate * 100);
+          const isWarning =
+            (h.successRate <= 0.7 && h.successRate > 0 && !h.circuitOpen) ||
+            h.consecutiveFailures > 0;
           const isDead = h.circuitOpen || h.successRate === 0;
 
           let statusClass = 'health-status-good';
-          if (isWarning) {
-            statusClass = 'health-status-warning';
-          }
+          let statusText = 'Healthy';
           if (isDead) {
             statusClass = 'health-status-dead';
+            statusText = h.circuitOpen ? 'Circuit open — cooling down' : 'Offline';
+          } else if (isWarning) {
+            statusClass = 'health-status-warning';
+            statusText = 'Degraded';
           }
 
+          const ms = Math.round(h.avgResponseTime);
+          const detail =
+            `${h.name}: ${statusText} · ${pct}% success · ~${ms}ms avg` +
+            (h.consecutiveFailures > 0
+              ? ` · ${h.consecutiveFailures} failure${h.consecutiveFailures === 1 ? '' : 's'} in a row`
+              : '');
+
           return (
-            <div key={h.name} className="health-pill-card">
-              <span className="health-provider-name">{h.name}</span>
+            <div key={h.name} className="health-pill-card" title={detail}>
+              <span className="health-provider-name" title={h.name}>
+                {h.name}
+              </span>
               <div className="health-status-group">
-                <span className="health-percent">{Math.round(h.successRate * 100)}%</span>
-                <div
+                <span className="health-percent" aria-label={detail}>
+                  {pct}% · {ms}ms
+                </span>
+                <span
                   className={`health-dot ${statusClass}`}
-                  title={`Response: ${Math.round(h.avgResponseTime)}ms | Failures: ${h.consecutiveFailures}`}
-                  aria-label={
-                    isDead
-                      ? 'Provider is offline'
-                      : isWarning
-                        ? 'Provider is degraded'
-                        : 'Provider is healthy'
-                  }
+                  role="img"
+                  aria-label={detail}
                 />
               </div>
             </div>
@@ -188,22 +239,23 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChang
       <SettingsSection id="appearance" title={t('appearanceSection')} icon={<Palette size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
-            <label htmlFor="dark-mode">{t('darkMode')}</label>
+            <label id="dark-mode-label">{t('darkMode')}</label>
             <p>{t('darkModeDescription')}</p>
           </div>
-          <select
+          <CustomSelect
             id="dark-mode"
+            ariaLabel={t('darkMode')}
+            ariaDescribedBy="dark-mode-description"
             value={String(settings.darkMode)}
-            onChange={(e) => {
-              const val = e.target.value;
-              onSettingChange('darkMode', val === 'system' ? 'system' : val === 'true');
-            }}
-            aria-describedby="dark-mode-description"
-          >
-            <option value="system">{t('themeSystem')}</option>
-            <option value="false">{t('themeLight')}</option>
-            <option value="true">{t('themeDark')}</option>
-          </select>
+            onChange={(val) =>
+              onSettingChange('darkMode', val === 'system' ? 'system' : val === 'true')
+            }
+            options={[
+              { value: 'system', label: t('themeSystem') },
+              { value: 'false', label: t('themeLight') },
+              { value: 'true', label: t('themeDark') },
+            ]}
+          />
           <span id="dark-mode-description" className="sr-only">
             {t('darkModeAriaDescription')}
           </span>
@@ -222,22 +274,14 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChang
           />
         </div>
 
-        <div className="setting-item">
-          <div className="setting-info">
-            <label htmlFor="floating-position">{t('buttonPosition')}</label>
-            <p>{t('buttonPositionDescription')}</p>
-          </div>
-          <select
-            id="floating-position"
-            value={settings.floatingButtonPosition}
-            onChange={(e) =>
-              onSettingChange('floatingButtonPosition', e.target.value as 'right' | 'left')
-            }
-          >
-            <option value="right">{t('right')}</option>
-            <option value="left">{t('left')}</option>
-          </select>
-        </div>
+        {/*
+          Button-position picker REMOVED (was here): the floating button is
+          field-anchored by SmartPositioner (content/floatingButton.ts) — it
+          docks to the focused input, so a global Right/Left side has no
+          meaning and the control was a no-op. The stored
+          `floatingButtonPosition` key is retained in types + validation for
+          backward compat with existing profiles.
+        */}
       </SettingsSection>
 
       <SettingsSection
@@ -261,7 +305,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChang
         <div className="setting-item">
           <div className="setting-info">
             <label id="sound-enabled-label">
-              {t('soundEffects')} <span className="coming-soon-label">({t('comingSoon')})</span>
+              {t('soundEffects')} <span className="coming-soon-label">(coming soon)</span>
             </label>
             <p>{t('soundEffectsDescription')}</p>
           </div>
@@ -270,6 +314,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChang
             onChange={(checked) => onSettingChange('soundEnabled', checked)}
             ariaLabel={t('soundEffectsAriaLabel')}
             ariaLabelledBy="sound-enabled-label"
+            disabled
           />
         </div>
       </SettingsSection>
@@ -280,15 +325,29 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChang
             <label>{t('applicationTutorial')}</label>
             <p>{t('applicationTutorialDescription')}</p>
           </div>
-          <Button
-            size="sm"
-            onClick={async () => {
-              await chrome.storage.local.set({ hasSeenOnboarding: false });
-              console.warn(t('onboardingResetWarning'));
-            }}
-          >
-            {t('replayOnboarding')}
-          </Button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <Button
+              size="sm"
+              onClick={async () => {
+                await chrome.storage.local.set({ hasSeenOnboarding: false });
+                const labelEl = document.getElementById('tutorial-reset-toast');
+                if (labelEl) {
+                  labelEl.style.display = 'inline';
+                  setTimeout(() => {
+                    labelEl.style.display = 'none';
+                  }, 3000);
+                }
+              }}
+            >
+              {t('replayOnboarding')}
+            </Button>
+            <span
+              id="tutorial-reset-toast"
+              style={{ display: 'none', fontSize: '12px', color: 'var(--gf-mint)', fontWeight: 600 }}
+            >
+              ✓ Tutorial will replay on next popup open!
+            </span>
+          </div>
         </div>
       </SettingsSection>
     </div>
@@ -446,6 +505,18 @@ export const EmailTab: React.FC<EmailTabProps> = ({
     'idle' | 'saving' | 'saved'
   >('idle');
 
+  const [zohoClientId, setZohoClientId] = useState('');
+  const [zohoClientIdError, setZohoClientIdError] = useState<string | null>(null);
+  const [zohoClientIdSaveStatus, setZohoClientIdSaveStatus] = useState<
+    'idle' | 'saving' | 'saved'
+  >('idle');
+
+  const [microsoftClientId, setMicrosoftClientId] = useState('');
+  const [microsoftClientIdError, setMicrosoftClientIdError] = useState<string | null>(null);
+  const [microsoftClientIdSaveStatus, setMicrosoftClientIdSaveStatus] = useState<
+    'idle' | 'saving' | 'saved'
+  >('idle');
+
   useEffect(() => {
     let cancelled = false;
 
@@ -454,6 +525,24 @@ export const EmailTab: React.FC<EmailTabProps> = ({
       .then((value) => {
         if (!cancelled) {
           setGmailClientId(typeof value === 'string' ? value : '');
+        }
+      })
+      .catch(() => undefined);
+
+    void storageService
+      .get('zohoClientId')
+      .then((value) => {
+        if (!cancelled) {
+          setZohoClientId(typeof value === 'string' ? value : '');
+        }
+      })
+      .catch(() => undefined);
+
+    void storageService
+      .get('microsoftClientId')
+      .then((value) => {
+        if (!cancelled) {
+          setMicrosoftClientId(typeof value === 'string' ? value : '');
         }
       })
       .catch(() => undefined);
@@ -484,6 +573,36 @@ export const EmailTab: React.FC<EmailTabProps> = ({
     }
   };
 
+  const saveZohoClientId = async (): Promise<void> => {
+    const nextClientId = zohoClientId.trim();
+    setZohoClientIdError(null);
+    setZohoClientIdSaveStatus('saving');
+    try {
+      await storageService.set('zohoClientId', nextClientId);
+      setZohoClientId(nextClientId);
+      setZohoClientIdSaveStatus('saved');
+      window.setTimeout(() => setZohoClientIdSaveStatus('idle'), SAVE_FEEDBACK_MS);
+    } catch {
+      setZohoClientIdSaveStatus('idle');
+      setZohoClientIdError('Could not save Zoho Client ID.');
+    }
+  };
+
+  const saveMicrosoftClientId = async (): Promise<void> => {
+    const nextClientId = microsoftClientId.trim();
+    setMicrosoftClientIdError(null);
+    setMicrosoftClientIdSaveStatus('saving');
+    try {
+      await storageService.set('microsoftClientId', nextClientId);
+      setMicrosoftClientId(nextClientId);
+      setMicrosoftClientIdSaveStatus('saved');
+      window.setTimeout(() => setMicrosoftClientIdSaveStatus('idle'), SAVE_FEEDBACK_MS);
+    } catch {
+      setMicrosoftClientIdSaveStatus('idle');
+      setMicrosoftClientIdError('Could not save Microsoft Client ID.');
+    }
+  };
+
   return (
     <div role="tabpanel" id="tabpanel-email" aria-labelledby="tab-email">
       <SettingsSection
@@ -493,40 +612,35 @@ export const EmailTab: React.FC<EmailTabProps> = ({
       >
         <div className="setting-item">
           <div className="setting-info">
-            <label htmlFor="preferred-email-service" className="fs-15-fw-600">
+            <label id="preferred-email-service-label" className="fs-15-fw-600">
               Preferred email service
             </label>
             <p>Choose the default service for generating temporary emails</p>
           </div>
-          <select
-            id="preferred-email-service"
-            value={settings.preferredEmailService}
-            onChange={(e) =>
-              onSettingChange(
-                'preferredEmailService',
-                e.target.value as UserSettings['preferredEmailService']
-              )
-            }
-          >
-            <option value="catchmail">CatchMail.io (Fastest & 7-Day Retention)</option>
-            <option value="mailcx">Mail.cx (Fast & SSE Real-time)</option>
-            <option value="openinbox">OpenInbox.io (Fast & Webhook-ready)</option>
-            <option value="mailboxtemp">MailboxTemp (Fast & 24h Retention)</option>
-            <option value="dropmail">Dropmail.me (GraphQL & 4 Domains)</option>
-            <option value="driftz">Driftz.net (.org/.mn Blocklist Bypass)</option>
-            <option value="getnada">GetNada / Inboxes.com (4 Domains)</option>
-            <option value="tempmailplus">Tempmail.plus / Mailto.plus (3 Domains)</option>
-            <option value="evilmail">EvilMail.pro (evilmail.dev)</option>
-            <option value="guerrilla">
-              Guerrilla Mail (10 Stealth Domains: sharklasers, grr.la)
-            </option>
-            <option value="maildrop">Maildrop.cc (GraphQL)</option>
-            <option value="tempmail">1secmail.com (9 Domains)</option>
-            <option value="tempmaillol">TempMail.lol (API v2)</option>
-            <option value="mailtm">Mail.tm (JWT Auth)</option>
-            <option value="mailgw">Mail.gw (JWT Auth)</option>
-            <option value="custom">Custom Infrastructure (Private)</option>
-          </select>
+          <div className="email-service-select">
+            <CustomSelect
+              id="preferred-email-service"
+              ariaLabel="Preferred email service"
+              ariaDescribedBy={
+                fieldHasError('preferredEmailService')
+                  ? 'preferred-email-service-error'
+                  : undefined
+              }
+              value={settings.preferredEmailService}
+              onChange={(val) =>
+                onSettingChange(
+                  'preferredEmailService',
+                  val as UserSettings['preferredEmailService']
+                )
+              }
+              options={[...EMAIL_SERVICE_OPTIONS]}
+            />
+          </div>
+          {fieldHasError('preferredEmailService') && (
+            <span id="preferred-email-service-error" className="field-error" role="alert">
+              {getFieldError('preferredEmailService')}
+            </span>
+          )}
         </div>
 
         <ProviderHealthMeter />
@@ -604,12 +718,15 @@ export const EmailTab: React.FC<EmailTabProps> = ({
       <SettingsSection
         id="gmail-oauth"
         title={t('gmailOauthSection')}
-        icon={<KeyRound size={18} />}
+        icon={<GmailLogo size={18} />}
       >
         <div className="setting-item vertical-group">
           <div className="setting-info w-full">
             <label htmlFor="gmail-client-id" className="fs-15-fw-600">
               OAuth client ID
+              <span className={`client-id-status-badge ${gmailClientId ? 'client-id-status-badge--configured' : 'client-id-status-badge--none'}`}>
+                {gmailClientId ? 'Configured' : 'Not configured'}
+              </span>
             </label>
             <p>Required for Gmail API sign-in.</p>
           </div>
@@ -671,6 +788,168 @@ export const EmailTab: React.FC<EmailTabProps> = ({
                   });
               }}
               disabled={gmailClientIdSaveStatus === 'saving'}
+            >
+              <X size={16} />
+              <span>Clear</span>
+            </Button>
+          </div>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        id="zoho-oauth"
+        title="Zoho Mail (OAuth API)"
+        icon={<ZohoLogo size={18} />}
+      >
+        <div className="setting-item vertical-group">
+          <div className="setting-info w-full">
+            <label htmlFor="zoho-client-id" className="fs-15-fw-600">
+              Zoho Client ID
+              <span className={`client-id-status-badge ${zohoClientId ? 'client-id-status-badge--configured' : 'client-id-status-badge--none'}`}>
+                {zohoClientId ? 'Configured' : 'Not configured'}
+              </span>
+            </label>
+            <p>Required for Zoho Mail alias creation and OTP auto-detection (Auto-detects US/EU/IN/AU/JP/CN).</p>
+          </div>
+          <input
+            id="zoho-client-id"
+            type="text"
+            inputMode="text"
+            spellCheck={false}
+            autoComplete="off"
+            placeholder="1000.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+            value={zohoClientId}
+            onChange={(e) => {
+              setZohoClientId(e.target.value);
+              setZohoClientIdError(null);
+              setZohoClientIdSaveStatus('idle');
+            }}
+            aria-invalid={!!zohoClientIdError}
+            aria-describedby={zohoClientIdError ? 'zoho-client-id-error' : undefined}
+          />
+          {zohoClientIdError && (
+            <span id="zoho-client-id-error" className="field-error" role="alert">
+              {zohoClientIdError}
+            </span>
+          )}
+          <div className="gmail-client-id-actions">
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              className={
+                zohoClientIdSaveStatus === 'saving'
+                  ? 'save-btn--saving'
+                  : zohoClientIdSaveStatus === 'saved'
+                    ? 'save-btn--saved'
+                    : ''
+              }
+              onClick={() => void saveZohoClientId()}
+              disabled={zohoClientIdSaveStatus === 'saving'}
+            >
+              {zohoClientIdSaveStatus === 'saved' ? <Check size={16} /> : <Save size={16} />}
+              <span>{zohoClientIdSaveStatus === 'saved' ? 'Saved' : 'Save'}</span>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                setZohoClientId('');
+                setZohoClientIdError(null);
+                setZohoClientIdSaveStatus('saving');
+                void storageService
+                  .set('zohoClientId', '')
+                  .then(() => {
+                    setZohoClientIdSaveStatus('saved');
+                    window.setTimeout(() => setZohoClientIdSaveStatus('idle'), SAVE_FEEDBACK_MS);
+                  })
+                  .catch(() => {
+                    setZohoClientIdSaveStatus('idle');
+                    setZohoClientIdError('Could not clear Zoho Client ID.');
+                  });
+              }}
+              disabled={zohoClientIdSaveStatus === 'saving'}
+            >
+              <X size={16} />
+              <span>Clear</span>
+            </Button>
+          </div>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        id="microsoft-oauth"
+        title="Microsoft Outlook (Graph API)"
+        icon={<OutlookLogo size={18} />}
+      >
+        <div className="setting-item vertical-group">
+          <div className="setting-info w-full">
+            <label htmlFor="microsoft-client-id" className="fs-15-fw-600">
+              Application (client) ID
+              <span className={`client-id-status-badge ${microsoftClientId ? 'client-id-status-badge--configured' : 'client-id-status-badge--none'}`}>
+                {microsoftClientId ? 'Configured' : 'Not configured'}
+              </span>
+            </label>
+            <p>Required for Microsoft Outlook / Hotmail / Live alias polling via Microsoft Graph.</p>
+          </div>
+          <input
+            id="microsoft-client-id"
+            type="text"
+            inputMode="text"
+            spellCheck={false}
+            autoComplete="off"
+            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            value={microsoftClientId}
+            onChange={(e) => {
+              setMicrosoftClientId(e.target.value);
+              setMicrosoftClientIdError(null);
+              setMicrosoftClientIdSaveStatus('idle');
+            }}
+            aria-invalid={!!microsoftClientIdError}
+            aria-describedby={microsoftClientIdError ? 'microsoft-client-id-error' : undefined}
+          />
+          {microsoftClientIdError && (
+            <span id="microsoft-client-id-error" className="field-error" role="alert">
+              {microsoftClientIdError}
+            </span>
+          )}
+          <div className="gmail-client-id-actions">
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              className={
+                microsoftClientIdSaveStatus === 'saving'
+                  ? 'save-btn--saving'
+                  : microsoftClientIdSaveStatus === 'saved'
+                    ? 'save-btn--saved'
+                    : ''
+              }
+              onClick={() => void saveMicrosoftClientId()}
+              disabled={microsoftClientIdSaveStatus === 'saving'}
+            >
+              {microsoftClientIdSaveStatus === 'saved' ? <Check size={16} /> : <Save size={16} />}
+              <span>{microsoftClientIdSaveStatus === 'saved' ? 'Saved' : 'Save'}</span>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                setMicrosoftClientId('');
+                setMicrosoftClientIdError(null);
+                setMicrosoftClientIdSaveStatus('saving');
+                void storageService
+                  .set('microsoftClientId', '')
+                  .then(() => {
+                    setMicrosoftClientIdSaveStatus('saved');
+                    window.setTimeout(() => setMicrosoftClientIdSaveStatus('idle'), SAVE_FEEDBACK_MS);
+                  })
+                  .catch(() => {
+                    setMicrosoftClientIdSaveStatus('idle');
+                    setMicrosoftClientIdError('Could not clear Microsoft Client ID.');
+                  });
+              }}
+              disabled={microsoftClientIdSaveStatus === 'saving'}
             >
               <X size={16} />
               <span>Clear</span>
@@ -831,7 +1110,20 @@ export const AutomationTab: React.FC<AutomationTabProps> = ({ settings, onSettin
           role="group"
           aria-label={t('shortcutReferenceAriaLabel')}
         >
-          <h3 className="shortcut-reference-title">{t('quickReference')}</h3>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+            <h3 className="shortcut-reference-title" style={{ margin: 0 }}>{t('quickReference')}</h3>
+            <Button
+              size="sm"
+              type="button"
+              onClick={() => {
+                if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
+                  chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
+                }
+              }}
+            >
+              Configure in Chrome
+            </Button>
+          </div>
           <div className="shortcut-list">
             {commands.map((cmd) => (
               <div className="shortcut-row" key={cmd.name}>
@@ -932,7 +1224,9 @@ export const PrivacyTab: React.FC<PrivacyTabProps> = ({
       >
         <div className="setting-item">
           <div className="setting-info">
-            <label id="gmail-session-fallback-label">{t('gmailSessionDetection')}</label>
+            <label id="gmail-session-fallback-label">
+              {t('gmailSessionDetection')} <span className="coming-soon-label">(coming soon)</span>
+            </label>
             <p>{t('gmailSessionDetectionDescription')}</p>
           </div>
           <ToggleSwitch
@@ -940,6 +1234,7 @@ export const PrivacyTab: React.FC<PrivacyTabProps> = ({
             onChange={(checked) => onSettingChange('allowGmailSessionFallback', checked)}
             ariaLabel={t('gmailSessionDetectionAriaLabel')}
             ariaLabelledBy="gmail-session-fallback-label"
+            disabled
           />
         </div>
       </SettingsSection>
@@ -1040,7 +1335,9 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
       <SettingsSection id="developer" title={t('developerSection')} icon={<Terminal size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
-            <label id="debug-mode-label">Debug mode</label>
+            <label id="debug-mode-label">
+              Debug mode <span className="coming-soon-label">(coming soon)</span>
+            </label>
             <p>Enable verbose console logging for troubleshooting</p>
           </div>
           <ToggleSwitch
@@ -1048,6 +1345,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
             onChange={(checked) => onSettingChange('debugMode', checked)}
             ariaLabel="Debug mode"
             ariaLabelledBy="debug-mode-label"
+            disabled
           />
         </div>
       </SettingsSection>
@@ -1057,8 +1355,13 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
             field: both are long opaque secrets, and a 220px box truncates them. */}
         <div className="setting-item vertical-group">
           <div className="setting-info w-full">
-            <label htmlFor="llm-api-key">LLM API key</label>
-            <p>Used to power AI-assisted replies. Stored only in this browser session.</p>
+            <label htmlFor="llm-api-key">
+              LLM API key <span className="coming-soon-label">(coming soon)</span>
+            </label>
+            <p>
+              Reserved for AI-assisted replies (not consumed by any feature yet).
+              Stored only in this browser session.
+            </p>
           </div>
           <input
             id="llm-api-key"
@@ -1067,7 +1370,8 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
             placeholder="sk-…"
             value={sessionSecrets.llmApiKey}
             onChange={(e) => onSessionSecretChange('llmApiKey', e.target.value)}
-            aria-label="LLM API key"
+            aria-label="LLM API key (coming soon)"
+            disabled
           />
         </div>
       </SettingsSection>

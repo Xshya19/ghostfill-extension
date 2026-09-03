@@ -189,5 +189,5 @@ Track these before/after to measure improvement:
 
 ---
 
-*Last Updated: August 2026*
-*Redesign Author: AI Agent Qoder*
+*Last Updated: 2026*
+*Author: GhostFill Team*

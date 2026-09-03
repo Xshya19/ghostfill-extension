@@ -16,6 +16,7 @@ import {
   GeneralTab,
   PasswordTab,
   PrivacyTab,
+  EMAIL_SERVICE_OPTIONS,
 } from './components/OptionsTabs';
 import { Sidebar, TabId } from './components/OptionsUIComponents';
 
@@ -132,6 +133,14 @@ function validateSettings(s: UserSettings): SettingsFormErrors {
     }
   }
 
+  // preferredEmailService: must be a service the backend zod enum knows.
+  // Without this, an unknown value sails through to UPDATE_SETTINGS and the
+  // service worker rejects the whole save ("backend rejected" with no field
+  // hint and a retry that can never succeed).
+  if (!EMAIL_SERVICE_OPTIONS.some((o) => o.value === (s.preferredEmailService as string))) {
+    errors.preferredEmailService = `Unknown email service: ${String(s.preferredEmailService)}`;
+  }
+
   return errors;
 }
 
@@ -142,6 +151,7 @@ const ALL_VALIDATED_FIELDS = new Set<string>([
   'passwordDefaults.length',
   'customDomain',
   'customDomainUrl',
+  'preferredEmailService',
 ]);
 
 // ═══════════════════════════════════════════════════════════════
@@ -341,6 +351,11 @@ const OptionsApp: React.FC = () => {
   });
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [loading, setLoading] = useState(true);
+  // Set when the initial GET_SETTINGS round-trip fails. While set, the form
+  // shows DEFAULT_SETTINGS — which are NOT the user's — so autosave stays
+  // off (it would otherwise overwrite real stored settings with defaults
+  // plus one edit) and a banner explains + offers retry.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [formErrors, setFormErrors] = useState<SettingsFormErrors>({});
   const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<TabId>('general');
@@ -393,12 +408,19 @@ const OptionsApp: React.FC = () => {
   // ═══════════════════════════════════════════════════════════
 
   const loadSettings = useCallback(async () => {
+    setLoadError(null);
     try {
       const response = await chrome.runtime.sendMessage({ action: 'GET_SETTINGS' });
       if (response?.settings && typeof response.settings === 'object') {
         const loaded = response.settings as UserSettings;
         setSettings(loaded);
         previousSettingsRef.current = loaded;
+      } else {
+        throw new Error(
+          (response as { error?: unknown } | null)?.error
+            ? String((response as { error?: unknown }).error)
+            : 'Service worker returned no settings'
+        );
       }
       const customDomainKey = (await storageService.getCustomDomainKey()) || '';
       const llmApiKey = (await storageService.getLLMApiKey()) || '';
@@ -407,7 +429,9 @@ const OptionsApp: React.FC = () => {
         llmApiKey,
       });
     } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
       log.error('Failed to load settings', error);
+      setLoadError(reason);
     } finally {
       setLoading(false);
     }
@@ -457,7 +481,11 @@ const OptionsApp: React.FC = () => {
         });
 
         if (!response || !response.success) {
-          log.error('Failed to save settings: backend rejected');
+          const reason =
+            response && typeof response.error === 'string' && response.error.length > 0
+              ? `: ${response.error}`
+              : '';
+          log.error(`Failed to save settings: backend rejected${reason}`);
           setSaveState('failed');
           return false;
         }
@@ -511,6 +539,11 @@ const OptionsApp: React.FC = () => {
       isFirstLoad.current = false;
       return;
     }
+    // Never autosave from defaults after a failed load — that would
+    // overwrite the user's real stored settings with DEFAULT_SETTINGS.
+    if (loadError) {
+      return;
+    }
     if (!loading) {
       if (autoSaveTimerRef.current) {
         clearTimeout(autoSaveTimerRef.current);
@@ -530,7 +563,7 @@ const OptionsApp: React.FC = () => {
         }
       };
     }
-  }, [settings, loading, saveSettings]);
+  }, [settings, loading, loadError, saveSettings]);
 
   // PERMANENT FIX 2026-06-21: beforeunload guard so unsaved changes
   // don't get lost if the user closes the tab during the debounce.
@@ -649,7 +682,14 @@ const OptionsApp: React.FC = () => {
     (imported: UserSettings) => {
       settingsRef.current = imported;
       setSettings(imported);
-      void saveSettings(imported);
+      // On validation failure the field errors render on their own tabs
+      // (e.g. preferredEmailService on Email) — jump there so the failure
+      // is visible instead of failing silently on Advanced.
+      void saveSettings(imported).then((ok) => {
+        if (!ok) {
+          setActiveTab('email');
+        }
+      });
     },
     [saveSettings]
   );
@@ -802,7 +842,7 @@ const OptionsApp: React.FC = () => {
       <header className="options-header" role="banner">
         <div className="header-content">
           <div className="ghost-card logo-box logo-box--no-padding">
-            <GhostLogo size={32} />
+            <GhostLogo size={52} />
           </div>
           <div className="header-text-group">
             <h1 className="spectral-title">{t('settingsTitle')}</h1>
@@ -845,6 +885,25 @@ const OptionsApp: React.FC = () => {
 
       {/* ── Posture: what GhostFill will do right now ── */}
       <PostureStrip settings={settings} />
+
+      {loadError && (
+        <div className="settings-load-error" role="alert">
+          <span>
+            Couldn&apos;t load your saved settings ({loadError}). Showing defaults — changes
+            won&apos;t autosave until loading succeeds.
+          </span>
+          <button
+            type="button"
+            className="gf-btn gf-btn--sm"
+            onClick={() => {
+              setLoading(true);
+              void loadSettings();
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* ── Dashboard ── */}
       <div
