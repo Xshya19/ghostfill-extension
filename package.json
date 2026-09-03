@@ -1,8 +1,16 @@
 {
   "name": "ghostfill-extension",
   "version": "1.1.0",
-  "description": "Disposable emails, secure passwords, and automatic OTP detection & fill. Local heuristics - no API key required. 100% Free & Open Source.",
+  "description": "GhostFill: Privacy-first Chrome Extension - Instant disposable temporary emails, cryptographically secure passwords, automatic OTP code detection & autofill, Gmail dot/plus alias support, and magic activation link auto-opening. Manifest V3. 17 temp mail backends. 100% local heuristics. Zero cloud tracking. Free & Open Source.",
   "private": true,
+  "homepage": "https://github.com/Xshya19/ghostfill-extension#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Xshya19/ghostfill-extension.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Xshya19/ghostfill-extension/issues"
+  },
   "scripts": {
     "dev": "webpack --watch --mode=development",
     "logs": "node scripts/log_server.js",
@@ -18,19 +26,49 @@
     "eval": "tsx src/intelligence/eval/runEval.ts --sample",
     "clean": "rimraf dist",
     "zip": "node scripts/build-zip.js",
+    "icons:brand": "python scripts/update-brand-icons.py",
     "build:zip": "npm run build && npm run zip"
   },
   "keywords": [
     "chrome-extension",
     "disposable-email",
+    "temporary-email",
+    "temp-mail",
     "temp-email",
+    "disposable-email-chrome-extension",
+    "otp-autofill",
+    "otp-detection",
+    "automatic-otp-fill",
+    "verification-code-autofill",
+    "magic-link",
+    "magic-link-autofill",
+    "activation-link",
     "password-generator",
-    "otp",
+    "secure-password",
+    "gmail-alias",
+    "gmail-dot-alias",
+    "gmail-plus-alias",
+    "anti-spam",
+    "anti-tracking",
+    "privacy-extension",
+    "privacy-tools",
+    "manifest-v3",
     "autofill",
-    "privacy",
-    "manifest-v3"
+    "form-autofill",
+    "browser-extension",
+    "chromium-extension",
+    "open-source",
+    "web-security",
+    "spam-protection",
+    "react",
+    "typescript",
+    "zustand",
+    "framer-motion"
   ],
-  "author": "GhostFill",
+  "author": {
+    "name": "GhostFill",
+    "url": "https://github.com/Xshya19"
+  },
   "license": "MIT",
   "dependencies": {
     "dompurify": "^3.3.3",
