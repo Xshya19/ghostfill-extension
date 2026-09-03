@@ -192,6 +192,7 @@ class LinkService {
   private draining = false;
   private lastActivationTime = 0;
   private readonly scanningEmails = new Set<string>();
+  private readonly activatedUrls = new Set<string>();
 
   private readonly metrics: LinkMetrics = {
     emailsScanned: 0,
@@ -477,9 +478,8 @@ class LinkService {
 
   clearHistory(): void {
     this.activationHistory = [];
-    dedupService.clear();
     this.scanningEmails.clear();
-    log.info('🧹 History & dedup cache cleared');
+    log.info('🧹 History cleared (activated URL dedup retained)');
   }
 
   private isScanning(emailId: string): boolean {
@@ -499,6 +499,12 @@ class LinkService {
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   private enqueue(record: ActivationRecord): void {
+    // Permanent URL deduplication
+    if (this.activatedUrls.has(record.url)) {
+      log.info('Link URL was already activated, skipping duplicate execution', { url: maskUrl(record.url) });
+      return;
+    }
+
     // Dedup against queue
     if (this.activationQueue.some((r) => r.url === record.url)) {
       log.debug('Link already in queue', { url: maskUrl(record.url) });
@@ -512,6 +518,16 @@ class LinkService {
       return;
     }
 
+    this.activatedUrls.add(record.url);
+    // Bound session growth: Sets preserve insertion order, so evict the
+    // oldest URL past the cap. Re-activating an evicted ancient URL is
+    // harmless (activation is idempotent server-side).
+    if (this.activatedUrls.size > 500) {
+      const oldest = this.activatedUrls.values().next();
+      if (!oldest.done) {
+        this.activatedUrls.delete(oldest.value);
+      }
+    }
     this.activationQueue.push(record);
     log.debug('📥 Queued', { depth: this.activationQueue.length });
     void this.drain();

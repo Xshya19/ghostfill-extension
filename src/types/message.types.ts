@@ -66,6 +66,8 @@ export type MessageAction =
   | 'WAIT_FOR_FRESH_OTP'
   | 'FALLBACK_DOMAINS_USED'
   | 'RESET_STATE'
+  // Polling pipeline state broadcasts (background → waiting tabs)
+  | 'POLLING_STATE_CHANGE'
   // Event-driven polling triggers
   | 'REGISTRATION_FORM_SUBMITTED'
   // Diagnostic export
@@ -78,6 +80,18 @@ export type MessageAction =
   | 'GMAIL_GET_STATUS'
   | 'GMAIL_SEARCH'
   | 'GMAIL_LIST_LABELS'
+  // Zoho Mail actions
+  | 'ZOHO_GET_STATUS'
+  | 'ZOHO_CONNECT'
+  | 'ZOHO_DISCONNECT'
+  | 'ZOHO_GENERATE_ALIAS'
+  | 'ZOHO_SEARCH_INBOX'
+  // Microsoft Outlook actions
+  | 'MICROSOFT_GET_STATUS'
+  | 'MICROSOFT_CONNECT'
+  | 'MICROSOFT_DISCONNECT'
+  | 'MICROSOFT_GENERATE_ALIAS'
+  | 'MICROSOFT_SEARCH_INBOX'
   // Link activation
   | 'ACTIVATE_LINK';
 
@@ -532,6 +546,17 @@ export interface ResetStateMessage extends BaseMessage {
   action: 'RESET_STATE';
 }
 
+/**
+ * Polling pipeline state broadcast (background → waiting tabs).
+ * Informs OTP-waiting pages of pipeline progress (analyzing, activating).
+ */
+export interface PollingStateChangeMessage extends BaseMessage {
+  action: 'POLLING_STATE_CHANGE';
+  payload?: {
+    state: string;
+  };
+}
+
 export interface RegistrationFormSubmittedMessage extends BaseMessage {
   action: 'REGISTRATION_FORM_SUBMITTED';
   payload?: {
@@ -653,7 +678,85 @@ export interface GmailListLabelsResponse {
   error?: string;
 }
 
-// Union type for all messages
+// ── Zoho Mail messages ────────────────────────────────────────────────────────
+
+export interface ZohoGetStatusMessage extends BaseMessage { action: 'ZOHO_GET_STATUS'; }
+export interface ZohoConnectMessage extends BaseMessage { action: 'ZOHO_CONNECT'; }
+export interface ZohoDisconnectMessage extends BaseMessage { action: 'ZOHO_DISCONNECT'; }
+export interface ZohoGenerateAliasMessage extends BaseMessage {
+  action: 'ZOHO_GENERATE_ALIAS';
+  payload: { website?: string; baseEmail?: string };
+}
+export interface ZohoSearchInboxMessage extends BaseMessage {
+  action: 'ZOHO_SEARCH_INBOX';
+  payload: { alias: string; sinceMs?: number };
+}
+
+export interface ZohoStatusResponse {
+  success: boolean;
+  connected: boolean;
+  email: string | null;
+  region: string | null;
+  error?: string;
+}
+
+export interface ZohoConnectResponse {
+  success: boolean;
+  profile?: unknown;
+  error?: string;
+}
+
+export interface ZohoGenerateAliasResponse {
+  success: boolean;
+  alias?: string;
+  error?: string;
+}
+
+export interface ZohoSearchInboxResponse {
+  success: boolean;
+  messages?: GmailMessage[];
+  error?: string;
+}
+
+// ── Microsoft Outlook messages ────────────────────────────────────────────────
+
+export interface MicrosoftGetStatusMessage extends BaseMessage { action: 'MICROSOFT_GET_STATUS'; }
+export interface MicrosoftConnectMessage extends BaseMessage { action: 'MICROSOFT_CONNECT'; }
+export interface MicrosoftDisconnectMessage extends BaseMessage { action: 'MICROSOFT_DISCONNECT'; }
+export interface MicrosoftGenerateAliasMessage extends BaseMessage {
+  action: 'MICROSOFT_GENERATE_ALIAS';
+  payload: { website?: string; baseEmail?: string };
+}
+export interface MicrosoftSearchInboxMessage extends BaseMessage {
+  action: 'MICROSOFT_SEARCH_INBOX';
+  payload: { alias: string; sinceMs?: number };
+}
+
+export interface MicrosoftStatusResponse {
+  success: boolean;
+  connected: boolean;
+  email: string | null;
+  error?: string;
+}
+
+export interface MicrosoftConnectResponse {
+  success: boolean;
+  profile?: unknown;
+  error?: string;
+}
+
+export interface MicrosoftGenerateAliasResponse {
+  success: boolean;
+  alias?: string;
+  error?: string;
+}
+
+export interface MicrosoftSearchInboxResponse {
+  success: boolean;
+  messages?: GmailMessage[];
+  error?: string;
+}
+
 export type ExtensionMessage =
   | GenerateEmailMessage
   | GenerateGmailAliasMessage
@@ -703,6 +806,7 @@ export type ExtensionMessage =
   | WaitForFreshOTPMessage
   | FallbackDomainsUsedMessage
   | ResetStateMessage
+  | PollingStateChangeMessage
   | RegistrationFormSubmittedMessage
   | GetDiagnosticReportMessage
   | GmailSignInMessage
@@ -711,7 +815,17 @@ export type ExtensionMessage =
   | GmailGetMessageMessage
   | GmailGetStatusMessage
   | GmailSearchMessage
-  | GmailListLabelsMessage;
+  | GmailListLabelsMessage
+  | ZohoGetStatusMessage
+  | ZohoConnectMessage
+  | ZohoDisconnectMessage
+  | ZohoGenerateAliasMessage
+  | ZohoSearchInboxMessage
+  | MicrosoftGetStatusMessage
+  | MicrosoftConnectMessage
+  | MicrosoftDisconnectMessage
+  | MicrosoftGenerateAliasMessage
+  | MicrosoftSearchInboxMessage;
 
 // Response union type
 export type ExtensionResponse =
@@ -735,6 +849,15 @@ export type ExtensionResponse =
   | GmailGetMessageResponse
   | GmailGetStatusResponse
   | GmailListLabelsResponse
+  | ZohoStatusResponse
+  | ZohoConnectResponse
+  | ZohoGenerateAliasResponse
+  | ZohoSearchInboxResponse
+  | MicrosoftStatusResponse
+  | MicrosoftConnectResponse
+  | MicrosoftGenerateAliasResponse
+  | MicrosoftSearchInboxResponse
+  | { success: boolean; alias?: string; error?: string }
   | { success: boolean; health?: unknown[]; error?: string }
   | { success: boolean; isFresh?: boolean; error?: string }
   | { success: boolean; error?: string };

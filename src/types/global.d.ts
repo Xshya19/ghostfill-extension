@@ -23,4 +23,10 @@ declare global {
   }
 }
 
+// ── Image module declarations ───────────────────────────────────────────────
+declare module '*.png' {
+  const content: string;
+  export default content;
+}
+
 export {};

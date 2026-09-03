@@ -2,9 +2,16 @@
 // Disposable email service for automated inbox and OTP extraction
 
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
+import {
+  fetchWithTimeout,
+  contentToString,
+  safeParseDate,
+  extractHtmlFromBody,
+  extractTextFromBody,
+} from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
+import { isRetryableError, throttledWarn } from './isRetryableError';
 
 const log = createLogger('OpeninboxService');
 const BASE_URL = 'https://openinbox.io/api/v1';
@@ -63,9 +70,9 @@ export class OpeninboxService {
               return { body: '', htmlBody: '', textBody: '' };
             }
             const fullMsg = await msgResponse.json();
-            const bodyStr = contentToString(fullMsg.body || fullMsg.text || fullMsg.html);
-            const htmlStr = contentToString(fullMsg.html || fullMsg.body);
-            const textStr = contentToString(fullMsg.text || fullMsg.body);
+            const htmlStr = extractHtmlFromBody(fullMsg.html || fullMsg.body);
+            const textStr = extractTextFromBody(fullMsg.text || fullMsg.body);
+            const bodyStr = textStr || htmlStr;
             return {
               body: bodyStr,
               htmlBody: htmlStr,
@@ -84,8 +91,8 @@ export class OpeninboxService {
           to: contentToString(msg.to || fullEmail),
           subject: contentToString(msg.subject, '(No Subject)'),
           date: safeParseDate(msg.createdAt || msg.date),
-          body: contentToString(msg.body || msg.text || msg.html),
-          htmlBody: contentToString(msg.html || msg.body),
+          body: '',
+          htmlBody: '',
           read: Boolean(msg.read),
           attachments: [],
         };
@@ -98,7 +105,11 @@ export class OpeninboxService {
         return email;
       });
     } catch (error) {
-      log.warn('Failed to fetch OpenInbox messages', error);
+      if (isRetryableError(error)) {
+        throttledWarn(log, 'openinbox-getMessages', 'Failed to fetch OpenInbox messages', error);
+        throw error;
+      }
+      log.debug('OpenInbox getMessages non-retryable error, returning []', error);
       return [];
     }
   }
@@ -115,9 +126,9 @@ export class OpeninboxService {
       }
 
       const msg = await response.json();
-      const bodyStr = contentToString(msg.body || msg.text || msg.html);
-      const htmlStr = contentToString(msg.html || msg.body);
-      const textStr = contentToString(msg.text || msg.body);
+      const htmlStr = extractHtmlFromBody(msg.html || msg.body);
+      const textStr = extractTextFromBody(msg.text || msg.body);
+      const bodyStr = textStr || htmlStr;
 
       return {
         id: String(msg.id || emailId),

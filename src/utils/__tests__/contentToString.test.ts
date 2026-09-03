@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { contentToString } from '../core';
+import { contentToString, extractHtmlFromBody, extractTextFromBody } from '../core';
 
 describe('contentToString', () => {
   it('passes plain strings through unchanged', () => {
@@ -49,5 +49,39 @@ describe('contentToString', () => {
       // Calling .slice() on the result must never throw.
       expect(() => out.slice(0, 5)).not.toThrow();
     }
+  });
+});
+
+describe('extractHtmlFromBody & extractTextFromBody', () => {
+  it('extracts html correctly when body is multipart object with text and html', () => {
+    const catchmailBody = {
+      text: 'Activate your account\n\nClick here',
+      html: '<html><body><a href="https://example.com/activate">Activate</a></body></html>',
+    };
+    expect(extractHtmlFromBody(catchmailBody)).toBe(
+      '<html><body><a href="https://example.com/activate">Activate</a></body></html>'
+    );
+    expect(extractTextFromBody(catchmailBody)).toBe('Activate your account\n\nClick here');
+  });
+
+  it('extracts nested body structures like { body: { html: ... } }', () => {
+    const nested = {
+      body: {
+        text: 'Nested text',
+        html: '<p>Nested HTML</p>',
+      },
+    };
+    expect(extractHtmlFromBody(nested)).toBe('<p>Nested HTML</p>');
+    expect(extractTextFromBody(nested)).toBe('Nested text');
+  });
+
+  it('handles plain string html or text', () => {
+    expect(extractHtmlFromBody('<p>hello</p>')).toBe('<p>hello</p>');
+    expect(extractTextFromBody('plain text')).toBe('plain text');
+  });
+
+  it('falls back gracefully on empty or null values', () => {
+    expect(extractHtmlFromBody(null, 'default')).toBe('default');
+    expect(extractTextFromBody(undefined, 'default')).toBe('default');
   });
 });

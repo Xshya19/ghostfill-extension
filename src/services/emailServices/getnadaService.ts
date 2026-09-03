@@ -4,6 +4,7 @@ import { EmailAccount, Email } from '../../types';
 import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
+import { isRetryableError, throttledWarn, throwIfRetryableStatus } from './isRetryableError';
 
 const log = createLogger('GetnadaService');
 const BASE_URL = 'https://getnada.com/api/v1';
@@ -73,9 +74,10 @@ export class GetnadaService {
         { signal: signal ?? null }
       );
 
-      if (!response.ok) {
+      if (response.status === 404) {
         return [];
       }
+      throwIfRetryableStatus(response, 'GetNada getMessages');
 
       const data = await response.json();
       const messages = Array.isArray(data) ? data : data.msgs || data.messages || [];
@@ -129,7 +131,11 @@ export class GetnadaService {
         return email;
       });
     } catch (error) {
-      log.warn('Failed to fetch GetNada messages', error);
+      if (isRetryableError(error)) {
+        throttledWarn(log, 'getnada-getMessages', 'Failed to fetch GetNada messages', error);
+        throw error;
+      }
+      log.debug('GetNada getMessages non-retryable error, returning []', error);
       return [];
     }
   }

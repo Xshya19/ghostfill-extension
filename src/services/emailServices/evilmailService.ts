@@ -1,9 +1,16 @@
 // Evilmail Service - evilmail.dev / evilmail.pro REST API integration
 
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
+import {
+  fetchWithTimeout,
+  contentToString,
+  safeParseDate,
+  extractHtmlFromBody,
+  extractTextFromBody,
+} from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
+import { isRetryableError, throttledWarn } from './isRetryableError';
 
 const log = createLogger('EvilmailService');
 const BASE_URL = 'https://evilmail.pro/api';
@@ -63,9 +70,9 @@ export class EvilmailService {
             }
             const fullMsg = await msgResponse.json();
             const item = fullMsg.data || fullMsg;
-            const bodyStr = contentToString(item.body || item.text || item.html);
-            const htmlStr = contentToString(item.html || item.body);
-            const textStr = contentToString(item.text || item.body);
+            const htmlStr = extractHtmlFromBody(item.html || item.body);
+            const textStr = extractTextFromBody(item.text || item.body);
+            const bodyStr = textStr || htmlStr;
             return {
               body: bodyStr,
               htmlBody: htmlStr,
@@ -84,8 +91,8 @@ export class EvilmailService {
           to: contentToString(msg.to || fullEmail),
           subject: contentToString(msg.subject, '(No Subject)'),
           date: safeParseDate(msg.timestamp || msg.date),
-          body: contentToString(msg.body || msg.text || msg.html),
-          htmlBody: contentToString(msg.html || msg.body),
+          body: '',
+          htmlBody: '',
           read: Boolean(msg.read),
           attachments: [],
         };
@@ -98,7 +105,11 @@ export class EvilmailService {
         return email;
       });
     } catch (error) {
-      log.warn('Failed to fetch Evilmail messages', error);
+      if (isRetryableError(error)) {
+        throttledWarn(log, 'evilmail-getMessages', 'Failed to fetch Evilmail messages', error);
+        throw error;
+      }
+      log.debug('Evilmail getMessages non-retryable error, returning []', error);
       return [];
     }
   }
@@ -116,9 +127,9 @@ export class EvilmailService {
 
       const msg = await response.json();
       const item = msg.data || msg;
-      const bodyStr = contentToString(item.body || item.text || item.html);
-      const htmlStr = contentToString(item.html || item.body);
-      const textStr = contentToString(item.text || item.body);
+      const htmlStr = extractHtmlFromBody(item.html || item.body);
+      const textStr = extractTextFromBody(item.text || item.body);
+      const bodyStr = textStr || htmlStr;
 
       return {
         id: String(item.id || emailId),

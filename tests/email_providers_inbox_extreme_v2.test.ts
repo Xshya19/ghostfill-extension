@@ -74,12 +74,11 @@ describe('CatchmailService — extreme', () => {
     const ok = await catchmailService.getMessage('ghost@catchmail.io', 'id1');
     expect(ok.body).toContain('hello');
   });
-  it('getMessages aborted returns []', async () => {
+  it('getMessages aborted throws (retryable errors propagate)', async () => {
     mockFetchOnce(async () => jsonResponse({ messages: [] }));
     const ctrl = new AbortController(); ctrl.abort();
-    const r = await catchmailService.getMessages('a@catchmail.io', ctrl.signal);
-    // service catches error and returns []
-    expect(r).toEqual([]);
+    // Abort errors are retryable — they should propagate so the circuit breaker can act
+    await expect(catchmailService.getMessages('a@catchmail.io', ctrl.signal)).rejects.toThrow();
   });
 });
 
@@ -125,14 +124,16 @@ describe('MaildropService — GraphQL retries', () => {
     await expect(maildropService.getMessage('nonexistent', acc)).rejects.toThrow(/not found/i);
     await expect(maildropService.deleteMessage('any')).resolves.toBeUndefined();
   });
-  it('getDomains returns maildrop.cc even when ping 500', async () => {
+  it('getDomains returns [] when ping 500 (provider ejected from health)', async () => {
     mockFetchOnce(async (_u, init) => {
       const body = (()=>{ try{ return JSON.parse(String((init as any)?.body ?? '{}'))}catch{return {}} })();
       if (body.query?.includes('ping')) return new Response('', { status: 500 });
       return jsonResponse({ data: { ping: 'pong' }});
     });
     const d = await maildropService.getDomains();
-    expect(d).toEqual(['maildrop.cc']);
+    // A dead ping must surface as unhealthy ([]) — previously this returned
+    // ['maildrop.cc'] unconditionally, so a dead provider never got ejected.
+    expect(d).toEqual([]);
   });
 });
 
@@ -269,10 +270,12 @@ describe('GuerrillaMailService — queue & backoff', () => {
 });
 
 describe('DropmailService', () => {
-  it('createAccount fallback local on 500', async () => {
+  it('createAccount throws on 500 (no fake local fallback)', async () => {
     mockFetchOnce(async () => new Response('', { status: 500 }));
-    const acc = await dropmailService.createAccount();
-    expect(acc.fullEmail).toMatch(/@dropmail\.me/);
+    // A fabricated login has no server session — the old local fallback
+    // produced accounts that empty-polled forever. Rejection lets the
+    // aggregator fall back to a working provider instead.
+    await expect(dropmailService.createAccount()).rejects.toThrow(/500/);
   });
   it('getMessages missing id returns []', async () => {
     const r = await dropmailService.getMessages({} as any);
@@ -320,7 +323,14 @@ describe('One-file providers', () => {
     expect(r[0]!.body).toBe('full');
   });
   it('mailCx/driftz/getnada/tempmailplus/tempMailLol smoke', async () => {
-    mockFetchOnce(async () => jsonResponse([]));
+    mockFetchOnce(async (url: RequestInfo) => {
+      // tempMail.lol creation is server-backed (no local fallback by design,
+      // so failures route to another provider) — answer its create call.
+      if (String(url).includes('/inbox/create')) {
+        return jsonResponse({ address: 'testprefix@tempmail.lol', token: 'tok123' });
+      }
+      return jsonResponse([]);
+    });
     for (const svc of [mailCxService, driftzService, getnadaService, tempmailPlusService, tempMailLolService] as any[]) {
       const ds = await svc.getDomains();
       expect(Array.isArray(ds)).toBe(true);
@@ -384,7 +394,7 @@ describe('TempMailService — rate limiter & fallback', () => {
 describe('ProviderHealthManager', () => {
   it('circuit open with crypto jitter ±20%', async () => {
     const mgr = new ProviderHealthManager();
-    const spy = vi.spyOn(crypto as any, 'getRandomValues').mockImplementation((arr: Uint32Array) => { arr[0]=2147483647; return arr; });
+    const spy = vi.spyOn(crypto as any, 'getRandomValues').mockImplementation((arr: any) => { (arr as any)[0]=2147483647; return arr; });
     for(let i=0;i<3;i++) mgr.recordFailure('catchmail' as any, new Error('net fail'));
     expect(mgr.isAvailable('catchmail' as any)).toBe(false);
     const health = (mgr as any).health.get('catchmail');
@@ -508,7 +518,7 @@ describe('EmailServiceAggregator — exhaustive', () => {
     expect(res.every(r=> r.fullEmail === 'a@catchmail.io')).toBe(true);
     (agg as any).generateEmailPromise = null;
   });
-  it('generateEmail cooldown 150ms on serial', async () => {
+  it('generateEmail coalesces the 150ms cooldown on serial calls instead of rejecting', async () => {
     const agg = makeAgg();
     vi.spyOn(storageService, 'getSettings').mockResolvedValue({ preferredEmailService: 'catchmail' } as any);
     vi.spyOn(storageService, 'set').mockResolvedValue(undefined as any);
@@ -518,7 +528,11 @@ describe('EmailServiceAggregator — exhaustive', () => {
     (agg as any).lastGenerationTime = 0;
     await agg.generateEmail({ service: 'catchmail' as any });
     (agg as any).generateEmailPromise = null;
-    await expect(agg.generateEmail({ service: 'catchmail' as any })).rejects.toThrow(/Rate limit/);
+    // A second click inside the cooldown window used to throw
+    // "Rate limit: wait 0.1s before retry." It now waits the window out and
+    // succeeds, which is what a user double-clicking "generate" expects.
+    const second = await agg.generateEmail({ service: 'catchmail' as any });
+    expect(second.fullEmail).toBe('a@catchmail.io');
   });
   it('generateEmailWithFallback retries 5 then throws', async () => {
     const health = new ProviderHealthManager();

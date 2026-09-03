@@ -4,6 +4,7 @@ import { EmailAccount, Email } from '../../types';
 import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
+import { isRetryableError, throttledWarn, throwIfRetryableStatus } from './isRetryableError';
 
 const log = createLogger('DropmailService');
 const GRAPHQL_ENDPOINT = 'https://dropmail.me/api/graphql/ghostfill_client_session';
@@ -79,21 +80,11 @@ export class DropmailService {
         service: 'dropmail',
       };
     } catch (error) {
-      log.error('Failed to create Dropmail account', error);
-      // Fallback local creation
-      const login = generateHumanLikeUsername();
-      const domain = 'dropmail.me';
-      const now = Date.now();
-      return {
-        id: `dropmail_${now}_${login}`,
-        username: login,
-        login,
-        domain,
-        fullEmail: `${login}@${domain}`,
-        createdAt: now,
-        expiresAt: now + 60 * 60 * 1000,
-        service: 'dropmail',
-      };
+      // No local fallback: a fabricated login has no server session, so
+      // session(id:) resolves to null and the inbox stays empty forever.
+      // Re-throw so the aggregator falls back to a working provider.
+      log.warn('Dropmail create failed, falling back to another provider', error);
+      throw error;
     }
   }
 
@@ -114,9 +105,10 @@ export class DropmailService {
         signal: signal ?? null,
       });
 
-      if (!response.ok) {
+      if (response.status === 404) {
         return [];
       }
+      throwIfRetryableStatus(response, 'Dropmail getMessages');
 
       const resJson = await response.json();
       const mails = resJson.data?.session?.mails || [];
@@ -139,7 +131,11 @@ export class DropmailService {
         };
       });
     } catch (error) {
-      log.warn('Failed to fetch Dropmail messages', error);
+      if (isRetryableError(error)) {
+        throttledWarn(log, 'dropmail-getMessages', 'Failed to fetch Dropmail messages', error);
+        throw error;
+      }
+      log.debug('Dropmail fetch failed (non-retryable)', error);
       return [];
     }
   }

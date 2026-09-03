@@ -1,5 +1,5 @@
 import { harvestPageJsonl } from '../intelligence/eval/harvest';
-import { classifyField, classifyHeuristic, mapFieldClassToFieldType, IntelligenceCore } from '../intelligence/IntelligenceCore';
+import { classifyHeuristic, decideFromResult, mapFieldClassToFieldType, IntelligenceCore } from '../intelligence/IntelligenceCore';
 import { extractFieldRecord, resolveLabelText } from '../intelligence/pageAnalyzer';
 import { safeGetComputedStyle } from '../shared/safeStyles';
 import {
@@ -269,8 +269,8 @@ export class FieldAnalyzer {
 
   analyzeField(element: FormInputElement, _allInputs?: FormInputElement[]): DetectedField {
     const record = extractFieldRecord(element);
-    const decision = classifyField(record);
     const result = classifyHeuristic(record);
+    const decision = decideFromResult(record, result);
 
     let fieldType = mapFieldClassToFieldType(result.top);
     let confidence = result.topProb;

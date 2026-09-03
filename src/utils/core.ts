@@ -52,10 +52,26 @@ export function generateRandomString(length: number, charset: string): string {
 /**
  * Safely parse a date/timestamp input into a valid Unix timestamp (ms).
  * Returns the fallback (default: Date.now()) if parsing yields NaN or invalid date.
+ *
+ * Seconds-vs-ms: several provider APIs return unix SECONDS (10 digits).
+ * A raw seconds value read as ms lands in 1970, and the polling age filter
+ * then discards real mail as "old" — so values < 1e12 are scaled ×1000.
  */
 export function safeParseDate(val: unknown, fallback: number = Date.now()): number {
   if (typeof val === 'number') {
-    return Number.isFinite(val) && !Number.isNaN(val) ? val : fallback;
+    if (!Number.isFinite(val) || Number.isNaN(val)) {
+      return fallback;
+    }
+    // Positive sub-1e12 values are unix seconds (1e12 ms = 2001-09-09, so no
+    // real ms timestamp is smaller). Zero and negatives pass through
+    // untouched (epoch / pre-epoch ms).
+    return val > 0 && val < 1e12 ? Math.round(val * 1000) : val;
+  }
+  if (typeof val === 'string' && /^\d{9,10}(\.\d+)?$/.test(val.trim())) {
+    const asNum = Number(val.trim());
+    if (Number.isFinite(asNum)) {
+      return Math.round(asNum * 1000);
+    }
   }
   if (!val || (typeof val !== 'string' && !(val instanceof Date))) {
     return fallback;
@@ -243,6 +259,12 @@ export function contentToString(value: unknown, fallback = ''): string {
     return fallback;
   }
   if (typeof value === 'object') {
+    if (typeof (value as any).toString === 'function') {
+      const str = String(value);
+      if (str && str !== '[object Object]') {
+        return str;
+      }
+    }
     const obj = value as Record<string, unknown>;
     // Prefer explicit content fields in a sensible priority order.
     for (const key of ['text', 'html', 'body', 'content', 'textBody', 'htmlBody']) {
@@ -259,6 +281,117 @@ export function contentToString(value: unknown, fallback = ''): string {
     }
   }
   return String(value);
+}
+
+/**
+ * Safely extracts raw HTML content from an email message or body representation.
+ * Prioritizes HTML fields ('html', 'html_body', 'htmlBody', 'htmlContent'),
+ * handles nested structures ({ body: { html: ... } }), and only falls back to text/body.
+ */
+export function extractHtmlFromBody(value: unknown, fallback = ''): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (!value || typeof value !== 'object') {
+    return fallback;
+  }
+
+  const obj = value as Record<string, unknown>;
+
+  // Check direct HTML fields
+  for (const key of ['html', 'html_body', 'htmlBody', 'htmlContent']) {
+    const field = obj[key];
+    if (typeof field === 'string' && field.trim().length > 0) {
+      return field;
+    }
+  }
+
+  // Check nested body object (e.g. Catchmail returns { body: { text: '...', html: '...' } })
+  if (typeof obj.body === 'object' && obj.body !== null) {
+    const nested = extractHtmlFromBody(obj.body);
+    if (nested) {
+      return nested;
+    }
+  } else if (typeof obj.body === 'string' && obj.body.trim().length > 0) {
+    return obj.body;
+  }
+
+  // Check nested data/result object
+  if (typeof obj.data === 'object' && obj.data !== null) {
+    const nested = extractHtmlFromBody(obj.data);
+    if (nested) {
+      return nested;
+    }
+  }
+  if (typeof obj.result === 'object' && obj.result !== null) {
+    const nested = extractHtmlFromBody(obj.result);
+    if (nested) {
+      return nested;
+    }
+  }
+
+  // Fallback to text fields if no HTML is present
+  for (const key of ['text', 'text_body', 'textBody', 'textContent', 'content', 'snippet']) {
+    const field = obj[key];
+    if (typeof field === 'string' && field.trim().length > 0) {
+      return field;
+    }
+  }
+
+  return fallback;
+}
+
+/**
+ * Safely extracts plain text content from an email message or body representation.
+ * Prioritizes text fields ('text', 'text_body', 'textBody', 'textContent', 'snippet').
+ */
+export function extractTextFromBody(value: unknown, fallback = ''): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (!value || typeof value !== 'object') {
+    return fallback;
+  }
+
+  const obj = value as Record<string, unknown>;
+
+  for (const key of ['text', 'text_body', 'textBody', 'textContent', 'snippet']) {
+    const field = obj[key];
+    if (typeof field === 'string' && field.trim().length > 0) {
+      return field;
+    }
+  }
+
+  if (typeof obj.body === 'object' && obj.body !== null) {
+    const nested = extractTextFromBody(obj.body);
+    if (nested) {
+      return nested;
+    }
+  } else if (typeof obj.body === 'string' && obj.body.trim().length > 0) {
+    return obj.body;
+  }
+
+  if (typeof obj.data === 'object' && obj.data !== null) {
+    const nested = extractTextFromBody(obj.data);
+    if (nested) {
+      return nested;
+    }
+  }
+  if (typeof obj.result === 'object' && obj.result !== null) {
+    const nested = extractTextFromBody(obj.result);
+    if (nested) {
+      return nested;
+    }
+  }
+
+  for (const key of ['content', 'html', 'html_body', 'htmlBody', 'htmlContent']) {
+    const field = obj[key];
+    if (typeof field === 'string' && field.trim().length > 0) {
+      return field;
+    }
+  }
+
+  return fallback;
 }
 
 export function formatTime(timestamp: number | string | Date): string {
@@ -482,12 +615,13 @@ export async function fetchWithTimeout(
   const id = setTimeout(() => controller.abort(), timeout);
 
   const onExternalAbort = () => controller.abort();
-  if (options.signal) {
-    if (options.signal.aborted) {
+  const hasValidSignal = options.signal && typeof (options.signal as AbortSignal).addEventListener === 'function';
+  if (hasValidSignal) {
+    if ((options.signal as AbortSignal).aborted) {
       clearTimeout(id);
       throw new DOMException('The user aborted a request.', 'AbortError');
     }
-    options.signal.addEventListener('abort', onExternalAbort);
+    (options.signal as AbortSignal).addEventListener('abort', onExternalAbort);
   }
 
   try {
@@ -506,8 +640,8 @@ export async function fetchWithTimeout(
     throw error;
   } finally {
     clearTimeout(id);
-    if (options.signal) {
-      options.signal.removeEventListener('abort', onExternalAbort);
+    if (hasValidSignal) {
+      (options.signal as AbortSignal).removeEventListener('abort', onExternalAbort);
     }
   }
 }
@@ -1082,6 +1216,7 @@ export class LRUCache<K extends string, V> {
 
 // ─── Extractors Consolidation ────────────────────────────────────────
 
+/** @deprecated — use services/extraction/otpExtractor.ts; kept for backwards compat */
 export function extractOTP(text: string): string | null {
   if (!text) {return null;}
   const lowerText = text.toLowerCase();
@@ -1159,6 +1294,7 @@ export function extractOTP(text: string): string | null {
   return scoredCandidates[0]!.value;
 }
 
+/** @deprecated — use services/extraction/linkExtractor.ts */
 export function extractActivationLink(text: string): string | null {
   if (!text) {return null;}
   const lowerText = text.toLowerCase();
@@ -1262,7 +1398,9 @@ export function extractActivationLink(text: string): string | null {
 // ─── Application Constants ───────────────────────────────────────────
 
 export const APP_NAME = 'GhostFill';
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = (() => {
+  try { return chrome.runtime.getManifest().version; } catch { return '1.1.0'; }
+})();
 
 export const API = {
   TEMP_MAIL: {
@@ -1418,4 +1556,67 @@ export const GMAIL_SCOPES = [
 export const GMAIL_API_BASE = 'https://www.googleapis.com/gmail/v1/users/me';
 export const OAUTH_TOKEN_INFO = 'https://oauth2.googleapis.com/tokeninfo';
 export const OAUTH_USERINFO = 'https://www.googleapis.com/oauth2/v2/userinfo';
+
+// ─── Zoho Mail OAuth & API Configurations ────────────────────────────────────
+
+/** Ordered list of Zoho regional account domains to try during auto-detection. */
+export const ZOHO_REGION_DOMAINS = [
+  'zoho.com',    // US (default)
+  'zoho.eu',     // Europe
+  'zoho.in',     // India
+  'zoho.com.au', // Australia
+  'zoho.jp',     // Japan
+  'zoho.com.cn', // China
+] as const;
+
+export type ZohoRegionDomain = (typeof ZOHO_REGION_DOMAINS)[number];
+
+export function getZohoOAuthBase(region: ZohoRegionDomain = 'zoho.com'): string {
+  return `https://accounts.${region}/oauth/v2`;
+}
+
+export function getZohoApiBase(region: ZohoRegionDomain = 'zoho.com'): string {
+  return `https://mail.${region}/api`;
+}
+
+/** OAuth 2.0 scopes needed for Zoho Mail inbox reading. */
+export const ZOHO_SCOPES = ['ZohoMail.messages.READ', 'ZohoMail.accounts.READ'];
+
+// ─── Microsoft Outlook (Graph API) OAuth & API Configurations ────────────────
+
+export const MICROSOFT_OAUTH_BASE =
+  'https://login.microsoftonline.com/common/oauth2/v2.0';
+
+export const MICROSOFT_GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
+
+/** OAuth 2.0 scopes needed for Outlook inbox reading via Microsoft Graph. */
+export const MICROSOFT_SCOPES = ['Mail.Read', 'User.Read', 'offline_access'];
+
+/** Domains recognised as Microsoft personal mailbox addresses. */
+export const MICROSOFT_DOMAINS = new Set([
+  'outlook.com',
+  'outlook.in',
+  'outlook.co.uk',
+  'outlook.de',
+  'outlook.fr',
+  'outlook.es',
+  'outlook.it',
+  'outlook.com.tr',
+  'outlook.com.au',
+  'hotmail.com',
+  'hotmail.co.uk',
+  'hotmail.de',
+  'hotmail.fr',
+  'hotmail.es',
+  'hotmail.it',
+  'hotmail.in',
+  'hotmail.com.au',
+  'live.com',
+  'live.co.uk',
+  'live.de',
+  'live.fr',
+  'live.in',
+  'live.com.au',
+  'msn.com',
+]);
 

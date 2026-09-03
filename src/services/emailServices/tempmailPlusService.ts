@@ -4,6 +4,7 @@ import { EmailAccount, Email } from '../../types';
 import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
+import { isRetryableError, throttledWarn, throwIfRetryableStatus } from './isRetryableError';
 
 const log = createLogger('TempmailPlusService');
 const BASE_URL = 'https://tempmail.plus/api/mails';
@@ -39,27 +40,63 @@ export class TempmailPlusService {
         { signal: signal ?? null }
       );
 
-      if (!response.ok) {
+      if (response.status === 404) {
         return [];
       }
+      throwIfRetryableStatus(response, 'Tempmail.plus getMessages');
 
       const data = await response.json();
-      const mailList = data.mail_list || data.mails || data.result || [];
+      const mailList: any[] = data.mail_list || data.mails || data.result || [];
 
-      return mailList.map((msg: any) => ({
-        id: String(msg.mail_id || msg.id),
-        from: contentToString(msg.from_mail || msg.from, 'Unknown Sender'),
-        to: fullEmail,
-        subject: contentToString(msg.subject, '(No Subject)'),
-        date: safeParseDate(msg.date),
-        body: contentToString(msg.text || msg.body),
-        htmlBody: contentToString(msg.html || msg.body),
-        textBody: contentToString(msg.text || msg.body),
-        read: Boolean(msg.is_read),
-        attachments: [],
-      }));
+      // Fetch detail bodies for up to 5 most recent messages in parallel
+      const recentMails = mailList.slice(0, 5);
+      const detailedMails = await Promise.all(
+        recentMails.map(async (msg: any) => {
+          const mailId = msg.mail_id || msg.id;
+          if (!mailId) {
+            return msg;
+          }
+          try {
+            const detailRes = await fetchWithTimeout(
+              `${BASE_URL}/${encodeURIComponent(mailId)}?email=${encodeURIComponent(login)}`,
+              { signal: signal ?? null }
+            );
+            if (detailRes.ok) {
+              const detailData = await detailRes.json();
+              return { ...msg, ...detailData };
+            }
+          } catch {
+            // Ignore failure to fetch single detail, use summary
+          }
+          return msg;
+        })
+      );
+
+      return recentMails.map((rawMsg: any, idx: number) => {
+        const msg = detailedMails[idx] || rawMsg;
+        const htmlStr = contentToString(msg.html || msg.body || msg.text);
+        const textStr = contentToString(msg.text || msg.body);
+        const bodyStr = textStr || htmlStr;
+
+        return {
+          id: String(msg.mail_id || msg.id),
+          from: contentToString(msg.from_mail || msg.from, 'Unknown Sender'),
+          to: fullEmail,
+          subject: contentToString(msg.subject, '(No Subject)'),
+          date: safeParseDate(msg.date),
+          body: bodyStr,
+          htmlBody: htmlStr,
+          textBody: textStr,
+          read: Boolean(msg.is_read),
+          attachments: [],
+        };
+      });
     } catch (error) {
-      log.warn('Failed to fetch Tempmail.plus messages', error);
+      if (isRetryableError(error)) {
+        throttledWarn(log, 'tempmailplus-getMessages', 'Failed to fetch Tempmail.plus messages', error);
+        throw error;
+      }
+      log.debug('Tempmail.plus getMessages non-retryable error, returning []', error);
       return [];
     }
   }

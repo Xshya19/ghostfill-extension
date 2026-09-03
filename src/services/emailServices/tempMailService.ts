@@ -1,4 +1,14 @@
 // TempMail Service - 1secmail.com API integration
+//
+// STATUS: DEMOTED, legacy-only. 1secmail.com is still registered (to 2027)
+// but the free api.1secmail.com endpoints are flaky (domain fetch routinely
+// fails -> fallback domains, see isUsingFallbackDomains), 1secmail.io is
+// parked, and the key-based 1sec-mail.com API is a different operator.
+// Do NOT add this backend to ALL_SERVICES, the preferred-service picker, or
+// any default list. This module stays only so previously stored
+// tempmail/1secmail accounts keep working (create/check/read passthroughs
+// in the aggregator). Category mortality here is ~50%/yr — prefer
+// catchmail/throwawaymail for anything new.
 
 import { EmailAccount, Email, TempMailMessage, TempMailFullMessage } from '../../types';
 import { API, TEMP_MAIL_DOMAINS, contentToString, safeParseDate } from '../../utils/core';

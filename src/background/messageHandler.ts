@@ -16,9 +16,23 @@ import {
 import { identityService } from '../services/identityService';
 import { extractAll } from '../services/intelligentExtractor';
 import { linkService } from '../services/linkService';
+import {
+  connectMicrosoft,
+  disconnectMicrosoft,
+  getMicrosoftConnectionStatus,
+  getMicrosoftAlias,
+  searchMicrosoftInbox,
+} from '../services/microsoftMailService';
 import { otpService } from '../services/otpService';
 import { passwordService } from '../services/passwordService';
 import { storageService } from '../services/storageService';
+import {
+  connectZoho,
+  disconnectZoho,
+  getZohoConnectionStatus,
+  getZohoAlias,
+  searchZohoInbox,
+} from '../services/zohoMailService';
 import {
   ExtensionMessage,
   ExtensionResponse,
@@ -106,6 +120,23 @@ const HANDLED_MESSAGE_ACTIONS = [
   'GMAIL_GET_MESSAGE',
   'GMAIL_SEARCH',
   'GMAIL_LIST_LABELS',
+  // Zoho Mail
+  'ZOHO_GET_STATUS',
+  'ZOHO_CONNECT',
+  'ZOHO_DISCONNECT',
+  'ZOHO_GENERATE_ALIAS',
+  'ZOHO_SEARCH_INBOX',
+  // Microsoft Outlook
+  'MICROSOFT_GET_STATUS',
+  'MICROSOFT_CONNECT',
+  'MICROSOFT_DISCONNECT',
+  'MICROSOFT_GENERATE_ALIAS',
+  'MICROSOFT_SEARCH_INBOX',
+  // Polling pipeline state (tab-bound; background never routes it, but the
+  // registry must know it so stats/validation don't report it as unknown)
+  'POLLING_STATE_CHANGE',
+  // Link activation
+  'ACTIVATE_LINK',
 ] as const satisfies readonly ExtensionMessage['action'][];
 
 type ExtractOTPPayloadWithMetadata = Record<string, unknown> & {
@@ -302,6 +333,29 @@ const HIGH_PRIORITY_ACTIONS = new Set([
   'OTP_PAGE_DETECTED',
   'CHECK_OTP_NOW',
   'GMAIL_GET_STATUS',
+  // Connect/disconnect are user mutations — a double-click must never be
+  // swallowed as a "duplicate" and answered with a fake success.
+  'ZOHO_CONNECT',
+  'ZOHO_DISCONNECT',
+  'ZOHO_GET_STATUS',
+  'MICROSOFT_CONNECT',
+  'MICROSOFT_DISCONNECT',
+  'MICROSOFT_GET_STATUS',
+  // Data-returning reads: a dedup hit answers {success:true} with NO data
+  // fields, which callers treat as success and render as errors/empties.
+  // Re-fetching is always cheaper than a fake success, so never dedup these.
+  'READ_EMAIL',
+  'EXTRACT_OTP',
+  'GMAIL_FETCH_INBOX',
+  'GMAIL_GET_MESSAGE',
+  'ZOHO_SEARCH_INBOX',
+  'MICROSOFT_SEARCH_INBOX',
+  // One-shot signals whose loss changes behavior (missed burst, missed link
+  // open, missed analysis result, missed fallback signal).
+  'REGISTRATION_FORM_SUBMITTED',
+  'ANALYZE_DOM',
+  'ACTIVATE_LINK',
+  'FALLBACK_DOMAINS_USED',
 ]);
 
 const MAX_DEDUP_HASH_AGE_MS = 2000;
@@ -309,9 +363,16 @@ const _MAX_DEDUP_MAP_SIZE = 100;
 
 function getPayloadFingerprint(payload: any): string {
   if (!payload || typeof payload !== 'object') {return '';}
-  // GRANDMASTER FIX: Only hash stable, small identifiers. 
+  // GRANDMASTER FIX: Only hash stable, small identifiers.
   // NEVER stringify HTML, DOM, or Email bodies.
-  const keys = ['emailId', 'url', 'domain', 'service', 'messageId', 'alias', 'website'];
+  // Every data-affecting field must be listed: omitting one (e.g. linkUrl,
+  // query, sinceMs) collapses DISTINCT requests into one hash and drops real
+  // work as "duplicate".
+  const keys = [
+    'emailId', 'url', 'domain', 'service', 'messageId', 'alias', 'website',
+    'linkUrl', 'query', 'sinceMs', 'title', 'message', 'maxResults',
+    'timestamp', 'id', 'email', 'state',
+  ];
   const parts = [];
   for (const k of keys) {
     if (payload[k] !== undefined) {parts.push(`${k}:${payload[k]}`);}
@@ -326,6 +387,7 @@ function isMessageDuplicate(message: ExtensionMessage): boolean {
     message.action.startsWith('GET_') ||
     message.action.startsWith('CHECK_') ||
     message.action.startsWith('GENERATE_') ||
+    message.action.startsWith('UPDATE_') ||
     message.action.startsWith('SAVE_') ||
     message.action.startsWith('DELETE_') ||
     message.action.startsWith('FILL_') ||
@@ -357,6 +419,31 @@ function isMessageDuplicate(message: ExtensionMessage): boolean {
   }
 }
 
+/**
+ * Message types used for internal extension-to-extension transport.
+ *
+ * These are not user-facing "actions" — they are pushed by the offscreen SSE
+ * relay (and the offscreen health ping). They are consumed directly by
+ * sseManager / offscreenManager, so they must bypass the action router, which
+ * would otherwise reject them as invalid actions and log a warning on every
+ * single email event.
+ */
+const INTERNAL_TRANSPORT_TYPES = new Set<string>([
+  'SSE_EMAIL_EVENT',
+  'SSE_RELAY_OPEN',
+  'SSE_RELAY_CLOSED',
+  'SSE_RELAY_FAILED',
+  'HEALTH_PING',
+]);
+
+function isInternalTransportMessage(message: unknown): boolean {
+  if (typeof message !== 'object' || message === null) {
+    return false;
+  }
+  const { type } = message as { type?: unknown };
+  return typeof type === 'string' && INTERNAL_TRANSPORT_TYPES.has(type);
+}
+
 export function setupMessageHandler(): void {
   // CRITICAL FIX: Prevent double registration which causes multiple response bugs
   if (hasRegistered) {
@@ -374,6 +461,11 @@ export function setupMessageHandler(): void {
       if (sender.id !== chrome.runtime.id) {
         log.warn('Blocked message from unauthorized origin', { id: sender.id, url: sender.url });
         sendResponse({ success: false, error: 'Unauthorized origin' });
+        return false;
+      }
+
+      // Internal transport traffic is handled by its own listeners.
+      if (isInternalTransportMessage(message)) {
         return false;
       }
 
@@ -636,8 +728,12 @@ async function handleMessage(
 
     case 'READ_EMAIL': {
       const payload = (message.payload || {}) as Record<string, unknown>;
-      const emailId = payload.emailId;
-      if (!emailId || typeof emailId !== 'string') {
+      // Schema allows string|number; normalise here instead of rejecting
+      // numbers that passed validation.
+      const rawId = payload.emailId;
+      const emailId =
+        typeof rawId === 'string' ? rawId : typeof rawId === 'number' ? String(rawId) : '';
+      if (!emailId) {
         return { success: false, error: 'Missing or invalid emailId' };
       }
       const login = typeof payload.login === 'string' ? payload.login : '';
@@ -704,9 +800,17 @@ async function handleMessage(
     }
 
     case 'WAIT_FOR_FRESH_OTP': {
-      const payload =
-        message.action === 'WAIT_FOR_FRESH_OTP' ? message.payload : { maxWaitMs: 30000 };
-      const lastOTP = await otpService.waitForFreshOTP(payload.maxWaitMs);
+      // Inside this case the action is always WAIT_FOR_FRESH_OTP; the old
+      // ternary's else-branch was unreachable and `payload.maxWaitMs` threw
+      // on an undefined payload. Default safely instead.
+      const payload = (message.payload ?? {}) as { maxWaitMs?: unknown };
+      const maxWaitMs =
+        typeof payload.maxWaitMs === 'number' &&
+        Number.isFinite(payload.maxWaitMs) &&
+        payload.maxWaitMs >= 1000
+          ? Math.min(payload.maxWaitMs, 120000)
+          : 30000;
+      const lastOTP = await otpService.waitForFreshOTP(maxWaitMs);
       return { success: true, lastOTP: lastOTP || undefined };
     }
 
@@ -715,13 +819,15 @@ async function handleMessage(
       if (message.action === 'OTP_PAGE_DETECTED' && message.payload) {
         const { url, fieldSelectors, confidence, verdict } = message.payload as {
           url: string;
-          fieldSelectors: string[];
-          confidence: number;
+          fieldSelectors?: string[];
+          confidence?: number;
           verdict?: string;
         };
+        // fieldSelectors is schema-optional; a legal omission used to throw here.
+        const selectors = Array.isArray(fieldSelectors) ? fieldSelectors : [];
         log.info('📱 OTP page detected', {
           url,
-          fieldCount: fieldSelectors.length,
+          fieldCount: selectors.length,
           confidence,
           verdict,
         });
@@ -736,7 +842,7 @@ async function handleMessage(
           startFastOTPPolling(
             sender.tab.id,
             url,
-            fieldSelectors,
+            selectors,
             sender.frameId,
             confidence,
             verdict
@@ -869,23 +975,6 @@ async function handleMessage(
         void deliverOTP(otpCode, otpConfidence, emailCtx).catch((e) =>
           log.warn('OTP delivery error (EXTRACT_OTP path)', e)
         );
-      }
-
-      // ── Activation link (popup path) ───────────────────────────────
-      // Delegate to the ACTIVATE_LINK handler so we go through the
-      // same security gate, dedup, and linkService flow as the polling
-      // engine — not an inline fire-and-forget hack.
-      if (linkUrl && payload?.emailId) {
-        const fromStr = toSafeStr(payload?.emailFrom);
-        const bodyStr = (toSafeStr(payload?.textBody) || toSafeStr(payload?.text) || '').substring(0, 500);
-        void activateDetectedLink({
-          emailId: payload.emailId,
-          linkUrl,
-          ...(fromStr ? { emailFrom: fromStr } : {}),
-          ...(subject ? { subject } : {}),
-          ...(typeof payload?.emailDate === 'number' ? { emailDate: payload.emailDate } : {}),
-          ...(bodyStr ? { bodySnippet: bodyStr } : {}),
-        }).catch((e) => log.warn('Link activation error (EXTRACT_OTP path)', e));
       }
 
       return {
@@ -1485,6 +1574,104 @@ async function handleMessage(
         }
         const labels = await gmailApiService.listLabels();
         return { success: true, labels };
+      } catch (e: unknown) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+
+    // ── ZOHO MAIL ACTIONS ──────────────────────────────────────────
+    case 'ZOHO_GET_STATUS': {
+      try {
+        const status = await getZohoConnectionStatus();
+        return { success: true, ...status };
+      } catch (e: unknown) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+
+    case 'ZOHO_CONNECT': {
+      try {
+        const profile = await connectZoho();
+        return { success: true, profile };
+      } catch (e: unknown) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+
+    case 'ZOHO_DISCONNECT': {
+      try {
+        await disconnectZoho();
+        return { success: true };
+      } catch (e: unknown) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+
+    case 'ZOHO_GENERATE_ALIAS': {
+      try {
+        const p = (message as any).payload as { website?: string; baseEmail?: string } | undefined;
+        const alias = await getZohoAlias(p?.website ?? 'general', p?.baseEmail);
+        return { success: true, alias };
+      } catch (e: unknown) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+
+    case 'ZOHO_SEARCH_INBOX': {
+      try {
+        const p = (message as any).payload as { alias?: string; sinceMs?: number } | undefined;
+        if (!p?.alias) {return { success: false, error: 'alias is required' };}
+        const messages = await searchZohoInbox(p.alias, p.sinceMs);
+        return { success: true, messages };
+      } catch (e: unknown) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+
+    // ── MICROSOFT OUTLOOK ACTIONS ──────────────────────────────────
+    case 'MICROSOFT_GET_STATUS': {
+      try {
+        const status = await getMicrosoftConnectionStatus();
+        return { success: true, ...status };
+      } catch (e: unknown) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+
+    case 'MICROSOFT_CONNECT': {
+      try {
+        const profile = await connectMicrosoft();
+        return { success: true, profile };
+      } catch (e: unknown) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+
+    case 'MICROSOFT_DISCONNECT': {
+      try {
+        await disconnectMicrosoft();
+        return { success: true };
+      } catch (e: unknown) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+
+    case 'MICROSOFT_GENERATE_ALIAS': {
+      try {
+        const p = (message as any).payload as { website?: string; baseEmail?: string } | undefined;
+        const alias = await getMicrosoftAlias(p?.website ?? 'general', p?.baseEmail);
+        return { success: true, alias };
+      } catch (e: unknown) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+
+    case 'MICROSOFT_SEARCH_INBOX': {
+      try {
+        const p = (message as any).payload as { alias?: string; sinceMs?: number } | undefined;
+        if (!p?.alias) {return { success: false, error: 'alias is required' };}
+        const messages = await searchMicrosoftInbox(p.alias, p.sinceMs);
+        return { success: true, messages };
       } catch (e: unknown) {
         return { success: false, error: e instanceof Error ? e.message : String(e) };
       }

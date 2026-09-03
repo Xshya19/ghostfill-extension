@@ -1,9 +1,16 @@
 // MailboxTemp Service - mailboxtemp.com API integration
 
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
+import {
+  fetchWithTimeout,
+  contentToString,
+  safeParseDate,
+  extractHtmlFromBody,
+  extractTextFromBody,
+} from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
+import { isRetryableError, throttledWarn } from './isRetryableError';
 
 const log = createLogger('MailboxtempService');
 const BASE_URL = 'https://mailboxtemp.com/api';
@@ -63,9 +70,9 @@ export class MailboxtempService {
             }
             const fullMsg = await msgResponse.json();
             const item = fullMsg.result || fullMsg;
-            const bodyStr = contentToString(item.body || item.text || item.html);
-            const htmlStr = contentToString(item.html || item.body);
-            const textStr = contentToString(item.text || item.body);
+            const htmlStr = extractHtmlFromBody(item.html || item.body);
+            const textStr = extractTextFromBody(item.text || item.body);
+            const bodyStr = textStr || htmlStr;
             return {
               body: bodyStr,
               htmlBody: htmlStr,
@@ -84,8 +91,8 @@ export class MailboxtempService {
           to: contentToString(msg.to || fullEmail),
           subject: contentToString(msg.subject, '(No Subject)'),
           date: safeParseDate(msg.date || msg.createdAt),
-          body: contentToString(msg.body || msg.text || msg.html),
-          htmlBody: contentToString(msg.html || msg.body),
+          body: '',
+          htmlBody: '',
           read: Boolean(msg.read),
           attachments: [],
         };
@@ -98,7 +105,11 @@ export class MailboxtempService {
         return email;
       });
     } catch (error) {
-      log.warn('Failed to fetch MailboxTemp messages', error);
+      if (isRetryableError(error)) {
+        throttledWarn(log, 'mailboxtemp-getMessages', 'Failed to fetch MailboxTemp messages', error);
+        throw error;
+      }
+      log.debug('MailboxTemp getMessages non-retryable error, returning []', error);
       return [];
     }
   }
@@ -116,9 +127,9 @@ export class MailboxtempService {
 
       const msg = await response.json();
       const item = msg.result || msg;
-      const bodyStr = contentToString(item.body || item.text || item.html);
-      const htmlStr = contentToString(item.html || item.body);
-      const textStr = contentToString(item.text || item.body);
+      const htmlStr = extractHtmlFromBody(item.html || item.body);
+      const textStr = extractTextFromBody(item.text || item.body);
+      const bodyStr = textStr || htmlStr;
 
       return {
         id: String(item.id || emailId),

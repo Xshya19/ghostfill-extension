@@ -40,24 +40,30 @@ class ProviderHealthManager implements IProviderHealthManager {
 
   // Priority order for providers (best first) — speed + reliability ranking
   private readonly providerPriority: EmailService[] = [
-    'catchmail', // Fast, 7-day retention, custom names
-    'mailcx', // SSE, 24h retention, custom names
-    'mailtm', // Highly reliable API
-    'guerrilla', // 10 domains (sharklasers, grr.la)
-    'maildrop', // GraphQL, 24h retention
-    'tempmail', // 9 domains, 1secmail.com
-    'mailboxtemp', // 24h retention, custom names
-    'dropmail', // GraphQL, 4 domains (emlpro.com)
-    'tempmailplus', // 3 domains (mailto.plus)
-    'getnada', // 4 domains (nada.ltd, inboxes.com)
-    'tempmaillol', // TempMail.lol
-    'openinbox', // Lower priority (prone to timeouts)
+    'driftz', // Blocklist bypass (.mn, .org) (Primary)
+    'catchmail', // Fast, 7-day retention, custom names (Verified 200 OK)
+    'throwawaymail', // Fast, zero auth REST API (Verified 200 OK)
+    'tempmailplus', // 3 domains, fast (Verified 200 OK)
+    'mailtm', // Highly reliable API, JWT auth (Verified 200 OK)
+    'mailgw', // JWT auth, alternative to mail.tm (Verified 200 OK)
+    'guerrilla', // 10 domains (sharklasers, grr.la) (Verified 200 OK)
+    'maildrop', // GraphQL, 24h retention (Verified 200 OK)
+    'custom', // Private self-hosted infrastructure
+    // Deprecated / non-working services kept at bottom of priority list.
+    // Do NOT promote 'tempmail'/'1secmail': 1secmail.com is unstable
+    // (intermittent outages since 2025, 1secmail.io parked) and the free
+    // api.1secmail.com endpoints this client uses degrade to fallback
+    // domains. Kept registered + health-gated only so existing stored
+    // accounts keep working — never make them defaults again.
+    'mailcx',
+    'dropmail',
+    'mailboxtemp',
+    'openinbox',
     'evilmail',
-    'driftz',
-    'mailgw',
-    'mailinator',
-    'mailnesia',
-    'custom',
+    'getnada',
+    'tempmaillol',
+    'tempmail',
+    '1secmail',
   ];
 
   constructor() {

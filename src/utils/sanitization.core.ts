@@ -312,7 +312,7 @@ export function sanitizeHtml(dirty: string, options?: SanitizerConfig): string {
       basicClean = basicClean.replace(/href\s*=\s*(['"])javascript:(?:(?!\1).)*?\1/gi, `href=$1#$1`);
       basicClean = secondaryValidation(basicClean);
       if (trustedTypesPolicy) {
-        return trustedTypesPolicy.createHTML(basicClean);
+        return String(trustedTypesPolicy.createHTML(basicClean));
       }
       return basicClean;
     } catch (error) {
@@ -340,17 +340,34 @@ export function sanitizeHtml(dirty: string, options?: SanitizerConfig): string {
   return cleaned;
 }
 
-/**
- * Sanitize email body (HTML content).
- */
-export function sanitizeEmailBody(htmlBody: string, textBody?: string): string {
+export function sanitizeEmailBody(
+  htmlBody: string,
+  textBody?: string,
+  options?: { allowStyleTag?: boolean }
+): string {
   if (htmlBody) {
+    const allowedTags = [
+      'html', 'head', 'body', 'meta', 'title',
+      'p', 'br', 'strong', 'em', 'u', 'b', 'i', 'a',
+      'ul', 'ol', 'li', 'div', 'span', 'h1', 'h2', 'h3', 'h4',
+      'h5', 'h6', 'blockquote', 'pre', 'code', 'table', 'thead',
+      'tbody', 'tfoot', 'tr', 'th', 'td', 'hr', 'sub', 'sup',
+      'img', 'center', 'section', 'header', 'footer', 'font',
+      'small', 'mark', 'caption', 'article', 'aside',
+      'figure', 'figcaption',
+    ];
+    if (options?.allowStyleTag) {
+      allowedTags.push('style');
+    }
+
     return sanitizeHtml(htmlBody, {
-      ALLOWED_TAGS: [
-        'p', 'br', 'strong', 'em', 'u', 'b', 'i', 'a', 'title',
-        'ul', 'ol', 'li', 'div', 'span', 'h1', 'h2', 'h3', 'h4',
-        'h5', 'h6', 'blockquote', 'pre', 'code', 'table', 'thead',
-        'tbody', 'tr', 'th', 'td', 'hr', 'sub', 'sup',
+      WHOLE_DOCUMENT: true,
+      FORCE_BODY: false,
+      ALLOWED_TAGS: allowedTags,
+      ALLOWED_ATTR: [
+        'href', 'alt', 'title', 'target', 'rel', 'src', 'style', 'class', 'id',
+        'width', 'height', 'align', 'valign', 'bgcolor', 'color', 'border',
+        'cellpadding', 'cellspacing', 'dir', 'charset', 'name', 'content',
       ],
       ADD_ATTR: ['target', 'rel'],
     });

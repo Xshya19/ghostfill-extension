@@ -41,7 +41,8 @@ export class IntentClassifier {
   private static tokenize(text: string): string[] {
     return text
       .toLowerCase()
-      .replace(/[^\w\s]/g, ' ')
+      // Preserve hyphens and equals for OTP codes like 123-456 and token=abc
+      .replace(/[^\w\s\-=]/g, ' ')
       .split(/\s+/)
       .filter((w) => w.length > 2);
   }

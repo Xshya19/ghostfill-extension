@@ -565,6 +565,18 @@ export class FloatingButton {
     log.debug('FloatingButton initialised');
     void this.loadSettingsAsync();
     void this.checkOTPAvailability();
+
+    // If a field is already focused when we init (lazy activation after focusin),
+    // the original focusin event fired before we existed — show immediately
+    const active = document.activeElement as HTMLElement | null;
+    if (active && isFormInputElement(active)) {
+      // Defer one tick so container is in DOM and classifier sees correct layout
+      setTimeout(() => {
+        if (!this.destroyed && this.isEnabled && document.activeElement === active) {
+          this.handleFocusChange(active);
+        }
+      }, 30);
+    }
   }
 
   destroy(): void {

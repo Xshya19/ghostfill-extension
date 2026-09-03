@@ -73,9 +73,64 @@ export class MailTmService {
   }
 
   /**
-   * Record an authentication failure (may trip circuit breaker)
+   * Decides whether a failure says something about the *credentials*.
+   *
+   * Only credential rejections should trip the circuit breaker. A brief Wi-Fi
+   * drop surfaces as `TypeError: Failed to fetch`, which tells us nothing about
+   * the account — counting those opened the breaker on perfectly healthy
+   * accounts and locked the user out of Mail.tm for the full 5-minute cooldown.
    */
-  recordAuthFailure(): void {
+  private isAuthoritativeAuthFailure(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+    const msg = `${error.message} ${error.name}`.toLowerCase();
+
+    // Transient / environmental — never the account's fault.
+    if (
+      error.name === 'AbortError' ||
+      msg.includes('failed to fetch') ||
+      msg.includes('networkerror') ||
+      msg.includes('network error') ||
+      msg.includes('timed out') ||
+      msg.includes('timeout') ||
+      msg.includes('aborted') ||
+      msg.includes('connection refused') ||
+      msg.includes('dns')
+    ) {
+      return false;
+    }
+
+    // Server-side faults are not credential faults either.
+    if (/\b5\d\d\b/.test(msg) || msg.includes('bad gateway') || msg.includes('service unavailable')) {
+      return false;
+    }
+
+    // Explicit credential rejection.
+    return (
+      msg.includes('401') ||
+      msg.includes('403') ||
+      msg.includes('unauthorized') ||
+      msg.includes('invalid credentials') ||
+      msg.includes('forbidden')
+    );
+  }
+
+  /**
+   * Record an authentication failure (may trip circuit breaker)
+   *
+   * @param error Pass the underlying error so transient network faults can be
+   *   distinguished from genuine credential rejections. Omitting it preserves
+   *   the legacy behaviour of always counting the failure.
+   */
+  recordAuthFailure(error?: unknown): void {
+    if (error !== undefined && !this.isAuthoritativeAuthFailure(error)) {
+      log.debug('Transient Mail.tm auth failure — not counted toward circuit breaker', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+
     this.authFailureCount++;
     if (this.authFailureCount >= this.AUTH_CIRCUIT_BREAKER_THRESHOLD) {
       this.authCircuitOpenUntil = Date.now() + this.AUTH_CIRCUIT_BREAKER_COOLDOWN_MS;
@@ -124,7 +179,7 @@ export class MailTmService {
           error.message.includes('Aborted') ||
           error.message.includes('timed out'))
       ) {
-        log.warn('Failed to fetch Mail.tm domains due to abort/timeout, using fallback');
+        log.debug('Failed to fetch Mail.tm domains due to abort/timeout, using fallback');
       } else {
         log.error('Failed to fetch Mail.tm domains, using fallback', error);
       }
@@ -307,7 +362,7 @@ export class MailTmService {
           attempts: maxAuthAttempts,
           error: lastAuthError?.message,
         });
-        this.recordAuthFailure();
+        this.recordAuthFailure(lastAuthError);
         throw lastAuthError || new Error('Authentication failed after retries');
       }
 
@@ -436,28 +491,42 @@ export class MailTmService {
   }
 
   /**
-   * Ensure we have a valid token, re-authenticating if necessary
+   * Ensure we have a valid token, re-authenticating if necessary.
+   * Single-flight: concurrent getMessages/SSE/retry callers share one
+   * re-auth instead of stampeding POST /token into a 429.
    */
   async ensureAuthenticated(signal?: AbortSignal): Promise<void> {
     if (this.isAuthenticated()) {
       return;
     }
-
-    // Check if we have credentials in storage to re-authenticate
-    try {
-      const { storageService } = await import('../storageService');
-      const currentEmail = await storageService.get('currentEmail');
-
-      if (currentEmail && currentEmail.service === 'mailtm' && currentEmail.password) {
-        log.info('Token expired, re-authenticating...');
-        await this.authenticate(currentEmail.fullEmail, currentEmail.password, signal);
-        return;
-      }
-    } catch (error) {
-      log.warn('Failed to retrieve credentials for re-authentication', error);
+    if (this.tokenRefreshPromise) {
+      await this.tokenRefreshPromise;
+      return;
     }
 
-    throw new Error('Not authenticated and cannot refresh token');
+    this.tokenRefreshPromise = (async () => {
+      // Check if we have credentials in storage to re-authenticate
+      try {
+        const { storageService } = await import('../storageService');
+        const currentEmail = await storageService.get('currentEmail');
+
+        if (currentEmail && currentEmail.service === 'mailtm' && currentEmail.password) {
+          log.info('Token expired, re-authenticating...');
+          await this.authenticate(currentEmail.fullEmail, currentEmail.password, signal);
+          return this.token ?? '';
+        }
+      } catch (error) {
+        log.warn('Failed to retrieve credentials for re-authentication', error);
+      }
+
+      throw new Error('Not authenticated and cannot refresh token');
+    })();
+
+    try {
+      await this.tokenRefreshPromise;
+    } finally {
+      this.tokenRefreshPromise = null;
+    }
   }
 
   /**
@@ -712,8 +781,10 @@ export class MailTmService {
 
     const result: Email = {
       id: String(msg.id),
-      from: contentToString(msg.from.address, 'Unknown Sender'),
-      to: contentToString(msg.to[0]?.address ?? ''),
+      // Sender-less system messages would otherwise throw inside
+      // messages.map and fail the ENTIRE inbox fetch.
+      from: contentToString(msg.from?.address, 'Unknown Sender'),
+      to: contentToString(msg.to?.[0]?.address ?? ''),
       subject: contentToString(msg.subject, '(No Subject)'),
       date: safeParseDate(msg.createdAt),
       body: bodyStr,

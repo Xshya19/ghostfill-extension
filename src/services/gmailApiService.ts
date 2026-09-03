@@ -97,6 +97,13 @@ const activeInboxFetches = new Map<string, Promise<GmailMessage[]>>();
 const activeDetailFetches = new Map<string, Promise<GmailMessage | null>>();
 const activePreviewFetches = new Map<string, Promise<GmailMessage | null>>();
 const activeSyncFetches = new Map<string, Promise<GmailInboxSyncResult>>();
+// Consecutive incremental-sync failures per syncKey. A single failure with a
+// warm cache correctly serves stale data — but the same path on repeat (e.g.
+// revoked OAuth surfacing as 403/401 with a non-empty cache) used to serve
+// stale mail FOREVER without ever surfacing. At the threshold we force one
+// full sync, which either recovers or throws the real auth error.
+const historyFailStreak = new Map<string, number>();
+const HISTORY_FAIL_STREAK_FORCE_FULL = 3;
 
 // ─── Client ID Management ────────────────────────────────
 let activeClientId = GMAIL_CLIENT_ID;
@@ -1201,6 +1208,7 @@ export async function syncInbox(
         messages,
         syncedAt: Date.now(),
       });
+      historyFailStreak.delete(syncKey);
 
       return {
         messages,
@@ -1212,8 +1220,20 @@ export async function syncInbox(
       const message = getErrorMessage(error);
       if (message.includes('404') || message.toLowerCase().includes('history')) {
         log.info('Gmail history cursor expired; falling back to full sync', { syncKey });
+        historyFailStreak.delete(syncKey);
         return doFullSync();
       }
+      const streak = (historyFailStreak.get(syncKey) ?? 0) + 1;
+      if (streak >= HISTORY_FAIL_STREAK_FORCE_FULL) {
+        log.warn('Gmail incremental sync failing repeatedly; forcing full sync', {
+          syncKey,
+          streak,
+          error: message,
+        });
+        historyFailStreak.delete(syncKey);
+        return doFullSync();
+      }
+      historyFailStreak.set(syncKey, streak);
       if (cachedMessages.length > 0) {
         log.warn('Gmail incremental sync failed; serving cached inbox', {
           syncKey,

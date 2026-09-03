@@ -1637,9 +1637,34 @@ async function deliverToRegisteredTab(
  *
  * @returns true if OTP was successfully delivered to at least one tab
  */
+let lastDeliveredOtpCode = '';
+let lastDeliveredOtpTimestamp = 0;
+
 export async function deliverOTP(code: string, confidence: number, email: EmailContext): Promise<boolean> {
+  const now = Date.now();
+  if (code && code === lastDeliveredOtpCode && now - lastDeliveredOtpTimestamp < 3000) {
+    log.debug('Skipping duplicate concurrent OTP delivery (debounced within 3s)');
+    return true;
+  }
+  lastDeliveredOtpCode = code;
+  lastDeliveredOtpTimestamp = now;
+
   await otpService.saveLastOTP(code, 'email', email.from, email.subject, confidence);
   await updateOTPMenuItem();
+
+  // The Auto-fill toggle owns TAB FILL only. Detection, saving, popup and
+  // notifications keep working with it off — we just don't type into pages.
+  try {
+    const settings = await storageService.getSettings();
+    if (settings.autoFillOTP === false) {
+      log.info('autoFillOTP disabled — code saved, skipping tab fill', {
+        waitingTabs: otpWaitingTabs.size,
+      });
+      return true;
+    }
+  } catch (e) {
+    log.warn('Failed to read autoFillOTP setting, defaulting to fill', e);
+  }
 
   const masked =
     code.length > 2 ? code.substring(0, 2) + '•'.repeat(code.length - 2) : '•'.repeat(code.length);
@@ -2006,7 +2031,7 @@ async function scheduleGeneralPoll(): Promise<void> {
   const mode: CheckMode = waitingForOtp ? 'fast' : 'general';
 
   // Calculate adaptive interval (e.g. 1.2-4s for fast, 3-5s for active general)
-  const interval = AdaptiveScheduler.calculateInterval(mode, otpWaitingTabs);
+  let interval = AdaptiveScheduler.calculateInterval(mode, otpWaitingTabs);
 
   try {
     const settings = await storageService.getSettings();
@@ -2014,6 +2039,20 @@ async function scheduleGeneralPoll(): Promise<void> {
       log.info('📧 General polling disabled by autoCheckInbox setting');
       pollingActive = false;
       return;
+    }
+    // The Check-interval setting owns the GENERAL cadence: the adaptive
+    // value is the engine's recommendation, the user value is the contract.
+    // Fast-path (OTP waiting) intervals are intentionally untouched —
+    // slowing those would break OTP delivery latency.
+    if (mode === 'general') {
+      const userMs = Math.min(Math.max(settings.checkIntervalSeconds, 3), 60) * 1000;
+      if (interval !== userMs) {
+        log.debug('General interval set from Check-interval setting', {
+          adaptiveMs: interval,
+          userMs,
+        });
+      }
+      interval = userMs;
     }
   } catch (e) {
     log.warn('Failed to fetch user settings for polling interval', e);
@@ -2457,7 +2496,26 @@ const extractionCacheByEmailId = new Map<string, { result: ExtractionPayload; sa
 
 // PERF: 5 min TTL — email content is immutable, no reason to re-extract.
 // Old 30s TTL caused re-extraction when retry/dual-path flows span >30s.
+// Hard cap: at fast-poll cadence thousands of entries can accumulate
+// between health sweeps, so evict oldest-first past the cap (a Map
+// preserves insertion order, making this O(1) amortised).
 const EXTRACTION_CACHE_TTL_MS = 300_000;
+const EXTRACTION_CACHE_MAX_ENTRIES = 300;
+
+function pruneExtractionCache(): void {
+  if (extractionCacheByEmailId.size <= EXTRACTION_CACHE_MAX_ENTRIES) {
+    return;
+  }
+  const overflow = extractionCacheByEmailId.size - EXTRACTION_CACHE_MAX_ENTRIES;
+  const keys = extractionCacheByEmailId.keys();
+  for (let i = 0; i < overflow; i++) {
+    const oldest = keys.next();
+    if (oldest.done) {
+      break;
+    }
+    extractionCacheByEmailId.delete(oldest.value);
+  }
+}
 
 export async function extractEmailOnce(
   emailId: string,
@@ -2476,6 +2534,7 @@ export async function extractEmailOnce(
     const promise = run()
     .then((result) => {
       extractionCacheByEmailId.set(emailId, { result, savedAt: Date.now() });
+      pruneExtractionCache();
       return result;
     })
     .finally(() => {

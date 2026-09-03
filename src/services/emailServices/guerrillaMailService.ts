@@ -176,13 +176,17 @@ class GuerrillaMailService {
       this.sessionId = data.sid_token;
       this.emailAddress = data.email_addr;
 
-      // Step 2: Set a human-like username via the set_email_user API
+      // Step 2: Set a human-like username via the set_email_user API.
+      // sid_token is REQUIRED: it binds the rename to the session from
+      // step 1. Without it the API answers for a different session and the
+      // returned address never matches our stored sid_token (empty inbox).
       const humanUsername = generateHumanLikeUsername();
       try {
         const setUserData = await this.executeRequest<GuerrillaSession>(
           {
             f: 'set_email_user',
             email_user: humanUsername,
+            sid_token: this.sessionId ?? data.sid_token,
             lang: 'en',
           },
           signal

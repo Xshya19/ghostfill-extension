@@ -1,10 +1,8 @@
 // Content Script Entry Point
 
 // Safe getComputedStyle override to prevent Chrome/Brave crashing on invalid pattern attributes (Chromium bug)
-// Initialize debug console FIRST to capture all errors
-import './dev/debugConsole';
-
-import { errorTracker, performanceMonitor } from '../services/performanceService';
+// Debug console only in development — excluded from production bundle via DefinePlugin
+import { errorTracker } from '../services/performanceService';
 import { FieldType } from '../types/form.types';
 import { deepQuerySelectorAll } from '../utils/core';
 import { createLogger, initRemoteLogger } from '../utils/logger';
@@ -15,6 +13,11 @@ import { OTPPageDetector } from './otpPageDetector';
 import { pageStatus } from './ui/pageStatus';
 import './styles/content.css';
 import './ui/GhostLabel';
+
+if (process.env.NODE_ENV !== 'production') {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  require('./dev/debugConsole');
+}
 
 // Register web component
 
@@ -193,6 +196,9 @@ const ACTIVATION_MESSAGE_ACTIONS = new Set([
   'SMART_AUTOFILL',
   'HIGHLIGHT_FIELDS',
   'SHOW_FLOATING_BUTTON',
+  // Symmetric with SHOW: a parked page that only ever receives HIDE must
+  // still initialise, otherwise the hide is silently lost.
+  'HIDE_FLOATING_BUTTON',
 ]);
 
 const PAGE_ACTIVATION_PATTERN =
@@ -296,20 +302,41 @@ function hasRelevantField(): boolean {
 }
 
 function hasPageActivationSignals(): boolean {
-  const bodyText = document.body?.textContent?.slice(0, 2000) ?? '';
-  return PAGE_ACTIVATION_PATTERN.test(`${location.href} ${document.title} ${bodyText}`);
+  // Fast path: URL + title match without touching DOM
+  if (PAGE_ACTIVATION_PATTERN.test(`${location.href} ${document.title}`)) {return true;}
+  if (!document.body) {return false;}
+  // Lazy walk: collect up to 2000 chars via TreeWalker without serializing entire body
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  let len = 0;
+  let buf = '';
+  let node: Node | null;
+  while ((node = walker.nextNode()) && len < 2000) {
+    const t = (node.nodeValue || '').trim();
+    if (!t) {continue;}
+    buf += t + ' ';
+    len += t.length + 1;
+    if (buf.length >= 2000) {break;}
+  }
+  if (!buf) {return false;}
+  return PAGE_ACTIVATION_PATTERN.test(buf.slice(0, 2000));
 }
 
 function shouldActivateImmediately(): boolean {
   if (hasRelevantField()) {
     return true;
   }
-
-  const hasAnyFormControl = deepQuerySelectorAll('form, input, textarea, select').length > 0;
-  return hasAnyFormControl && hasPageActivationSignals();
+  // If any form control exists, activate — per-field classifier (shouldDecorateField/isHighValueField)
+  // will decide whether to actually show. Previous `&& hasPageActivationSignals()` was too strict
+  // and caused "button not appearing" on auth pages without login/signup keywords in URL/title/body
+  // (e.g., SPAs, localized pages, checkout flows). Let the field-level gate do its job.
+  return deepQuerySelectorAll('form, input, textarea, select').length > 0;
 }
 
 function removePassiveActivationHooks(): void {
+  if (passiveObserver) {
+    passiveObserver.disconnect();
+    passiveObserver = null;
+  }
   if (!passiveActivationHandler) {
     return;
   }
@@ -317,6 +344,8 @@ function removePassiveActivationHooks(): void {
   document.removeEventListener('input', passiveActivationHandler, true);
   passiveActivationHandler = null;
 }
+
+let passiveObserver: MutationObserver | null = null;
 
 function installPassiveActivationHooks(): void {
   if (passiveActivationHandler || isInitialized) {
@@ -342,6 +371,62 @@ function installPassiveActivationHooks(): void {
 
   document.addEventListener('focusin', passiveActivationHandler, true);
   document.addEventListener('input', passiveActivationHandler, true);
+
+  // SPA support: if a relevant field is added later (React hydration, modal, route change),
+  // auto-activate even if user hasn't focused yet. This is lightweight — only runs while parked.
+  let parkedDebounce: ReturnType<typeof setTimeout> | null = null;
+  passiveObserver = new MutationObserver((mutations) => {
+    if (isInitialized) {
+      passiveObserver?.disconnect();
+      passiveObserver = null;
+      return;
+    }
+    let hasAddedInput = false;
+    for (const m of mutations) {
+      if (m.type === 'childList') {
+        for (let i = 0; i < m.addedNodes.length; i++) {
+          const n = m.addedNodes[i] as HTMLElement;
+          if (n instanceof HTMLElement) {
+            if (
+              n.tagName === 'INPUT' ||
+              n.tagName === 'TEXTAREA' ||
+              n.tagName === 'SELECT' ||
+              n.tagName === 'FORM' ||
+              (n.querySelector && n.querySelector('input, textarea, select'))
+            ) {
+              hasAddedInput = true;
+              break;
+            }
+          }
+        }
+      }
+      if (hasAddedInput) {break;}
+    }
+    if (!hasAddedInput) {return;}
+    if (parkedDebounce) {return;}
+    parkedDebounce = setTimeout(() => {
+      parkedDebounce = null;
+      if (isInitialized) {return;}
+      // Re-check: if any relevant field now exists, activate
+      if (hasRelevantField()) {
+        safeInit(true);
+      } else if (deepQuerySelectorAll('form, input, textarea, select').length > 0) {
+        // Generic form appeared — let field classifier decide, still worth activating
+        // but debounce a bit more to allow SPA to finish rendering text
+        setTimeout(() => {
+          if (!isInitialized && deepQuerySelectorAll('form, input, textarea, select').length > 0) {
+            safeInit(true);
+          }
+        }, 600);
+      }
+    }, 250);
+  });
+
+  // Observe body if available, otherwise documentElement
+  const target = document.body || document.documentElement;
+  if (target) {
+    passiveObserver.observe(target, { childList: true, subtree: true });
+  }
 }
 
 function installPassiveMessageListener(): void {
@@ -418,9 +503,8 @@ function init(): void {
   try {
     removePassiveActivationHooks();
 
-    // Initialize Observability Plugins First
+    // Initialize Observability — only lightweight errorTracker in content; performanceMonitor is background/offscreen only
     errorTracker.init();
-    performanceMonitor.init();
 
     // Initialize DOM-dependent components
     try {
@@ -582,7 +666,27 @@ async function handleMessage(message: {
 
   switch (message.action) {
     case 'PING': {
-      return { success: true, alive: true, verdict: otpPageDetector.getStatus().verdict };
+      // Must never throw: the background link-activation probe pings
+      // immediately after tab creation, potentially before init assigns
+      // the detector. An exception here surfaces as "content script never
+      // responded" and stalls the whole activation queue on its 15s timeout.
+      return {
+        success: true,
+        alive: true,
+        verdict: otpPageDetector ? otpPageDetector.getStatus().verdict : 'not-otp',
+      };
+    }
+
+    case 'RESET_STATE': {
+      // Broadcast alongside the FAB's own listener (floatingButton.ts).
+      // Answered here too so senders never see a nondeterministic
+      // success/error race between the two listeners on this tab.
+      try {
+        (otpPageDetector as unknown as { reset?: () => void } | undefined)?.reset?.();
+      } catch {
+        // ignore — reset is best-effort on a state broadcast
+      }
+      return { success: true };
     }
 
     case 'DETECT_FORMS': {

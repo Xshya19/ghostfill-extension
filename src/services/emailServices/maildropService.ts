@@ -163,10 +163,13 @@ class MaildropService {
    * Maildrop supports multiple domains, but maildrop.cc is primary
    */
   async getDomains(signal?: AbortSignal): Promise<string[]> {
-    // Check health first with quick timeout
+    // Check health first with quick timeout. A failed ping means an empty
+    // list so the aggregator health check ejects this provider instead of
+    // treating it as permanently healthy.
     const isHealthy = await this.ping(signal);
     if (!isHealthy) {
       log.warn('Maildrop API appears down during domains check');
+      return [];
     }
 
     // Known Maildrop domains

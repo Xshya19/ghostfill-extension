@@ -891,15 +891,25 @@ export class FieldWatcher {
   }
 
   private scanAndObserveShadowRoots(root: ParentNode, checkFields: () => Promise<void>): void {
+    // Limit shadow observation to at most 5 roots, only those inside forms or near OTP context
+    // to avoid CPU avalanche on Salesforce/Angular Material pages
+    let observed = 0;
     const walker = document.createTreeWalker(root as Node, NodeFilter.SHOW_ELEMENT, null);
     let node = walker.nextNode();
-    while (node) {
-      const shadow = (node as Element).shadowRoot;
+    while (node && observed < 5) {
+      const el = node as Element;
+      const shadow = el.shadowRoot;
       if (shadow && !this.knownShadowRoots.has(shadow)) {
+        // Only observe shadows that look form-related
+        const isFormRelated = el.closest('form, [role="form"], [class*="otp"], [class*="verify"], [class*="auth"]') !== null
+          || el.tagName.toLowerCase().includes('-');
+        if (!isFormRelated) { node = walker.nextNode(); continue; }
         this.knownShadowRoots.add(shadow);
         const obs = new MutationObserver(() => this.onMutation(checkFields));
-        obs.observe(shadow, { childList: true, subtree: true, attributes: true });
+        // Avoid attributes:true to reduce noise from spinner/class changes
+        obs.observe(shadow, { childList: true, subtree: true, attributes: false });
         this.shadowObservers.push(obs);
+        observed++;
       }
       node = walker.nextNode();
     }

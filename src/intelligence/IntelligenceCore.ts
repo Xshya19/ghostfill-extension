@@ -1,6 +1,8 @@
 import { storageService } from '../services/storageService';
 import { FieldType } from '../types/form.types';
+import { LRUCache } from '../utils/core';
 import { createLogger } from '../utils/logger';
+
 
 const log = createLogger('IntelligenceCore');
 
@@ -419,7 +421,7 @@ export const KW = {
 
 export type KeywordGroup = keyof typeof KW;
 
-const normCache = new Map<string, string>();
+const normCache = new LRUCache<string, string>(2000, 5 * 60 * 1000);
 export function normalizeText(input: string): string {
   if (!input) {
     return '';
@@ -439,24 +441,24 @@ export function normalizeText(input: string): string {
     out += ch;
   }
   out = out.replace(/[ \t\r\n]+/g, ' ').trim();
-  
-  if (normCache.size > 2000) {
-    normCache.clear();
-  }
   normCache.set(input, out);
   return out;
 }
 
-// Precompile regexes for each keyword group with safe Unicode word boundaries
+// Lazy regex compilation: build per-group regexes on first matchesAny() call
 const precompiledKwRegexes = new Map<KeywordGroup, RegExp[]>();
 
-for (const [group, keywords] of Object.entries(KW)) {
-  const regexes = keywords.map(kw => {
+function getOrCompileRegexes(group: KeywordGroup): RegExp[] {
+  let regexes = precompiledKwRegexes.get(group);
+  if (regexes) {return regexes;}
+  const keywords = (KW as Record<string, string[]>)[group] || [];
+  regexes = keywords.map(kw => {
     const normalized = normalizeText(kw);
     const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}(?=$|[^\\p{L}\\p{N}])`, 'iu');
   });
-  precompiledKwRegexes.set(group as KeywordGroup, regexes);
+  precompiledKwRegexes.set(group, regexes);
+  return regexes;
 }
 
 export function matchesAny(text: string, group: KeywordGroup): boolean {
@@ -464,10 +466,7 @@ export function matchesAny(text: string, group: KeywordGroup): boolean {
   if (!t) {
     return false;
   }
-  const regexes = precompiledKwRegexes.get(group);
-  if (!regexes) {
-    return false;
-  }
+  const regexes = getOrCompileRegexes(group);
   for (const rx of regexes) {
     if (rx.test(t)) {
       return true;
@@ -946,13 +945,12 @@ export function classifyHeuristic(
   };
 }
 
-export function classifyField(
+export function decideFromResult(
   record: RawFieldRecord,
-  opts: ClassifyOptions = {}
+  result: ClassificationResult,
+  _temperature?: number
 ): FillDecision {
-  const result = classifyHeuristic(record, opts);
   const chosen = result.top;
-
   const safety = checkSafety(record, result, chosen);
   const confidence = result.topProb;
 
@@ -987,6 +985,14 @@ export function classifyField(
   };
 }
 
+export function classifyField(
+  record: RawFieldRecord,
+  opts: ClassifyOptions = {}
+): FillDecision {
+  const result = classifyHeuristic(record, opts);
+  return decideFromResult(record, result, opts.temperature);
+}
+
 // ─── 5. CLASSIFIER ENTRYPOINT GATEWAY ─────────────────────────────────
 
 export interface CalibratedResult {
@@ -1001,11 +1007,17 @@ export interface CalibratedResult {
 
 export class IntelligenceCore {
   private temperature = 1.0;
-  private classificationCache = new Map<string, CalibratedResult>();
+  private classificationCache = new LRUCache<string, CalibratedResult>(800, 5 * 60 * 1000);
   private adaptive = new AdaptiveStrategyEngine();
 
   constructor(temperature: number = 1.0) {
     this.temperature = temperature;
+  }
+
+  private classifyOnce(record: RawFieldRecord): { result: ClassificationResult; decision: FillDecision } {
+    const result = classifyHeuristic(record, { temperature: this.temperature });
+    const decision = decideFromResult(record, result, this.temperature);
+    return { result, decision };
   }
 
   classify(record: RawFieldRecord): CalibratedResult {
@@ -1022,16 +1034,12 @@ export class IntelligenceCore {
       record.surroundingText?.slice(0, 80) || '',
     ].join('|');
 
-    if (this.classificationCache.size > 800) {
-      this.classificationCache.clear();
-    }
-
     const cached = this.classificationCache.get(fingerprint);
     if (cached) {
       return cached;
     }
 
-    const { result, decision } = this.classifyLegacyHelper(record);
+    const { result, decision } = this.classifyOnce(record);
 
     const fieldType = mapFieldClassToFieldType(result.top);
     const confidence = result.topProb;
@@ -1060,9 +1068,7 @@ export class IntelligenceCore {
   }
 
   private classifyLegacyHelper(record: RawFieldRecord) {
-    const result = classifyHeuristic(record, { temperature: this.temperature });
-    const decision = classifyField(record, { temperature: this.temperature });
-    return { result, decision };
+    return this.classifyOnce(record);
   }
 
   classifyBatch(records: RawFieldRecord[]): CalibratedResult[] {
@@ -1114,6 +1120,11 @@ export class IntelligenceCore {
 
   clearCache(): void {
     this.classificationCache.clear();
+  }
+
+  // For testing: expose cache stats
+  getCacheStats() {
+    return this.classificationCache.getStats();
   }
 
   setTemperature(t: number): void {
@@ -1190,9 +1201,12 @@ export class HistoryManager {
         return [{ selector: raw, hits: 1, misses: 0, lastSuccess: Date.now(), lastAttempt: Date.now() }];
       }
       if (Array.isArray(raw)) {
-        return [...raw]
+        const now = Date.now();
+        const decorated = [...raw]
           .filter((e): e is TrustedSelectorEntry => Boolean(e?.selector))
-          .sort((a, b) => this.score(b) - this.score(a));
+          .map(e => ({ e, s: this.score(e, now) }));
+        decorated.sort((a, b) => b.s - a.s);
+        return decorated.map(d => d.e);
       }
       return [];
     } catch {
@@ -1200,10 +1214,10 @@ export class HistoryManager {
     }
   }
 
-  private static score(e: TrustedSelectorEntry): number {
+  private static score(e: TrustedSelectorEntry, now: number = Date.now()): number {
     const total = e.hits + e.misses;
     const rate = total > 0 ? e.hits / total : 0.5;
-    const recency = Math.max(0, 1 - (Date.now() - (e.lastSuccess || 0)) / (30 * 24 * 60 * 60 * 1000));
+    const recency = Math.max(0, 1 - (now - (e.lastSuccess || 0)) / (30 * 24 * 60 * 60 * 1000));
     return rate * 70 + e.hits * 3 + recency * 20;
   }
 
@@ -1232,7 +1246,8 @@ export class HistoryManager {
         list.unshift({ selector, hits: 1, misses: 0, lastSuccess: now, lastAttempt: now });
       }
 
-      list.sort((a, b) => this.score(b) - this.score(a));
+      const now2 = Date.now();
+      list.sort((a, b) => this.score(b, now2) - this.score(a, now2));
       bag[type] = list.slice(0, this.MAX_PER_TYPE);
       await chrome.storage.local.set({ [key]: bag });
     } catch {
@@ -1283,6 +1298,10 @@ export interface TelemetryEvent {
 export class TelemetryCollector {
   private readonly STORAGE_KEY = 'ghostfill_telemetry_events';
   private events: TelemetryEvent[] = [];
+  private pending: TelemetryEvent[] = [];
+  private flushTimer: ReturnType<typeof setTimeout> | null = null;
+  private static readonly FLUSH_BATCH = 25;
+  private static readonly FLUSH_MS = 5000;
 
   async record(event: Omit<TelemetryEvent, 'timestamp' | 'hostname'>): Promise<void> {
     const timestamp = Date.now();
@@ -1294,22 +1313,31 @@ export class TelemetryCollector {
     };
 
     this.events.push(fullEvent);
+    this.pending.push(fullEvent);
 
     if (this.events.length > 100) {
       this.events.shift();
     }
 
+    if (this.pending.length >= TelemetryCollector.FLUSH_BATCH) {
+      void this.flush();
+    } else if (!this.flushTimer) {
+      this.flushTimer = setTimeout(() => void this.flush(), TelemetryCollector.FLUSH_MS);
+    }
+  }
+
+  private async flush(): Promise<void> {
+    if (this.flushTimer) { clearTimeout(this.flushTimer); this.flushTimer = null; }
+    if (this.pending.length === 0) {return;}
+    const batch = this.pending.splice(0, this.pending.length);
     try {
       const stored = (await storageService.get(this.STORAGE_KEY as any)) as TelemetryEvent[] || [];
-      stored.push(fullEvent);
-
-      if (stored.length > 1000) {
-        stored.shift();
-      }
-
+      stored.push(...batch);
+      while (stored.length > 1000) {stored.shift();}
       await storageService.set(this.STORAGE_KEY as any, stored);
     } catch {
-      // safe fallback
+      // safe fallback — re-queue batch head on failure?
+      // Drop to avoid unbounded growth; in-memory still retains it
     }
   }
 

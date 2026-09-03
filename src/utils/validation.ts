@@ -22,6 +22,11 @@ const safeNumber = z.number().finite();
 const safeBoolean = z.boolean();
 
 // ─── Email Service enum ───────────────────────────────────────────────────────
+// NOTE: keep in sync with EmailService (types/email.types.ts),
+// UserSettings.preferredEmailService (types/storage.types.ts) and
+// EMAIL_SERVICE_OPTIONS (frontend/options/components/OptionsTabs.tsx).
+// A provider missing here makes validateMessage reject UPDATE_SETTINGS /
+// GENERATE_EMAIL with that service ("backend rejected" in OptionsApp).
 const emailServiceSchema = z.enum([
   'mailgw',
   'mailtm',
@@ -34,6 +39,7 @@ const emailServiceSchema = z.enum([
   'evilmail',
   'openinbox',
   'catchmail',
+  'throwawaymail',
   'mailboxtemp',
   'dropmail',
   'tempmaillol',
@@ -55,12 +61,18 @@ const emailAccountServiceSchema = z.enum([
   'evilmail',
   'openinbox',
   'catchmail',
+  'throwawaymail',
   'mailboxtemp',
   'dropmail',
   'tempmaillol',
   'tempmailplus',
   'mailcx',
   'getnada',
+  // Registered legacy backends: fetch is host-permission gated in the
+  // manifest, but stored accounts may still carry these services, so
+  // CHECK_INBOX/READ_EMAIL validation must accept them.
+  'mailinator',
+  'mailnesia',
 ]);
 
 // ─── Email Account schema ─────────────────────────────────────────────────────
@@ -130,10 +142,14 @@ export const userSettingsSchema = z.object({
   preferredEmailService: emailServiceSchema.default('catchmail'),
   autoCheckInbox: safeBoolean.default(true),
   checkIntervalSeconds: safeNumber.min(3).max(60).default(5),
+  // Present in UserSettings and written directly by the popup — must be
+  // declared here or UPDATE_SETTINGS silently strips it on every save.
+  preferredEmailType: z.enum(['disposable', 'gmail', 'zoho', 'microsoft']).default('disposable'),
 
   // UI settings
   darkMode: z.union([safeBoolean, z.literal('system')]).default(true),
   showFloatingButton: safeBoolean.default(true),
+  // Kept for stored-data compat (see removal note in OptionsTabs GeneralTab).
   floatingButtonPosition: z.enum(['right', 'left']).default('right'),
 
   // Behavior settings
@@ -226,7 +242,9 @@ export const extractOTPPayloadSchema = z
     source: safeString.optional().nullable(),
     emailId: z.union([safeString, safeNumber]).optional(),
     emailFrom: safeString.optional().nullable(),
-    emailDate: safeNumber.optional(),
+    // TempMail-shape dates arrive as strings at runtime; the handler
+    // normalises via Date.parse, so accept both.
+    emailDate: z.union([safeNumber, safeString]).optional(),
     saveToLastOTP: safeBoolean.optional(),
   })
   .refine((payload) => {
@@ -238,7 +256,12 @@ export const extractOTPPayloadSchema = z
   }, 'At least one of text, textBody, or htmlBody is required');
 
 export const fillOTPPayloadSchema = z.object({
-  otp: safeString.min(4).max(64),
+  // Same code alphabet as AUTO_FILL_OTP: a code that passes popup→tab
+  // FILL_OTP must also pass bg→tab AUTO_FILL_OTP.
+  otp: safeString.regex(
+    /^[\sA-Za-z0-9\-_]{4,64}$/,
+    'OTP must be 4-64 alphanumeric characters, spaces, hyphens or underscores'
+  ),
   fieldSelectors: z.array(safeString).max(MAX_ARRAY_LENGTH).optional(),
 });
 
@@ -328,11 +351,15 @@ export const gmailFetchInboxPayloadSchema = z
     query: safeString.optional(),
     maxResults: safeNumber.optional(),
     alias: safeString.optional(),
+    forceFull: safeBoolean.optional(),
   })
   .optional();
 
 export const gmailGetMessagePayloadSchema = z.object({
   messageId: safeString,
+  // The handler scopes to this alias session when present; zod strips
+  // unknown keys, so it must be declared or it is silently lost.
+  alias: safeString.optional(),
 });
 
 // ─── Base Message Schema ──────────────────────────────────────────────────────
@@ -430,6 +457,49 @@ export const messagePayloadSchemas: Record<string, z.ZodSchema> = {
   GMAIL_GET_STATUS: z.undefined().optional(),
   GMAIL_SEARCH: gmailFetchInboxPayloadSchema,
   GMAIL_LIST_LABELS: z.undefined().optional(),
+  // NOTE: every background/popup action MUST be listed here. Missing entries
+  // are rejected as "Unknown message action" both in the popup (safeSendMessage)
+  // and in the service worker — which is exactly how Zoho/Outlook silently broke.
+  ZOHO_GET_STATUS: z.undefined().optional(),
+  ZOHO_CONNECT: z.undefined().optional(),
+  ZOHO_DISCONNECT: z.undefined().optional(),
+  ZOHO_GENERATE_ALIAS: z
+    .object({
+      website: safeString.optional(),
+      baseEmail: z.string().email().optional(),
+    })
+    .optional(),
+  ZOHO_SEARCH_INBOX: z
+    .object({
+      // min(1): the handler rejects empty aliases with 'alias is required',
+      // so fail fast here with a validation error instead.
+      alias: safeString.min(1),
+      sinceMs: safeNumber.optional(),
+    })
+    .optional(),
+  MICROSOFT_GET_STATUS: z.undefined().optional(),
+  MICROSOFT_CONNECT: z.undefined().optional(),
+  MICROSOFT_DISCONNECT: z.undefined().optional(),
+  MICROSOFT_GENERATE_ALIAS: z
+    .object({
+      website: safeString.optional(),
+      baseEmail: z.string().email().optional(),
+    })
+    .optional(),
+  MICROSOFT_SEARCH_INBOX: z
+    .object({
+      alias: safeString.min(1),
+      sinceMs: safeNumber.optional(),
+    })
+    .optional(),
+  // Fired by the polling engine to inform waiting tabs of pipeline state.
+  // Previously unregistered: any safeSendTabMessage with this action failed
+  // validation, so only raw chrome.tabs.sendMessage worked.
+  POLLING_STATE_CHANGE: z
+    .object({
+      state: safeString,
+    })
+    .optional(),
 };
 
 // ─── Validation function ──────────────────────────────────────────────────────

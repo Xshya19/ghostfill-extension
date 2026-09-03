@@ -2,6 +2,7 @@ import { EmailAccount, Email } from '../../types';
 import { fetchWithTimeout, contentToString } from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
+import { isRetryableError, throttledWarn } from './isRetryableError';
 
 const log = createLogger('DriftzService');
 const BASE_URL = 'https://api.driftz.net';
@@ -18,20 +19,27 @@ export class DriftzService {
         throw new Error(data.error || 'Failed to fetch domains');
       }
 
-      // We primarily use temp domains for standard Ghostfill generation
-      return Array.isArray(data.result?.temp) && data.result.temp.length > 0
-        ? data.result.temp
-        : ['temp.driftz.net'];
+      // We primarily use temp domains for standard Ghostfill generation, prioritizing bbjbinin.mn
+      const tempDomains: string[] =
+        Array.isArray(data.result?.temp) && data.result.temp.length > 0
+          ? data.result.temp
+          : ['bbjbinin.mn', 'manornewtech.org'];
+      return tempDomains.sort((a, b) => (a === 'bbjbinin.mn' ? -1 : b === 'bbjbinin.mn' ? 1 : 0));
     } catch (error) {
-      log.debug('Driftz domains unavailable, using fallback domain', { error: String(error) });
-      return ['temp.driftz.net']; // Fallback
+      log.debug('Driftz domains unavailable, using fallback domains', { error: String(error) });
+      return ['bbjbinin.mn', 'manornewtech.org']; // Real active temp domains fallback with bbjbinin.mn default
     }
   }
 
-  async createAccount(signal?: AbortSignal): Promise<EmailAccount> {
+  async createAccount(signal?: AbortSignal, requestedDomain?: string): Promise<EmailAccount> {
+    const targetDomain = requestedDomain || 'bbjbinin.mn';
     try {
       const response = await fetchWithTimeout(`${BASE_URL}/temp/generate`, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ domain: targetDomain }),
         signal: signal ?? null,
       });
       if (response.ok) {
@@ -41,7 +49,7 @@ export class DriftzService {
           const expiresAt = data.result.expiresAt
             ? Number(data.result.expiresAt) * 1000
             : Date.now() + 24 * 60 * 60 * 1000;
-          const domain = address.split('@')[1] || 'temp.driftz.net';
+          const domain = address.split('@')[1] || 'bbjbinin.mn';
 
           return {
             id: address,
@@ -57,9 +65,11 @@ export class DriftzService {
       log.debug('Driftz remote generate failed, falling back to local generation', error);
     }
 
-    // Resilient fallback: generate locally on supported domain
+    // Resilient fallback: generate locally. Use a static domain — the network
+    // just failed, so calling getDomains() here would fail too (and burn a
+    // second timeout before returning the same static list anyway).
     const login = generateHumanLikeUsername();
-    const domain = 'temp.driftz.net';
+    const domain = targetDomain || 'bbjbinin.mn';
     const address = `${login}@${domain}`;
     const now = Date.now();
 
@@ -139,7 +149,11 @@ export class DriftzService {
         return email;
       });
     } catch (error) {
-      log.warn('Failed to fetch Driftz messages', error);
+      if (isRetryableError(error)) {
+        throttledWarn(log, 'driftz-getMessages', 'Failed to fetch Driftz messages', error);
+        throw error;
+      }
+      log.debug('Driftz getMessages non-retryable error, returning []', error);
       return [];
     }
   }
@@ -222,7 +236,11 @@ export class DriftzService {
         attachments: [],
       }));
     } catch (error) {
-      log.warn('Failed to fetch Driftz permanent messages', error);
+      if (isRetryableError(error)) {
+        throttledWarn(log, 'driftz-getPermanentMessages', 'Failed to fetch Driftz permanent messages', error);
+        throw error;
+      }
+      log.debug('Driftz getPermanentMessages non-retryable error, returning []', error);
       return [];
     }
   }

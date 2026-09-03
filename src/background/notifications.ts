@@ -1096,7 +1096,10 @@ async function copyToClipboard(text: string): Promise<void> {
   const masked = text.length > 4 ? text.substring(0, 4) + '••••' : text;
   await chrome.notifications.create(`gf-otp-fallback-${Date.now()}`, {
     type: 'basic',
-    iconUrl: 'assets/icon-128.png',
+    // NOTE: assets/icons/icon128.png is the only shipped 128px icon
+    // (see web_accessible_resources). The old 'assets/icon-128.png'
+    // 404'd and notifications rendered without an icon.
+    iconUrl: 'assets/icons/icon128.png',
     title: 'GhostFill — OTP Code',
     message: `Your code: ${masked}\n\n(Could not auto-copy — clipboard not available. Retrieve full code from extension popup.)`,
     priority: 2,

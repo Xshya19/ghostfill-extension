@@ -3,9 +3,16 @@
 // Free REST API for temporary disposable email
 
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
+import {
+  fetchWithTimeout,
+  contentToString,
+  safeParseDate,
+  extractHtmlFromBody,
+  extractTextFromBody,
+} from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
+import { isRetryableError, throttledWarn } from './isRetryableError';
 
 const log = createLogger('CatchmailService');
 const BASE_URL = 'https://api.catchmail.io';
@@ -63,9 +70,9 @@ export class CatchmailService {
               return { body: '', htmlBody: '', textBody: '' };
             }
             const fullMsg = await msgResponse.json();
-            const bodyStr = contentToString(fullMsg.body || fullMsg.text_body || fullMsg.html_body);
-            const htmlStr = contentToString(fullMsg.html_body || fullMsg.body);
-            const textStr = contentToString(fullMsg.text_body || fullMsg.body);
+            const htmlStr = extractHtmlFromBody(fullMsg.html_body || fullMsg.html || fullMsg.body);
+            const textStr = extractTextFromBody(fullMsg.text_body || fullMsg.text || fullMsg.body);
+            const bodyStr = textStr || htmlStr;
             return {
               body: bodyStr,
               htmlBody: htmlStr,
@@ -97,7 +104,12 @@ export class CatchmailService {
         return email;
       });
     } catch (error) {
-      log.warn('Failed to fetch Catchmail messages', error);
+      if (isRetryableError(error)) {
+        throttledWarn(log, 'catchmail-getMessages', 'Failed to fetch Catchmail messages', error);
+        throw error;
+      }
+      // Non-retryable (e.g. malformed response) — degrade gracefully
+      log.debug('Catchmail getMessages non-retryable error, returning []', error);
       return [];
     }
   }
@@ -114,9 +126,9 @@ export class CatchmailService {
       }
 
       const msg = await response.json();
-      const bodyStr = contentToString(msg.body || msg.text_body || msg.html_body);
-      const htmlStr = contentToString(msg.html_body || msg.body);
-      const textStr = contentToString(msg.text_body || msg.body);
+      const htmlStr = extractHtmlFromBody(msg.html_body || msg.html || msg.body);
+      const textStr = extractTextFromBody(msg.text_body || msg.text || msg.body);
+      const bodyStr = textStr || htmlStr;
 
       return {
         id: String(msg.id || emailId),

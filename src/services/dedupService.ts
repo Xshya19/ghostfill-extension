@@ -96,9 +96,23 @@ class DedupService {
 
   private readonly pendingRecords = new Map<string, number>();
 
+  /** Opportunistic sweep: expired pending entries are otherwise only
+   * removed on per-key access, so orphans (never re-queried) accumulated
+   * forever. Runs inline on each write — O(n) but n is tiny and writes
+   * are per-email, not per-poll. */
+  private sweepPendingRecords(): void {
+    const now = Date.now();
+    for (const [key, expiresAt] of this.pendingRecords) {
+      if (now >= expiresAt) {
+        this.pendingRecords.delete(key);
+      }
+    }
+  }
+
   async markPending(emailId: string | number, accountId: string, ttlMs = 60_000): Promise<void> {
     const key = this.makeKey(emailId, accountId);
     this.pendingRecords.set(key, Date.now() + ttlMs);
+    this.sweepPendingRecords();
   }
 
   async clearPending(emailId: string | number, accountId: string): Promise<void> {

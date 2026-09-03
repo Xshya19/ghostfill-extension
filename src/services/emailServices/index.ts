@@ -12,9 +12,11 @@ import {
   getGmailAliasSession,
   getMostRecentGmailAliasSession,
 } from '../gmailConnectionService';
+import { searchMicrosoftInbox } from '../microsoftMailService';
 import { storageService } from '../storageService';
 import { IProviderHealthManager } from '../types/email-services.types';
 
+import { searchZohoInbox } from '../zohoMailService';
 import { catchmailService } from './catchmailService';
 import { CustomDomainService } from './customDomainService';
 import { driftzService } from './driftzService';
@@ -34,32 +36,41 @@ import { providerHealth } from './providerHealthManager';
 import { tempMailLolService } from './tempMailLolService';
 import { tempmailPlusService } from './tempmailPlusService';
 import { tempMailService } from './tempMailService';
+import { throwawaymailService } from './throwawaymailService';
 
 const log = createLogger('EmailServiceAggregator');
 const customDomainService = new CustomDomainService();
 
 class EmailServiceAggregator {
-  private availableServices: EmailService[] = [
+  /**
+   * Registry of providers that are health-checked and eligible as
+   * defaults/fallbacks. Deliberately the HEALTHY subset only — not every
+   * backend the aggregator can still serve.
+   *
+   * Deprecated backends (tempmail/1secmail, mailcx, dropmail, mailboxtemp,
+   * openinbox, evilmail, getnada, tempmaillol, mailinator, mailnesia) keep
+   * their create/check/read/getDomains passthroughs below so previously
+   * stored accounts keep working, but they are NEVER health-checked, NEVER
+   * defaults, and NEVER in the preferred-service picker. In particular do
+   * NOT re-add 1secmail: api.1secmail.com is flaky, 1secmail.io is parked,
+   * and the key-based 1sec-mail.com API is a different operator.
+   *
+   * Health checks always iterate this full list (never reassign-then-
+   * iterate) so a provider that recovers is re-admitted on the next check.
+   */
+  private static readonly ALL_SERVICES: EmailService[] = [
     'catchmail',
-    'mailcx',
-    'openinbox',
-    'mailboxtemp',
-    'dropmail',
-    'driftz',
-    'getnada',
+    'throwawaymail',
     'tempmailplus',
-    'evilmail',
-    'guerrilla',
-    'maildrop',
-    'tempmail',
-    'tempmaillol',
     'mailtm',
     'mailgw',
-    'mailinator',
-    'mailnesia',
-    '1secmail',
+    'guerrilla',
+    'maildrop',
+    'driftz',
     'custom',
   ];
+
+  private availableServices: EmailService[] = [...EmailServiceAggregator.ALL_SERVICES];
   private healthCheckTimestamp: number = 0;
   private healthCheckInitialized: boolean = false;
 
@@ -155,8 +166,9 @@ class EmailServiceAggregator {
 
     log.info('Performing email service health check...');
 
-    // Parallel checks
-    const checks = this.availableServices.map(async (service) => {
+    // Parallel checks — always against the FULL registry so a provider that
+    // failed once can be re-tested (and re-admitted) on the next check.
+    const checks = EmailServiceAggregator.ALL_SERVICES.map(async (service) => {
       if (service === 'custom') {
         return 'custom';
       } // Always assume custom is "healthy" if configured (checked later)
@@ -171,15 +183,6 @@ class EmailServiceAggregator {
         const domains = await this.getDomains(service, controller.signal);
         clearTimeout(timeoutId);
         if (domains && domains.length > 0) {
-          if (
-            (service === 'tempmail' || service === '1secmail') &&
-            tempMailService.isUsingFallbackDomains()
-          ) {
-            // This is expected behavior - just use debug level, not warn
-            log.debug(`Health check degraded for ${service}: using fallback domains`);
-            // Don't record as failure - fallback domains still work
-            return service;
-          }
           return service;
         }
       } catch (e) {
@@ -194,7 +197,7 @@ class EmailServiceAggregator {
 
     // Always ensure we have at least one fallback
     if (this.availableServices.length === 0) {
-      this.availableServices = ['mailtm', 'mailgw', 'maildrop', 'guerrilla'];
+      this.availableServices = ['driftz', 'catchmail', 'throwawaymail', 'tempmailplus', 'mailtm', 'mailgw', 'maildrop', 'guerrilla'];
       log.warn('All health checks failed, resetting to defaults');
     }
 
@@ -229,10 +232,14 @@ class EmailServiceAggregator {
     const now = Date.now();
     const diff = this.GENERATION_COOLDOWN_MS - (now - this.lastGenerationTime);
     if (diff > 0) {
-      const waitSec = (diff / 1000).toFixed(1);
-      throw new Error(`Rate limit: wait ${waitSec}s before retry.`);
+      // Coalesce rather than reject. A double-click on "generate" should simply
+      // wait out the remaining cooldown — throwing here surfaced a bogus
+      // "Rate limit: wait 0.1s before retry" error to the user for nothing.
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.min(diff, this.GENERATION_COOLDOWN_MS))
+      );
     }
-    this.lastGenerationTime = now;
+    this.lastGenerationTime = Date.now();
 
     this.generateEmailPromise = (async () => {
       // Ensure we have a list of healthy services
@@ -243,7 +250,7 @@ class EmailServiceAggregator {
 
       const settings = await storageService.getSettings();
       // Use preferred if valid/healthy, otherwise pick best healthy
-      let service = options.service || settings.preferredEmailService || 'catchmail';
+      let service = options.service || settings.preferredEmailService || 'driftz';
 
       // Custom precedence
       if (settings.preferredEmailService === 'custom' && !options.service) {
@@ -300,7 +307,16 @@ class EmailServiceAggregator {
     // Fail fast so fallback providers engage quickly
     const TIMEOUT_MS = 12_000;
     const internalAbortController = new AbortController();
-    const signal = options.signal || internalAbortController.signal;
+    if (options.signal) {
+      if (options.signal.aborted) {
+        internalAbortController.abort();
+      } else {
+        options.signal.addEventListener('abort', () => internalAbortController.abort(), {
+          once: true,
+        });
+      }
+    }
+    const signal = internalAbortController.signal;
 
     const timeoutId = setTimeout(() => internalAbortController.abort(), TIMEOUT_MS);
 
@@ -308,6 +324,8 @@ class EmailServiceAggregator {
       switch (service) {
         case 'custom':
           return await customDomainService.createAccount(signal);
+        case 'throwawaymail':
+          return await throwawaymailService.createAccount(options.prefix, signal);
         case 'maildrop':
           return await maildropService.createAccount(options.prefix, signal);
         case 'mailgw':
@@ -324,7 +342,7 @@ class EmailServiceAggregator {
         case 'guerrilla':
           return await guerrillaMailService.createAccount(signal);
         case 'driftz':
-          return await driftzService.createAccount(signal);
+          return await driftzService.createAccount(signal, options.domain);
         case 'catchmail':
           return await catchmailService.createAccount(options.prefix, signal);
         case 'openinbox':
@@ -372,7 +390,17 @@ class EmailServiceAggregator {
     const maxRetries = 5;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
-      const nextProvider = this.healthManager.getBestProvider(triedProviders);
+      let nextProvider: EmailService | null = this.healthManager.getBestProvider(triedProviders);
+
+      // Registry split-brain guard: the health manager scores the FULL
+      // priority list (including demoted legacy backends), but fallback
+      // generation must stay inside ALL_SERVICES — otherwise a failure
+      // cascade resurrects demoted providers (1secmail et al) as "best".
+      if (nextProvider && !EmailServiceAggregator.ALL_SERVICES.includes(nextProvider)) {
+        triedProviders.push(nextProvider);
+        nextProvider =
+          EmailServiceAggregator.ALL_SERVICES.find((s) => !triedProviders.includes(s)) ?? null;
+      }
 
       if (!nextProvider) {
         const errorMsg = `All email services unavailable after ${maxRetries} attempts`;
@@ -441,17 +469,28 @@ class EmailServiceAggregator {
     }
     log.info('✅ Email saved to storage', { preferred, setAsCurrent: preferred !== 'gmail' });
 
-    await storageService.pushToArray(
-      'emailHistory',
-      {
-        email: account.fullEmail,
-        service: account.service,
-        usedOn: [],
-        createdAt: account.createdAt,
-        emailsReceived: 0,
-      },
-      50
-    );
+    // saveHistory=false means "don't keep a trail" — skip the history write
+    // entirely rather than writing and pretending to prune.
+    try {
+      const settings = await storageService.getSettings();
+      if (settings.saveHistory !== false) {
+        await storageService.pushToArray(
+          'emailHistory',
+          {
+            email: account.fullEmail,
+            service: account.service,
+            usedOn: [],
+            createdAt: account.createdAt,
+            emailsReceived: 0,
+          },
+          50
+        );
+      } else {
+        log.debug('History write skipped (saveHistory disabled)');
+      }
+    } catch (e) {
+      log.warn('Failed to record email history', e);
+    }
 
     const responseTime = performance.now() - startTime;
     this.healthManager.recordSuccess(service, responseTime);
@@ -646,6 +685,49 @@ class EmailServiceAggregator {
           }));
           break;
         }
+        case 'zoho': {
+          try {
+            const zohoMsgs = await searchZohoInbox(account.fullEmail);
+            emails = zohoMsgs.map((msg) => ({
+              id: msg.id,
+              from: msg.fromEmail || msg.from,
+              to: msg.to || account.fullEmail,
+              subject: msg.subject,
+              date: msg.date,
+              body: msg.body || msg.snippet,
+              htmlBody: msg.htmlBody || msg.body || msg.snippet,
+              attachments: [],
+              read: !msg.isUnread,
+            }));
+          } catch (err) {
+            log.warn('Zoho checkInbox failed', err);
+            emails = [];
+          }
+          break;
+        }
+        case 'microsoft': {
+          try {
+            const msMsgs = await searchMicrosoftInbox(account.fullEmail);
+            emails = msMsgs.map((msg) => ({
+              id: msg.id,
+              from: msg.fromEmail || msg.from,
+              to: msg.to || account.fullEmail,
+              subject: msg.subject,
+              date: msg.date,
+              body: msg.body || msg.snippet,
+              htmlBody: msg.htmlBody || msg.body || msg.snippet,
+              attachments: [],
+              read: !msg.isUnread,
+            }));
+          } catch (err) {
+            log.warn('Microsoft checkInbox failed', err);
+            emails = [];
+          }
+          break;
+        }
+        case 'throwawaymail':
+          emails = await throwawaymailService.getMessages(account, signal);
+          break;
         case 'custom':
           emails = await customDomainService.getMessages(account, signal);
           break;
@@ -758,7 +840,12 @@ class EmailServiceAggregator {
 
       return safeEmails;
     } catch (error) {
-      if ((error as Error).name === 'AbortError') {
+      const isAbort =
+        (error as Error)?.name === 'AbortError' ||
+        ((error as any)?.name === 'DOMException' && /abort/i.test((error as any)?.message)) ||
+        /user aborted|aborted/i.test((error as Error)?.message || '');
+
+      if (isAbort) {
         throw error;
       }
 
@@ -848,6 +935,59 @@ class EmailServiceAggregator {
             throw new Error('Email not found');
           }
           email = found;
+          break;
+        }
+        case 'zoho': {
+          const zohoMsgs = await searchZohoInbox(account.fullEmail);
+          const found = zohoMsgs.find((m) => String(m.id) === String(emailId));
+          if (!found) {
+            throw new Error('Zoho email not found');
+          }
+          email = {
+            id: found.id,
+            from: found.fromEmail || found.from,
+            to: found.to || account.fullEmail,
+            subject: found.subject,
+            date: found.date,
+            body: found.body || found.snippet || '',
+            htmlBody: found.htmlBody || found.body || found.snippet || '',
+            attachments: [],
+            read: !found.isUnread,
+          };
+          break;
+        }
+        case 'microsoft': {
+          const msMsgs = await searchMicrosoftInbox(account.fullEmail);
+          const found = msMsgs.find((m) => String(m.id) === String(emailId));
+          if (!found) {
+            throw new Error('Microsoft email not found');
+          }
+          email = {
+            id: found.id,
+            from: found.fromEmail || found.from,
+            to: found.to || account.fullEmail,
+            subject: found.subject,
+            date: found.date,
+            body: found.body || found.snippet || '',
+            htmlBody: found.htmlBody || found.body || found.snippet || '',
+            attachments: [],
+            read: !found.isUnread,
+          };
+          break;
+        }
+        case 'throwawaymail': {
+          const tMsgs = await throwawaymailService.getMessages(account, signal);
+          const found = tMsgs.find((m) => String(m.id) === String(emailId));
+          email = found || {
+            id: String(emailId),
+            from: 'Unknown Sender',
+            to: account.fullEmail,
+            subject: '(No Subject)',
+            date: Date.now(),
+            body: '',
+            read: true,
+            attachments: [],
+          };
           break;
         }
         case 'maildrop':
@@ -958,7 +1098,7 @@ class EmailServiceAggregator {
 
     const endpoints = [
       'https://api.mail.tm/domains',
-      'https://api.catchmail.io/v1/domains',
+      'https://api.mail.gw/domains',
     ];
 
     for (const url of endpoints) {
@@ -973,7 +1113,7 @@ class EmailServiceAggregator {
     try {
       switch (service) {
         case 'maildrop':
-          return ['maildrop.cc'];
+          return await maildropService.getDomains(signal);
         case 'guerrilla':
           return ['guerrillamail.com'];
         case 'mailgw':
@@ -984,6 +1124,8 @@ class EmailServiceAggregator {
           return await driftzService.getDomains(signal);
         case 'catchmail':
           return await catchmailService.getDomains(signal);
+        case 'throwawaymail':
+          return await throwawaymailService.getDomains(signal);
         case 'openinbox':
           return await openinboxService.getDomains(signal);
         case 'evilmail':
@@ -1013,10 +1155,29 @@ class EmailServiceAggregator {
   }
 
   /**
-   * Get email history
+   * Get email history, enforcing the retention window. Entries older than
+   * historyRetentionDays are dropped on read (and pruned from storage) so
+   * the Privacy setting is actually honored instead of merely displayed.
    */
   async getHistory() {
-    return (await storageService.get('emailHistory')) || [];
+    const raw = (await storageService.get('emailHistory')) || [];
+    let retentionDays = 30;
+    try {
+      const settings = await storageService.getSettings();
+      retentionDays = Math.min(Math.max(settings.historyRetentionDays ?? 30, 1), 365);
+    } catch {
+      // fall back to the default window
+    }
+    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    const kept = raw.filter((h: { createdAt?: number }) => (h?.createdAt ?? 0) >= cutoff);
+    if (kept.length !== raw.length) {
+      try {
+        await storageService.set('emailHistory', kept);
+      } catch (e) {
+        log.warn('Failed to prune expired email history', e);
+      }
+    }
+    return kept;
   }
 
   /**

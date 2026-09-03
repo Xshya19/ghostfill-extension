@@ -4,6 +4,7 @@ import { EmailAccount, Email } from '../../types';
 import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
+import { isRetryableError, throttledWarn, throwIfRetryableStatus } from './isRetryableError';
 
 const log = createLogger('TempMailLolService');
 const BASE_URL = 'https://api.tempmail.lol/v2';
@@ -48,21 +49,11 @@ export class TempMailLolService {
         service: 'tempmaillol',
       };
     } catch (error) {
-      log.warn('Failed to create TempMail.lol account from API, using fallback', error);
-      const login = generateHumanLikeUsername();
-      const domain = 'tempmail.lol';
-      const now = Date.now();
-      return {
-        id: `tempmaillol_${now}_${login}`,
-        username: login,
-        login,
-        domain,
-        fullEmail: `${login}@${domain}`,
-        token: login,
-        createdAt: now,
-        expiresAt: now + 60 * 60 * 1000,
-        service: 'tempmaillol',
-      };
+      // No local fallback: a username is not a server token, so a fabricated
+      // account would 401/empty-poll forever. Re-throw so the aggregator's
+      // generateEmailWithFallback picks a working provider instead.
+      log.warn('TempMail.lol create failed, falling back to another provider', error);
+      throw error;
     }
   }
 
@@ -73,9 +64,10 @@ export class TempMailLolService {
         { signal: signal ?? null }
       );
 
-      if (!response.ok) {
+      if (response.status === 404) {
         return [];
       }
+      throwIfRetryableStatus(response, 'TempMail.lol getMessages');
 
       const data = await response.json();
       const emails = data.emails || [];
@@ -97,7 +89,11 @@ export class TempMailLolService {
         };
       });
     } catch (error) {
-      log.warn('Failed to fetch TempMail.lol messages', error);
+      if (isRetryableError(error)) {
+        throttledWarn(log, 'tempmaillol-getMessages', 'Failed to fetch TempMail.lol messages', error);
+        throw error;
+      }
+      log.debug('TempMail.lol fetch failed (non-retryable)', error);
       return [];
     }
   }

@@ -3,7 +3,18 @@ import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/co
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 import { storageService } from '../storageService';
+import { isRetryableError, throttledWarn } from './isRetryableError';
 import { providerHealth } from './providerHealthManager';
+
+/** FNV-1a 32-bit hash → short stable hex for id fallback uniqueness. */
+function hashBody(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
 
 const log = createLogger('CustomDomainService');
 
@@ -156,11 +167,15 @@ export class CustomDomainService implements IEmailProvider {
           date?: string | number;
         }
 
-        return data.messages.map((msg: CustomMessage) => {
+        return data.messages.map((msg: CustomMessage, idx: number) => {
           const bodyStr = contentToString(msg.body);
           const htmlStr = contentToString(msg.htmlBody || msg.body);
+          // Date.now() alone collides within the same ms (dedup then keeps
+          // only the first mail). Suffix with the index + a body hash so
+          // ids are stable per poll AND unique within a batch.
+          const fallbackId = `custom_${Date.now()}_${idx}_${bodyStr.length}_${hashBody(bodyStr)}`;
           return {
-            id: msg.id || String(Date.now()),
+            id: msg.id || fallbackId,
             from: contentToString(msg.from, 'Unknown Sender'),
             to: account.fullEmail,
             subject: contentToString(msg.subject, '(No Subject)'),
@@ -176,10 +191,14 @@ export class CustomDomainService implements IEmailProvider {
 
       return [];
     } catch (error) {
-      log.warn('Failed to fetch from custom domain', error);
-      if (error instanceof Error) {
-        providerHealth.recordFailure('custom', error);
+      if (isRetryableError(error)) {
+        throttledWarn(log, 'custom-getMessages', 'Failed to fetch from custom domain', error);
+        if (error instanceof Error) {
+          providerHealth.recordFailure('custom', error);
+        }
+        throw error;
       }
+      log.debug('Custom domain getMessages non-retryable error, returning []', error);
       return [];
     }
   }

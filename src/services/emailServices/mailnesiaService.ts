@@ -3,9 +3,21 @@ import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/co
 import { getRandomInt } from '../../utils/encryption';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
+import { isRetryableError, throttledWarn, throwIfRetryableStatus } from './isRetryableError';
 
 const log = createLogger('MailnesiaService');
 const BASE_URL = 'https://mailnesia.com';
+
+/** FNV-1a 32-bit hash → stable hex id from message-stable fields. */
+function stableId(...parts: Array<string | undefined>): string {
+  const s = parts.map((p) => p ?? '').join('|');
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return `mn_${(h >>> 0).toString(16).padStart(8, '0')}`;
+}
 
 export class MailnesiaService {
   async getDomains(_signal?: AbortSignal): Promise<string[]> {
@@ -42,9 +54,10 @@ export class MailnesiaService {
         { signal: signal ?? null }
       );
 
-      if (!response.ok) {
+      if (response.status === 404) {
         return [];
       }
+      throwIfRetryableStatus(response, 'Mailnesia getMessages');
 
       const xmlText = await response.text();
       
@@ -75,7 +88,12 @@ export class MailnesiaService {
            subject = parts.slice(1).join(':').trim();
         }
 
-        const msgId = link.split('/').pop() || String(Math.random());
+        // Deterministic ID: Math.random() breaks dedup (new identity every
+        // poll → duplicate notifications + unbounded cache growth). Hash the
+        // stable link/title/date triple instead.
+        const msgId = link
+          ? link.split('/').pop() || stableId(link, title, pubDate)
+          : stableId(title, description, pubDate);
         
         items.push({
            id: msgId,
@@ -104,7 +122,11 @@ export class MailnesiaService {
         };
       });
     } catch (error) {
-      log.warn('mailnesia getMessages error', error);
+      if (isRetryableError(error)) {
+        throttledWarn(log, 'mailnesia-getMessages', 'Failed to fetch Mailnesia messages', error);
+        throw error;
+      }
+      log.debug('Mailnesia getMessages non-retryable error, returning []', error);
       return [];
     }
   }

@@ -1,9 +1,16 @@
 // Mail.cx Service Integration
 
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
+import {
+  fetchWithTimeout,
+  contentToString,
+  safeParseDate,
+  extractHtmlFromBody,
+  extractTextFromBody,
+} from '../../utils/core';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
+import { isRetryableError, throttledWarn, throwIfRetryableStatus } from './isRetryableError';
 
 const log = createLogger('MailCxService');
 const BASE_URL = 'https://api.mail.cx/v1';
@@ -38,9 +45,10 @@ export class MailCxService {
         { signal: signal ?? null }
       );
 
-      if (!response.ok) {
+      if (response.status === 404) {
         return [];
       }
+      throwIfRetryableStatus(response, 'Mail.cx getMessages');
 
       const data = await response.json();
       const messages = Array.isArray(data) ? data : data.messages || data.result || [];
@@ -59,9 +67,9 @@ export class MailCxService {
               return { body: '', htmlBody: '', textBody: '' };
             }
             const fullMsg = await msgResponse.json();
-            const bodyStr = contentToString(fullMsg.body || fullMsg.text || fullMsg.html);
-            const htmlStr = contentToString(fullMsg.html || fullMsg.body);
-            const textStr = contentToString(fullMsg.text || fullMsg.body);
+            const htmlStr = extractHtmlFromBody(fullMsg.html || fullMsg.body);
+            const textStr = extractTextFromBody(fullMsg.text || fullMsg.body);
+            const bodyStr = textStr || htmlStr;
             return {
               body: bodyStr,
               htmlBody: htmlStr,
@@ -80,8 +88,8 @@ export class MailCxService {
           to: contentToString(msg.to || fullEmail),
           subject: contentToString(msg.subject, '(No Subject)'),
           date: safeParseDate(msg.date || msg.createdAt),
-          body: contentToString(msg.body || msg.text || msg.html),
-          htmlBody: contentToString(msg.html || msg.body),
+          body: '',
+          htmlBody: '',
           read: Boolean(msg.read),
           attachments: [],
         };
@@ -94,7 +102,11 @@ export class MailCxService {
         return email;
       });
     } catch (error) {
-      log.warn('Failed to fetch Mail.cx messages', error);
+      if (isRetryableError(error)) {
+        throttledWarn(log, 'mailcx-getMessages', 'Failed to fetch Mail.cx messages', error);
+        throw error;
+      }
+      log.debug('Mail.cx getMessages non-retryable error, returning []', error);
       return [];
     }
   }
@@ -111,9 +123,9 @@ export class MailCxService {
       }
 
       const msg = await response.json();
-      const bodyStr = contentToString(msg.body || msg.text || msg.html);
-      const htmlStr = contentToString(msg.html || msg.body);
-      const textStr = contentToString(msg.text || msg.body);
+      const htmlStr = extractHtmlFromBody(msg.html || msg.body);
+      const textStr = extractTextFromBody(msg.text || msg.body);
+      const bodyStr = textStr || htmlStr;
 
       return {
         id: String(msg.id || emailId),

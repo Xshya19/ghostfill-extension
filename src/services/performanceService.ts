@@ -774,6 +774,21 @@ class PerformanceMonitor {
     'tempmail',
     'mercure.mail.tm',
     'well-known/mercure',
+    'api.mail.tm/domains',
+    'api.mail.tm/messages',
+    'api.maildrop.cc',
+    'dropmail.me/api/graphql',
+    'evilmail.pro/api/inbox',
+    'evilmail.dev/api/inbox',
+    'api.catchmail.io',
+    'tempmail.lol',
+    'api.tempmail.lol',
+    'openinbox.io',
+    'tempmail.plus',
+    'mailboxtemp.com',
+    'getnada.com',
+    'api.mail.cx',
+    'driftz',
   ];
 
   private observeResourceTiming(): void {
@@ -783,7 +798,7 @@ class PerformanceMonitor {
         const isPolling = PerformanceMonitor.POLLING_ENDPOINTS.some((endpoint) =>
           entry.name.includes(endpoint)
         );
-        if (!isPolling && entry.duration > 5000) {
+        if (!isPolling && entry.duration > 8000) {
           this.reportSlowResource(entry);
         }
       });
@@ -819,26 +834,21 @@ class PerformanceMonitor {
   }
 
   private reportLongTask(entry: PerformanceEntry): void {
-    log.warn(
-      'Long task detected',
-      JSON.stringify({
-        name: entry.name,
-        duration: entry.duration,
-        startTime: entry.startTime,
-      })
-    );
+    log.debug('Long task detected', {
+      name: entry.name,
+      duration: Math.round(entry.duration),
+      startTime: Math.round(entry.startTime),
+    });
   }
 
   private reportSlowResource(entry: PerformanceResourceTiming): void {
-    log.warn(
-      'Slow resource detected',
-      JSON.stringify({
-        name: entry.name,
-        duration: entry.duration,
-        transferSize: entry.transferSize || 0,
-        encodedBodySize: entry.encodedBodySize || 0,
-      })
-    );
+    // Pass as object so logger's number short-circuit avoids [PHONE] redaction
+    log.debug('Slow resource detected', {
+      name: entry.name,
+      duration: Math.round(entry.duration),
+      transferSize: entry.transferSize || 0,
+      encodedBodySize: entry.encodedBodySize || 0,
+    });
   }
 
   getMetrics(): Map<string, LocalMetric[]> {

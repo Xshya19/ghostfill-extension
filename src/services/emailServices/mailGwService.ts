@@ -148,7 +148,7 @@ class MailGwService {
           error.message.includes('Aborted') ||
           error.message.includes('timed out'))
       ) {
-        log.warn('Failed to fetch Mail.gw domains due to abort/timeout, using fallback');
+        log.debug('Failed to fetch Mail.gw domains due to abort/timeout, using fallback');
       } else {
         log.warn('Failed to fetch Mail.gw domains, using fallback', error);
       }
@@ -513,7 +513,9 @@ class MailGwService {
 
     const email: Email = {
       id: String(msg.id),
-      from: contentToString(msg.from.address, 'Unknown Sender'),
+      // Sender-less system messages would otherwise throw inside
+      // messages.map and fail the ENTIRE inbox fetch.
+      from: contentToString(msg.from?.address, 'Unknown Sender'),
       subject: contentToString(msg.subject, '(No Subject)'),
       date: safeParseDate(msg.createdAt),
       body: bodyStr,
@@ -522,7 +524,7 @@ class MailGwService {
       attachments: [],
       read: Boolean(msg.seen),
     };
-    const toAddress = msg.to[0]?.address;
+    const toAddress = msg.to?.[0]?.address;
     if (toAddress) {
       email.to = contentToString(toAddress);
     }

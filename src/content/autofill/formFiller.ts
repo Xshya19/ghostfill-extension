@@ -1090,6 +1090,20 @@ export class ContentEditableStrategy extends FillStrategy {
   }
 }
 
+let cachedFramework: string | null = null;
+function detectFrameworkOnce(): string {
+  if (cachedFramework) {return cachedFramework;}
+  try {
+    if (document.querySelector('[data-reactroot], #__NEXT_DATA__, [data-nextjs-scroll-focus-boundary]') || (document.getElementById('root') && Object.keys(document.getElementById('root')!).some(k => k.startsWith('__reactFiber')))) {cachedFramework = 'react';}
+    else if (document.querySelector('[ng-version], [_nghost-ng-c], [ng-app]')) {cachedFramework = 'angular';}
+    else if (document.querySelector('[data-v-app], [__vue_app__]') || '__vue__' in window) {cachedFramework = 'vue';}
+    else if (document.querySelector('[data-svelte-h]') || '__svelte' in window) {cachedFramework = 'svelte';}
+    else if (Object.keys(document.documentElement).some(k => k.startsWith('__$r'))) {cachedFramework = 'solid';}
+    else {cachedFramework = 'unknown';}
+  } catch { cachedFramework = 'unknown'; }
+  return cachedFramework;
+}
+
 export class UniversalFiller {
   private strategies: FillStrategy[] = [
     new ReactFiberStrategy(),
@@ -1100,7 +1114,6 @@ export class UniversalFiller {
     new ExecCommandStrategy(),
     new NativeSetterStrategy(),
     new InputEventSequenceStrategy(),
-    new ClipboardPasteStrategy(),
     new ContentEditableStrategy(),
   ];
 
@@ -1112,8 +1125,15 @@ export class UniversalFiller {
 
   async fill(field: FieldCandidate, value: string): Promise<StrategyFillResult> {
     const el = field.element;
+    const fw = detectFrameworkOnce();
+    // Prioritize framework-specific strategy if detected
+    const ordered = [...this.strategies].sort((a, b) => {
+      const aMatch = (a.name === 'react-fiber' && fw === 'react') || (a.name === 'vue-reactivity' && fw === 'vue') || (a.name === 'angular-zone' && fw === 'angular') ? 0 : 1;
+      const bMatch = (b.name === 'react-fiber' && fw === 'react') || (b.name === 'vue-reactivity' && fw === 'vue') || (b.name === 'angular-zone' && fw === 'angular') ? 0 : 1;
+      return aMatch - bMatch;
+    });
 
-    for (const strategy of this.strategies) {
+    for (const strategy of ordered) {
       if (!strategy.supports(el)) {continue;}
 
       try {

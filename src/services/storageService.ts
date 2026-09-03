@@ -136,6 +136,29 @@ function withStorageTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
   ]);
 }
 
+/**
+ * Detects a chrome.storage quota rejection.
+ *
+ * Chrome surfaces these inconsistently — sometimes as a message mentioning
+ * QUOTA_BYTES, sometimes as a MAX_WRITE_OPERATIONS_PER_HOUR throttling error,
+ * and (with callback-style APIs) only via chrome.runtime.lastError. Match on
+ * all known shapes so we never mistake a quota failure for a fatal one.
+ */
+function isQuotaError(error: unknown): boolean {
+  if (!error) {return false;}
+  const parts: string[] = [];
+  if (error instanceof Error) {
+    parts.push(error.message, error.name);
+  } else if (typeof error === 'string') {
+    parts.push(error);
+  }
+  if (typeof chrome !== 'undefined' && chrome.runtime?.lastError?.message) {
+    parts.push(chrome.runtime.lastError.message);
+  }
+  const msg = parts.join(' ').toUpperCase();
+  return msg.includes('QUOTA_BYTES') || msg.includes('QUOTA EXCEEDED') || msg.includes('MAX_WRITE');
+}
+
 export class StorageService {
   // PERFORMANCE: O(1) LRU Cache instead of array-based O(n)
   private readonly cache: LRUCache<keyof StorageSchema, unknown>;
@@ -932,10 +955,7 @@ export class StorageService {
 
       await Promise.all(encryptJobs);
 
-      await withStorageTimeout(
-        chrome.storage.local.set(Object.fromEntries(writes)),
-        `set:${writes.size}-keys`
-      );
+      await this.writeWithQuotaRecovery(writes);
 
       // Bust usage cache after successful write
       this.cachedUsage = null;
@@ -953,6 +973,104 @@ export class StorageService {
     } finally {
       this.releaseWriteMutex();
     }
+  }
+
+  /**
+   * Persists a batch, recovering from chrome.storage quota rejections.
+   *
+   * The proactive usage check in flushPendingWrites is not sufficient on its own:
+   * the usage snapshot is cached (so it can be stale), and a single large
+   * encrypted blob can exceed the remaining headroom by itself. Previously a
+   * quota rejection bubbled up to flushPendingWrites' catch block, which logged
+   * the error and discarded the pending writes — so the user's freshly generated
+   * password or OTP vanished with no visible symptom. That is the
+   * "I generated a password but it's not in my history" bug.
+   *
+   * Recovery runs in two phases:
+   *   1. Prune histories hard, then retry the full batch.
+   *   2. If still over quota, remove the optional bulk caches from disk and
+   *      persist only the essential keys — the newest user data is never the
+   *      thing we choose to drop.
+   */
+  private async writeWithQuotaRecovery(writes: Map<string, unknown>): Promise<void> {
+    try {
+      await withStorageTimeout(
+        chrome.storage.local.set(Object.fromEntries(writes)),
+        `set:${writes.size}-keys`
+      );
+      return;
+    } catch (error) {
+      if (!isQuotaError(error)) {
+        throw error;
+      }
+      log.warn(`Storage quota exceeded across ${writes.size} key(s) — pruning and retrying`, error);
+    }
+
+    // ── Phase 1: aggressive prune, retry the full batch ─────────────────
+    await this.pruneOldData(true);
+    for (const [pKey, pVal] of this.pendingWrites.entries()) {
+      writes.set(pKey, pVal);
+    }
+    this.pendingWrites.clear();
+    this.cachedUsage = null;
+
+    try {
+      await withStorageTimeout(
+        chrome.storage.local.set(Object.fromEntries(writes)),
+        `set-retry:${writes.size}-keys`
+      );
+      log.info('Recovered from storage quota pressure after pruning');
+      return;
+    } catch (error) {
+      if (!isQuotaError(error)) {
+        throw error;
+      }
+      log.warn('Still over quota after pruning — shedding optional bulk keys');
+    }
+
+    // ── Phase 2: shed optional caches, persist essentials only ──────────
+    // These are all recomputable/refetchable. Losing them is annoying; losing
+    // the user's new password or OTP is not.
+    const OPTIONAL_BULK_KEYS = new Set<string>([
+      'inbox',
+      'gmailInbox',
+      'emailHistory',
+      'behaviorData',
+      'siteContexts',
+      'gmailSyncState',
+    ]);
+
+    const essential = new Map<string, unknown>();
+    const dropped: string[] = [];
+    for (const [key, value] of writes.entries()) {
+      if (OPTIONAL_BULK_KEYS.has(key)) {
+        dropped.push(key);
+      } else {
+        essential.set(key, value);
+      }
+    }
+
+    for (const key of dropped) {
+      try {
+        await withStorageTimeout(chrome.storage.local.remove(key), `remove:${key}`);
+      } catch (e) {
+        log.debug(`Failed to shed optional key ${key}`, e);
+      }
+      this.cache.delete(key as keyof StorageSchema);
+    }
+    this.cachedUsage = null;
+
+    if (essential.size === 0) {
+      throw new Error('Storage quota exceeded and no essential keys remained to write');
+    }
+
+    await withStorageTimeout(
+      chrome.storage.local.set(Object.fromEntries(essential)),
+      `set-essential:${essential.size}-keys`
+    );
+    log.warn(`Persisted ${essential.size} essential key(s) after shedding ${dropped.length}`, {
+      dropped,
+    });
   }
 
   /**
@@ -1268,30 +1386,56 @@ export class StorageService {
     await this.set(key, updated as StorageSchema[K]);
   }
 
-  private async pruneOldData(): Promise<void> {
+  /**
+   * Trims the unbounded history arrays before they exhaust QUOTA_BYTES.
+   *
+   * @param aggressive When true, trims far harder (used only after an actual
+   *   quota rejection). Normal operation keeps generous limits so history stays
+   *   useful; we only get brutal once storage is genuinely full.
+   */
+  private async pruneOldData(aggressive = false): Promise<void> {
+    const EMAIL_LIMIT = aggressive ? 5 : 20;
+    const PASSWORD_LIMIT = aggressive ? 5 : 20;
+    const INBOX_LIMIT = aggressive ? 10 : 50;
+
     try {
       const emailHistory = await this.get('emailHistory');
-      if (emailHistory && Array.isArray(emailHistory) && emailHistory.length > 20) {
-        const pruned = emailHistory.slice(0, 20) as StorageSchema['emailHistory'];
+      if (emailHistory && Array.isArray(emailHistory) && emailHistory.length > EMAIL_LIMIT) {
+        const pruned = emailHistory.slice(0, EMAIL_LIMIT) as StorageSchema['emailHistory'];
         this.pendingWrites.set('emailHistory', pruned);
         this.cache.set('emailHistory', pruned);
-        log.info('Pruned email history to 20 items');
+        log.info(`Pruned email history to ${EMAIL_LIMIT} items`);
       }
 
       const passwordHistory = await this.get('passwordHistory');
-      if (passwordHistory && Array.isArray(passwordHistory) && passwordHistory.length > 20) {
-        const pruned = passwordHistory.slice(0, 20) as StorageSchema['passwordHistory'];
+      if (passwordHistory && Array.isArray(passwordHistory) && passwordHistory.length > PASSWORD_LIMIT) {
+        const pruned = passwordHistory.slice(0, PASSWORD_LIMIT) as StorageSchema['passwordHistory'];
         this.pendingWrites.set('passwordHistory', pruned);
         this.cache.set('passwordHistory', pruned);
-        log.info('Pruned password history to 20 items');
+        log.info(`Pruned password history to ${PASSWORD_LIMIT} items`);
       }
 
       const inbox = await this.get('inbox');
-      if (inbox && Array.isArray(inbox) && inbox.length > 50) {
-        const pruned = inbox.slice(0, 50) as StorageSchema['inbox'];
+      if (inbox && Array.isArray(inbox) && inbox.length > INBOX_LIMIT) {
+        const pruned = inbox.slice(0, INBOX_LIMIT) as StorageSchema['inbox'];
         this.pendingWrites.set('inbox', pruned);
         this.cache.set('inbox', pruned);
-        log.info('Pruned inbox cache to 50 items');
+        log.info(`Pruned inbox cache to ${INBOX_LIMIT} items`);
+      }
+
+      // behaviorData.usagePatterns grows without bound and is privacy-sensitive
+      // bulk data — it is the least valuable thing on disk when space runs out.
+      if (aggressive) {
+        const behavior = await this.get('behaviorData');
+        if (behavior && Array.isArray(behavior.usagePatterns) && behavior.usagePatterns.length > 25) {
+          const pruned = {
+            ...behavior,
+            usagePatterns: behavior.usagePatterns.slice(0, 25),
+          } as StorageSchema['behaviorData'];
+          this.pendingWrites.set('behaviorData', pruned);
+          this.cache.set('behaviorData', pruned);
+          log.info('Pruned behavior usage patterns to 25 items');
+        }
       }
     } catch (e) {
       log.warn('Failed to prune old data', e);

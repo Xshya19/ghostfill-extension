@@ -40,215 +40,6 @@ const OTP_FRESHNESS = {
   MAX_WAIT_MS: 30_000, // Maximum time to wait for fresh OTP
 };
 
-class OTPService {
-  private rateLimitMutex: Promise<void> = Promise.resolve();
-  private rateLimitTimestamps: number[] = [];
-
-  // PERF: Rate-limit timestamps are ephemeral bookkeeping — no disk persistence needed.
-  // Removed storageService.get/set calls that triggered encryption + disk I/O per OTP save.
-  // Timestamps naturally reset on service worker restart (correct for rate limiting).
-
-  private pruneRateLimitWindow(now: number): void {
-    const filtered = this.rateLimitTimestamps.filter((ts) => now - ts < RATE_LIMIT.WINDOW_MS);
-    if (filtered.length !== this.rateLimitTimestamps.length) {
-      this.rateLimitTimestamps = filtered;
-    }
-  }
-
-  private isRateLimitedLocked(now: number): boolean {
-    this.pruneRateLimitWindow(now);
-    return this.rateLimitTimestamps.length >= RATE_LIMIT.MAX_SAVES_PER_MINUTE;
-  }
-
-  private recordSaveLocked(now: number): void {
-    this.rateLimitTimestamps.push(now);
-  }
-
-  /**
-   * Extract OTP from email using the 5-layer Intelligent Extraction engine.
-   * No API key required. Works on all browsers.
-   */
-  async extractFromEmail(
-    body: string,
-    htmlBody?: string,
-    subject: string = ''
-  ): Promise<PatternMatch | null> {
-    log.info('🤖 Extracting OTP via Smart Detection (local heuristics)');
-
-    try {
-      const result = await smartDetectionService.detect(subject, body || '', htmlBody || '');
-
-      if ((result.type === 'otp' || result.type === 'both') && result.code) {
-        log.info('✅ OTP extracted', {
-          code: result.code,
-          engine: result.engine,
-          confidence: result.confidence,
-        });
-        return {
-          pattern: `SMART_${result.engine.toUpperCase().replace('-', '_')}`,
-          confidence: result.confidence,
-          extractedValue: result.code,
-          startIndex: 0,
-          endIndex: result.code.length,
-        };
-      }
-
-      log.debug('No OTP found', { type: result.type, engine: result.engine });
-      return null;
-    } catch (error) {
-      log.error('OTP extraction failed', error);
-      return null;
-    }
-  }
-
-  /**
-   * Save last extracted OTP
-   * Rate limited to prevent abuse
-   */
-  async saveLastOTP(
-    otp: string,
-    source: 'email' | 'sms' | 'manual',
-    emailFrom?: string,
-    emailSubject?: string,
-    confidence: number = 0.8,
-    metadata: { emailId?: string | number; emailDate?: number } = {}
-  ): Promise<{ saved: boolean; reason?: string; retryAfterMs?: number }> {
-    const previousMutex = this.rateLimitMutex;
-    let releaseMutex: () => void = () => {};
-    const nextMutex = new Promise<void>((res) => {
-      releaseMutex = res;
-    });
-    this.rateLimitMutex = previousMutex.then(
-      () => nextMutex,
-      () => nextMutex
-    );
-    await previousMutex;
-
-    try {
-      const now = Date.now();
-
-      if (this.isRateLimitedLocked(now)) {
-        const msg = `OTP save rate limited - maximum ${RATE_LIMIT.MAX_SAVES_PER_MINUTE} requests per minute allowed`;
-        const retryAfterMs = RATE_LIMIT.WINDOW_MS;
-
-        log.warn(msg, { otpLength: otp.length, source, retryAfterMs });
-        await this.notifyRateLimitExceeded(retryAfterMs);
-
-        return { saved: false, reason: msg, retryAfterMs };
-      }
-
-      const lastOTP: LastOTP = {
-        code: otp,
-        source,
-        extractedAt: now,
-        confidence,
-      };
-      if (metadata.emailId !== undefined) {
-        lastOTP.emailId = metadata.emailId;
-      }
-      if (metadata.emailDate !== undefined) {
-        lastOTP.emailDate = metadata.emailDate;
-      }
-      if (emailFrom) {
-        lastOTP.emailFrom = emailFrom;
-      }
-      if (emailSubject) {
-        lastOTP.emailSubject = emailSubject;
-      }
-
-      await storageService.set('lastOTP', lastOTP);
-      this.recordSaveLocked(now);
-      log.info('Last OTP saved', { source });
-      return { saved: true };
-    } finally {
-      releaseMutex();
-    }
-  }
-
-  private async notifyRateLimitExceeded(retryAfterMs: number): Promise<void> {
-    try {
-      const msgText = `OTP extraction temporarily paused. Try again in ${Math.round(retryAfterMs / 1000)}s.`;
-      if (typeof chrome !== 'undefined' && chrome.notifications?.create) {
-        chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'assets/icons/icon128.png',
-          title: 'GhostFill: Too Many OTPs',
-          message: msgText,
-        });
-      }
-      log.debug('OTP rate limit notification handled', { retryAfterMs });
-    } catch (error) {
-      log.debug('Could not send OTP rate limit notification', error);
-    }
-  }
-
-  async getLastOTP(): Promise<LastOTP | null> {
-    const lastOTP = await storageService.get('lastOTP');
-
-    if (lastOTP && Date.now() - lastOTP.extractedAt > 10 * 60 * 1000) {
-      log.debug('Last OTP expired');
-      return null;
-    }
-
-    if (lastOTP && lastOTP.usedAt) {
-      log.debug('Last OTP already used');
-      return null;
-    }
-
-    return lastOTP || null;
-  }
-
-  async clearLastOTP(): Promise<void> {
-    await storageService.remove('lastOTP');
-    log.info('Last OTP cleared from storage');
-  }
-
-  async isOTPFresh(): Promise<boolean> {
-    const lastOTP = await storageService.get('lastOTP');
-    if (!lastOTP) {
-      return false;
-    }
-    const age = Date.now() - lastOTP.extractedAt;
-    return age < OTP_FRESHNESS.FRESH_WINDOW_MS && !lastOTP.usedAt;
-  }
-
-  async waitForFreshOTP(maxWaitMs: number = OTP_FRESHNESS.MAX_WAIT_MS): Promise<LastOTP | null> {
-    const isFresh = await this.isOTPFresh();
-    if (isFresh) {
-      return this.getLastOTP();
-    }
-
-    // MV3-resilient yielding loop: checks storage at steady intervals
-    // without risking hanging promise listeners across SW suspension.
-    const startTime = Date.now();
-    while (Date.now() - startTime < maxWaitMs) {
-      await new Promise((r) => setTimeout(r, 500));
-      const otp = await this.getLastOTP();
-      if (otp && !otp.usedAt && Date.now() - otp.extractedAt < OTP_FRESHNESS.FRESH_WINDOW_MS) {
-        return otp;
-      }
-    }
-    log.debug('Timeout waiting for fresh OTP');
-    return this.getLastOTP();
-  }
-
-  async markAsUsed(): Promise<void> {
-    const lastOTP = await storageService.get('lastOTP');
-    if (lastOTP) {
-      lastOTP.usedAt = Date.now();
-      await storageService.set('lastOTP', lastOTP);
-      log.debug('OTP marked as used');
-    }
-  }
-
-  validateOTP(otp: string): boolean {
-    const cleaned = otp.replace(/[-\s]/g, '');
-    return /^[A-Z0-9]{4,10}$/i.test(cleaned);
-  }
-}
-
-export const otpService = new OTPService();
-
 // ━━━ Smart Detection Service Caching Layer (Inlined from smartDetectionService.ts) ━━━
 
 class SmartDetectionService {
@@ -464,8 +255,12 @@ class SmartDetectionService {
     const sSubject = toSafeString(subject);
     const sBody = toSafeString(body);
     const sContext = toSafeString(contextKey);
-    // Sample the first 1000 chars + length to prevent 5MB HTML hashing
-    const sample = `${sSender}|${sSubject}|${sBody.substring(0, 1000)}|len:${sBody.length}|ctx:${sContext}`;
+    // Sample head + length + TAIL: same-template OTP mails share the first
+    // 1k and often the total length, differing only in the code near the
+    // bottom. Head-only sampling collided across such mails and served a
+    // stale cached code (wrong OTP delivered).
+    const tail = sBody.length > 500 ? sBody.substring(sBody.length - 500) : '';
+    const sample = `${sSender}|${sSubject}|${sBody.substring(0, 1000)}|len:${sBody.length}|tail:${tail}|ctx:${sContext}`;
     let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
     for (let i = 0; i < sample.length; i++) {
       const ch = sample.charCodeAt(i);
@@ -588,3 +383,214 @@ class SmartDetectionService {
 }
 
 export const smartDetectionService = new SmartDetectionService();
+
+class OTPService {
+  private rateLimitMutex: Promise<void> = Promise.resolve();
+  private rateLimitTimestamps: number[] = [];
+
+  // PERF: Rate-limit timestamps are ephemeral bookkeeping — no disk persistence needed.
+  // Removed storageService.get/set calls that triggered encryption + disk I/O per OTP save.
+  // Timestamps naturally reset on service worker restart (correct for rate limiting).
+
+  private pruneRateLimitWindow(now: number): void {
+    const filtered = this.rateLimitTimestamps.filter((ts) => now - ts < RATE_LIMIT.WINDOW_MS);
+    if (filtered.length !== this.rateLimitTimestamps.length) {
+      this.rateLimitTimestamps = filtered;
+    }
+  }
+
+  private isRateLimitedLocked(now: number): boolean {
+    this.pruneRateLimitWindow(now);
+    return this.rateLimitTimestamps.length >= RATE_LIMIT.MAX_SAVES_PER_MINUTE;
+  }
+
+  private recordSaveLocked(now: number): void {
+    this.rateLimitTimestamps.push(now);
+  }
+
+  /**
+   * Extract OTP from email using the 5-layer Intelligent Extraction engine.
+   * No API key required. Works on all browsers.
+   */
+  async extractFromEmail(
+    body: string,
+    htmlBody?: string,
+    subject: string = ''
+  ): Promise<PatternMatch | null> {
+    log.info('🤖 Extracting OTP via Smart Detection (local heuristics)');
+
+    try {
+      const result = await smartDetectionService.detect(subject, body || '', htmlBody || '');
+
+      if ((result.type === 'otp' || result.type === 'both') && result.code) {
+        log.info('✅ OTP extracted', {
+          code: result.code,
+          engine: result.engine,
+          confidence: result.confidence,
+        });
+        return {
+          pattern: `SMART_${result.engine.toUpperCase().replace('-', '_')}`,
+          confidence: result.confidence,
+          extractedValue: result.code,
+          startIndex: 0,
+          endIndex: result.code.length,
+        };
+      }
+
+      log.debug('No OTP found', { type: result.type, engine: result.engine });
+      return null;
+    } catch (error) {
+      log.error('OTP extraction failed', error);
+      return null;
+    }
+  }
+
+  /**
+   * Save last extracted OTP
+   * Rate limited to prevent abuse
+   */
+  async saveLastOTP(
+    otp: string,
+    source: 'email' | 'sms' | 'manual',
+    emailFrom?: string,
+    emailSubject?: string,
+    confidence: number = 0.8,
+    metadata: { emailId?: string | number; emailDate?: number } = {}
+  ): Promise<{ saved: boolean; reason?: string; retryAfterMs?: number }> {
+    const previousMutex = this.rateLimitMutex;
+    let releaseMutex: () => void = () => {};
+    const nextMutex = new Promise<void>((res) => {
+      releaseMutex = res;
+    });
+    this.rateLimitMutex = previousMutex.then(
+      () => nextMutex,
+      () => nextMutex
+    );
+    await previousMutex;
+
+    try {
+      const now = Date.now();
+
+      if (this.isRateLimitedLocked(now)) {
+        const msg = `OTP save rate limited - maximum ${RATE_LIMIT.MAX_SAVES_PER_MINUTE} requests per minute allowed`;
+        const retryAfterMs = RATE_LIMIT.WINDOW_MS;
+
+        log.warn(msg, { otpLength: otp.length, source, retryAfterMs });
+        await this.notifyRateLimitExceeded(retryAfterMs);
+
+        return { saved: false, reason: msg, retryAfterMs };
+      }
+
+      const lastOTP: LastOTP = {
+        code: otp,
+        source,
+        extractedAt: now,
+        confidence,
+      };
+      if (metadata.emailId !== undefined) {
+        lastOTP.emailId = metadata.emailId;
+      }
+      if (metadata.emailDate !== undefined) {
+        lastOTP.emailDate = metadata.emailDate;
+      }
+      if (emailFrom) {
+        lastOTP.emailFrom = emailFrom;
+      }
+      if (emailSubject) {
+        lastOTP.emailSubject = emailSubject;
+      }
+
+      await storageService.set('lastOTP', lastOTP);
+      this.recordSaveLocked(now);
+      log.info('Last OTP saved', { source });
+      return { saved: true };
+    } finally {
+      releaseMutex();
+    }
+  }
+
+  private async notifyRateLimitExceeded(retryAfterMs: number): Promise<void> {
+    try {
+      const msgText = `OTP extraction temporarily paused. Try again in ${Math.round(retryAfterMs / 1000)}s.`;
+      if (typeof chrome !== 'undefined' && chrome.notifications?.create) {
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: 'assets/icons/icon128.png',
+          title: 'GhostFill: Too Many OTPs',
+          message: msgText,
+        });
+      }
+      log.debug('OTP rate limit notification handled', { retryAfterMs });
+    } catch (error) {
+      log.debug('Could not send OTP rate limit notification', error);
+    }
+  }
+
+  async getLastOTP(): Promise<LastOTP | null> {
+    const lastOTP = await storageService.get('lastOTP');
+
+    if (lastOTP && Date.now() - lastOTP.extractedAt > 10 * 60 * 1000) {
+      log.debug('Last OTP expired');
+      return null;
+    }
+
+    if (lastOTP && lastOTP.usedAt) {
+      log.debug('Last OTP already used');
+      return null;
+    }
+
+    return lastOTP || null;
+  }
+
+  async clearLastOTP(): Promise<void> {
+    await storageService.remove('lastOTP');
+    log.info('Last OTP cleared from storage');
+  }
+
+  async isOTPFresh(): Promise<boolean> {
+    const lastOTP = await storageService.get('lastOTP');
+    if (!lastOTP) {
+      return false;
+    }
+    const age = Date.now() - lastOTP.extractedAt;
+    return age < OTP_FRESHNESS.FRESH_WINDOW_MS && !lastOTP.usedAt;
+  }
+
+  async waitForFreshOTP(maxWaitMs: number = OTP_FRESHNESS.MAX_WAIT_MS): Promise<LastOTP | null> {
+    const isFresh = await this.isOTPFresh();
+    if (isFresh) {
+      return this.getLastOTP();
+    }
+
+    // MV3-resilient yielding loop: checks storage at steady intervals
+    // without risking hanging promise listeners across SW suspension.
+    const startTime = Date.now();
+    while (Date.now() - startTime < maxWaitMs) {
+      await new Promise((r) => setTimeout(r, 500));
+      const otp = await this.getLastOTP();
+      if (otp && !otp.usedAt && Date.now() - otp.extractedAt < OTP_FRESHNESS.FRESH_WINDOW_MS) {
+        return otp;
+      }
+    }
+    log.debug('Timeout waiting for fresh OTP');
+    return this.getLastOTP();
+  }
+
+  async markAsUsed(): Promise<void> {
+    const lastOTP = await storageService.get('lastOTP');
+    if (lastOTP) {
+      lastOTP.usedAt = Date.now();
+      await storageService.set('lastOTP', lastOTP);
+      log.debug('OTP marked as used');
+    }
+  }
+
+  validateOTP(otp: string): boolean {
+    const cleaned = otp.replace(/[-\s]/g, '');
+    return /^[A-Z0-9]{4,10}$/i.test(cleaned);
+  }
+}
+
+export const otpService = new OTPService();
+
+

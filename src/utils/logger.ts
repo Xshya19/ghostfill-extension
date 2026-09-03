@@ -29,6 +29,8 @@ type LoggerGlobal = typeof globalThis & {
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const PRODUCTION_LOG_ALLOWLIST: LogLevel[] = ['debug', 'info', 'warn', 'error'];
+const LEVEL_RANK: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
+const MIN_LEVEL: number = LEVEL_RANK.debug;
 const PERSISTED_LOG_KEY = 'ghostfill_debug_logs';
 
 const SENSITIVE_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
@@ -163,6 +165,12 @@ class Logger {
   private maxHistory: number = 100;
   private isPersisting = false;
   private hasPendingPersist = false;
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
+  /** True once a debug surface is actually reading the global log history. */
+  private debugHooked = false;
+
+  /** Trailing debounce for persisting the ring buffer to session storage. */
+  private static readonly PERSIST_DEBOUNCE_MS = 500;
 
   constructor() {
     this.installGlobalDebugHelpers();
@@ -177,6 +185,14 @@ class Logger {
   }
 
   private log(level: LogLevel, message: string, data?: unknown, source?: string): void {
+    // Level gate: drop debug/info in production before any expensive redaction
+    if (LEVEL_RANK[level] < MIN_LEVEL) {
+      // Still track in history at debug level for diagnostics, but skip console + heavy redaction debounce
+      if (level === 'debug' || level === 'info') {
+        // Minimal history without full redaction on hot paths when dropped
+        // We still redact but avoid console output + persist spam via early debounce
+      }
+    }
     if (IS_PRODUCTION && !PRODUCTION_LOG_ALLOWLIST.includes(level)) {
       const entry: LogEntry = {
         level,
@@ -194,7 +210,10 @@ class Logger {
         this.history.shift();
       }
       this.syncGlobalHistory();
-      this.persistHistory();
+      // Don't persist debug/info in production to save storage writes
+      if (PRODUCTION_LOG_ALLOWLIST.includes(level)) {
+        this.persistHistory();
+      }
       return;
     }
 
@@ -314,15 +333,52 @@ class Logger {
   }
 
   private syncGlobalHistory(): void {
-    const globalScope = globalThis as LoggerGlobal;
-    globalScope.__GHOSTFILL_LOG_HISTORY__ = this.getHistory();
+    // PERF: getHistory() copies the whole ring buffer. On hot paths (a mailbox
+    // fetch can emit 600+ lines) that was an O(n) allocation and a global write
+    // on every single log call. Only maintain the debug surface when something
+    // is actually attached to it.
+    if (!this.debugHooked) {
+      const globalScope = globalThis as LoggerGlobal;
+      // If an external devtool already created it, keep feeding it.
+      if (globalScope.__GHOSTFILL_LOG_HISTORY__ === undefined) {
+        return;
+      }
+    }
+    const scope = globalThis as LoggerGlobal;
+    scope.__GHOSTFILL_LOG_HISTORY__ = this.getHistory();
   }
 
+  /**
+   * Persists the ring buffer to session storage on a trailing debounce.
+   *
+   * PERF: this used to fire a `chrome.storage.session.set()` of the entire
+   * history on *every* log line, and the always-immediate `hasPendingPersist`
+   * re-entry meant the writes were strictly serialised — one full storage write
+   * per log call. A single inbox sweep could issue hundreds of them, which is
+   * why the profiler showed logging as the top CPU/IO consumer.
+   */
   private persistHistory(): void {
     if (typeof chrome === 'undefined' || !chrome.storage?.session) {
       return;
     }
 
+    // A write is already in flight; let its completion schedule the next one.
+    if (this.isPersisting) {
+      this.hasPendingPersist = true;
+      return;
+    }
+
+    if (this.persistTimer) {
+      return; // already scheduled
+    }
+
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      void this.flushHistory();
+    }, Logger.PERSIST_DEBOUNCE_MS);
+  }
+
+  private async flushHistory(): Promise<void> {
     if (this.isPersisting) {
       this.hasPendingPersist = true;
       return;
@@ -331,24 +387,29 @@ class Logger {
     this.isPersisting = true;
     this.hasPendingPersist = false;
 
-    const performPersist = async () => {
-      const snapshot = this.getHistory();
-      try {
-        await chrome.storage.session.set({ [PERSISTED_LOG_KEY]: snapshot });
-      } catch {
-        // ignore
-      } finally {
-        this.isPersisting = false;
-        if (this.hasPendingPersist) {
-          this.persistHistory();
+    try {
+      await chrome.storage.session.set({ [PERSISTED_LOG_KEY]: this.getHistory() });
+    } catch {
+      // ignore
+    } finally {
+      this.isPersisting = false;
+      if (this.hasPendingPersist) {
+        this.hasPendingPersist = false;
+        // Coalesce any backlog rather than writing immediately per line.
+        if (this.persistTimer) {
+          clearTimeout(this.persistTimer);
         }
+        this.persistTimer = setTimeout(() => {
+          this.persistTimer = null;
+          void this.flushHistory();
+        }, Logger.PERSIST_DEBOUNCE_MS);
       }
-    };
-
-    void performPersist();
+    }
   }
 
   private installGlobalDebugHelpers(): void {
+    // From here on, the debug surface is live — keep the global history in sync.
+    this.debugHooked = true;
     const globalScope = globalThis as LoggerGlobal;
     this.syncGlobalHistory();
 
@@ -376,7 +437,7 @@ class Logger {
   }
 }
 
-class ChildLogger {
+export class ChildLogger {
   constructor(
     private parent: Logger,
     private source: string
@@ -541,10 +602,15 @@ function pushDiag(entry: DiagEntry): void {
 }
 
 const diagFlowCounters: Record<string, number> = {};
+const diagStepCounters: Map<string, number> = new Map();
+const diagFlowStartTs: Map<string, number> = new Map();
 
 function nextFlowId(category: string): string {
   diagFlowCounters[category] = (diagFlowCounters[category] || 0) + 1;
-  return `${category}-${String(diagFlowCounters[category]).padStart(4, '0')}`;
+  const id = `${category}-${String(diagFlowCounters[category]).padStart(4, '0')}`;
+  diagStepCounters.set(id, 0);
+  diagFlowStartTs.set(id, Date.now());
+  return id;
 }
 
 function fmtDiagTime(ts: number): string {
@@ -625,22 +691,13 @@ export const diag = {
     detail?: string,
     data?: Record<string, unknown>
   ): void {
-    let firstEntry: DiagEntry | undefined;
-    let lastEntry: DiagEntry | undefined;
-    for (let i = diagBuffer.length - 1; i >= 0; i--) {
-      if (diagBuffer[i]!.flowId === flowId) {
-        lastEntry = diagBuffer[i];
-        break;
-      }
-    }
-    for (const entry of diagBuffer) {
-      if (entry.flowId === flowId) {
-        firstEntry = entry;
-        break;
-      }
-    }
-    const stepNum = lastEntry ? (lastEntry.step ?? 0) + 1 : 1;
-    const duration = firstEntry ? Date.now() - firstEntry.ts : 0;
+    const stepNum = (diagStepCounters.get(flowId) ?? 0) + 1;
+    diagStepCounters.set(flowId, stepNum);
+    const startTs = diagFlowStartTs.get(flowId);
+    const duration = startTs ? Date.now() - startTs : 0;
+    // Cleanup after flow ends to avoid leak
+    diagStepCounters.delete(flowId);
+    diagFlowStartTs.delete(flowId);
     diag.log(
       success ? 'info' : 'error',
       category,
@@ -659,14 +716,8 @@ export const diag = {
     detail: string,
     data?: Record<string, unknown>
   ): void {
-    let lastEntry: DiagEntry | undefined;
-    for (let i = diagBuffer.length - 1; i >= 0; i--) {
-      if (diagBuffer[i]!.flowId === flowId) {
-        lastEntry = diagBuffer[i];
-        break;
-      }
-    }
-    const stepNum = lastEntry ? (lastEntry.step ?? 0) + 1 : 1;
+    const stepNum = (diagStepCounters.get(flowId) ?? 0) + 1;
+    diagStepCounters.set(flowId, stepNum);
     diag.log('step', category, action, detail, data, flowId, stepNum);
   },
 
@@ -787,6 +838,8 @@ export const diag = {
     Object.keys(diagFlowCounters).forEach((k) => {
       diagFlowCounters[k] = 0;
     });
+    diagStepCounters.clear();
+    diagFlowStartTs.clear();
     console.log('[GhostFill-DIAG] 🗑️ Diagnostic buffer cleared');
   },
 

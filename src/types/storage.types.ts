@@ -43,6 +43,7 @@ export interface UserSettings {
   passwordDefaults: PasswordOptions;
 
   // Email settings
+  // NOTE: keep in sync with emailServiceSchema (utils/validation.ts).
   preferredEmailService:
     | '1secmail'
     | 'mailgw'
@@ -55,6 +56,7 @@ export interface UserSettings {
     | 'evilmail'
     | 'openinbox'
     | 'catchmail'
+    | 'throwawaymail'
     | 'mailboxtemp'
     | 'dropmail'
     | 'tempmaillol'
@@ -63,6 +65,9 @@ export interface UserSettings {
     | 'getnada';
   autoCheckInbox: boolean;
   checkIntervalSeconds: number;
+
+  // Preferred inbox type (disposable vs real-inbox alias provider)
+  preferredEmailType?: 'disposable' | 'gmail' | 'zoho' | 'microsoft';
 
   // UI settings
   darkMode: boolean | 'system';
@@ -223,8 +228,11 @@ export interface StorageSchema {
   // Rejected / burned OTP codes by domain
   burnedCodes?: Record<string, string[]>;
 
+  // Preferred provider selection
+  selectedRealProvider?: 'gmail' | 'zoho' | 'microsoft';
+
   // Gmail integration
-  preferredEmailType?: 'disposable' | 'gmail';
+  preferredEmailType?: 'disposable' | 'gmail' | 'zoho' | 'microsoft';
   gmailProfile?: GmailProfile | null;
   gmailBase?: string | null;
   gmailConnected?: boolean;
@@ -236,6 +244,22 @@ export interface StorageSchema {
   gmailInbox?: GmailMessage[];
   gmailSyncState?: Record<string, GmailSyncStateEntry>;
   gmailClientId?: string;
+
+  // Zoho Mail integration
+  zohoConnected?: boolean;
+  zohoConnectedAt?: number | null;
+  zohoProfile?: { accountId: string; email: string; displayName: string } | null;
+  zohoClientId?: string;
+  zohoRegion?: string;
+  zohoAliasSessions?: Record<string, GmailAliasSession>;
+
+  // Microsoft Outlook integration
+  microsoftConnected?: boolean;
+  microsoftConnectedAt?: number | null;
+  microsoftProfile?: { userId: string; email: string; displayName: string } | null;
+  microsoftClientId?: string;
+  microsoftAliasSessions?: Record<string, GmailAliasSession>;
+
   performanceReport?: any;
 }
 
@@ -253,7 +277,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
     minNumbers: 2,
     minSymbols: 2,
   },
-  preferredEmailService: 'catchmail',
+  preferredEmailService: 'driftz',
   autoCheckInbox: true,
   checkIntervalSeconds: 5,
   darkMode: true,
@@ -295,6 +319,7 @@ export const STORAGE_KEYS = {
   INSTALL_DATE: 'installDate',
   LAST_UPDATED: 'lastUpdated',
   PREFERRED_EMAIL_TYPE: 'preferredEmailType',
+  SELECTED_REAL_PROVIDER: 'selectedRealProvider',
   GMAIL_PROFILE: 'gmailProfile',
   GMAIL_BASE: 'gmailBase',
   GMAIL_CONNECTED: 'gmailConnected',
@@ -306,6 +331,19 @@ export const STORAGE_KEYS = {
   GMAIL_INBOX: 'gmailInbox',
   GMAIL_SYNC_STATE: 'gmailSyncState',
   GMAIL_CLIENT_ID: 'gmailClientId',
+  // Zoho Mail
+  ZOHO_CONNECTED: 'zohoConnected',
+  ZOHO_CONNECTED_AT: 'zohoConnectedAt',
+  ZOHO_PROFILE: 'zohoProfile',
+  ZOHO_CLIENT_ID: 'zohoClientId',
+  ZOHO_REGION: 'zohoRegion',
+  ZOHO_ALIAS_SESSIONS: 'zohoAliasSessions',
+  // Microsoft Outlook
+  MICROSOFT_CONNECTED: 'microsoftConnected',
+  MICROSOFT_CONNECTED_AT: 'microsoftConnectedAt',
+  MICROSOFT_PROFILE: 'microsoftProfile',
+  MICROSOFT_CLIENT_ID: 'microsoftClientId',
+  MICROSOFT_ALIAS_SESSIONS: 'microsoftAliasSessions',
   PERFORMANCE_REPORT: 'performanceReport',
 } as const;
 

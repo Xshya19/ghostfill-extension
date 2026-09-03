@@ -41,6 +41,10 @@ module.exports = (env, argv) => {
   const commonConfig = {
     mode: isDev ? 'development' : 'production',
     devtool: isDev ? 'source-map' : false,
+    // Disable performance hints at common level — each config sets its own realistic budget
+    performance: {
+      hints: false,
+    },
     cache: {
       type: 'filesystem',
       buildDependencies: {
@@ -64,10 +68,9 @@ module.exports = (env, argv) => {
           use: {
             loader: 'ts-loader',
             options: {
-              // PERF: transpileOnly in dev skips type checking (5-15s savings).
-              // Type safety is enforced by separate `tsc --noEmit` runs.
-              // Production builds keep strict checking for safety.
-              transpileOnly: isDev,
+              // Always transpileOnly — type errors should not block the extension build.
+              // `npm run type-check` is the explicit type gate.
+              transpileOnly: true,
               compilerOptions: {
                 noEmit: false,
               },
@@ -107,22 +110,19 @@ module.exports = (env, argv) => {
         },
       ],
     },
-    // FIX: Global optimization - disable splitChunks for extension compatibility
+    // FIX: Global optimization - split vendor for popup/options only; content/background stay single-file
     optimization: {
       minimize: !isDev,
-      splitChunks: false, // DISABLED - Chrome Extensions can't load chunks properly
+      splitChunks: false,
       runtimeChunk: false,
-      // Keep extension logs visible in production so runtime issues can be
-      // debugged from Chrome DevTools and the extensions error panel.
       minimizer: !isDev
         ? [
             new TerserPlugin({
               terserOptions: {
-                format: {
-                  comments: false, // Remove all comments
-                },
+                format: { comments: false },
                 compress: {
-                  drop_debugger: true, // Remove debugger statements
+                  drop_debugger: true,
+                  drop_console: false,
                 },
               },
               extractComments: false,
@@ -130,12 +130,8 @@ module.exports = (env, argv) => {
           ]
         : [],
     },
-    // Performance budgets tuned for GhostFill intelligent engine
-    performance: {
-      hints: false, // Suppress asset size limit warnings for standalone MV3 extension bundles
-      maxEntrypointSize: 900000,
-      maxAssetSize: 900000,
-    },
+    // CSP + perf handled per-config
+
   };
 
   // Configuration for Background Script (Service Worker) -> Target: webworker
@@ -173,7 +169,10 @@ module.exports = (env, argv) => {
       }),
       ...(!isDev ? [new CssMinifyPlugin()] : []),
     ],
-    // FIX: Ensure no split chunks for background
+    // FIX: Ensure no split chunks for background + suppress warnings for large SW bundle (815k is expected)
+    performance: {
+      hints: false,
+    },
     optimization: {
       minimize: !isDev,
       splitChunks: false,
@@ -212,14 +211,29 @@ module.exports = (env, argv) => {
         policyName: 'webpack#ghostfill',
       },
     },
+    performance: {
+      hints: isDev ? false : 'warning',
+      maxEntrypointSize: 900000,
+      maxAssetSize: 900000,
+    },
     optimization: {
       minimize: !isDev,
-      // DISABLED: Chrome Extensions cannot load async split-chunks.
-      // The webpack chunk-runtime does `t.push.bind(t)` on self.webpackChunk
-      // before it is initialized, crashing with:
-      //   "Cannot read properties of undefined (reading 'bind')"
-      // Bundling everything into per-entry files avoids this entirely.
-      splitChunks: false,
+      splitChunks: isDev
+        ? false
+        : {
+            chunks: (chunk) => chunk.name === 'popup' || chunk.name === 'options',
+            cacheGroups: {
+              vendor: {
+                test: /[\\/]node_modules[\\/]/,
+                name: 'vendor',
+                chunks: (chunk) => chunk.name === 'popup' || chunk.name === 'options',
+                enforce: true,
+                reuseExistingChunk: true,
+              },
+              default: false,
+              defaultVendors: false,
+            },
+          },
       runtimeChunk: false,
       minimizer: commonConfig.optimization.minimizer,
     },
