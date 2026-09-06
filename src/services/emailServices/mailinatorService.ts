@@ -116,7 +116,14 @@ export class MailinatorService {
     login: string,
     msgId: string,
     signal?: AbortSignal
-  ): Promise<{ body: string; htmlBody: string; textBody: string }> {
+  ): Promise<{
+    body: string;
+    htmlBody: string;
+    textBody: string;
+    subject?: string;
+    from?: string;
+    date?: number;
+  }> {
     const msgResponse = await fetchWithTimeout(
       `${BASE_URL}/${encodeURIComponent(login)}/messages/${encodeURIComponent(msgId)}`,
       { signal: signal ?? null }
@@ -157,6 +164,9 @@ export class MailinatorService {
       body: finalHtml,
       htmlBody: finalHtml,
       textBody: finalText,
+      subject: contentToString(fullMsg?.subject, '(No Subject)'),
+      from: contentToString(fullMsg?.origfrom || fullMsg?.fromfull || fullMsg?.from, 'Unknown Sender'),
+      date: fullMsg?.time ? Number(fullMsg.time) : Date.now(),
     };
   }
 
@@ -164,13 +174,13 @@ export class MailinatorService {
     try {
       const [login] = fullEmail.split('@');
       const detail = await this.fetchMessageDetail(login || '', emailId, signal);
-      if (detail.body || detail.htmlBody) {
+      if (detail.body || detail.htmlBody || detail.subject) {
         return {
           id: String(emailId),
-          from: 'Unknown Sender',
+          from: detail.from || 'Unknown Sender',
           to: fullEmail,
-          subject: '(No Subject)',
-          date: Date.now(),
+          subject: detail.subject || '(No Subject)',
+          date: detail.date || Date.now(),
           body: detail.body,
           htmlBody: detail.htmlBody,
           textBody: detail.textBody,

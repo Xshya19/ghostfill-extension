@@ -140,6 +140,7 @@ Generate a throwaway address and use it on signup forms.
 | **Mail.cx** | `mailcx` | `mail.cx` | ✅ Yes | Real-time SSE streaming & 24h retention |
 | **Mailinator** | `mailinator` | `mailinator.com` | ✅ Yes | Public inbox generator & REST parser |
 | **Mailnesia** | `mailnesia` | `mailnesia.com` | ✅ Yes | Public inbox with automated RSS parser |
+| **YOPmail** | `yopmail` | `mynes.com`, `hunnur.com`, `binich.com`, +20 obscure alternates | ✅ Yes | 🌐 **Least-blocked alt domains & 8-Day Retention** |
 | **Custom Domain** | `custom` | *User-defined* | ✅ Yes | Private Cloudflare Worker / self-hosted API |
 
 ### 2. Real Inbox Aliases (Gmail, Zoho Mail & Microsoft Outlook)

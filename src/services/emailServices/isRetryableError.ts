@@ -108,7 +108,13 @@ export function isRetryableError(error: unknown): boolean {
     return true;
   }
 
-  // Everything else (404, 400, malformed data, missing fields, etc.)
+  // HTTP status errors (except 404 which is handled by provider returning [])
+  // e.g. 400 Bad Request, 403 Forbidden, 401 Unauthorized, 5xx
+  if (/\bhttp\s*error[:\s]*(?!404\b)\d{3}\b/i.test(msg)) {
+    return true;
+  }
+
+  // Everything else (404, malformed data, missing fields, etc.)
   // is non-retryable — the provider should return [] or a default.
   return false;
 }

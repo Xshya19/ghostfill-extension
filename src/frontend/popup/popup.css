@@ -331,8 +331,37 @@ textarea:disabled,
 .header-actions {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: 6px;
   flex-shrink: 0;
+}
+
+/* Header action buttons: soft-rounded squares (not full circles) so they
+   read as toolbar controls, with a primary-tinted hover and a visible
+   keyboard focus ring. Scoped to the header — .icon-button is shared. */
+.header-actions .icon-button {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--gf-surface-2);
+  border: 1px solid var(--gf-line);
+  color: var(--gf-ink-soft);
+  box-shadow: inset 0 1px 0 var(--gf-hi);
+}
+.header-actions .icon-button:hover {
+  color: var(--gf-primary);
+  background: rgba(var(--gf-primary-rgb), 0.1);
+  border-color: rgba(var(--gf-primary-rgb), 0.3);
+  transform: translateY(-1px);
+  box-shadow:
+    0 3px 8px -2px rgba(var(--gf-primary-rgb), 0.35),
+    inset 0 1px 0 var(--gf-hi);
+}
+.header-actions .icon-button:active {
+  transform: translateY(0) scale(0.94);
+}
+.header-actions .icon-button:focus-visible {
+  outline: var(--gf-ring-width, 2px) solid var(--gf-primary);
+  outline-offset: 2px;
 }
 
 .icon-button,
@@ -2750,9 +2779,11 @@ textarea:disabled,
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
-  padding: var(--space-5) var(--space-4);
+  gap: 6px;
+  padding: 12px var(--space-4);
   text-align: center;
+  overflow-y: auto;
+  overflow-x: hidden;
   background:
     radial-gradient(100% 50% at 50% 0%, rgba(var(--gf-primary-rgb), 0.12), transparent 50%),
     var(--gf-bg);
@@ -2770,6 +2801,33 @@ textarea:disabled,
     0 10px 28px -8px rgba(var(--gf-primary-rgb), 0.7),
     inset 0 1px 0 rgba(255, 255, 255, 0.25);
   margin-bottom: var(--space-1);
+}
+
+/* Mascot variant: the detailed ghost artwork needs room to breathe, so it
+   renders large on a transparent stage instead of inside the 48px tile.
+   Explicit full-width flex centering: as a plain block the wrapper can sit
+   off-center next to the centered title/cards (the PNG's own transparent
+   padding is asymmetric). */
+.onboarding-logo--mascot {
+  width: 100%;
+  height: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  box-shadow: none;
+  margin-bottom: 0;
+  flex: none;
+}
+
+.onboarding-mascot-img {
+  width: 76px;
+  height: 76px;
+  object-fit: contain;
+  object-position: center center;
+  display: block;
+  margin: 0 auto;
+  filter: drop-shadow(0 8px 18px rgba(var(--gf-primary-rgb), 0.45));
 }
 
 .onboarding-title {

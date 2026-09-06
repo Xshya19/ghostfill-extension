@@ -15,7 +15,6 @@ import {
   X,
   Settings,
   HelpCircle,
-  Sparkles,
   Zap,
   ShieldCheck,
   Hash,
@@ -65,7 +64,7 @@ import {
   IconButton,
 } from '../../ui';
 import { useStorageSubscription } from '../hooks';
-import { GmailLogo, ZohoLogo, OutlookLogo } from './ProviderLogos';
+import { GmailLogo } from './ProviderLogos';
 
 // i18n helper
 const t = (key: string): string => {
@@ -77,19 +76,14 @@ const t = (key: string): string => {
 };
 
 // --- AccountCard.tsx ---
+// NOTE: Gmail is the only real-mail provider. Zoho/Outlook were removed
+// from the UI (backend services + validation stay for compat, but nothing
+// sends those actions anymore).
 export interface AccountCardProps {
   readonly preferredEmailType: 'disposable' | 'real' | 'gmail' | 'zoho' | 'microsoft';
-  readonly selectedRealProvider?: 'gmail' | 'zoho' | 'microsoft';
-  readonly onSelectRealProvider?: (provider: 'gmail' | 'zoho' | 'microsoft') => void;
   readonly gmailConnected: boolean;
   readonly gmailSigningIn: boolean;
   readonly gmailBase: string | null;
-  readonly zohoConnected?: boolean;
-  readonly zohoSigningIn?: boolean;
-  readonly zohoBase?: string | null;
-  readonly microsoftConnected?: boolean;
-  readonly microsoftSigningIn?: boolean;
-  readonly microsoftBase?: string | null;
   readonly activeEmailAddress: string;
   readonly emailAccount: EmailAccount | null;
   readonly emailCopied: boolean;
@@ -98,29 +92,15 @@ export interface AccountCardProps {
   readonly onCopyEmail: () => void;
   readonly onGenerateEmail: () => void;
   readonly onGmailSignIn: () => void | Promise<void>;
-  readonly onZohoSignIn?: () => void | Promise<void>;
-  readonly onMicrosoftSignIn?: () => void | Promise<void>;
   readonly onSignOut?: () => void;
-  readonly onZohoSignOut?: () => void;
-  readonly onMicrosoftSignOut?: () => void;
   readonly gmailProfile?: any;
-  readonly zohoProfile?: any;
-  readonly microsoftProfile?: any;
 }
 
 const AccountCardComponent: React.FC<AccountCardProps> = ({
   preferredEmailType,
-  selectedRealProvider = 'gmail',
-  onSelectRealProvider,
   gmailConnected,
   gmailSigningIn,
   gmailBase,
-  zohoConnected = false,
-  zohoSigningIn = false,
-  zohoBase,
-  microsoftConnected = false,
-  microsoftSigningIn = false,
-  microsoftBase,
   activeEmailAddress,
   emailAccount,
   emailCopied,
@@ -129,51 +109,15 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
   onCopyEmail,
   onGenerateEmail,
   onGmailSignIn,
-  onZohoSignIn,
-  onMicrosoftSignIn,
   onSignOut,
-  onZohoSignOut,
-  onMicrosoftSignOut,
   gmailProfile,
-  zohoProfile,
-  microsoftProfile,
 }) => {
   const isReal = preferredEmailType !== 'disposable';
 
-  const providerSelector = isReal && onSelectRealProvider && (
-    <div className="hub-provider-selector">
-      <button
-        type="button"
-        className={`hub-provider-pill ${selectedRealProvider === 'gmail' ? 'hub-provider-pill--active' : ''}`}
-        onClick={() => onSelectRealProvider('gmail')}
-      >
-        <GmailLogo size={14} />
-        <span>Gmail</span>
-      </button>
-      <button
-        type="button"
-        className={`hub-provider-pill ${selectedRealProvider === 'zoho' ? 'hub-provider-pill--active' : ''}`}
-        onClick={() => onSelectRealProvider('zoho')}
-      >
-        <ZohoLogo size={14} />
-        <span>Zoho Mail</span>
-      </button>
-      <button
-        type="button"
-        className={`hub-provider-pill ${selectedRealProvider === 'microsoft' ? 'hub-provider-pill--active' : ''}`}
-        onClick={() => onSelectRealProvider('microsoft')}
-      >
-        <OutlookLogo size={14} />
-        <span>Outlook</span>
-      </button>
-    </div>
-  );
-
   // 1. Gmail not connected
-  if (isReal && selectedRealProvider === 'gmail' && !gmailConnected) {
+  if (isReal && !gmailConnected) {
     return (
       <div>
-        {providerSelector}
         <div className="hub-gmail-not-connected">
           <GmailLogo size={44} className="hub-gmail-logo-img" />
           <span className="hub-gmail-title">Connect Gmail</span>
@@ -201,100 +145,17 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
     );
   }
 
-  // 2. Zoho Mail not connected
-  if (isReal && selectedRealProvider === 'zoho' && !zohoConnected) {
-    return (
-      <div>
-        {providerSelector}
-        <div className="hub-provider-not-connected">
-          <ZohoLogo size={44} className="hub-provider-logo-img" />
-          <span className="hub-provider-title">Connect Zoho Mail</span>
-          <span className="hub-provider-desc">
-            Create aliases and auto-fill OTPs directly from your Zoho Mail inbox (Auto-detects
-            US/EU/IN/AU/JP/CN).
-          </span>
-          <motion.button
-            onClick={() => {
-              void onZohoSignIn?.();
-            }}
-            className="hub-provider-connect-btn"
-            {...interactiveSurface}
-            disabled={zohoSigningIn}
-          >
-            {zohoSigningIn ? (
-              <span>
-                <RefreshCw size={14} className="spin" /> Connecting...
-              </span>
-            ) : (
-              <span>Connect Zoho Mail</span>
-            )}
-          </motion.button>
-        </div>
-      </div>
-    );
-  }
+  const currentOriginalBase = gmailBase;
 
-  // 3. Microsoft Outlook not connected
-  if (isReal && selectedRealProvider === 'microsoft' && !microsoftConnected) {
-    return (
-      <div>
-        {providerSelector}
-        <div className="hub-provider-not-connected">
-          <OutlookLogo size={44} className="hub-provider-logo-img" />
-          <span className="hub-provider-title">Connect Microsoft Outlook</span>
-          <span className="hub-provider-desc">
-            Create aliases and auto-fill OTPs from your @outlook.com, @hotmail.com, or @live.com
-            account.
-          </span>
-          <motion.button
-            onClick={() => {
-              void onMicrosoftSignIn?.();
-            }}
-            className="hub-provider-connect-btn"
-            {...interactiveSurface}
-            disabled={microsoftSigningIn}
-          >
-            {microsoftSigningIn ? (
-              <span>
-                <RefreshCw size={14} className="spin" /> Connecting...
-              </span>
-            ) : (
-              <span>Connect Outlook</span>
-            )}
-          </motion.button>
-        </div>
-      </div>
-    );
-  }
+  const currentDisconnectHandler = onSignOut;
 
-  const currentOriginalBase =
-    selectedRealProvider === 'gmail'
-      ? gmailBase
-      : selectedRealProvider === 'zoho'
-        ? zohoBase || zohoProfile?.email
-        : microsoftBase || microsoftProfile?.email;
-
-  const currentDisconnectHandler =
-    selectedRealProvider === 'gmail'
-      ? onSignOut
-      : selectedRealProvider === 'zoho'
-        ? onZohoSignOut
-        : onMicrosoftSignOut;
-
-  const providerLabel = !isReal
-    ? t('emailLabel')
-    : selectedRealProvider === 'gmail'
-      ? 'Gmail Alias'
-      : selectedRealProvider === 'zoho'
-        ? 'Zoho Alias'
-        : 'Outlook Alias';
+  const providerLabel = !isReal ? t('emailLabel') : 'Gmail Alias';
 
   return (
     <div>
-      {providerSelector}
       <div className="identity-row">
         <div className="identity-icon">
-          {isReal && selectedRealProvider === 'gmail' ? (
+          {isReal ? (
             gmailProfile?.picture ? (
               <img
                 src={gmailProfile.picture}
@@ -310,10 +171,6 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
             ) : (
               <GmailLogo size={18} />
             )
-          ) : isReal && selectedRealProvider === 'zoho' ? (
-            <ZohoLogo size={18} />
-          ) : isReal && selectedRealProvider === 'microsoft' ? (
-            <OutlookLogo size={18} />
           ) : (
             <Mail size={18} className="icon-premium" />
           )}
@@ -1976,11 +1833,11 @@ const Header: React.FC<HeaderProps> = React.memo(({ onOpenSettings, onOpenHelp }
         </div>
       </div>
       <div className="header-actions">
-        <IconButton label="Open help center" title="Help center" onClick={onOpenHelp}>
-          <HelpCircle size={20} strokeWidth={2} />
+        <IconButton label="Open help center" title="Help center (guides & FAQ)" onClick={onOpenHelp}>
+          <HelpCircle size={18} strokeWidth={2} />
         </IconButton>
         <IconButton label="Open settings" title="Settings" onClick={onOpenSettings}>
-          <Settings size={19} strokeWidth={2.2} />
+          <Settings size={18} strokeWidth={2.2} />
         </IconButton>
       </div>
     </header>
@@ -2096,8 +1953,6 @@ export interface InboxListProps {
   readonly gmailIsManual: boolean;
   readonly gmailInboxLoading: boolean;
   readonly gmailInboxError: string | null;
-  readonly zohoConnected?: boolean;
-  readonly microsoftConnected?: boolean;
   readonly inboxCount: number;
   readonly displayedEmails: DisplayedEmail[];
   readonly openingEmailId?: string | null;
@@ -2117,8 +1972,6 @@ const InboxListComponent: React.FC<InboxListProps> = ({
   gmailIsManual,
   gmailInboxLoading,
   gmailInboxError,
-  zohoConnected = false,
-  microsoftConnected = false,
   inboxCount,
   displayedEmails,
   openingEmailId,
@@ -2197,16 +2050,6 @@ const InboxListComponent: React.FC<InboxListProps> = ({
             <AlertCircle size={18} strokeWidth={1.7} color="var(--gf-coral)" />
             <span className="hub-empty-text">Connect Gmail above to sync OTP emails.</span>
           </div>
-        ) : preferredEmailType === 'zoho' && !zohoConnected ? (
-          <div className="hub-empty-state hub-empty-state--action">
-            <AlertCircle size={18} strokeWidth={1.7} color="var(--gf-coral)" />
-            <span className="hub-empty-text">Connect Zoho Mail above to sync OTP emails.</span>
-          </div>
-        ) : preferredEmailType === 'microsoft' && !microsoftConnected ? (
-          <div className="hub-empty-state hub-empty-state--action">
-            <AlertCircle size={18} strokeWidth={1.7} color="var(--gf-coral)" />
-            <span className="hub-empty-text">Connect Outlook above to sync OTP emails.</span>
-          </div>
         ) : preferredEmailType === 'gmail' && gmailIsManual ? (
           <div className="hub-empty-state hub-empty-state--action">
             <AlertCircle size={18} strokeWidth={1.7} color="var(--gf-amber)" />
@@ -2220,10 +2063,6 @@ const InboxListComponent: React.FC<InboxListProps> = ({
             <span>Syncing Gmail</span>
           </div>
         ) : gmailInboxError ? (
-          // NOTE: despite the prop name, this carries Zoho/Outlook fetch
-          // errors too (Hub writes all provider failures here). Render for
-          // every provider — previously non-Gmail failures fell through to
-          // the generic empty state and looked like "no mail".
           <button
             className="hub-empty-state hub-empty-state--action"
             onClick={() => void onFetchGmailInbox()}
@@ -2235,13 +2074,7 @@ const InboxListComponent: React.FC<InboxListProps> = ({
           <div className="hub-empty-state">
             <Mail size={18} strokeWidth={1.5} color="var(--gf-primary)" />
             <span>
-              {preferredEmailType === 'gmail'
-                ? 'No Gmail messages yet.'
-                : preferredEmailType === 'zoho'
-                  ? 'No Zoho messages yet.'
-                  : preferredEmailType === 'microsoft'
-                    ? 'No Outlook messages yet.'
-                    : t('listening')}
+              {preferredEmailType === 'gmail' ? 'No Gmail messages yet.' : t('listening')}
             </span>
           </div>
         ) : (
@@ -2365,12 +2198,18 @@ const Onboarding: React.FC<OnboardingProps> = ({ onDismiss, version }) => {
       className="onboarding-overlay"
     >
       <motion.div
-        initial={{ scale: 0.5, opacity: 0, rotate: -20 }}
+        initial={{ scale: 0.5, opacity: 0, rotate: -8 }}
         animate={{ scale: 1, opacity: 1, rotate: 0 }}
         transition={{ type: 'spring', stiffness: 200, damping: 20, delay: 0.05 }}
-        className="onboarding-logo"
+        className="onboarding-logo onboarding-logo--mascot"
       >
-        <Sparkles size={36} color="var(--gf-on-primary)" strokeWidth={2.5} />
+        <img
+          src={ghostLogoImg}
+          width={104}
+          height={104}
+          alt="GhostFill"
+          className="onboarding-mascot-img"
+        />
       </motion.div>
 
       <motion.h1
@@ -3055,9 +2894,6 @@ export interface QuickActionsProps {
   readonly onCopyPassword: () => void;
   readonly onToggleShowPassword: () => void;
   readonly onGeneratePassword: () => void;
-  // Opens the full password-vault detail view (length slider, options).
-  // Without this the App 'password' view is unreachable from the Hub.
-  readonly onOpenVault?: () => void;
 }
 
 const QuickActionsComponent: React.FC<QuickActionsProps> = ({
@@ -3069,7 +2905,6 @@ const QuickActionsComponent: React.FC<QuickActionsProps> = ({
   onCopyPassword,
   onToggleShowPassword,
   onGeneratePassword,
-  onOpenVault,
 }) => {
   return (
     <div className="identity-row">
@@ -3116,20 +2951,6 @@ const QuickActionsComponent: React.FC<QuickActionsProps> = ({
         >
           <RefreshCw size={14} className={isGeneratingPassword ? 'spin' : ''} />
         </motion.button>
-        {onOpenVault && (
-          <>
-            <div className="action-separator" />
-            <motion.button
-              className="action-icon"
-              onClick={onOpenVault}
-              {...interactiveSurface}
-              title="Open password vault"
-              aria-label="Open full password generator"
-            >
-              <ChevronRight size={14} />
-            </motion.button>
-          </>
-        )}
       </div>
     </div>
   );

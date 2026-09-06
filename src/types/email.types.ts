@@ -92,7 +92,8 @@ export type EmailService =
   | 'mailcx'
   | 'getnada'
   | 'mailinator'
-  | 'mailnesia';
+  | 'mailnesia'
+  | 'yopmail';
 
 export interface IEmailProvider {
   name: string;

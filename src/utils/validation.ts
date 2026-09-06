@@ -46,6 +46,8 @@ const emailServiceSchema = z.enum([
   'tempmailplus',
   'mailcx',
   'getnada',
+  'yopmail',
+  'mailinator',
 ]);
 
 const emailAccountServiceSchema = z.enum([
@@ -73,6 +75,7 @@ const emailAccountServiceSchema = z.enum([
   // CHECK_INBOX/READ_EMAIL validation must accept them.
   'mailinator',
   'mailnesia',
+  'yopmail',
 ]);
 
 // ─── Email Account schema ─────────────────────────────────────────────────────

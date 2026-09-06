@@ -180,15 +180,12 @@ class MaildropService {
    * Create a new disposable email account
    * Maildrop doesn't require registration - just generate a mailbox name
    */
-  async createAccount(prefix?: string, signal?: AbortSignal): Promise<EmailAccount> {
+  async createAccount(prefix?: string, _signal?: AbortSignal): Promise<EmailAccount> {
     try {
       const mailbox = prefix ? prefix.toLowerCase().replace(/[^a-z0-9]/g, '') : this.generateMailboxName();
       const domain = 'maildrop.cc';
       const fullEmail = `${mailbox}@${domain}`;
       const now = Date.now();
-
-      // Quick health check to ensure API is reachable
-      await this.ping(signal);
 
       const account: EmailAccount = {
         id: `maildrop_${now}_${Array.from(crypto.getRandomValues(new Uint8Array(4)))

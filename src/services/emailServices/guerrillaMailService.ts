@@ -46,11 +46,11 @@ class GuerrillaMailService {
 
   // Rate limiting state
   private lastRequestTime = 0;
-  private minRequestInterval = 2000; // 2 seconds between requests
+  private minRequestInterval = 600; // 600ms between requests (fast & within limits)
   private cooldownUntil = 0; // Timestamp until which no requests are allowed
-  private backoffMs = 2000; // Start with 2s backoff
-  private maxBackoffMs = 30000; // Max 30s backoff
-  private maxCooldownMs = 5 * 60 * 1000; // Max 5 minutes cooldown
+  private backoffMs = 1000; // Start with 1s backoff
+  private maxBackoffMs = 10000; // Max 10s backoff
+  private maxCooldownMs = 30 * 1000; // Cap cooldown at 30s (was 5 minutes)
   private consecutiveFailures = 0;
 
   // Request queue to serialize calls
@@ -97,15 +97,19 @@ class GuerrillaMailService {
     const now = Date.now();
     if (now < this.cooldownUntil) {
       const remainingTime = this.cooldownUntil - now;
+      // If cooldown is longer than 3 seconds, fail fast so aggregator fallback kicks in
+      if (remainingTime > 3000) {
+        throw new Error(`Guerrilla Mail in cooldown (${Math.round(remainingTime / 1000)}s remaining)`);
+      }
       const waitTime = Math.min(remainingTime, this.maxCooldownMs);
       if (waitTime > 0) {
         log.debug(`Rate limited. Waiting ${Math.round(waitTime / 1000)}s before retry...`);
         await this.delay(waitTime);
       }
-      // Always reset cooldown after waiting the max allowed time
-      if (remainingTime >= this.maxCooldownMs || Date.now() >= this.cooldownUntil) {
+      // Reset cooldown after waiting
+      if (Date.now() >= this.cooldownUntil) {
         this.cooldownUntil = 0;
-        this.backoffMs = 2000;
+        this.backoffMs = 1000;
       }
     }
 
@@ -250,8 +254,8 @@ class GuerrillaMailService {
 
       const messages: GuerrillaEmail[] = data.list || [];
 
-      // Fetch full body for first 5 messages (respecting rate limits)
-      const recentMessages = messages.slice(0, 5);
+      // Fetch full body for up to 2 most recent messages (respecting rate limits)
+      const recentMessages = messages.slice(0, 2);
       const fullBodyResults = await Promise.all(
         recentMessages.map(async (msg) => {
           try {
@@ -276,7 +280,7 @@ class GuerrillaMailService {
 
       return messages.map((msg, idx) => {
         const email = this.convertMessage(msg);
-        if (idx < 5 && fullBodyResults[idx]) {
+        if (idx < 2 && fullBodyResults[idx]) {
           const body = fullBodyResults[idx]!;
           email.body = body.body;
           email.htmlBody = body.htmlBody;

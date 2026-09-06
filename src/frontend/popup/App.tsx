@@ -55,8 +55,8 @@ const App: React.FC = () => {
   const emailAccount = useAppStore((s) => s.emailAccount);
   const setEmailAccount = useAppStore((s) => s.setEmailAccount);
 
-  // Real Mail Provider store hooks
-  const selectedRealProvider = useAppStore((s) => s.selectedRealProvider);
+  // Real Mail Provider store hooks (Gmail-only in the UI; Zoho/Outlook
+  // hydration below is legacy stored-data compat and stays write-only)
   const setSelectedRealProvider = useAppStore((s) => s.setSelectedRealProvider);
   const setGmailConnected = useAppStore((s) => s.setGmailConnected);
   const setGmailProfile = useAppStore((s) => s.setGmailProfile);
@@ -523,11 +523,7 @@ const App: React.FC = () => {
                       {view === 'otp'
                         ? t('passcodeSync')
                         : view === 'aliases'
-                          ? selectedRealProvider === 'zoho'
-                            ? 'Zoho Mail Aliases'
-                            : selectedRealProvider === 'microsoft'
-                              ? 'Outlook Aliases'
-                              : 'Gmail Aliases'
+                          ? 'Gmail Aliases'
                           : t('vaultSettings')}
                     </span>
                   </div>

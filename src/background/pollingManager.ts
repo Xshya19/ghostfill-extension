@@ -216,7 +216,8 @@ interface SessionState {
 //  §3  CIRCUIT BREAKER
 // ═════════════════════════════════════════════════════════════��═
 
-class CircuitBreaker {
+export class CircuitBreaker {
+  // Exported for unit tests (see tests/polling_circuit_429.test.ts).
   private readonly state: CircuitBreakerState = {
     state: 'closed',
     consecutiveFailures: 0,
@@ -293,7 +294,29 @@ class CircuitBreaker {
     }
 
     if (isRateLimitError) {
-      log.debug('HTTP 429 Rate Limit hit — non-fatal, not tripping engine circuit', { msg });
+      // 429 means the remote provider is throttling our requests. Respond
+      // with a GRADUATED cooldown: a lone 429 costs a short breather so a
+      // twitchy provider (e.g. YOPmail's token page) can't freeze the whole
+      // engine for 30s+ on a single blip; only a sustained streak escalates
+      // toward the cap. Any success resets the streak (see recordSuccess),
+      // and TRANSPORT_DECAY_MS forgives old streaks via lastFailureTime.
+      this.state.consecutiveFailures += 1;
+      this.state.lastFailureTime = Date.now();
+      this.state.state = 'open';
+      const streak = this.state.consecutiveFailures;
+      const exponent = Math.min(streak - 1, CIRCUIT.MAX_BACKOFF_EXPONENT);
+      const backoff = Math.min(
+        CIRCUIT.BACKOFF_BASE_MS * Math.pow(2, exponent),
+        CIRCUIT.BACKOFF_CAP_MS
+      );
+      // First 429 in a streak: brief pause only. Sustained 429s: full floor.
+      const cooldownMs = streak <= 1 ? Math.min(backoff, 10_000) : Math.max(backoff, 30_000);
+      this.state.nextRetryTime = Date.now() + cooldownMs;
+      log.warn('HTTP 429 Rate Limit hit — opening engine circuit for cooldown', {
+        cooldownMs,
+        streak,
+        msg,
+      });
       return;
     }
 
@@ -1298,9 +1321,15 @@ async function performCheck(mode: CheckMode): Promise<void> {
     metrics.lastSuccessTime = Date.now();
     checkSucceeded = true;
   } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    const isRateLimited = /\b(429|rate limit|too many requests)\b/i.test(errorMsg);
+    if (isRateLimited) {
+      stopFastWatchBurst('rate_limited');
+    }
+
     circuitBreaker.recordFailure(error);
     metrics.failedChecks++;
-    metrics.lastErrorMessage = error instanceof Error ? error.message : String(error);
+    metrics.lastErrorMessage = errorMsg;
     metrics.lastErrorTime = Date.now();
 
     log.warn(`Inbox check failed [${mode}]`, {

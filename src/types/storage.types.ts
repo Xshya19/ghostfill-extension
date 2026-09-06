@@ -62,7 +62,9 @@ export interface UserSettings {
     | 'tempmaillol'
     | 'tempmailplus'
     | 'mailcx'
-    | 'getnada';
+    | 'getnada'
+    | 'yopmail'
+    | 'mailinator';
   autoCheckInbox: boolean;
   checkIntervalSeconds: number;
 

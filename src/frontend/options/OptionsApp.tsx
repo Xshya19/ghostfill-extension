@@ -41,7 +41,6 @@ type SettingsFormErrors = Record<string, string> & {
 
 interface SessionSecretsState {
   customDomainKey: string;
-  llmApiKey: string;
 }
 
 interface ConfirmModalState {
@@ -347,7 +346,6 @@ const OptionsApp: React.FC = () => {
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [sessionSecrets, setSessionSecrets] = useState<SessionSecretsState>({
     customDomainKey: '',
-    llmApiKey: '',
   });
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [loading, setLoading] = useState(true);
@@ -423,10 +421,8 @@ const OptionsApp: React.FC = () => {
         );
       }
       const customDomainKey = (await storageService.getCustomDomainKey()) || '';
-      const llmApiKey = (await storageService.getLLMApiKey()) || '';
       setSessionSecrets({
         customDomainKey,
-        llmApiKey,
       });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
@@ -632,7 +628,7 @@ const OptionsApp: React.FC = () => {
   );
 
   const handleSessionSecretChange = useCallback(
-    (key: 'customDomainKey' | 'llmApiKey', value: string) => {
+    (key: 'customDomainKey', value: string) => {
       setSessionSecrets((prev) => ({ ...prev, [key]: value }));
 
       if (secretSaveTimersRef.current[key]) {
@@ -641,15 +637,9 @@ const OptionsApp: React.FC = () => {
 
       secretSaveTimersRef.current[key] = setTimeout(() => {
         try {
-          if (key === 'customDomainKey') {
-            void (value
-              ? storageService.setCustomDomainKey(value)
-              : storageService.clearSessionSecret(key));
-          } else {
-            void (value
-              ? storageService.setLLMApiKey(value)
-              : storageService.clearSessionSecret(key));
-          }
+          void (value
+            ? storageService.setCustomDomainKey(value)
+            : storageService.clearSessionSecret(key));
         } catch (error) {
           log.error('Failed to set session secret', error);
         }
@@ -790,8 +780,6 @@ const OptionsApp: React.FC = () => {
           <AdvancedTab
             settings={settings}
             onSettingChange={handleChange}
-            sessionSecrets={sessionSecrets}
-            onSessionSecretChange={handleSessionSecretChange}
             onReset={handleReset}
             onClearData={handleClearData}
             onSettingsImport={handleSettingsImport}

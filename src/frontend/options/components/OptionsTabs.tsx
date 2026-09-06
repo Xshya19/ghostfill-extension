@@ -17,7 +17,6 @@ import {
   Check,
   Inbox,
   Mail,
-  Sparkles,
   X,
 } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
@@ -25,7 +24,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { storageService } from '../../../services/storageService';
 import { UserSettings, DEFAULT_SETTINGS } from '../../../types/storage.types';
 import { createLogger } from '../../../utils/logger';
-import { GmailLogo, ZohoLogo, OutlookLogo } from '../../popup/components/ProviderLogos';
+import { GmailLogo } from '../../popup/components/ProviderLogos';
 import { Button } from '../../ui';
 
 import { CustomSelect } from './CustomSelect';
@@ -57,6 +56,8 @@ export const EMAIL_SERVICE_OPTIONS = [
   { value: 'mailgw', label: 'Mail.gw — Dedicated domain pool' },
   { value: 'guerrilla', label: 'Guerrilla Mail — 10 stealth domains' },
   { value: 'maildrop', label: 'Maildrop.cc — Free GraphQL disposable mail' },
+  { value: 'yopmail', label: 'YOPmail — Disposable inbox · Multi-domain' },
+  { value: 'mailinator', label: 'Mailinator — Public inbox · Fast delivery' },
   { value: 'custom', label: 'Custom infrastructure (private)' },
 ] as const;
 
@@ -157,7 +158,7 @@ export const ProviderHealthMeter: React.FC = () => {
       <div className="provider-health-meter">
         <h4 className="health-title">{t('providerHealthTitle')}</h4>
         <div className="health-grid">
-          {['driftz', 'catchmail', 'throwawaymail', 'tempmailplus', 'mailtm', 'mailgw', 'guerrilla', 'maildrop'].map((name) => (
+          {['driftz', 'catchmail', 'throwawaymail', 'tempmailplus', 'mailtm', 'mailgw', 'guerrilla', 'maildrop', 'yopmail'].map((name) => (
             <div key={name} className="health-pill-card" title="No calls recorded yet">
               <span className="health-provider-name">{name}</span>
               <div className="health-status-group">
@@ -178,7 +179,7 @@ export const ProviderHealthMeter: React.FC = () => {
       <div className="health-grid">
         {healthData
           .filter((h) =>
-            ['driftz', 'catchmail', 'throwawaymail', 'tempmailplus', 'mailtm', 'mailgw', 'guerrilla', 'maildrop', 'custom'].includes(h.name)
+            ['driftz', 'catchmail', 'throwawaymail', 'tempmailplus', 'mailtm', 'mailgw', 'guerrilla', 'maildrop', 'yopmail', 'custom'].includes(h.name)
           )
           .map((h) => {
           const pct = Math.round(h.successRate * 100);
@@ -483,8 +484,8 @@ export const PasswordTab: React.FC<PasswordTabProps> = ({
 interface EmailTabProps {
   settings: UserSettings;
   onSettingChange: (key: keyof UserSettings, value: UserSettings[keyof UserSettings]) => void;
-  sessionSecrets: { customDomainKey: string; llmApiKey: string };
-  onSessionSecretChange: (key: 'customDomainKey' | 'llmApiKey', value: string) => void;
+  sessionSecrets: { customDomainKey: string };
+  onSessionSecretChange: (key: 'customDomainKey', value: string) => void;
   fieldHasError: (field: string) => boolean;
   getFieldError: (field: string) => string | undefined;
   onFieldBlur: (field: string) => void;
@@ -505,18 +506,6 @@ export const EmailTab: React.FC<EmailTabProps> = ({
     'idle' | 'saving' | 'saved'
   >('idle');
 
-  const [zohoClientId, setZohoClientId] = useState('');
-  const [zohoClientIdError, setZohoClientIdError] = useState<string | null>(null);
-  const [zohoClientIdSaveStatus, setZohoClientIdSaveStatus] = useState<
-    'idle' | 'saving' | 'saved'
-  >('idle');
-
-  const [microsoftClientId, setMicrosoftClientId] = useState('');
-  const [microsoftClientIdError, setMicrosoftClientIdError] = useState<string | null>(null);
-  const [microsoftClientIdSaveStatus, setMicrosoftClientIdSaveStatus] = useState<
-    'idle' | 'saving' | 'saved'
-  >('idle');
-
   useEffect(() => {
     let cancelled = false;
 
@@ -525,24 +514,6 @@ export const EmailTab: React.FC<EmailTabProps> = ({
       .then((value) => {
         if (!cancelled) {
           setGmailClientId(typeof value === 'string' ? value : '');
-        }
-      })
-      .catch(() => undefined);
-
-    void storageService
-      .get('zohoClientId')
-      .then((value) => {
-        if (!cancelled) {
-          setZohoClientId(typeof value === 'string' ? value : '');
-        }
-      })
-      .catch(() => undefined);
-
-    void storageService
-      .get('microsoftClientId')
-      .then((value) => {
-        if (!cancelled) {
-          setMicrosoftClientId(typeof value === 'string' ? value : '');
         }
       })
       .catch(() => undefined);
@@ -570,36 +541,6 @@ export const EmailTab: React.FC<EmailTabProps> = ({
     } catch {
       setGmailClientIdSaveStatus('idle');
       setGmailClientIdError('Could not save Gmail Client ID.');
-    }
-  };
-
-  const saveZohoClientId = async (): Promise<void> => {
-    const nextClientId = zohoClientId.trim();
-    setZohoClientIdError(null);
-    setZohoClientIdSaveStatus('saving');
-    try {
-      await storageService.set('zohoClientId', nextClientId);
-      setZohoClientId(nextClientId);
-      setZohoClientIdSaveStatus('saved');
-      window.setTimeout(() => setZohoClientIdSaveStatus('idle'), SAVE_FEEDBACK_MS);
-    } catch {
-      setZohoClientIdSaveStatus('idle');
-      setZohoClientIdError('Could not save Zoho Client ID.');
-    }
-  };
-
-  const saveMicrosoftClientId = async (): Promise<void> => {
-    const nextClientId = microsoftClientId.trim();
-    setMicrosoftClientIdError(null);
-    setMicrosoftClientIdSaveStatus('saving');
-    try {
-      await storageService.set('microsoftClientId', nextClientId);
-      setMicrosoftClientId(nextClientId);
-      setMicrosoftClientIdSaveStatus('saved');
-      window.setTimeout(() => setMicrosoftClientIdSaveStatus('idle'), SAVE_FEEDBACK_MS);
-    } catch {
-      setMicrosoftClientIdSaveStatus('idle');
-      setMicrosoftClientIdError('Could not save Microsoft Client ID.');
     }
   };
 
@@ -788,168 +729,6 @@ export const EmailTab: React.FC<EmailTabProps> = ({
                   });
               }}
               disabled={gmailClientIdSaveStatus === 'saving'}
-            >
-              <X size={16} />
-              <span>Clear</span>
-            </Button>
-          </div>
-        </div>
-      </SettingsSection>
-
-      <SettingsSection
-        id="zoho-oauth"
-        title="Zoho Mail (OAuth API)"
-        icon={<ZohoLogo size={18} />}
-      >
-        <div className="setting-item vertical-group">
-          <div className="setting-info w-full">
-            <label htmlFor="zoho-client-id" className="fs-15-fw-600">
-              Zoho Client ID
-              <span className={`client-id-status-badge ${zohoClientId ? 'client-id-status-badge--configured' : 'client-id-status-badge--none'}`}>
-                {zohoClientId ? 'Configured' : 'Not configured'}
-              </span>
-            </label>
-            <p>Required for Zoho Mail alias creation and OTP auto-detection (Auto-detects US/EU/IN/AU/JP/CN).</p>
-          </div>
-          <input
-            id="zoho-client-id"
-            type="text"
-            inputMode="text"
-            spellCheck={false}
-            autoComplete="off"
-            placeholder="1000.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-            value={zohoClientId}
-            onChange={(e) => {
-              setZohoClientId(e.target.value);
-              setZohoClientIdError(null);
-              setZohoClientIdSaveStatus('idle');
-            }}
-            aria-invalid={!!zohoClientIdError}
-            aria-describedby={zohoClientIdError ? 'zoho-client-id-error' : undefined}
-          />
-          {zohoClientIdError && (
-            <span id="zoho-client-id-error" className="field-error" role="alert">
-              {zohoClientIdError}
-            </span>
-          )}
-          <div className="gmail-client-id-actions">
-            <Button
-              type="button"
-              variant="primary"
-              size="sm"
-              className={
-                zohoClientIdSaveStatus === 'saving'
-                  ? 'save-btn--saving'
-                  : zohoClientIdSaveStatus === 'saved'
-                    ? 'save-btn--saved'
-                    : ''
-              }
-              onClick={() => void saveZohoClientId()}
-              disabled={zohoClientIdSaveStatus === 'saving'}
-            >
-              {zohoClientIdSaveStatus === 'saved' ? <Check size={16} /> : <Save size={16} />}
-              <span>{zohoClientIdSaveStatus === 'saved' ? 'Saved' : 'Save'}</span>
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => {
-                setZohoClientId('');
-                setZohoClientIdError(null);
-                setZohoClientIdSaveStatus('saving');
-                void storageService
-                  .set('zohoClientId', '')
-                  .then(() => {
-                    setZohoClientIdSaveStatus('saved');
-                    window.setTimeout(() => setZohoClientIdSaveStatus('idle'), SAVE_FEEDBACK_MS);
-                  })
-                  .catch(() => {
-                    setZohoClientIdSaveStatus('idle');
-                    setZohoClientIdError('Could not clear Zoho Client ID.');
-                  });
-              }}
-              disabled={zohoClientIdSaveStatus === 'saving'}
-            >
-              <X size={16} />
-              <span>Clear</span>
-            </Button>
-          </div>
-        </div>
-      </SettingsSection>
-
-      <SettingsSection
-        id="microsoft-oauth"
-        title="Microsoft Outlook (Graph API)"
-        icon={<OutlookLogo size={18} />}
-      >
-        <div className="setting-item vertical-group">
-          <div className="setting-info w-full">
-            <label htmlFor="microsoft-client-id" className="fs-15-fw-600">
-              Application (client) ID
-              <span className={`client-id-status-badge ${microsoftClientId ? 'client-id-status-badge--configured' : 'client-id-status-badge--none'}`}>
-                {microsoftClientId ? 'Configured' : 'Not configured'}
-              </span>
-            </label>
-            <p>Required for Microsoft Outlook / Hotmail / Live alias polling via Microsoft Graph.</p>
-          </div>
-          <input
-            id="microsoft-client-id"
-            type="text"
-            inputMode="text"
-            spellCheck={false}
-            autoComplete="off"
-            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-            value={microsoftClientId}
-            onChange={(e) => {
-              setMicrosoftClientId(e.target.value);
-              setMicrosoftClientIdError(null);
-              setMicrosoftClientIdSaveStatus('idle');
-            }}
-            aria-invalid={!!microsoftClientIdError}
-            aria-describedby={microsoftClientIdError ? 'microsoft-client-id-error' : undefined}
-          />
-          {microsoftClientIdError && (
-            <span id="microsoft-client-id-error" className="field-error" role="alert">
-              {microsoftClientIdError}
-            </span>
-          )}
-          <div className="gmail-client-id-actions">
-            <Button
-              type="button"
-              variant="primary"
-              size="sm"
-              className={
-                microsoftClientIdSaveStatus === 'saving'
-                  ? 'save-btn--saving'
-                  : microsoftClientIdSaveStatus === 'saved'
-                    ? 'save-btn--saved'
-                    : ''
-              }
-              onClick={() => void saveMicrosoftClientId()}
-              disabled={microsoftClientIdSaveStatus === 'saving'}
-            >
-              {microsoftClientIdSaveStatus === 'saved' ? <Check size={16} /> : <Save size={16} />}
-              <span>{microsoftClientIdSaveStatus === 'saved' ? 'Saved' : 'Save'}</span>
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => {
-                setMicrosoftClientId('');
-                setMicrosoftClientIdError(null);
-                setMicrosoftClientIdSaveStatus('saving');
-                void storageService
-                  .set('microsoftClientId', '')
-                  .then(() => {
-                    setMicrosoftClientIdSaveStatus('saved');
-                    window.setTimeout(() => setMicrosoftClientIdSaveStatus('idle'), SAVE_FEEDBACK_MS);
-                  })
-                  .catch(() => {
-                    setMicrosoftClientIdSaveStatus('idle');
-                    setMicrosoftClientIdError('Could not clear Microsoft Client ID.');
-                  });
-              }}
-              disabled={microsoftClientIdSaveStatus === 'saving'}
             >
               <X size={16} />
               <span>Clear</span>
@@ -1246,8 +1025,6 @@ export const PrivacyTab: React.FC<PrivacyTabProps> = ({
 interface AdvancedTabProps {
   settings: UserSettings;
   onSettingChange: (key: keyof UserSettings, value: UserSettings[keyof UserSettings]) => void;
-  sessionSecrets: { customDomainKey: string; llmApiKey: string };
-  onSessionSecretChange: (key: 'customDomainKey' | 'llmApiKey', value: string) => void;
   onReset: () => void;
   onClearData: () => void;
   onSettingsImport: (imported: UserSettings) => void;
@@ -1257,8 +1034,6 @@ interface AdvancedTabProps {
 export const AdvancedTab: React.FC<AdvancedTabProps> = ({
   settings,
   onSettingChange,
-  sessionSecrets,
-  onSessionSecretChange,
   onReset,
   onClearData,
   onSettingsImport,
@@ -1345,32 +1120,6 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
             onChange={(checked) => onSettingChange('debugMode', checked)}
             ariaLabel="Debug mode"
             ariaLabelledBy="debug-mode-label"
-            disabled
-          />
-        </div>
-      </SettingsSection>
-
-      <SettingsSection id="llm" title="AI assistance" icon={<Sparkles size={18} />}>
-        {/* vertical-group so the key field is as wide as the Gmail client ID
-            field: both are long opaque secrets, and a 220px box truncates them. */}
-        <div className="setting-item vertical-group">
-          <div className="setting-info w-full">
-            <label htmlFor="llm-api-key">
-              LLM API key <span className="coming-soon-label">(coming soon)</span>
-            </label>
-            <p>
-              Reserved for AI-assisted replies (not consumed by any feature yet).
-              Stored only in this browser session.
-            </p>
-          </div>
-          <input
-            id="llm-api-key"
-            type="password"
-            autoComplete="off"
-            placeholder="sk-…"
-            value={sessionSecrets.llmApiKey}
-            onChange={(e) => onSessionSecretChange('llmApiKey', e.target.value)}
-            aria-label="LLM API key (coming soon)"
             disabled
           />
         </div>

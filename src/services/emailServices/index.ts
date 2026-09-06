@@ -37,6 +37,7 @@ import { tempMailLolService } from './tempMailLolService';
 import { tempmailPlusService } from './tempmailPlusService';
 import { tempMailService } from './tempMailService';
 import { throwawaymailService } from './throwawaymailService';
+import { yopmailService } from './yopmailService';
 
 const log = createLogger('EmailServiceAggregator');
 const customDomainService = new CustomDomainService();
@@ -67,6 +68,7 @@ class EmailServiceAggregator {
     'guerrilla',
     'maildrop',
     'driftz',
+    'yopmail',
     'custom',
   ];
 
@@ -177,9 +179,9 @@ class EmailServiceAggregator {
       } // Skip unavailable providers
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const timeoutId = setTimeout(() => controller.abort(), 7000);
       try {
-        // Try to get domains as a lightweight "ping" with a 5-second timeout
+        // Try to get domains as a lightweight "ping" with a 7-second timeout
         const domains = await this.getDomains(service, controller.signal);
         clearTimeout(timeoutId);
         if (domains && domains.length > 0) {
@@ -197,7 +199,17 @@ class EmailServiceAggregator {
 
     // Always ensure we have at least one fallback
     if (this.availableServices.length === 0) {
-      this.availableServices = ['driftz', 'catchmail', 'throwawaymail', 'tempmailplus', 'mailtm', 'mailgw', 'maildrop', 'guerrilla'];
+      this.availableServices = [
+        'driftz',
+        'catchmail',
+        'mailtm',
+        'throwawaymail',
+        'tempmailplus',
+        'mailgw',
+        'maildrop',
+        'yopmail',
+        'guerrilla',
+      ];
       log.warn('All health checks failed, resetting to defaults');
     }
 
@@ -365,6 +377,8 @@ class EmailServiceAggregator {
           return await mailinatorService.createAccount(options.prefix, signal);
         case 'mailnesia':
           return await mailnesiaService.createAccount(options.prefix, signal);
+        case 'yopmail':
+          return await yopmailService.createAccount(options.prefix, signal);
         case 'tempmail':
         case '1secmail':
           return await tempMailService.generateEmail(options.prefix, options.domain, signal);
@@ -625,6 +639,22 @@ class EmailServiceAggregator {
         throw new Error('Invalid email format: must contain @');
       }
 
+      // Ensure provider is available (circuit not OPEN in cooldown).
+      // Gmail, Zoho, Microsoft, Custom use user credentials / OAuth and manage their own health.
+      const isSelfManaged =
+        account.service === 'gmail' ||
+        account.service === 'zoho' ||
+        account.service === 'microsoft' ||
+        account.service === 'custom';
+
+      if (!isSelfManaged && !this.healthManager.isAvailable(account.service)) {
+        log.warn(
+          `Provider ${account.service} circuit is OPEN (cooling down). Skipping network check.`
+        );
+        const cachedInbox = (await storageService.get('inbox')) || [];
+        return cachedInbox;
+      }
+
       let emails: Email[];
 
       switch (account.service) {
@@ -803,6 +833,9 @@ class EmailServiceAggregator {
           break;
         case 'mailnesia':
           emails = await mailnesiaService.getMessages(account.fullEmail, signal);
+          break;
+        case 'yopmail':
+          emails = await yopmailService.getMessages(account.fullEmail, signal);
           break;
         case 'tempmail':
         case '1secmail':
@@ -1043,6 +1076,12 @@ class EmailServiceAggregator {
         case 'getnada':
           email = await getnadaService.getMessage(account.fullEmail, emailId.toString(), signal);
           break;
+        case 'yopmail':
+          email = await yopmailService.getMessage(account.fullEmail, emailId.toString(), signal);
+          break;
+        case 'mailinator':
+          email = await mailinatorService.getMessage(account.fullEmail, emailId.toString(), signal);
+          break;
         case 'tempmail':
         case '1secmail':
         default:
@@ -1142,6 +1181,10 @@ class EmailServiceAggregator {
           return await mailCxService.getDomains(signal);
         case 'getnada':
           return await getnadaService.getDomains(signal);
+        case 'yopmail':
+          return await yopmailService.getDomains(signal);
+        case 'mailinator':
+          return await mailinatorService.getDomains(signal);
         case 'tempmail':
         case '1secmail':
           return await tempMailService.getDomains(signal);
@@ -1220,5 +1263,6 @@ export { tempMailLolService } from './tempMailLolService';
 export { tempmailPlusService } from './tempmailPlusService';
 export { mailCxService } from './mailCxService';
 export { getnadaService } from './getnadaService';
+export { yopmailService } from './yopmailService';
 export { customDomainService };
 export { providerHealth } from './providerHealthManager';
