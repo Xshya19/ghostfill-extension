@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/manifest-MV3-orange?style=flat-square" alt="Manifest V3" />
   <img src="https://img.shields.io/badge/chrome-109%2B-brightgreen?style=flat-square" alt="Chrome 109+" />
   <img src="https://img.shields.io/badge/typescript-5.3-blue?style=flat-square" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/tests-977%20passing-success?style=flat-square" alt="977 Tests Passing" />
+  <img src="https://img.shields.io/badge/tests-1018%20passing-success?style=flat-square" alt="1,018 Tests Passing" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow?style=flat-square" alt="MIT License" /></a>
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square" alt="PRs Welcome" />
 </p>
@@ -37,26 +37,33 @@
 - [Why GhostFill? (Feature Comparison)](#why-ghostfill)
 - [Who It Is For](#who-it-is-for)
 - [Core Features](#core-features)
-  - [1. Disposable Temporary Emails (17+ Backends)](#1-disposable-temporary-emails)
-  - [2. Gmail Scrambler (Dot & Plus Aliases)](#2-gmail-scrambler-dot--plus-aliases)
+  - [1. Disposable Temporary Emails (10 Active + 10 Legacy Backends)](#1-disposable-temporary-emails)
+  - [2. Real Inbox Aliases: Gmail Scrambler (Dot & Plus Aliases)](#2-real-inbox-aliases-gmail-scrambler-dot--plus-aliases)
   - [3. Smart OTP Detection & Auto-Fill](#3-smart-otp-detection--auto-fill)
-  - [4. Magic & Activation Links (Auto-Open in New Tab)](#4-magic--activation-links-auto-open-in-a-new-tab)
+  - [4. Magic & Activation Links (Auto-Open in a New Tab)](#4-magic--activation-links-auto-open-in-a-new-tab)
   - [5. Cryptographically Secure Password Generator](#5-secure-password-generator)
   - [6. Identity-Aware Form Fill](#6-identity-aware-form-fill)
   - [7. Floating Action Button (FAB)](#7-floating-action-button-fab)
-  - [8. Options & Settings Console](#9-options-page)
-  - [9. Keyboard Shortcuts](#10-keyboard-shortcuts)
+  - [8. Popup Control Panel (Hub)](#8-popup-control-panel-hub)
+  - [9. Options Page](#9-options-page)
+  - [10. Keyboard Shortcuts](#10-keyboard-shortcuts)
+  - [11. Context Menus, Notifications & Clipboard](#11-context-menus-notifications-clipboard)
 - [How a Typical Flow Works](#how-a-typical-flow-works)
-- [Privacy, Cryptography & Security](#privacy--security)
+- [Privacy & Security](#privacy--security)
 - [Safety Exclusions](#safety-exclusions)
-- [Requirements & Browser Compatibility](#requirements)
+- [Requirements](#requirements)
 - [Quick Start](#quick-start)
-  - [Install from Pre-Built `dist/`](#install-from-a-pre-built-dist-end-users)
-  - [Build from Source](#build-from-source-developers)
-- [Gmail OAuth Setup (Optional)](#gmail-setup-optional)
-- [Architecture & Tech Stack](#architecture-high-level)
-- [Frequently Asked Questions (FAQ)](#faq)
-- [Contributing & License](#contributing)
+  - [Install from Pre-Built `dist/` (End Users)](#install-from-a-pre-built-dist-end-users)
+  - [Build from Source (Developers)](#build-from-source-developers)
+- [Gmail Setup (Optional)](#gmail-setup-optional)
+- [Day-to-Day Usage](#day-to-day-usage)
+- [Architecture (High Level)](#architecture-high-level)
+- [FAQ](#faq)
+- [Project Status](#project-status)
+- [Contributing](#contributing)
+- [Related Projects & Alternatives](#related-projects--alternatives)
+- [Disclaimer](#disclaimer)
+- [License](#license)
 
 ---
 
@@ -78,29 +85,29 @@ Everything executes locally inside your browser as a Google Chrome **Manifest V3
 
 ## Why GhostFill?
 
-| Feature | GhostFill | Web Temp Mail Sites | Password Managers |
-| :--- | :---: | :---: | :---: |
-| **In-Page Form Autofill** | ✅ **Instant One-Click** | ❌ Manual copy-paste | ⚠️ Passwords only |
-| **Automatic OTP Code Extraction** | ✅ **Dual-Engine Local Heuristics** | ❌ Manual inbox reading | ❌ No temp mail OTPs |
-| **Magic / Activation Link Auto-Open** | ✅ **Auto-Opens in New Tab** | ❌ Manual tab switching | ❌ Unsupported |
-| **Multiple Temp Mail Backends** | ✅ **17 Public APIs + Custom + Self-Heal** | ❌ Single domain/provider | ❌ None |
-| **Human-Like Username Formats** | ✅ **`first.last##` (Anti-Bot Friendly)** | ❌ Obvious random hashes | ❌ N/A |
-| **Gmail Dot/Plus Alias Support** | ✅ **Built-In OAuth Search** | ❌ Not available | ❌ Unsupported |
-| **Local Encryption at Rest** | ✅ **Web Crypto AES-GCM 256-bit** | ❌ Cloud-hosted inboxes | ✅ Encrypted vaults |
-| **Privacy / No Cloud Account** | ✅ **100% Free & Open Source** | ⚠️ Ad-heavy trackers | ⚠️ Paid subscriptions |
+| Feature                               |                     GhostFill                     |    Web Temp Mail Sites    |   Password Managers   |
+| :------------------------------------ | :-----------------------------------------------: | :-----------------------: | :-------------------: |
+| **In-Page Form Autofill**             |             ✅ **Instant One-Click**              |   ❌ Manual copy-paste    |   ⚠️ Passwords only   |
+| **Automatic OTP Code Extraction**     |        ✅ **Dual-Engine Local Heuristics**        |  ❌ Manual inbox reading  | ❌ No temp mail OTPs  |
+| **Magic / Activation Link Auto-Open** |           ✅ **Auto-Opens in New Tab**            |  ❌ Manual tab switching  |    ❌ Unsupported     |
+| **Multiple Temp Mail Backends**       | ✅ **10 Active + 10 Legacy + Custom + Self-Heal** | ❌ Single domain/provider |        ❌ None        |
+| **Human-Like Username Formats**       |     ✅ **`first.last##` (Anti-Bot Friendly)**     | ❌ Obvious random hashes  |        ❌ N/A         |
+| **Gmail Dot/Plus Alias Support**      |           ✅ **Built-In OAuth Search**            |     ❌ Not available      |    ❌ Unsupported     |
+| **Local Encryption at Rest**          |         ✅ **Web Crypto AES-GCM 256-bit**         |  ❌ Cloud-hosted inboxes  |  ✅ Encrypted vaults  |
+| **Privacy / No Cloud Account**        |          ✅ **100% Free & Open Source**           |   ⚠️ Ad-heavy trackers    | ⚠️ Paid subscriptions |
 
 ---
 
 ## Who it is for
 
-| Use case | How GhostFill helps |
-| --- | --- |
-| Trying a new SaaS / AI tool | Temp email so marketing mail never hits your real inbox |
-| Avoiding cross-site email tracking | Gmail dot/plus aliases so each site sees a different address |
-| Lazy OTP entry | Detects 4–8 digit / alphanumeric codes and fills them for you |
-| Activation / magic links | Finds verify / confirm / activate links and **auto-opens them in a new tab** |
-| Strong unique passwords | Local password generator with length & character options |
-| Dev / QA signups | Fast identity + email + password + OTP loop |
+| Use case                           | How GhostFill helps                                                          |
+| ---------------------------------- | ---------------------------------------------------------------------------- |
+| Trying a new SaaS / AI tool        | Temp email so marketing mail never hits your real inbox                      |
+| Avoiding cross-site email tracking | Gmail dot/plus aliases so each site sees a different address                 |
+| Lazy OTP entry                     | Detects 4–8 digit / alphanumeric codes and fills them for you                |
+| Activation / magic links           | Finds verify / confirm / activate links and **auto-opens them in a new tab** |
+| Strong unique passwords            | Local password generator with length & character options                     |
+| Dev / QA signups                   | Fast identity + email + password + OTP loop                                  |
 
 **Not for:** banking, brokerages, or password-manager sites. GhostFill deliberately does **not** inject on major banks, brokerages, and password managers (see [Safety exclusions](#safety-exclusions)).
 
@@ -118,50 +125,37 @@ Generate a throwaway address and use it on signup forms.
 - Inbox polling in the background while you wait for verification
 - Preferred provider can be set in **Options → Email**
 
-**Supported services (18 built-in public providers + Custom Domain + Real Mailbox Alias engines, ordered by health & priority):**
+**Supported services (10 active health-monitored backends + 10 legacy compatibility backends + Custom Domain + Gmail Real Mailbox):**
 
-| Provider | Service Key | Primary Domain(s) | Human Names | Highlights |
-| --- | --- | --- | --- | --- |
-| **Driftz.net** | `driftz` | `bbjbinin.mn` *(default)*, `manornewtech.org` | ✅ Yes | 🛡️ **Primary Default** · Anti-disposable blocklist bypass (`.mn`, `.org`) |
-| **CatchMail.io** | `catchmail` | `catchmail.io` | ✅ Yes | ⚡ **Fast (939ms avg)** & 7-Day Retention |
-| **Throwawaymail.app** | `throwawaymail` | `throwawaymail.app` | ✅ Yes | 🚀 Fast REST API & Instant delivery |
-| **Tempmail.plus** | `tempmailplus` | `tempmail.plus`, `mailto.plus`, `fexbox.org` | ✅ Yes | Multi-domain alias support with PIN lock |
-| **Mail.tm** | `mailtm` | Dynamic API domains | ✅ Yes | High-reliability REST API with JWT Auth |
-| **Mail.gw** | `mailgw` | Dynamic API domains | ✅ Yes | Dedicated domain pool & JWT Auth |
-| **Guerrilla Mail** | `guerrilla` | `guerrillamail.com`, `sharklasers.com`, `grr.la`, `pokemail.net`, +6 more | ✅ Yes | **10 Stealth Domains** (sharklasers, grr.la) |
-| **Maildrop** | `maildrop` | `maildrop.cc` | ✅ Yes | Apollo GraphQL API & 24h retention |
-| **1secmail** | `tempmail` / `1secmail` | `1secmail.com`, `1secmail.net`, `1secmail.org`, `kzccv.com`, +5 more | ✅ Yes | 9 public domains |
-| **MailboxTemp** | `mailboxtemp` | `mailboxtemp.com` | ✅ Yes | Fast REST API & 24h retention |
-| **Dropmail.me** | `dropmail` | `dropmail.me`, `emlpro.com`, +2 more | ✅ Yes | GraphQL API & 4 rotating domains |
-| **GetNada / Inboxes** | `getnada` | `getnada.com`, `nada.ltd`, `inboxes.com`, `clic2load.com` | ✅ Yes | 4 multi-TLD domain options |
-| **TempMail.lol** | `tempmaillol` | `tempmail.lol`, `disposable.com` | ✅ Yes | REST API v2 integration |
-| **OpenInbox.io** | `openinbox` | `openinbox.io` | ✅ Yes | Webhook-ready for fast OTP extraction |
-| **EvilMail.pro** | `evilmail` | `evilmail.dev`, `evilmail.pro` | ✅ Yes | REST API with customizable message TTL |
-| **Mail.cx** | `mailcx` | `mail.cx` | ✅ Yes | Real-time SSE streaming & 24h retention |
-| **Mailinator** | `mailinator` | `mailinator.com` | ✅ Yes | Public inbox generator & REST parser |
-| **Mailnesia** | `mailnesia` | `mailnesia.com` | ✅ Yes | Public inbox with automated RSS parser |
-| **YOPmail** | `yopmail` | `mynes.com`, `hunnur.com`, `binich.com`, +20 obscure alternates | ✅ Yes | 🌐 **Least-blocked alt domains & 8-Day Retention** |
-| **Custom Domain** | `custom` | *User-defined* | ✅ Yes | Private Cloudflare Worker / self-hosted API |
+#### Active & Health-Monitored Providers (Selectable in Options)
 
-### 2. Real Inbox Aliases (Gmail, Zoho Mail & Microsoft Outlook)
+| Provider              | Service Key     | Primary Domain(s)                                         | Human Names | Highlights                                                        |
+| --------------------- | --------------- | --------------------------------------------------------- | ----------- | ----------------------------------------------------------------- |
+| **CatchMail.io**      | `catchmail`     | `catchmail.io`                                            | ✅ Yes      | ⚡ **Primary Default** · Ultra-fast (~46ms gen) & 7-Day Retention |
+| **Throwawaymail.app** | `throwawaymail` | `throwawaymail.app`                                       | ✅ Yes      | 🚀 Fast REST API & Instant delivery                               |
+| **Mail.tm**           | `mailtm`        | Dynamic API domains                                       | ✅ Yes      | High-reliability REST API with JWT Auth                           |
+| **Tempmail.plus**     | `tempmailplus`  | `tempmail.plus`, `mailto.plus`, `fexbox.org`              | ✅ Yes      | Multi-domain alias support with PIN lock                          |
+| **Maildrop**          | `maildrop`      | `maildrop.cc`                                             | ✅ Yes      | Apollo GraphQL API & 24h retention                                |
+| **Driftz.net**        | `driftz`        | `bbjbinin.mn`, `manornewtech.org`                         | ✅ Yes      | 🛡️ Anti-disposable blocklist bypass (`.mn`, `.org`)               |
+| **Mail.gw**           | `mailgw`        | Dynamic API domains                                       | ✅ Yes      | Dedicated domain pool & JWT Auth                                  |
+| **Guerrilla Mail**    | `guerrilla`     | `guerrillamail.com`, `sharklasers.com`, `grr.la`, +7 more | ✅ Yes      | **10 Stealth Domains** (sharklasers, grr.la)                      |
+| **YOPmail**           | `yopmail`       | `mynes.com`, `hunnur.com`, `binich.com`, +20 alternates   | ✅ Yes      | 🌐 **Least-blocked alt domains & 8-Day Retention**                |
+| **Custom Domain**     | `custom`        | _User-defined_                                            | ✅ Yes      | Private Cloudflare Worker / self-hosted API                       |
 
-Optional. Connect your real email accounts once and generate site-specific plus/dot aliases that land directly in your real inbox while keeping your address private and tracking-resistant.
+> **Legacy Compatibility Backends:** GhostFill retains historical read/check passthroughs for 10 older backends (`mailboxtemp`, `openinbox`, `evilmail`, `getnada`, `tempmaillol`, `dropmail`, `mailinator`, `mailnesia`, `mailcx`, `1secmail`) so previously stored accounts continue functioning. To prevent flakiness and rate limiting, they are not health-checked or offered as defaults.
 
-| Provider | Alias Format | OAuth Integration | Inbox Polling |
-| :--- | :--- | :--- | :--- |
-| **Gmail** | `u.s.e.r+tag@gmail.com` | Google Identity (`gmail.readonly`) | ✅ Gmail REST API |
-| **Zoho Mail** | `user+ghostfill-tag@zoho.com` | Zoho OAuth 2.0 (Auto-detects US/EU/IN/AU/JP/CN) | ✅ Zoho Mail REST API |
-| **Microsoft Outlook** | `user+ghostfill-tag@outlook.com` | Microsoft Identity (`Mail.Read`) | ✅ Microsoft Graph API |
+### 2. Real inbox aliases: Gmail scrambler (dot & plus aliases)
 
-**How real inbox aliases work:**
+Optional. Connect your personal or work Gmail once and generate site-specific plus/dot aliases that land directly in your real inbox while keeping your address private and tracking-resistant.
 
-- **Gmail:** Combines dot variations + plus suffixes (`j.o.h.n+github@gmail.com`).
-- **Zoho Mail:** Uses plus tags with automatic regional endpoint detection (`user+ghostfill-brand@zoho.com`).
-- **Microsoft Outlook:** Uses plus tags with Microsoft Graph search for `@outlook.com`, `@hotmail.com`, `@live.com`, and `@msn.com`.
-- **OTP Auto-Detection:** Background service worker monitors the inbox for incoming messages delivered to that specific alias, extracts the verification OTP or magic link, and auto-fills it directly on your signup tab.
-- **Privacy & Security:** Tokens are stored in ephemeral session storage (`chrome.storage.session`) and never written to disk unencrypted. Zero passwords stored.
+| Feature               | Details                                                                                |
+| :-------------------- | :------------------------------------------------------------------------------------- |
+| **Alias Formats**     | Dot permutations (`j.o.h.n@gmail.com`) + plus tags (`user+github@gmail.com`)           |
+| **OAuth Integration** | Google Identity with minimal `gmail.readonly` scope                                    |
+| **Inbox Polling**     | Background search directly querying messages addressed to the specific alias           |
+| **Security**          | OAuth tokens reside exclusively in volatile session storage (`chrome.storage.session`) |
 
-Connecting real accounts is **completely optional**. Disposable temporary emails work immediately with zero setup.
+_Note: Modular backend connectors for Zoho Mail and Microsoft Graph API exist in `src/services/` for developer extension, while the core extension UI is streamlined to Gmail for a focused, zero-bloat user experience._
 
 ### 3. Smart OTP detection & auto-fill
 
@@ -194,8 +188,9 @@ GhostFill:
 
 Local cryptographically-backed generator (browser crypto). Defaults are configurable:
 
-- Length (8–128)
+- Length (8–128, default 20)
 - Uppercase / lowercase / numbers / symbols
+- Exclude ambiguous characters (`l`, `1`, `O`, `0`)
 - Filled into password fields via FAB, popup, or shortcut
 
 **Settings:** Options → Password
@@ -208,51 +203,53 @@ GhostFill can generate a lightweight identity profile (name / username style fie
 
 On supported pages, a compact control appears near email / password / OTP fields:
 
-| State | Meaning |
-| --- | --- |
-| Idle | Ready to generate or fill |
-| Pulsing blue | Working — generating, waiting for mail, extracting |
-| Green | OTP / value ready — click to fill |
+| State       | Indicator      | Meaning                                                     |
+| ----------- | -------------- | ----------------------------------------------------------- |
+| **Idle**    | Ghost icon     | Field detected, ready to generate or fill                   |
+| **Loading** | Pulsing indigo | Generating email/password or polling inbox for incoming OTP |
+| **Success** | Vibrant green  | OTP code or credential ready — click to autofill            |
+| **Error**   | Amber / red    | Temporary rate limit or network warning                     |
 
-Uses a Shadow DOM style isolation so site CSS is less likely to break the UI.
+- **Contextual Modes:** Automatically switches between `email`, `password`, `otp`, `user`, and `form` based on focused inputs.
+- **Shadow DOM Isolation:** Protected from website CSS interference.
 
 ### 8. Popup control panel (Hub)
 
 Click the toolbar icon (or `Ctrl+Shift+E`) for:
 
-- **Complete Email Address Visibility:** Zero truncation — smart wrapping displays long usernames while keeping domain tags (e.g. `@bbjbinin.mn`) fully visible and highlighted in brand indigo. Single-click copy directly on the email badge.
-- **Instant Identity & Password Generation:** One-click generate / refresh with Driftz.net as primary default, plus instant password generator & copy.
+- **Complete Email Address Visibility:** Zero truncation — smart wrapping displays long usernames while keeping domain tags (e.g. `@catchmail.io`) fully visible and highlighted in brand indigo. Single-click copy directly on the email badge.
+- **Instant Identity & Password Generation:** One-click generate / refresh with CatchMail.io as primary default, plus instant password generator & copy.
 - **Safe Sandboxed Mailbox Viewer:** Live email preview with automated broken image/tracking pixel suppression and presentation-layer OTP & verification link safety net.
-- **Provider Hub:** Quick-toggle between Disposable Temp Mail and Real Inboxes (Gmail, Zoho Mail, Microsoft Outlook) with uniform provider iconography (soft-rounded squircle for Zoho).
-- **Navigation:** Seamless tabs for identity hub, alias tracking, full email viewer, and settings.
+- **Provider Hub:** Quick-toggle between **Disposable Temp Mail** and **Gmail**, with one-click Google Sign-In and real-time alias tracking.
+- **Navigation:** Seamless tabs for Hub dashboard, full email viewer, and direct settings access.
 
 ### 9. Options page
 
-Full settings in a separate tab (`options.html`):
+Full settings dashboard in a separate tab (`options.html`):
 
-| Tab | What you configure |
-| --- | --- |
-| **General** | Theme mode (Dark, Light, System Auto), check interval (3–60s), history retention (1–365 days), audio alert cues |
-| **Email** | Preferred email provider (18 backends + custom, Driftz.net default), Live Provider Health Monitor (latency & circuit breakers), custom API endpoint, OAuth Client credentials (Gmail, Zoho, Microsoft Outlook) |
-| **Password** | Default length (8–128), character sets (uppercase, lowercase, numbers, symbols), exclude ambiguous characters (`l`, `1`, `O`, `0`) |
-| **Automation** | Auto-fill OTP on active tab, auto-open verification/magic links in new tab (`autoConfirmLinks`), keyboard shortcut toggles |
-| **Privacy** | Form data tracking prevention, Web Crypto AES-GCM local storage encryption, storage quota manager & pruning |
-| **Advanced** | Custom field classification rules, session secrets manager (in-memory LLM / custom API keys), raw storage viewer & export, debug logging level |
-| **About** | Version info (v1.1.0), live storage usage breakdown, GitHub repository links, architecture & tech stack specifications |
+| Tab            | What you configure                                                                                                                                                                                                                                                                               |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **General**    | Theme mode (System Auto, Light, Dark), Floating Action Button (FAB) visibility toggle, Desktop notifications toggle, sound effects                                                                                                                                                               |
+| **Email**      | Preferred disposable email provider (10 active health-checked backends + custom, CatchMail.io default), Live Provider Health Monitor (latency & circuit breakers), Custom domain & Cloudflare Worker endpoint, Google OAuth Client ID, Inbox background polling toggle & interval slider (3–60s) |
+| **Password**   | Default length (8–128, default 20), character sets (uppercase, lowercase, numbers, symbols), exclude ambiguous characters (`l`, `1`, `O`, `0`)                                                                                                                                                   |
+| **Automation** | Auto-fill OTP on active tab, auto-open verification/magic links in new tab (`autoConfirmLinks`), keyboard shortcut toggles                                                                                                                                                                       |
+| **Privacy**    | Form data tracking prevention, Web Crypto AES-GCM local storage encryption, history retention slider (1–365 days), clear on browser close, one-click data purge                                                                                                                                  |
+| **Advanced**   | Session Secrets Manager (in-memory API keys), Raw storage inspector & JSON exporter, debug logging level, analytics toggle                                                                                                                                                                       |
+| **About**      | Version info (v1.1.0), live real-time storage quota usage breakdown & pruning, GitHub repository links, architecture & tech stack specifications                                                                                                                                                 |
 
 ### 10. Keyboard shortcuts
 
-| Shortcut (Windows / Linux) | Mac | Action |
-| --- | --- | --- |
-| `Ctrl+Shift+E` | `⌘+Shift+E` | Open GhostFill popup |
-| `Ctrl+Shift+M` | `⌘+Shift+M` | Generate new temp email |
-| `Ctrl+Shift+G` | `⌘+Shift+G` | Generate password |
-| `Ctrl+Shift+F` | `⌘+Shift+F` | Auto-fill current form |
+| Shortcut (Windows / Linux) | Mac         | Action                  |
+| -------------------------- | ----------- | ----------------------- |
+| `Ctrl+Shift+E`             | `⌘+Shift+E` | Open GhostFill popup    |
+| `Ctrl+Shift+M`             | `⌘+Shift+M` | Generate new temp email |
+| `Ctrl+Shift+G`             | `⌘+Shift+G` | Generate password       |
+| `Ctrl+Shift+F`             | `⌘+Shift+F` | Auto-fill current form  |
 
 Customize under `chrome://extensions/shortcuts`.  
 Toggle shortcuts in Options → Automation.
 
-### 11. Context menus, notifications, clipboard
+### 11. Context menus, notifications & clipboard
 
 - Right-click context menu actions where registered
 - Desktop notifications when codes/links are found (Chrome notifications permission)
@@ -300,21 +297,22 @@ You continue signup — real inbox never saw the spam
 
 ### What GhostFill does right
 
-| Principle | Practice |
-| --- | --- |
-| No GhostFill account | No signup to use the extension |
-| Local processing | OTP / link extraction runs in the extension / browser |
-| Optional Gmail only | Gmail OAuth is opt-in; scope is read-only mail + basic profile |
-| Encrypted local storage | Sensitive values use browser crypto APIs before storage |
-| No ads / no built-in product analytics trackers | Product is free OSS |
-| Fintech exclusion list | Content script does not run on major banks / brokers / PMs |
+| Principle                     | Practice                                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------ |
+| **No GhostFill Account**      | No signup or cloud registration needed to use the extension                    |
+| **Local Processing**          | OTP & activation link extraction runs 100% locally in your browser             |
+| **Opt-In Gmail Integration**  | Gmail OAuth is strictly optional; minimal `gmail.readonly` scope               |
+| **Encrypted Local Storage**   | Sensitive data encrypted at rest with Web Crypto AES-GCM 256-bit               |
+| **Session-Only Secrets**      | API keys and OAuth tokens kept in volatile memory (`chrome.storage.session`)   |
+| **Zero Telemetry / Trackers** | 100% Free & Open Source; zero external analytics beacons                       |
+| **Fintech Exclusion List**    | Content scripts do not inject on banking, brokerage, or password manager sites |
 
 ### What you should still know (honest)
 
-- **Temp-mail providers** can read messages they host. Do not use disposable mail for accounts that protect real money, government IDs, or long-term recovery.
-- **Gmail OAuth** grants the extension permission to **read** Gmail messages (for OTP search). Only connect accounts you trust on this machine. Revoke anytime in [Google Account → Security → Third-party access](https://myaccount.google.com/permissions).
-- **Local encryption** protects data at rest in extension storage better than plain text, but a compromised OS / profile can still be attacked. GhostFill is not a full password manager substitute for Bitwarden / 1Password.
-- **Loaded unpacked** builds use a fixed extension ID only if you pin one; Chrome Web Store / packed IDs differ — Gmail OAuth redirect URIs must match **your** extension ID.
+- **Disposable temp-mail providers** host received mail on public infrastructure. Never use disposable mail for banking, investments, tax services, government portals, or high-security personal accounts.
+- **Gmail OAuth** grants read-only access solely to search for incoming verification codes and activation links for your generated aliases. Tokens reside strictly in local session memory (`chrome.storage.session`) and are never transmitted to third parties. You can revoke access at any time in [Google Account → Security → Third-party access](https://myaccount.google.com/permissions).
+- **Local encryption** protects cached inboxes and history at rest, but a compromised operating system or user profile remains vulnerable. GhostFill is designed for fast, private web signups and OTP auto-completion—not as an enterprise password vault replacement.
+- **Loaded unpacked** builds use an extension ID derived from the local folder path unless pinned; ensure your Google Cloud OAuth Authorized redirect URI (`https://<EXTENSION_ID>.chromiumapp.org/`) matches the ID shown in `chrome://extensions/`.
 
 ---
 
@@ -371,23 +369,23 @@ npm run dev
 npm run build:zip
 ```
 
-| Script | Purpose |
-| --- | --- |
-| `npm run build` | Clean + production Webpack build (`dist/`) |
-| `npm run build:dev` | Clean + development Webpack build |
-| `npm run dev` | Webpack watch mode (auto-rebuild on file changes) |
-| `npm test` | Vitest unit & integration test suites (960+ tests) |
-| `npm run test:watch` | Vitest interactive test watcher |
-| `npm run test:ui` | Vitest browser UI test runner |
-| `npm run type-check` | TypeScript strict type validation (`tsc --noEmit`) |
-| `npm run lint` | ESLint static analysis for TypeScript & React |
-| `npm run lint:fix` | ESLint automated code fixing |
-| `npm run format:check` | Prettier code style validation |
-| `npm run eval` | Local heuristic & ML intelligence benchmark evaluation |
-| `npm run logs` | Local debug log collector server |
-| `npm run clean` | Clean and remove `dist/` directory |
-| `npm run zip` | Package `dist/` folder into distributable zip |
-| `npm run build:zip` | Production build and zip package |
+| Script                 | Purpose                                                                   |
+| ---------------------- | ------------------------------------------------------------------------- |
+| `npm run build`        | Clean + production Webpack build (`dist/`)                                |
+| `npm run build:dev`    | Clean + development Webpack build                                         |
+| `npm run dev`          | Webpack watch mode (auto-rebuild on file changes)                         |
+| `npm test`             | Vitest unit & integration test suites (1,018 tests across 39 test suites) |
+| `npm run test:watch`   | Vitest interactive test watcher                                           |
+| `npm run test:ui`      | Vitest browser UI test runner                                             |
+| `npm run type-check`   | TypeScript strict type validation (`tsc --noEmit`)                        |
+| `npm run lint`         | ESLint static analysis for TypeScript & React                             |
+| `npm run lint:fix`     | ESLint automated code fixing                                              |
+| `npm run format:check` | Prettier code style validation                                            |
+| `npm run eval`         | Local heuristic & ML intelligence benchmark evaluation                    |
+| `npm run logs`         | Local debug log collector server                                          |
+| `npm run clean`        | Clean and remove `dist/` directory                                        |
+| `npm run zip`          | Package `dist/` folder into distributable zip                             |
+| `npm run build:zip`    | Production build and zip package                                          |
 
 Then **Load unpacked** → `dist/`.
 
@@ -421,24 +419,24 @@ Add that URI where Google Cloud asks for authorized redirect URIs (web client st
 
 1. Open GhostFill **Options** → **Email**
 2. Paste **Google OAuth Client ID** (`….apps.googleusercontent.com`)
-3. Save
+3. Click **Save**
 4. Open the popup → **Connect Gmail** and complete the consent screen
 
 ### 4. Scopes requested
 
-- `gmail.readonly` — search and read messages for OTPs / links  
-- `userinfo.email` / `userinfo.profile` — show which account is connected  
+- `gmail.readonly` — search and read messages for OTPs / links
+- `userinfo.email` / `userinfo.profile` — show which account is connected
 
 GhostFill does **not** request send-mail scope.
 
 ### Troubleshooting Gmail
 
-| Symptom | Likely fix |
-| --- | --- |
-| Invalid client / blocked | Client ID wrong, or extension ID not registered in Cloud Console |
-| Works once then fails | Clear site data for Google auth, reconnect; ensure only one auth path is used |
-| No OTP from Gmail | Confirm alias mode is active; mail may be in Spam; alias must match what you typed on the form |
-| Consent screen “app not verified” | Expected for personal Testing apps — continue as the test user you added |
+| Symptom                           | Likely fix                                                                                     |
+| --------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Invalid client / blocked          | Client ID wrong, or extension ID not registered in Cloud Console                               |
+| Works once then fails             | Clear site data for Google auth, reconnect; ensure only one auth path is used                  |
+| No OTP from Gmail                 | Confirm alias mode is active; mail may be in Spam; alias must match what you typed on the form |
+| Consent screen “app not verified” | Expected for personal Testing apps — continue as the test user you added                       |
 
 The repo ships a default `oauth2.client_id` in `manifest.json` for Chrome `getAuthToken`. For local/dev builds you should use **your own** Client ID tied to **your** extension ID (Options → Email is the right place for a custom ID).
 
@@ -448,22 +446,22 @@ The repo ships a default `oauth2.client_id` in `manifest.json` for Chrome `getAu
 
 ### Signup with temp email
 
-1. Focus the email field on the site  
-2. Click the FAB → generate temp email (or `Ctrl+Shift+M`)  
-3. Generate password for the password field  
-4. Submit the form  
+1. Focus the email field on the site
+2. Click the FAB → generate temp email (or `Ctrl+Shift+M`)
+3. Generate password for the password field
+4. Submit the form
 5. When mail arrives:
-   - **OTP** → green FAB / auto-fill on the signup tab  
-   - **Activation link** → opens automatically in a **new tab** (if enabled)  
-6. Finish signup  
+   - **OTP** → green FAB / auto-fill on the signup tab
+   - **Activation link** → opens automatically in a **new tab** (if enabled)
+6. Finish signup
 
 ### Signup with Gmail alias
 
-1. Connect Gmail once in the popup  
-2. Switch preferred mode to Gmail / alias  
-3. Generate alias for the site and paste/fill into the form  
-4. Wait — GhostFill searches Gmail for the verification message  
-5. OTP fills on the signup tab, and/or activation link opens in a **new tab**  
+1. Connect Gmail once in the popup
+2. Switch preferred mode to Gmail / alias
+3. Generate alias for the site and paste/fill into the form
+4. Wait — GhostFill searches Gmail for the verification message
+5. OTP fills on the signup tab, and/or activation link opens in a **new tab**
 
 ### Manual inbox
 
@@ -483,17 +481,18 @@ Open the popup Hub → inbox list / full inbox to read messages, copy codes, or 
          ┌──────────────────┬─────────────────────────┼──────────────┐
          ▼                  ▼                         ▼              ▼
    Temp mail APIs     Gmail API (OAuth)      chrome.storage        Popup / Options
-   (17+ providers)    readonly search        encrypted secrets     React + Zustand
+   (10 active + 10    readonly search        encrypted secrets     React 18 + Zustand 5
+    legacy backends)                         session secrets
 ```
 
-| Area | Tech |
-| --- | --- |
-| **UI** | React 18, Zustand 5, Framer Motion 12, Lucide React, "Spectre" Design Tokens |
-| **Build & Platform** | Webpack 5, TypeScript 5, Chrome Manifest V3 |
-| **Extraction Engine** | Local dual-engine heuristics (Cognitive layout + Regex patterns) & ML benchmark |
-| **Security & Validation** | Web Crypto API (AES-GCM 256-bit, PBKDF2), Zod 4 schemas, DOMPurify |
-| **Tests & QA** | Vitest (36 test suites, 977 tests passed) |
-| **i18n** | Chrome i18n (`public/_locales` with English & Spanish) |
+| Area                      | Tech                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------- |
+| **UI**                    | React 18, Zustand 5, Framer Motion 12, Lucide React, "Spectre" Design Tokens    |
+| **Build & Platform**      | Webpack 5, TypeScript 5.3, Chrome Manifest V3                                   |
+| **Extraction Engine**     | Local dual-engine heuristics (Cognitive layout + Regex patterns) & ML benchmark |
+| **Security & Validation** | Web Crypto API (AES-GCM 256-bit, PBKDF2), Zod schemas, DOMPurify                |
+| **Tests & QA**            | Vitest (39 test suites, 1,018 tests passed)                                     |
+| **i18n**                  | Chrome i18n (`public/_locales` with English & Spanish)                          |
 
 Key source folders:
 
@@ -506,7 +505,7 @@ src/
     options/      Full-page options & settings dashboard
     ui/           Shared Spectre design system UI components & motion presets
     styles/       Global stylesheets and design tokens (globals.css)
-  services/       Email providers (18 backends + custom + Gmail/Zoho/Outlook), extraction, passwords, encrypted storage
+  services/       Email providers (10 active + 10 legacy backends + Custom + Gmail/Zoho/Outlook), extraction, passwords, encrypted storage
   intelligence/   Local cognitive heuristics, intent scoring models, eval benchmark
   offscreen/      Offscreen document manager for safe DOM parsing & audio cues
   shared/         Theme engine, design tokens, field classification
@@ -549,11 +548,11 @@ Yes — Options → Email → preferred service. Health manager may still fail o
 
 ## Project status
 
-| Item | Value |
-| --- | --- |
-| Version | **1.1.0** |
-| Manifest | **V3** |
-| License | **MIT** |
+| Item       | Value                                                                         |
+| ---------- | ----------------------------------------------------------------------------- |
+| Version    | **1.1.0**                                                                     |
+| Manifest   | **V3**                                                                        |
+| License    | **MIT**                                                                       |
 | Repository | [Xshya19/ghostfill-extension](https://github.com/Xshya19/ghostfill-extension) |
 
 ---
@@ -574,7 +573,7 @@ We welcome contributions to GhostFill! This project is open source under the MIT
 2. Install dependencies: `npm install`
 3. Start watch mode: `npm run dev`
 4. Load `dist/` as an **unpacked extension** in `chrome://extensions/` (Developer mode)
-5. Run tests: `npm test` (36 test suites, 977 tests, Vitest)
+5. Run tests: `npm test` (39 test suites, 1,018 tests, Vitest)
 6. Type-check: `npm run type-check` (strict TypeScript)
 7. Prefer small, focused pull requests with a clear problem statement
 
@@ -586,13 +585,13 @@ Please do not commit secrets (OAuth client secrets, personal tokens). Client IDs
 
 If GhostFill isn't what you're looking for, here are related tools in the space:
 
-| Tool | Type | Key Difference |
-| --- | --- | --- |
-| [Temp Mail sites](https://temp-mail.org) | Web App | Browser tab-switching required; no autofill |
-| [10 Minute Mail](https://10minutemail.com) | Web App | 10-minute TTL; no OTP extraction |
-| [SimpleLogin](https://simplelogin.io) | Email Forwarding | Real forwarding aliases; not disposable |
-| [AnonAddy](https://anonaddy.com) | Email Forwarding | Privacy-first aliases; not temp inboxes |
-| [Bitwarden](https://bitwarden.com) | Password Manager | Passwords only; no temp email or OTP autofill |
+| Tool                                       | Type             | Key Difference                                |
+| ------------------------------------------ | ---------------- | --------------------------------------------- |
+| [Temp Mail sites](https://temp-mail.org)   | Web App          | Browser tab-switching required; no autofill   |
+| [10 Minute Mail](https://10minutemail.com) | Web App          | 10-minute TTL; no OTP extraction              |
+| [SimpleLogin](https://simplelogin.io)      | Email Forwarding | Real forwarding aliases; not disposable       |
+| [AnonAddy](https://anonaddy.com)           | Email Forwarding | Privacy-first aliases; not temp inboxes       |
+| [Bitwarden](https://bitwarden.com)         | Password Manager | Passwords only; no temp email or OTP autofill |
 
 **GhostFill's edge**: All-in-one in-browser solution — temp inbox + OTP autofill + password generation without switching tabs.
 

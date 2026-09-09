@@ -48,15 +48,15 @@ const SAVE_FEEDBACK_MS = 1800;
 // Exported so OptionsApp can validate membership before saving (a service the
 // backend zod enum doesn't know would otherwise fail as "backend rejected").
 export const EMAIL_SERVICE_OPTIONS = [
-  { value: 'driftz', label: 'Driftz.net — Blocklist bypass (@bbjbinin.mn default) (Recommended)' },
-  { value: 'catchmail', label: 'CatchMail.io — Fast · 7-day retention' },
+  { value: 'catchmail', label: 'CatchMail.io — Fast · 7-day retention (Recommended)' },
   { value: 'throwawaymail', label: 'Throwawaymail.app — Fast REST API · Instant delivery' },
-  { value: 'tempmailplus', label: 'Tempmail.plus — Multi-domain · Fast sync' },
   { value: 'mailtm', label: 'Mail.tm — Encrypted account · High uptime' },
-  { value: 'mailgw', label: 'Mail.gw — Dedicated domain pool' },
-  { value: 'guerrilla', label: 'Guerrilla Mail — 10 stealth domains' },
+  { value: 'tempmailplus', label: 'Tempmail.plus — Multi-domain · Fast sync' },
   { value: 'maildrop', label: 'Maildrop.cc — Free GraphQL disposable mail' },
+  { value: 'driftz', label: 'Driftz.net — Blocklist bypass (@bbjbinin.mn)' },
+  { value: 'guerrilla', label: 'Guerrilla Mail — 10 stealth domains' },
   { value: 'yopmail', label: 'YOPmail — Disposable inbox · Multi-domain' },
+  { value: 'mailgw', label: 'Mail.gw — Dedicated domain pool' },
   { value: 'mailinator', label: 'Mailinator — Public inbox · Fast delivery' },
   { value: 'custom', label: 'Custom infrastructure (private)' },
 ] as const;

@@ -279,7 +279,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
     minNumbers: 2,
     minSymbols: 2,
   },
-  preferredEmailService: 'driftz',
+  preferredEmailService: 'catchmail',
   autoCheckInbox: true,
   checkIntervalSeconds: 5,
   darkMode: true,

@@ -40,16 +40,16 @@ class ProviderHealthManager implements IProviderHealthManager {
 
   // Priority order for providers (best first) — speed + reliability ranking
   private readonly providerPriority: EmailService[] = [
-    'driftz', // Blocklist bypass (.mn, .org) (Primary)
-    'catchmail', // Fast, 7-day retention, custom names (Verified 200 OK)
-    'mailtm', // Highly reliable API, JWT auth (Verified 200 OK)
-    'mailinator', // Fast, public REST API (Verified 200 OK)
+    'catchmail', // Fast, 7-day retention, custom names, zero auth (Primary)
     'throwawaymail', // Fast, zero auth REST API (Verified 200 OK)
-    'mailgw', // JWT auth, alternative to mail.tm (Verified 200 OK)
+    'mailtm', // Highly reliable API, JWT auth (Verified 200 OK)
     'tempmailplus', // Multi-domain, fast (Verified 200 OK)
-    'yopmail', // Multi-domain, 8-day retention (Verified 200 OK)
     'maildrop', // GraphQL, 24h retention (Verified 200 OK)
+    'driftz', // Blocklist bypass (.mn, .org)
+    'mailinator', // Fast, public REST API (Verified 200 OK)
     'guerrilla', // 10 domains (sharklasers, grr.la) (Verified 200 OK)
+    'yopmail', // Multi-domain, 8-day retention (Verified 200 OK)
+    'mailgw', // JWT auth, alternative to mail.tm (Verified 200 OK)
     'custom', // Private self-hosted infrastructure
     // Deprecated / non-working services kept at bottom of priority list.
     // Do NOT promote 'tempmail'/'1secmail': 1secmail.com is unstable

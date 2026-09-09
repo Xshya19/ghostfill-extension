@@ -200,15 +200,15 @@ class EmailServiceAggregator {
     // Always ensure we have at least one fallback
     if (this.availableServices.length === 0) {
       this.availableServices = [
-        'driftz',
         'catchmail',
-        'mailtm',
         'throwawaymail',
+        'mailtm',
         'tempmailplus',
-        'mailgw',
         'maildrop',
-        'yopmail',
         'guerrilla',
+        'driftz',
+        'yopmail',
+        'mailgw',
       ];
       log.warn('All health checks failed, resetting to defaults');
     }
@@ -223,7 +223,7 @@ class EmailServiceAggregator {
 
   /**
    * Generate a new email using the specified or default service
-   * Mail.tm is now the primary service. TMailor is secondary.
+   * CatchMail is now the primary service.
    */
   private lastGenerationTime: number = 0;
   private readonly GENERATION_COOLDOWN_MS = 150; // snappy UI without hammering providers
@@ -262,7 +262,7 @@ class EmailServiceAggregator {
 
       const settings = await storageService.getSettings();
       // Use preferred if valid/healthy, otherwise pick best healthy
-      let service = options.service || settings.preferredEmailService || 'driftz';
+      let service = options.service || settings.preferredEmailService || 'catchmail';
 
       // Custom precedence
       if (settings.preferredEmailService === 'custom' && !options.service) {
