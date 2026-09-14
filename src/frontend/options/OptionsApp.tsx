@@ -5,7 +5,7 @@ import { storageService } from '../../services/storageService';
 import { applyTheme, resolveTheme } from '../../shared/theme';
 import { UserSettings, DEFAULT_SETTINGS } from '../../types/storage.types';
 import { createLogger } from '../../utils/logger';
-import { GhostLogo } from '../popup/components';
+import { GhostLogo } from '../popup/components/SharedComponents';
 import { Button } from '../ui';
 
 import {
@@ -18,7 +18,7 @@ import {
   PrivacyTab,
   EMAIL_SERVICE_OPTIONS,
 } from './components/OptionsTabs';
-import { Sidebar, TabId } from './components/OptionsUIComponents';
+import { Sidebar, TabId } from './components/OptionsUI';
 
 const t = (key: string): string => {
   try {
@@ -830,7 +830,7 @@ const OptionsApp: React.FC = () => {
       <header className="options-header" role="banner">
         <div className="header-content">
           <div className="ghost-card logo-box logo-box--no-padding">
-            <GhostLogo size={52} />
+            <GhostLogo size={44} />
           </div>
           <div className="header-text-group">
             <h1 className="spectral-title">{t('settingsTitle')}</h1>

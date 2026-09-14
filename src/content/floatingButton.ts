@@ -16,13 +16,9 @@
 // └────────────────────────────────────────────────────────────────────────┘
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { PageAnalyzer, type PageType, type PageAnalysis } from '../intelligence/pageAnalyzer';
 import {
   classifyField,
-  shouldDecorateField,
   getFieldTooltip,
-  isHighValueField,
-  PageContext,
   FieldType as ClassifierFieldType,
 } from '../shared/fieldClassifier';
 import { IconSystem, menuIcon, type MenuIconName as _MenuIconName } from '../shared/icons';
@@ -34,11 +30,12 @@ import {
   GetLastOTPResponse,
 } from '../types';
 import { TIMING } from '../utils/core';
-import { debounce } from '../utils/debounce';
 import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
 import { setHTML, clearHTML } from '../utils/sanitization.core';
 import { AutoFiller } from './autoFiller';
+import { SmartFabPresenter } from './fab';
+import type { FabMode, FabPresence, PlacementResult, PageSignals } from './fab';
 import fabStyles from './floatingButton.shadow.css';
 import { FieldAnalyzer, collectFieldDiagnostics } from './formDetector';
 import { pageStatus } from './ui/pageStatus';
@@ -64,7 +61,7 @@ const TIMING_MS = {
   PAGE_TEXT_SCAN_LIMIT: 3000,
 } as const;
 
-/** Size presets — must match `.gf-fab` in floatingButton.shadow.css (46px normal) */
+/** Size presets — must match `.gf-fab` in floatingButton.shadow.css (44px normal) */
 const BUTTON_SIZE_PX: Readonly<Record<ButtonSize, number>> = {
   mini: 32,
   normal: 46,
@@ -373,10 +370,10 @@ class ContextualMenu {
       analysis.hasOTPField ||
       hasOTPReady;
 
-    const _showEmail =
+    const showEmail =
       analysis.hasEmailField || analysis.pageType === 'signup' || analysis.pageType === 'login';
 
-    const _showPassword =
+    const showPassword =
       analysis.hasPasswordField ||
       analysis.pageType === 'signup' ||
       analysis.pageType === 'password-reset';
@@ -406,14 +403,14 @@ class ContextualMenu {
         id: 'generate-email',
         icon: menuIcon('mail'),
         label: 'Use Hidden Email',
-        visible: true, // always available for advanced one-click inject
+        visible: showEmail,
         handler: noop,
       },
       {
         id: 'generate-password',
         icon: menuIcon('lock'),
         label: 'Generate Secure Password',
-        visible: true,
+        visible: showPassword,
         handler: noop,
       },
       {
@@ -459,6 +456,13 @@ class ContextualMenu {
         visible: true,
         handler: noop,
       },
+      {
+        id: 'hide-here',
+        icon: menuIcon('clear'),
+        label: 'Hide on this site',
+        visible: true,
+        handler: noop,
+      },
       { id: 'divider', icon: '', label: '', visible: true, handler: noop },
       {
         id: 'settings',
@@ -498,6 +502,7 @@ export class FloatingButton {
   // ── State ────────────────────────────────────────────────
   private state: ButtonState = 'hidden';
   private mode: ButtonMode = 'magic';
+  private presence: FabPresence = 'active';
   private readonly size: ButtonSize = 'normal';
   private currentField: HTMLElement | null = null;
   private currentFieldRef: WeakRef<HTMLElement> | null = null;
@@ -507,6 +512,7 @@ export class FloatingButton {
   private isWaitingForOTP = false;
   private pageAnalysis: PageAnalysis | null = null;
   private destroyed = false;
+  private presenter: SmartFabPresenter | null = null;
 
   // ── Cache ────────────────────────────────────────────────
   private static readonly IDENTITY_CACHE_TTL_MS = 500;
@@ -560,6 +566,36 @@ export class FloatingButton {
     }
 
     this.createContainer();
+
+    this.presenter = new SmartFabPresenter({
+      host: this.container!,
+      size: BUTTON_SIZE_PX.normal,
+      gateOptions: () => ({
+        enabled: this.isEnabled,
+        pageSignals: this.getCachedPageAnalysis(),
+        classify: (el) => {
+          const type = classifyField(el as HTMLInputElement);
+          return type === 'generic' ? 'generic' : (type as FabMode);
+        },
+      }),
+      onShow: (field, decision) => {
+        this.currentField = field as HTMLInputElement;
+        this.setMode(decision.mode);
+        this.setPresence(decision.presence); // 'quiet' → dot, 'active' → full FAB
+        this.showNearField(field);
+      },
+      onPlace: (placement) => this.applyPlacement(placement),
+      onHide: () => this.setState('hidden'),
+      onDecision: (decision, field) => {
+        log.debug('[fab-gate]', {
+          presence: decision.presence,
+          score: decision.score,
+          reasons: decision.reasons,
+          field,
+        });
+      },
+    });
+
     this.setupEventListeners();
     this.setupKeyboardShortcut();
     log.debug('FloatingButton initialised');
@@ -584,6 +620,9 @@ export class FloatingButton {
       return;
     }
     this.destroyed = true;
+
+    this.presenter?.destroy();
+    this.presenter = null;
 
     this.cancelAllTimers();
     this.cancelAllAnimationFrames();
@@ -656,6 +695,7 @@ export class FloatingButton {
         if (!this.isEnabled) {
           this.setState('hidden');
         }
+        this.presenter?.reevaluate();
       }
     } catch {
       log.debug('Settings fetch failed — defaulting to enabled');
@@ -682,6 +722,7 @@ export class FloatingButton {
         if (!this.isEnabled) {
           this.setState('hidden');
         }
+        this.presenter?.reevaluate();
       }
       if (msg.action === 'OTP_RECEIVED' && msg.otp) {
         this.hasOTPReady = true;
@@ -809,6 +850,9 @@ export class FloatingButton {
     if (!this.container || !this.button) {
       return;
     }
+    if (!this.isCurrentFieldFocused()) {
+      return;
+    }
     this.ensureContainerAttached();
     this.container.style.setProperty('display', 'block', 'important');
     this.container.style.setProperty('visibility', 'visible', 'important');
@@ -826,12 +870,7 @@ export class FloatingButton {
         : '';
     this.button.setAttribute('aria-label', `${baseLabel}${armed}`);
     this.updateBadge();
-    // Stay visible while the user is still on the field — only hide on focus leave
-    if (this.isCurrentFieldFocused()) {
-      this.cancelHideTimer();
-    } else {
-      this.scheduleAutoHide();
-    }
+    this.cancelHideTimer();
   }
 
   /** Visual intelligence: mode-colored ring + OTP armed pulse */
@@ -875,9 +914,11 @@ export class FloatingButton {
     if (!this.button) {
       return;
     }
-    this.ensureContainerAttached();
-    this.container?.style.setProperty('display', 'block', 'important');
-    this.container?.style.setProperty('visibility', 'visible', 'important');
+    if (this.isCurrentFieldFocused()) {
+      this.ensureContainerAttached();
+      this.container?.style.setProperty('display', 'block', 'important');
+      this.container?.style.setProperty('visibility', 'visible', 'important');
+    }
     this.button.classList.remove('gf-loading');
     this.button.classList.add('gf-success');
     setHTML(this.button, IconSystem.getSuccess());
@@ -903,6 +944,11 @@ export class FloatingButton {
     if (!this.button) {
       return;
     }
+    if (this.isCurrentFieldFocused()) {
+      this.ensureContainerAttached();
+      this.container?.style.setProperty('display', 'block', 'important');
+      this.container?.style.setProperty('visibility', 'visible', 'important');
+    }
     this.button.classList.remove('gf-loading');
     this.button.classList.add('gf-error');
     setHTML(this.button, IconSystem.getError());
@@ -913,7 +959,11 @@ export class FloatingButton {
 
     this.stateResetTimeout = setTimeout(() => {
       this.clearStatusTooltip();
-      this.setState('idle');
+      if (this.isCurrentFieldFocused()) {
+        this.setState('idle');
+      } else {
+        this.setState('hidden');
+      }
     }, TIMING_MS.ERROR_DISPLAY);
   }
 
@@ -966,8 +1016,6 @@ export class FloatingButton {
     if (!this.container) {
       return;
     }
-    // Bust cache so modals/sticky headers don't bury the FAB
-    SmartPositioner.invalidateZCache();
     this.container.style.setProperty(
       'z-index',
       SmartPositioner.getMaxZIndex().toString(),
@@ -1198,6 +1246,7 @@ export class FloatingButton {
       }
 
       if (result.success && result.filledCount > 0) {
+        this.presenter?.noteAccept();
         const msg = `Filled ${result.filledCount} field(s)!`;
         pageStatus.success(msg, TIMING_MS.SUCCESS_DISPLAY);
         this.setState('success', msg);
@@ -1266,6 +1315,7 @@ export class FloatingButton {
       }
 
       if (result) {
+        this.presenter?.noteAccept();
         this.setSentinelMessage('Code secured successfully!');
         this.setState('success');
         setTimeout(() => this.hideAutoFillSentinel(), 2000);
@@ -1360,7 +1410,7 @@ export class FloatingButton {
           if (a.id === 'divider') {
             return '<div class="gf-menu-divider" role="separator"></div>';
           }
-          // a.icon is emoji (safe), a.label may contain escaped HTML from contextName
+          // a.icon is a trusted bundled SVG; dynamic labels and shortcuts stay escaped.
           return `<button class="gf-menu-item" data-action="${escapeHTML(a.id)}" role="menuitem" tabindex="-1">
             <span class="gf-menu-icon" aria-hidden="true">${a.icon}</span>
             <span class="gf-menu-label">${a.label}</span>
@@ -1503,6 +1553,11 @@ export class FloatingButton {
           this.setState('idle');
           break;
 
+        case 'hide-here':
+          this.presenter?.muteHost();
+          this.setState('hidden');
+          break;
+
         case 'settings':
           safeSendMessage({ action: 'OPEN_OPTIONS' }).catch((error) => {
             log.warn('Failed to open options', error);
@@ -1550,6 +1605,7 @@ export class FloatingButton {
       }
 
       if (filled) {
+        this.presenter?.noteAccept();
         pageStatus.success('Code filled!', TIMING_MS.SUCCESS_DISPLAY);
         this.setState('success', 'Code filled!');
         safeSendMessage({ action: 'MARK_OTP_USED' }).catch((err) => {
@@ -1651,6 +1707,7 @@ export class FloatingButton {
     if (this.destroyed) {return;}
 
     if (filled) {
+      this.presenter?.noteAccept();
       const tag = preferred === 'gmail' ? 'Gmail' : 'Temp Mail';
       pageStatus.success(`${tag} filled!`, TIMING_MS.SUCCESS_DISPLAY);
       this.setState('success', `${tag} filled!`);
@@ -1679,6 +1736,7 @@ export class FloatingButton {
       if (this.destroyed) {return;}
 
       if (filled) {
+        this.presenter?.noteAccept();
         pageStatus.success('Password filled!', TIMING_MS.SUCCESS_DISPLAY);
         this.setState('success', 'Password filled!');
       } else {
@@ -1736,6 +1794,7 @@ export class FloatingButton {
       if (this.destroyed) {return;}
 
       if (filled) {
+        this.presenter?.noteAccept();
         pageStatus.success(`${mapping.label} filled!`, TIMING_MS.SUCCESS_DISPLAY);
         this.setState('success', `${mapping.label} filled!`);
       } else {
@@ -1872,43 +1931,6 @@ export class FloatingButton {
   // ═══════════════════════════════════════════════════════════
 
   private setupEventListeners(): void {
-    // ── Focus Tracking ────────────────────────────────────
-
-    const onFocusIn = (e: FocusEvent): void => {
-      const path = e.composedPath?.();
-      const target = (path?.[0] ?? e.target) as EventTarget | null;
-      this.handleFocusChange(target);
-    };
-    document.addEventListener('focusin', onFocusIn, true);
-    this.cleanupFns.push(() => document.removeEventListener('focusin', onFocusIn, true));
-
-    // ── Focus Out ─────────────────────────────────────────
-    const onFocusOut = (e: FocusEvent): void => {
-      if (this.destroyed) {
-        return;
-      }
-      const related = e.relatedTarget as EventTarget | null;
-
-      // Don't hide when focus moves into the FAB (including closed shadow tree)
-      if (this.isEventInsideFab(related)) {
-        this.cancelHideTimer();
-        return;
-      }
-      if (this.state === 'menu-open' || this.state === 'loading') {
-        return;
-      }
-
-      // Only schedule hide if focus left the decorated field
-      const field = this.currentFieldRef?.deref() ?? this.currentField;
-      const leavingField =
-        !field || e.target === field || (e.target instanceof Node && field.contains(e.target));
-      if (leavingField) {
-        this.scheduleAutoHide();
-      }
-    };
-    document.addEventListener('focusout', onFocusOut, true);
-    this.cleanupFns.push(() => document.removeEventListener('focusout', onFocusOut, true));
-
     // ── Click Outside → Close Menu ────────────────────────
     const onDocClick = (e: MouseEvent): void => {
       if (this.state !== 'menu-open') {
@@ -1925,65 +1947,11 @@ export class FloatingButton {
     };
     document.addEventListener('click', onDocClick, true);
     this.cleanupFns.push(() => document.removeEventListener('click', onDocClick, true));
-
-    // ── Scroll Following ──────────────────────────────────
-    const onScroll = (): void => {
-      if (this.destroyed || this.state === 'hidden' || !this.currentField) {
-        return;
-      }
-      if (!this.isScrolling) {
-        this.isScrolling = true;
-        this.followFieldOnScroll();
-      }
-    };
-    window.addEventListener('scroll', onScroll, { passive: true, capture: true });
-    this.cleanupFns.push(() => window.removeEventListener('scroll', onScroll, true));
-
-    // ── Resize ────────────────────────────────────────────
-    const onResize = debounce(() => {
-      if (this.destroyed) {
-        return;
-      }
-      const field = this.currentFieldRef?.deref();
-      if (this.state !== 'hidden' && field) {
-        this.positionNearField(field);
-      }
-    }, TIMING_MS.RESIZE_DEBOUNCE);
-    window.addEventListener('resize', onResize);
-    this.cleanupFns.push(() => window.removeEventListener('resize', onResize));
   }
 
-  private readonly handleFocusChange = debounce((...args: unknown[]): void => {
-    const target = args[0] as EventTarget | null;
-    if (this.destroyed || !this.isEnabled) {
-      return;
-    }
-    if (!target || !(target instanceof HTMLElement)) {
-      return;
-    }
-
-    // Ignore focus inside our own FAB
-    if (this.isEventInsideFab(target)) {
-      this.cancelHideTimer();
-      return;
-    }
-
-    // Invalidate page analysis cache on focus to detect SPA changes
-    this.pageAnalysis = null;
-
-    if (!isFormInputElement(target)) {
-      return;
-    }
-
-    // Textareas / contenteditable: only decorate when clearly email/password/otp-like
-    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
-      if (!shouldDecorateField(target as HTMLInputElement)) {
-        return;
-      }
-    }
-
-    this.showNearField(target);
-  }, TIMING_MS.FOCUS_DEBOUNCE) as any;
+  private handleFocusChange(target: EventTarget | null): void {
+    this.presenter?.handleFocusIn(target);
+  }
 
   // ═══════════════════════════════════════════════════════════
   //  §7.15  S H A D O W - D O M   S T Y L E S
@@ -2028,6 +1996,36 @@ ${fabStyles}`;
   //  §7.12  P O S I T I O N I N G
   // ═══════════════════════════════════════════════════════════
 
+  private setPresence(presence: FabPresence): void {
+    this.presence = presence;
+    if (!this.button) {
+      return;
+    }
+    if (presence === 'quiet') {
+      this.button.classList.add('gf-quiet');
+    } else {
+      this.button.classList.remove('gf-quiet');
+    }
+  }
+
+  private setMode(mode: ButtonMode): void {
+    this.mode = mode;
+    this.applyModeChrome();
+    if (this.button && this.state !== 'loading' && this.state !== 'success' && this.state !== 'error') {
+      setHTML(this.button, IconSystem.get(this.mode));
+    }
+  }
+
+  private applyPlacement(placement: PlacementResult): void {
+    if (!this.container) {
+      return;
+    }
+    this.container.style.left = `${placement.left}px`;
+    this.container.style.top = `${placement.top}px`;
+    this.container.style.zIndex = String(placement.zIndex);
+    this.container.dataset.placement = placement.placement;
+  }
+
   showNearField(field: HTMLElement): void {
     if (!this.isEnabled || this.destroyed) {
       return;
@@ -2036,78 +2034,10 @@ ${fabStyles}`;
     this.ensureContainerAttached();
     this.cancelHideTimer();
 
-    // Classify field first — high-value fields always show FAB even if page
-    // analysis is conservative (SPA marketing shells, etc.)
-    const analysis = this.getPageAnalysis();
-    let pageContext: PageContext = 'default';
-    if (analysis.pageType === 'signup') {
-      pageContext = 'signup';
-    } else if (analysis.pageType === 'login') {
-      pageContext = 'login';
-    } else if (analysis.pageType === 'verification') {
-      pageContext = 'verification';
-    } else if (analysis.pageType === '2fa') {
-      pageContext = '2fa';
-    } else if (analysis.pageType === 'password-reset') {
-      pageContext = 'password-reset';
-    }
-    const classified = classifyField(field as HTMLInputElement, pageContext);
-    const highValue = isHighValueField(classified);
-
-    if (
-      !highValue &&
-      !analysis.isAuthRelated &&
-      !analysis.hasOTPField &&
-      !analysis.hasEmailField &&
-      !analysis.hasPasswordField &&
-      analysis.inputCount < 1
-    ) {
-      return;
-    }
-
     this.currentField = field;
     this.currentFieldRef = new WeakRef(field);
     this.currentFieldRect = null;
-    this.mode = classified === 'generic' ? 'magic' : classified;
 
-    // Observe field resize
-    if (this.fieldResizeObserver) {
-      this.fieldResizeObserver.disconnect();
-    }
-    this.fieldResizeObserver = new ResizeObserver(
-      debounce(() => {
-        if (!this.destroyed && this.state !== 'hidden') {
-          const f = this.currentFieldRef?.deref();
-          if (f) {
-            this.positionNearField(f);
-          }
-        }
-      }, TIMING_MS.FIELD_RESIZE_DEBOUNCE)
-    );
-    this.fieldResizeObserver.observe(field);
-
-    // Observe field visibility — only hide when fully off-screen
-    if (this.fieldIntersectionObserver) {
-      this.fieldIntersectionObserver.disconnect();
-    }
-    this.fieldIntersectionObserver = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (!this.destroyed && this.state !== 'hidden' && entry) {
-          if (!entry.isIntersecting) {
-            this.container?.style.setProperty('visibility', 'hidden', 'important');
-          } else {
-            this.container?.style.setProperty('visibility', 'visible', 'important');
-            this.positionNearField(field);
-          }
-        }
-      },
-      { threshold: [0, 0.01, 0.25, 1.0], rootMargin: '40px' }
-    );
-    this.fieldIntersectionObserver.observe(field);
-
-    this.positionNearField(field);
-    // Force re-apply even if already idle so hide timers reset and display sticks
     if (this.state === 'idle') {
       this.applyIdle();
     } else {
@@ -2115,82 +2045,13 @@ ${fabStyles}`;
     }
   }
 
-  private positionNearField(field: HTMLElement): void {
-    if (!this.container || this.destroyed) {
-      return;
-    }
-
-    this.ensureContainerAttached();
-
-    const btnSize = BUTTON_SIZE_PX[this.size];
-    let pos = SmartPositioner.calculate(field, btnSize);
-
-    if (pos.left === OFF_SCREEN) {
-      // Field scrolled away — soft-hide, keep state so scroll-back can restore
-      this.container.style.setProperty('visibility', 'hidden', 'important');
-      return;
-    }
-
-    // Prefer outside-right first when field is narrow or already has an icon
-    const rect = field.getBoundingClientRect();
-    if (rect.width < btnSize + 40 && pos.placement === 'inside-right') {
-      const m = VIEWPORT_MARGIN;
-      const outsideRight = rect.right + m;
-      if (outsideRight + btnSize < (window.visualViewport?.width ?? window.innerWidth) - m) {
-        pos = {
-          left: outsideRight,
-          top: rect.top + (rect.height - btnSize) / 2,
-          placement: 'outside-right',
-        };
-      }
-    }
-
-    // Smart Obstruction Check: if blocked, try "Outside Left" or "Below"
-    if (
-      (pos.placement === 'inside-right' || pos.placement === 'outside-right') &&
-      SmartPositioner.checkObstructions(pos.left, pos.top, btnSize)
-    ) {
-      const m = VIEWPORT_MARGIN;
-
-      // Prefer outside-right
-      const rightX = rect.right + m;
-      if (!SmartPositioner.checkObstructions(rightX, pos.top, btnSize)) {
-        pos = { left: rightX, top: pos.top, placement: 'outside-right' };
-      } else {
-        const belowTop = rect.bottom + m;
-        if (!SmartPositioner.checkObstructions(rect.left, belowTop, btnSize)) {
-          pos = { left: rect.left, top: belowTop, placement: 'below' };
-        } else {
-          const leftX = rect.left - btnSize - m;
-          if (leftX > m && !SmartPositioner.checkObstructions(leftX, pos.top, btnSize)) {
-            pos = { left: leftX, top: pos.top, placement: 'outside-left' };
-          }
-        }
-      }
-    }
-
-    this.container.style.setProperty('left', `${pos.left}px`, 'important');
-    this.container.style.setProperty('top', `${pos.top}px`, 'important');
-    this.container.style.setProperty('transform', 'none', 'important');
-    this.container.style.setProperty('display', 'block', 'important');
-    this.container.style.setProperty('visibility', 'visible', 'important');
-    this.refreshZIndex();
+  private positionNearField(_field: HTMLElement): void {
+    // Placement managed continuously by SmartFabPresenter & FabAnchor
+    this.presenter?.reevaluate();
   }
 
   private followFieldOnScroll(): void {
-    if (this.scrollRafId !== null) {
-      cancelAnimationFrame(this.scrollRafId);
-    }
-
-    this.scrollRafId = requestAnimationFrame(() => {
-      this.isScrolling = false;
-      this.scrollRafId = null;
-      // Primary tracking is via startContinuousTracking, this is a safety net
-      const field = this.currentFieldRef?.deref();
-      if (!this.destroyed && field && this.state !== 'hidden') {
-        this.positionNearField(field);
-      }
-    });
+    // Handled by FabAnchor
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -2198,24 +2059,7 @@ ${fabStyles}`;
   // ═══════════════════════════════════════════════════════════
 
   private scheduleAutoHide(): void {
-    if (this.state === 'menu-open' || this.state === 'loading') {
-      return;
-    }
-    // Never auto-hide while the decorated field still has focus
-    if (this.isCurrentFieldFocused()) {
-      this.cancelHideTimer();
-      return;
-    }
-    this.cancelHideTimer();
-    this.hideTimeout = setTimeout(() => {
-      if (this.destroyed || this.state === 'menu-open' || this.state === 'loading') {
-        return;
-      }
-      if (this.isCurrentFieldFocused() || this.isEventInsideFab(document.activeElement)) {
-        return;
-      }
-      this.setState('hidden');
-    }, TIMING_MS.AUTO_HIDE);
+    // Retired: SmartFabPresenter manages blur grace (180ms)
   }
 
   private cancelHideTimer(): void {
@@ -2252,6 +2096,10 @@ ${fabStyles}`;
       });
     }
     return this.pageAnalysis;
+  }
+
+  private getCachedPageAnalysis(): PageSignals {
+    return this.getPageAnalysis();
   }
 
   private getPageType(): PageType {

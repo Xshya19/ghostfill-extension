@@ -9,6 +9,7 @@
  * in isolation. DOM access is confined to label discovery and visibility checks,
  * each guarded against cross-origin / detached-node exceptions.
  */
+import { evaluateFab } from '../content/fab';
 import { IntelligenceCore } from '../intelligence/IntelligenceCore';
 import { extractFieldRecord } from '../intelligence/pageAnalyzer';
 
@@ -128,15 +129,19 @@ export function classifyField(
 
 /**
  * Determine whether an input should receive a GhostLabel overlay or FAB decoration.
- *
- * Returns false for:
- * - Non-text input types (hidden, submit, button, etc.)
- * - Search-intent fields
- * - Single-character OTP digit boxes (handled separately by content script)
- * - Disabled or read-only fields
- * - Visually hidden or zero-size fields
+ * Delegates to the scored FAB intelligence visibility gate.
  */
-export function shouldDecorateField(input: HTMLInputElement): boolean {
+export function shouldDecorateField(input: HTMLInputElement | HTMLTextAreaElement): boolean {
+  if (!input) {
+    return false;
+  }
+  return evaluateFab(input).presence !== 'hidden';
+}
+
+/**
+ * Legacy shouldDecorateField logic preserved as a fallback / kill-switch.
+ */
+export function shouldDecorateFieldLegacy(input: HTMLInputElement): boolean {
   if (!input) {
     return false;
   }

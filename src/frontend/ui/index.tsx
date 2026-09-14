@@ -26,20 +26,19 @@ export const springDefault: Transition = {
   mass: 0.8,
 };
 
-/** Soft spring — page transitions, list reorder, sheet enter. */
+/** Soft tween — page transitions, sheet enter. Springs overshoot and feel
+ *  laggy in a 375×400 popup; a short expo-out tween stays on the compositor. */
 export const springSoft: Transition = {
-  type: 'spring',
-  stiffness: 260,
-  damping: 28,
-  mass: 0.85,
+  type: 'tween',
+  duration: 0.18,
+  ease: [0.16, 1, 0.3, 1],
 };
 
-/** Tab pill spring — used for the sliding active-tab indicator (layoutId). */
+/** Tab pill — fast compositor-only slide. No spring overshoot in a 375px popup. */
 export const springTab: Transition = {
-  type: 'spring',
-  stiffness: 320,
-  damping: 28,
-  mass: 0.85,
+  type: 'tween',
+  duration: 0.18,
+  ease: [0.16, 1, 0.3, 1],
 };
 
 /** Per-digit spring — tight, snappy entrance for OTP characters. */
@@ -93,21 +92,22 @@ export const tweenTimerBar: Transition = {
 /* ── Hover / Press / Focus (the interactive vocabulary) ──────────── */
 
 export const hoverLift = {
-  y: -2,
-  boxShadow: 'var(--gf-shadow-lg)',
-  transition: { type: 'spring', stiffness: 480, damping: 22 } as Transition,
+  // Transform-only: box-shadow animation forces a main-thread repaint every
+  // frame. Shadows are handled by CSS :hover (instant swap, no tween).
+  y: -1,
+  transition: { type: 'tween', duration: 0.12, ease: [0.16, 1, 0.3, 1] } as Transition,
 };
 
 export const pressDown = {
-  y: 1,
-  boxShadow: 'var(--gf-shadow-sm)',
-  transition: { type: 'spring', stiffness: 600, damping: 26 } as Transition,
+  y: 0,
+  scale: 0.97,
+  transition: { type: 'tween', duration: 0.08, ease: [0.4, 0, 1, 1] } as Transition,
 };
 
 export const rest = {
   y: 0,
-  boxShadow: 'var(--gf-shadow)',
-  transition: { type: 'spring', stiffness: 360, damping: 28 } as Transition,
+  scale: 1,
+  transition: { type: 'tween', duration: 0.12, ease: [0.16, 1, 0.3, 1] } as Transition,
 };
 
 export const fabHover = {
@@ -127,18 +127,18 @@ export const fabPress = {
 /* ── Page / view transitions ────────────────────────────────────── */
 
 export const viewFade: Variants = {
-  initial: { opacity: 0, y: 8, scale: 0.99 },
+  // Opacity + tiny translate only — both compositor-friendly. No scale:
+  // scale (even 0.99) forces a text re-raster + backdrop-filter repaint.
+  initial: { opacity: 0, y: 6 },
   animate: {
     opacity: 1,
     y: 0,
-    scale: 1,
-    transition: { duration: 0.28, ease: [0.16, 1, 0.3, 1] },
+    transition: { duration: 0.17, ease: [0.16, 1, 0.3, 1] },
   },
   exit: {
     opacity: 0,
-    y: -6,
-    scale: 0.99,
-    transition: { duration: 0.16, ease: [0.4, 0, 1, 1] },
+    y: -4,
+    transition: { duration: 0.11, ease: [0.4, 0, 1, 1] },
   },
 };
 
@@ -149,20 +149,23 @@ export const sheetUp: Variants = {
 };
 
 export const stagger: Variants = {
-  animate: { transition: { staggerChildren: 0.04, delayChildren: 0.04 } },
+  // Near-instant cascade — a 40ms+ stagger per card is what reads as "laggy".
+  animate: { transition: { staggerChildren: 0.015, delayChildren: 0 } },
 };
 
 export const itemRise: Variants = {
-  initial: { opacity: 0, y: 6 },
-  animate: { opacity: 1, y: 0, transition: { duration: 0.24, ease: [0.16, 1, 0.3, 1] } },
+  initial: { opacity: 0, y: 4 },
+  animate: { opacity: 1, y: 0, transition: { duration: 0.16, ease: [0.16, 1, 0.3, 1] } },
 };
 
-/** Drop-in <motion.button> whileHover/whileTap preset. */
+/**
+ * Drop-in preset — now intentionally minimal. Prefer pure CSS :hover/:active
+ * (see popup.css) for icon buttons: zero JS overhead, 60fps. Kept for API
+ * compat; only drives transform, never box-shadow.
+ */
 export const interactiveSurface = {
   whileHover: hoverLift,
   whileTap: pressDown,
-  initial: rest,
-  animate: rest,
 };
 
 
@@ -476,8 +479,8 @@ export const Modal: React.FC<ModalProps> = ({
           className="gf-modal__overlay"
           onClick={onClose}
           initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
+          animate={{ opacity: 1, transition: { duration: 0.14 } }}
+          exit={{ opacity: 0, transition: { duration: 0.1 } }}
         >
           <motion.div
             className={cx('gf-modal', className)}
@@ -535,10 +538,10 @@ export const Toast: React.FC<ToastProps> = ({ message }) => (
         role="status"
         aria-live="polite"
         aria-atomic="true"
-        initial={{ opacity: 0, scale: 0.95, y: 20, x: '-50%' }}
-        animate={{ opacity: 1, scale: 1, y: 0, x: '-50%' }}
-        exit={{ opacity: 0, scale: 0.95, y: 20, x: '-50%' }}
-        transition={springSoft}
+        initial={{ opacity: 0, y: 10, x: '-50%' }}
+        animate={{ opacity: 1, y: 0, x: '-50%' }}
+        exit={{ opacity: 0, y: 8, x: '-50%' }}
+        transition={{ type: 'tween', duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
       >
         {message}
       </motion.div>

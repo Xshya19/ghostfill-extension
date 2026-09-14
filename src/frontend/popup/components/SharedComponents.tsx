@@ -53,16 +53,7 @@ import { TIMING, formatRelativeTime, copyToClipboard, contentToString } from '..
 import { createLogger } from '../../../utils/logger';
 import { safeSendMessage, safeSendTabMessage } from '../../../utils/messaging';
 import { sanitizeEmailBody } from '../../../utils/sanitization.core';
-import {
-  springSoft,
-  interactiveSurface,
-  tweenIn,
-  tweenOut,
-  tweenTimerBar,
-  springDigit,
-  Button,
-  IconButton,
-} from '../../ui';
+import { tweenIn, tweenOut, tweenTimerBar, Button, IconButton } from '../../ui';
 import { useStorageSubscription } from '../hooks';
 import { GmailLogo } from './ProviderLogos';
 
@@ -124,12 +115,11 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
           <span className="hub-gmail-desc">
             Create site-specific aliases and sync OTP emails from your Gmail account.
           </span>
-          <motion.button
+          <button
             onClick={() => {
               void onGmailSignIn();
             }}
             className="hub-gmail-connect-btn"
-            {...interactiveSurface}
             disabled={gmailSigningIn}
           >
             {gmailSigningIn ? (
@@ -139,7 +129,7 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
             ) : (
               <span>Connect Gmail</span>
             )}
-          </motion.button>
+          </button>
         </div>
       </div>
     );
@@ -229,36 +219,33 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
             )}
         </div>
         <div className="identity-actions">
-          <motion.button
+          <button
             className={`action-icon ${emailCopied ? 'success' : ''}`}
             onClick={onCopyEmail}
-            {...interactiveSurface}
             title="Copy email"
             aria-label="Copy email address to clipboard"
           >
             {emailCopied ? <Check size={14} /> : <Copy size={14} />}
-          </motion.button>
+          </button>
           {!isReal && (
-            <motion.button
+            <button
               className={`action-icon ${isGeneratingEmail ? 'action-loading' : ''} ${emailCooldown ? 'opacity-50' : ''}`}
               onClick={onGenerateEmail}
-              {...interactiveSurface}
               title={'New identity'}
               aria-label={'Generate new disposable email'}
             >
               <RefreshCw size={14} className={isGeneratingEmail ? 'spin' : ''} />
-            </motion.button>
+            </button>
           )}
           {isReal && currentDisconnectHandler && (
-            <motion.button
+            <button
               className="action-icon"
               onClick={currentDisconnectHandler}
-              {...interactiveSurface}
               title="Disconnect account"
               aria-label="Disconnect email account"
             >
               <LogOut size={14} />
-            </motion.button>
+            </button>
           )}
         </div>
       </div>
@@ -324,17 +311,16 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ history, onClear, onToast }) =>
                 {item.alias}
               </div>
             </div>
-            <motion.button
+            <button
               className="action-icon"
               aria-label={`Copy ${item.alias}`}
               onClick={() =>
                 void copyToClipboard(item.alias).then((ok) => onToast(ok ? 'Copied' : 'Failed'))
               }
-              {...interactiveSurface}
               title="Copy alias"
             >
               <Copy size={14} />
-            </motion.button>
+            </button>
           </div>
         ))
       )}
@@ -1765,13 +1751,8 @@ interface GhostLogoProps {
   className?: string;
 }
 
-// Subtle drift on hover — one calm bob, not a frantic wobble.
-const drift = {
-  y: [0, -2, 0],
-  transition: { duration: 0.7, ease: 'easeInOut' },
-};
-
-const press = { scale: 0.92 };
+// Logo hover is pure CSS (.logo-circle:hover) — no JS animation on the
+// header path (every hover re-render ran a 700ms JS tween).
 
 /**
  * GhostFill brand mark — Spectre v2026-06-28.
@@ -1788,7 +1769,7 @@ const press = { scale: 0.92 };
  */
 const GhostLogo: React.FC<GhostLogoProps> = React.memo(({ size = 24, className = '' }) => {
   return (
-    <motion.div
+    <div
       className={`ghost-logo-container ${className}`}
       style={{
         display: 'flex',
@@ -1796,8 +1777,6 @@ const GhostLogo: React.FC<GhostLogoProps> = React.memo(({ size = 24, className =
         justifyContent: 'center',
         flexShrink: 0,
       }}
-      whileHover={drift as never}
-      whileTap={press as never}
     >
       <img
         src={ghostLogoImg}
@@ -1807,7 +1786,7 @@ const GhostLogo: React.FC<GhostLogoProps> = React.memo(({ size = 24, className =
         className={`ghost-logo-img ${className}`}
         style={{ objectFit: 'contain' }}
       />
-    </motion.div>
+    </div>
   );
 });
 
@@ -1826,7 +1805,7 @@ const Header: React.FC<HeaderProps> = React.memo(({ onOpenSettings, onOpenHelp }
     <header className="header">
       <div className="header-left">
         <div className="logo-circle">
-          <GhostLogo size={42} />
+          <GhostLogo size={36} />
         </div>
         <div className="header-title-container">
           <span className="header-title">GhostFill</span>
@@ -2013,7 +1992,7 @@ const InboxListComponent: React.FC<InboxListProps> = ({
   const canOpenAliases = preferredEmailType !== 'disposable';
 
   return (
-    <motion.div className="inbox-section">
+    <div className="inbox-section">
       <div className="inbox-header-row">
         <div className="inbox-title-group">
           <Inbox size={15} className="inbox-title-icon" />
@@ -2021,26 +2000,24 @@ const InboxListComponent: React.FC<InboxListProps> = ({
           {inboxCount > 0 && <span className="inbox-count">{inboxCount}</span>}
         </div>
         {canOpenInbox && (
-          <motion.button
+          <button
             className="view-all-btn"
             onClick={() => onNavigate('email')}
-            whileHover={{ x: 2 }}
             aria-label="View full inbox"
           >
             Open
             <ChevronRight size={15} />
-          </motion.button>
+          </button>
         )}
         {canOpenAliases && (
-          <motion.button
+          <button
             className="view-all-btn"
             onClick={() => onNavigate('aliases')}
-            whileHover={{ x: 2 }}
             aria-label="Open alias manager"
           >
             Aliases
             <ChevronRight size={15} />
-          </motion.button>
+          </button>
         )}
       </div>
 
@@ -2079,18 +2056,13 @@ const InboxListComponent: React.FC<InboxListProps> = ({
           </div>
         ) : (
           <div className="hub-inbox-scroll">
-            {displayedEmails.map((emailItem, index: number) => {
+            {displayedEmails.map((emailItem) => {
+              // PERF: rows mount instantly — no stagger delay, no JS spring.
+              // Hover is pure CSS (:hover border + chevron).
               return (
-                <motion.div
+                <div
                   key={emailItem.id}
                   className="inbox-item"
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{
-                    ...tweenIn,
-                    delay: 0.05 + index * 0.03,
-                  }}
-                  whileHover={{ x: 4 }}
                   role="button"
                   tabIndex={0}
                   onClick={(e) => handleEmailInteraction(e, emailItem)}
@@ -2111,7 +2083,7 @@ const InboxListComponent: React.FC<InboxListProps> = ({
                     {(emailItem.otpCode || emailItem.activationLink) && (
                       <div className="inbox-item-actions">
                         {emailItem.otpCode && (
-                          <motion.button
+                          <button
                             className="otp-badge"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -2119,43 +2091,41 @@ const InboxListComponent: React.FC<InboxListProps> = ({
                                 onCopyOTP(emailItem.otpCode);
                               }
                             }}
-                            {...interactiveSurface}
                             aria-label={`Copy verification code ${emailItem.otpCode}`}
                           >
                             <span className="otp-badge-code" aria-hidden="true">
                               {emailItem.otpCode}
                             </span>
                             <Copy size={12} />
-                          </motion.button>
+                          </button>
                         )}
                         {emailItem.activationLink && (
-                          <motion.button
+                          <button
                             className="link-badge"
                             onClick={(e) => {
                               if (emailItem.activationLink) {
                                 void onOpenLink(e, emailItem.activationLink);
                               }
                             }}
-                            {...interactiveSurface}
                             aria-label="Open verification link"
                           >
                             <span className="otp-badge-code" aria-hidden="true">
                               Verify
                             </span>
                             <ChevronRight size={12} />
-                          </motion.button>
+                          </button>
                         )}
                       </div>
                     )}
                   </div>
                   <ChevronRight size={14} className="inbox-item-open-chevron" aria-hidden="true" />
-                </motion.div>
+                </div>
               );
             })}
           </div>
         )}
       </div>
-    </motion.div>
+    </div>
   );
 };
 
@@ -2191,16 +2161,14 @@ const Onboarding: React.FC<OnboardingProps> = ({ onDismiss, version }) => {
   return (
     <motion.div
       key="onboarding"
-      initial={{ opacity: 0, scale: 0.98 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 1.02 }}
-      transition={springSoft}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1, transition: { duration: 0.16 } }}
+      exit={{ opacity: 0, transition: { duration: 0.1 } }}
       className="onboarding-overlay"
     >
       <motion.div
-        initial={{ scale: 0.5, opacity: 0, rotate: -8 }}
-        animate={{ scale: 1, opacity: 1, rotate: 0 }}
-        transition={{ type: 'spring', stiffness: 200, damping: 20, delay: 0.05 }}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0, transition: { duration: 0.18, ease: [0.16, 1, 0.3, 1] } }}
         className="onboarding-logo onboarding-logo--mascot"
       >
         <img
@@ -2213,27 +2181,24 @@ const Onboarding: React.FC<OnboardingProps> = ({ onDismiss, version }) => {
       </motion.div>
 
       <motion.h1
-        initial={{ y: 20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.1 }}
+        initial={{ y: 8, opacity: 0 }}
+        animate={{ y: 0, opacity: 1, transition: { duration: 0.16, delay: 0.03 } }}
         className="onboarding-title"
       >
         {t('onboardingTitle')}
       </motion.h1>
 
       <motion.p
-        initial={{ y: 20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.15 }}
+        initial={{ y: 8, opacity: 0 }}
+        animate={{ y: 0, opacity: 1, transition: { duration: 0.16, delay: 0.05 } }}
         className="onboarding-subtitle"
       >
         {t('onboardingSubtitle')}
       </motion.p>
 
       <motion.div
-        initial={{ y: 20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.2 }}
+        initial={{ y: 8, opacity: 0 }}
+        animate={{ y: 0, opacity: 1, transition: { duration: 0.16, delay: 0.07 } }}
         className="onboarding-features"
       >
         {features.map((step, i) => (
@@ -2256,8 +2221,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onDismiss, version }) => {
       </Button>
       <motion.p
         initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.4 }}
+        animate={{ opacity: 1, transition: { duration: 0.16, delay: 0.1 } }}
         className="onboarding-footer"
       >
         {t('onboardingFooter')} • v{version}
@@ -2428,7 +2392,9 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
 
         {lastOTP ? (
           <div className="otp-focus-area">
-            <motion.div
+            {/* PERF: plain div — CSS .otp-digit animation (140ms pop, 20ms
+                cascade) replaces 6 parallel JS springs. Hover is CSS. */}
+            <div
               className="otp-box"
               onClick={handleCopyOTP}
               onKeyDown={(event) => {
@@ -2437,27 +2403,16 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
                   handleCopyOTP();
                 }
               }}
-              whileHover={{ x: -2, y: -2 }}
-              whileTap={{ x: 2, y: 2 }}
               role="button"
               tabIndex={0}
               aria-label={`Copy OTP code ${lastOTP.code.split('').join(' ')}`}
             >
               {lastOTP.code.split('').map((char: string, i: number) => (
-                <motion.span
-                  key={i}
-                  initial={{ opacity: 0, scale: 0.8, y: 5 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  transition={{
-                    ...springDigit,
-                    delay: i * 0.04,
-                  }}
-                  className="otp-digit"
-                >
+                <span key={i} className="otp-digit">
                   {char}
-                </motion.span>
+                </span>
               ))}
-            </motion.div>
+            </div>
 
             <OTPTimerBar lastOTP={lastOTP} />
 
@@ -2755,10 +2710,9 @@ const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({ onToast, currentP
             {showPassword ? <Eye size={18} /> : <EyeOff size={18} />}
           </button>
         </div>
-        {/* Terminal-style Password Display */}
-        <motion.div
+        {/* Terminal-style Password Display (plain div — CSS :active press) */}
+        <div
           className={`password-terminal ${loading ? 'shimmer' : ''}`}
-          whileTap={{ x: 2, y: 2 }}
           onClick={handleCopyPassword}
           role="button"
           tabIndex={0}
@@ -2778,7 +2732,7 @@ const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({ onToast, currentP
                 : '•'.repeat(Math.min(password.password.length, 16))
               : '•'.repeat(Math.min(options.length, 16))}
           </div>
-        </motion.div>
+        </div>
 
         {password && (
           <div className="strength-meter-container" aria-live="polite">
@@ -2922,35 +2876,31 @@ const QuickActionsComponent: React.FC<QuickActionsProps> = ({
         </span>
       </div>
       <div className="identity-actions">
-        <motion.button
+        <button
           className={`action-icon ${passwordCopied ? 'success' : ''}`}
           onClick={onCopyPassword}
-          {...interactiveSurface}
           title="Copy password"
           aria-label="Copy password to clipboard"
         >
           {passwordCopied ? <Check size={14} /> : <Copy size={14} />}
-        </motion.button>
-        <motion.button
+        </button>
+        <button
           className="action-icon"
           onClick={onToggleShowPassword}
-          {...interactiveSurface}
           title={showPassword ? 'Hide' : 'Show'}
           aria-label={showPassword ? 'Hide password' : 'Show password'}
         >
           {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-        </motion.button>
-        <div className="action-separator" />
-        <motion.button
+        </button>
+        <button
           className={`action-icon action-danger ${passwordCooldown ? 'opacity-50' : ''}`}
           onClick={onGeneratePassword}
-          {...interactiveSurface}
           title="Reset secure password"
           aria-label="Generate new secure password"
           disabled={isGeneratingPassword || passwordCooldown}
         >
           <RefreshCw size={14} className={isGeneratingPassword ? 'spin' : ''} />
-        </motion.button>
+        </button>
       </div>
     </div>
   );

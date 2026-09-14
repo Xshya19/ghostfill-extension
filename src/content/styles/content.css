@@ -42,23 +42,23 @@
 
 /* Spectre accents (literal — must survive on any host page) */
 :root {
-  --gf-cc-iris: #5b54e8;
-  --gf-cc-iris-glow: rgba(91, 84, 232, 0.28);
-  --gf-cc-mint: #0a9d72;
-  --gf-cc-mint-glow: rgba(10, 157, 114, 0.3);
-  --gf-cc-amber: #c98209;
-  --gf-cc-amber-glow: rgba(201, 130, 9, 0.3);
-  --gf-cc-coral: #e0463f;
+  --gf-cc-iris: #818cf8;
+  --gf-cc-iris-glow: rgba(129, 140, 248, 0.24);
+  --gf-cc-mint: #34d399;
+  --gf-cc-mint-glow: rgba(52, 211, 153, 0.24);
+  --gf-cc-amber: #fbbf24;
+  --gf-cc-amber-glow: rgba(251, 191, 36, 0.24);
+  --gf-cc-coral: #f87171;
 }
 
 /* ─────────────────────────────────────────────────────────
    ACTIVE FIELD — Iris outline + soft glow, no offset shift
    ───────────────────────────────────────────────────────── */
 .ghostfill-highlight {
-  outline: 2px solid #5b54e8 !important;
+  outline: 2px solid var(--gf-cc-iris) !important;
   outline-offset: 2px !important;
-  box-shadow: 0 0 0 4px rgba(91, 84, 232, 0.18) !important;
-  border-radius: 8px !important;
+  box-shadow: 0 0 0 4px var(--gf-cc-iris-glow) !important;
+  border-radius: 10px !important;
   transition:
     box-shadow 0.2s cubic-bezier(0.22, 1, 0.36, 1),
     outline-color 0.2s cubic-bezier(0.22, 1, 0.36, 1) !important;
@@ -68,22 +68,22 @@
    SUCCESS — mint ring, gentle confirming pulse
    ───────────────────────────────────────────────────────── */
 .ghostfill-success {
-  outline: 2px solid #0a9d72 !important;
+  outline: 2px solid var(--gf-cc-mint) !important;
   outline-offset: 2px !important;
-  box-shadow: 0 0 0 4px rgba(10, 157, 114, 0.22) !important;
-  border-radius: 8px !important;
+  box-shadow: 0 0 0 4px var(--gf-cc-mint-glow) !important;
+  border-radius: 10px !important;
   animation: gf-success-seal 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
 }
 
 @keyframes gf-success-seal {
   0% {
-    box-shadow: 0 0 0 0 rgba(10, 157, 114, 0.45);
+    box-shadow: 0 0 0 0 var(--gf-cc-mint-glow);
   }
   60% {
-    box-shadow: 0 0 0 7px rgba(10, 157, 114, 0.12);
+    box-shadow: 0 0 0 7px rgba(52, 211, 153, 0.12);
   }
   100% {
-    box-shadow: 0 0 0 4px rgba(10, 157, 114, 0.22);
+    box-shadow: 0 0 0 4px var(--gf-cc-mint-glow);
   }
 }
 
@@ -91,22 +91,22 @@
    OTP READY — pulses amber <-> iris like a signal lamp
    ───────────────────────────────────────────────────────── */
 .ghostfill-otp-ready {
-  outline: 2px solid #c98209 !important;
+  outline: 2px solid var(--gf-cc-amber) !important;
   outline-offset: 2px !important;
-  box-shadow: 0 0 0 4px rgba(201, 130, 9, 0.2) !important;
-  border-radius: 8px !important;
+  box-shadow: 0 0 0 4px var(--gf-cc-amber-glow) !important;
+  border-radius: 10px !important;
   animation: gf-otp-lamp 1.8s ease-in-out infinite !important;
 }
 
 @keyframes gf-otp-lamp {
   0%,
   100% {
-    outline-color: #c98209;
-    box-shadow: 0 0 0 4px rgba(201, 130, 9, 0.2);
+    outline-color: var(--gf-cc-amber);
+    box-shadow: 0 0 0 4px var(--gf-cc-amber-glow);
   }
   50% {
-    outline-color: #5b54e8;
-    box-shadow: 0 0 0 6px rgba(91, 84, 232, 0.2);
+    outline-color: var(--gf-cc-iris);
+    box-shadow: 0 0 0 6px var(--gf-cc-iris-glow);
   }
 }
 
@@ -114,7 +114,7 @@
    BLOCKED FIELD — subtle coral dashed outline
    ───────────────────────────────────────────────────────── */
 .ghostfill-blocked {
-  outline: 2px dashed #e0463f !important;
+  outline: 2px dashed var(--gf-cc-coral) !important;
   outline-offset: 2px !important;
   opacity: 0.7 !important;
 }

@@ -7,6 +7,7 @@ import { FieldType } from '../types/form.types';
 import { deepQuerySelectorAll } from '../utils/core';
 import { createLogger, initRemoteLogger } from '../utils/logger';
 import { AutoFiller } from './autoFiller';
+import { isAppSurfaceHost, AUTH_PATH_RE } from './fab';
 import { FloatingButton } from './floatingButton';
 import { FormDetector, FieldAnalyzer, DOMObserver, collectFieldDiagnostics } from './formDetector';
 import { OTPPageDetector } from './otpPageDetector';
@@ -322,14 +323,10 @@ function hasPageActivationSignals(): boolean {
 }
 
 function shouldActivateImmediately(): boolean {
-  if (hasRelevantField()) {
-    return true;
+  if (isAppSurfaceHost(location.hostname) && !AUTH_PATH_RE.test(location.href)) {
+    return false; // Docs / Slack / WhatsApp / feeds — wait for a real signal
   }
-  // If any form control exists, activate — per-field classifier (shouldDecorateField/isHighValueField)
-  // will decide whether to actually show. Previous `&& hasPageActivationSignals()` was too strict
-  // and caused "button not appearing" on auth pages without login/signup keywords in URL/title/body
-  // (e.g., SPAs, localized pages, checkout flows). Let the field-level gate do its job.
-  return deepQuerySelectorAll('form, input, textarea, select').length > 0;
+  return hasRelevantField() && (hasPageActivationSignals() || AUTH_PATH_RE.test(location.href));
 }
 
 function removePassiveActivationHooks(): void {

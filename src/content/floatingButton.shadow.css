@@ -10,43 +10,64 @@
 
   /* Spectre palette mapped to FAB */
 
-  --brand: var(--gf-primary);
-  --brand-dark: var(--gf-primary-deep);
-  --brand-rgb: var(--gf-primary-rgb);
-  --brand-glow: rgba(var(--gf-primary-rgb), 0.24);
+  /* Shadow DOM boundary: page styles do not load globals.css, so the FAB
+     carries a local Spectre palette instead of inheriting arbitrary site UI. */
+  --brand: var(--gf-primary, #818cf8);
+  --brand-rgb: var(--gf-primary-rgb, 129, 140, 248);
 
-  --neon-cyan: var(--gf-cyan);
-  --neon-cyan-rgb: var(--gf-cyan-rgb);
-  --neon-green: var(--gf-mint);
-  --neon-green-rgb: var(--gf-mint-rgb);
-  --neon-amber: var(--gf-yellow);
-  --neon-violet: var(--gf-violet);
-  --neon-violet-rgb: var(--gf-violet-rgb);
+  --success: var(--gf-mint, #34d399);
+  --success-rgb: var(--gf-mint-rgb, 52, 211, 153);
+  --success-glow: rgba(var(--success-rgb), 0.25);
+  --error: var(--gf-coral, #f87171);
+  --error-rgb: var(--gf-coral-rgb, 248, 113, 113);
+  --error-glow: rgba(var(--error-rgb), 0.25);
 
-  --success: var(--gf-mint);
-  --success-rgb: var(--gf-mint-rgb);
-  --success-glow: rgba(var(--gf-mint-rgb), 0.25);
-  --error: var(--gf-coral);
-  --error-rgb: var(--gf-coral-rgb);
-  --error-glow: rgba(var(--gf-coral-rgb), 0.25);
-
-  --fab-bg: var(--gf-surface);
-  --fab-bg-hover: var(--gf-primary-soft);
-  --fab-border: var(--gf-line);
+  --gf-surface: #141820;
+  --gf-surface-2: #1b212c;
+  --gf-sunken: #080a0e;
+  --gf-card: #141820;
+  --gf-card-elevated: #1e2432;
+  --gf-primary: #818cf8;
+  --gf-primary-deep: #6366f1;
+  --gf-primary-rgb: 129, 140, 248;
+  --gf-cyan: #82a8ff;
+  --gf-cyan-rgb: 130, 168, 255;
+  --gf-mint: #34d399;
+  --gf-mint-rgb: 52, 211, 153;
+  --gf-amber: #fbbf24;
+  --gf-amber-rgb: 251, 191, 36;
+  --gf-coral: #f87171;
+  --gf-coral-rgb: 248, 113, 113;
+  --gf-violet: #a78bfa;
+  --gf-violet-rgb: 167, 139, 250;
+  --gf-cream: #f4f6fa;
+  --gf-font-mono: 'IBM Plex Mono', 'Space Mono', ui-monospace, monospace;
+  --brand-font-mono: var(--gf-font-mono);
+  --gf-on-fill-light: #ffffff;
+  --gf-on-fill-dark: #080a0e;
+  --gf-grad-cobalt: linear-gradient(180deg, #6366f1 0%, #4f46e5 100%);
+  --gf-grad-mint: linear-gradient(180deg, #34d399 0%, #10b981 100%);
+  --gf-grad-coral: linear-gradient(180deg, #f87171 0%, #ef4444 100%);
+  --gf-panel-radius: 14px;
+  --gf-control-radius: 10px;
+  --gf-primary-soft: rgba(99, 102, 241, 0.15);
+  --gf-line: rgba(255, 255, 255, 0.08);
+  --gf-line-2: rgba(255, 255, 255, 0.14);
+  --gf-hi: rgba(255, 255, 255, 0.08);
+  --gf-ink: #f4f6fa;
+  --gf-text-muted: #949cb0;
+  --gf-text-dim: #697386;
   --text: var(--gf-ink);
   --text-secondary: var(--gf-text-muted);
   --text-tertiary: var(--gf-text-dim);
 
   /* Spectre soft layered shadows + machined top highlight */
-  --shadow-rest: 0 4px 14px -4px rgba(0, 0, 0, 0.5), 0 1px 0 var(--gf-hi) inset;
   --shadow-hover: 0 10px 26px -8px rgba(0, 0, 0, 0.6), 0 1px 0 var(--gf-hi) inset;
-  --shadow-active: 0 2px 8px -2px rgba(0, 0, 0, 0.5) inset;
   --panel-shadow: 0 18px 48px -16px rgba(0, 0, 0, 0.66), 0 1px 0 var(--gf-hi) inset;
 
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.2, 0.8, 0.2, 1);
   --ease-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);
-  --perspective: 600px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -54,88 +75,135 @@
 /* ── .gf-pulse class — used by OTP-waiting indicator ring (toggle via class) ── */
 .gf-pulse { animation: gfBadgePulse 1.8s ease-in-out infinite; }
 
-/* Ultra-advanced status rings on FAB host button */
+/* Mode-aware spectral beacon. The same machined shell stays recognizable on
+   every page; only the signal colour and glyph change with field intent. */
+.gf-fab {
+  --fab-accent: var(--gf-primary);
+  --fab-accent-rgb: var(--gf-primary-rgb);
+  --fab-core: var(--gf-sunken);
+}
 .gf-fab.gf-mode-otp {
-  box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.55), 0 8px 22px -8px rgba(52, 211, 153, 0.65);
+  --fab-accent: var(--gf-mint);
+  --fab-accent-rgb: var(--gf-mint-rgb);
 }
 .gf-fab.gf-mode-email {
-  box-shadow: 0 0 0 2px rgba(124, 131, 255, 0.55), 0 8px 22px -8px rgba(124, 131, 255, 0.75);
+  --fab-accent: var(--gf-cyan);
+  --fab-accent-rgb: var(--gf-cyan-rgb);
 }
 .gf-fab.gf-mode-password {
-  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.5), 0 8px 22px -8px rgba(251, 191, 36, 0.55);
+  --fab-accent: var(--gf-amber);
+  --fab-accent-rgb: var(--gf-amber-rgb);
+}
+.gf-fab.gf-mode-user {
+  --fab-accent: var(--gf-violet);
+  --fab-accent-rgb: var(--gf-violet-rgb);
 }
 .gf-fab.gf-otp-armed {
   animation: gfOtpArmed 1.4s ease-in-out infinite;
 }
 @keyframes gfOtpArmed {
-  0%, 100% { box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.4), 0 8px 22px -8px rgba(52, 211, 153, 0.5); }
-  50% { box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.75), 0 12px 28px -6px rgba(52, 211, 153, 0.85); }
+  0%, 100% { box-shadow: 0 0 0 1px rgba(var(--fab-accent-rgb), 0.45), 0 10px 24px -8px rgba(var(--fab-accent-rgb), 0.58), 0 1px 0 rgba(255,255,255,.14) inset; }
+  50% { box-shadow: 0 0 0 4px rgba(var(--fab-accent-rgb), 0.18), 0 14px 30px -7px rgba(var(--fab-accent-rgb), 0.78), 0 1px 0 rgba(255,255,255,.14) inset; }
 }
 
-/* ── FAB Button — Spectre glass chip ── */
+/* ── FAB Button — Spectral prism ── */
 .gf-fab {
-  width: 46px; height: 46px; border-radius: 13px;
-  background: var(--gf-grad-cobalt, linear-gradient(160deg, #7c83ff 0%, #5a61f0 100%));
-  border: 1px solid var(--gf-line-2, rgba(255, 255, 255, 0.10));
-  box-shadow: 0 8px 22px -8px rgba(var(--gf-primary-rgb, 124,131,255), 0.8), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  width: 44px; height: 44px; border-radius: var(--gf-panel-radius);
+  background: var(--fab-core);
+  border: 1px solid rgba(var(--fab-accent-rgb), 0.58);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.05) inset, 0 7px 18px -6px rgba(var(--fab-accent-rgb), .56), 0 10px 22px -12px rgba(0,0,0,.9);
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   outline: none; position: relative; overflow: visible;
-  color: #fff;
+  color: var(--fab-accent);
   transition: transform 0.18s var(--ease-spring), box-shadow 0.18s var(--ease-spring), filter 0.18s var(--ease-smooth);
 }
 .gf-fab::before {
-  display: none;
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: calc(var(--gf-panel-radius) - 3px);
+  background: radial-gradient(circle at 28% 20%, rgba(var(--fab-accent-rgb), .17), transparent 48%);
+  border: 1px solid rgba(var(--fab-accent-rgb), .16);
+  pointer-events: none;
 }
 .gf-fab::after {
   display: none;
 }
 
 .gf-fab:hover {
-  transform: translateY(-2px) scale(1.03);
-  box-shadow: 0 14px 30px -8px rgba(var(--gf-primary-rgb, 124,131,255), 0.9), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
-  filter: brightness(1.05);
+  transform: translateY(-1px) scale(1.02);
+  box-shadow: 0 0 0 1px rgba(var(--fab-accent-rgb), .32), 0 10px 24px -7px rgba(var(--fab-accent-rgb), .72), 0 14px 28px -14px rgba(0,0,0,.92);
+  filter: brightness(1.06);
 }
 
 .gf-fab:active {
   transform: translateY(0) scale(0.97);
-  box-shadow: 0 4px 12px -4px rgba(var(--gf-primary-rgb, 124,131,255), 0.7), 0 1px 2px rgba(0, 0, 0, 0.3) inset;
+  box-shadow: 0 4px 12px -5px rgba(var(--fab-accent-rgb), .58), 0 1px 3px rgba(0, 0, 0, 0.7) inset;
   transition-duration: 0.05s;
 }
 
 .gf-fab:focus-visible {
-  outline: 2px solid var(--gf-primary, #7c83ff);
+  outline: 2px solid var(--fab-accent);
   outline-offset: 3px;
 }
 
 /* Icon */
-.gf-fab svg, .gf-fab img, .gf-fab .gf-emoji-icon {
-  width: 21px; height: 21px; position: relative; z-index: 3;
+.gf-fab svg, .gf-fab img {
+  width: 24px; height: 24px; position: relative; z-index: 3;
   transition: transform 0.3s var(--ease-spring);
 }
-.gf-fab .gf-emoji-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 21px;
-  line-height: 1;
+.gf-fab-symbol { overflow: visible; }
+.gf-fab-symbol__halo { transform-origin: center; transition: opacity .18s ease, transform .18s var(--ease-spring); }
+
+/* ── Quiet dot presence — 14px dot for low confidence, expands on hover ── */
+.gf-fab.gf-quiet {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  box-shadow: 0 2px 9px -2px rgba(var(--fab-accent-rgb), 0.72), 0 1px 0 rgba(255, 255, 255, 0.2) inset;
+  transition: width 0.22s var(--ease-spring), height 0.22s var(--ease-spring), border-radius 0.22s var(--ease-spring), transform 0.18s var(--ease-spring), box-shadow 0.18s var(--ease-spring);
 }
-.gf-fab:hover svg, .gf-fab:hover img, .gf-fab:hover .gf-emoji-icon {
+.gf-fab.gf-quiet svg,
+.gf-fab.gf-quiet img {
+  opacity: 0;
+  transform: scale(0.4);
+  transition: opacity 0.15s ease, transform 0.18s var(--ease-spring);
+}
+.gf-fab.gf-quiet .gf-badge {
+  display: none;
+}
+.gf-fab.gf-quiet:hover {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--gf-panel-radius);
+  box-shadow: 0 10px 24px -7px rgba(var(--fab-accent-rgb), 0.72), 0 1px 0 rgba(255, 255, 255, 0.08) inset;
+}
+.gf-fab.gf-quiet:hover svg,
+.gf-fab.gf-quiet:hover img {
+  opacity: 1;
+  transform: scale(1);
+}
+.gf-fab.gf-quiet:hover .gf-badge {
+  display: flex;
+}
+.gf-fab:hover svg, .gf-fab:hover img {
   transform: scale(1.08);
 }
-.gf-fab:active svg, .gf-fab:active img, .gf-fab:active .gf-emoji-icon { transform: scale(0.92); transition-duration: 0.06s; }
+.gf-fab:hover .gf-fab-symbol__halo { opacity: .18; transform: scale(1.06); }
+.gf-fab:active svg, .gf-fab:active img { transform: scale(0.92); transition-duration: 0.06s; }
 
 /* Loading */
 .gf-fab.gf-loading {
   cursor: wait;
-  background: var(--gf-grad-cobalt, linear-gradient(160deg, #7c83ff 0%, #5a61f0 100%));
-  border-color: var(--gf-line-2, rgba(255, 255, 255, 0.10));
+  background: var(--gf-grad-cobalt);
+  border-color: var(--gf-line-2);
   animation: gfFabPulse 1.4s ease-in-out infinite;
 }
 .gf-spinner {
   width: 20px; height: 20px;
   border: 2.5px solid rgba(255, 255, 255, 0.25);
-  border-radius: 50%; border-top-color: #ffffff;
+  border-radius: 50%; border-top-color: var(--gf-on-fill-light);
   animation: gfSpin 0.6s cubic-bezier(0.4,0,0.2,1) infinite;
   position: relative; z-index: 3;
 }
@@ -143,19 +211,19 @@
 @keyframes gfFabPulse {
   0%, 100% {
     transform: translateY(-2px) scale(1.03);
-    box-shadow: 0 10px 24px -6px rgba(var(--gf-primary-rgb, 124,131,255), 0.8), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+    box-shadow: 0 10px 24px -6px rgba(var(--gf-primary-rgb), 0.8), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
   }
   50% {
     transform: translateY(-2px) scale(0.97);
-    box-shadow: 0 6px 14px -8px rgba(var(--gf-primary-rgb, 124,131,255), 0.6), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+    box-shadow: 0 6px 14px -8px rgba(var(--gf-primary-rgb), 0.6), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
   }
 }
 
 /* Success — mint glass */
 .gf-fab.gf-success {
   animation: none;
-  border-color: var(--gf-line-2, rgba(255,255,255,0.10));
-  background: var(--gf-grad-mint, linear-gradient(160deg, #3fe0c5 0%, #12b886 100%));
+  border-color: var(--gf-line-2);
+  background: var(--gf-grad-mint);
   box-shadow: 0 8px 22px -8px rgba(63, 224, 197, 0.7), 0 1px 0 rgba(255, 255, 255, 0.3) inset;
 }
 .gf-success-check {
@@ -165,10 +233,10 @@
 /* SVG is now stroked — remove fill overrides so fill="none" is respected */
 .gf-success-check circle {
   fill: none;
-  stroke: #fff;
+  stroke: var(--gf-on-fill-light);
 }
 .gf-success-check path {
-  stroke: #fff;
+  stroke: var(--gf-on-fill-light);
 }
 @keyframes gfCheckPop {
   0%   { transform: scale(0) rotate(-60deg); opacity: 0; }
@@ -179,8 +247,8 @@
 /* Error — coral glass shake */
 .gf-fab.gf-error {
   animation: gfShake 0.4s ease;
-  border-color: rgba(255, 255, 255, 0.16);
-  background: var(--gf-grad-coral, linear-gradient(160deg, #ff6b6b 0%, #e0463f 100%));
+  border-color: var(--gf-line-2);
+  background: var(--gf-grad-coral);
   box-shadow: 0 8px 22px -8px rgba(255, 107, 107, 0.7), 0 1px 0 rgba(255, 255, 255, 0.3) inset;
 }
 @keyframes gfShake {
@@ -196,7 +264,7 @@
 .gf-badge {
   position: absolute; top: -6px; right: -6px;
   min-width: 18px; height: 18px; border-radius: 50%;
-  background: var(--gf-amber, #e8920c); /* Studio Mono Amber */
+  background: var(--gf-amber);
   color: var(--gf-ink);
   font-size: 10px; font-weight: 800;
   display: flex; align-items: center; justify-content: center;
@@ -211,7 +279,7 @@
 }
 
 .gf-badge.gf-badge-otp-ready {
-  background: var(--gf-violet, #7c5ce0);
+  background: var(--gf-violet);
   color: white;
   animation: gfBadgePulse 2s ease-in-out infinite;
 }
@@ -220,8 +288,8 @@
    fields on the current page. Subtle mint accent so it doesn't
    compete with the OTP-ready pulse. */
 .gf-badge.gf-badge-count {
-  background: var(--gf-mint, #3fe0c5);
-  color: #0a2a25;
+  background: var(--gf-mint);
+  color: var(--gf-on-fill-dark);
   font-family: var(--brand-font-mono, monospace);
   font-weight: 800;
 }
@@ -239,7 +307,7 @@
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: var(--gf-primary, #2d5bff);
+  background: var(--gf-primary);
   opacity: 0;
   transform: scale(0);
   transition: opacity 0.4s ease, transform 0.4s var(--ease-spring);
@@ -258,7 +326,7 @@
   position: absolute;
   inset: -4px;
   border-radius: 50%;
-  border: 2px solid var(--gf-primary, #2d5bff);
+  border: 2px solid var(--gf-primary);
   opacity: 0;
   animation: gfOTPWaitingRing 1.5s ease-out infinite;
 }
@@ -281,10 +349,13 @@
   background: var(--gf-card-elevated);
   color: var(--gf-ink);
   font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: none;
-  border-radius: 9px; white-space: nowrap; pointer-events: none;
-  border: 1px solid var(--gf-line-2, rgba(255,255,255,0.13));
+  border-radius: var(--gf-control-radius); white-space: nowrap; pointer-events: none;
+  border: 1px solid var(--gf-line-2);
   box-shadow: 0 8px 22px -8px rgba(0,0,0,0.6), 0 1px 0 var(--gf-hi) inset;
-  opacity: 0; transition: all 0.2s var(--ease-out-expo);
+  opacity: 0;
+  transition:
+    opacity 0.2s var(--ease-out-expo),
+    transform 0.2s var(--ease-out-expo);
   z-index: 1001;
 }
 .gf-tooltip::after {
@@ -296,13 +367,14 @@
 
 /* Menu — Spectre glass panel with hairline border + soft shadow */
 .gf-menu {
-  position: absolute; top: calc(100% + 10px); right: 0;
-  min-width: 254px;
+  position: absolute; top: calc(100% + 8px); right: 0;
+  width: 236px;
+  max-width: calc(100vw - 24px);
   background: var(--gf-card);
-  border-radius: 16px;
+  border-radius: var(--gf-panel-radius);
   border: 1px solid var(--gf-line-2, rgba(255,255,255,0.13));
   box-shadow: var(--panel-shadow);
-  padding: 7px; z-index: 999; overflow: hidden;
+  padding: 6px; z-index: 999; overflow: hidden;
   opacity: 0; visibility: hidden;
   transform: translateY(-6px) scale(0.96);
   transform-origin: top right;
@@ -312,9 +384,7 @@
 }
 /* faint spectral glow at the top edge */
 .gf-menu::before {
-  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 100px;
-  background: radial-gradient(120% 80% at 50% 0%, rgba(var(--gf-primary-rgb), 0.12), transparent 70%);
-  pointer-events: none; z-index: 0;
+  display: none;
 }
 .gf-menu::after {
   display: none;
@@ -332,17 +402,17 @@
 }
 
 .gf-menu-item {
-  display: flex; align-items: center; gap: 11px;
-  padding: 9px 11px; width: 100%;
-  cursor: pointer; border-radius: 10px; border: 1px solid transparent; background: transparent;
-  font: inherit; font-size: 13px; font-weight: 600; letter-spacing: 0;
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 9px; width: 100%;
+  cursor: pointer; border-radius: var(--gf-control-radius); border: 1px solid transparent; background: transparent;
+  font: inherit; font-size: 12.5px; font-weight: 600; letter-spacing: 0;
   color: var(--text); text-align: left; outline: none;
   position: relative; z-index: 2;
   transition: background 0.15s var(--ease-smooth), border-color 0.15s var(--ease-smooth);
   transform-origin: center center;
 }
 .gf-menu-item:hover, .gf-menu-item:focus-visible {
-  background: var(--gf-surface-2, rgba(255,255,255,0.05));
+  background: var(--gf-surface-2);
   border-color: var(--gf-line);
   color: var(--gf-ink);
 }
@@ -353,11 +423,11 @@
 .gf-menu-item:focus-visible { outline: 2px solid var(--gf-primary); outline-offset: -2px; }
 
 .gf-menu-icon {
-  flex-shrink: 0; width: 30px; height: 30px;
+  flex-shrink: 0; width: 28px; height: 28px;
   display: flex; align-items: center; justify-content: center;
-  border-radius: 8px;
-  background: var(--gf-sunken);
-  border: 1px solid var(--gf-line);
+  border-radius: var(--gf-control-radius);
+  background: rgba(var(--gf-primary-rgb), .07);
+  border: 1px solid rgba(var(--gf-primary-rgb), .14);
   color: var(--gf-primary);
   transition: transform 0.15s var(--ease-spring), background 0.15s ease, color 0.15s ease;
 }
@@ -379,7 +449,7 @@
   font-size: 10.5px; color: var(--text-tertiary); font-weight: 600;
   letter-spacing: 0; opacity: 0.85;
   display: inline-flex; align-items: center;
-  padding: 2px 6px; background: var(--gf-surface-2, rgba(255,255,255,0.05));
+  padding: 2px 6px; background: var(--gf-surface-2);
   border-radius: 5px; border: 1px solid var(--gf-line);
   font-family: var(--gf-font-mono, monospace);
   transition: opacity 0.15s ease;

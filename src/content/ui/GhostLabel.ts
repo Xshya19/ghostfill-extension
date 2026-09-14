@@ -12,12 +12,12 @@
 
 import {
   classifyField,
-  shouldDecorateField,
   getFieldTooltip,
   FieldType,
 } from '../../shared/fieldClassifier';
 import { generateHostTokens } from '../../shared/theme';
 import { setHTML } from '../../utils/sanitization.core';
+import { evaluateFab } from '../fab';
 
 const STYLES = `
 /* ═══════════════════════════════════════════════════
@@ -63,7 +63,7 @@ const STYLES = `
   justify-content: center;
   width: 100%;
   height: 100%;
-  border-radius: 9px;
+  border-radius: var(--gf-control-radius, 10px);
   background: var(--sticker-bg);
   border: 1px solid rgba(255, 255, 255, 0.18);
   box-shadow: var(--shadow-hard);
@@ -150,7 +150,7 @@ const STYLES = `
   font-size: 10.5px;
   font-weight: 600;
   padding: 5px 9px;
-  border-radius: 7px;
+  border-radius: var(--gf-radius-sm, 9px);
   box-shadow: 0 6px 18px -6px rgba(0,0,0,0.55), 0 1px 0 var(--gf-hi) inset;
   white-space: nowrap;
   pointer-events: none;
@@ -482,6 +482,10 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
     if (this.isAttached) {
       return;
     }
+    if (evaluateFab(input).presence !== 'active') {
+      this.remove();
+      return;
+    }
     this.isAttached = true;
     this.classList.add('gl-attached');
     this.inputElement = input;
@@ -549,7 +553,7 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
 
     // Mutation observer on the input — detect type/disabled/style changes
     this.inputObserver = new MutationObserver(() => {
-      if (!input.isConnected || !shouldDecorateField(input)) {
+      if (!input.isConnected || evaluateFab(input).presence !== 'active') {
         this.animateExit();
       } else {
         const newType = classifyField(input);
@@ -734,7 +738,7 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
       return;
     }
 
-    if (!this.inputElement.isConnected) {
+    if (!this.inputElement.isConnected || evaluateFab(this.inputElement).presence !== 'active') {
       this.animateExit();
       return;
     }

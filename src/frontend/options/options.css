@@ -155,7 +155,7 @@ body {
   transform: scale(1.04);
 }
 
-/* GhostLogo renders at size=52 (see OptionsApp) inside a 58px plate. */
+/* GhostLogo renders at size=44 (see OptionsApp) inside a 48px plate. */
 .logo-box--no-padding {
   padding: 0;
 }
@@ -1004,7 +1004,7 @@ body {
   left: 3px;
   width: 16px;
   height: 16px;
-  background: #fff;
+  background: var(--gf-on-fill-light);
   border-radius: 50%;
   transform: translateY(-50%);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
@@ -1854,5 +1854,184 @@ button.options-save-indicator {
   .spinner {
     animation-duration: 1.6s !important;
     animation-iteration-count: infinite !important;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   CONSISTENCY LAYER  ·  shared geometry with popup + floating controls
+   ════════════════════════════════════════════════════════════════════════
+   This is intentionally small and token-only. It keeps the options page's
+   existing markup and behavior while making its plates, controls, and focus
+   states use the same Spectre Console recipe as the popup. */
+:root {
+  --rail-w: 220px;
+  --rail-pad-r: 10px;
+  --page-max: 1180px;
+  --gutter: var(--gf-page-gutter);
+}
+
+.options-app {
+  background:
+    var(--gf-pattern-dot) 0 0 / 24px 24px,
+    var(--gf-bg);
+}
+
+.options-header,
+.posture-strip {
+  background: var(--gf-surface);
+  border-color: var(--gf-line);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.header-content {
+  gap: 12px;
+  padding: 14px var(--gutter);
+}
+
+.logo-box {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--gf-panel-radius);
+  box-shadow:
+    inset 0 1px 0 var(--gf-hi),
+    var(--gf-shadow-xs);
+}
+
+.spectral-title {
+  font-size: 20px;
+}
+
+.spectral-subtitle {
+  font-size: 12.5px;
+}
+
+.command-palette-trigger-btn,
+.theme-toggle-header-btn {
+  min-height: var(--gf-control-h);
+  border-radius: var(--gf-control-radius);
+}
+
+.dashboard-layout {
+  gap: 20px;
+  padding: 20px var(--gutter) 32px;
+}
+
+.settings-sidebar {
+  top: calc(var(--posture-h) + 16px);
+  gap: 14px;
+  padding: 12px 10px;
+  background: var(--gf-surface);
+  border: 1px solid var(--gf-line);
+  border-radius: var(--gf-panel-radius);
+  box-shadow:
+    var(--gf-shadow-sm),
+    inset 0 1px 0 var(--gf-hi);
+}
+
+.sidebar-nav-item {
+  min-height: var(--gf-control-h);
+  padding: 7px 10px;
+  border-radius: var(--gf-control-radius);
+}
+
+.sidebar-nav-item:hover {
+  transform: none;
+  background: var(--gf-surface-2);
+}
+
+.sidebar-nav-item[aria-selected='true'] {
+  background: var(--gf-primary-soft);
+  box-shadow: inset 0 0 0 1px rgba(var(--gf-primary-rgb), 0.16);
+}
+
+.options-main {
+  padding: 0 0 4px;
+}
+
+.ghost-card {
+  background: var(--gf-surface);
+  border-color: var(--gf-line);
+  border-radius: var(--gf-panel-radius);
+  box-shadow:
+    var(--gf-shadow-sm),
+    inset 0 1px 0 var(--gf-hi);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.settings-section h2 {
+  border-radius: var(--gf-panel-radius) var(--gf-panel-radius) 0 0;
+}
+
+.options-app input[type='text'],
+.options-app input[type='number'],
+.options-app input[type='password'],
+.options-app input[type='email'],
+.options-app input[type='url'],
+.options-app select,
+.options-app textarea,
+.gf-custom-select-trigger {
+  min-height: var(--gf-control-h);
+  padding-top: 7px;
+  padding-bottom: 7px;
+  border-radius: var(--gf-control-radius);
+}
+
+.toggle {
+  width: 40px;
+  height: 24px;
+}
+
+.toggle[aria-checked='true'] .toggle-slider {
+  transform: translate(16px, -50%);
+}
+
+.setting-item {
+  gap: 16px;
+}
+
+.provider-health-meter,
+.shortcut-reference,
+.storage-monitor {
+  border-radius: var(--gf-control-radius);
+  border-color: var(--gf-line);
+  background: var(--gf-sunken);
+}
+
+.modal-content,
+.command-palette {
+  border-radius: var(--gf-panel-radius);
+}
+
+@media (max-width: 860px) {
+  .dashboard-layout {
+    gap: 0;
+    padding: 0 var(--gutter) 24px;
+  }
+
+  .settings-sidebar {
+    top: auto;
+    padding: 14px 0 16px;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--gf-line);
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .options-main {
+    padding: 18px 0 24px;
+  }
+}
+
+@media (max-width: 560px) {
+  :root {
+    --gutter: 16px;
+  }
+
+  .header-content {
+    padding: 14px var(--gutter);
   }
 }

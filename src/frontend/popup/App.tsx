@@ -6,18 +6,10 @@ import { EmailAccount } from '../../types';
 import { createLogger } from '../../utils/logger';
 import { safeSendMessage } from '../../utils/messaging';
 import { viewFade , Toast } from '../ui';
-import {
-  AliasPanel,
-  AppSkeleton,
-  EmailGenerator,
-  ErrorBoundary,
-  Header,
-  HelpModal,
-  Hub,
-  Onboarding,
-  OTPDisplay,
-  PasswordGenerator
-} from './components';
+import AliasPanel from './components/AliasPanel';
+import EmailGenerator from './components/EmailGenerator';
+import Hub from './components/Hub';
+import { AppSkeleton, ErrorBoundary, Header, HelpModal, Onboarding, OTPDisplay, PasswordGenerator } from './components/SharedComponents';
 import { useAppStore } from './store';
 
 const log = createLogger('App');
@@ -446,7 +438,7 @@ const App: React.FC = () => {
       <main className="main-content-area" id="main-content" role="main">
         <Toast message={toast} />
 
-        <AnimatePresence>
+        <AnimatePresence initial={false}>
           {!isInitialized ? (
             <AppSkeleton key="app-skeleton" />
           ) : isFirstTime ? (
@@ -458,7 +450,10 @@ const App: React.FC = () => {
           ) : null}
         </AnimatePresence>
 
-        <AnimatePresence mode="popLayout">
+        {/* mode="wait": popLayout forces layout measurements on every view
+            switch (layout thrash in a 375px popup). wait gives a clean
+            110ms fade-out → 170ms fade-in with zero overlap jank. */}
+        <AnimatePresence mode="wait" initial={false}>
           {isInitialized && !isFirstTime && view === 'hub' && (
             <motion.div
               key="hub-view"

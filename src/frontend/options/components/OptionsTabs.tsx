@@ -27,8 +27,7 @@ import { createLogger } from '../../../utils/logger';
 import { GmailLogo } from '../../popup/components/ProviderLogos';
 import { Button } from '../../ui';
 
-import { CustomSelect } from './CustomSelect';
-import { SettingsSection, ToggleSwitch } from './OptionsUIComponents';
+import { CustomSelect, SettingsSection, ToggleSwitch } from './OptionsUI';
 
 const t = (key: string): string => {
   try {

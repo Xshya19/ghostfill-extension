@@ -11,13 +11,14 @@ Everything a user sees in an extension window lives here. Two entry points:
 popup/     App.tsx  store.ts  hooks.ts  popup.css  index.html
            components/  Hub · EmailGenerator · AliasPanel · SharedComponents
 options/   OptionsApp.tsx  options.css  index.html
-           components/  OptionsTabs · OptionsUIComponents
+           components/  OptionsTabs · OptionsUI
 ui/        index.tsx    shared components (Button, Card, Modal, Toast…) + motion tokens
 styles/    globals.css   imported by popup.css and options.css (combines design tokens & primitives)
 ```
 
 One file per concern: `hooks.ts` holds all popup hooks, `store.ts` the whole store,
-`ui/index.tsx` every shared component plus its motion presets. No barrels to chase.
+`ui/index.tsx` every shared component plus its motion presets. Feature modules stay
+separate so popup screens remain easy to change without creating one mega-file.
 
 ## What is deliberately *not* here
 

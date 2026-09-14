@@ -14,41 +14,56 @@ const STROKE = '1.7';
 
 export const SHARED_SVG_DEFS = '';
 
+const fabIcon = (
+  body: string
+): string => `<svg class="gf-fab-symbol" viewBox="0 0 24 24" fill="none" role="presentation" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <path class="gf-fab-symbol__halo" d="M12 2.7a9.3 9.3 0 1 1 0 18.6 9.3 9.3 0 0 1 0-18.6Z" fill="currentColor" opacity=".1"/>
+  ${body}
+</svg>`;
+
 const ICONS: Readonly<Record<ButtonMode, string>> = {
-  magic: `<span class="gf-emoji-icon" role="presentation" aria-hidden="true">👻</span>`,
+  magic: fabIcon(`
+    <path d="M7.1 18.8V10a4.9 4.9 0 0 1 9.8 0v8.8l-2.45-1.65L12 18.8l-2.45-1.65L7.1 18.8Z" fill="currentColor" opacity=".2"/>
+    <path d="M7.1 18.8V10a4.9 4.9 0 0 1 9.8 0v8.8l-2.45-1.65L12 18.8l-2.45-1.65L7.1 18.8Z" stroke="currentColor" stroke-width="${STROKE}" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="10.2" cy="10.7" r="1" fill="currentColor"/><circle cx="13.8" cy="10.7" r="1" fill="currentColor"/>
+    <path d="m18.3 4.1.45 1.25 1.25.45-1.25.45-.45 1.25-.45-1.25-1.25-.45 1.25-.45.45-1.25Z" fill="currentColor"/>
+  `),
 
-  email: `<svg viewBox="0 0 24 24" fill="none" role="presentation" aria-hidden="true" stroke="currentColor" stroke-width="${STROKE}" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="5" width="18" height="14" rx="2.5"/>
-    <path d="M3.5 6.5 L12 12.5 L20.5 6.5"/>
-    <path d="M3.5 17.5 L9 13" opacity="0.55"/>
-    <path d="M20.5 17.5 L15 13" opacity="0.55"/>
-  </svg>`,
+  email: fabIcon(`
+    <rect x="4.7" y="6.6" width="14.6" height="11" rx="2.4" fill="currentColor" opacity=".18"/>
+    <rect x="4.7" y="6.6" width="14.6" height="11" rx="2.4" stroke="currentColor" stroke-width="${STROKE}"/>
+    <path d="m5.7 8 6.3 4.65L18.3 8" stroke="currentColor" stroke-width="${STROKE}" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="18.5" cy="5.5" r="2" fill="currentColor" stroke="var(--fab-core, #fff)" stroke-width="1.15"/>
+  `),
 
-  password: `<svg viewBox="0 0 24 24" fill="none" role="presentation" aria-hidden="true" stroke="currentColor" stroke-width="${STROKE}" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="8.5" cy="15.5" r="4"/>
-    <circle cx="8.5" cy="15.5" r="1.1" fill="currentColor" stroke="none"/>
-    <path d="M11.5 12.5 L20 4"/>
-    <path d="M16.5 8 L18.5 10"/>
-    <path d="M19 5.5 L20.5 7"/>
-  </svg>`,
+  password: fabIcon(`
+    <rect x="5.1" y="10.2" width="13.8" height="8.7" rx="2.4" fill="currentColor" opacity=".18"/>
+    <rect x="5.1" y="10.2" width="13.8" height="8.7" rx="2.4" stroke="currentColor" stroke-width="${STROKE}"/>
+    <path d="M8.2 10.1V8.4a3.8 3.8 0 0 1 7.6 0v1.7" stroke="currentColor" stroke-width="${STROKE}" stroke-linecap="round"/>
+    <circle cx="12" cy="14.3" r="1.25" fill="currentColor"/><path d="M12 15.4v1.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  `),
 
-  otp: `<svg viewBox="0 0 24 24" fill="none" role="presentation" aria-hidden="true" stroke="currentColor" stroke-width="${STROKE}" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
-    <path d="M12 3 L20 6 V 12.5 C 20 17 16.5 20 12 21 C 7.5 20 4 17 4 12.5 V 6 Z"/>
-    <path d="M8.5 12 L11 14.5 L15.8 9.7" stroke-width="2"/>
-  </svg>`,
+  otp: fabIcon(`
+    <path d="m12 4 6.5 2.45v5.3c0 3.65-2.6 6.5-6.5 8.25-3.9-1.75-6.5-4.6-6.5-8.25v-5.3L12 4Z" fill="currentColor" opacity=".18"/>
+    <path d="m12 4 6.5 2.45v5.3c0 3.65-2.6 6.5-6.5 8.25-3.9-1.75-6.5-4.6-6.5-8.25v-5.3L12 4Z" stroke="currentColor" stroke-width="${STROKE}" stroke-linejoin="round"/>
+    <circle cx="8.8" cy="11.4" r="1" fill="currentColor"/><circle cx="12" cy="11.4" r="1" fill="currentColor"/><circle cx="15.2" cy="11.4" r="1" fill="currentColor"/>
+    <path d="m9.7 15 1.45 1.35 3.2-3.05" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  `),
 
-  user: `<svg viewBox="0 0 24 24" fill="none" role="presentation" aria-hidden="true" stroke="currentColor" stroke-width="${STROKE}" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="12" cy="8.5" r="3.5"/>
-    <path d="M5.5 20 C 5.5 16.4 8.4 13.5 12 13.5 C 15.6 13.5 18.5 16.4 18.5 20"/>
-  </svg>`,
+  user: fabIcon(`
+    <circle cx="12" cy="8.4" r="3.15" fill="currentColor" opacity=".22"/>
+    <circle cx="12" cy="8.4" r="3.15" stroke="currentColor" stroke-width="${STROKE}"/>
+    <path d="M5.7 19c.55-3.45 2.65-5.35 6.3-5.35s5.75 1.9 6.3 5.35" fill="currentColor" opacity=".18"/>
+    <path d="M5.7 19c.55-3.45 2.65-5.35 6.3-5.35s5.75 1.9 6.3 5.35" stroke="currentColor" stroke-width="${STROKE}" stroke-linecap="round"/>
+    <path d="M18.3 6.4h3M19.8 4.9v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  `),
 
-  form: `<svg viewBox="0 0 24 24" fill="none" role="presentation" aria-hidden="true" stroke="currentColor" stroke-width="${STROKE}" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
-    <rect x="5" y="3.5" width="14" height="17" rx="2"/>
-    <path d="M8 8 H 14" opacity="0.85"/>
-    <path d="M8 12 H 16" opacity="0.85"/>
-    <path d="M8 16 H 13" opacity="0.85"/>
-    <path d="M14.5 16.5 L 16 18 L 18.5 15.2" stroke-width="2"/>
-  </svg>`,
+  form: fabIcon(`
+    <rect x="5.7" y="4.2" width="12.6" height="15.6" rx="2.3" fill="currentColor" opacity=".16"/>
+    <rect x="5.7" y="4.2" width="12.6" height="15.6" rx="2.3" stroke="currentColor" stroke-width="${STROKE}"/>
+    <path d="M9 8h5.8M9 11.5h6M9 15h3.2" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/>
+    <path d="m13.8 15.3 1.35 1.25 2.55-2.7" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/>
+  `),
 };
 
 export class IconSystem {
@@ -97,95 +112,73 @@ export type MenuIconName =
   | 'chart'
   | 'settings';
 
-const MENU_COLORS = {
-  ink: '#181818',
-  yellow: '#FFE500',
-  cyan: '#79F7FF',
-  teal: '#53F2FC',
-  pink: '#FA8CEF',
-  violet: '#918EFA',
-  mint: '#9DFC7C',
-  coral: '#FA7A7A',
-  paper: '#FFFDF6',
-} as const;
-
-const shell = (body: string, accent: string = MENU_COLORS.yellow): string => `
+const menuShell = (body: string, accent = 'var(--gf-primary, #8b8fff)'): string => `
   <svg class="gf-menu-symbol" viewBox="0 0 24 24" fill="none" aria-hidden="true" role="presentation" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="3" width="18" height="18" rx="3" fill="${MENU_COLORS.paper}" stroke="${MENU_COLORS.ink}" stroke-width="1.8"/>
-    <path d="M5 18.5L18.5 5" stroke="${accent}" stroke-width="2.2" stroke-linecap="round"/>
+    <circle class="gf-menu-symbol__plate" cx="12" cy="12" r="9.2" fill="currentColor" opacity=".08"/>
+    <path d="M5.2 17.9 17.9 5.2" stroke="${accent}" stroke-width="1.35" stroke-linecap="round" opacity=".5"/>
     ${body}
   </svg>`;
 
 const MENU_ICONS: Readonly<Record<MenuIconName, string>> = {
-  spark: shell(
-    `<path d="M12 6.2l1.15 3.1 3.1 1.15-3.1 1.15L12 14.8l-1.15-3.2-3.1-1.15 3.1-1.15L12 6.2z" fill="${MENU_COLORS.yellow}" stroke="${MENU_COLORS.ink}" stroke-width="1.2" stroke-linejoin="round"/>
-     <circle cx="7.2" cy="16.4" r="1.15" fill="${MENU_COLORS.cyan}" stroke="${MENU_COLORS.ink}" stroke-width="0.9"/>
-     <path d="M17.4 15.7l.5 1 .95.35-.95.35-.5 1-.48-1-.98-.35.98-.35.48-1z" fill="${MENU_COLORS.pink}" stroke="${MENU_COLORS.ink}" stroke-width="0.6"/>`,
-    MENU_COLORS.pink
+  spark: menuShell(
+    `<path d="M12 6.7 13.25 10l3.3 1.25-3.3 1.25L12 15.8l-1.25-3.3-3.3-1.25L10.75 10 12 6.7Z" fill="currentColor" opacity=".84" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/>
+     <circle cx="7.1" cy="16.8" r="1" fill="currentColor"/><path d="m17.5 15.4.55 1.25 1.25.55-1.25.55-.55 1.25-.55-1.25-1.25-.55 1.25-.55.55-1.25Z" fill="currentColor" opacity=".75"/>`,
+    'var(--gf-violet, #d19cff)'
   ),
-  key: shell(
-    `<circle cx="9" cy="14.4" r="3.6" fill="${MENU_COLORS.yellow}" stroke="${MENU_COLORS.ink}" stroke-width="1.5"/>
-     <circle cx="9" cy="14.4" r="1.05" fill="${MENU_COLORS.ink}"/>
-     <path d="M11.5 11.9l5.5-5.5M15 8.4l2.1 2.1M16.6 6.8l2.1 2.1" stroke="${MENU_COLORS.ink}" stroke-width="1.5" stroke-linecap="round"/>
-     <path d="M6.9 17.5h4.2" stroke="${MENU_COLORS.paper}" stroke-width="0.8" stroke-linecap="round" opacity="0.8"/>`,
-    MENU_COLORS.cyan
+  key: menuShell(
+    `<circle cx="8.2" cy="15.3" r="3.15" stroke="currentColor" stroke-width="${STROKE}"/>
+     <circle cx="8.2" cy="15.3" r=".8" fill="currentColor"/>
+     <path d="m10.55 12.95 5.9-5.9m-2.55 2.55 2.05 2.05m-.45-4.15 2.05 2.05" stroke="currentColor" stroke-width="${STROKE}" stroke-linecap="round"/>`,
+    'var(--gf-amber, #ffd166)'
   ),
-  mail: shell(
-    `<rect x="5.7" y="7" width="12.6" height="9.8" rx="1.6" fill="${MENU_COLORS.cyan}" stroke="${MENU_COLORS.ink}" stroke-width="1.5"/>
-     <path d="M6 8.6l6 4.1 6-4.1" stroke="${MENU_COLORS.ink}" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/>
-     <rect x="8" y="13.2" width="8" height="2" rx="1" fill="${MENU_COLORS.paper}" stroke="${MENU_COLORS.ink}" stroke-width="0.7"/>
-     <circle cx="17.7" cy="6.1" r="1.3" fill="${MENU_COLORS.pink}" stroke="${MENU_COLORS.ink}" stroke-width="0.8"/>`,
-    MENU_COLORS.yellow
+  mail: menuShell(
+    `<rect x="5.2" y="7.1" width="13.6" height="10" rx="2" stroke="currentColor" stroke-width="${STROKE}"/>
+     <path d="m5.8 8.2 6.2 4.5 6.2-4.5" stroke="currentColor" stroke-width="${STROKE}" stroke-linecap="round" stroke-linejoin="round"/>
+     <circle cx="17.8" cy="6.4" r="1.25" fill="currentColor"/>`,
+    'var(--gf-primary, #82a8ff)'
   ),
-  lock: shell(
-    `<rect x="6.3" y="10.2" width="11.4" height="7.6" rx="1.6" fill="${MENU_COLORS.violet}" stroke="${MENU_COLORS.ink}" stroke-width="1.5"/>
-     <path d="M8.5 10.1V8.2a3.5 3.5 0 017 0v1.9" stroke="${MENU_COLORS.ink}" stroke-width="1.5" stroke-linecap="round"/>
-     <circle cx="12" cy="14" r="1.35" fill="${MENU_COLORS.yellow}" stroke="${MENU_COLORS.ink}" stroke-width="0.8"/>
-     <path d="M12 15.2v1.2" stroke="${MENU_COLORS.ink}" stroke-width="1.1" stroke-linecap="round"/>`,
-    MENU_COLORS.teal
+  lock: menuShell(
+    `<rect x="6.1" y="10.1" width="11.8" height="8.4" rx="2" stroke="currentColor" stroke-width="${STROKE}"/>
+     <path d="M8.6 10V8.2a3.4 3.4 0 0 1 6.8 0V10" stroke="currentColor" stroke-width="${STROKE}" stroke-linecap="round"/>
+     <circle cx="12" cy="13.7" r="1.15" fill="currentColor"/><path d="M12 14.8v1.25" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/>`,
+    'var(--gf-mint, #4de4b4)'
   ),
-  user: shell(
-    `<circle cx="12" cy="8.6" r="3" fill="${MENU_COLORS.mint}" stroke="${MENU_COLORS.ink}" stroke-width="1.5"/>
-     <path d="M6.9 17.8c.7-3 2.7-4.5 5.1-4.5s4.4 1.5 5.1 4.5" fill="${MENU_COLORS.cyan}" stroke="${MENU_COLORS.ink}" stroke-width="1.5" stroke-linecap="round"/>
-     <path d="M9.5 8.2h5" stroke="${MENU_COLORS.paper}" stroke-width="0.8" stroke-linecap="round" opacity="0.7"/>`,
-    MENU_COLORS.pink
+  user: menuShell(
+    `<circle cx="12" cy="8.5" r="3.1" stroke="currentColor" stroke-width="${STROKE}"/>
+     <path d="M5.9 19c.55-3.35 2.6-5.2 6.1-5.2s5.55 1.85 6.1 5.2" stroke="currentColor" stroke-width="${STROKE}" stroke-linecap="round"/>
+     <path d="M18.2 6.3h3M19.7 4.8v3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>`,
+    'var(--gf-violet, #d19cff)'
   ),
-  users: shell(
-    `<circle cx="9.2" cy="9.1" r="2.5" fill="${MENU_COLORS.cyan}" stroke="${MENU_COLORS.ink}" stroke-width="1.3"/>
-     <circle cx="15" cy="9.4" r="2.4" fill="${MENU_COLORS.yellow}" stroke="${MENU_COLORS.ink}" stroke-width="1.3"/>
-     <path d="M5.6 17.6c.55-2.5 2-3.8 3.9-3.8 1.15 0 2.1.45 2.85 1.35.75-.9 1.7-1.35 2.85-1.35 1.9 0 3.35 1.3 3.9 3.8" fill="${MENU_COLORS.pink}" stroke="${MENU_COLORS.ink}" stroke-width="1.3" stroke-linecap="round"/>`,
-    MENU_COLORS.mint
+  users: menuShell(
+    `<circle cx="9.2" cy="9" r="2.55" stroke="currentColor" stroke-width="1.4"/>
+     <circle cx="15.2" cy="9.6" r="2.45" stroke="currentColor" stroke-width="1.4"/>
+     <path d="M5.6 18c.45-2.75 1.8-4.2 3.6-4.2 1.15 0 2.1.45 2.8 1.35.7-.9 1.65-1.35 2.8-1.35 1.8 0 3.15 1.45 3.6 4.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>`,
+    'var(--gf-mint, #4de4b4)'
   ),
-  edit: shell(
-    `<path d="M7.1 16.8l.85-3.7 6.9-6.9 2.85 2.85-6.9 6.9-3.7.85z" fill="${MENU_COLORS.yellow}" stroke="${MENU_COLORS.ink}" stroke-width="1.4" stroke-linejoin="round"/>
-     <path d="M13.7 7.3l2.85 2.85M8.2 13.5l2.25 2.25" stroke="${MENU_COLORS.ink}" stroke-width="1" stroke-linecap="round"/>
-     <path d="M6.5 18.3h10.8" stroke="${MENU_COLORS.ink}" stroke-width="1.4" stroke-linecap="round"/>`,
-    MENU_COLORS.violet
+  edit: menuShell(
+    `<path d="m7.1 16.85.85-3.7 7-7 2.8 2.8-7 7-3.65.9Z" stroke="currentColor" stroke-width="${STROKE}" stroke-linejoin="round"/>
+     <path d="m13.8 7.35 2.8 2.8M6.5 18.4h10.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>`,
+    'var(--gf-primary, #82a8ff)'
   ),
-  mask: shell(
-    `<path d="M6.5 9.2c2.2-1.6 8.8-1.6 11 0l-.75 5.4c-.35 2-2 3.2-4.75 3.2s-4.4-1.2-4.75-3.2L6.5 9.2z" fill="${MENU_COLORS.pink}" stroke="${MENU_COLORS.ink}" stroke-width="1.4" stroke-linejoin="round"/>
-     <path d="M9 12.1c1.2-.55 2.1-.55 3.2 0M12.8 12.1c1.1-.55 2-.55 3.2 0" stroke="${MENU_COLORS.ink}" stroke-width="1.1" stroke-linecap="round"/>
-     <path d="M10.4 15.2c1 .55 2.2.55 3.2 0" stroke="${MENU_COLORS.paper}" stroke-width="1" stroke-linecap="round"/>`,
-    MENU_COLORS.cyan
+  mask: menuShell(
+    `<path d="M6.5 9.3c2.2-1.45 8.8-1.45 11 0l-.75 5.2c-.35 2.05-2 3.3-4.75 3.3s-4.4-1.25-4.75-3.3L6.5 9.3Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+     <path d="M8.9 12.1c1.15-.5 2.15-.5 3.1 0m0 0c.95-.5 1.95-.5 3.1 0M10.4 15.15c1 .55 2.2.55 3.2 0" stroke="currentColor" stroke-width="1.15" stroke-linecap="round"/>`,
+    'var(--gf-violet, #d19cff)'
   ),
-  clear: shell(
-    `<path d="M8 9.3h9.2v7.2A1.5 1.5 0 0115.7 18H9.5A1.5 1.5 0 018 16.5V9.3z" fill="${MENU_COLORS.coral}" stroke="${MENU_COLORS.ink}" stroke-width="1.4"/>
-     <path d="M6.7 9.3h11.8M10 7.1h5.2M10.6 11.5v4.1M14.5 11.5v4.1" stroke="${MENU_COLORS.ink}" stroke-width="1.25" stroke-linecap="round"/>
-     <path d="M7.5 6.5l2.1-1.1" stroke="${MENU_COLORS.yellow}" stroke-width="1.4" stroke-linecap="round"/>`,
-    MENU_COLORS.mint
+  clear: menuShell(
+    `<path d="M8 9.2h8v7.4A1.5 1.5 0 0 1 14.5 18h-5A1.5 1.5 0 0 1 8 16.6V9.2Z" stroke="currentColor" stroke-width="1.4"/>
+     <path d="M6.6 9.2h10.8M10 7h4M10.4 11.5v4M13.6 11.5v4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>`,
+    'var(--gf-coral, #ff7d8d)'
   ),
-  chart: shell(
-    `<rect x="6.5" y="13" width="2.7" height="4.5" rx=".8" fill="${MENU_COLORS.cyan}" stroke="${MENU_COLORS.ink}" stroke-width="1.1"/>
-     <rect x="10.7" y="9" width="2.7" height="8.5" rx=".8" fill="${MENU_COLORS.yellow}" stroke="${MENU_COLORS.ink}" stroke-width="1.1"/>
-     <rect x="14.9" y="6.8" width="2.7" height="10.7" rx=".8" fill="${MENU_COLORS.pink}" stroke="${MENU_COLORS.ink}" stroke-width="1.1"/>
-     <path d="M6.4 18.2h12" stroke="${MENU_COLORS.ink}" stroke-width="1.4" stroke-linecap="round"/>`,
-    MENU_COLORS.violet
+  chart: menuShell(
+    `<path d="M6.5 17.8V14M10.4 17.8V10.7M14.3 17.8V7.4M18.1 17.8V12.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+     <path d="M5.9 18.3h12.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>`,
+    'var(--gf-primary, #82a8ff)'
   ),
-  settings: shell(
-    `<circle cx="12" cy="12" r="3.2" fill="${MENU_COLORS.mint}" stroke="${MENU_COLORS.ink}" stroke-width="1.4"/>
-     <path d="M12 5.8v2M12 16.2v2M5.8 12h2M16.2 12h2M7.6 7.6l1.4 1.4M15 15l1.4 1.4M16.4 7.6L15 9M9 15l-1.4 1.4" stroke="${MENU_COLORS.ink}" stroke-width="1.3" stroke-linecap="round"/>
-     <circle cx="12" cy="12" r="1.05" fill="${MENU_COLORS.yellow}" stroke="${MENU_COLORS.ink}" stroke-width="0.7"/>`,
-    MENU_COLORS.coral
+  settings: menuShell(
+    `<circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.45"/>
+     <path d="M12 5.7v2M12 16.3v2M5.7 12h2M16.3 12h2M7.55 7.55l1.45 1.45M15 15l1.45 1.45M16.45 7.55 15 9M9 15l-1.45 1.45" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>`,
+    'var(--gf-coral, #ff7d8d)'
   ),
 };
 

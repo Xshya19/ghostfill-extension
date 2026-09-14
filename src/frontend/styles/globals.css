@@ -153,6 +153,15 @@
    --radius-xl: 20px;
    --radius-pill: 999px;
    --radius-button: 12px;
+   /* Shared component geometry. Every surface uses these values so the
+      popup, options page, and floating controls read as one product. */
+   --gf-panel-radius: 14px;
+   --gf-control-radius: 10px;
+   --gf-control-h-sm: 30px;
+   --gf-control-h: 36px;
+   --gf-control-h-lg: 40px;
+   --gf-page-gutter: 24px;
+   --gf-panel-gap: 10px;
    --gf-radius: 14px;
    --gf-radius-sm: 9px;
    --gf-radius-lg: 16px;
@@ -307,6 +316,21 @@
    }
 }
 
+/* High-contrast users get the same visual system with stronger hairlines and
+   focus rings, not a separate accessibility theme. */
+@media (prefers-contrast: more) {
+   :root {
+      --gf-line: rgba(15, 23, 42, 0.18);
+      --gf-line-2: rgba(15, 23, 42, 0.28);
+      --gf-ring-width: 3px;
+   }
+
+   [data-theme='dark'] {
+      --gf-line: rgba(255, 255, 255, 0.18);
+      --gf-line-2: rgba(255, 255, 255, 0.28);
+   }
+}
+
 /* ============================================================================
    SECTION 2: SHARED UI PRIMITIVES  ·  "SPECTRE"
    ========================================================================== */
@@ -400,7 +424,8 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  padding: 10px 16px;
+  min-height: var(--gf-control-h);
+  padding: 0 16px;
   font-family: var(--gf-font-display);
   font-size: 14px;
   font-weight: 600;
@@ -409,7 +434,7 @@
   color: var(--gf-ink);
   background: var(--gf-surface);
   border: var(--gf-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--gf-control-radius);
   box-shadow: var(--gf-shadow-sm), inset 0 1px 0 var(--gf-hi);
   cursor: pointer;
   user-select: none;
@@ -541,12 +566,14 @@
 }
 
 .gf-btn--sm {
-  padding: 7px 12px;
+  min-height: var(--gf-control-h-sm);
+  padding: 0 12px;
   font-size: 12.5px;
 }
 
 .gf-btn--lg {
-  padding: 13px 22px;
+  min-height: var(--gf-control-h-lg);
+  padding: 0 22px;
   font-size: 15px;
 }
 
@@ -560,8 +587,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: var(--gf-control-h);
+  height: var(--gf-control-h);
   padding: 0;
   color: var(--gf-ink-soft);
   background: var(--gf-surface);
@@ -645,7 +672,7 @@
 .gf-card {
   background: var(--gf-surface);
   border: var(--gf-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--gf-panel-radius);
   box-shadow: var(--gf-shadow), inset 0 1px 0 var(--gf-hi);
   padding: var(--space-4);
 }
@@ -730,13 +757,14 @@
 
 .gf-input {
   width: 100%;
-  padding: 10px 12px;
+  min-height: var(--gf-control-h);
+  padding: 8px 12px;
   font-family: var(--gf-font-body);
   font-size: 14px;
   color: var(--gf-ink);
   background: var(--gf-sunken);
   border: var(--gf-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--gf-control-radius);
   transition:
     border-color var(--gf-dur-fast) var(--gf-ease),
     box-shadow var(--gf-dur-fast) var(--gf-ease),
@@ -813,7 +841,7 @@
   left: 3px;
   width: 18px;
   height: 18px;
-  background: #fff;
+  background: var(--gf-on-fill-light);
   border-radius: 50%;
   transform: translateY(-50%);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);

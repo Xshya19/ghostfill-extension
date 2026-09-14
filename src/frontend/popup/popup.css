@@ -10,27 +10,31 @@
 :root {
   --popup-w: 375px;
   --popup-h: 400px;
-  --header-h: 48px;
+  --header-h: 52px;
+  --popup-gutter: 14px;
+  --popup-gap: var(--gf-panel-gap);
 }
 
-/* ── 2. KEYFRAMES (Popup-specific only; base spin/shimmer in primitives) ─ */
+/* ── 2. KEYFRAMES (Popup-specific only; base spin/shimmer in primitives) ──
+   PERF: compositor-only (opacity + translate/scale). No rotateX / blur /
+   box-shadow tweens — those force main-thread repaints and read as glitch. */
 @keyframes gf-fade-up {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translate3d(0, 4px, 0);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
   }
 }
 @keyframes gf-flip-in {
   0% {
-    transform: rotateX(-90deg);
+    transform: translate3d(0, 4px, 0) scale(0.92);
     opacity: 0;
   }
   100% {
-    transform: rotateX(0deg);
+    transform: translate3d(0, 0, 0) scale(1);
     opacity: 1;
   }
 }
@@ -68,28 +72,32 @@
     transform: scale(1);
   }
   40% {
-    transform: scale(1.1);
+    transform: scale(1.04);
   }
   100% {
     transform: scale(1);
   }
 }
+/* PERF: old versions tweened box-shadow (repaint every frame). Now opacity
+   on a pseudo-friendly scale pulse — compositor only. */
 @keyframes gf-pulse-ring {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(var(--gf-amber-rgb), 0);
+    opacity: 1;
   }
   50% {
-    box-shadow: 0 0 0 4px rgba(var(--gf-amber-rgb), 0.18);
+    opacity: 0.82;
   }
 }
 @keyframes gf-celebrate-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(var(--gf-mint-rgb), 0);
+    transform: scale(1);
+    opacity: 1;
   }
   50% {
-    box-shadow: 0 0 0 8px rgba(var(--gf-mint-rgb), 0.18);
+    transform: scale(1.015);
+    opacity: 0.96;
   }
 }
 @keyframes skeleton-pulse {
@@ -168,12 +176,23 @@ textarea:disabled,
   transform: none;
 }
 
-/* ── 4. APP SHELL & SCROLL MANAGEMENT ──────────────────────────────────── */
+/* ── 4. APP SHELL & SCROLL MANAGEMENT ────────────────────────────────────
+   PERF: view switches animate opacity+translate on the compositor. Promote
+   the animated layer once here so every frame stays off the main thread.
+   `contain` keeps paint scoped to the 375×400 frame. */
 .app {
   display: flex;
   flex-direction: column;
   position: relative;
   background: var(--gf-bg);
+  contain: layout style;
+}
+
+.app-view-container {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  contain: layout style paint;
+  will-change: opacity, transform;
 }
 
 .app::before {
@@ -185,6 +204,8 @@ textarea:disabled,
   pointer-events: none;
   z-index: var(--z-base);
   opacity: 0.15;
+  contain: strict;
+  transform: translateZ(0);
 }
 
 .main-content-area,
@@ -259,15 +280,15 @@ textarea:disabled,
   justify-content: space-between;
   height: var(--header-h);
   min-height: var(--header-h);
-  padding: 0 var(--space-3);
+  padding: 0 var(--popup-gutter);
+  /* PERF: solid header — blur(10px) on an element inside the animated view
+     forced a backdrop repaint on every frame of the 170ms transition. */
   background: var(--gf-surface);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--gf-line);
   position: relative;
   z-index: var(--z-header);
   flex-shrink: 0;
-  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+  transform: translateZ(0);
 }
 
 .header-left,
@@ -280,8 +301,8 @@ textarea:disabled,
 }
 
 .logo-circle {
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -426,8 +447,8 @@ textarea:disabled,
 .inbox-detailed-dashboard {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-3) var(--space-3);
+  gap: var(--popup-gap);
+  padding: var(--popup-gap) var(--popup-gutter) var(--popup-gutter);
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -445,19 +466,19 @@ textarea:disabled,
 .efficiency-tip-card,
 .alias-setup-card,
 .inbox-section {
-  background: var(--gf-card);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--gf-glass-border);
-  border-radius: var(--radius-md);
-  box-shadow:
-    var(--shadow-card),
-    inset 0 1px 0 var(--gf-hi);
+  /* PERF: popup sits on an opaque bg — blur(16px) here blurred nothing but
+     forced a full-layer repaint on every animation frame. Solid surface +
+     hairline border is visually identical and 60fps. */
+  background: var(--gf-surface);
+  border: 1px solid var(--gf-line);
+  border-radius: var(--gf-panel-radius);
+  box-shadow: var(--shadow-card);
   position: relative;
+  /* PERF: never transition box-shadow (paint). Border + transform only. */
   transition:
-    border-color var(--gf-dur) var(--gf-ease),
-    box-shadow var(--gf-dur) var(--gf-ease),
-    transform var(--gf-dur) var(--gf-ease);
+    border-color var(--gf-dur-fast) var(--gf-ease),
+    transform var(--gf-dur-fast) var(--gf-ease);
+  contain: layout style;
 }
 
 .memphis-card {
@@ -466,7 +487,8 @@ textarea:disabled,
 .identity-card {
   padding: 0;
   overflow: hidden;
-  animation: gf-fade-up var(--gf-dur-slow) var(--gf-ease) both;
+  /* PERF: container (motion.div) already fades in — a second CSS animation
+     on the card doubled the motion and read as stutter. */
 }
 .identity-card:hover {
   border-color: var(--gf-line-2);
@@ -490,7 +512,7 @@ textarea:disabled,
   padding: 3px;
   background: var(--gf-sunken);
   border: 1px solid var(--gf-line);
-  border-radius: var(--radius-md);
+  border-radius: var(--gf-control-radius);
   position: relative;
   flex-shrink: 0;
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
@@ -505,7 +527,7 @@ textarea:disabled,
   justify-content: center;
   gap: var(--space-1);
   padding: var(--space-1) 0;
-  min-height: 28px;
+  min-height: 30px;
   border: none;
   background: transparent;
   border-radius: var(--radius-xs);
@@ -535,17 +557,19 @@ textarea:disabled,
   background: var(--gf-surface);
   border: 1px solid var(--gf-line-2);
   border-radius: var(--radius-xs);
-  box-shadow: var(--gf-shadow-xs);
+  /* PERF: no shadow (paint) on a per-frame sliding pill. Transform is driven
+     by a 180ms CSS transition (see Hub.tsx) — stays on the compositor. */
   will-change: transform;
+  transform: translateZ(0);
 }
 
 /* ── 7. IDENTITY & ACTIONS ─────────────────────────────────────────────── */
 .identity-row {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-3);
-  min-height: 52px;
+  gap: 10px;
+  padding: 10px 12px;
+  min-height: 56px;
   position: relative;
   transition: background var(--gf-dur-fast) var(--gf-ease);
 }
@@ -688,8 +712,26 @@ textarea:disabled,
 .identity-actions {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 2px;
   flex: none;
+  padding: 2px;
+  background: var(--gf-sunken);
+  border: 1px solid var(--gf-line);
+  border-radius: var(--gf-control-radius);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.12);
+}
+.identity-actions .action-icon {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  box-shadow: none;
+}
+.identity-actions .action-icon:hover {
+  background: var(--gf-surface-2);
+  border-color: transparent;
+  box-shadow: inset 0 1px 0 var(--gf-hi);
 }
 .identity-actions-row {
   display: flex;
@@ -794,6 +836,12 @@ textarea:disabled,
   padding: var(--space-3);
   flex: 1 1 auto;
   min-height: 0;
+}
+
+.inbox-list > .hub-empty-state {
+  flex: 1 1 auto;
+  min-height: 72px;
+  align-self: stretch;
 }
 .inbox-header-row,
 .inbox-header-default {
@@ -900,13 +948,13 @@ textarea:disabled,
   background: var(--gf-surface-2);
   border: 1px solid var(--gf-line);
   border-radius: var(--radius-sm);
-  box-shadow: var(--gf-shadow-xs);
   cursor: pointer;
   position: relative;
-  transition:
-    background var(--gf-dur-fast) var(--gf-ease),
-    border-color var(--gf-dur-fast) var(--gf-ease);
-  animation: gf-fade-up var(--gf-dur) var(--gf-ease) both;
+  /* PERF: no per-row entrance animation — 20 rows × simultaneous tweens is
+     the #1 inbox jank source. Container fades once; rows are instant.
+     No box-shadow (paint) — border-color swap only. */
+  transition: border-color var(--gf-dur-fast) var(--gf-ease);
+  contain: layout style;
 }
 .inbox-item:hover,
 .inbox-item-default:hover {
@@ -1246,7 +1294,7 @@ textarea:disabled,
   overflow-y: auto;
   overflow-x: hidden;
   padding: var(--space-2) var(--space-3) var(--space-3);
-  animation: gf-fade-up var(--gf-dur) var(--gf-ease) both;
+  /* PERF: parent motion.div already transitions — no double animation. */
 }
 .generator-flow,
 .email-generator-flow {
@@ -1373,19 +1421,15 @@ textarea:disabled,
 }
 .strength-bar-fill[data-level='weak'] {
   --strength-color: var(--gf-coral);
-  --strength-color-end: #ff8a8a;
 }
 .strength-bar-fill[data-level='fair'] {
   --strength-color: var(--gf-amber);
-  --strength-color-end: #ffd07a;
 }
 .strength-bar-fill[data-level='good'] {
   --strength-color: var(--gf-primary);
-  --strength-color-end: #9aa0ff;
 }
 .strength-bar-fill[data-level='strong'] {
   --strength-color: var(--gf-mint);
-  --strength-color-end: #74efd6;
 }
 
 .slider-container {
@@ -1550,31 +1594,33 @@ textarea:disabled,
   border-radius: var(--radius-sm);
   background: var(--gf-sunken);
   border: 1px solid var(--gf-line-2);
-  box-shadow: inset 0 1px 0 var(--gf-hi);
   font-family: var(--gf-font-mono);
   font-weight: 600;
   font-size: 20px;
   color: var(--gf-ink);
   flex-shrink: 0;
-  animation: gf-flip-in 350ms var(--gf-ease-back) both;
+  /* PERF: snappy 140ms pop, 20ms cascade — total 240ms vs old 550ms.
+     Compositor-only (no rotateX/backface repaint). */
+  animation: gf-flip-in 140ms var(--gf-ease) both;
+  will-change: opacity, transform;
 }
 .otp-digit:nth-child(1) {
   animation-delay: 0ms;
 }
 .otp-digit:nth-child(2) {
-  animation-delay: 40ms;
+  animation-delay: 20ms;
 }
 .otp-digit:nth-child(3) {
-  animation-delay: 80ms;
+  animation-delay: 40ms;
 }
 .otp-digit:nth-child(4) {
-  animation-delay: 120ms;
+  animation-delay: 60ms;
 }
 .otp-digit:nth-child(5) {
-  animation-delay: 160ms;
+  animation-delay: 80ms;
 }
 .otp-digit:nth-child(6) {
-  animation-delay: 200ms;
+  animation-delay: 100ms;
 }
 
 .otp-timer-container {
@@ -1768,28 +1814,11 @@ textarea:disabled,
   overflow-y: auto;
   overflow-x: hidden;
   padding: var(--space-2) var(--space-3) var(--space-3);
-  mask-image: linear-gradient(
-    180deg,
-    transparent 0,
-    #000 12px,
-    #000 calc(100% - 12px),
-    transparent 100%
-  );
-  -webkit-mask-image: linear-gradient(
-    180deg,
-    transparent 0,
-    #000 12px,
-    #000 calc(100% - 12px),
-    transparent 100%
-  );
-}
-
-/* The 12px edge fade clips focus rings of edge controls (domain input,
-   copy button) — keyboard users lose visible focus. Lift the mask while
-   focus is inside so the ring always paints. */
-.alias-tab-content-area:focus-within {
-  mask-image: none;
-  -webkit-mask-image: none;
+  /* PERF: removed 12px edge-fade mask — mask-image must be recomposited on
+     every scroll frame (scroll jank) and it clipped focus rings. Plain
+     padding scrolls at 60fps. */
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .alias-gen-card,
@@ -2030,7 +2059,7 @@ textarea:disabled,
 }
 .alias-result-card--celebrate {
   border-color: rgba(var(--gf-mint-rgb), 0.4);
-  animation: gf-celebrate-pulse 1.5s var(--gf-ease) 2;
+  animation: gf-celebrate-pulse 600ms var(--gf-ease) 1;
 }
 .alias-result-top {
   display: flex;
@@ -2071,7 +2100,7 @@ textarea:disabled,
 }
 .alias-copy-btn--copied {
   background: var(--gf-grad-mint);
-  animation: gf-celebrate 700ms var(--gf-ease);
+  animation: gf-celebrate 280ms var(--gf-ease);
 }
 .alias-result-meta {
   display: flex;
@@ -2123,13 +2152,15 @@ textarea:disabled,
   border: 1px solid var(--gf-line);
   color: var(--gf-ink-soft);
   cursor: pointer;
-  transition:
-    transform var(--gf-dur-slow) var(--gf-ease),
-    color var(--gf-dur) var(--gf-ease);
+  /* PERF: hover-rotate felt laggy + disorienting. Hover is instant color
+     only; rotation happens on click via --loading spin. */
+  transition: color var(--gf-dur-fast) var(--gf-ease);
 }
 .alias-inbox-refresh:hover {
-  transform: rotate(180deg);
   color: var(--gf-ink);
+}
+.alias-inbox-refresh:active {
+  transform: scale(0.92);
 }
 .alias-inbox-refresh--loading {
   animation: gf-spin 1s linear infinite;
@@ -2155,10 +2186,9 @@ textarea:disabled,
   border: 1px solid var(--gf-line);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  animation: gf-fade-up 250ms var(--gf-ease) both;
-  transition:
-    background var(--gf-dur) var(--gf-ease),
-    border-color var(--gf-dur) var(--gf-ease);
+  /* PERF: same as inbox — no per-row animation, border-only hover. */
+  transition: border-color var(--gf-dur-fast) var(--gf-ease);
+  contain: layout style;
 }
 .alias-inbox-item:hover,
 .alias-history-item:hover {
@@ -2393,7 +2423,10 @@ textarea:disabled,
   border: none;
   border-radius: 3px;
   cursor: pointer;
-  transition: all var(--gf-dur-fast) var(--gf-ease);
+  transition:
+    color var(--gf-dur-fast) var(--gf-ease),
+    background-color var(--gf-dur-fast) var(--gf-ease),
+    box-shadow var(--gf-dur-fast) var(--gf-ease);
 }
 
 .alias-view-toggle-btn:hover {
@@ -2450,7 +2483,7 @@ textarea:disabled,
   background: linear-gradient(
     135deg,
     rgba(var(--gf-primary-rgb), 0.15) 0%,
-    rgba(var(--gf-accent-rgb), 0.08) 100%
+    rgba(var(--gf-violet-rgb), 0.08) 100%
   );
   border: 1px solid rgba(var(--gf-primary-rgb), 0.3);
   box-shadow: 0 2px 8px rgba(var(--gf-primary-rgb), 0.08);
@@ -2716,7 +2749,7 @@ textarea:disabled,
 
 /* Plain-text fallback reads as prose, not code: sans, roomier, no ink glare. */
 .email-viewer-text-body {
-  font-family: var(--gf-font-sans, -apple-system, 'Segoe UI', Roboto, sans-serif);
+  font-family: var(--gf-font-body);
   font-size: 12.5px;
   line-height: 1.65;
   background: #ffffff;
@@ -3643,13 +3676,6 @@ textarea:disabled,
 }
 
 /* ── Additional utility aliases used by components ─────────────────────── */
-.action-separator {
-  width: 1px;
-  height: 16px;
-  background: var(--gf-line);
-  margin: 0 var(--space-1);
-  flex-shrink: 0;
-}
 .icon-faded {
   opacity: 0.55;
 }
@@ -3767,7 +3793,11 @@ textarea:disabled,
   border: 1px solid transparent;
   border-radius: var(--radius-xs);
   cursor: pointer;
-  transition: all var(--gf-dur-fast) var(--gf-ease);
+  transition:
+    color var(--gf-dur-fast) var(--gf-ease),
+    background-color var(--gf-dur-fast) var(--gf-ease),
+    border-color var(--gf-dur-fast) var(--gf-ease),
+    box-shadow var(--gf-dur-fast) var(--gf-ease);
 }
 
 .hub-provider-pill:hover:not(.hub-provider-pill--active) {
@@ -3850,20 +3880,55 @@ textarea:disabled,
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  box-shadow: var(--shadow-sm);
-  transition: all var(--gf-dur-fast) var(--gf-ease);
+  box-shadow: var(--gf-shadow-sm);
+  transition:
+    transform var(--gf-dur-fast) var(--gf-ease),
+    box-shadow var(--gf-dur-fast) var(--gf-ease),
+    filter var(--gf-dur-fast) var(--gf-ease),
+    background-color var(--gf-dur-fast) var(--gf-ease);
   margin-top: 2px;
 }
 
 .hub-provider-connect-btn:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--gf-shadow);
   filter: brightness(1.08);
 }
 
 .hub-provider-connect-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* ============================================================================
+   60FPS SCROLL + LIST VIRTUALIZATION HINTS
+   ========================================================================== */
+.ghost-dashboard,
+.inbox-detailed-dashboard {
+  overscroll-behavior: contain;
+  /* The dashboard itself usually fits inside the popup. Reserving a stable
+     scrollbar column here creates a visible 15px right-side misalignment;
+     only the nested lists below need a stable gutter. */
+  scrollbar-gutter: auto;
+  transform: translateZ(0);
+}
+
+.hub-inbox-scroll,
+.inbox-list,
+.inbox-list-default,
+.inbox-list-scroll,
+.alias-inbox-list,
+.alias-history-list {
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  /* Offscreen rows skip paint until scrolled into view. */
+  content-visibility: auto;
+}
+
+/* Tab pill slides on the compositor via CSS (Hub.tsx sets transform). */
+.hub-email-selector-bg,
+.alias-tab-bg {
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* ============================================================================

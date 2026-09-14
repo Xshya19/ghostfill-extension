@@ -205,6 +205,9 @@ export const TOKENS = {
   dangerSoft: 'rgba(239, 68, 68, 0.14)',
   scrim: 'rgba(5, 7, 10, 0.75)',
   fontMono: "'IBM Plex Mono', 'Space Mono', 'JetBrains Mono', ui-monospace, monospace",
+  panelRadius: '14px',
+  controlRadius: '10px',
+  controlHeight: '36px',
 } as const;
 
 /**
@@ -358,6 +361,9 @@ export function generateHostTokens(): string {
     --shadow-hard: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.42), 0 16px 36px -12px rgba(0, 0, 0, 0.6);
     --gf-radius: 14px;
     --gf-radius-sm: 9px;
+    --gf-panel-radius: ${TOKENS.panelRadius};
+    --gf-control-radius: ${TOKENS.controlRadius};
+    --gf-control-h: ${TOKENS.controlHeight};
   `.trim();
 }
 

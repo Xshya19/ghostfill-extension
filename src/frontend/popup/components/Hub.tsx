@@ -1,4 +1,3 @@
-import { motion } from 'framer-motion';
 import { Mail } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -22,7 +21,6 @@ import {
 } from '../../../types';
 import { TIMING, copyToClipboard, openSafeUrl } from '../../../utils/core';
 import { safeSendMessage } from '../../../utils/messaging';
-import { itemRise, springTab, stagger } from '../../ui';
 import { useOTPExtractor, useStorageSubscription } from '../hooks';
 import { useAppStore } from '../store';
 import { GmailLogo } from './ProviderLogos';
@@ -845,16 +843,16 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
   const isRealNotConnected = preferredEmailType !== 'disposable' && !gmailConnected;
 
   return (
-    <motion.div className="ghost-dashboard" variants={stagger} initial="initial" animate="animate">
+    <div className="ghost-dashboard">
       {/* ───────────────────────────────────────────────────────────
                  📊 EMAIL TYPE SELECTOR (Temp Mail vs Mail Provider)
                ─────────────────────────────────────────────────────────── */}
       <div className="hub-email-selector" role="tablist">
-        <motion.div
+        {/* PERF: CSS transform slide (180ms expo-out, compositor-only).
+            Old framer-motion spring overshot + ran on JS thread. */}
+        <div
           className="hub-email-selector-bg"
-          initial={false}
-          animate={{ x: preferredEmailType === 'disposable' ? '0%' : '100%' }}
-          transition={springTab}
+          aria-hidden
           style={{
             position: 'absolute',
             top: 3,
@@ -862,6 +860,8 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
             left: 3,
             width: 'calc(50% - 3px)',
             margin: 0,
+            transform:
+              preferredEmailType === 'disposable' ? 'translateX(0%)' : 'translateX(100%)',
           }}
         />
         <button
@@ -891,7 +891,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       {/* ═══════════════════════════════════════════════════════════
                  🎴 IDENTITY CARD - Combined Email & Password
                ═══════════════════════════════════════════════════════════ */}
-      <motion.div className="memphis-card identity-card" variants={itemRise}>
+      <div className="memphis-card identity-card">
         <AccountCard
           preferredEmailType={preferredEmailType}
           gmailConnected={gmailConnected}
@@ -934,7 +934,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
             onGeneratePassword={handleGeneratePassword}
           />
         )}
-      </motion.div>
+      </div>
 
       {(preferredEmailType === 'disposable' ||
         (preferredEmailType === 'gmail' && gmailConnected)) && (
@@ -990,7 +990,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
         onClose={handleCloseViewer}
         onToast={onToast}
       />
-    </motion.div>
+    </div>
   );
 };
 
