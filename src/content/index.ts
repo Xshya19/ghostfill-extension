@@ -767,7 +767,7 @@ async function handleMessage(message: {
     }
 
     case 'SMART_AUTOFILL':
-      pageStatus.show('Filling form...', 'loading');
+      pageStatus.show('Filling form…', 'loading');
       try {
         const result = await autoFiller.smartFill();
         if (result.success && result.filledCount > 0) {

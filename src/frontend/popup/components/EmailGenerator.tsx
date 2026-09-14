@@ -282,7 +282,7 @@ const EmailGenerator: React.FC<Props> = ({
   const openActivationLink = useCallback(
     (event: React.MouseEvent, activationLink: string) => {
       event.stopPropagation();
-      onToast('Opening activation link...');
+      onToast('Opening activation link…');
       openSafeUrl(activationLink);
     },
     [onToast]
@@ -316,9 +316,9 @@ const EmailGenerator: React.FC<Props> = ({
                     >
                       <RefreshCw size={12} className={checking || syncing ? 'spin' : ''} />
                       {checking
-                        ? 'Checking...'
+                        ? 'Checking…'
                         : syncing
-                          ? 'Syncing...'
+                          ? 'Syncing…'
                           : `Updated ${formatRelativeTime(lastUpdated)}`}
                     </motion.div>
                   </AnimatePresence>
@@ -384,7 +384,7 @@ const EmailGenerator: React.FC<Props> = ({
                   ) : (
                     <>
                       <Inbox size={18} />
-                      {checking ? 'Syncing...' : 'Sync Inbox'}
+                      {checking ? 'Syncing…' : 'Sync Inbox'}
                     </>
                   )}
                 </Button>
@@ -424,21 +424,27 @@ const EmailGenerator: React.FC<Props> = ({
                     <span>Inbox</span>
                     {inbox.length > 0 && <span className="inbox-count">{inbox.length}</span>}
                   </div>
-                  {/* Refresh: Just icon with tooltip, shows Syncing... when active */}
+                  {/* Refresh: Just icon with tooltip, shows Syncing… when active */}
                   <motion.button
                     className="action-icon"
                     onClick={() => void checkInbox()}
                     disabled={checking}
                     {...interactiveSurface}
-                    title={checking ? 'Syncing...' : 'Refresh inbox'}
+                    title={checking ? 'Syncing…' : 'Refresh inbox'}
                     aria-label="Refresh inbox"
                   >
                     <RefreshCw size={16} className={checking ? 'spin' : ''} />
                   </motion.button>
                 </div>
 
+                {/* Announce meaningful inbox changes without making the full list live. */}
+                <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+                  {latestInbox.length > 0
+                    ? `${latestInbox.length} message${latestInbox.length === 1 ? '' : 's'} in inbox`
+                    : 'No messages in inbox'}
+                </div>
                 {/* Email List - Dashboard Style */}
-                <div className="inbox-list inbox-list-scroll" aria-live="polite">
+                <div className="inbox-list inbox-list-scroll">
                   {latestInbox.length > 0 ? (
                     latestInbox.map((item: Email, i: number) => {
                       // Use shared utility functions
@@ -450,23 +456,10 @@ const EmailGenerator: React.FC<Props> = ({
                         <motion.div
                           key={item.id}
                           className="inbox-item"
-                          role="button"
-                          tabIndex={0}
-                          aria-label={`Open email from ${item.from}: ${item.subject}`}
                           onClick={(e) => {
                             if ((e.target as HTMLElement).closest('button')) {
                               return;
                             }
-                            void openEmailInViewer(item);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key !== 'Enter' && e.key !== ' ') {
-                              return;
-                            }
-                            if ((e.target as HTMLElement).closest('button')) {
-                              return;
-                            }
-                            e.preventDefault();
                             void openEmailInViewer(item);
                           }}
                           initial={{ opacity: 0, y: 16 }}
@@ -519,6 +512,14 @@ const EmailGenerator: React.FC<Props> = ({
                               )}
                             </div>
                           </div>
+                          <button
+                            type="button"
+                            className="inbox-item-open-button"
+                            aria-label={`Open email from ${item.from}: ${item.subject}`}
+                            onClick={() => void openEmailInViewer(item)}
+                          >
+                            <ChevronRight size={14} className="inbox-item-open-chevron" aria-hidden="true" />
+                          </button>
                         </motion.div>
                       );
                     })

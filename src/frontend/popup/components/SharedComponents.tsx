@@ -124,7 +124,7 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
           >
             {gmailSigningIn ? (
               <span>
-                <RefreshCw size={14} className="spin" /> Connecting...
+                <RefreshCw size={14} className="spin" /> Connecting…
               </span>
             ) : (
               <span>Connect Gmail</span>
@@ -185,20 +185,14 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
             const domain = hasAt ? rawEmail.slice(atIndex) : '';
 
             return (
-              <span
+              <button
+                type="button"
                 className={`identity-value hub-val hub-val-email ${
                   !isReal && !emailAccount ? 'shimmer' : ''
                 }`}
                 title={`Click to copy: ${rawEmail}`}
                 onClick={onCopyEmail}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    onCopyEmail();
-                  }
-                }}
+                aria-label={`Copy email address ${rawEmail}`}
               >
                 {hasAt ? (
                   <>
@@ -208,7 +202,7 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
                 ) : (
                   rawEmail
                 )}
-              </span>
+              </button>
             );
           })()}
           {isReal &&
@@ -405,7 +399,7 @@ const InboxTab: React.FC<InboxTabProps> = ({
             }}
           >
             {signingIn ? <RefreshCw size={13} className="spin" /> : <LogIn size={13} />}
-            <span>{signingIn ? 'Connecting...' : 'Use Google sign-in'}</span>
+            <span>{signingIn ? 'Connecting…' : 'Use Google sign-in'}</span>
           </button>
         </div>
       )}
@@ -424,7 +418,7 @@ const InboxTab: React.FC<InboxTabProps> = ({
       {showLoading && (
         <div className="shimmer hub-empty-state" style={{ marginTop: 8 }}>
           <RefreshCw size={16} strokeWidth={1.5} className="spin" color="var(--gf-primary)" />
-          <span>Syncing Gmail...</span>
+          <span>Syncing Gmail…</span>
         </div>
       )}
 
@@ -1498,6 +1492,7 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
                       className={`alias-view-toggle-btn ${viewMode === 'html' ? 'alias-view-toggle-btn--active' : ''}`}
                       onClick={() => setViewMode('html')}
                       title="View rich HTML email"
+                      aria-pressed={viewMode === 'html'}
                     >
                       <span>HTML</span>
                     </button>
@@ -1506,6 +1501,7 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
                       className={`alias-view-toggle-btn ${viewMode === 'text' ? 'alias-view-toggle-btn--active' : ''}`}
                       onClick={() => setViewMode('text')}
                       title="View plain text"
+                      aria-pressed={viewMode === 'text'}
                     >
                       <span>Text</span>
                     </button>
@@ -1521,7 +1517,11 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
               </div>
             </div>
 
-            {error && <div className="alias-inbox-error">{error}</div>}
+            {error && (
+              <div className="alias-inbox-error" role="alert">
+                {error}
+              </div>
+            )}
 
             <div className="alias-message-modal-body">
               {loading ? (
@@ -1755,9 +1755,9 @@ interface GhostLogoProps {
 // header path (every hover re-render ran a 700ms JS tween).
 
 /**
- * GhostFill brand mark — Spectre v2026-06-28.
+ * GhostFill brand mark — Private Workspace.
  *
- * Refined, minimal ghost glyph in the Spectre system:
+ * Refined, minimal ghost glyph for the Private Workspace system:
  *  - Iris→deep linear gradient body
  *  - Hairline ink outline (token-driven so it adapts in light/dark)
  *  - Single bright catchlight per eye for life
@@ -1804,11 +1804,11 @@ const Header: React.FC<HeaderProps> = React.memo(({ onOpenSettings, onOpenHelp }
   return (
     <header className="header">
       <div className="header-left">
-        <div className="logo-circle">
-          <GhostLogo size={36} />
+        <div className="logo-circle" aria-hidden="true">
+          <GhostLogo size={28} />
         </div>
         <div className="header-title-container">
-          <span className="header-title">GhostFill</span>
+          <h1 className="header-title">GhostFill</h1>
         </div>
       </div>
       <div className="header-actions">
@@ -1960,6 +1960,19 @@ const InboxListComponent: React.FC<InboxListProps> = ({
   onOpenEmail,
   onFetchGmailInbox,
 }) => {
+  const openDisplayedEmail = useCallback(
+    (emailItem: DisplayedEmail) => {
+      if (onOpenEmail) {
+        onOpenEmail(emailItem);
+      } else if (preferredEmailType !== 'disposable') {
+        onNavigate('aliases', { aliasTab: 'inbox' });
+      } else {
+        onNavigate('email');
+      }
+    },
+    [onOpenEmail, onNavigate, preferredEmailType]
+  );
+
   const handleEmailInteraction = useCallback(
     (e: React.MouseEvent | React.KeyboardEvent, emailItem: DisplayedEmail) => {
       const target = e.target as HTMLElement;
@@ -1974,15 +1987,9 @@ const InboxListComponent: React.FC<InboxListProps> = ({
         return;
       }
       e.preventDefault();
-      if (onOpenEmail) {
-        onOpenEmail(emailItem);
-      } else if (preferredEmailType !== 'disposable') {
-        onNavigate('aliases', { aliasTab: 'inbox' });
-      } else {
-        onNavigate('email');
-      }
+      openDisplayedEmail(emailItem);
     },
-    [onOpenEmail, onNavigate, preferredEmailType]
+    [openDisplayedEmail]
   );
 
   const canOpenInbox = preferredEmailType === 'disposable' && inboxCount > 0;
@@ -2060,15 +2067,13 @@ const InboxListComponent: React.FC<InboxListProps> = ({
               // PERF: rows mount instantly — no stagger delay, no JS spring.
               // Hover is pure CSS (:hover border + chevron).
               return (
+                /* Pointer click remains a convenience; the explicit open
+                   button below provides the keyboard action. */
+                /* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */
                 <div
                   key={emailItem.id}
                   className="inbox-item"
-                  role="button"
-                  tabIndex={0}
                   onClick={(e) => handleEmailInteraction(e, emailItem)}
-                  onKeyDown={(e) => handleEmailInteraction(e, emailItem)}
-                  aria-label={`Open email from ${emailItem.from}: ${emailItem.subject}`}
-                  aria-busy={openingEmailId === emailItem.id}
                 >
                   <EmailAvatar from={emailItem.from} className="inbox-item-avatar" />
                   <div className="inbox-item-content">
@@ -2118,7 +2123,15 @@ const InboxListComponent: React.FC<InboxListProps> = ({
                       </div>
                     )}
                   </div>
-                  <ChevronRight size={14} className="inbox-item-open-chevron" aria-hidden="true" />
+                  <button
+                    type="button"
+                    className="inbox-item-open-button"
+                    aria-label={`Open email from ${emailItem.from}: ${emailItem.subject}`}
+                    aria-busy={openingEmailId === emailItem.id}
+                    onClick={() => openDisplayedEmail(emailItem)}
+                  >
+                    <ChevronRight size={14} className="inbox-item-open-chevron" aria-hidden="true" />
+                  </button>
                 </div>
               );
             })}
@@ -2291,7 +2304,11 @@ const OTPTimerBar: React.FC<{ lastOTP: LastOTP | null }> = ({ lastOTP }) => {
           }}
         />
       </div>
-      <div className="otp-timer-info" aria-live="polite">
+      <div
+        className="otp-timer-info"
+        role="timer"
+        aria-label={`Verification code expiry ${timeText}`}
+      >
         <span className="otp-timer-label">
           {lastOTP?.expiresAt ? 'Expiring in ' : 'Est. expiry in '}
           <span className={timePercentage < 20 ? 'otp-timer-expired' : 'otp-timer-active'}>
@@ -2394,17 +2411,10 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
           <div className="otp-focus-area">
             {/* PERF: plain div — CSS .otp-digit animation (140ms pop, 20ms
                 cascade) replaces 6 parallel JS springs. Hover is CSS. */}
-            <div
+            <button
+              type="button"
               className="otp-box"
               onClick={handleCopyOTP}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  handleCopyOTP();
-                }
-              }}
-              role="button"
-              tabIndex={0}
               aria-label={`Copy OTP code ${lastOTP.code.split('').join(' ')}`}
             >
               {lastOTP.code.split('').map((char: string, i: number) => (
@@ -2412,7 +2422,7 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
                   {char}
                 </span>
               ))}
-            </div>
+            </button>
 
             <OTPTimerBar lastOTP={lastOTP} />
 
@@ -2423,7 +2433,7 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
                   <div
                     className="otp-confidence-fill"
                     style={{
-                      '--confidence-width': `${Math.round(lastOTP.confidence * 100)}%`,
+                      '--confidence-scale': lastOTP.confidence,
                       '--confidence-color':
                         lastOTP.confidence >= 0.9
                           ? 'var(--gf-mint)'
@@ -2711,17 +2721,10 @@ const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({ onToast, currentP
           </button>
         </div>
         {/* Terminal-style Password Display (plain div — CSS :active press) */}
-        <div
+        <button
+          type="button"
           className={`password-terminal ${loading ? 'shimmer' : ''}`}
           onClick={handleCopyPassword}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              handleCopyPassword();
-            }
-          }}
         >
           <div
             className={`password-display-text ${showPassword ? 'password-display-visible' : 'password-display-hidden'}`}
@@ -2732,7 +2735,7 @@ const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({ onToast, currentP
                 : '•'.repeat(Math.min(password.password.length, 16))
               : '•'.repeat(Math.min(options.length, 16))}
           </div>
-        </div>
+        </button>
 
         {password && (
           <div className="strength-meter-container" aria-live="polite">
@@ -2771,7 +2774,7 @@ const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({ onToast, currentP
             disabled={loading}
           >
             {loading ? <span className="spinner-small" /> : <Zap size={18} fill="white" />}
-            {loading ? 'Securing...' : 'Regenerate'}
+            {loading ? 'Securing…' : 'Regenerate'}
           </Button>
           <Button onClick={handleCopyPassword}>
             {copied ? <Check size={18} color="var(--gf-success)" /> : <Copy size={18} />}

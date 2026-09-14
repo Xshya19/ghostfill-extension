@@ -1,6 +1,6 @@
 /* ══════════════════════════════════════════════════════════════
-   GhostFill — Spectre — FAB Shadow DOM
-   Machined surfaces · One luminous accent · Hairline geometry · Dark-first
+   GhostFill — Private Workspace — FAB Shadow DOM
+   Quiet slate surface · One clear signal · Browser-native geometry · Dark-first
    ══════════════════════════════════════════════════════════════ */
 
 :host {
@@ -8,62 +8,62 @@
   font-family: "Space Grotesk", "Inter", sans-serif;
   isolation: isolate;
 
-  /* Spectre palette mapped to FAB */
+  /* The shadow root owns the same Private Workspace palette as the extension. */
 
   /* Shadow DOM boundary: page styles do not load globals.css, so the FAB
-     carries a local Spectre palette instead of inheriting arbitrary site UI. */
-  --brand: var(--gf-primary, #818cf8);
-  --brand-rgb: var(--gf-primary-rgb, 129, 140, 248);
+     carries a local palette instead of inheriting arbitrary site UI. */
+  --brand: var(--gf-primary, #88a8ff);
+  --brand-rgb: var(--gf-primary-rgb, 136, 168, 255);
 
-  --success: var(--gf-mint, #34d399);
-  --success-rgb: var(--gf-mint-rgb, 52, 211, 153);
+  --success: var(--gf-mint, #5ac89e);
+  --success-rgb: var(--gf-mint-rgb, 90, 200, 158);
   --success-glow: rgba(var(--success-rgb), 0.25);
-  --error: var(--gf-coral, #f87171);
-  --error-rgb: var(--gf-coral-rgb, 248, 113, 113);
+  --error: var(--gf-coral, #f18484);
+  --error-rgb: var(--gf-coral-rgb, 241, 132, 132);
   --error-glow: rgba(var(--error-rgb), 0.25);
 
-  --gf-surface: #141820;
-  --gf-surface-2: #1b212c;
-  --gf-sunken: #080a0e;
-  --gf-card: #141820;
-  --gf-card-elevated: #1e2432;
-  --gf-primary: #818cf8;
-  --gf-primary-deep: #6366f1;
-  --gf-primary-rgb: 129, 140, 248;
-  --gf-cyan: #82a8ff;
-  --gf-cyan-rgb: 130, 168, 255;
-  --gf-mint: #34d399;
-  --gf-mint-rgb: 52, 211, 153;
-  --gf-amber: #fbbf24;
-  --gf-amber-rgb: 251, 191, 36;
-  --gf-coral: #f87171;
-  --gf-coral-rgb: 248, 113, 113;
-  --gf-violet: #a78bfa;
-  --gf-violet-rgb: 167, 139, 250;
-  --gf-cream: #f4f6fa;
+  --gf-surface: #171e29;
+  --gf-surface-2: #1d2632;
+  --gf-sunken: #111721;
+  --gf-card: #171e29;
+  --gf-card-elevated: #202a37;
+  --gf-primary: #88a8ff;
+  --gf-primary-deep: #5e85e6;
+  --gf-primary-rgb: 136, 168, 255;
+  --gf-cyan: #88a8ff;
+  --gf-cyan-rgb: 136, 168, 255;
+  --gf-mint: #5ac89e;
+  --gf-mint-rgb: 90, 200, 158;
+  --gf-amber: #f2b64d;
+  --gf-amber-rgb: 242, 182, 77;
+  --gf-coral: #f18484;
+  --gf-coral-rgb: 241, 132, 132;
+  --gf-violet: #afb6ff;
+  --gf-violet-rgb: 175, 182, 255;
+  --gf-cream: #f3f6fa;
   --gf-font-mono: 'IBM Plex Mono', 'Space Mono', ui-monospace, monospace;
   --brand-font-mono: var(--gf-font-mono);
   --gf-on-fill-light: #ffffff;
-  --gf-on-fill-dark: #080a0e;
-  --gf-grad-cobalt: linear-gradient(180deg, #6366f1 0%, #4f46e5 100%);
-  --gf-grad-mint: linear-gradient(180deg, #34d399 0%, #10b981 100%);
-  --gf-grad-coral: linear-gradient(180deg, #f87171 0%, #ef4444 100%);
-  --gf-panel-radius: 14px;
-  --gf-control-radius: 10px;
-  --gf-primary-soft: rgba(99, 102, 241, 0.15);
-  --gf-line: rgba(255, 255, 255, 0.08);
-  --gf-line-2: rgba(255, 255, 255, 0.14);
-  --gf-hi: rgba(255, 255, 255, 0.08);
-  --gf-ink: #f4f6fa;
-  --gf-text-muted: #949cb0;
-  --gf-text-dim: #697386;
+  --gf-on-fill-dark: #10151e;
+  --gf-grad-cobalt: #5e85e6;
+  --gf-grad-mint: #5ac89e;
+  --gf-grad-coral: #d75b5b;
+  --gf-panel-radius: 12px;
+  --gf-control-radius: 8px;
+  --gf-primary-soft: rgba(136, 168, 255, 0.16);
+  --gf-line: rgba(243, 246, 250, 0.10);
+  --gf-line-2: rgba(243, 246, 250, 0.18);
+  --gf-hi: rgba(255, 255, 255, 0.06);
+  --gf-ink: #f3f6fa;
+  --gf-text-muted: #aab5c4;
+  --gf-text-dim: #7e8b9c;
   --text: var(--gf-ink);
   --text-secondary: var(--gf-text-muted);
   --text-tertiary: var(--gf-text-dim);
 
-  /* Spectre soft layered shadows + machined top highlight */
-  --shadow-hover: 0 10px 26px -8px rgba(0, 0, 0, 0.6), 0 1px 0 var(--gf-hi) inset;
-  --panel-shadow: 0 18px 48px -16px rgba(0, 0, 0, 0.66), 0 1px 0 var(--gf-hi) inset;
+  /* Elevation is reserved for the floating surface and its menu. */
+  --shadow-hover: 0 8px 18px rgba(0, 0, 0, 0.34);
+  --panel-shadow: 0 14px 30px rgba(0, 0, 0, 0.38);
 
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -75,8 +75,7 @@
 /* ── .gf-pulse class — used by OTP-waiting indicator ring (toggle via class) ── */
 .gf-pulse { animation: gfBadgePulse 1.8s ease-in-out infinite; }
 
-/* Mode-aware spectral beacon. The same machined shell stays recognizable on
-   every page; only the signal colour and glyph change with field intent. */
+/* Mode-aware signal. The shell stays quiet; only the icon signal changes. */
 .gf-fab {
   --fab-accent: var(--gf-primary);
   --fab-accent-rgb: var(--gf-primary-rgb);
@@ -106,12 +105,12 @@
   50% { box-shadow: 0 0 0 4px rgba(var(--fab-accent-rgb), 0.18), 0 14px 30px -7px rgba(var(--fab-accent-rgb), 0.78), 0 1px 0 rgba(255,255,255,.14) inset; }
 }
 
-/* ── FAB Button — Spectral prism ── */
+/* ── FAB Button — private workspace signal ── */
 .gf-fab {
   width: 44px; height: 44px; border-radius: var(--gf-panel-radius);
   background: var(--fab-core);
-  border: 1px solid rgba(var(--fab-accent-rgb), 0.58);
-  box-shadow: 0 0 0 1px rgba(255,255,255,.05) inset, 0 7px 18px -6px rgba(var(--fab-accent-rgb), .56), 0 10px 22px -12px rgba(0,0,0,.9);
+  border: 1px solid var(--gf-line-2);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.34);
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   outline: none; position: relative; overflow: visible;
@@ -123,18 +122,33 @@
   position: absolute;
   inset: 3px;
   border-radius: calc(var(--gf-panel-radius) - 3px);
-  background: radial-gradient(circle at 28% 20%, rgba(var(--fab-accent-rgb), .17), transparent 48%);
-  border: 1px solid rgba(var(--fab-accent-rgb), .16);
+  background: var(--fab-core);
+  border: 1px solid rgba(var(--fab-accent-rgb), .2);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
   pointer-events: none;
 }
 .gf-fab::after {
-  display: none;
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: calc(var(--gf-panel-radius) + 4px);
+  border: 1px solid rgba(var(--fab-accent-rgb), .22);
+  opacity: .65;
+  transform: scale(.98);
+  pointer-events: none;
+  transition: opacity .18s var(--ease-smooth), transform .18s var(--ease-spring);
 }
 
 .gf-fab:hover {
   transform: translateY(-1px) scale(1.02);
   box-shadow: 0 0 0 1px rgba(var(--fab-accent-rgb), .32), 0 10px 24px -7px rgba(var(--fab-accent-rgb), .72), 0 14px 28px -14px rgba(0,0,0,.92);
   filter: brightness(1.06);
+}
+
+.gf-fab:hover::after,
+.gf-fab:focus-visible::after {
+  opacity: .95;
+  transform: scale(1.04);
 }
 
 .gf-fab:active {
@@ -156,13 +170,25 @@
 .gf-fab-symbol { overflow: visible; }
 .gf-fab-symbol__halo { transform-origin: center; transition: opacity .18s ease, transform .18s var(--ease-spring); }
 
-/* ── Quiet dot presence — 14px dot for low confidence, expands on hover ── */
+/* ── Quiet presence — keep a full hit area while showing a small dot ── */
 .gf-fab.gf-quiet {
-  width: 14px;
-  height: 14px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  transition: background 0.18s var(--ease-smooth), border-color 0.18s var(--ease-smooth), border-radius 0.18s var(--ease-smooth), transform 0.18s var(--ease-spring), box-shadow 0.18s var(--ease-spring);
+}
+.gf-fab.gf-quiet::before {
+  inset: 15px;
+  border-radius: 50%;
+  background: var(--fab-core);
+  border-color: rgba(var(--fab-accent-rgb), .58);
   box-shadow: 0 2px 9px -2px rgba(var(--fab-accent-rgb), 0.72), 0 1px 0 rgba(255, 255, 255, 0.2) inset;
-  transition: width 0.22s var(--ease-spring), height 0.22s var(--ease-spring), border-radius 0.22s var(--ease-spring), transform 0.18s var(--ease-spring), box-shadow 0.18s var(--ease-spring);
+}
+.gf-fab.gf-quiet::after {
+  display: none;
 }
 .gf-fab.gf-quiet svg,
 .gf-fab.gf-quiet img {
@@ -173,18 +199,32 @@
 .gf-fab.gf-quiet .gf-badge {
   display: none;
 }
-.gf-fab.gf-quiet:hover {
+.gf-fab.gf-quiet:hover,
+.gf-fab.gf-quiet:focus-visible {
   width: 44px;
   height: 44px;
   border-radius: var(--gf-panel-radius);
+  background: var(--fab-core);
+  border-color: rgba(var(--fab-accent-rgb), 0.58);
   box-shadow: 0 10px 24px -7px rgba(var(--fab-accent-rgb), 0.72), 0 1px 0 rgba(255, 255, 255, 0.08) inset;
 }
+.gf-fab.gf-quiet:hover::before,
+.gf-fab.gf-quiet:focus-visible::before {
+  inset: 3px;
+  border-radius: calc(var(--gf-panel-radius) - 3px);
+  box-shadow: none;
+}
 .gf-fab.gf-quiet:hover svg,
-.gf-fab.gf-quiet:hover img {
+.gf-fab.gf-quiet:hover img,
+.gf-fab.gf-quiet:focus-visible svg,
+.gf-fab.gf-quiet:focus-visible img {
   opacity: 1;
   transform: scale(1);
 }
 .gf-fab.gf-quiet:hover .gf-badge {
+  display: flex;
+}
+.gf-fab.gf-quiet:focus-visible .gf-badge {
   display: flex;
 }
 .gf-fab:hover svg, .gf-fab:hover img {
@@ -196,7 +236,7 @@
 /* Loading */
 .gf-fab.gf-loading {
   cursor: wait;
-  background: var(--gf-grad-cobalt);
+  background: var(--gf-primary-deep);
   border-color: var(--gf-line-2);
   animation: gfFabPulse 1.4s ease-in-out infinite;
 }
@@ -223,11 +263,11 @@
 .gf-fab.gf-success {
   animation: none;
   border-color: var(--gf-line-2);
-  background: var(--gf-grad-mint);
+  background: var(--gf-mint);
   box-shadow: 0 8px 22px -8px rgba(63, 224, 197, 0.7), 0 1px 0 rgba(255, 255, 255, 0.3) inset;
 }
 .gf-success-check {
-  animation: gfCheckPop 0.4s var(--ease-spring);
+  animation: gfCheckPop 0.4s var(--ease-out-expo);
   position: relative; z-index: 3;
 }
 /* SVG is now stroked — remove fill overrides so fill="none" is respected */
@@ -239,8 +279,8 @@
   stroke: var(--gf-on-fill-light);
 }
 @keyframes gfCheckPop {
-  0%   { transform: scale(0) rotate(-60deg); opacity: 0; }
-  50%  { transform: scale(1.2) rotate(5deg); opacity: 1; }
+  0%   { transform: scale(.92) rotate(-20deg); opacity: 0; }
+  55%  { transform: scale(1.04) rotate(3deg); opacity: 1; }
   100% { transform: scale(1) rotate(0); }
 }
 
@@ -248,7 +288,7 @@
 .gf-fab.gf-error {
   animation: gfShake 0.4s ease;
   border-color: var(--gf-line-2);
-  background: var(--gf-grad-coral);
+  background: var(--gf-coral);
   box-shadow: 0 8px 22px -8px rgba(255, 107, 107, 0.7), 0 1px 0 rgba(255, 255, 255, 0.3) inset;
 }
 @keyframes gfShake {
@@ -270,11 +310,11 @@
   display: flex; align-items: center; justify-content: center;
   border: 2px solid var(--gf-ink); z-index: 10; padding: 0 3px;
   box-shadow: 2px 2px 0 var(--gf-ink);
-  animation: gfBadgePop 0.3s var(--ease-spring);
+  animation: gfBadgePop 0.3s var(--ease-out-expo);
 }
 @keyframes gfBadgePop {
-  0%   { transform: scale(0) rotate(-20deg); opacity: 0; }
-  60%  { transform: scale(1.15) rotate(5deg); }
+  0%   { transform: scale(.92) rotate(-12deg); opacity: 0; }
+  60%  { transform: scale(1.06) rotate(3deg); }
   100% { transform: scale(1) rotate(0); opacity: 1; }
 }
 
@@ -309,8 +349,8 @@
   border-radius: 50%;
   background: var(--gf-primary);
   opacity: 0;
-  transform: scale(0);
-  transition: opacity 0.4s ease, transform 0.4s var(--ease-spring);
+  transform: scale(.92);
+  transition: opacity 0.2s ease, transform 0.2s var(--ease-spring);
   pointer-events: none;
   z-index: 10;
 }
@@ -341,7 +381,7 @@
   100% { transform: scale(2.5); opacity: 0; }
 }
 
-/* Tooltip — Spectre glass pill */
+/* Tooltip — compact private workspace surface */
 .gf-tooltip {
   position: absolute; bottom: calc(100% + 12px); left: 50%;
   transform: translateX(-50%) translateY(4px);
@@ -365,7 +405,7 @@
 }
 .gf-tooltip-visible { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-/* Menu — Spectre glass panel with hairline border + soft shadow */
+/* Menu — compact private workspace panel */
 .gf-menu {
   position: absolute; top: calc(100% + 8px); right: 0;
   width: 236px;
@@ -392,7 +432,6 @@
 .gf-menu-open {
   opacity: 1; visibility: visible;
   transform: translateY(0) scale(1);
-  animation: gfMenuSpring 0.35s var(--ease-spring);
 }
 
 @keyframes gfMenuSpring {
@@ -564,6 +603,9 @@
   /* Keep visibility transitions for menu open/close (accessibility needs it) */
   .gf-menu {
     transition: opacity 0.1s ease, visibility 0.1s ease !important;
+  }
+  .gf-fab::after {
+    display: none;
   }
   .gf-fab svg circle[animate],
   .gf-fab svg path[animate],

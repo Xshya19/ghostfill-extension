@@ -4,6 +4,7 @@ module.exports = {
     'plugin:@typescript-eslint/recommended',
     'plugin:react/recommended',
     'plugin:react-hooks/recommended',
+    'plugin:jsx-a11y/recommended',
     'plugin:security/recommended-legacy',
   ],
   parser: '@typescript-eslint/parser',
@@ -15,7 +16,7 @@ module.exports = {
     },
     project: './tsconfig.json',
   },
-  plugins: ['@typescript-eslint', 'react', 'react-hooks', 'security', 'import'],
+  plugins: ['@typescript-eslint', 'react', 'react-hooks', 'jsx-a11y', 'security', 'import'],
   env: {
     browser: true,
     es2022: true,

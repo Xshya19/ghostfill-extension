@@ -124,7 +124,7 @@ export const ProviderHealthMeter: React.FC = () => {
   if (loading) {
     return (
       <div className="provider-health-meter" aria-busy="true">
-        <h4 className="health-title">{t('providerHealthTitle')}</h4>
+        <h3 className="health-title">{t('providerHealthTitle')}</h3>
         <div className="health-grid">
           {[0, 1, 2].map((i) => (
             <div key={i} className="health-pill-card">
@@ -144,7 +144,7 @@ export const ProviderHealthMeter: React.FC = () => {
   if (error && healthData.length === 0) {
     return (
       <div className="provider-health-meter">
-        <h4 className="health-title">{t('providerHealthTitle')}</h4>
+        <h3 className="health-title">{t('providerHealthTitle')}</h3>
         <p className="health-empty" role="alert">
           Couldn&apos;t reach the service worker ({error}). Generate an email to start tracking.
         </p>
@@ -155,7 +155,7 @@ export const ProviderHealthMeter: React.FC = () => {
   if (healthData.length === 0) {
     return (
       <div className="provider-health-meter">
-        <h4 className="health-title">{t('providerHealthTitle')}</h4>
+        <h3 className="health-title">{t('providerHealthTitle')}</h3>
         <div className="health-grid">
           {['driftz', 'catchmail', 'throwawaymail', 'tempmailplus', 'mailtm', 'mailgw', 'guerrilla', 'maildrop', 'yopmail'].map((name) => (
             <div key={name} className="health-pill-card" title="No calls recorded yet">
@@ -174,7 +174,7 @@ export const ProviderHealthMeter: React.FC = () => {
 
   return (
     <div className="provider-health-meter">
-      <h4 className="health-title">{t('providerHealthTitle')}</h4>
+      <h3 className="health-title">{t('providerHealthTitle')}</h3>
       <div className="health-grid">
         {healthData
           .filter((h) =>
@@ -235,7 +235,7 @@ interface GeneralTabProps {
 
 export const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChange }) => {
   return (
-    <div role="tabpanel" id="tabpanel-general" aria-labelledby="tab-general">
+    <div>
       <SettingsSection id="appearance" title={t('appearanceSection')} icon={<Palette size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
@@ -374,7 +374,7 @@ export const PasswordTab: React.FC<PasswordTabProps> = ({
   onFieldBlur,
 }) => {
   return (
-    <div role="tabpanel" id="tabpanel-password" aria-labelledby="tab-password">
+    <div>
       <SettingsSection
         id="password-defaults"
         title={t('passwordDefaultsSection')}
@@ -544,7 +544,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
   };
 
   return (
-    <div role="tabpanel" id="tabpanel-email" aria-labelledby="tab-email">
+    <div>
       <SettingsSection
         id="email-service"
         title={t('emailServiceSection')}
@@ -552,7 +552,11 @@ export const EmailTab: React.FC<EmailTabProps> = ({
       >
         <div className="setting-item">
           <div className="setting-info">
-            <label id="preferred-email-service-label" className="fs-15-fw-600">
+            <label
+              id="preferred-email-service-label"
+              htmlFor="preferred-email-service"
+              className="fs-15-fw-600"
+            >
               Preferred email service
             </label>
             <p>Choose the default service for generating temporary emails</p>
@@ -743,10 +747,13 @@ export const EmailTab: React.FC<EmailTabProps> = ({
       >
         <div className="setting-item">
           <div className="setting-info">
-            <label id="auto-check-label">Auto-check inbox</label>
+            <label id="auto-check-label" htmlFor="auto-check-inbox">
+              Auto-check inbox
+            </label>
             <p>Automatically check for new emails in the background</p>
           </div>
           <ToggleSwitch
+            id="auto-check-inbox"
             checked={settings.autoCheckInbox}
             onChange={(checked) => onSettingChange('autoCheckInbox', checked)}
             ariaLabel="Auto-check inbox"
@@ -840,7 +847,7 @@ export const AutomationTab: React.FC<AutomationTabProps> = ({ settings, onSettin
   }, []);
 
   return (
-    <div role="tabpanel" id="tabpanel-automation" aria-labelledby="tab-automation">
+    <div>
       <SettingsSection id="auto-fill" title={t('autofillSection')} icon={<Zap size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
@@ -936,7 +943,7 @@ export const PrivacyTab: React.FC<PrivacyTabProps> = ({
   onFieldBlur,
 }) => {
   return (
-    <div role="tabpanel" id="tabpanel-privacy" aria-labelledby="tab-privacy">
+    <div>
       <SettingsSection id="history" title={t('historyDataSection')} icon={<Lock size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
@@ -1105,16 +1112,17 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
   };
 
   return (
-    <div role="tabpanel" id="tabpanel-advanced" aria-labelledby="tab-advanced">
+    <div>
       <SettingsSection id="developer" title={t('developerSection')} icon={<Terminal size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
-            <label id="debug-mode-label">
+            <label id="debug-mode-label" htmlFor="debug-mode">
               Debug mode <span className="coming-soon-label">(coming soon)</span>
             </label>
             <p>Enable verbose console logging for troubleshooting</p>
           </div>
           <ToggleSwitch
+            id="debug-mode"
             checked={settings.debugMode}
             onChange={(checked) => onSettingChange('debugMode', checked)}
             ariaLabel="Debug mode"
@@ -1127,7 +1135,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
       <SettingsSection id="backup" title={t('backupRestoreSection')} icon={<Save size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
-            <label>Export settings</label>
+            <span className="fs-15-fw-600">Export settings</span>
             <p>Download your current settings as a JSON file</p>
           </div>
           <Button size="sm" type="button" onClick={handleExport}>
@@ -1175,7 +1183,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
       >
         <div className="setting-item">
           <div className="setting-info">
-            <label>Reset settings</label>
+            <span className="fs-15-fw-600">Reset settings</span>
             <p>Restore all settings to their defaults</p>
           </div>
           <Button
@@ -1190,7 +1198,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
 
         <div className="setting-item">
           <div className="setting-info">
-            <label>Clear all data</label>
+            <span className="fs-15-fw-600">Clear all data</span>
             <p>Delete all emails, passwords, and history</p>
           </div>
           <Button
@@ -1237,7 +1245,7 @@ export const AboutTab: React.FC = () => {
     : 0;
 
   return (
-    <div role="tabpanel" id="tabpanel-about" aria-labelledby="tab-about">
+    <div>
       <SettingsSection id="extension-info" title="GhostFill" icon={<Info size={18} />}>
         <div className="about-hero">
           <div className="about-version">
@@ -1284,7 +1292,7 @@ export const AboutTab: React.FC = () => {
             <div className="storage-bar-wrapper">
               <div
                 className="storage-bar-fill"
-                style={{ width: `${Math.max(usagePercent, 2)}%` }}
+                style={{ '--storage-progress-scale': Math.max(usagePercent, 2) / 100 }}
                 role="progressbar"
                 aria-valuenow={Math.round(usagePercent)}
                 aria-valuemin={0}

@@ -2415,7 +2415,7 @@ export class OTPPageDetector {
 
     if (state === 'ANALYZING_EMAIL') {
       log.info('🔄 PollingManager is analyzing a new email...');
-      ToastFeedback.showState('Studying new email...', 'working', 4000);
+      ToastFeedback.showState('Studying new email…', 'working', 4000);
     } else if (state === 'LINK_ACTIVATION_STARTED') {
       log.info('🔗 PollingManager activated a background link');
       ToastFeedback.showState('Activation link handled in background', 'success', 5000);

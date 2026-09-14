@@ -311,7 +311,7 @@ const InboxTab: React.FC<InboxTabProps> = ({
           <span className="alias-inbox-manual-desc">Manual connection generates aliases only.</span>
           <button onClick={onSignIn} disabled={signingIn} className="alias-oauth-connect-btn">
             {signingIn ? <RefreshCw size={13} className="spin" /> : <LogIn size={13} />}
-            <span>{signingIn ? 'Connecting...' : 'Use Google sign-in'}</span>
+            <span>{signingIn ? 'Connecting…' : 'Use Google sign-in'}</span>
           </button>
         </div>
       )}
@@ -914,7 +914,7 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
                 className="alias-connect-btn"
               >
                 {signingIn ? <RefreshCw size={14} className="spin" /> : <LogIn size={14} />}
-                <span>{signingIn ? 'Connecting...' : 'Try Again'}</span>
+                <span>{signingIn ? 'Connecting…' : 'Try Again'}</span>
               </button>
               {gmailSetupRequired && (
                 <button
@@ -982,7 +982,7 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
         </button>
         <div className="alias-profile-bar-left">
           {gmailProfile.picture ? (
-            <img src={gmailProfile.picture} alt="" className="alias-profile-avatar" />
+            <img src={gmailProfile.picture} width={26} height={26} alt="" className="alias-profile-avatar" />
           ) : (
             <div className="alias-profile-avatar-placeholder">
               <User size={16} />

@@ -10,8 +10,8 @@
 :root {
   --popup-w: 375px;
   --popup-h: 400px;
-  --header-h: 52px;
-  --popup-gutter: 14px;
+  --header-h: 48px;
+  --popup-gutter: 16px;
   --popup-gap: var(--gf-panel-gap);
 }
 
@@ -135,6 +135,7 @@ body,
 html,
 body {
   overscroll-behavior: none;
+  color-scheme: light dark;
 }
 
 body {
@@ -301,26 +302,21 @@ textarea:disabled,
 }
 
 .logo-circle {
-  width: 36px;
-  height: 36px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   background: transparent;
-  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.22));
-  transition:
-    transform var(--gf-dur-fast) var(--gf-ease),
-    filter var(--gf-dur-fast) var(--gf-ease);
 }
 .logo-circle:hover {
-  transform: scale(1.08);
-  filter: drop-shadow(0 3px 10px rgba(var(--gf-primary-rgb), 0.45));
+  transform: none;
 }
 .logo-circle svg,
 .ghost-logo-svg {
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
 }
 
 .header-title-container {
@@ -329,11 +325,12 @@ textarea:disabled,
   min-width: 0;
 }
 .header-title {
+  margin: 0;
   font-family: var(--gf-font-display);
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
   color: var(--gf-ink);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -342,17 +339,14 @@ textarea:disabled,
 }
 
 .detail-view-title-text {
-  background: linear-gradient(135deg, var(--gf-ink) 0%, rgba(var(--gf-ink-rgb), 0.75) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--gf-ink);
   display: block;
 }
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   flex-shrink: 0;
 }
 
@@ -360,25 +354,22 @@ textarea:disabled,
    read as toolbar controls, with a primary-tinted hover and a visible
    keyboard focus ring. Scoped to the header — .icon-button is shared. */
 .header-actions .icon-button {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  background: var(--gf-surface-2);
-  border: 1px solid var(--gf-line);
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
   color: var(--gf-ink-soft);
-  box-shadow: inset 0 1px 0 var(--gf-hi);
+  box-shadow: none;
 }
 .header-actions .icon-button:hover {
   color: var(--gf-primary);
-  background: rgba(var(--gf-primary-rgb), 0.1);
-  border-color: rgba(var(--gf-primary-rgb), 0.3);
-  transform: translateY(-1px);
-  box-shadow:
-    0 3px 8px -2px rgba(var(--gf-primary-rgb), 0.35),
-    inset 0 1px 0 var(--gf-hi);
+  background: var(--gf-primary-soft);
+  border-color: transparent;
+  transform: none;
 }
 .header-actions .icon-button:active {
-  transform: translateY(0) scale(0.94);
+  transform: scale(0.96);
 }
 .header-actions .icon-button:focus-visible {
   outline: var(--gf-ring-width, 2px) solid var(--gf-primary);
@@ -631,11 +622,11 @@ textarea:disabled,
 
 .identity-label {
   font-family: var(--gf-font-display);
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--gf-ink-dim);
+  color: var(--gf-ink-soft);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -658,6 +649,11 @@ textarea:disabled,
 }
 
 .identity-value.hub-val-email {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
   display: inline-flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -693,7 +689,7 @@ textarea:disabled,
 }
 
 .hub-email-domain {
-  color: var(--gf-primary);
+  color: var(--gf-primary-text);
   font-weight: 600;
   white-space: nowrap;
   flex-shrink: 0;
@@ -869,7 +865,7 @@ textarea:disabled,
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--gf-ink-dim);
+  color: var(--gf-ink-soft);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -889,7 +885,7 @@ textarea:disabled,
   font-family: var(--gf-font-mono);
   font-size: 9.5px;
   font-weight: 700;
-  color: var(--gf-primary);
+  color: var(--gf-primary-text);
   flex-shrink: 0;
 }
 
@@ -1064,6 +1060,29 @@ textarea:disabled,
   transition:
     opacity var(--gf-dur-fast) var(--gf-ease),
     color var(--gf-dur-fast) var(--gf-ease);
+}
+.inbox-item-open-button {
+  display: grid;
+  place-items: center;
+  align-self: center;
+  flex: none;
+  min-width: 32px;
+  min-height: 32px;
+  margin: -4px -6px -4px 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.inbox-item-open-button:hover,
+.inbox-item-open-button:focus-visible {
+  background: var(--gf-primary-soft);
+}
+.inbox-item-open-button:focus-visible {
+  outline: var(--gf-ring-width) solid var(--gf-primary);
+  outline-offset: 1px;
 }
 .inbox-item:hover .inbox-item-open-chevron,
 .inbox-item-default:hover .inbox-item-open-chevron {
@@ -1322,6 +1341,10 @@ textarea:disabled,
 }
 
 .password-terminal {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: center;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1568,6 +1591,10 @@ textarea:disabled,
 
 /* ── 11. OTP DISPLAY ───────────────────────────────────────────────────── */
 .otp-box {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  appearance: none;
   display: flex;
   justify-content: center;
   gap: var(--space-1);
@@ -2200,7 +2227,7 @@ textarea:disabled,
   transform: none;
 }
 .alias-history-item {
-  border-left: 3px solid var(--gf-mint);
+  border-left: 2px solid rgba(var(--gf-mint-rgb), 0.72);
 }
 .alias-history-item--combined {
   border-left-color: var(--gf-primary);
@@ -2709,7 +2736,7 @@ textarea:disabled,
 .email-html-body blockquote {
   margin: 6px 0;
   padding: 6px 10px;
-  border-left: 3px solid var(--gf-primary);
+  border-left: 1px solid var(--gf-line-2);
   background: var(--gf-surface-2);
   border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
   color: var(--gf-ink-soft);
@@ -3663,10 +3690,12 @@ textarea:disabled,
 }
 .otp-confidence-fill {
   height: 100%;
-  width: var(--confidence-width, 0%);
+  width: 100%;
+  transform: scaleX(var(--confidence-scale, 0));
+  transform-origin: left center;
   background: var(--confidence-color, var(--gf-primary));
   border-radius: var(--radius-pill);
-  transition: width var(--gf-dur-slow) var(--gf-ease);
+  transition: transform var(--gf-dur-slow) var(--gf-ease);
 }
 .otp-confidence-value {
   color: var(--gf-ink-soft);
@@ -3942,5 +3971,183 @@ textarea:disabled,
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* ============================================================================
+   PRIVATE WORKSPACE COMPOSITION
+   --------------------------------------------------------------------------
+   The popup is a 375px utility surface, so hierarchy comes from rhythm and
+   alignment rather than extra decoration. This layer keeps the existing
+   component contracts intact while making the dashboard feel intentional:
+   one tab rail, one identity dock, and one quiet inbox surface.
+   ========================================================================== */
+
+.ghost-dashboard {
+  gap: 8px;
+  padding: 12px var(--popup-gutter) 14px;
+}
+
+.hub-email-selector {
+  min-height: 40px;
+  padding: 2px;
+  background: var(--gf-surface-2);
+  border-color: var(--gf-line);
+  border-radius: var(--gf-control-radius);
+  box-shadow: none;
+}
+
+.hub-email-selector-btn {
+  min-height: 32px;
+  padding-inline: 10px;
+  border-radius: 7px;
+  letter-spacing: 0;
+}
+
+.hub-email-selector-btn--active {
+  color: var(--gf-ink);
+  text-shadow: none;
+}
+
+.hub-email-selector-bg {
+  background: var(--gf-surface);
+  border-color: var(--gf-line);
+  box-shadow: none;
+}
+
+.identity-card {
+  border-color: var(--gf-line);
+  box-shadow: none;
+}
+
+.identity-row {
+  min-height: 60px;
+  padding: 10px 12px;
+  gap: 10px;
+}
+
+.identity-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+}
+
+.identity-content {
+  gap: 3px;
+}
+
+.identity-actions {
+  gap: 0;
+  min-height: 32px;
+  padding: 0;
+  margin-inline-start: auto;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+}
+
+.identity-actions:focus-within {
+  box-shadow: none;
+}
+
+.identity-actions .action-icon {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  border-radius: 8px;
+}
+
+.identity-actions .action-icon:focus-visible {
+  outline: 2px solid var(--gf-primary);
+  outline-offset: -2px;
+}
+
+.identity-actions .action-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.inbox-section {
+  gap: 8px;
+  padding: 12px;
+  border-color: var(--gf-line);
+  box-shadow: none;
+}
+
+.inbox-header-row {
+  min-height: 24px;
+}
+
+.inbox-title-group {
+  gap: 6px;
+}
+
+.inbox-title-group .inbox-title-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.view-all-btn {
+  min-height: 30px;
+  padding-inline: 9px;
+  border-radius: 8px;
+}
+
+.inbox-list {
+  padding: 2px 2px 2px 0;
+  scrollbar-gutter: auto;
+}
+
+.inbox-list:has(> .hub-empty-state) {
+  overflow-y: hidden;
+}
+
+.hub-empty-state {
+  min-height: 72px;
+  padding: 12px 10px;
+  gap: 9px;
+  color: var(--gf-ink-soft);
+  background: var(--gf-surface-2);
+  border: 1px solid var(--gf-line);
+}
+
+.hub-empty-state > svg {
+  flex: none;
+  padding: 7px;
+  width: 32px;
+  height: 32px;
+  color: var(--gf-primary) !important;
+  background: var(--gf-primary-soft);
+  border: 0;
+  border-radius: 8px;
+}
+
+.hub-empty-state--action {
+  border-color: var(--gf-line);
+}
+
+.hub-empty-state--action:hover {
+  background: var(--gf-primary-soft);
+}
+
+.alias-inbox-refresh {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+}
+
+@media (max-width: 360px) {
+  .identity-row {
+    gap: 8px;
+    padding-inline: 10px;
+  }
+
+  .identity-actions {
+    gap: 2px;
+  }
+
+  .identity-actions .action-icon {
+    width: 30px;
+    min-width: 30px;
   }
 }

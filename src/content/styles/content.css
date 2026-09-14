@@ -1,15 +1,15 @@
 /* ═══════════════════════════════════════════════════════════
-   GhostFill — Content Script Styles · "SPECTRE"
-   In-page field highlights · soft luminous rings · Iris accent
+   GhostFill — Content Script Styles · "PRIVATE WORKSPACE"
+   In-page field highlights · clear focus rings · one blue accent
    ───────────────────────────────────────────────────────────
    The FAB itself lives in a closed shadow root whose palette is
    injected by generateHostTokens() (src/shared/theme.ts), so the
-   in-page UI matches the popup (graphite Spectre glass console).
+   in-page UI matches the popup (quiet Private Workspace slate).
    This file only needs the host container reset + the field-highlight
    classes that decorate elements on the *host page* (outside the shadow
-   root), which use literal Spectre values with !important so they win
-   over arbitrary host-site styles. Treatment: a soft luminous focus
-   ring (box-shadow glow) + thin outline — NO hard offset, NO translate,
+   root), which use literal tokens with !important so they win over
+   arbitrary host-site styles. Treatment: a clear focus ring + thin outline
+   — NO hard offset, NO translate,
    so the host page never visibly shifts.
    ═══════════════════════════════════════════════════════════ */
 
@@ -32,23 +32,23 @@
 
 /* Host container — focus-ring + transition vars the shadow children inherit.
    The color palette comes from generateHostTokens() applied on :host inside
-   the shadow root (Spectre graphite + Iris). */
+   the shadow root (Private Workspace slate + blue). */
 #ghostfill-fab {
   --gf-ring-width: 2px;
   --gf-ring-offset: 2px;
   --gf-ring-radius: 8px;
-  --gf-transition: all 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  --gf-transition: opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1), transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Spectre accents (literal — must survive on any host page) */
+/* Private Workspace accents (literal — must survive on any host page) */
 :root {
-  --gf-cc-iris: #818cf8;
-  --gf-cc-iris-glow: rgba(129, 140, 248, 0.24);
-  --gf-cc-mint: #34d399;
-  --gf-cc-mint-glow: rgba(52, 211, 153, 0.24);
-  --gf-cc-amber: #fbbf24;
-  --gf-cc-amber-glow: rgba(251, 191, 36, 0.24);
-  --gf-cc-coral: #f87171;
+  --gf-cc-iris: #2f5fd0;
+  --gf-cc-iris-glow: rgba(47, 95, 208, 0.22);
+  --gf-cc-mint: #14805c;
+  --gf-cc-mint-glow: rgba(20, 128, 92, 0.22);
+  --gf-cc-amber: #b66f00;
+  --gf-cc-amber-glow: rgba(182, 111, 0, 0.22);
+  --gf-cc-coral: #c43a3a;
 }
 
 /* ─────────────────────────────────────────────────────────
@@ -80,7 +80,7 @@
     box-shadow: 0 0 0 0 var(--gf-cc-mint-glow);
   }
   60% {
-    box-shadow: 0 0 0 7px rgba(52, 211, 153, 0.12);
+    box-shadow: 0 0 0 7px rgba(20, 128, 92, 0.12);
   }
   100% {
     box-shadow: 0 0 0 4px var(--gf-cc-mint-glow);

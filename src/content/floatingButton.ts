@@ -16,6 +16,7 @@
 // └────────────────────────────────────────────────────────────────────────┘
 // ═══════════════════════════════════════════════════════════════════════════════
 
+import { PageAnalyzer, type PageAnalysis, type PageType } from '../intelligence/pageAnalyzer';
 import {
   classifyField,
   getFieldTooltip,
@@ -850,6 +851,7 @@ export class FloatingButton {
     if (!this.container || !this.button) {
       return;
     }
+    this.closeMenuSilent();
     if (!this.isCurrentFieldFocused()) {
       return;
     }
@@ -973,6 +975,7 @@ export class FloatingButton {
     this.container?.style.setProperty('display', 'block', 'important');
     this.container?.style.setProperty('visibility', 'visible', 'important');
     this.openMenuInternal();
+    this.button?.setAttribute('aria-expanded', 'true');
     this.hideTooltip();
   }
 
@@ -1047,8 +1050,8 @@ export class FloatingButton {
     this.button.className = 'gf-fab';
     setHTML(this.button, IconSystem.get('magic'));
     this.button.setAttribute('aria-label', 'GhostFill — Auto-fill this form');
-    this.button.setAttribute('role', 'button');
-    this.button.setAttribute('tabindex', '0');
+    this.button.setAttribute('aria-haspopup', 'menu');
+    this.button.setAttribute('aria-expanded', 'false');
     this.shadowRoot.appendChild(this.button);
 
     // ── Tooltip ───────────────────────────────────────────
@@ -1061,12 +1064,14 @@ export class FloatingButton {
     // ── Menu ──────────────────────────────────────────────
     this.menu = document.createElement('div');
     this.menu.className = 'gf-menu';
+    this.menu.id = 'gf-menu';
     this.menu.setAttribute('role', 'menu');
     this.menu.setAttribute('aria-label', 'GhostFill actions');
     this.shadowRoot.appendChild(this.menu);
 
     // Link button to tooltip for screen readers
     this.button.setAttribute('aria-describedby', 'gf-tooltip');
+    this.button.setAttribute('aria-controls', this.menu.id);
 
     // Attach to <html> to bypass aggressive site body rules
     const attachTarget = document.documentElement ?? document.body;
@@ -1219,7 +1224,7 @@ export class FloatingButton {
           analysis.pageType === '2fa' ||
           analysis.hasOTPField
         ) {
-          pageStatus.show('Filling verification code...', 'loading');
+          pageStatus.show('Filling verification code…', 'loading');
           await this.actionPasteOTP();
           return;
         }
@@ -1227,18 +1232,18 @@ export class FloatingButton {
 
       if (this.mode === 'email' && this.currentField instanceof HTMLInputElement) {
         // Fill ACTIVE popup tab email. Disposable is only generated if Temp Mail tab is active.
-        pageStatus.show('Injecting email...', 'loading');
+        pageStatus.show('Injecting email…', 'loading');
         await this.actionFillActiveEmail({ allowGenerateDisposable: true });
         return;
       }
 
       if (this.mode === 'password' && this.currentField instanceof HTMLInputElement) {
-        pageStatus.show('Injecting secure password...', 'loading');
+        pageStatus.show('Injecting secure password…', 'loading');
         await this.actionGeneratePassword();
         return;
       }
 
-      pageStatus.show('Analyzing form...', 'loading');
+          pageStatus.show('Analyzing form…', 'loading');
       const result = await this.autoFiller.smartFill();
 
       if (this.destroyed) {
@@ -1351,7 +1356,7 @@ export class FloatingButton {
           ${IconSystem.get('otp')}
         </div>
         <div class="gf-sentinel-toast-text">
-          <div class="gf-sentinel-toast-title">Filling code...</div>
+          <div class="gf-sentinel-toast-title">Filling code…</div>
           <div class="gf-sentinel-toast-subtitle">GhostFill is securing your session</div>
         </div>
       </div>
@@ -1506,6 +1511,7 @@ export class FloatingButton {
         this.menuKeyboardHandler = null;
       }
       this.menu.classList.remove('gf-menu-open');
+      this.button?.setAttribute('aria-expanded', 'false');
       clearHTML(this.menu);
     }
   }

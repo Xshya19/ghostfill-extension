@@ -60,6 +60,7 @@ class PageStatusInjector {
                 z-index: 2147483645;
                 isolation: isolate;
                 pointer-events: none;
+                color-scheme: light dark;
             }
 
             .status-banner {
@@ -76,27 +77,38 @@ class PageStatusInjector {
                 border-radius: 12px;
                 box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), inset 0 1px 0 var(--gf-hi, rgba(255,255,255,0.06)); /* SPECTRE LIFT */
                 transform: translateX(120%);
-                transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+                opacity: 0;
+                transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1);
                 pointer-events: auto;
                 font-family: "Space Grotesk", sans-serif;
             }
 
             .status-banner.visible {
                 transform: translateX(0);
+                opacity: 1;
             }
 
             .status-banner.success {
-                background: var(--gf-mint, #62F2B3);
+                border-color: var(--gf-mint, #34D399);
             }
 
             .status-banner.error {
-                background: var(--gf-coral, #FF6A4D);
-                border-left: 4px solid var(--gf-ink, #000);
+                border-color: var(--gf-coral, #F87171);
             }
 
             .ghost-icon {
-                font-size: 20px;
-                animation: none;
+                width: 22px;
+                height: 22px;
+                display: grid;
+                place-items: center;
+                color: var(--gf-primary, #818CF8);
+                flex: none;
+            }
+
+            .ghost-icon svg {
+                width: 100%;
+                height: 100%;
+                display: block;
             }
 
             .spinner {
@@ -123,8 +135,8 @@ class PageStatusInjector {
                 background: transparent;
                 border: 1px solid var(--gf-line-2, rgba(255,255,255,0.10));
                 border-radius: 6px;
-                width: 20px;
-                height: 20px;
+                width: 28px;
+                height: 28px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -133,11 +145,16 @@ class PageStatusInjector {
                 font-size: 10px;
                 margin-left: 4px;
                 font-weight: bold;
-                transition: transform 0.1s;
+                transition: background 0.14s ease, border-color 0.14s ease, transform 0.14s ease;
             }
 
             .close-btn:hover {
                 background: var(--gf-sunken, #0C0E12);
+            }
+
+            .close-btn:focus-visible {
+                outline: 2px solid var(--gf-primary, #818CF8);
+                outline-offset: 2px;
             }
 
             @media (prefers-reduced-motion: reduce) {
@@ -153,13 +170,22 @@ class PageStatusInjector {
     // Create banner HTML
     const banner = document.createElement('div');
     banner.className = 'status-banner';
+    banner.setAttribute('role', 'status');
+    banner.setAttribute('aria-live', 'polite');
+    banner.setAttribute('aria-atomic', 'true');
     setHTML(
       banner,
       `
-            <span class="ghost-icon">👻</span>
+            <span class="ghost-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M5 18.5V10.8C5 7.04 8.13 4 12 4s7 3.04 7 6.8v7.7l-2.15-1.5-2.15 1.5-2.2-1.5-2.2 1.5-2.15-1.5L5 18.5Z" fill="currentColor" fill-opacity=".16" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                <path d="M9 11h.01M15 11h.01" stroke="currentColor" stroke-width="2.25" stroke-linecap="round"/>
+                <path d="M9 14.5c.9.72 2.1 1.08 3 1.08s2.1-.36 3-1.08" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/>
+              </svg>
+            </span>
             <div class="spinner"></div>
             <span class="status-text">GhostFill Active</span>
-            <button class="close-btn" role="button" aria-label="Dismiss">✕</button>
+            <button class="close-btn" aria-label="Dismiss">✕</button>
         `
     );
 
@@ -249,7 +275,7 @@ class PageStatusInjector {
    * Show info message and auto-hide
    */
   info(message: string, autoHideMs: number = 4000): void {
-    this.show(message, 'loading'); // Use default purple gradient for info
+    this.show(message, 'loading');
     setTimeout(() => this.hide(), autoHideMs);
   }
 

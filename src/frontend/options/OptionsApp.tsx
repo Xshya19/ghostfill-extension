@@ -179,6 +179,10 @@ function useModalFocusTrap(
     const focusableSelector = [
       'button:not([disabled])',
       'a[href]',
+      'input:not([disabled])',
+      'select:not([disabled])',
+      'textarea:not([disabled])',
+      '[contenteditable="true"]',
       '[tabindex]:not([tabindex="-1"])',
     ].join(', ');
 
@@ -191,6 +195,7 @@ function useModalFocusTrap(
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
+        e.stopPropagation();
         onClose();
         return;
       }
@@ -218,6 +223,49 @@ function useModalFocusTrap(
       previouslyFocused?.focus();
     };
   }, [isOpen, modalRef, onClose]);
+}
+
+/** Isolates modal siblings from both keyboard and assistive technology focus. */
+function useSiblingIsolation(
+  isOpen: boolean,
+  overlayRef: React.RefObject<HTMLElement | null>
+): void {
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const overlay = overlayRef.current;
+    const parent = overlay?.parentElement;
+    if (!overlay || !parent) {
+      return;
+    }
+
+    const siblings = Array.from(parent.children).filter(
+      (child): child is HTMLElement => child !== overlay
+    );
+    const previous = siblings.map((sibling) => ({
+      sibling,
+      inert: sibling.inert,
+      ariaHidden: sibling.getAttribute('aria-hidden'),
+    }));
+
+    siblings.forEach((sibling) => {
+      sibling.inert = true;
+      sibling.setAttribute('aria-hidden', 'true');
+    });
+
+    return () => {
+      previous.forEach(({ sibling, inert, ariaHidden }) => {
+        sibling.inert = inert;
+        if (ariaHidden === null) {
+          sibling.removeAttribute('aria-hidden');
+        } else {
+          sibling.setAttribute('aria-hidden', ariaHidden);
+        }
+      });
+    };
+  }, [isOpen, overlayRef]);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -301,12 +349,19 @@ const ConfirmModal: React.FC<{
   onClose: () => void;
   modalRef: React.RefObject<HTMLDivElement>;
 }> = ({ modal, onClose, modalRef }) => {
+  const overlayRef = useRef<HTMLDivElement>(null);
+  useSiblingIsolation(modal.open, overlayRef);
+
   if (!modal.open) {
     return null;
   }
 
   return (
+    /* Backdrop clicks are a pointer convenience; Escape and the focus trap
+       provide the keyboard path. */
+    /* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions, jsx-a11y/no-noninteractive-element-interactions */
     <div
+      ref={overlayRef}
       className="modal-overlay"
       onClick={onClose}
       role="dialog"
@@ -314,6 +369,7 @@ const ConfirmModal: React.FC<{
       aria-labelledby="confirm-modal-title"
       aria-describedby="confirm-modal-description"
     >
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
       <div ref={modalRef} className="modal-content" onClick={(e) => e.stopPropagation()}>
         <h3 id="confirm-modal-title">{modal.title}</h3>
         <p id="confirm-modal-description">{modal.message}</p>
@@ -360,6 +416,7 @@ const OptionsApp: React.FC = () => {
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState>(EMPTY_MODAL);
   // Ctrl+K command palette.
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const closeCommandPalette = useCallback(() => setCommandPaletteOpen(false), []);
 
   // ── Refs ─────────────────────────────────────────────────
   const isFirstLoad = useRef(true);
@@ -829,8 +886,8 @@ const OptionsApp: React.FC = () => {
       {/* ── Header ── */}
       <header className="options-header" role="banner">
         <div className="header-content">
-          <div className="ghost-card logo-box logo-box--no-padding">
-            <GhostLogo size={44} />
+          <div className="ghost-card logo-box logo-box--no-padding" aria-hidden="true">
+            <GhostLogo size={32} />
           </div>
           <div className="header-text-group">
             <h1 className="spectral-title">{t('settingsTitle')}</h1>
@@ -935,7 +992,7 @@ const OptionsApp: React.FC = () => {
       {/* ── Ctrl+K command palette ── */}
       <CommandPalette
         isOpen={commandPaletteOpen}
-        onClose={() => setCommandPaletteOpen(false)}
+        onClose={closeCommandPalette}
         activeTab={activeTab}
         onSelectTab={setActiveTab}
       />
@@ -979,7 +1036,7 @@ const SaveStatusIndicator: React.FC<{
   }
   if (state === 'failed') {
     return (
-      <button type="button" className={cls} role="status" aria-live="polite" onClick={onRetry}>
+      <button type="button" className={cls} aria-live="polite" onClick={onRetry}>
         <span className="options-save-indicator-dot" aria-hidden="true" />
         <span>{label}</span>
       </button>
@@ -1022,6 +1079,11 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
 }) => {
   const [query, setQuery] = useState('');
   const [highlightIdx, setHighlightIdx] = useState(0);
+  const paletteRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  useModalFocusTrap(isOpen, paletteRef, onClose);
+  useSiblingIsolation(isOpen, overlayRef);
 
   const q = query.trim().toLowerCase();
   const filtered = TAB_ORDER.filter(
@@ -1040,11 +1102,6 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
       return;
     }
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-        return;
-      }
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         setHighlightIdx((i) => Math.min(i + 1, filtered.length - 1));
@@ -1069,17 +1126,20 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
   }
 
   return (
+    /* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions, jsx-a11y/no-noninteractive-element-interactions */
     <div
+      ref={overlayRef}
       className="command-palette-overlay"
       role="dialog"
       aria-modal="true"
       aria-label="Jump to settings section"
       onClick={onClose}
     >
-      <div className="command-palette" onClick={(e) => e.stopPropagation()}>
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions, jsx-a11y/no-noninteractive-element-interactions */}
+      <div ref={paletteRef} className="command-palette" onClick={(e) => e.stopPropagation()}>
         <input
+          id="command-palette-input"
           className="command-palette-input"
-          autoFocus
           placeholder="Jump to… (try 'email' or 'privacy')"
           value={query}
           onChange={(e) => {
@@ -1087,14 +1147,22 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
             setHighlightIdx(0);
           }}
           aria-label="Search settings"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-controls="command-palette-list"
+          aria-expanded="true"
+          aria-activedescendant={
+            filtered[highlightIdx] ? `command-option-${filtered[highlightIdx].id}` : undefined
+          }
         />
-        <ul className="command-palette-list" role="listbox">
+        <ul id="command-palette-list" className="command-palette-list" role="listbox">
           {filtered.length === 0 ? (
             <li className="command-palette-empty">No matches</li>
           ) : (
             filtered.map((t, idx) => (
               <li
                 key={t.id}
+                id={`command-option-${t.id}`}
                 role="option"
                 aria-selected={idx === highlightIdx}
                 className={
@@ -1103,6 +1171,13 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
                     : 'command-palette-item'
                 }
                 onMouseEnter={() => setHighlightIdx(idx)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onSelectTab(t.id);
+                    onClose();
+                  }
+                }}
                 onClick={() => {
                   onSelectTab(t.id);
                   onClose();

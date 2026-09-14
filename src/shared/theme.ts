@@ -100,113 +100,113 @@ export function initTheme(
  */
 export const TOKENS = {
   // Raw accent swatches (200 tint, 300 base, 400 deep)
-  xxxViolet200: 'rgba(99, 102, 241, 0.15)',
-  xxxViolet200Rgb: '99, 102, 241',
-  xxxViolet300: '#818CF8',
-  xxxViolet300Rgb: '129, 140, 248',
-  xxxViolet400: '#6366F1',
-  xxxViolet400Rgb: '99, 102, 241',
-  xxxPink200: 'rgba(167, 139, 250, 0.15)',
-  xxxPink200Rgb: '167, 139, 250',
-  xxxPink300: '#A78BFA',
-  xxxPink300Rgb: '167, 139, 250',
-  xxxPink400: '#8B5CF6',
-  xxxPink400Rgb: '139, 92, 246',
-  xxxRed200: 'rgba(239, 68, 68, 0.15)',
-  xxxRed200Rgb: '239, 68, 68',
-  xxxRed300: '#F87171',
-  xxxRed300Rgb: '248, 113, 113',
-  xxxRed400: '#EF4444',
-  xxxRed400Rgb: '239, 68, 68',
-  xxxOrange200: 'rgba(245, 158, 11, 0.15)',
-  xxxOrange200Rgb: '245, 158, 11',
-  xxxOrange300: '#FBBF24',
-  xxxOrange300Rgb: '251, 191, 36',
-  xxxOrange400: '#F59E0B',
-  xxxOrange400Rgb: '245, 158, 11',
-  xxxYellow200: 'rgba(245, 158, 11, 0.15)',
-  xxxYellow200Rgb: '245, 158, 11',
-  xxxYellow300: '#FBBF24',
-  xxxYellow300Rgb: '251, 191, 36',
-  xxxYellow400: '#F59E0B',
-  xxxYellow400Rgb: '245, 158, 11',
-  xxxLime200: 'rgba(16, 185, 129, 0.15)',
-  xxxLime200Rgb: '16, 185, 129',
-  xxxLime300: '#34D399',
-  xxxLime300Rgb: '52, 211, 153',
-  xxxLime400: '#10B981',
-  xxxLime400Rgb: '16, 185, 129',
-  xxxCyan200: 'rgba(99, 102, 241, 0.15)',
-  xxxCyan200Rgb: '99, 102, 241',
-  xxxCyan300: '#818CF8',
-  xxxCyan300Rgb: '129, 140, 248',
-  xxxCyan400: '#6366F1',
-  xxxCyan400Rgb: '99, 102, 241',
+  xxxViolet200: 'rgba(136, 168, 255, 0.16)',
+  xxxViolet200Rgb: '136, 168, 255',
+  xxxViolet300: '#B8CBFF',
+  xxxViolet300Rgb: '184, 203, 255',
+  xxxViolet400: '#88A8FF',
+  xxxViolet400Rgb: '136, 168, 255',
+  xxxPink200: 'rgba(136, 168, 255, 0.16)',
+  xxxPink200Rgb: '136, 168, 255',
+  xxxPink300: '#B8CBFF',
+  xxxPink300Rgb: '184, 203, 255',
+  xxxPink400: '#88A8FF',
+  xxxPink400Rgb: '136, 168, 255',
+  xxxRed200: 'rgba(241, 132, 132, 0.16)',
+  xxxRed200Rgb: '241, 132, 132',
+  xxxRed300: '#F18484',
+  xxxRed300Rgb: '241, 132, 132',
+  xxxRed400: '#D75B5B',
+  xxxRed400Rgb: '215, 91, 91',
+  xxxOrange200: 'rgba(242, 182, 77, 0.16)',
+  xxxOrange200Rgb: '242, 182, 77',
+  xxxOrange300: '#F2B64D',
+  xxxOrange300Rgb: '242, 182, 77',
+  xxxOrange400: '#D79425',
+  xxxOrange400Rgb: '215, 148, 37',
+  xxxYellow200: 'rgba(242, 182, 77, 0.16)',
+  xxxYellow200Rgb: '242, 182, 77',
+  xxxYellow300: '#F2B64D',
+  xxxYellow300Rgb: '242, 182, 77',
+  xxxYellow400: '#D79425',
+  xxxYellow400Rgb: '215, 148, 37',
+  xxxLime200: 'rgba(90, 200, 158, 0.16)',
+  xxxLime200Rgb: '90, 200, 158',
+  xxxLime300: '#5AC89E',
+  xxxLime300Rgb: '90, 200, 158',
+  xxxLime400: '#3EA97E',
+  xxxLime400Rgb: '62, 169, 126',
+  xxxCyan200: 'rgba(136, 168, 255, 0.16)',
+  xxxCyan200Rgb: '136, 168, 255',
+  xxxCyan300: '#B8CBFF',
+  xxxCyan300Rgb: '184, 203, 255',
+  xxxCyan400: '#88A8FF',
+  xxxCyan400Rgb: '136, 168, 255',
 
-  // Canvas (Titanium Obsidian + Slate)
-  bg: '#0C0F14',
-  bgRgb: '12, 15, 20',
-  surface: '#141820',
-  surfaceRgb: '20, 24, 32',
-  surface2: '#1B212C',
-  card: 'rgba(20, 24, 32, 0.82)',
-  cardRgb: '20, 24, 32',
-  cardElevated: '#1E2432',
-  sunken: '#080A0E',
-  sunkenRgb: '8, 10, 14',
-  line: 'rgba(255, 255, 255, 0.08)',
-  line2: 'rgba(255, 255, 255, 0.14)',
-  hi: 'rgba(255, 255, 255, 0.08)',
+  // Canvas (Private Workspace night slate)
+  bg: '#10151E',
+  bgRgb: '16, 21, 30',
+  surface: '#171E29',
+  surfaceRgb: '23, 30, 41',
+  surface2: '#1D2632',
+  card: '#171E29',
+  cardRgb: '23, 30, 41',
+  cardElevated: '#202A37',
+  sunken: '#111721',
+  sunkenRgb: '17, 23, 33',
+  line: 'rgba(243, 246, 250, 0.10)',
+  line2: 'rgba(243, 246, 250, 0.18)',
+  hi: 'rgba(255, 255, 255, 0.06)',
 
-  // Ink (Arctic White + Titanium Slate)
-  ink: '#F4F6FA',
-  inkRgb: '244, 246, 250',
-  inkSoft: '#949CB0',
-  inkSoftRgb: '148, 156, 176',
-  cream: '#F4F6FA',
-  textMuted: '#949CB0',
-  textDim: '#697386',
+  // Ink (clear contrast under ambient light)
+  ink: '#F3F6FA',
+  inkRgb: '243, 246, 250',
+  inkSoft: '#AAB5C4',
+  inkSoftRgb: '170, 181, 196',
+  cream: '#F3F6FA',
+  textMuted: '#AAB5C4',
+  textDim: '#7E8B9C',
 
   // Semantic legacy aliases
-  mustard: '#FBBF24',
-  mustardRgb: '251, 191, 36',
-  sienna: '#F87171',
-  siennaRgb: '248, 113, 113',
-  teal: '#34D399',
-  tealRgb: '52, 211, 153',
-  coralWarm: '#A78BFA',
-  coralWarmRgb: '167, 139, 250',
+  mustard: '#F2B64D',
+  mustardRgb: '242, 182, 77',
+  sienna: '#F18484',
+  siennaRgb: '241, 132, 132',
+  teal: '#5AC89E',
+  tealRgb: '90, 200, 158',
+  coralWarm: '#B8CBFF',
+  coralWarmRgb: '184, 203, 255',
 
-  magenta: '#A78BFA',
-  magentaRgb: '167, 139, 250',
-  cyan: '#818CF8',
-  cyanRgb: '129, 140, 248',
-  violet: '#A78BFA',
-  violetRgb: '167, 139, 250',
-  yellow: '#FBBF24',
-  yellowRgb: '251, 191, 36',
-  coral: '#F87171',
-  coralRgb: '248, 113, 113',
-  mint: '#34D399',
-  mintRgb: '52, 211, 153',
+  magenta: '#B8CBFF',
+  magentaRgb: '184, 203, 255',
+  cyan: '#88A8FF',
+  cyanRgb: '136, 168, 255',
+  violet: '#AFB6FF',
+  violetRgb: '175, 182, 255',
+  yellow: '#F2B64D',
+  yellowRgb: '242, 182, 77',
+  coral: '#F18484',
+  coralRgb: '241, 132, 132',
+  mint: '#5AC89E',
+  mintRgb: '90, 200, 158',
 
-  // Primary Indigo
-  primary: '#818CF8',
-  primaryRgb: '129, 140, 248',
-  primaryDeep: '#6366F1',
-  primarySoft: 'rgba(99, 102, 241, 0.15)',
+  // Primary blue
+  primary: '#88A8FF',
+  primaryRgb: '136, 168, 255',
+  primaryDeep: '#5E85E6',
+  primarySoft: 'rgba(136, 168, 255, 0.16)',
 
-  primaryFillDeep: '#4F46E5',
-  dangerFill: '#EF4444',
-  dangerFillDeep: '#DC2626',
+  primaryFillDeep: '#456BC7',
+  dangerFill: '#D75B5B',
+  dangerFillDeep: '#BD4545',
   onFillLight: '#ffffff',
-  successSoft: 'rgba(16, 185, 129, 0.14)',
-  warningSoft: 'rgba(245, 158, 11, 0.14)',
-  dangerSoft: 'rgba(239, 68, 68, 0.14)',
-  scrim: 'rgba(5, 7, 10, 0.75)',
+  successSoft: 'rgba(90, 200, 158, 0.16)',
+  warningSoft: 'rgba(242, 182, 77, 0.16)',
+  dangerSoft: 'rgba(241, 132, 132, 0.16)',
+  scrim: 'rgba(7, 10, 15, 0.76)',
   fontMono: "'IBM Plex Mono', 'Space Mono', 'JetBrains Mono', ui-monospace, monospace",
-  panelRadius: '14px',
-  controlRadius: '10px',
+  panelRadius: '12px',
+  controlRadius: '8px',
   controlHeight: '36px',
 } as const;
 
@@ -257,8 +257,8 @@ export function generateHostTokens(): string {
     --xxx-cyan-300-rgb: ${TOKENS.xxxCyan300Rgb};
     --xxx-cyan-400: ${TOKENS.xxxCyan400};
     --xxx-cyan-400-rgb: ${TOKENS.xxxCyan400Rgb};
-    --xxx-spectrum: linear-gradient(90deg, ${TOKENS.primary}, ${TOKENS.primaryDeep});
-    --xxx-spectrum-tight: linear-gradient(90deg, ${TOKENS.primary}, ${TOKENS.primaryDeep});
+    --xxx-spectrum: ${TOKENS.primary};
+    --xxx-spectrum-tight: ${TOKENS.primary};
     --gf-bg: ${TOKENS.bg};
     --gf-bg-rgb: ${TOKENS.bgRgb};
     --gf-surface: ${TOKENS.surface};
@@ -303,11 +303,11 @@ export function generateHostTokens(): string {
     --nb-surface: ${TOKENS.surface};
     --nb-ink: ${TOKENS.ink};
     --nb-border: 1px solid ${TOKENS.line};
-    --nb-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.42), 0 16px 36px -12px rgba(0, 0, 0, 0.6);
-    --nb-shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.4);
-    --nb-shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 26px -8px rgba(0, 0, 0, 0.5), 0 40px 80px -20px rgba(0, 0, 0, 0.72);
-    --nb-radius: 14px;
-    --nb-radius-sm: 9px;
+    --nb-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+    --nb-shadow-sm: 0 3px 8px rgba(0, 0, 0, 0.26);
+    --nb-shadow-lg: 0 14px 30px rgba(0, 0, 0, 0.38);
+    --nb-radius: 12px;
+    --nb-radius-sm: 8px;
     --gf-paper: ${TOKENS.bg};
     --gf-paper-2: ${TOKENS.surface};
     --gf-ink-dim: ${TOKENS.textDim};
@@ -347,20 +347,20 @@ export function generateHostTokens(): string {
     --gf-scrim: ${TOKENS.scrim};
     --gf-font-mono: ${TOKENS.fontMono};
     --brand-font-mono: ${TOKENS.fontMono};
-    --gf-grad-cobalt: linear-gradient(180deg, ${TOKENS.primaryDeep}, ${TOKENS.primaryFillDeep});
-    --gf-grad-cobalt-hover: linear-gradient(180deg, #8b91ff, #6a70f5);
-    --gf-grad-mint: linear-gradient(180deg, #12b886, ${TOKENS.mint});
-    --gf-grad-coral: linear-gradient(180deg, ${TOKENS.dangerFill}, ${TOKENS.dangerFillDeep});
+    --gf-grad-cobalt: ${TOKENS.primaryDeep};
+    --gf-grad-cobalt-hover: ${TOKENS.primaryFillDeep};
+    --gf-grad-mint: ${TOKENS.mint};
+    --gf-grad-coral: ${TOKENS.dangerFill};
     --gf-border: 1px solid ${TOKENS.line};
     --gf-border-strong: 1px solid ${TOKENS.line2};
     --gf-border-thin: 1px solid ${TOKENS.line};
-    --gf-shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.4);
-    --gf-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.42), 0 16px 36px -12px rgba(0, 0, 0, 0.6);
-    --gf-shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 26px -8px rgba(0, 0, 0, 0.5), 0 40px 80px -20px rgba(0, 0, 0, 0.72);
-    --shadow-hard-sm: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.4);
-    --shadow-hard: 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 6px rgba(0, 0, 0, 0.42), 0 16px 36px -12px rgba(0, 0, 0, 0.6);
-    --gf-radius: 14px;
-    --gf-radius-sm: 9px;
+    --gf-shadow-sm: 0 3px 8px rgba(0, 0, 0, 0.26);
+    --gf-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+    --gf-shadow-lg: 0 14px 30px rgba(0, 0, 0, 0.38);
+    --shadow-hard-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
+    --shadow-hard: 0 5px 14px rgba(0, 0, 0, 0.3);
+    --gf-radius: 12px;
+    --gf-radius-sm: 8px;
     --gf-panel-radius: ${TOKENS.panelRadius};
     --gf-control-radius: ${TOKENS.controlRadius};
     --gf-control-h: ${TOKENS.controlHeight};

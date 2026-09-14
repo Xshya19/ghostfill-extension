@@ -1,12 +1,12 @@
 /* ============================================================================
-   GHOSTFILL — GLOBAL STYLES & SHARED PRIMITIVES  ·  "SPECTRE"
+   GHOSTFILL — GLOBAL STYLES & SHARED PRIMITIVES  ·  "PRIVATE WORKSPACE"
    ----------------------------------------------------------------------------
    Merged entrypoint combining Design Tokens + Shared UI Primitives.
    ========================================================================== */
 
 /* ============================================================================
    SECTION 1: DESIGN TOKENS — single source of truth
-   "SPECTRE"  ·  graphite privacy console
+   "PRIVATE WORKSPACE"  ·  calm, browser-native privacy controls
    ========================================================================== */
 
 /* ── @font-face ───────────────────────────────────────────────────────────
@@ -41,88 +41,89 @@
 }
 
 :root {
-   /* ── Canvas (Titanium light — crisp slate paper) ───────────────────────── */
-   --gf-paper: #f8fafc;
-   --gf-paper-2: #f1f5f9;
-   --gf-bg: #f8fafc;
-   --gf-bg-rgb: 248, 250, 252;
+   /* ── Canvas (quiet paper, opaque by design) ───────────────────────────── */
+   --gf-paper: #f7f8fa;
+   --gf-paper-2: #eef1f5;
+   --gf-bg: #f7f8fa;
+   --gf-bg-rgb: 247, 248, 250;
    --gf-surface: #ffffff;
    --gf-surface-rgb: 255, 255, 255;
-   --gf-surface-2: #f1f5f9;
-   --gf-sunken: #edf2f7;
-   --gf-sunken-rgb: 237, 242, 247;
-   --gf-card: rgba(255, 255, 255, 0.85);
+   --gf-surface-2: #f2f4f7;
+   --gf-sunken: #eef1f5;
+   --gf-sunken-rgb: 238, 241, 245;
+   --gf-card: #ffffff;
    --gf-card-rgb: 255, 255, 255;
    --gf-card-elevated: #ffffff;
-   --gf-glass: rgba(255, 255, 255, 0.78);
-   --gf-glass-border: rgba(15, 23, 42, 0.08);
+   --gf-glass: #ffffff;
+   --gf-glass-border: rgba(23, 32, 51, 0.12);
 
    /* ── Ink (deep crisp slate) ───────────────────────────────────────────── */
-   --gf-ink: #0f172a;
-   --gf-ink-rgb: 15, 23, 42;
-   --gf-ink-soft: #475569;
-   --gf-ink-soft-rgb: 71, 85, 105;
-   --gf-ink-dim: #64748b;
-   --gf-line: rgba(15, 23, 42, 0.08);
-   --gf-line-2: rgba(15, 23, 42, 0.14);
+   --gf-ink: #172033;
+   --gf-ink-rgb: 23, 32, 51;
+   --gf-ink-soft: #5e6b7c;
+   --gf-ink-soft-rgb: 94, 107, 124;
+   --gf-ink-dim: #778394;
+   --gf-line: rgba(23, 32, 51, 0.12);
+   --gf-line-2: rgba(23, 32, 51, 0.2);
    --gf-hi: rgba(255, 255, 255, 0.95);
 
    --gf-cream: var(--gf-ink);
    --gf-text-muted: var(--gf-ink-soft);
    --gf-text-dim: var(--gf-ink-dim);
 
-   /* ── Accent — Modern Indigo ───────────────────────────────────────────── */
-   --gf-primary: #6366f1;
-   --gf-primary-rgb: 99, 102, 241;
-   --gf-primary-deep: #4f46e5;
-   --gf-primary-soft: rgba(99, 102, 241, 0.10);
+   /* ── Accent — one controlled blue signal ──────────────────────────────── */
+   --gf-primary: #2f5fd0;
+   --gf-primary-rgb: 47, 95, 208;
+   --gf-primary-deep: #2249ad;
+   --gf-primary-text: #2249ad;
+   --gf-primary-soft: #e7eeff;
    --gf-on-primary: #ffffff;
 
    /* ── Status hues ──────────────────────────────────────────────────────── */
-   --gf-mint: #10b981;
-   --gf-mint-rgb: 16, 185, 129;
-   --gf-mint-text: #047857;
-   --gf-amber: #f59e0b;
-   --gf-amber-rgb: 245, 158, 11;
-   --gf-amber-text: #b45309;
-   --gf-coral: #ef4444;
-   --gf-coral-rgb: 239, 68, 68;
-   --gf-coral-text: #b91c1c;
-   --gf-violet: #8b5cf6;
-   --gf-violet-rgb: 139, 92, 246;
+   --gf-mint: #14805c;
+   --gf-mint-rgb: 20, 128, 92;
+   --gf-mint-text: #0c6347;
+   --gf-amber: #b66f00;
+   --gf-amber-rgb: 182, 111, 0;
+   --gf-amber-text: #805000;
+   --gf-coral: #c43a3a;
+   --gf-coral-rgb: 196, 58, 58;
+   --gf-coral-text: #a52727;
+   --gf-violet: #5b61b9;
+   --gf-violet-rgb: 91, 97, 185;
 
    /* Semantic aliases */
    --gf-success: var(--gf-mint);
    --gf-success-rgb: var(--gf-mint-rgb);
-   --gf-success-soft: #ecfdf5;
+   --gf-success-soft: #e8f7f0;
    --gf-warning: var(--gf-amber);
    --gf-warning-rgb: var(--gf-amber-rgb);
-   --gf-warning-soft: #fffbeb;
+   --gf-warning-soft: #fff4df;
    --gf-danger: var(--gf-coral);
    --gf-danger-rgb: var(--gf-coral-rgb);
-   --gf-danger-soft: #fef2f2;
+   --gf-danger-soft: #fff0f0;
    --gf-danger-text: var(--gf-coral-text);
 
    --gf-primary-fill: var(--gf-primary);
    --gf-primary-fill-deep: var(--gf-primary-deep);
    --gf-success-fill: var(--gf-mint);
    --gf-warning-fill: var(--gf-amber);
-   --gf-danger-fill: #dc2626;
-   --gf-danger-fill-deep: #b91c1c;
+   --gf-danger-fill: #c43a3a;
+   --gf-danger-fill-deep: #a52727;
    --gf-on-fill-light: #ffffff;
    --gf-on-fill-dark: var(--gf-ink);
 
-   /* ── Gradients ────────────────────────────────────────────────────────── */
-   --gf-grad-cobalt: linear-gradient(180deg, #6366f1 0%, #4f46e5 100%);
-   --gf-grad-cobalt-hover: linear-gradient(180deg, #7175f7 0%, #5950ee 100%);
-   --gf-grad-mint: linear-gradient(180deg, #34d399 0%, #10b981 100%);
-   --gf-grad-coral: linear-gradient(180deg, #f87171 0%, #ef4444 100%);
-   --gf-grad-amber: linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%);
-   --gf-grad-violet: linear-gradient(180deg, #a78bfa 0%, #8b5cf6 100%);
-   --gf-grad-accent-bar: linear-gradient(90deg, #6366f1, #8b5cf6);
-   --gf-grad-rainbow-stripe: linear-gradient(90deg, #6366f1, #8b5cf6);
-   --xxx-spectrum: linear-gradient(90deg, #6366f1, #8b5cf6);
-   --xxx-spectrum-tight: linear-gradient(90deg, #6366f1, #8b5cf6);
+   /* Legacy aliases intentionally resolve to solid fills. */
+   --gf-grad-cobalt: var(--gf-primary-fill);
+   --gf-grad-cobalt-hover: #234eba;
+   --gf-grad-mint: var(--gf-success-fill);
+   --gf-grad-coral: var(--gf-danger-fill);
+   --gf-grad-amber: var(--gf-warning-fill);
+   --gf-grad-violet: var(--gf-violet);
+   --gf-grad-accent-bar: var(--gf-primary-fill);
+   --gf-grad-rainbow-stripe: var(--gf-primary-fill);
+   --xxx-spectrum: var(--gf-primary-fill);
+   --xxx-spectrum-tight: var(--gf-primary-fill);
 
    /* ── Typography ──────────────────────────────────────────────────────── */
    --font-display: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -147,27 +148,27 @@
 
    /* ── Radii ───────────────────────────────────────────────────────────── */
    --radius-xs: 6px;
-   --radius-sm: 9px;
-   --radius-md: 12px;
-   --radius-lg: 16px;
-   --radius-xl: 20px;
+   --radius-sm: 8px;
+   --radius-md: 10px;
+   --radius-lg: 12px;
+   --radius-xl: 16px;
    --radius-pill: 999px;
-   --radius-button: 12px;
+   --radius-button: 8px;
    /* Shared component geometry. Every surface uses these values so the
       popup, options page, and floating controls read as one product. */
-   --gf-panel-radius: 14px;
-   --gf-control-radius: 10px;
+   --gf-panel-radius: 12px;
+   --gf-control-radius: 8px;
    --gf-control-h-sm: 30px;
    --gf-control-h: 36px;
    --gf-control-h-lg: 40px;
    --gf-page-gutter: 24px;
    --gf-panel-gap: 10px;
-   --gf-radius: 14px;
-   --gf-radius-sm: 9px;
+   --gf-radius: 12px;
+   --gf-radius-sm: 8px;
    --gf-radius-lg: 16px;
    --gf-radius-pill: 999px;
-   --nb-radius: 14px;
-   --nb-radius-sm: 9px;
+   --nb-radius: 12px;
+   --nb-radius-sm: 8px;
 
    /* ── Borders (hairline) ──────────────────────────────────────────────── */
    --gf-border: 1px solid var(--gf-line);
@@ -175,19 +176,19 @@
    --gf-border-thin: 1px solid var(--gf-line);
    --nb-border: 1px solid var(--gf-line);
 
-   /* ── Soft layered shadows (light) ────────────────────────────────────── */
-   --shadow-hard-sm: 0 1px 2px rgba(15, 23, 42, 0.05), 0 3px 8px -2px rgba(15, 23, 42, 0.08);
-   --shadow-hard: 0 2px 5px rgba(15, 23, 42, 0.06), 0 12px 28px -8px rgba(15, 23, 42, 0.12);
-   --shadow-hard-lg: 0 6px 18px -4px rgba(15, 23, 42, 0.10), 0 24px 48px -12px rgba(15, 23, 42, 0.18);
-   --shadow-floating: 0 6px 18px -4px rgba(15, 23, 42, 0.10), 0 24px 48px -12px rgba(15, 23, 42, 0.18);
-   --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.05), 0 6px 16px -4px rgba(15, 23, 42, 0.08);
-   --gf-shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
-   --gf-shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.05), 0 4px 10px -2px rgba(15, 23, 42, 0.08);
-   --gf-shadow: 0 2px 5px rgba(15, 23, 42, 0.06), 0 12px 28px -8px rgba(15, 23, 42, 0.12);
-   --gf-shadow-lg: 0 6px 18px -4px rgba(15, 23, 42, 0.10), 0 24px 48px -12px rgba(15, 23, 42, 0.18);
-   --nb-shadow: 0 2px 5px rgba(15, 23, 42, 0.06), 0 12px 28px -8px rgba(15, 23, 42, 0.12);
-   --nb-shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.05), 0 4px 10px -2px rgba(15, 23, 42, 0.08);
-   --nb-shadow-lg: 0 6px 18px -4px rgba(15, 23, 42, 0.10), 0 24px 48px -12px rgba(15, 23, 42, 0.18);
+   /* ── Elevation is reserved for floating surfaces ─────────────────────── */
+   --shadow-hard-sm: 0 1px 2px rgba(23, 32, 51, 0.05);
+   --shadow-hard: 0 4px 12px rgba(23, 32, 51, 0.08);
+   --shadow-hard-lg: 0 12px 28px rgba(23, 32, 51, 0.12);
+   --shadow-floating: 0 12px 28px rgba(23, 32, 51, 0.12);
+   --shadow-card: none;
+   --gf-shadow-xs: 0 1px 2px rgba(23, 32, 51, 0.05);
+   --gf-shadow-sm: 0 2px 6px rgba(23, 32, 51, 0.06);
+   --gf-shadow: 0 6px 16px rgba(23, 32, 51, 0.08);
+   --gf-shadow-lg: 0 12px 28px rgba(23, 32, 51, 0.12);
+   --nb-shadow: var(--gf-shadow);
+   --nb-shadow-sm: var(--gf-shadow-sm);
+   --nb-shadow-lg: var(--gf-shadow-lg);
 
    /* ── Focus ring (accent) ─────────────────────────────────────────────── */
    --gf-ring-width: 2px;
@@ -198,20 +199,20 @@
    --gf-scrim: rgba(15, 23, 42, 0.45);
 
    /* ── Texture ─────────────────────────────────────────────────────────── */
-   --gf-pattern-dot: radial-gradient(rgba(var(--gf-ink-rgb), 0.05) 1px, transparent 1px);
+   --gf-pattern-dot: none;
 
-   /* ── Motion (Spring-physics based) ───────────────────────────────────── */
+   /* ── Motion (one restrained deceleration curve) ───────────────────────── */
    --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
-   --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+   --ease-out-back: cubic-bezier(0.16, 1, 0.3, 1);
    --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
    --gf-ease: cubic-bezier(0.16, 1, 0.3, 1);
    --gf-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-   --gf-ease-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+   --gf-ease-back: cubic-bezier(0.16, 1, 0.3, 1);
    --gf-dur-fast: 120ms;
    --gf-dur: 200ms;
    --gf-dur-slow: 340ms;
-   --gf-transition: all var(--gf-dur) var(--gf-ease);
+   --gf-transition: opacity var(--gf-dur) var(--gf-ease), transform var(--gf-dur) var(--gf-ease);
 
    /* ── Z-index ─────────────────────────────────────────────────────────── */
    --z-base: 0;
@@ -228,52 +229,53 @@
 }
 
 [data-theme='dark'] {
-   /* Canvas (Modern Titanium Dark — deep obsidian with subtle cool slate cast) */
-   --gf-paper: #0c0f14;
-   --gf-paper-2: #141820;
-   --gf-bg: #0c0f14;
-   --gf-bg-rgb: 12, 15, 20;
-   --gf-surface: #141820;
-   --gf-surface-rgb: 20, 24, 32;
-   --gf-surface-2: #1b212c;
-   --gf-sunken: #080a0e;
-   --gf-sunken-rgb: 8, 10, 14;
-   --gf-card: rgba(20, 24, 32, 0.82);
-   --gf-card-rgb: 20, 24, 32;
-   --gf-card-elevated: #1e2432;
-   --gf-glass: rgba(20, 24, 32, 0.72);
-   --gf-glass-border: rgba(255, 255, 255, 0.09);
+   /* Canvas (night slate; the same system, not a separate visual product) */
+   --gf-paper: #10151e;
+   --gf-paper-2: #141b25;
+   --gf-bg: #10151e;
+   --gf-bg-rgb: 16, 21, 30;
+   --gf-surface: #171e29;
+   --gf-surface-rgb: 23, 30, 41;
+   --gf-surface-2: #1d2632;
+   --gf-sunken: #111721;
+   --gf-sunken-rgb: 17, 23, 33;
+   --gf-card: #171e29;
+   --gf-card-rgb: 23, 30, 41;
+   --gf-card-elevated: #202a37;
+   --gf-glass: #171e29;
+   --gf-glass-border: rgba(243, 246, 250, 0.12);
 
    /* Ink (Arctic White + Titanium Slate) */
-   --gf-ink: #f4f6fa;
-   --gf-ink-rgb: 244, 246, 250;
-   --gf-ink-soft: #949cb0;
-   --gf-ink-soft-rgb: 148, 156, 176;
-   --gf-ink-dim: #697386;
-   --gf-line: rgba(255, 255, 255, 0.08);
-   --gf-line-2: rgba(255, 255, 255, 0.14);
-   --gf-hi: rgba(255, 255, 255, 0.08);
+   --gf-ink: #f3f6fa;
+   --gf-ink-rgb: 243, 246, 250;
+   --gf-ink-soft: #aab5c4;
+   --gf-ink-soft-rgb: 170, 181, 196;
+   --gf-ink-dim: #7e8b9c;
+   --gf-line: rgba(243, 246, 250, 0.1);
+   --gf-line-2: rgba(243, 246, 250, 0.18);
+   --gf-hi: rgba(255, 255, 255, 0.06);
    --gf-cream: var(--gf-ink);
    --gf-text-muted: var(--gf-ink-soft);
    --gf-text-dim: var(--gf-ink-dim);
 
-   --gf-primary: #818cf8;
-   --gf-primary-rgb: 129, 140, 248;
-   --gf-primary-deep: #6366f1;
-   --gf-primary-soft: rgba(99, 102, 241, 0.15);
-   --gf-on-primary: #ffffff;
+   --gf-primary: #88a8ff;
+   --gf-primary-rgb: 136, 168, 255;
+   --gf-primary-deep: #5e85e6;
+   --gf-primary-text: #b8cbff;
+   --gf-primary-soft: rgba(136, 168, 255, 0.16);
+   --gf-on-primary: #10151e;
 
-   --gf-mint: #34d399;
-   --gf-mint-rgb: 52, 211, 153;
+   --gf-mint: #5ac89e;
+   --gf-mint-rgb: 90, 200, 158;
    --gf-mint-text: var(--gf-mint);
-   --gf-amber: #fbbf24;
-   --gf-amber-rgb: 251, 191, 36;
+   --gf-amber: #f2b64d;
+   --gf-amber-rgb: 242, 182, 77;
    --gf-amber-text: var(--gf-amber);
-   --gf-coral: #f87171;
-   --gf-coral-rgb: 248, 113, 113;
+   --gf-coral: #f18484;
+   --gf-coral-rgb: 241, 132, 132;
    --gf-coral-text: var(--gf-coral);
-   --gf-violet: #a78bfa;
-   --gf-violet-rgb: 167, 139, 250;
+   --gf-violet: #afb6ff;
+   --gf-violet-rgb: 175, 182, 255;
 
    --gf-success: var(--gf-mint);
    --gf-success-rgb: var(--gf-mint-rgb);
@@ -286,25 +288,27 @@
    --gf-danger-soft: rgba(239, 68, 68, 0.14);
    --gf-danger-text: var(--gf-coral-text);
 
-   --gf-primary-fill: #4f46e5;
-   --gf-primary-fill-deep: #4338ca;
+   --gf-primary-fill: #5e85e6;
+   --gf-primary-fill-deep: #456bc7;
+   --gf-danger-fill: #d75b5b;
+   --gf-danger-fill-deep: #bd4545;
    --gf-on-fill-dark: var(--gf-bg);
 
-   --shadow-hard-sm: 0 1px 0 rgba(255, 255, 255, 0.05), 0 2px 6px rgba(0, 0, 0, 0.45);
-   --shadow-hard: 0 1px 0 rgba(255, 255, 255, 0.06), 0 3px 8px rgba(0, 0, 0, 0.5), 0 16px 36px -10px rgba(0, 0, 0, 0.65);
-   --shadow-hard-lg: 0 1px 0 rgba(255, 255, 255, 0.07), 0 10px 28px -6px rgba(0, 0, 0, 0.6), 0 36px 72px -16px rgba(0, 0, 0, 0.8);
-   --shadow-floating: 0 1px 0 rgba(255, 255, 255, 0.07), 0 10px 28px -6px rgba(0, 0, 0, 0.6), 0 36px 72px -16px rgba(0, 0, 0, 0.8);
-   --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.05), 0 2px 8px rgba(0, 0, 0, 0.45);
-   --gf-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.45);
-   --gf-shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.05), 0 2px 6px rgba(0, 0, 0, 0.45);
-   --gf-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), 0 3px 8px rgba(0, 0, 0, 0.5), 0 16px 36px -10px rgba(0, 0, 0, 0.65);
-   --gf-shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.07), 0 10px 28px -6px rgba(0, 0, 0, 0.6), 0 36px 72px -16px rgba(0, 0, 0, 0.8);
-   --nb-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), 0 3px 8px rgba(0, 0, 0, 0.5), 0 16px 36px -10px rgba(0, 0, 0, 0.65);
-   --nb-shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.05), 0 2px 6px rgba(0, 0, 0, 0.45);
-   --nb-shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.07), 0 10px 28px -6px rgba(0, 0, 0, 0.6), 0 36px 72px -16px rgba(0, 0, 0, 0.8);
+   --shadow-hard-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
+   --shadow-hard: 0 5px 14px rgba(0, 0, 0, 0.3);
+   --shadow-hard-lg: 0 14px 30px rgba(0, 0, 0, 0.38);
+   --shadow-floating: 0 14px 30px rgba(0, 0, 0, 0.38);
+   --shadow-card: none;
+   --gf-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.28);
+   --gf-shadow-sm: 0 3px 8px rgba(0, 0, 0, 0.26);
+   --gf-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+   --gf-shadow-lg: 0 14px 30px rgba(0, 0, 0, 0.38);
+   --nb-shadow: var(--gf-shadow);
+   --nb-shadow-sm: var(--gf-shadow-sm);
+   --nb-shadow-lg: var(--gf-shadow-lg);
 
    --gf-scrim: rgba(5, 7, 10, 0.75);
-   --gf-grad-cobalt-hover: linear-gradient(180deg, #939bf8, #7175f7);
+   --gf-grad-cobalt-hover: #456bc7;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -46,7 +46,7 @@ describe('GhostFill visual contract', () => {
   it('keeps popup alignment on a shared gutter and compact vertical rhythm', () => {
     const css = readSource('src/frontend/popup/popup.css');
 
-    expect(css).toContain('--popup-gutter: 14px;');
+    expect(css).toContain('--popup-gutter: 16px;');
     expect(css).toContain('--popup-gap: var(--gf-panel-gap);');
     expect(css).not.toContain('var(--shadow-sm)');
     expect(css).not.toContain('var(--shadow-md)');
@@ -76,13 +76,13 @@ describe('GhostFill visual contract', () => {
     expect(css).not.toContain('gf-emoji-icon');
   });
 
-  it('shares the Spectre geometry across popup, options, and primitives', () => {
+  it('shares the Private Workspace geometry across popup, options, and primitives', () => {
     const globals = readSource('src/frontend/styles/globals.css');
     const options = readSource('src/frontend/options/options.css');
     const popup = readSource('src/frontend/popup/popup.css');
 
-    expect(globals).toContain('--gf-panel-radius: 14px;');
-    expect(globals).toContain('--gf-control-radius: 10px;');
+    expect(globals).toContain('--gf-panel-radius: 12px;');
+    expect(globals).toContain('--gf-control-radius: 8px;');
     expect(options).toContain('background: var(--gf-surface);');
     expect(options).toContain('border-radius: var(--gf-panel-radius);');
     expect(options).toContain('min-height: var(--gf-control-h);');
@@ -94,25 +94,25 @@ describe('GhostFill visual contract', () => {
   it('keeps the shadow-dom FAB self-contained on arbitrary host pages', () => {
     const css = readSource('src/content/floatingButton.shadow.css');
 
-    expect(css).toContain('--gf-surface: #141820;');
-    expect(css).toContain('--gf-primary-rgb: 129, 140, 248;');
+    expect(css).toContain('--gf-surface: #171e29;');
+    expect(css).toContain('--gf-primary-rgb: 136, 168, 255;');
     expect(css).toContain('--gf-font-mono:');
     expect(css).toContain('--fab-accent: var(--gf-primary);');
     expect(css).toContain('--fab-accent: var(--gf-mint);');
     expect(css).toContain('--fab-accent: var(--gf-amber);');
-    expect(css).toContain('--gf-grad-cobalt: linear-gradient(180deg, #6366f1 0%, #4f46e5 100%);');
-    expect(css).toContain('--gf-grad-mint: linear-gradient(180deg, #34d399 0%, #10b981 100%);');
-    expect(css).toContain('--gf-grad-coral: linear-gradient(180deg, #f87171 0%, #ef4444 100%);');
-    expect(css).toContain('local Spectre palette');
+    expect(css).toContain('--gf-grad-cobalt: #5e85e6;');
+    expect(css).toContain('--gf-grad-mint: #5ac89e;');
+    expect(css).toContain('--gf-grad-coral: #d75b5b;');
+    expect(css).toContain('Private Workspace palette');
   });
 
   it('uses the same semantic accents for in-page field feedback', () => {
     const css = readSource('src/content/styles/content.css');
 
-    expect(css).toContain('--gf-cc-iris: #818cf8;');
-    expect(css).toContain('--gf-cc-mint: #34d399;');
-    expect(css).toContain('--gf-cc-amber: #fbbf24;');
-    expect(css).toContain('--gf-cc-coral: #f87171;');
+    expect(css).toContain('--gf-cc-iris: #2f5fd0;');
+    expect(css).toContain('--gf-cc-mint: #14805c;');
+    expect(css).toContain('--gf-cc-amber: #b66f00;');
+    expect(css).toContain('--gf-cc-coral: #c43a3a;');
     expect(css).not.toContain('#5b54e8');
     expect(css).not.toContain('#0a9d72');
   });
@@ -120,8 +120,32 @@ describe('GhostFill visual contract', () => {
   it('exports the same geometry tokens into shadow-dom content UI', () => {
     const hostTokens = generateHostTokens();
 
-    expect(hostTokens).toContain('--gf-panel-radius: 14px;');
-    expect(hostTokens).toContain('--gf-control-radius: 10px;');
+    expect(hostTokens).toContain('--gf-panel-radius: 12px;');
+    expect(hostTokens).toContain('--gf-control-radius: 8px;');
     expect(hostTokens).toContain('--gf-control-h: 36px;');
+  });
+
+  it('keeps interactive semantics unique across options and inbox surfaces', () => {
+    const optionsApp = readSource('src/frontend/options/OptionsApp.tsx');
+    const optionsTabs = readSource('src/frontend/options/components/OptionsTabs.tsx');
+    const inbox = readSource('src/frontend/popup/components/EmailGenerator.tsx');
+
+    expect(optionsApp).toContain('role="tabpanel"');
+    expect(optionsTabs).not.toContain('role="tabpanel"');
+    expect(inbox).toContain('className="inbox-item-open-button"');
+    expect(inbox).not.toContain('className="inbox-item"\n                          role="button"');
+  });
+
+  it('keeps the command palette and quiet FAB keyboard-safe', () => {
+    const optionsApp = readSource('src/frontend/options/OptionsApp.tsx');
+    const fabCss = readSource('src/content/floatingButton.shadow.css');
+    const eslint = readSource('.eslintrc.cjs');
+
+    expect(optionsApp).toContain('role="combobox"');
+    expect(optionsApp).toContain('aria-activedescendant');
+    expect(optionsApp).toContain('useSiblingIsolation(isOpen, overlayRef)');
+    expect(fabCss).toMatch(/\.gf-fab\.gf-quiet\s*{[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px/);
+    expect(fabCss).toContain('.gf-fab.gf-quiet:focus-visible');
+    expect(eslint).toContain("'plugin:jsx-a11y/recommended'");
   });
 });

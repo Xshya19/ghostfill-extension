@@ -57,7 +57,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => (
-  <nav className="settings-sidebar" role="tablist" aria-label="Settings navigation">
+  <div className="settings-sidebar" role="tablist" aria-label="Settings navigation">
     {TAB_GROUPS.map((group, groupIdx) => (
       <div key={group.title} className="sidebar-group">
         <div className="sidebar-nav-section-label">{group.title}</div>
@@ -112,7 +112,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => (
         {groupIdx < TAB_GROUPS.length - 1 && <div className="sidebar-nav-divider" />}
       </div>
     ))}
-  </nav>
+  </div>
 );
 
 interface SettingsSectionProps {
@@ -399,6 +399,12 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
                   .join(' ')}
                 onMouseEnter={() => setHighlightIdx(idx)}
                 onMouseDown={(event) => event.preventDefault()}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    selectIdx(idx);
+                  }
+                }}
                 onClick={() => selectIdx(idx)}
               >
                 <span className="gf-custom-select-option-label">{option.label}</span>

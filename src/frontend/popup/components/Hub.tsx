@@ -565,7 +565,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
   const handleOpenLink = useCallback(
     (event: React.MouseEvent, url: string) => {
       event.stopPropagation();
-      onToast('Opening activation link...');
+      onToast('Opening activation link…');
       openSafeUrl(url);
     },
     [onToast]
@@ -882,7 +882,9 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
           onClick={handleSwitchToRealProvider}
         >
           <span className="hub-email-selector-label">
-            <GmailLogo size={14} />
+            <span aria-hidden="true">
+              <GmailLogo size={14} />
+            </span>
             <span>Gmail</span>
           </span>
         </button>

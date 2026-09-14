@@ -48,13 +48,12 @@ const STYLES = `
   --error:           var(--gf-coral);
   --error-rgb:       var(--gf-coral-rgb);
   
-  --sticker-bg: var(--gf-grad-cobalt, linear-gradient(160deg, #6366f1 0%, #4f46e5 100%));
-  --sticker-bg-hover: var(--gf-grad-cobalt-hover, linear-gradient(160deg, #7175f7 0%, #5950ee 100%));
+  --sticker-bg: var(--gf-primary-deep, #4f46e5);
+  --sticker-bg-hover: var(--gf-primary, #6366f1);
   --shadow-hard: 0 4px 14px -4px rgba(var(--gf-primary-rgb, 99, 102, 241), 0.7), 0 1px 0 rgba(255,255,255,0.28) inset;
 
   --ease-out-expo:   cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring:     cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-bounce:     cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .ghost-icon-container {
@@ -87,11 +86,17 @@ const STYLES = `
 }
 
 .ghost-icon-container:focus-visible {
-  outline: none;
+  outline: 2px solid var(--gf-primary, #818cf8);
+  outline-offset: 2px;
   box-shadow:
     0 0 0 2px var(--gf-bg, #0c0f14),
-    0 0 0 4px var(--gf-primary, #818cf8),
     0 3px 10px -4px rgba(var(--gf-primary-rgb, 99, 102, 241), 0.7);
+}
+
+:host(:focus-visible) {
+  outline: 2px solid var(--gf-primary, #818cf8);
+  outline-offset: 2px;
+  border-radius: var(--gf-control-radius, 10px);
 }
 
 /* ── SVG Icons ── */
@@ -133,8 +138,8 @@ const STYLES = `
 }
 
 @keyframes glPop {
-  0% { transform: scale(0); opacity: 0; }
-  100% { transform: scale(1); opacity: 1; }
+  0% { transform: scale(.92) rotate(-8deg); opacity: 0; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
 }
 
 /* ── Spatial Tooltip (Cyberpunk styled) ── */
@@ -185,18 +190,18 @@ const STYLES = `
   cursor: wait;
 }
 .ghost-icon-container.gl-success {
-  background: var(--gf-grad-mint, linear-gradient(160deg, #3fe0c5, #12b886));
+  background: var(--gf-mint, #34d399);
   border-color: var(--gf-line-2, rgba(255,255,255,0.10));
   box-shadow: 0 6px 18px -6px rgba(63, 224, 197, 0.7), 0 1px 0 rgba(255,255,255,0.06) inset;
 }
 .ghost-icon-container.gl-error {
-  background: var(--gf-grad-coral, linear-gradient(160deg, #ff6b6b, #e0463f));
+  background: var(--gf-coral, #f87171);
   border-color: var(--gf-line-2, rgba(255,255,255,0.10));
   box-shadow: 0 6px 18px -6px rgba(255, 107, 107, 0.7), 0 1px 0 rgba(255,255,255,0.06) inset;
   animation: glShake2D 0.35s ease;
 }
 .ghost-icon-container.gl-otp-ready {
-  background: var(--gf-grad-cobalt, linear-gradient(160deg, #7c83ff, #5a61f0));
+  background: var(--gf-primary-deep, #4f46e5);
   border-color: var(--gf-line-2, rgba(255,255,255,0.10));
   box-shadow: 0 6px 18px -6px rgba(var(--brand-rgb, 124,131,255), 0.7), 0 1px 0 rgba(255,255,255,0.06) inset;
   animation: glPulse2D 2s ease-in-out infinite;

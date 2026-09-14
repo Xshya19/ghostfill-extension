@@ -23,9 +23,11 @@ const fabIcon = (
 
 const ICONS: Readonly<Record<ButtonMode, string>> = {
   magic: fabIcon(`
-    <path d="M7.1 18.8V10a4.9 4.9 0 0 1 9.8 0v8.8l-2.45-1.65L12 18.8l-2.45-1.65L7.1 18.8Z" fill="currentColor" opacity=".2"/>
-    <path d="M7.1 18.8V10a4.9 4.9 0 0 1 9.8 0v8.8l-2.45-1.65L12 18.8l-2.45-1.65L7.1 18.8Z" stroke="currentColor" stroke-width="${STROKE}" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="10.2" cy="10.7" r="1" fill="currentColor"/><circle cx="13.8" cy="10.7" r="1" fill="currentColor"/>
+    <circle cx="12" cy="12" r="5.15" fill="currentColor" opacity=".16"/>
+    <path d="M12 5.1v2.05M12 16.85v2.05M5.1 12h2.05M16.85 12h2.05" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" opacity=".72"/>
+    <path d="m12 7.25 1.45 3.3 3.3 1.45-3.3 1.45-1.45 3.3-1.45-3.3-3.3-1.45 3.3-1.45L12 7.25Z" fill="currentColor" opacity=".22"/>
+    <path d="m12 7.25 1.45 3.3 3.3 1.45-3.3 1.45-1.45 3.3-1.45-3.3-3.3-1.45 3.3-1.45L12 7.25Z" stroke="currentColor" stroke-width="${STROKE}" stroke-linejoin="round"/>
+    <circle cx="12" cy="12" r="1.25" fill="currentColor"/>
     <path d="m18.3 4.1.45 1.25 1.25.45-1.25.45-.45 1.25-.45-1.25-1.25-.45 1.25-.45.45-1.25Z" fill="currentColor"/>
   `),
 
