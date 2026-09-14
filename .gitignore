@@ -94,6 +94,7 @@ tsconfig.tsbuildinfo
 *.pid
 *.seed
 *.pid.lock
+*.raw.gif
 
 # ───────────────────────────────────────────────────────────────────
 # Chrome Extension Testing & Packaging
@@ -122,6 +123,12 @@ DEBUG_*.json
 audit_*.md
 audit_*.txt
 audit_*.json
+*audit*.md
+*audit*.txt
+*audit*.json
+*audit*.html
+audits/
+frontend_audit.md
 check_*.js
 debug_*.js
 lint_*.js
@@ -175,6 +182,9 @@ tests/accuracy_log*.jsonl
 # ───────────────────────────────────────────────────────────────────
 artifacts/
 .claude/
+.workbuddy-ai/
+.gemini/
+export-*.gif
 
 # ───────────────────────────────────────────────────────────────────
 # Archived / Legacy (large files, not needed in git history)

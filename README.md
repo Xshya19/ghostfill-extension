@@ -21,6 +21,7 @@
 
 <p align="center">
   <a href="#what-is-ghostfill">Overview</a> •
+  <a href="#demo-in-action">Demo</a> •
   <a href="#why-ghostfill">Why GhostFill?</a> •
   <a href="#core-features">Features & Providers</a> •
   <a href="#quick-start">Quick Start</a> •
@@ -34,6 +35,7 @@
 ## Table of Contents
 
 - [What is GhostFill?](#what-is-ghostfill)
+- [Demo in Action](#demo-in-action)
 - [Why GhostFill? (Feature Comparison)](#why-ghostfill)
 - [Who It Is For](#who-it-is-for)
 - [Core Features](#core-features)
@@ -80,6 +82,25 @@ On any signup or registration page, GhostFill automatically:
 5. **Autofills the OTP code on the page** and/or **auto-opens the activation link in a new tab**.
 
 Everything executes locally inside your browser as a Google Chrome **Manifest V3** extension with zero server tracking and zero external telemetry.
+
+---
+
+## Demo in Action
+
+<p align="center">
+  <img src="src/assets/demo.gif" alt="GhostFill Live Demo: One-Click Registration, Autofill & Magic Link Auto-Confirmation" width="100%" />
+</p>
+
+<p align="center">
+  <em><strong>Live End-to-End Flow on Qwen (chat.qwen.ai):</strong> 1-Click Identity generation (<code>Roy Schmidt</code>) with CatchMail.io (&lt;50ms generation, 7-day retention) &rarr; Intelligent form field autofill &rarr; Background mailbox polling &rarr; Automatic activation link detection & new-tab auto-confirmation—zero tab-hopping or manual code entry required.</em>
+</p>
+
+### What You're Seeing in the Demo
+
+1. **Instant Identity & Credentials Provisioning**: Opening the GhostFill Popup Hub generates a realistic human identity (`Roy Schmidt`), disposable CatchMail address (`roy.schmidt.3813@catchmail.io`), and a cryptographically secure password with zero setup.
+2. **Context-Aware Form Autofill**: Navigating to the registration page (`chat.qwen.ai/auth?mode=register`), GhostFill detects input fields and automatically fills full name, disposable email, and passwords matching form constraints.
+3. **Background Mailbox Interception**: After submitting the form and completing access verification, Qwen prompts: *"The account is pending activation. Please activate your account through the verification email in your inbox."* GhostFill's background service worker immediately begins polling the disposable inbox.
+4. **Zero-Click Magic Link Confirmation (`autoConfirmLinks`)**: GhostFill detects the incoming activation email, extracts the verification link, and automatically launches it in a new browser tab. The account is confirmed instantly and the user is logged into Qwen Studio ready to use!
 
 ---
 
@@ -182,7 +203,7 @@ GhostFill:
 - Tracks that tab as an “activation tab” so OTP delivery still targets your original signup page
 - Still fills OTPs if both a code and a link appear in the same mail
 
-**On by default.** Toggle under Options → Automation → **Auto-open verification links** (`autoConfirmLinks`).
+**On by default.** Toggle under Options → Automation → **Auto-open verification links** (`autoConfirmLinks`). *(See this feature in action in the [Demo](#demo-in-action) confirming an account on Qwen).*
 
 ### 5. Secure password generator
 
@@ -281,6 +302,8 @@ OTP delivered to the waiting tab → content script fills field
         ▼
 You continue signup — real inbox never saw the spam
 ```
+
+> 💡 **Visual Walkthrough:** See the [Demo in Action](#demo-in-action) above to watch this complete sequence executed in real time on a live web app.
 
 **Important details under the hood:**
 
