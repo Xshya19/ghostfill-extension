@@ -217,3 +217,10 @@ singe.md
 test-qwen-classifier.ts
 test-qwen-classifier.js
 test-qwen-classifier.log
+frame_*.png
+test_*.gif
+
+# Preserve agent workflow docs
+!.agents/**
+.agents/**/__pycache__/
+.agents/**/*.pyc
