@@ -4,7 +4,9 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { storageService } from '../../services/storageService';
 import { applyTheme, resolveTheme } from '../../shared/theme';
 import { UserSettings, DEFAULT_SETTINGS } from '../../types/storage.types';
+import { APP_VERSION } from '../../utils/core';
 import { createLogger } from '../../utils/logger';
+import { t } from '../i18n';
 import { GhostLogo } from '../popup/components/SharedComponents';
 import { Button } from '../ui';
 
@@ -20,14 +22,10 @@ import {
 } from './components/OptionsTabs';
 import { Sidebar, TabId } from './components/OptionsUI';
 
-const t = (key: string): string => {
-  try {
-    return chrome.i18n.getMessage(key) || key;
-  } catch {
-    return key;
-  }
-};
 const log = createLogger('OptionsApp');
+
+const hasRuntimeMessaging = (): boolean =>
+  typeof chrome !== 'undefined' && typeof chrome.runtime?.sendMessage === 'function';
 
 // ═══════════════════════════════════════════════════════════════
 //  §1  T Y P E S
@@ -290,29 +288,31 @@ const LoadingSpinner: React.FC = () => (
  */
 const PostureStrip: React.FC<{ settings: UserSettings }> = ({ settings }) => {
   const items: { text: string; on: boolean }[] = [
-    { text: `mail · ${settings.preferredEmailService}`, on: true },
+    { text: `Mail: ${settings.preferredEmailService}`, on: true },
     {
       text: settings.autoCheckInbox
-        ? `inbox · every ${settings.checkIntervalSeconds}s`
-        : 'inbox · on demand',
+        ? `Inbox: every ${settings.checkIntervalSeconds} seconds`
+        : 'Inbox: on demand',
       on: settings.autoCheckInbox,
     },
     {
-      text: settings.autoFillOTP ? 'codes · auto-fill' : 'codes · manual',
+      text: settings.autoFillOTP ? 'Codes: automatic' : 'Codes: manual',
       on: settings.autoFillOTP,
     },
     {
       text: settings.showFloatingButton
-        ? `button · ${settings.floatingButtonPosition}`
-        : 'button · hidden',
+        ? `Button: ${settings.floatingButtonPosition}`
+        : 'Button: hidden',
       on: settings.showFloatingButton,
     },
     {
-      text: settings.autoConfirmLinks ? 'links · auto-open' : 'links · ask first',
+      text: settings.autoConfirmLinks ? 'Links: automatic' : 'Links: ask first',
       on: settings.autoConfirmLinks,
     },
     {
-      text: settings.saveHistory ? `history · ${settings.historyRetentionDays}d` : 'history · off',
+      text: settings.saveHistory
+        ? `History: ${settings.historyRetentionDays} days`
+        : 'History: off',
       on: settings.saveHistory,
     },
   ];
@@ -320,7 +320,7 @@ const PostureStrip: React.FC<{ settings: UserSettings }> = ({ settings }) => {
   return (
     <div className="posture-strip">
       <div className="posture-inner">
-        <span className="posture-label">Right now</span>
+        <span className="posture-label">Active settings</span>
         <ul className="posture-list" aria-label="Current behavior summary">
           {items.map((item) => (
             <li
@@ -423,7 +423,7 @@ const OptionsApp: React.FC = () => {
   const previousSettingsRef = useRef<UserSettings | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
 
-  const version = useMemo(() => chrome.runtime.getManifest().version, []);
+  const version = APP_VERSION;
 
   // ═══════════════════════════════════════════════════════════
   //  §5.1  V A L I D A T I O N   H E L P E R S
@@ -464,6 +464,14 @@ const OptionsApp: React.FC = () => {
 
   const loadSettings = useCallback(async () => {
     setLoadError(null);
+    if (!hasRuntimeMessaging()) {
+      // Localhost builds are used for responsive and visual regression checks.
+      // Render the real defaults without pretending they can be persisted.
+      previousSettingsRef.current = DEFAULT_SETTINGS;
+      setSettings(DEFAULT_SETTINGS);
+      setLoading(false);
+      return;
+    }
     try {
       const response = await chrome.runtime.sendMessage({ action: 'GET_SETTINGS' });
       if (response?.settings && typeof response.settings === 'object') {
@@ -525,6 +533,15 @@ const OptionsApp: React.FC = () => {
       if (Object.keys(errors).length > 0) {
         log.error('Validation failed', errors);
         return false;
+      }
+
+      // The localhost build is intentionally usable for visual regression and
+      // accessibility checks. It has no extension service worker to persist to,
+      // so keep its save state quiet instead of presenting a false failure.
+      if (!hasRuntimeMessaging()) {
+        previousSettingsRef.current = currentSettings;
+        setSaveState('idle');
+        return true;
       }
 
       try {
@@ -595,6 +612,12 @@ const OptionsApp: React.FC = () => {
     // Never autosave from defaults after a failed load — that would
     // overwrite the user's real stored settings with DEFAULT_SETTINGS.
     if (loadError) {
+      return;
+    }
+    // Loading changes `loading` and `settings` in the same render. Comparing
+    // the exact object installed by loadSettings prevents that render from
+    // being mistaken for a user edit and written straight back to storage.
+    if (previousSettingsRef.current === settings) {
       return;
     }
     if (!loading) {

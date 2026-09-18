@@ -60,6 +60,28 @@ describe('GhostFill visual contract', () => {
     );
   });
 
+  it('reserves enough popup height for a complete populated inbox row', () => {
+    const css = readSource('src/frontend/popup/popup.css');
+    const composition = css.slice(css.indexOf('PRIVATE WORKSPACE COMPOSITION'));
+
+    expect(composition).toMatch(
+      /\.ghost-dashboard\s*{[\s\S]*?padding:\s*8px var\(--popup-gutter\) 10px;/
+    );
+    expect(composition).toMatch(
+      /\.identity-row\s*{[\s\S]*?min-height:\s*54px;[\s\S]*?padding:\s*5px 10px;/
+    );
+    expect(composition).toMatch(
+      /\.inbox-section\s*{[\s\S]*?gap:\s*var\(--space-1\);[\s\S]*?padding:\s*8px 10px;/
+    );
+    expect(composition).toMatch(
+      /ACCESSIBLE HIT AREAS[\s\S]*?\.identity-row\s*{\s*min-height:\s*54px;/
+    );
+    expect(composition).toMatch(
+      /\.identity-actions \.action-icon,[\s\S]*?\.view-all-btn,[\s\S]*?min-width:\s*44px;[\s\S]*?min-height:\s*44px;/
+    );
+    expect(css).toMatch(/\.otp-badge,\s*\.link-badge\s*{\s*min-height:\s*24px;/);
+  });
+
   it('renders identity controls as a single aligned action dock', () => {
     const css = readSource('src/frontend/popup/popup.css');
 

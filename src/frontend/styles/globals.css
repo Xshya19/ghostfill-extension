@@ -62,7 +62,8 @@
    --gf-ink-rgb: 23, 32, 51;
    --gf-ink-soft: #5e6b7c;
    --gf-ink-soft-rgb: 94, 107, 124;
-   --gf-ink-dim: #778394;
+   /* 4.5:1+ against both light canvas and white surfaces at body sizes. */
+   --gf-ink-dim: #667284;
    --gf-line: rgba(23, 32, 51, 0.12);
    --gf-line-2: rgba(23, 32, 51, 0.2);
    --gf-hi: rgba(255, 255, 255, 0.95);
@@ -336,7 +337,7 @@
 }
 
 /* ============================================================================
-   SECTION 2: SHARED UI PRIMITIVES  ·  "SPECTRE"
+   SECTION 2: SHARED UI PRIMITIVES  ·  "PRIVATE WORKSPACE"
    ========================================================================== */
 
 /* ── Motion primitives ───────────────────────────────────────────────────── */
@@ -506,7 +507,7 @@
 
 .gf-btn--success {
   color: var(--gf-on-fill-dark);
-  background: linear-gradient(180deg, #12b886, var(--gf-success-fill));
+  background: var(--gf-success-fill);
   border-color: transparent;
   box-shadow:
     0 8px 22px -10px rgba(var(--gf-mint-rgb), 0.5),
@@ -519,7 +520,7 @@
 
 .gf-btn--warning {
   color: var(--gf-on-fill-dark);
-  background: linear-gradient(180deg, #e0950f, var(--gf-warning-fill));
+  background: var(--gf-warning-fill);
   border-color: transparent;
   box-shadow:
     0 8px 22px -10px rgba(var(--gf-amber-rgb), 0.5),
@@ -741,10 +742,10 @@
   align-items: center;
   gap: 6px;
   font-family: var(--gf-font-display);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--gf-ink-dim);
 }
 

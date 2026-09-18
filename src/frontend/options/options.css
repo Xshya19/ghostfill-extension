@@ -10,11 +10,6 @@
 @import '../styles/globals.css';
 
 :root {
-  --rail-w: 220px;
-  --rail-pad-r: 10px;
-  --page-max: 1180px;
-  --gutter: var(--gf-page-gutter);
-  --posture-h: 41px;
   --touch-min: 44px;
   color-scheme: light dark;
 }
@@ -109,9 +104,6 @@ body {
   flex-direction: column;
   min-height: 100vh;
   /* Dot field instead of animated blobs — texture without motion. */
-  background:
-    var(--gf-pattern-dot) 0 0 / 22px 22px,
-    var(--gf-bg);
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -120,39 +112,24 @@ body {
 .options-header {
   position: relative;
   z-index: var(--z-header);
-  background: var(--gf-glass);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--gf-glass-border);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  background: var(--gf-surface);
+  border-bottom: 1px solid var(--gf-line);
+  box-shadow: none;
 }
 
 .header-content {
   display: flex;
   align-items: center;
-  gap: 14px;
   max-width: var(--page-max);
   margin: 0 auto;
-  padding: 18px var(--gutter);
 }
 
 .logo-box {
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  width: 58px;
-  height: 58px;
-  background: var(--gf-sunken);
   border: 1px solid var(--gf-line);
-  border-radius: var(--radius-md);
-  box-shadow:
-    inset 0 1px 0 var(--gf-hi),
-    var(--gf-shadow-xs);
   overflow: hidden;
-  transition: transform var(--gf-dur-fast) var(--gf-ease);
-}
-.logo-box:hover {
-  transform: scale(1.04);
 }
 
 /* GhostLogo renders at size=44 (see OptionsApp) inside a 48px plate. */
@@ -163,28 +140,21 @@ body {
 .header-text-group {
   display: flex;
   flex-direction: column;
-  gap: 2px;
   min-width: 0;
 }
 
 .spectral-title {
   font-family: var(--gf-font-display);
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  line-height: 1.15;
   color: var(--gf-ink);
 }
 
 .spectral-subtitle {
-  font-size: 13px;
   color: var(--gf-text-muted);
 }
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
   margin-left: auto;
 }
 
@@ -194,18 +164,10 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  min-height: 36px;
-  padding: 0 14px;
   font-family: var(--gf-font-display);
   font-size: 12.5px;
   font-weight: 600;
-  color: var(--gf-ink-soft);
-  background: var(--gf-surface);
   border: 1px solid var(--gf-line);
-  border-radius: var(--radius-md);
-  box-shadow:
-    var(--gf-shadow-xs),
-    inset 0 1px 0 var(--gf-hi);
   cursor: pointer;
   transition:
     color var(--gf-dur-fast) var(--gf-ease),
@@ -216,10 +178,7 @@ body {
 
 .command-palette-trigger-btn:hover,
 .theme-toggle-header-btn:hover {
-  color: var(--gf-ink);
-  border-color: var(--gf-line-2);
   background-color: var(--gf-sunken);
-  transform: translateY(-1px);
 }
 
 .command-palette-trigger-btn:focus-visible,
@@ -229,11 +188,8 @@ body {
 }
 
 .command-palette-trigger-btn kbd {
-  margin-left: 2px;
-  padding: 2px 5px;
   font-size: 10.5px;
   border-radius: 4px;
-  background: var(--gf-sunken);
   border: 1px solid var(--gf-line);
 }
 
@@ -250,22 +206,16 @@ body {
    POSTURE STRIP  ·  a mono readout of GhostFill's live security posture
    ════════════════════════════════════════════════════════════════════════ */
 .posture-strip {
-  position: sticky;
   top: 0;
-  z-index: var(--z-header);
-  background: var(--gf-glass);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--gf-glass-border);
+  background: var(--gf-surface);
+  border-bottom: 1px solid var(--gf-line);
 }
 
 .posture-inner {
   display: flex;
   align-items: center;
-  gap: 12px;
   max-width: var(--page-max);
   margin: 0 auto;
-  min-height: var(--posture-h);
   padding: 0 var(--gutter);
   overflow-x: auto;
   scrollbar-width: none;
@@ -280,15 +230,14 @@ body {
   font-family: var(--gf-font-display);
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: var(--tracking-ultra-wide);
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--gf-ink-dim);
 }
 
 .posture-list {
   display: flex;
   align-items: center;
-  gap: 6px;
   min-width: 0;
   list-style: none;
 }
@@ -296,36 +245,20 @@ body {
 .posture-item {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
   flex-shrink: 0;
-  padding: 4px 10px 4px 8px;
-  font-family: var(--gf-font-mono);
-  font-size: 11px;
-  line-height: 1.5;
   white-space: nowrap;
   color: var(--gf-ink-soft);
-  background: var(--gf-surface);
   border: 1px solid var(--gf-line);
-  border-radius: var(--radius-pill);
-  box-shadow: var(--gf-shadow-xs);
 }
 
 .posture-item::before {
   content: '';
-  width: 6px;
-  height: 6px;
   border-radius: 50%;
   background: var(--gf-ink-dim);
 }
 
-.posture-item--on {
-  color: var(--gf-ink);
-  border-color: rgba(var(--gf-mint-rgb), 0.3);
-}
-
 .posture-item--on::before {
   background: var(--gf-success);
-  box-shadow: 0 0 0 3px rgba(var(--gf-mint-rgb), 0.2);
 }
 
 .posture-item--off::before {
@@ -337,12 +270,9 @@ body {
    ════════════════════════════════════════════════════════════════════════ */
 .dashboard-layout {
   display: grid;
-  grid-template-columns: var(--rail-w) minmax(0, 1fr);
-  gap: 0;
   width: 100%;
   max-width: var(--page-max);
   margin: 0 auto;
-  padding: 0 var(--gutter);
   flex: 1 1 auto;
   align-items: start;
 }
@@ -350,34 +280,27 @@ body {
 /* ── Rail nav ─────────────────────────────────────────── */
 .settings-sidebar {
   position: sticky;
-  top: calc(var(--posture-h) + 1px);
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 26px var(--rail-pad-r) 26px 0;
-  border-right: 1px solid var(--gf-line);
 }
 
 .sidebar-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
 }
 
 .sidebar-nav-section-label {
-  padding: 0 10px 4px;
   font-family: var(--gf-font-display);
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: var(--tracking-ultra-wide);
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--gf-ink-dim);
 }
 
 .sidebar-nav {
   display: flex;
   flex-direction: column;
-  gap: 3px;
 }
 
 .sidebar-nav-divider {
@@ -390,27 +313,11 @@ body {
   align-items: center;
   gap: 10px;
   width: 100%;
-  min-height: 38px;
-  padding: 8px 12px;
   font-family: var(--gf-font-display);
-  font-size: 13.5px;
-  font-weight: 600;
   text-align: left;
-  color: var(--gf-ink-soft);
   background: transparent;
   border: none;
-  border-radius: var(--radius-md);
   cursor: pointer;
-  transition:
-    color var(--gf-dur-fast) var(--gf-ease),
-    background-color var(--gf-dur-fast) var(--gf-ease),
-    transform var(--gf-dur-fast) var(--gf-ease);
-}
-
-.sidebar-nav-item:hover {
-  color: var(--gf-ink);
-  background: rgba(var(--gf-ink-rgb), 0.06);
-  transform: translateX(2px);
 }
 
 .sidebar-nav-item:focus-visible {
@@ -419,8 +326,6 @@ body {
 }
 
 .sidebar-nav-item[aria-selected='true'] {
-  color: var(--gf-ink);
-  background: var(--gf-primary-soft);
   font-weight: 700;
 }
 
@@ -444,7 +349,6 @@ body {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  color: var(--gf-ink-dim);
   transition: color var(--gf-dur-fast) var(--gf-ease);
 }
 
@@ -468,11 +372,6 @@ body {
 /* ── Main column ──────────────────────────────────────── */
 .options-main {
   min-width: 0;
-  padding: 26px 0 26px 28px;
-}
-
-.tab-panel {
-  animation: gf-status-in 200ms var(--gf-ease) both;
 }
 
 .tab-panel:focus {
@@ -480,59 +379,25 @@ body {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   SECTION CARD  ·  frosted titanium plate
+   SECTION CARD  ·  quiet settings surface
    ════════════════════════════════════════════════════════════════════════ */
 .ghost-card {
-  background: var(--gf-card);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--gf-glass-border);
-  border-radius: var(--radius-lg);
-  box-shadow:
-    var(--shadow-card),
-    inset 0 1px 0 var(--gf-hi);
-  transition:
-    border-color var(--gf-dur) var(--gf-ease),
-    box-shadow var(--gf-dur) var(--gf-ease);
-}
-
-.settings-section {
-  padding: 0 24px 20px;
-}
-
-.settings-section + .settings-section {
-  margin-top: 20px;
-}
-
-.settings-section.danger {
-  border-color: rgba(var(--gf-coral-rgb), 0.35);
+  transition: border-color var(--gf-dur) var(--gf-ease);
 }
 
 .settings-section h2 {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 0 -24px 16px;
-  padding: 16px 24px;
   font-family: var(--gf-font-display);
-  font-size: 14.5px;
-  font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--gf-ink);
-  background: var(--gf-sunken);
-  border-bottom: 1px solid var(--gf-line);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 
 .section-icon {
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  width: 30px;
-  height: 30px;
-  color: var(--gf-primary);
-  background: var(--gf-primary-soft);
-  border-radius: var(--radius-sm);
 }
 
 .settings-section.danger h2 {
@@ -550,11 +415,8 @@ body {
    ════════════════════════════════════════════════════════════════════════ */
 .setting-item {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
-  padding: 13px 0;
   border-top: 1px solid var(--gf-line);
 }
 
@@ -565,8 +427,6 @@ body {
 .setting-item.setting-item-col,
 .setting-item.vertical-group {
   flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
 }
 
 .setting-info {
@@ -580,15 +440,11 @@ body {
 .setting-info > label,
 .setting-info .fs-15-fw-600 {
   font-family: var(--gf-font-display);
-  font-size: 13.5px;
-  font-weight: 600;
   color: var(--gf-ink);
 }
 
 .setting-info p,
 .setting-info .fs-13 {
-  font-size: 12.5px;
-  line-height: 1.45;
   color: var(--gf-text-muted);
 }
 
@@ -632,7 +488,6 @@ body {
 }
 
 .setting-item:not(.setting-item-col):not(.vertical-group) > input[type='number'] {
-  width: 90px;
   max-width: 110px;
   text-align: center;
   flex-shrink: 0;
@@ -640,8 +495,6 @@ body {
 
 .setting-item:not(.setting-item-col):not(.vertical-group) > .gf-custom-select {
   width: auto;
-  min-width: 240px;
-  max-width: 320px;
   flex-shrink: 0;
 }
 
@@ -676,7 +529,6 @@ body {
 .options-app select:focus,
 .options-app textarea:focus {
   outline: none;
-  background-color: var(--gf-surface);
   border-color: var(--gf-primary);
 }
 
@@ -981,13 +833,24 @@ body {
 .toggle {
   position: relative;
   flex-shrink: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+.toggle::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 1px;
   width: 42px;
   height: 24px;
-  padding: 0;
   background: var(--gf-sunken);
   border: 1px solid var(--gf-line);
   border-radius: var(--radius-pill);
-  cursor: pointer;
+  transform: translateY(-50%);
   transition:
     background-color var(--gf-dur) var(--gf-ease),
     border-color var(--gf-dur) var(--gf-ease);
@@ -1001,9 +864,7 @@ body {
 .toggle-slider {
   position: absolute;
   top: 50%;
-  left: 3px;
-  width: 16px;
-  height: 16px;
+  left: 4px;
   background: var(--gf-on-fill-light);
   border-radius: 50%;
   transform: translateY(-50%);
@@ -1012,12 +873,12 @@ body {
 }
 
 .toggle[aria-checked='true'] {
-  background: var(--gf-primary-fill);
-  border-color: transparent;
+  background: transparent;
 }
 
-.toggle[aria-checked='true'] .toggle-slider {
-  transform: translate(18px, -50%);
+.toggle[aria-checked='true']::before {
+  background: var(--gf-primary-fill);
+  border-color: transparent;
 }
 
 .toggle:disabled {
@@ -1147,8 +1008,8 @@ body {
   font-family: var(--gf-font-display);
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--gf-ink-dim);
 }
 
@@ -1242,8 +1103,8 @@ body {
   font-family: var(--gf-font-display);
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--gf-ink-dim);
 }
 
@@ -1747,23 +1608,10 @@ button.options-save-indicator {
    RESPONSIVE  ·  the rail folds into a chip row
    ════════════════════════════════════════════════════════════════════════ */
 @media (max-width: 860px) {
-  .dashboard-layout {
-    display: block;
-    padding: 0 var(--gutter);
-  }
 
   .settings-sidebar {
-    position: static;
     gap: 14px;
-    padding: 18px 0 16px;
     border-right: none;
-    border-bottom: 1px solid var(--gf-line);
-  }
-
-  .sidebar-nav {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px;
   }
 
   /* Chips carry an inset ring instead of an edge marker. */
@@ -1785,27 +1633,14 @@ button.options-save-indicator {
 }
 
 @media (max-width: 560px) {
-  :root {
-    --gutter: 16px;
-  }
 
   .header-content {
-    flex-wrap: wrap;
     padding: 14px var(--gutter);
-  }
-
-  .header-actions {
-    width: 100%;
-    margin-left: 0;
   }
 
   .command-palette-trigger-btn {
     flex: 1 1 auto;
     justify-content: center;
-  }
-
-  .sidebar-nav {
-    grid-template-columns: minmax(0, 1fr);
   }
 
   .settings-section {
@@ -1824,8 +1659,6 @@ button.options-save-indicator {
 
   .setting-item {
     flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
   }
 
   .health-grid {
@@ -1847,268 +1680,44 @@ button.options-save-indicator {
    REDUCED MOTION  ·  keep the spinner readable, drop everything else
    ════════════════════════════════════════════════════════════════════════ */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
+  html:focus-within {
+    scroll-behavior: auto !important;
+  }
+
+  .tab-panel,
+  .gf-custom-select-panel,
+  .field-error,
+  .health-dot.health-status-dead,
+  .modal-content,
+  .options-save-indicator,
+  .options-save-indicator-saving .options-save-indicator-dot,
+  .command-palette,
+  .about-skeleton-row {
+    animation: none !important;
+  }
+
+  .about-skeleton-row {
+    background: var(--gf-sunken);
   }
 
   .spinner {
-    animation-duration: 1.6s !important;
-    animation-iteration-count: infinite !important;
+    animation-duration: 1.6s;
   }
 }
 
-/* ════════════════════════════════════════════════════════════════════════
-   CONSISTENCY LAYER  ·  shared geometry with popup + floating controls
-   ════════════════════════════════════════════════════════════════════════
-   This is intentionally small and token-only. It keeps the options page's
-   existing markup and behavior while preserving a shared control geometry. */
-.options-app {
-  background:
-    var(--gf-pattern-dot) 0 0 / 24px 24px,
-    var(--gf-bg);
+/* Save feedback is actionable when persistence fails, so it follows the same
+   target-size contract as the rest of the settings controls. */
+.options-save-indicator {
+  min-height: 44px;
 }
 
-.options-header,
-.posture-strip {
-  background: var(--gf-surface);
-  border-color: var(--gf-line);
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+.about-link {
+  min-height: 44px;
 }
 
-.header-content {
-  gap: 12px;
-  padding: 14px var(--gutter);
-}
-
-.logo-box {
-  width: 48px;
-  height: 48px;
-  border-radius: var(--gf-panel-radius);
-  box-shadow:
-    inset 0 1px 0 var(--gf-hi),
-    var(--gf-shadow-xs);
-}
-
-.spectral-title {
-  font-size: 20px;
-}
-
-.spectral-subtitle {
-  font-size: 12.5px;
-}
-
-.command-palette-trigger-btn,
-.theme-toggle-header-btn {
-  min-height: var(--gf-control-h);
-  border-radius: var(--gf-control-radius);
-}
-
-.dashboard-layout {
-  gap: 20px;
-  padding: 20px var(--gutter) 32px;
-}
-
-.settings-sidebar {
-  top: calc(var(--posture-h) + 16px);
-  gap: 14px;
-  padding: 12px 10px;
-  background: var(--gf-surface);
-  border: 1px solid var(--gf-line);
-  border-radius: var(--gf-panel-radius);
-  box-shadow:
-    var(--gf-shadow-sm),
-    inset 0 1px 0 var(--gf-hi);
-}
-
-.sidebar-nav-item {
-  min-height: var(--gf-control-h);
-  padding: 7px 10px;
-  border-radius: var(--gf-control-radius);
-}
-
-.sidebar-nav-item:hover {
-  transform: none;
-  background: var(--gf-surface-2);
-}
-
-.sidebar-nav-item[aria-selected='true'] {
-  background: var(--gf-primary-soft);
-  box-shadow: inset 0 0 0 1px rgba(var(--gf-primary-rgb), 0.16);
-}
-
-.options-main {
-  padding: 0 0 4px;
-}
-
-.ghost-card {
-  background: var(--gf-surface);
-  border-color: var(--gf-line);
-  border-radius: var(--gf-panel-radius);
-  box-shadow:
-    var(--gf-shadow-sm),
-    inset 0 1px 0 var(--gf-hi);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-.settings-section h2 {
-  border-radius: var(--gf-panel-radius) var(--gf-panel-radius) 0 0;
-}
-
-.options-app input[type='text'],
-.options-app input[type='number'],
-.options-app input[type='password'],
-.options-app input[type='email'],
-.options-app input[type='url'],
-.options-app select,
-.options-app textarea,
-.gf-custom-select-trigger {
-  min-height: var(--gf-control-h);
-  padding-top: 7px;
-  padding-bottom: 7px;
-  border-radius: var(--gf-control-radius);
-}
-
-.toggle {
-  width: 40px;
-  height: 24px;
-}
-
-.toggle[aria-checked='true'] .toggle-slider {
-  transform: translate(16px, -50%);
-}
-
-.setting-item {
-  gap: 16px;
-}
-
-.provider-health-meter,
-.shortcut-reference,
-.storage-monitor {
-  border-radius: var(--gf-control-radius);
-  border-color: var(--gf-line);
-  background: var(--gf-sunken);
-}
-
-.modal-content,
-.command-palette {
-  border-radius: var(--gf-panel-radius);
-}
-
-@media (max-width: 860px) {
-  .dashboard-layout {
-    gap: 0;
-    padding: 0 var(--gutter) 24px;
-  }
-
-  .settings-sidebar {
-    top: auto;
-    padding: 14px 0 16px;
-    background: transparent;
-    border: 0;
-    border-bottom: 1px solid var(--gf-line);
-    border-radius: 0;
-    box-shadow: none;
-  }
-
-  .options-main {
-    padding: 18px 0 24px;
-  }
-}
-
-@media (max-width: 560px) {
-  :root {
-    --gutter: 16px;
-  }
-
-  .header-content {
-    padding: 14px var(--gutter);
-  }
-}
-
-/* ============================================================================
-   SPECTRE PRECISION PASS
-   --------------------------------------------------------------------------
-   Settings uses the same geometry as the popup, but earns a little more
-   breathing room for long descriptions and keyboard-heavy workflows.
-   ========================================================================== */
-
-.dashboard-layout {
-  grid-template-columns: 216px minmax(0, 1fr);
-  gap: 24px;
-}
-
-.settings-sidebar {
-  gap: 12px;
-}
-
-.sidebar-nav-item {
-  min-height: 40px;
-  padding-inline: 11px;
-}
-
-.sidebar-nav-item[aria-selected='true'] {
-  background: var(--gf-primary-soft);
-  box-shadow: inset 0 0 0 1px rgba(var(--gf-primary-rgb), 0.2);
-}
-
-.settings-section h2 {
-  min-height: 58px;
-  margin-bottom: 8px;
-  text-wrap: balance;
-}
-
-.setting-item {
-  min-height: 62px;
-  padding-block: 12px;
-  border-top-color: rgba(var(--gf-ink-rgb), 0.1);
-}
-
-.setting-item:focus-within {
-  background: rgba(var(--gf-primary-rgb), 0.045);
-}
-
-.setting-info > label,
-.setting-info .fs-15-fw-600 {
-  letter-spacing: -0.005em;
-}
-
-.toggle {
-  width: 44px;
-  height: 26px;
-}
-
-.toggle-slider {
-  width: 18px;
-  height: 18px;
-}
-
-.toggle[aria-checked='true'] .toggle-slider {
-  transform: translate(17px, -50%);
-}
-
-.gf-custom-select-trigger,
-.options-app input[type='text'],
-.options-app input[type='number'],
-.options-app input[type='password'],
-.options-app input[type='email'],
-.options-app input[type='url'],
-.options-app select,
-.options-app textarea {
-  min-height: 40px;
-}
-
-@media (max-width: 860px) {
-  .dashboard-layout {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0;
-  }
+.command-palette-item,
+.gf-custom-select-option {
+  min-height: 44px;
 }
 
 /* ============================================================================
@@ -2181,7 +1790,7 @@ button.options-save-indicator {
 
 .command-palette-trigger-btn,
 .theme-toggle-header-btn {
-  min-height: 36px;
+  min-height: 44px;
   padding: 0 10px;
   border-color: transparent;
   border-radius: 8px;
@@ -2204,6 +1813,11 @@ button.options-save-indicator {
   color: var(--gf-ink-dim);
   background: transparent;
   border-color: var(--gf-line);
+}
+
+.options-app .gf-btn {
+  min-height: var(--gf-control-h);
+  min-height: 44px;
 }
 
 .posture-strip {
@@ -2284,7 +1898,7 @@ button.options-save-indicator {
 }
 
 .sidebar-nav-item {
-  min-height: 40px;
+  min-height: 44px;
   padding: 8px 10px;
   border-radius: 8px;
   color: var(--gf-ink-soft);
@@ -2331,7 +1945,7 @@ button.options-save-indicator {
 .ghost-card {
   background: var(--gf-surface);
   border: 1px solid var(--gf-line);
-  border-radius: 12px;
+  border-radius: var(--gf-panel-radius);
   box-shadow: none;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
@@ -2416,7 +2030,7 @@ button.options-save-indicator {
 .options-app select,
 .options-app textarea,
 .gf-custom-select-trigger {
-  min-height: 40px;
+  min-height: 44px;
   border-radius: 8px;
   background-color: var(--gf-surface-2);
   border-color: var(--gf-line);
@@ -2438,8 +2052,8 @@ button.options-save-indicator {
 }
 
 .toggle {
-  width: 42px;
-  height: 24px;
+  width: 44px;
+  height: 44px;
 }
 
 .toggle-slider {
@@ -2533,7 +2147,7 @@ button.options-save-indicator {
   .command-palette-trigger-btn,
   .theme-toggle-header-btn {
     justify-content: center;
-    width: 36px;
+    width: 44px;
     padding: 0;
   }
 

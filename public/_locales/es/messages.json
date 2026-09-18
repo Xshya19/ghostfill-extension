@@ -8,13 +8,13 @@
     "description": "Description of the extension"
   },
   "emailLabel": {
-    "message": "CORREO"
+    "message": "Correo"
   },
   "syncingIdentity": {
     "message": "Sincronizando identidad..."
   },
   "passwordLabel": {
-    "message": "CONTRASENA"
+    "message": "Contraseña"
   },
   "generatingPassword": {
     "message": "Generando..."

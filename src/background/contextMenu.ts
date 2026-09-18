@@ -142,21 +142,21 @@ function buildMenuTree(): MenuItemSpec[] {
     {
       id: CONTEXT_MENU_IDS.SMART_AUTOFILL,
       parentId: CONTEXT_MENU_IDS.PARENT,
-      title: '✨ Magic Fill (All Fields)',
+      title: 'Magic Fill — All Fields',
       contexts: ['editable'],
       action: 'smart-autofill',
     },
     {
       id: CONTEXT_MENU_IDS.GENERATE_EMAIL_QUICK,
       parentId: CONTEXT_MENU_IDS.PARENT,
-      title: '📧 Generate & Fill Email',
+      title: 'Generate and Fill Email',
       contexts: ['all'],
       action: 'generate-email',
     },
     {
       id: CONTEXT_MENU_IDS.GENERATE_PASSWORD_STANDARD,
       parentId: CONTEXT_MENU_IDS.PARENT,
-      title: '🔐 Generate & Fill Password',
+      title: 'Generate and Fill Password',
       contexts: ['all'],
       action: 'generate-password-standard',
     },
@@ -165,7 +165,7 @@ function buildMenuTree(): MenuItemSpec[] {
     {
       id: CONTEXT_MENU_IDS.LAST_OTP,
       parentId: CONTEXT_MENU_IDS.PARENT,
-      title: '🔢 No OTP available',
+      title: 'No verification code available',
       contexts: ['all'],
       enabled: false,
       action: 'copy-last-otp',
@@ -193,7 +193,7 @@ function buildMenuTree(): MenuItemSpec[] {
     {
       id: CONTEXT_MENU_IDS.SETTINGS,
       parentId: CONTEXT_MENU_IDS.PARENT,
-      title: '⚙️ Settings',
+      title: 'Settings',
       contexts: ['all'],
       action: 'open-settings',
     },
@@ -234,6 +234,7 @@ function registerDefaultActions(): void {
       clipboardValue: email.fullEmail,
       clipboardType: 'email',
       fillValue: ctx.info.editable ? email.fullEmail : undefined,
+      fillFieldType: 'email',
       notifyType: 'success',
       notifyTitle: 'GhostFill: Email Generated',
       notifyMessage: `${maskEmail(email.fullEmail)} copied to clipboard!`,
@@ -642,7 +643,7 @@ export async function updateOTPMenuItem(): Promise<void> {
     if (lastOTPState !== null) {
       lastOTPState = null;
       safeUpdate(CONTEXT_MENU_IDS.LAST_OTP, {
-        title: '🔢 No OTP available',
+        title: 'No verification code available',
         enabled: false,
       });
     }
@@ -668,12 +669,12 @@ export async function updateOTPMenuItem(): Promise<void> {
 
   let title: string;
   if (expired) {
-    title = `🔢 OTP expired: ${masked}`;
+    title = `Verification code expired: ${masked}`;
   } else if (stale) {
     const mins = Math.round(age / 60_000);
-    title = `🔢 OTP: ${masked} (${mins}m ago)`;
+    title = `Verification code: ${masked} (${mins}m ago)`;
   } else {
-    title = `🔢 OTP: ${masked} (copy)`;
+    title = `Verification code: ${masked} (copy)`;
   }
 
   safeUpdate(CONTEXT_MENU_IDS.LAST_OTP, {

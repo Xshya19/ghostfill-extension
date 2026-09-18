@@ -551,7 +551,7 @@ async function handleMessage(
 
       // 2. Clear processed-email dedup cache so new inbox is scanned fresh
       //    Also clears otpWaitingTabs + circuit breaker (see resetEmailSession)
-      resetEmailSession();
+      await resetEmailSession();
 
       // 3. Clear notification dedup cache (separate module-level map)
       resetNotificationSession();
@@ -638,7 +638,7 @@ async function handleMessage(
 
       // 2. Clear processed-email dedup cache so new inbox is scanned fresh
       //    Also clears otpWaitingTabs + circuit breaker (see resetEmailSession)
-      resetEmailSession();
+      await resetEmailSession();
 
       // 3. Clear notification dedup cache (separate module-level map)
       resetNotificationSession();
@@ -692,8 +692,8 @@ async function handleMessage(
         gmailAliasSessionStartedAt: aliasSession.startedAt,
       };
 
-      // 7. Update preferredEmailType and currentEmail in storage
-      sseManager.disconnect();
+      // 7. Update preferredEmailType and currentEmail in storage. The session
+      // reset above already tears down any Mail.tm stream.
       suppressNextEmailTypeTransition('gmail');
       await storageService.set('preferredEmailType', 'gmail');
       await storageService.set('currentEmail', currentEmailAcct);

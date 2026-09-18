@@ -7,6 +7,8 @@
 // the Mail.tm (Mercure) stream is hosted here. When an event arrives we message
 // the background worker, which wakes it up to run the normal inbox pipeline.
 
+import { isAllowedMailTmSseRequest } from '../utils/ssePolicy';
+
 // ─────────────────────────────────────────────────────────────
 // SSE Relay (Mail.tm / Mercure)
 // ─────────────────────────────────────────────────────────────
@@ -223,8 +225,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // ---- SSE Relay: start ----
     if (message.target === 'offscreen-doc' && message.type === 'SSE_CONNECT') {
       const { url, token, accountId } = message;
-      if (typeof url !== 'string' || typeof token !== 'string') {
-        sendResponse({ success: false, error: 'SSE_CONNECT requires url and token' });
+      if (
+        typeof token !== 'string' ||
+        token.length < 1 ||
+        token.length > 8192 ||
+        !isAllowedMailTmSseRequest(url, accountId)
+      ) {
+        sendResponse({ success: false, error: 'Invalid SSE relay request' });
         return true;
       }
 

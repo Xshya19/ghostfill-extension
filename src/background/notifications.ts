@@ -50,6 +50,7 @@
 
 import { storageService } from '../services/storageService';
 import { sleep } from '../utils/core';
+import { getSenderEmail, getSenderLabel } from '../utils/emailIdentity';
 import { getRandomString } from '../utils/encryption';
 import { createLogger } from '../utils/logger';
 
@@ -107,6 +108,7 @@ interface DedupEntry {
 interface QueueItem {
   id: string;
   spec: NotificationSpec;
+  sessionGeneration: number;
   resolve: (id: string) => void;
   reject: (err: Error) => void;
   attempt: number;
@@ -141,6 +143,9 @@ interface NotificationMetrics {
 // ━━━ Configuration ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const DEFAULT_ICON_PATH = 'assets/icons/icon128.png';
+const OTP_NOTIFICATION_ICON_URL = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect x="6" y="6" width="116" height="116" rx="28" fill="#172033"/><rect x="25" y="23" width="78" height="82" rx="16" fill="#36d6a8"/><path d="M42 43h44" stroke="#172033" stroke-width="8" stroke-linecap="round" opacity=".55"/><circle cx="43" cy="68" r="7" fill="#172033"/><circle cx="64" cy="68" r="7" fill="#172033"/><circle cx="85" cy="68" r="7" fill="#172033"/><path d="M43 87h42" stroke="#172033" stroke-width="7" stroke-linecap="round" opacity=".7"/></svg>'
+)}`;
 
 const DEFAULT_CATEGORY_SETTINGS: Record<NotificationCategory, CategorySettings> = {
   otp: { enabled: true, dedupTtlMs: 10_000, autoClearMs: null, maxPerMinute: 10 },
@@ -171,6 +176,7 @@ const dedupCache = new Map<string, DedupEntry>();
 const sendQueue: QueueItem[] = [];
 const history: NotificationRecord[] = [];
 const categoryTimestamps = new Map<NotificationCategory, number[]>();
+let notificationSessionGeneration = 0;
 
 const buttonActions = new Map<string, ButtonActionHandler>();
 const clickActions = new Map<string, ClickActionHandler>();
@@ -201,6 +207,12 @@ const metrics: NotificationMetrics = {
     system: 0,
   },
 };
+
+function resolveQueuedNotifications(): void {
+  while (sendQueue.length > 0) {
+    sendQueue.shift()?.resolve('');
+  }
+}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  LIFECYCLE
@@ -278,7 +290,7 @@ export function destroyNotifications(): void {
   }
   activeNotifications.clear();
   dedupCache.clear();
-  sendQueue.length = 0;
+  resolveQueuedNotifications();
   lastDedupPruneAt = 0;
 
   log.info('🔔 Notification engine destroyed');
@@ -293,8 +305,13 @@ export function destroyNotifications(): void {
  */
 export function resetNotificationSession(): void {
   const prevSize = dedupCache.size;
+  notificationSessionGeneration++;
   dedupCache.clear();
-  sendQueue.length = 0;
+  resolveQueuedNotifications();
+  // A generated address starts a new session. Remove visible alerts from the
+  // previous address as well, otherwise an old persistent notification can be
+  // mistaken for a duplicate/new alert after the reset.
+  void clearAllNotifications().catch(() => {});
 
   // Clear persisted dedup from session storage (best-effort)
   if (sessionStorageAvailable) {
@@ -493,17 +510,24 @@ export async function notifyNewEmail(
   otp?: string,
   link?: string
 ): Promise<string> {
+  const senderLabel = getSenderLabel(from, subject);
+  const senderEmail = getSenderEmail(from);
+  const senderContext = senderEmail && senderEmail !== from ? senderEmail : undefined;
+  const formatMessage = (limit: number): string => `${senderLabel}\n${truncate(subject, limit)}`;
+  const context = senderContext ? { contextMessage: senderContext } : {};
+
   // Case 1: Both OTP and Link found in same email (Consolidated UX)
   if (otp && link) {
     return notify({
       category: 'otp', // Treat as OTP category for high priority
       title: 'Verification Link & OTP Found',
-      message: `From: ${from}\n${truncate(subject, 60)}`,
+      message: formatMessage(60),
+      ...context,
       priority: 2,
       requireInteraction: true,
       buttons: [
-        { title: '📋 Copy OTP', action: 'copy-otp' },
-        { title: '🔗 Open Link', action: 'open-link' },
+        { title: 'Copy code', action: 'copy-otp' },
+        { title: 'Open link', action: 'open-link' },
         { title: 'Dismiss', action: 'dismiss' },
       ],
       data: { otp, link, from, subject },
@@ -515,11 +539,12 @@ export async function notifyNewEmail(
     return notify({
       category: 'otp',
       title: `OTP Received: ${maskOTP(otp)}`,
-      message: `From: ${from}\n${truncate(subject, 80)}`,
+      message: formatMessage(80),
+      ...context,
       priority: 2,
       requireInteraction: true,
       buttons: [
-        { title: '📋 Copy OTP', action: 'copy-otp' },
+        { title: 'Copy code', action: 'copy-otp' },
         { title: 'Dismiss', action: 'dismiss' },
       ],
       data: { otp, from, subject },
@@ -531,12 +556,13 @@ export async function notifyNewEmail(
     return notify({
       category: 'link',
       title: 'Verification Link Found',
-      message: `From: ${from}\n${truncate(subject, 80)}`,
+      message: formatMessage(80),
+      ...context,
       priority: 1,
       requireInteraction: true,
       buttons: [
-        { title: '🔗 Open Link', action: 'open-link' },
-        { title: '📥 Open Inbox', action: 'open-inbox' },
+        { title: 'Open link', action: 'open-link' },
+        { title: 'Open inbox', action: 'open-inbox' },
       ],
       data: { link, from, subject },
     });
@@ -546,9 +572,10 @@ export async function notifyNewEmail(
   return notify({
     category: 'email',
     title: 'New Email',
-    message: `From: ${from}\n${truncate(subject, 80)}`,
+    message: formatMessage(80),
+    ...context,
     priority: 1,
-    buttons: [{ title: '📥 Open Inbox', action: 'open-inbox' }],
+    buttons: [{ title: 'Open inbox', action: 'open-inbox' }],
     data: { from, subject },
   });
 }
@@ -652,7 +679,14 @@ async function notify(spec: NotificationSpec): Promise<string> {
       return;
     }
 
-    sendQueue.push({ id, spec, resolve, reject, attempt: 0 });
+    sendQueue.push({
+      id,
+      spec,
+      sessionGeneration: notificationSessionGeneration,
+      resolve,
+      reject,
+      attempt: 0,
+    });
     void drain();
   });
 }
@@ -683,6 +717,12 @@ async function processQueueItem(item: QueueItem): Promise<void> {
 
   try {
     await sendNotification(id, spec);
+
+    if (item.sessionGeneration !== notificationSessionGeneration) {
+      await clearNotification(id);
+      item.resolve('');
+      return;
+    }
 
     const ms = Math.round(performance.now() - t0);
     metrics.avgSendMs = metrics.avgSendMs === 0 ? ms : metrics.avgSendMs * 0.8 + ms * 0.2;
@@ -724,7 +764,11 @@ async function processQueueItem(item: QueueItem): Promise<void> {
 
 function sendNotification(id: string, spec: NotificationSpec): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    const iconUrl = chrome.runtime.getURL(spec.iconPath ?? DEFAULT_ICON_PATH);
+    const iconUrl = spec.iconPath
+      ? chrome.runtime.getURL(spec.iconPath)
+      : spec.category === 'otp'
+        ? OTP_NOTIFICATION_ICON_URL
+        : chrome.runtime.getURL(DEFAULT_ICON_PATH);
 
     const options: chrome.notifications.NotificationOptions<true> = {
       type: 'basic',
@@ -1099,7 +1143,7 @@ async function copyToClipboard(text: string): Promise<void> {
     // NOTE: assets/icons/icon128.png is the only shipped 128px icon
     // (see web_accessible_resources). The old 'assets/icon-128.png'
     // 404'd and notifications rendered without an icon.
-    iconUrl: 'assets/icons/icon128.png',
+    iconUrl: OTP_NOTIFICATION_ICON_URL,
     title: 'GhostFill — OTP Code',
     message: `Your code: ${masked}\n\n(Could not auto-copy — clipboard not available. Retrieve full code from extension popup.)`,
     priority: 2,

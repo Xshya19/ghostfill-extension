@@ -65,4 +65,15 @@ describe('username vs email resolution', () => {
     expect(filler.getValueForFieldType('email', withoutEmail, null)).toBeNull();
     expect(filler.getValueForFieldType('email', identity, null)).toBe(identity.email);
   });
+
+  it('never treats a profile name field as an email target', () => {
+    const f = form('<label for="name">Your name</label><input id="name" name="name">');
+    const filler = new AutoFiller() as unknown as {
+      isCompatibleTarget: (t: string, e: HTMLInputElement) => boolean;
+    };
+    const nameField = f.querySelector('#name')!;
+
+    expect(filler.isCompatibleTarget('email', nameField)).toBe(false);
+    expect(filler.isCompatibleTarget('full-name', nameField)).toBe(true);
+  });
 });

@@ -1,33 +1,21 @@
 # Frontend
 
-Everything a user sees in an extension window lives here. Two entry points:
+GhostFill’s user-facing extension surfaces use the **Private Workspace** design system: calm cobalt accents, opaque paper/slate surfaces, hairline structure, local Space Grotesk and IBM Plex Mono fonts, and purposeful motion.
 
-| Path | What it is |
-|---|---|
-| `popup/index.tsx` → `popup/App.tsx` | The 375×400 popup (fixed size — don't change it) |
-| `options/index.tsx` → `options/OptionsApp.tsx` | The full-page settings console |
+| Entry point                                    | Surface                       |
+| ---------------------------------------------- | ----------------------------- |
+| `popup/index.tsx` → `popup/App.tsx`            | Fixed 375×400 extension popup |
+| `options/index.tsx` → `options/OptionsApp.tsx` | Responsive full-page settings |
 
+```text
+popup/      App.tsx · store.ts · hooks.ts · popup.css
+            components/Hub · EmailGenerator · AliasPanel · SharedComponents
+options/    OptionsApp.tsx · options.css
+            components/OptionsTabs · OptionsUI
+ui/         Shared React primitives and motion tokens
+styles/     globals.css — design tokens and primitive styling
 ```
-popup/     App.tsx  store.ts  hooks.ts  popup.css  index.html
-           components/  Hub · EmailGenerator · AliasPanel · SharedComponents
-options/   OptionsApp.tsx  options.css  index.html
-           components/  OptionsTabs · OptionsUI
-ui/        index.tsx    shared components (Button, Card, Modal, Toast…) + motion tokens
-styles/    globals.css   imported by popup.css and options.css (combines design tokens & primitives)
-```
 
-One file per concern: `hooks.ts` holds all popup hooks, `store.ts` the whole store,
-`ui/index.tsx` every shared component plus its motion presets. Feature modules stay
-separate so popup screens remain easy to change without creating one mega-file.
+`src/shared/theme.ts` controls theme application because content-script Shadow DOM also consumes the shared theme model. In-page UI remains under `src/content/`, with its own isolated stylesheet and runtime constraints.
 
-## What is deliberately *not* here
-
-- `src/shared/theme.ts` — the theme controller and design-token source. Content scripts
-  mirror these tokens into shadow DOM, so it can't live under `frontend/`.
-- `src/content/` — page-injected UI (floating button, OTP labels). Different runtime,
-  different webpack entry, no shared styling pipeline.
-
-## Design system
-
-"Spectre": dark-first graphite, one Iris accent, hairline borders, mono for data.
-Tokens in `styles/globals.css`; dark is `[data-theme="dark"]`, light is `:root`.
+Use `design-system/ghostfill/MASTER.md` as the product baseline. Keep controls semantic, targets at least 44px, motion transform/opacity based, and all runtime assets local.

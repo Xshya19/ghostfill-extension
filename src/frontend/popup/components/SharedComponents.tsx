@@ -36,7 +36,7 @@ import React, {
   ReactNode,
 } from 'react';
 
-import ghostLogoImg from '../../../assets/logo.png';
+import ghostLogoImg from '../../../assets/icons/icon128.png';
 
 import { storageService } from '../../../services/storageService';
 import {
@@ -50,20 +50,25 @@ import { type GmailMessage, type AliasHistoryItem } from '../../../types/email.t
 import { type GeneratePasswordResponse } from '../../../types/message.types';
 import { LastOTP } from '../../../types/storage.types';
 import { TIMING, formatRelativeTime, copyToClipboard, contentToString } from '../../../utils/core';
+import { getSenderEmail, getSenderLabel } from '../../../utils/emailIdentity';
 import { createLogger } from '../../../utils/logger';
 import { safeSendMessage, safeSendTabMessage } from '../../../utils/messaging';
-import { sanitizeEmailBody } from '../../../utils/sanitization.core';
+import { containsRemoteEmailAssets, sanitizeEmailBody } from '../../../utils/sanitization.core';
+import { t } from '../../i18n';
 import { tweenIn, tweenOut, tweenTimerBar, Button, IconButton } from '../../ui';
 import { useStorageSubscription } from '../hooks';
 import { GmailLogo } from './ProviderLogos';
 
-// i18n helper
-const t = (key: string): string => {
-  try {
-    return chrome.i18n.getMessage(key) || key;
-  } catch {
-    return key;
+export const getSenderSource = (displayName?: unknown, address?: unknown): string => {
+  const name = contentToString(displayName).trim();
+  const email = contentToString(address).trim();
+  if (email.includes('<') && email.includes('@')) {
+    return email;
   }
+  if (name && email && email.includes('@') && !name.includes(email)) {
+    return `${name} <${email}>`;
+  }
+  return email || name || '?';
 };
 
 // --- AccountCard.tsx ---
@@ -101,7 +106,6 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
   onGenerateEmail,
   onGmailSignIn,
   onSignOut,
-  gmailProfile,
 }) => {
   const isReal = preferredEmailType !== 'disposable';
 
@@ -146,21 +150,7 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
       <div className="identity-row">
         <div className="identity-icon">
           {isReal ? (
-            gmailProfile?.picture ? (
-              <img
-                src={gmailProfile.picture}
-                alt=""
-                style={{
-                  width: 20,
-                  height: 20,
-                  borderRadius: '50%',
-                  display: 'block',
-                  objectFit: 'cover',
-                }}
-              />
-            ) : (
-              <GmailLogo size={18} />
-            )
+            <GmailLogo size={18} />
           ) : (
             <Mail size={18} className="icon-premium" />
           )}
@@ -432,41 +422,34 @@ const InboxTab: React.FC<InboxTabProps> = ({
       {showList && (
         <div className="hub-inbox-scroll">
           {inbox.map((msg) => (
-            <div
+            <button
+              type="button"
               key={msg.id}
               className={`inbox-item ${msg.isUnread ? 'alias-inbox-item--unread' : ''}`}
-              role="button"
-              tabIndex={0}
               onClick={() => onOpenMessage(msg)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  onOpenMessage(msg);
-                }
-              }}
               aria-label={`Open email from ${msg.fromName || msg.fromEmail}: ${msg.subject}`}
               aria-busy={openingMessageId === msg.id}
             >
               <EmailAvatar
-                from={msg.fromName || msg.fromEmail || '?'}
+                from={getSenderSource(msg.fromName, msg.fromEmail)}
                 className="inbox-item-avatar"
               />
-              <div className="inbox-item-content">
-                <div className="inbox-item-header">
+              <span className="inbox-item-content">
+                <span className="inbox-item-header">
                   <span className="inbox-item-from truncate">{msg.fromName || msg.fromEmail}</span>
                   <span className="inbox-item-date">
                     <Clock size={10} />
                     {msg.dateFormatted || formatRelativeTime(new Date(msg.date).getTime())}
                   </span>
-                </div>
-                <div className="inbox-item-subject truncate">{msg.subject || '(No subject)'}</div>
-              </div>
+                </span>
+                <span className="inbox-item-subject truncate">{msg.subject || '(No subject)'}</span>
+              </span>
               {openingMessageId === msg.id ? (
                 <RefreshCw size={14} className="inbox-item-open-chevron spin" aria-hidden="true" />
               ) : (
                 <ChevronRight size={14} className="inbox-item-open-chevron" aria-hidden="true" />
               )}
-            </div>
+            </button>
           ))}
         </div>
       )}
@@ -779,63 +762,37 @@ interface EmailAvatarProps {
   children?: React.ReactNode;
 }
 
-const extractDomain = (emailStr: string): string | null => {
-  if (!emailStr) {
-    return null;
-  }
-  // Match anything inside angle brackets if present, e.g. "Mistral AI <no-reply@emails.mistral.ai>"
-  const match = emailStr.match(/<([^>]+)>/);
-  const email = match && match[1] ? match[1] : emailStr;
-  if (!email) {
-    return null;
-  }
-  const parts = email.split('@');
-  if (parts.length < 2) {
-    return null;
-  }
-  const domainPart = parts[1];
-  if (!domainPart) {
-    return null;
-  }
-
-  const cleanDomain = domainPart.trim().toLowerCase();
-  const domainParts = cleanDomain.split('.');
-  if (domainParts.length <= 2) {
-    return cleanDomain;
-  }
-
-  const last = domainParts[domainParts.length - 1];
-  const secondLast = domainParts[domainParts.length - 2];
-  if (!last || !secondLast) {
-    return cleanDomain;
-  }
-
-  const commonSLDs = ['co', 'com', 'net', 'org', 'gov', 'edu', 'ac', 'nom', 'mil', 'sch'];
-
-  if (secondLast.length <= 3 && (last.length === 2 || commonSLDs.includes(secondLast))) {
-    return domainParts.slice(-3).join('.');
-  }
-
-  return domainParts.slice(-2).join('.');
-};
-
 export const EmailAvatar: React.FC<EmailAvatarProps> = React.memo(
   ({ from, className = '', style, children }) => {
     const safeFrom = contentToString(from);
-    const domain = useMemo(() => extractDomain(safeFrom), [safeFrom]);
+    const senderLabel = useMemo(() => getSenderLabel(safeFrom), [safeFrom]);
+    const senderEmail = useMemo(() => getSenderEmail(safeFrom), [safeFrom]);
+    const domain = senderEmail.split('@')[1]?.toLowerCase() ?? '';
 
     const firstLetter = useMemo(() => {
-      // Prefer the display name's first letter; fall back to the email/domain so we
-      // never render a meaningless "?" when only an address is available.
-      const displayName = safeFrom.replace(/<[^>]+>/, '').trim();
-      const source = displayName || domain || safeFrom.trim();
+      const source = senderLabel || domain || safeFrom.trim();
       const firstChar = source.charAt(0);
       return /[a-z0-9]/i.test(firstChar) ? firstChar.toUpperCase() : '?';
-    }, [safeFrom, domain]);
+    }, [domain, safeFrom, senderLabel]);
+
+    const tone = useMemo(() => {
+      const identity = domain || senderLabel || safeFrom;
+      let hash = 0;
+      for (let index = 0; index < identity.length; index += 1) {
+        hash = (hash * 31 + identity.charCodeAt(index)) >>> 0;
+      }
+      return hash % 4;
+    }, [domain, safeFrom, senderLabel]);
 
     return (
-      <div className={className} style={style} title={domain || undefined}>
-        <span>{firstLetter}</span>
+      <div
+        className={`email-avatar email-avatar--tone-${tone} ${className}`.trim()}
+        style={style}
+        title={senderLabel || domain || safeFrom || undefined}
+      >
+        <span className="email-avatar-fallback" aria-hidden="true">
+          {firstLetter}
+        </span>
         {children}
       </div>
     );
@@ -884,6 +841,7 @@ export interface EmailViewerMessage {
   /** Optional body sources — first non-empty wins */
   snippet?: string | undefined;
   body?: string | undefined;
+  textBody?: string | undefined;
   htmlBody?: string | undefined;
   /** Detected actions (computed by parent via EXTRACT_OTP / link extraction) */
   otp?: string | null | undefined;
@@ -901,6 +859,7 @@ export interface EmailViewerModalProps {
 }
 
 const MAX_BODY_CHARS = 18_000;
+const MAX_RENDERABLE_HTML_CHARS = 300_000;
 
 const stripHtml = (htmlInput: unknown): string => {
   const html = contentToString(htmlInput);
@@ -997,6 +956,8 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
   const [copiedOtp, setCopiedOtp] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
   const modalRef = useRef<HTMLDivElement | null>(null);
+  const modalBodyRef = useRef<HTMLDivElement | null>(null);
+  const htmlContainerRef = useRef<HTMLDivElement | null>(null);
   const openerRef = useRef<HTMLElement | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const iframeFitTimers = useRef<Array<ReturnType<typeof setTimeout>>>([]);
@@ -1044,9 +1005,20 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
       if (!Number.isFinite(contentH) || contentH <= 0) {
         return;
       }
-      // Tall enough to read, short enough to keep hero + footer visible.
-      // The modal body scrolls past this — never the iframe itself.
-      const fitted = Math.min(Math.max(contentH + 8, 160), 560);
+      // Use the actual remaining modal space before allowing the email to
+      // grow. Short verification emails therefore fit without scrolling;
+      // genuinely long messages still use the modal's single scrollbar.
+      const modalBody = modalBodyRef.current;
+      const htmlContainer = htmlContainerRef.current;
+      let availableHeight = 560;
+      if (modalBody && htmlContainer) {
+        const fixedChildrenHeight = Array.from(modalBody.children)
+          .filter((child) => child !== htmlContainer)
+          .reduce((total, child) => total + (child as HTMLElement).getBoundingClientRect().height, 0);
+        const gapBudget = Math.max(0, (modalBody.children.length - 1) * 10);
+        availableHeight = Math.max(160, modalBody.clientHeight - fixedChildrenHeight - gapBudget);
+      }
+      const fitted = Math.min(Math.max(contentH + 8, 160), Math.min(560, availableHeight));
       const current = parseFloat(iframe.style.height) || iframe.clientHeight || 0;
       if (Math.abs(fitted - current) <= 1) {
         return;
@@ -1065,42 +1037,55 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
       iframeRef.current.style.height = '160px';
     }
     fitIframeToContent();
+    if (modalBodyRef.current) {
+      modalBodyRef.current.scrollTop = 0;
+    }
     try {
       const doc = iframeRef.current?.contentDocument;
       const imgs = doc ? Array.from(doc.images ?? []) : [];
-      const hideIfBroken = (img: HTMLImageElement) => {
+      const handleBrokenImage = (img: HTMLImageElement) => {
         try {
-          if (img.naturalWidth === 0) {
-            (img as HTMLElement).style.display = 'none';
-            return true;
+          if (img.naturalWidth !== 0) {
+            return false;
           }
+          const alt = img.alt.trim();
+          if (alt && img.parentElement && doc) {
+            const fallback = doc.createElement('span');
+            fallback.textContent = alt;
+            fallback.setAttribute('role', 'img');
+            fallback.style.cssText =
+              'display:inline-flex;align-items:center;max-width:100%;padding:6px 10px;border:1px solid #e5e7eb;border-radius:6px;background:#f9fafb;color:#4b5563;font:12px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;';
+            img.replaceWith(fallback);
+          } else {
+            (img as HTMLElement).style.display = 'none';
+          }
+          return true;
         } catch {
           // ignore — visibility check is best-effort
         }
         return false;
       };
       for (const img of imgs) {
-        // Remote sender assets routinely fail in the sandbox; a broken
-        // glyph in the middle of the mail reads as corruption, so hide it.
+        // Remote sender assets can still fail independently; preserve useful
+        // alt text as a small inline fallback instead of silently losing it.
         if (!img.complete) {
           img.addEventListener(
             'load',
             () => {
-              if (!hideIfBroken(img)) {
-                fitIframeToContent();
-              }
+              fitIframeToContent();
             },
             { once: true }
           );
           img.addEventListener(
             'error',
             () => {
-              (img as unknown as HTMLElement).style.display = 'none';
+              handleBrokenImage(img);
               fitIframeToContent();
             },
             { once: true }
           );
-        } else if (!hideIfBroken(img)) {
+        } else {
+          handleBrokenImage(img);
           fitIframeToContent();
         }
       }
@@ -1123,26 +1108,27 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
     // (HTML-string changes also re-fire the iframe onLoad above, which
     // resets to the floor and refits; this covers the text-mode path.)
     const iframe = iframeRef.current;
+    const body = modalBodyRef.current;
+    if (body) {
+      body.scrollTop = 0;
+    }
     if (iframe) {
       iframe.style.height = '160px';
     }
     fitIframeToContent();
   }, [message, fitIframeToContent]);
 
-  const rawHtml = contentToString(message?.htmlBody ?? message?.body ?? '');
-  const hasHtml = Boolean(
-    message?.htmlBody ||
-    (/<[a-z][\s\S]*>/i.test(rawHtml) &&
-      (rawHtml.includes('<p') ||
-        rawHtml.includes('<div') ||
-        rawHtml.includes('<table') ||
-        rawHtml.includes('<br') ||
-        rawHtml.includes('<a') ||
-        rawHtml.includes('<span') ||
-        rawHtml.includes('<html') ||
-        rawHtml.includes('<body') ||
-        rawHtml.includes('<center') ||
-        rawHtml.includes('<style')))
+  // Some providers always include an `htmlBody` key, even when its value is
+  // plain text. Select the first body that actually contains email markup;
+  // otherwise the plain-text reader is the reliable fallback.
+  const htmlBodyPattern = /<\/?(?:html|body|head|meta|title|table|thead|tbody|tfoot|tr|td|th|div|p|br|a|img|picture|source|h[1-6]|ul|ol|li|center|section|article|header|footer|span|strong|em|b|i|u|blockquote|pre|code|hr|font|small|mark|figure|figcaption|style)\b[^>]*>/i;
+  const rawHtml = [message?.htmlBody, message?.body]
+    .map((candidate) => contentToString(candidate ?? ''))
+    .find((candidate) => htmlBodyPattern.test(candidate)) || '';
+  const hasHtml = Boolean(rawHtml);
+  const remoteAssetsBlocked = useMemo(
+    () => containsRemoteEmailAssets(rawHtml.slice(0, MAX_RENDERABLE_HTML_CHARS)),
+    [rawHtml]
   );
 
   const [viewMode, setViewMode] = useState<'html' | 'text'>(hasHtml ? 'html' : 'text');
@@ -1203,14 +1189,16 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
     };
   }, [message]);
 
-  const sender = message?.fromName || message?.from || '';
+  const rawSender = getSenderSource(message?.fromName, message?.from || '');
+  const sender = message ? getSenderLabel(rawSender, message.subject) : '';
+  const avatarSource = getSenderSource(message?.fromName, message?.from || sender);
   const dateText = message ? formatDate(message) : '';
 
   const sanitizedHtml = useMemo(() => {
     if (!hasHtml || !rawHtml) {
       return '';
     }
-    return sanitizeEmailBody(rawHtml.slice(0, 150_000), undefined, { allowStyleTag: true });
+    return sanitizeEmailBody(rawHtml.slice(0, MAX_RENDERABLE_HTML_CHARS), undefined, { allowStyleTag: true });
   }, [hasHtml, rawHtml]);
 
   const iframeSrcDoc = useMemo(() => {
@@ -1221,6 +1209,7 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
     const hasHead = /<head[\s>]/i.test(htmlString);
     const hasBody = /<body[\s>]/i.test(htmlString);
     const baseTargetTag = '<base target="_blank" rel="noopener noreferrer">';
+    const contentPolicyTag = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; font-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; connect-src 'none'; form-action 'none'; base-uri 'none'">`;
     // Best-fit reader: single centered column, no inner scrollbars, no
     // clipped tables/buttons. The iframe is sized to content (see
     // fitIframeToContent) and the modal body owns the only scrollbar.
@@ -1255,7 +1244,8 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
         *, *::before, *::after {
           box-sizing: border-box !important;
         }
-        /* Make all tables and block containers responsive */
+        /* Keep email layout semantics, but give wide marketing tables a
+           flexible width so content can breathe in the popup reader. */
         table, tbody, tr, td, th, div, center, section, article, p {
           max-width: 100% !important;
           box-sizing: border-box !important;
@@ -1263,7 +1253,7 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
         }
         table {
           width: 100% !important;
-          table-layout: fixed !important;
+          table-layout: auto !important;
           margin-left: auto !important;
           margin-right: auto !important;
         }
@@ -1271,8 +1261,18 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
           word-break: break-word !important;
           overflow-wrap: anywhere !important;
         }
+        /* Reset fixed pixel widths without forcing every cell into one
+           narrow column. Top-level tables still span the reader below. */
         table[width], td[width], th[width], div[width],
         table[style*="width"], td[style*="width"], div[style*="width"] {
+          max-width: 100% !important;
+          width: auto !important;
+          min-width: 0 !important;
+        }
+        body > table, body > table[width], body > table[style*="width"],
+        body > center > table, body > center > table[width],
+        body > div > table, body > div > table[width],
+        body > div > center > table, body > div > center > table[width] {
           width: 100% !important;
           max-width: 100% !important;
           min-width: 0 !important;
@@ -1288,6 +1288,15 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
            Clamp top-level and common container padding to 12px so the
            copy uses the full width. Centering is preserved. */
         body > div, body > center {
+          width: 100% !important;
+          max-width: 100% !important;
+          padding-left: 12px !important;
+          padding-right: 12px !important;
+        }
+        body > table > tbody > tr > td,
+        body > center > table > tbody > tr > td,
+        body > div > table > tbody > tr > td,
+        body > div > center > table > tbody > tr > td {
           padding-left: 12px !important;
           padding-right: 12px !important;
         }
@@ -1340,22 +1349,33 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
       </style>
     `;
 
-    if (hasHead) {
+    if (hasHead && /<\/head>/i.test(htmlString)) {
+      // Provider CSS lives in the head. Append our reader rules after it so
+      // responsive constraints win without mutating the original email.
+      return htmlString.replace(
+        /<\/head>/i,
+        `${contentPolicyTag}\n${baseTargetTag}\n${responsiveStyle}\n</head>`
+      );
+    } else if (hasHead) {
       return htmlString.replace(
         /<head[\s>]/i,
-        (match) => `${match}\n${baseTargetTag}\n${responsiveStyle}\n`
+        (match) => `${match}\n${contentPolicyTag}\n${baseTargetTag}\n${responsiveStyle}\n`
       );
     } else if (hasBody) {
       return htmlString.replace(
         /<body[\s>]/i,
-        (match) => `\n<head>\n${baseTargetTag}\n${responsiveStyle}\n</head>\n${match}`
+        (match) => `\n<head>\n${contentPolicyTag}\n${baseTargetTag}\n${responsiveStyle}\n</head>\n${match}`
       );
     } else {
-      return `<!DOCTYPE html><html><head><meta charset="utf-8">${baseTargetTag}${responsiveStyle}</head><body>${htmlString}</body></html>`;
+      return `<!DOCTYPE html><html><head><meta charset="utf-8">${contentPolicyTag}${baseTargetTag}${responsiveStyle}</head><body>${htmlString}</body></html>`;
     }
   }, [sanitizedHtml]);
 
   const plainTextBody = useMemo(() => {
+    const preferredText = contentToString(message?.textBody ?? '');
+    if (preferredText) {
+      return preferredText.slice(0, MAX_BODY_CHARS);
+    }
     if (message?.body && !/<[a-z][\s\S]*>/i.test(message.body)) {
       return contentToString(message.body).slice(0, MAX_BODY_CHARS);
     }
@@ -1463,7 +1483,7 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
           >
             <div className="alias-message-modal-header">
               <div className="alias-message-modal-title-group">
-                <EmailAvatar from={sender || message.from || '?'} className="email-viewer-avatar" />
+                <EmailAvatar from={avatarSource} className="email-viewer-avatar" />
                 <div className="alias-message-modal-titles">
                   <div
                     id="email-viewer-subject"
@@ -1475,7 +1495,12 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
                   <div className="alias-message-modal-meta truncate">
                     {sender && (
                       <>
-                        <span className="email-viewer-sender">{sender}</span>
+                        <span
+                          className="email-viewer-sender"
+                          title={getSenderEmail(rawSender) || rawSender || undefined}
+                        >
+                          {sender}
+                        </span>
                         {dateText && <span className="email-viewer-sep"> · </span>}
                       </>
                     )}
@@ -1523,7 +1548,7 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
               </div>
             )}
 
-            <div className="alias-message-modal-body">
+            <div ref={modalBodyRef} className="alias-message-modal-body">
               {loading ? (
                 <div className="alias-inbox-loading">
                   <RefreshCw size={20} className="spin-icon" />
@@ -1588,13 +1613,21 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
                     <div className="alias-message-modal-snippet">{snippet}</div>
                   )}
 
+                  {viewMode === 'html' && remoteAssetsBlocked && (
+                    <div className="email-privacy-notice" role="status">
+                      <ShieldCheck size={14} aria-hidden="true" />
+                      <span>Remote images blocked to prevent tracking.</span>
+                    </div>
+                  )}
+
                   {viewMode === 'html' && hasHtml && sanitizedHtml ? (
-                    <div className="alias-message-modal-html-container">
+                    <div ref={htmlContainerRef} className="alias-message-modal-html-container">
                       <iframe
                         ref={iframeRef}
                         title={message.subject || 'Email content'}
                         className="email-html-iframe"
                         sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin"
+                        referrerPolicy="no-referrer"
                         srcDoc={iframeSrcDoc}
                         scrolling="no"
                         onLoad={handleIframeLoad}
@@ -1719,7 +1752,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
         <div className="error-boundary-container">
           <div className="memphis-card error-card">
             <div className="error-icon-box">
-              <span className="error-icon-large">⚠️</span>
+              <AlertCircle className="error-icon-large" size={30} aria-hidden="true" />
             </div>
             <h2 className="error-title">System error</h2>
             <p className="error-message-box">
@@ -1922,6 +1955,8 @@ export { HelpModal as HelpModal };
 
 // --- InboxList.tsx ---
 export type DisplayedEmail = Email & {
+  /** Raw sender address retained for logo lookup when the visible label is only a name. */
+  senderEmail?: string;
   otpCode?: string | null | undefined;
   activationLink?: string | null | undefined;
 };
@@ -1971,25 +2006,6 @@ const InboxListComponent: React.FC<InboxListProps> = ({
       }
     },
     [onOpenEmail, onNavigate, preferredEmailType]
-  );
-
-  const handleEmailInteraction = useCallback(
-    (e: React.MouseEvent | React.KeyboardEvent, emailItem: DisplayedEmail) => {
-      const target = e.target as HTMLElement;
-      if (target.closest('button')) {
-        return;
-      }
-      if (
-        e.type === 'keydown' &&
-        (e as React.KeyboardEvent).key !== 'Enter' &&
-        (e as React.KeyboardEvent).key !== ' '
-      ) {
-        return;
-      }
-      e.preventDefault();
-      openDisplayedEmail(emailItem);
-    },
-    [openDisplayedEmail]
   );
 
   const canOpenInbox = preferredEmailType === 'disposable' && inboxCount > 0;
@@ -2067,18 +2083,22 @@ const InboxListComponent: React.FC<InboxListProps> = ({
               // PERF: rows mount instantly — no stagger delay, no JS spring.
               // Hover is pure CSS (:hover border + chevron).
               return (
-                /* Pointer click remains a convenience; the explicit open
-                   button below provides the keyboard action. */
-                /* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */
                 <div
                   key={emailItem.id}
                   className="inbox-item"
-                  onClick={(e) => handleEmailInteraction(e, emailItem)}
                 >
-                  <EmailAvatar from={emailItem.from} className="inbox-item-avatar" />
+                  <EmailAvatar
+                    from={getSenderSource(emailItem.from, emailItem.senderEmail)}
+                    className="inbox-item-avatar"
+                  />
                   <div className="inbox-item-content">
                     <div className="inbox-item-header">
-                      <span className="inbox-item-from">{emailItem.from}</span>
+                      <span
+                        className="inbox-item-from"
+                        title={emailItem.from || undefined}
+                      >
+                        {getSenderLabel(emailItem.from, emailItem.subject)}
+                      </span>
                       <span className="inbox-item-date">
                         <Clock size={12} />
                         {formatRelativeTime(new Date(emailItem.date).getTime())}
@@ -2126,7 +2146,7 @@ const InboxListComponent: React.FC<InboxListProps> = ({
                   <button
                     type="button"
                     className="inbox-item-open-button"
-                    aria-label={`Open email from ${emailItem.from}: ${emailItem.subject}`}
+                    aria-label={`Open email from ${getSenderLabel(emailItem.from, emailItem.subject)}: ${emailItem.subject}`}
                     aria-busy={openingEmailId === emailItem.id}
                     onClick={() => openDisplayedEmail(emailItem)}
                   >

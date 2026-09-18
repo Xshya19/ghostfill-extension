@@ -558,9 +558,6 @@ textarea:disabled,
 .identity-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  min-height: 56px;
   position: relative;
   transition: background var(--gf-dur-fast) var(--gf-ease);
 }
@@ -572,12 +569,9 @@ textarea:disabled,
 }
 
 .identity-icon {
-  width: 34px;
-  height: 34px;
   flex: none;
   display: grid;
   place-items: center;
-  border-radius: var(--radius-sm);
   background: var(--gf-sunken);
   border: 1px solid var(--gf-line);
   color: var(--gf-primary);
@@ -622,10 +616,10 @@ textarea:disabled,
 
 .identity-label {
   font-family: var(--gf-font-display);
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--gf-ink-soft);
   min-width: 0;
   overflow: hidden;
@@ -633,7 +627,7 @@ textarea:disabled,
   transition: color var(--gf-dur-fast) var(--gf-ease);
 }
 .identity-row:hover .identity-label {
-  color: var(--gf-primary);
+  color: var(--gf-ink-soft);
 }
 
 .identity-value {
@@ -708,19 +702,11 @@ textarea:disabled,
 .identity-actions {
   display: flex;
   align-items: center;
-  gap: 2px;
   flex: none;
-  padding: 2px;
-  background: var(--gf-sunken);
-  border: 1px solid var(--gf-line);
-  border-radius: var(--gf-control-radius);
   box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.12);
 }
 .identity-actions .action-icon {
-  width: 28px;
-  height: 28px;
   border: 0;
-  border-radius: var(--radius-sm);
   background: transparent;
   box-shadow: none;
 }
@@ -828,8 +814,6 @@ textarea:disabled,
 .inbox-section {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3);
   flex: 1 1 auto;
   min-height: 0;
 }
@@ -851,7 +835,6 @@ textarea:disabled,
 .inbox-title-group {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
   min-width: 0;
 }
 .inbox-title-group .inbox-title-icon {
@@ -861,10 +844,10 @@ textarea:disabled,
 }
 .inbox-title-group .inbox-title-text {
   font-family: var(--gf-font-display);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--gf-ink-soft);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -937,13 +920,17 @@ textarea:disabled,
 
 .inbox-item,
 .inbox-item-default {
+  width: 100%;
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-2) 38px var(--space-2) var(--space-3);
   background: var(--gf-surface-2);
   border: 1px solid var(--gf-line);
   border-radius: var(--radius-sm);
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   position: relative;
   /* PERF: no per-row entrance animation — 20 rows × simultaneous tweens is
@@ -993,6 +980,64 @@ textarea:disabled,
     0 2px 6px -2px rgba(var(--gf-primary-rgb), 0.4),
     inset 0 1px 0 var(--gf-hi);
 }
+
+.email-viewer-avatar {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  font-family: var(--gf-font-display);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gf-on-primary);
+  background: var(--gf-grad-cobalt);
+  box-shadow: inset 0 1px 0 var(--gf-hi);
+}
+
+.email-avatar {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px solid rgba(var(--gf-primary-rgb), 0.16);
+}
+
+.email-avatar.email-avatar--tone-0 {
+  color: var(--gf-primary-text);
+  background: rgba(var(--gf-primary-rgb), 0.12);
+}
+
+.email-avatar.email-avatar--tone-1 {
+  color: var(--gf-mint-text);
+  background: rgba(var(--gf-mint-rgb), 0.12);
+  border-color: rgba(var(--gf-mint-rgb), 0.18);
+}
+
+.email-avatar.email-avatar--tone-2 {
+  color: var(--gf-amber-text);
+  background: rgba(var(--gf-amber-rgb), 0.12);
+  border-color: rgba(var(--gf-amber-rgb), 0.18);
+}
+
+.email-avatar.email-avatar--tone-3 {
+  color: var(--gf-coral-text);
+  background: rgba(var(--gf-coral-rgb), 0.1);
+  border-color: rgba(var(--gf-coral-rgb), 0.16);
+}
+
+.email-avatar-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: currentColor;
+  font: 700 11px/1 var(--gf-font-display);
+  pointer-events: none;
+}
+
 .inbox-item-content,
 .inbox-content-default {
   flex: 1 1 auto;
@@ -1048,46 +1093,49 @@ textarea:disabled,
   flex-wrap: wrap;
 }
 .inbox-item-open-chevron {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  align-self: center;
-  flex-shrink: 0;
+  position: absolute;
+  top: 50%;
+  right: 9px;
   width: 18px;
   height: 18px;
   color: var(--gf-ink-dim);
   opacity: 0.55;
+  transform: translateY(-50%);
   transition:
     opacity var(--gf-dur-fast) var(--gf-ease),
     color var(--gf-dur-fast) var(--gf-ease);
 }
 .inbox-item-open-button {
-  display: grid;
-  place-items: center;
-  align-self: center;
-  flex: none;
-  min-width: 32px;
-  min-height: 32px;
-  margin: -4px -6px -4px 0;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
   padding: 0;
   color: inherit;
   background: transparent;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: inherit;
   cursor: pointer;
 }
 .inbox-item-open-button:hover,
 .inbox-item-open-button:focus-visible {
-  background: var(--gf-primary-soft);
+  background: transparent;
 }
 .inbox-item-open-button:focus-visible {
   outline: var(--gf-ring-width) solid var(--gf-primary);
-  outline-offset: 1px;
+  outline-offset: -2px;
 }
 .inbox-item:hover .inbox-item-open-chevron,
 .inbox-item-default:hover .inbox-item-open-chevron {
   opacity: 1;
   color: var(--gf-primary);
+}
+
+.inbox-badges-row,
+.inbox-badges-default,
+.inbox-item-actions {
+  position: relative;
+  z-index: 2;
 }
 
 .inbox-badges-row,
@@ -1113,6 +1161,10 @@ textarea:disabled,
   text-transform: uppercase;
   line-height: 1.3;
   transition: transform var(--gf-dur-fast) var(--gf-ease);
+}
+.otp-badge,
+.link-badge {
+  min-height: 24px;
 }
 .inbox-badge svg {
   width: 9px;
@@ -1146,18 +1198,12 @@ textarea:disabled,
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-2);
-  color: var(--gf-text-muted);
   font-size: 11.5px;
   border-radius: var(--radius-sm);
 }
 .hub-empty-state--action {
   cursor: pointer;
   transition: background var(--gf-dur-fast) var(--gf-ease);
-}
-.hub-empty-state--action:hover {
-  background: rgba(var(--gf-ink-rgb), 0.04);
 }
 .hub-empty-text {
   flex: 1;
@@ -1187,7 +1233,7 @@ textarea:disabled,
   justify-content: center;
   gap: var(--space-2);
   padding: var(--space-5) var(--space-4);
-  background: linear-gradient(180deg, var(--gf-surface), var(--gf-sunken));
+  background: var(--gf-surface);
   border: 1px solid var(--gf-line);
   border-radius: var(--radius-md);
   box-shadow:
@@ -1275,7 +1321,7 @@ textarea:disabled,
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  background: linear-gradient(180deg, var(--empty-icon-bg1), var(--empty-icon-bg2));
+  background: var(--empty-icon-bg1);
   border: 1px solid var(--empty-icon-border);
   border-radius: var(--radius-sm);
   box-shadow: inset 0 1px 0 var(--gf-hi);
@@ -1328,8 +1374,8 @@ textarea:disabled,
   font-family: var(--gf-font-display);
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--gf-ink-dim);
   margin-bottom: var(--space-2);
 }
@@ -1384,7 +1430,7 @@ textarea:disabled,
   filter: blur(0);
 }
 .password-display-visible::after {
-  content: '▏';
+  content: '▏';
   display: inline-block;
   margin-left: 2px;
   color: var(--gf-primary);
@@ -1402,8 +1448,8 @@ textarea:disabled,
   font-family: var(--gf-font-display);
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
 }
 .strength-level-label,
 .strength-level-percent {
@@ -1430,8 +1476,8 @@ textarea:disabled,
   width: 100%;
   height: 6px;
   border-radius: var(--radius-pill);
-  background: linear-gradient(180deg, rgba(var(--gf-ink-rgb), 0.06), rgba(var(--gf-ink-rgb), 0.02));
-  box-shadow: inset 0 1px 2px rgba(var(--gf-ink-rgb), 0.1);
+  background: var(--gf-surface-2);
+  box-shadow: none;
   overflow: hidden;
 }
 .strength-bar-fill {
@@ -1865,8 +1911,8 @@ textarea:disabled,
   font-family: var(--gf-font-display);
   font-size: 9.5px;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--gf-ink-dim);
 }
 .alias-gen-label-icon,
@@ -1914,7 +1960,9 @@ textarea:disabled,
 .alias-pipeline-connector {
   display: grid;
   place-items: center;
+  height: 14px;
   overflow: hidden;
+  transform-origin: top;
 }
 .alias-pipeline-flow {
   width: 2px;
@@ -2170,11 +2218,8 @@ textarea:disabled,
 }
 
 .alias-inbox-refresh {
-  width: 26px;
-  height: 26px;
   display: grid;
   place-items: center;
-  border-radius: var(--radius-xs);
   background: var(--gf-surface-2);
   border: 1px solid var(--gf-line);
   color: var(--gf-ink-soft);
@@ -2367,7 +2412,8 @@ textarea:disabled,
 .alias-message-modal {
   width: 100%;
   max-width: 100%;
-  height: auto;
+  height: 98%;
+  min-height: 0;
   max-height: 98%;
   display: flex;
   flex-direction: column;
@@ -2494,9 +2540,38 @@ textarea:disabled,
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-height: 120px;
+  min-height: 0;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
+  scrollbar-gutter: auto;
+  overflow-anchor: none;
+}
+
+.alias-message-modal-body {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(var(--gf-primary-rgb), 0.72) transparent;
+}
+
+.alias-message-modal-body::-webkit-scrollbar {
+  width: 7px;
+  background: transparent;
+}
+
+.alias-message-modal-body::-webkit-scrollbar-track {
+  background: rgba(var(--gf-surface-rgb), 0.5);
+  border-radius: var(--radius-pill);
+}
+
+.alias-message-modal-body::-webkit-scrollbar-thumb {
+  min-height: 28px;
+  background: rgba(var(--gf-primary-rgb), 0.72);
+  border: 2px solid transparent;
+  border-radius: var(--radius-pill);
+  background-clip: padding-box;
+}
+
+.alias-message-modal-body::-webkit-scrollbar-thumb:hover {
+  background: var(--gf-primary);
+  background-clip: padding-box;
 }
 
 /* ── Hero Banners: OTP & Link ────────────────────────────────────────── */
@@ -2507,11 +2582,7 @@ textarea:disabled,
   gap: var(--space-2);
   padding: 10px 12px;
   border-radius: var(--radius-sm);
-  background: linear-gradient(
-    135deg,
-    rgba(var(--gf-primary-rgb), 0.15) 0%,
-    rgba(var(--gf-violet-rgb), 0.08) 100%
-  );
+  background: var(--gf-primary-soft);
   border: 1px solid rgba(var(--gf-primary-rgb), 0.3);
   box-shadow: 0 2px 8px rgba(var(--gf-primary-rgb), 0.08);
 }
@@ -2525,8 +2596,8 @@ textarea:disabled,
 .email-hero-otp-label {
   font-size: 9.5px;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--gf-primary);
   display: flex;
   align-items: center;
@@ -2581,8 +2652,8 @@ textarea:disabled,
 .email-hero-link-label {
   font-size: 9.5px;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--gf-primary);
   display: flex;
   align-items: center;
@@ -2620,6 +2691,24 @@ textarea:disabled,
   line-height: 1.4;
 }
 
+.email-privacy-notice {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 7px 9px;
+  color: var(--gf-mint-text);
+  font-size: 11.5px;
+  line-height: 1.35;
+  background: rgba(var(--gf-mint-rgb), 0.08);
+  border: 1px solid rgba(var(--gf-mint-rgb), 0.2);
+  border-radius: var(--radius-sm);
+}
+
+.email-privacy-notice svg {
+  flex: none;
+}
+
 /* ── Rich HTML Container & CSS Styling ─────────────────────────────────
    Best-fit reader: the iframe NEVER scrolls itself (scrolling="no" +
    overflow hidden in srcDoc). fitIframeToContent() grows it to content
@@ -2632,12 +2721,15 @@ textarea:disabled,
   padding: 0;
   overflow: hidden;
   max-width: 100%;
+  min-width: 0;
+  width: 100%;
   box-sizing: border-box;
   flex-shrink: 0;
 }
 
 .email-html-iframe {
   width: 100%;
+  min-width: 0;
   min-height: 160px;
   max-height: 560px;
   height: 240px;
@@ -2844,9 +2936,7 @@ textarea:disabled,
   text-align: center;
   overflow-y: auto;
   overflow-x: hidden;
-  background:
-    radial-gradient(100% 50% at 50% 0%, rgba(var(--gf-primary-rgb), 0.12), transparent 50%),
-    var(--gf-bg);
+  background: var(--gf-bg);
 }
 
 .onboarding-logo {
@@ -3053,10 +3143,6 @@ textarea:disabled,
   font-family: var(--gf-font-mono);
   font-size: 10px;
   color: var(--gf-mint);
-}
-
-.terminal-domain {
-  color: var(--gf-ink-dim);
 }
 
 .identity-status-temporary {
@@ -3490,7 +3576,6 @@ textarea:disabled,
   color: var(--gf-primary);
   background: transparent;
   border: 1px solid rgba(var(--gf-primary-rgb), 0.18);
-  border-radius: var(--radius-xs);
   cursor: pointer;
   transition:
     background var(--gf-dur-fast) var(--gf-ease),
@@ -3655,8 +3740,8 @@ textarea:disabled,
   padding: var(--space-6) var(--space-4);
   text-align: center;
   color: var(--gf-text-muted);
-  background: linear-gradient(180deg, var(--gf-surface), var(--gf-sunken));
-  border: 1px dashed var(--gf-line-2);
+  background: var(--gf-surface-2);
+  border: 1px solid var(--gf-line);
   border-radius: var(--radius-sm);
 }
 .otp-loading-container {
@@ -3964,13 +4049,30 @@ textarea:disabled,
    REDUCED MOTION SUPPORT
    ========================================================================== */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  ::before,
-  ::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+  html:focus-within {
     scroll-behavior: auto !important;
+  }
+
+  .password-display-visible::after,
+  .toggle-pill.active .pill-check,
+  .otp-digit,
+  .alias-result-card--celebrate,
+  .alias-copy-btn--copied,
+  .skeleton-pulse,
+  .shimmer,
+  .email-skeleton-row {
+    animation: none !important;
+  }
+
+  .shimmer,
+  .email-skeleton-row {
+    background-position: 0 0;
+  }
+
+  .spin,
+  .spinner-small,
+  .alias-inbox-refresh--loading {
+    animation-duration: 1.6s;
   }
 }
 
@@ -3985,7 +4087,9 @@ textarea:disabled,
 
 .ghost-dashboard {
   gap: 8px;
-  padding: 12px var(--popup-gutter) 14px;
+  /* The popup has 352px below the header. Keep the shared 16px rail while
+     reserving enough vertical space for a complete populated inbox row. */
+  padding: 8px var(--popup-gutter) 10px;
 }
 
 .hub-email-selector {
@@ -4021,14 +4125,14 @@ textarea:disabled,
 }
 
 .identity-row {
-  min-height: 60px;
-  padding: 10px 12px;
-  gap: 10px;
+  min-height: 54px;
+  padding: 5px 10px;
+  gap: 8px;
 }
 
 .identity-icon {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   border-radius: 8px;
 }
 
@@ -4068,8 +4172,10 @@ textarea:disabled,
 }
 
 .inbox-section {
-  gap: 8px;
-  padding: 12px;
+  /* The list contributes 4px of its own top inset, producing an 8px visual
+     rhythm without paying for the same spacing twice. */
+  gap: var(--space-1);
+  padding: 8px 10px;
   border-color: var(--gf-line);
   box-shadow: none;
 }
@@ -4149,5 +4255,113 @@ textarea:disabled,
   .identity-actions .action-icon {
     width: 30px;
     min-width: 30px;
+  }
+}
+
+/* ==========================================================================
+   ACCESSIBLE HIT AREAS
+   --------------------------------------------------------------------------
+   Chrome's popup is visually compact, but the primary controls still need a
+   dependable 44px pointer target. The email value uses negative block margins
+   so its hit area grows across the row without increasing the text stack.
+   ========================================================================== */
+
+.header-actions .gf-icon-btn {
+  width: 44px;
+  height: 44px;
+}
+
+.hub-email-selector {
+  min-height: 48px;
+}
+
+.hub-email-selector-btn {
+  min-height: 44px;
+}
+
+.identity-row {
+  min-height: 54px;
+}
+
+.identity-value.hub-val-email {
+  min-height: 44px;
+  margin-block: -14px;
+  padding-block: 14px;
+}
+
+.identity-actions {
+  min-height: 44px;
+}
+
+.identity-actions .action-icon,
+.alias-inbox-refresh,
+.view-all-btn,
+.hub-gmail-connect-btn,
+.help-btn {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.alias-tab-btn,
+.alias-clear-history-btn,
+.inbox-clear-btn,
+.otp-action-primary,
+.otp-action-secondary,
+.alias-connect-btn,
+.alias-oauth-connect-btn,
+.alias-signout-btn,
+.alias-copy-btn,
+.alias-inbox-open-btn,
+.alias-history-copy-btn,
+.alias-view-toggle-btn,
+.email-hero-otp-btn,
+.email-hero-link-btn,
+.alias-message-action-btn,
+.email-viewer-expand-btn,
+.onboarding-btn,
+.toggle-pill,
+.back-button,
+.detail-view-back-btn,
+.email-back-btn {
+  min-height: 44px;
+}
+
+.alias-message-modal-close,
+.icon-button,
+.eye-button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.alias-tabs {
+  min-height: 48px;
+}
+
+.identity-actions .action-icon {
+  width: 44px;
+  height: 44px;
+}
+
+.skip-link:focus {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+@media (max-width: 360px) {
+  .identity-actions .action-icon {
+    width: 44px;
+    min-width: 44px;
+  }
+}
+
+@media (hover: none) {
+  .gf-icon-btn:hover,
+  .identity-row:hover .identity-icon,
+  .action-icon:hover,
+  .identity-action-btn:hover,
+  .inbox-item:hover,
+  .inbox-item-default:hover {
+    transform: none;
   }
 }

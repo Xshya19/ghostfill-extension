@@ -700,7 +700,7 @@ async function handleMessage(message: {
         };
 
         if (selector) {
-          return { success: await autoFiller.fillField(selector, value) };
+          return { success: await autoFiller.fillField(selector, value, fieldType) };
         }
         return { success: await autoFiller.fillCurrentField(value, fieldType) };
       }

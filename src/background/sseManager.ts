@@ -133,8 +133,13 @@ class SSEManager {
         this.state.totalEventsReceived++;
         const accountId = message.accountId ?? this.state.accountId;
         log.debug('📨 SSE relay event received', { accountId });
-        if (this.onEmailReceived && accountId) {
+        if (this.onEmailReceived && accountId && accountId === this.state.accountId) {
           this.onEmailReceived(accountId);
+        } else if (accountId && accountId !== this.state.accountId) {
+          log.debug('Ignoring SSE event for a stale account session', {
+            eventAccountId: accountId,
+            activeAccountId: this.state.accountId,
+          });
         }
         break;
       }

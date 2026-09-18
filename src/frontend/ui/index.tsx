@@ -1,5 +1,5 @@
 /**
- * GhostFill shared UI — Spectre component vocabulary + motion system.
+ * GhostFill shared UI — Private Workspace component vocabulary + motion system.
  *
  * One module for both frontends (popup and options): the primitives
  * (Button, Card, Input, Modal, Toast, Toggle…) and the spring/tween

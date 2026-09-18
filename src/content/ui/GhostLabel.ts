@@ -283,10 +283,10 @@ class GhostLabelIcons {
       <defs><linearGradient id="glOG" x1="0%" y1="0%" x2="100%" y2="100%">
         <stop offset="0%" stop-color="var(--gf-mint)"/><stop offset="100%" stop-color="var(--gf-cyan)"/>
       </linearGradient></defs>
-      <rect x="3" y="11" width="18" height="11" rx="3" fill="url(#glOG)"/>
-      <path d="M7 11V7a5 5 0 0 1 10 0v4" stroke="url(#glOG)"
-            stroke-width="2.5" stroke-linecap="round"/>
-      <circle cx="12" cy="16" r="1.5" fill="white"/>
+      <rect x="3.2" y="4.5" width="17.6" height="15" rx="3.2" fill="url(#glOG)"/>
+      <path d="M6.2 8h11.6" stroke="white" stroke-width="1.35" stroke-linecap="round" opacity=".75"/>
+      <circle cx="7.5" cy="12.2" r="1.15" fill="white"/><circle cx="12" cy="12.2" r="1.15" fill="white"/><circle cx="16.5" cy="12.2" r="1.15" fill="white"/>
+      <path d="M7.5 15.8h9" stroke="white" stroke-width="1.35" stroke-linecap="round" opacity=".82"/>
     </svg>`;
 
   static readonly USER = `

@@ -21,6 +21,7 @@ import {
 } from '../../../types';
 import { TIMING, copyToClipboard, openSafeUrl } from '../../../utils/core';
 import { safeSendMessage } from '../../../utils/messaging';
+import { t } from '../../i18n';
 import { useOTPExtractor, useStorageSubscription } from '../hooks';
 import { useAppStore } from '../store';
 import { GmailLogo } from './ProviderLogos';
@@ -32,15 +33,6 @@ import {
   QuickActions,
   type DisplayedEmail,
 } from './SharedComponents';
-
-// i18n helper
-const t = (key: string): string => {
-  try {
-    return chrome.i18n.getMessage(key) || key;
-  } catch {
-    return key;
-  }
-};
 
 const toSafeStr = (v: unknown): string => {
   if (typeof v === 'string') {return v;}
@@ -245,7 +237,8 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     if (preferredEmailType !== 'disposable') {
       return (gmailInbox || []).map((msg) => ({
         id: msg.id,
-        from: msg.fromName || msg.from,
+        from: msg.fromName || msg.fromEmail || msg.from,
+        senderEmail: msg.fromEmail || msg.from,
         subject: msg.subject,
         date: msg.date,
         body: msg.body || msg.snippet || '',
@@ -981,6 +974,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
                 dateFormatted: viewerMeta.dateFormatted,
                 snippet: viewerEmail.snippet,
                 body: viewerEmail.body,
+                textBody: viewerEmail.textBody,
                 htmlBody: viewerEmail.htmlBody,
                 otp: viewerOtp,
                 link: viewerLink,

@@ -342,7 +342,7 @@ export class FieldAnalyzer {
 
     if (!siblings.includes(startElement)) {siblings.push(startElement);}
 
-    // GRANDMASTER FIX: Batch geometry reads BEFORE sorting to prevent O(N log N) reflows
+    // Batch geometry reads before sorting to prevent O(N log N) reflows.
     const rectCache = new Map<HTMLInputElement, DOMRect>();
     for (const sib of siblings) {
       rectCache.set(sib, sib.getBoundingClientRect());
@@ -978,27 +978,34 @@ export class DOMObserver {
       for (const mutation of mutations) {
         if (mutation.type === 'childList') {
           for (let i = 0; i < mutation.addedNodes.length; i++) {
-            const node = mutation.addedNodes[i];
-            if (node instanceof HTMLElement) {
-              // 🚨 CRITICAL FIX: Ignore GhostFill's own injected UI elements
+            const node = mutation.addedNodes.item(i);
+            if (!node) {
+              continue;
+            }
+            // Avoid realm-bound `instanceof HTMLElement`: elements created by an
+            // iframe have a different constructor, and test environments may
+            // tear down that global before queued mutation records are flushed.
+            if (node.nodeType === 1) {
+              const element = node as HTMLElement;
+              // Ignore GhostFill-owned UI so injection does not trigger a scan loop.
               if (
-                node.classList?.contains('ghostfill-container') ||
-                node.classList?.contains('ghostfill-fab') ||
-                node.classList?.contains('gf-fab') ||
-                node.tagName?.toLowerCase().startsWith('ghostfill-') ||
-                node.tagName?.toLowerCase().startsWith('gf-') ||
-                node.closest?.('.ghostfill-container')
+                element.classList?.contains('ghostfill-container') ||
+                element.classList?.contains('ghostfill-fab') ||
+                element.classList?.contains('gf-fab') ||
+                element.tagName?.toLowerCase().startsWith('ghostfill-') ||
+                element.tagName?.toLowerCase().startsWith('gf-') ||
+                element.closest?.('.ghostfill-container')
               ) {
                 continue;
               }
 
-              const tag = node.tagName;
+              const tag = element.tagName;
               if (tag === 'FORM' || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
                 shouldRedetect = true;
                 break;
               }
               if (tag === 'DIV' || tag === 'MAIN' || tag === 'SECTION' || tag.includes('-')) {
-                if (node.querySelector('form, input, textarea, select')) {
+                if (element.querySelector('form, input, textarea, select')) {
                   shouldRedetect = true;
                   break;
                 }
@@ -1251,7 +1258,7 @@ export class UltraDetector {
 
     if (singleDigitCandidates.length < 4) {return;}
 
-    // GRANDMASTER FIX: O(N) Ancestor grouping. Zero nested loops.
+    // Group ancestors in O(N) instead of nesting field comparisons.
     const ancestorMap = new Map<HTMLElement, FieldCandidate[]>();
     
     for (const c of singleDigitCandidates) {
@@ -1361,11 +1368,15 @@ export class ContextEngine {
     this.observer = new MutationObserver((mutations) => {
       let shouldRescan = false;
       for (const m of mutations) {
-        // GRANDMASTER FIX: Ignore GhostFill's own UI injections
-        if (m.target instanceof HTMLElement && 
-           (m.target.classList?.contains('ghostfill-container') || 
-            m.target.closest?.('.ghostfill-container'))) {
-          continue;
+        // Ignore GhostFill-owned UI so injection does not trigger a scan loop.
+        if (m.target.nodeType === 1) {
+          const target = m.target as HTMLElement;
+          if (
+            target.classList?.contains('ghostfill-container') ||
+            target.closest?.('.ghostfill-container')
+          ) {
+            continue;
+          }
         }
 
         if (m.type === 'attributes') {
@@ -1414,7 +1425,7 @@ export class ContextEngine {
 
   private getDOMFingerprint(): string {
     try {
-      // GRANDMASTER FIX: O(1) memory allocation. 
+      // Keep the structural fingerprint allocation constant-sized.
       // We only care if the structural count or key identifiers changed.
       const inputs = document.querySelectorAll('input, textarea');
       let hash = inputs.length * 31; // Base hash on count
@@ -1482,4 +1493,3 @@ export class ContextEngine {
     }
   }
 }
-

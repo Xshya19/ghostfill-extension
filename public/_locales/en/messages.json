@@ -8,13 +8,13 @@
     "description": "Description of the extension"
   },
   "emailLabel": {
-    "message": "EMAIL"
+    "message": "Email"
   },
   "syncingIdentity": {
     "message": "Syncing identity..."
   },
   "passwordLabel": {
-    "message": "PASSWORD"
+    "message": "Password"
   },
   "generatingPassword": {
     "message": "Generating..."

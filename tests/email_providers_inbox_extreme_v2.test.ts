@@ -626,6 +626,74 @@ describe('EmailServiceAggregator — exhaustive', () => {
     expect(setCalls).toBe(0);
     (tempMailService.checkInbox as any).mockRestore?.();
   });
+  it('checkInbox coalesces concurrent requests for the same account', async () => {
+    const agg = makeAgg();
+    let providerCalls = 0;
+    vi.spyOn(storageService, 'get').mockResolvedValue([] as any);
+    vi.spyOn(storageService, 'set').mockResolvedValue(undefined as any);
+    vi.spyOn(tempMailService, 'checkInbox').mockImplementation(async () => {
+      providerCalls++;
+      await sleep(20);
+      return [];
+    });
+    const acc = {
+      fullEmail: 'a@1secmail.com',
+      domain: '1secmail.com',
+      login: 'a',
+      service: 'tempmail' as any,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 1e9,
+      username: 'a',
+    } as any;
+
+    const results = await Promise.all([agg.checkInbox(acc), agg.checkInbox(acc), agg.checkInbox(acc)]);
+
+    expect(providerCalls).toBe(1);
+    expect(results).toHaveLength(3);
+    expect(results.every((result) => Array.isArray(result))).toBe(true);
+    (tempMailService.checkInbox as any).mockRestore?.();
+  });
+  it('checkInbox drops persistence from an invalidated in-flight session', async () => {
+    const agg = makeAgg();
+    let releaseProvider!: () => void;
+    const providerFinished = new Promise<void>((resolve) => {
+      releaseProvider = resolve;
+    });
+    const setSpy = vi.spyOn(storageService, 'set').mockResolvedValue(undefined as any);
+    vi.spyOn(storageService, 'get').mockResolvedValue([] as any);
+    vi.spyOn(tempMailService, 'checkInbox').mockImplementation(async () => {
+      await providerFinished;
+      return [
+        {
+          id: 'stale-1',
+          from: 'a@b.com',
+          subject: 'Stale message',
+          date: Date.now(),
+          body: 'stale',
+          read: false,
+          attachments: [],
+        } as any,
+      ];
+    });
+    const acc = {
+      fullEmail: 'a@1secmail.com',
+      domain: '1secmail.com',
+      login: 'a',
+      service: 'tempmail' as any,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 1e9,
+      username: 'a',
+    } as any;
+
+    const pendingCheck = agg.checkInbox(acc);
+    await sleep(0);
+    agg.invalidateInboxSession();
+    releaseProvider();
+    await pendingCheck;
+
+    expect(setSpy).not.toHaveBeenCalledWith('inbox', expect.anything());
+    (tempMailService.checkInbox as any).mockRestore?.();
+  });
   it('checkInbox records health and wraps error', async () => {
     const health = new ProviderHealthManager();
     const agg = new EmailServiceAggregator(health as any);

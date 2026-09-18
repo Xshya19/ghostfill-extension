@@ -35,10 +35,11 @@ import {
   type AliasHistoryItem,
 } from '../../../types/email.types';
 import { copyToClipboard, openSafeUrl } from '../../../utils/core';
+import { getSenderLabel } from '../../../utils/emailIdentity';
 import { safeSendMessage } from '../../../utils/messaging';
 import { useAppStore } from '../store';
 import { GmailLogo } from './ProviderLogos';
-import { EmailViewerModal } from './SharedComponents';
+import { EmailAvatar, EmailViewerModal, getSenderSource } from './SharedComponents';
 
 // ─── Types ───────────────────────────────────────────────
 type AliasPanelTab = 'generator' | 'inbox' | 'history';
@@ -167,9 +168,9 @@ const GeneratorTab: React.FC<GeneratorTabProps> = ({
         {cleanDomain && (
           <motion.div
             className="alias-pipeline-connector"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 14, opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
+            initial={{ scaleY: 0, opacity: 0 }}
+            animate={{ scaleY: 1, opacity: 1 }}
+            exit={{ scaleY: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
           >
             <div className="alias-pipeline-flow" />
@@ -187,8 +188,8 @@ const GeneratorTab: React.FC<GeneratorTabProps> = ({
           <div className="alias-result-top">
             <motion.span
               key={activeAlias}
-              initial={{ opacity: 0, filter: 'blur(6px)', y: 4 }}
-              animate={{ opacity: 1, filter: 'blur(0px)', y: 0 }}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
               className="alias-result-alias truncate"
               title={activeAlias}
@@ -350,13 +351,14 @@ const InboxTab: React.FC<InboxTabProps> = ({
               className={`alias-inbox-item ${msg.isUnread ? 'alias-inbox-item--unread' : ''}`}
             >
               <div className="alias-inbox-item-left">
-                <div className="alias-inbox-avatar" aria-hidden="true">
-                  {(msg.fromName || msg.fromEmail || '?').charAt(0).toUpperCase()}
-                </div>
+                <EmailAvatar
+                  from={getSenderSource(msg.fromName, msg.fromEmail || msg.from)}
+                  className="alias-inbox-avatar"
+                />
                 <div className="alias-inbox-item-body">
                   <div className="alias-inbox-item-top">
                     <span className="alias-inbox-from truncate">
-                      {msg.fromName || msg.fromEmail}
+                      {getSenderLabel(msg.fromName || msg.fromEmail || msg.from, msg.subject)}
                     </span>
                     <span className="alias-inbox-date">{msg.dateFormatted}</span>
                   </div>

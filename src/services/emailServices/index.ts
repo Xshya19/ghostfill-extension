@@ -79,6 +79,9 @@ class EmailServiceAggregator {
   // Mutexes to prevent race conditions during concurrent operations
   private generateEmailPromise: Promise<EmailAccount> | null = null;
   private getCurrentEmailPromise: Promise<EmailAccount | null> | null = null;
+  private readonly inboxCheckPromises = new Map<string, Promise<Email[]>>();
+  private inboxSessionGeneration = 0;
+  private healthCheckPromise: Promise<void> | null = null;
 
   // ARCHITECTURE FIX: Inject health manager dependency (defaults to singleton)
   private healthManager: IProviderHealthManager;
@@ -156,6 +159,22 @@ class EmailServiceAggregator {
    * PERFORMANCE FIX: Results are now persisted to storage
    */
   async performHealthCheck(): Promise<void> {
+    if (this.healthCheckPromise) {
+      return this.healthCheckPromise;
+    }
+
+    const promise = this.performHealthCheckInternal();
+    this.healthCheckPromise = promise;
+    try {
+      await promise;
+    } finally {
+      if (this.healthCheckPromise === promise) {
+        this.healthCheckPromise = null;
+      }
+    }
+  }
+
+  private async performHealthCheckInternal(): Promise<void> {
     // Load persisted state if not already done
     if (!this.healthCheckInitialized) {
       await this.loadHealthState();
@@ -614,7 +633,57 @@ class EmailServiceAggregator {
    * Check inbox for the specified account
    */
   async checkInbox(account: EmailAccount, signal?: AbortSignal): Promise<Email[]> {
+    // A caller-owned signal must retain its cancellation semantics. Polling,
+    // popup refresh, SSE recovery, and context-menu checks normally omit a
+    // signal, so coalesce those requests into one provider round-trip.
+    if (signal || !account?.fullEmail) {
+      return this.checkInboxInternal(account, signal);
+    }
+
+    const key = this.getInboxCheckKey(account);
+    const existing = this.inboxCheckPromises.get(key);
+    if (existing) {
+      log.debug('Coalescing concurrent inbox check', {
+        service: account.service,
+        email: account.fullEmail.replace(/^(.)(.*)(@.*)$/, (_, f, m, d) => `${f}${'*'.repeat(Math.min(m.length, 5))}${d}`),
+      });
+      return existing;
+    }
+
+    const promise = this.checkInboxInternal(account);
+    this.inboxCheckPromises.set(key, promise);
     try {
+      return await promise;
+    } finally {
+      if (this.inboxCheckPromises.get(key) === promise) {
+        this.inboxCheckPromises.delete(key);
+      }
+    }
+  }
+
+  private getInboxCheckKey(account: EmailAccount): string {
+    return [account.service, account.id || '', account.fullEmail].join(':');
+  }
+
+  /**
+   * Invalidate provider work that belongs to the previous email session.
+   * Requests cannot always be aborted (some providers do not accept a signal),
+   * so consumers also re-check this generation before persisting results.
+   */
+  invalidateInboxSession(): void {
+    this.inboxSessionGeneration++;
+    this.inboxCheckPromises.clear();
+  }
+
+  private async checkInboxInternal(account: EmailAccount, signal?: AbortSignal): Promise<Email[]> {
+    try {
+      if (!account || typeof account.fullEmail !== 'string' || !account.fullEmail) {
+        log.error('Invalid account for inbox check', { account });
+        throw new Error('Invalid email account: missing fullEmail');
+      }
+
+      const inboxSessionGeneration = this.inboxSessionGeneration;
+
       const maskedEmail = account.fullEmail
         ? account.fullEmail.replace(
             /^(.)(.*)(@.*)$/,
@@ -626,12 +695,6 @@ class EmailServiceAggregator {
         service: account.service,
         fullEmail: maskedEmail,
       });
-
-      // Validate account has required fields
-      if (!account || !account.fullEmail) {
-        log.error('Invalid account for inbox check', { account });
-        throw new Error('Invalid email account: missing fullEmail');
-      }
 
       // Ensure fullEmail contains @
       if (!account.fullEmail.includes('@')) {
@@ -667,7 +730,9 @@ class EmailServiceAggregator {
                 : await getMostRecentGmailAliasSession();
             if (await gmailApiService.ensureAuthenticated(false)) {
               if (!aliasSession) {
-                await storageService.set('inbox', []);
+                if (inboxSessionGeneration === this.inboxSessionGeneration) {
+                  await storageService.set('inbox', []);
+                }
                 return [];
               }
               const query = buildGmailAliasSearchQuery(
@@ -867,8 +932,15 @@ class EmailServiceAggregator {
       const cachedInbox = (await storageService.get('inbox')) || [];
       const inboxHash = (list: Email[]) => list.map((e) => `${e.id}:${e.read}`).join('|');
 
-      if (inboxHash(slicedSafeEmails) !== inboxHash(cachedInbox)) {
+      if (
+        inboxSessionGeneration === this.inboxSessionGeneration &&
+        inboxHash(slicedSafeEmails) !== inboxHash(cachedInbox)
+      ) {
         await storageService.set('inbox', slicedSafeEmails);
+      } else if (inboxSessionGeneration !== this.inboxSessionGeneration) {
+        log.debug('Discarding inbox persistence from an invalidated session', {
+          service: account.service,
+        });
       }
 
       return safeEmails;
@@ -929,6 +1001,7 @@ class EmailServiceAggregator {
     signal?: AbortSignal
   ): Promise<Email> {
     try {
+      const inboxSessionGeneration = this.inboxSessionGeneration;
       let email: Email;
 
       switch (account.service) {
@@ -1101,6 +1174,13 @@ class EmailServiceAggregator {
       };
 
       const inbox = await storageService.get('inbox');
+      if (inboxSessionGeneration !== this.inboxSessionGeneration) {
+        log.debug('Discarding read-email persistence from an invalidated session', {
+          service: account.service,
+          id: emailId,
+        });
+        return safeEmail;
+      }
       if (!Array.isArray(inbox)) {
         log.warn('Corrupted inbox found during readEmail, resetting');
         await storageService.set('inbox', [safeEmail]);
@@ -1234,6 +1314,7 @@ class EmailServiceAggregator {
    * Clear email data
    */
   async clearData(): Promise<void> {
+    this.invalidateInboxSession();
     await storageService.remove('currentEmail');
     await storageService.remove('disposableEmail');
     await storageService.set('inbox', []);

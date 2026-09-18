@@ -3,8 +3,10 @@ import { ChevronLeft } from 'lucide-react';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { storageService } from '../../services/storageService';
 import { EmailAccount } from '../../types';
+import { APP_VERSION } from '../../utils/core';
 import { createLogger } from '../../utils/logger';
 import { safeSendMessage } from '../../utils/messaging';
+import { t } from '../i18n';
 import { viewFade , Toast } from '../ui';
 import AliasPanel from './components/AliasPanel';
 import EmailGenerator from './components/EmailGenerator';
@@ -13,24 +15,6 @@ import { AppSkeleton, ErrorBoundary, Header, HelpModal, Onboarding, OTPDisplay, 
 import { useAppStore } from './store';
 
 const log = createLogger('App');
-
-// Helper to get extension version dynamically
-const getExtensionVersion = (): string => {
-  try {
-    return chrome.runtime.getManifest().version;
-  } catch {
-    return 'unknown';
-  }
-};
-
-// i18n helper
-const t = (key: string): string => {
-  try {
-    return chrome.i18n.getMessage(key) || key;
-  } catch {
-    return key;
-  }
-};
 
 type AppView = 'hub' | 'email' | 'password' | 'otp' | 'aliases';
 type AliasPanelTab = 'generator' | 'inbox' | 'history';
@@ -165,8 +149,10 @@ const App: React.FC = () => {
       try {
         let isFirst = false;
         try {
-          const result = await chrome.storage.local.get('hasSeenOnboarding');
-          isFirst = !result.hasSeenOnboarding;
+          if (typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
+            const result = await chrome.storage.local.get('hasSeenOnboarding');
+            isFirst = !result.hasSeenOnboarding;
+          }
           if (mounted) {
             setIsFirstTime(isFirst);
           }
@@ -414,10 +400,12 @@ const App: React.FC = () => {
 
   const handleOpenSettings = useCallback(() => {
     try {
-      if (chrome.runtime.openOptionsPage) {
+      if (typeof chrome !== 'undefined' && chrome.runtime?.openOptionsPage) {
         void chrome.runtime.openOptionsPage();
+      } else if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
+        window.open(chrome.runtime.getURL('options.html'), '_blank', 'noopener,noreferrer');
       } else {
-        window.open(chrome.runtime.getURL('options.html'));
+        window.open(new URL('options.html', window.location.href).href, '_blank', 'noopener,noreferrer');
       }
     } catch (e) {
       log.error('Failed to open settings', e);
@@ -445,7 +433,7 @@ const App: React.FC = () => {
             <Onboarding
               key="onboarding"
               onDismiss={dismissOnboarding}
-              version={getExtensionVersion()}
+              version={APP_VERSION}
             />
           ) : null}
         </AnimatePresence>

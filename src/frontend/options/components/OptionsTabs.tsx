@@ -22,43 +22,57 @@ import {
 import React, { useState, useEffect, useRef } from 'react';
 
 import { storageService } from '../../../services/storageService';
-import { UserSettings, DEFAULT_SETTINGS } from '../../../types/storage.types';
+import { UserSettings } from '../../../types/storage.types';
+import { APP_VERSION } from '../../../utils/core';
 import { createLogger } from '../../../utils/logger';
+import {
+  MAX_SETTINGS_IMPORT_BYTES,
+  normalizeImportedSettings,
+} from '../../../utils/settingsImport';
+import { t } from '../../i18n';
 import { GmailLogo } from '../../popup/components/ProviderLogos';
 import { Button } from '../../ui';
 
 import { CustomSelect, SettingsSection, ToggleSwitch } from './OptionsUI';
 
-const t = (key: string): string => {
-  try {
-    return chrome.i18n.getMessage(key) || key;
-  } catch {
-    return key;
-  }
-};
-
 const log = createLogger('OptionsTabs');
 const GMAIL_CLIENT_ID_PATTERN = /^[a-z0-9-]+\.apps\.googleusercontent\.com$/i;
 const SAVE_FEEDBACK_MS = 1800;
 
-// Single source of truth for the preferred-service picker. Labels stay short
-// so the in-DOM CustomSelect panel never clips; the retention/auth hint is
-// the differentiator users actually choose on.
+// Single source of truth for the preferred-service picker. Keep labels concise
+// so the selected value and the in-DOM CustomSelect panel remain readable.
 // Exported so OptionsApp can validate membership before saving (a service the
 // backend zod enum doesn't know would otherwise fail as "backend rejected").
 export const EMAIL_SERVICE_OPTIONS = [
-  { value: 'catchmail', label: 'CatchMail.io — Fast · 7-day retention (Recommended)' },
-  { value: 'throwawaymail', label: 'Throwawaymail.app — Fast REST API · Instant delivery' },
-  { value: 'mailtm', label: 'Mail.tm — Encrypted account · High uptime' },
-  { value: 'tempmailplus', label: 'Tempmail.plus — Multi-domain · Fast sync' },
-  { value: 'maildrop', label: 'Maildrop.cc — Free GraphQL disposable mail' },
-  { value: 'driftz', label: 'Driftz.net — Blocklist bypass (@bbjbinin.mn)' },
-  { value: 'guerrilla', label: 'Guerrilla Mail — 10 stealth domains' },
-  { value: 'yopmail', label: 'YOPmail — Disposable inbox · Multi-domain' },
-  { value: 'mailgw', label: 'Mail.gw — Dedicated domain pool' },
-  { value: 'mailinator', label: 'Mailinator — Public inbox · Fast delivery' },
-  { value: 'custom', label: 'Custom infrastructure (private)' },
+  { value: 'catchmail', label: 'CatchMail.io · Recommended' },
+  { value: 'throwawaymail', label: 'Throwawaymail.app · Fast' },
+  { value: 'mailtm', label: 'Mail.tm · High uptime' },
+  { value: 'tempmailplus', label: 'Tempmail.plus · Multi-domain' },
+  { value: 'maildrop', label: 'Maildrop.cc · Public inbox' },
+  { value: 'driftz', label: 'Driftz.net · Stealth domains' },
+  { value: 'guerrilla', label: 'Guerrilla Mail · Stealth domains' },
+  { value: 'yopmail', label: 'YOPmail · Multi-domain' },
+  { value: 'mailgw', label: 'Mail.gw · Dedicated domains' },
+  { value: 'mailinator', label: 'Mailinator · Public inbox' },
+  { value: 'custom', label: 'Custom service · Private' },
 ] as const;
+
+const EMAIL_SERVICE_LABELS: Readonly<Record<string, string>> = {
+  catchmail: 'CatchMail.io',
+  throwawaymail: 'Throwawaymail.app',
+  mailtm: 'Mail.tm',
+  tempmailplus: 'Tempmail.plus',
+  maildrop: 'Maildrop.cc',
+  driftz: 'Driftz.net',
+  guerrilla: 'Guerrilla Mail',
+  yopmail: 'YOPmail',
+  mailgw: 'Mail.gw',
+  mailinator: 'Mailinator',
+  custom: 'Custom service',
+};
+
+const getEmailServiceLabel = (service: string): string =>
+  EMAIL_SERVICE_LABELS[service.toLowerCase()] ?? service;
 
 // ─── Provider Health Meter Component ──────────────────────────────────────────
 interface ProviderHealthStatus {
@@ -159,7 +173,7 @@ export const ProviderHealthMeter: React.FC = () => {
         <div className="health-grid">
           {['driftz', 'catchmail', 'throwawaymail', 'tempmailplus', 'mailtm', 'mailgw', 'guerrilla', 'maildrop', 'yopmail'].map((name) => (
             <div key={name} className="health-pill-card" title="No calls recorded yet">
-              <span className="health-provider-name">{name}</span>
+              <span className="health-provider-name">{getEmailServiceLabel(name)}</span>
               <div className="health-status-group">
                 <span className="health-percent">—</span>
                 <span className="health-dot health-status-unknown" aria-hidden="true" />
@@ -207,7 +221,7 @@ export const ProviderHealthMeter: React.FC = () => {
           return (
             <div key={h.name} className="health-pill-card" title={detail}>
               <span className="health-provider-name" title={h.name}>
-                {h.name}
+                {getEmailServiceLabel(h.name)}
               </span>
               <div className="health-status-group">
                 <span className="health-percent" aria-label={detail}>
@@ -329,7 +343,9 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChang
             <Button
               size="sm"
               onClick={async () => {
-                await chrome.storage.local.set({ hasSeenOnboarding: false });
+                if (typeof chrome !== 'undefined' && chrome.storage?.local?.set) {
+                  await chrome.storage.local.set({ hasSeenOnboarding: false });
+                }
                 const labelEl = document.getElementById('tutorial-reset-toast');
                 if (labelEl) {
                   labelEl.style.display = 'inline';
@@ -826,21 +842,33 @@ export const AutomationTab: React.FC<AutomationTabProps> = ({ settings, onSettin
 
   useEffect(() => {
     let cancelled = false;
-    chrome.commands.getAll().then((cmds) => {
-      if (cancelled) {
-        return;
-      }
-      const byName = new Map(cmds.map((c) => [c.name, c]));
-      const ordered = COMMAND_ORDER.map((name) => {
-        const info = byName.get(name);
-        return {
-          name,
-          shortcut: info?.shortcut || 'Not assigned',
-          description: info?.description || '',
-        } as CommandInfo;
+    if (typeof chrome === 'undefined' || typeof chrome.commands?.getAll !== 'function') {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void chrome.commands
+      .getAll()
+      .then((cmds) => {
+        if (cancelled) {
+          return;
+        }
+        const byName = new Map(cmds.map((c) => [c.name, c]));
+        const ordered = COMMAND_ORDER.map((name) => {
+          const info = byName.get(name);
+          return {
+            name,
+            shortcut: info?.shortcut || 'Not assigned',
+            description: info?.description || '',
+          } as CommandInfo;
+        });
+        setCommands(ordered);
+      })
+      .catch(() => {
+        // The manifest defaults remain a complete, useful fallback if Chrome
+        // cannot enumerate commands (for example in a standalone preview).
       });
-      setCommands(ordered);
-    });
     return () => {
       cancelled = true;
     };
@@ -1069,29 +1097,22 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
       return;
     }
 
+    if (file.size > MAX_SETTINGS_IMPORT_BYTES) {
+      onError?.('Settings files must be smaller than 256 KB.');
+      e.target.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
-        const parsed = JSON.parse(event.target?.result as string);
-
-        const merged: UserSettings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
-        for (const key of Object.keys(DEFAULT_SETTINGS)) {
-          const k = key as keyof UserSettings;
-          if (k in parsed) {
-            const expectedType = typeof DEFAULT_SETTINGS[k];
-            const actualType =
-              parsed[k] === null ? 'null' : Array.isArray(parsed[k]) ? 'array' : typeof parsed[k];
-            const typeMatches =
-              actualType === expectedType ||
-              (expectedType === 'object' && (actualType === 'object' || actualType === 'array'));
-            if (typeMatches) {
-              if (k === 'passwordDefaults' && typeof parsed[k] === 'object') {
-                merged[k] = { ...DEFAULT_SETTINGS.passwordDefaults, ...parsed[k] };
-              } else {
-                (merged as any)[k] = parsed[k];
-              }
-            }
-          }
+        const raw = event.target?.result;
+        if (typeof raw !== 'string') {
+          throw new Error('Settings file was not readable text');
+        }
+        const merged = normalizeImportedSettings(JSON.parse(raw));
+        if (!merged) {
+          throw new Error('Settings file must contain a JSON object');
         }
 
         onSettingsImport(merged);
@@ -1102,6 +1123,13 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
         } else {
           console.warn('Invalid settings file. Please select a valid GhostFill settings JSON.');
         }
+      }
+    };
+    reader.onerror = () => {
+      if (onError) {
+        onError('GhostFill could not read that settings file.');
+      } else {
+        console.warn('GhostFill could not read that settings file.');
       }
     };
     reader.readAsText(file);
@@ -1218,10 +1246,14 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
 
 // ─── About Tab Component ─────────────────────────────────────────────────────
 export const AboutTab: React.FC = () => {
-  const version = React.useMemo(() => chrome.runtime.getManifest().version, []);
+  const version = APP_VERSION;
   const [storageUsage, setStorageUsage] = useState<{ used: number; quota: number } | null>(null);
 
   useEffect(() => {
+    if (typeof chrome === 'undefined' || !chrome.storage?.local?.getBytesInUse) {
+      setStorageUsage({ used: 0, quota: 10 * 1024 * 1024 });
+      return;
+    }
     chrome.storage.local.getBytesInUse(null, (bytes) => {
       setStorageUsage({
         used: bytes,

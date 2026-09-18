@@ -259,8 +259,10 @@ class DedupService {
     this.persistGeneration++;
     this.cancelPendingPersist();
     this.records.clear();
+    this.pendingRecords.clear();
     await this.initialize();
     this.records.clear();
+    this.pendingRecords.clear();
 
     try {
       await storageService.remove(CONFIG.STORAGE_KEY);

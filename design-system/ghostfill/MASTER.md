@@ -1,239 +1,129 @@
-# Design System Master File
+# GhostFill Design System — Private Workspace
 
-> **LOGIC:** When building a specific page, first check `design-system/pages/[page-name].md`.
-> If that file exists, its rules **override** this Master file.
-> If not, strictly follow the rules below.
+**Status:** production baseline
 
----
+**Surfaces:** 375×400 popup, responsive options page, in-page Shadow DOM controls
 
-**Project:** GhostFill
-**Generated:** 2026-09-14 11:21:56
-**Category:** VPN & Privacy Tool
-**Design Dials:** Variance 5/10 (Balanced / Modern) | Motion 4/10 (Standard) | Density 7/10 (Standard)
+**Design dials:** variance 5/10 · motion 4/10 · density 7/10
 
-**Surface:** Operate. This is a Manifest V3 browser-extension popup, options surface, and in-page utility. Preserve the existing information architecture and privacy-first product behavior while improving hierarchy, alignment, feedback, and touch targets.
+GhostFill is a focused privacy utility. It should feel calm, precise, and browser-native—not like a marketing site or a playful dashboard. Hierarchy comes from spacing, type, borders, and state; decoration stays subordinate to the task.
 
-### Implementation Guardrails
+## Implementation guardrails
 
-- Keep the existing React + native CSS + Webpack stack. Do not introduce Tailwind, shadcn, or a second component system for visual polish.
-- Do not load remote fonts. Manifest V3 CSP and offline popup behavior require the existing local/system font stack.
-- Reuse the existing semantic tokens in `src/frontend/styles/globals.css` and the established GhostFill icon helpers. Do not introduce a second icon family.
-- Treat 44px as the minimum interactive hit area, keep popup content within its fixed viewport, and test the 375px, 768px, 1024px, and 1440px contexts where applicable.
-- Keep motion purposeful and short: transform/opacity transitions in the 125-250ms range, reduced-motion fallbacks, and no animation on frequent keyboard actions.
-- Treat this file as a design baseline. Surface-specific accessibility or behavior constraints in code and tests take precedence over generic examples below.
+- Keep React, native CSS, Webpack, and the existing shared primitives. Do not add Tailwind, shadcn, a second token set, or a second icon family.
+- Use only bundled fonts and assets. No remote fonts, remote UI images, or runtime style dependencies.
+- `src/frontend/styles/globals.css` is the token source of truth. Surface styles may compose those tokens, not redefine the visual language.
+- Lucide is the interface icon family. Brand marks use local bundled artwork. Do not use emoji as structural icons.
+- Preserve extension behavior, manifest permissions, analytics hooks, accessibility semantics, and the fixed popup viewport while polishing UI.
 
----
+## Visual language
 
-## Global Rules
+### Color
 
-### Color Palette
+Use semantic `--gf-*` tokens rather than literals.
 
-| Role | Hex | CSS Variable |
-|------|-----|--------------|
-| Primary | `#1E3A5F` | `--color-primary` |
-| On Primary | `#FFFFFF` | `--color-on-primary` |
-| Secondary | `#334155` | `--color-secondary` |
-| On Secondary | `#FFFFFF` | `--color-on-secondary` |
-| Accent/CTA | `#22C55E` | `--color-accent` |
-| On Accent/CTA | `#0F172A` | `--color-on-accent` |
-| Background | `#0F172A` | `--color-background` |
-| Foreground | `#FFFFFF` | `--color-foreground` |
-| Card | `#192134` | `--color-card` |
-| Card Foreground | `#FFFFFF` | `--color-card-foreground` |
-| Muted | `#10192E` | `--color-muted` |
-| Muted Foreground | `#94A3B8` | `--color-muted-foreground` |
-| Border | `rgba(255,255,255,0.08)` | `--color-border` |
-| Destructive | `#DC2626` | `--color-destructive` |
-| On Destructive | `#FFFFFF` | `--color-on-destructive` |
-| Ring | `#FFFFFF` | `--color-ring` |
+| Role                 |     Light |      Dark | Token            |
+| -------------------- | --------: | --------: | ---------------- |
+| Canvas               | `#f7f8fa` | `#10151e` | `--gf-bg`        |
+| Surface              | `#ffffff` | `#171e29` | `--gf-surface`   |
+| Raised/hover surface | `#f2f4f7` | `#1d2632` | `--gf-surface-2` |
+| Primary ink          | `#172033` | `#f3f6fa` | `--gf-ink`       |
+| Secondary ink        | `#5e6b7c` | `#aab5c4` | `--gf-ink-soft`  |
+| Tertiary ink         | `#667284` | `#7e8b9c` | `--gf-ink-dim`   |
+| Action               | `#2f5fd0` | `#88a8ff` | `--gf-primary`   |
+| Success              | `#14805c` | `#5ac89e` | `--gf-mint`      |
+| Warning              | `#b66f00` | `#f2b64d` | `--gf-amber`     |
+| Danger               | `#c43a3a` | `#f18484` | `--gf-coral`     |
 
-**Color Notes:** Shield dark + connected green
+Rules:
+
+- Cobalt is the only general action accent. Status colors communicate status only.
+- Default cards are flat with a hairline border. Reserve shadows for menus, dialogs, toasts, and other floating layers.
+- Gradients, glass blur, ambient blobs, and decorative glow are not part of this system.
+- Normal text must meet WCAG 2.2 AA contrast (4.5:1). Never use dim ink for critical instructions.
 
 ### Typography
 
-- **Heading Font:** Inter
-- **Body Font:** Inter
-- **Mood:** dark, cinematic, technical, precision, clean, premium, developer, professional, high-end utility
-- **Runtime font rule:** use the existing local/system stack. The Google Fonts reference is inspiration only and must not be imported into the extension.
+- UI/display: bundled Space Grotesk.
+- Data, generated identities, passwords, codes, and shortcuts: bundled IBM Plex Mono.
+- Use sentence case. Prefer direct labels such as “Desktop notifications” and “Generate new email.”
+- Popup body copy should not fall below 11px; options body copy should normally be 13px or larger. Tiny type is reserved for nonessential metadata.
+- Avoid gratuitous uppercase, wide tracking, gradient text, and decorative headings.
 
-### Spacing Variables
+### Geometry and rhythm
 
-*Density: 7/10 — Standard*
+- Spacing follows the 4px scale in `globals.css` (`--space-1` through `--space-10`).
+- Core radii: controls 8px, panels 12px, elevated dialogs up to 16px.
+- Every interactive control must expose a minimum 44×44px hit area. Compact visuals may sit inside that area.
+- Popup: keep a 12–16px gutter, an 8px primary vertical rhythm, and no document scrolling at 375×400.
+- Options: one rail plus one reading column on desktop; two-column navigation then stacked content on narrow screens. Never introduce page-level horizontal overflow.
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--space-xs` | `4px` / `0.25rem` | Tight gaps |
-| `--space-sm` | `8px` / `0.5rem` | Icon gaps, inline spacing |
-| `--space-md` | `16px` / `1rem` | Standard padding |
-| `--space-lg` | `24px` / `1.5rem` | Section padding |
-| `--space-xl` | `32px` / `2rem` | Large gaps |
-| `--space-2xl` | `48px` / `3rem` | Section margins |
-| `--space-3xl` | `64px` / `4rem` | Hero padding |
-
-### Shadow Depths
-
-| Level | Value | Usage |
-|-------|-------|-------|
-| `--shadow-sm` | `0 1px 2px rgba(0,0,0,0.05)` | Subtle lift |
-| `--shadow-md` | `0 4px 6px rgba(0,0,0,0.1)` | Cards, buttons |
-| `--shadow-lg` | `0 10px 15px rgba(0,0,0,0.1)` | Modals, dropdowns |
-| `--shadow-xl` | `0 20px 25px rgba(0,0,0,0.15)` | Hero images, featured cards |
-
----
-
-## Component Specs
+## Component contracts
 
 ### Buttons
 
-```css
-/* Primary Button */
-.btn-primary {
-  background: #22C55E;
-  color: white;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  transition: all 200ms ease;
-  cursor: pointer;
-}
+- Primary: solid cobalt, high-contrast label, one per decision group.
+- Secondary: quiet surface with hairline border.
+- Destructive: coral only when the action is destructive.
+- Icon-only controls require an accessible name and tooltip/title.
+- Hover may lift by at most 1px on fine pointers. Press returns to the surface or scales to 0.97. Disabled controls never animate.
 
-.btn-primary:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
-}
+### Cards and rows
 
-/* Secondary Button */
-.btn-secondary {
-  background: transparent;
-  color: #1E3A5F;
-  border: 2px solid #1E3A5F;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  transition: all 200ms ease;
-  cursor: pointer;
-}
-```
+- A card groups one concept; avoid nested-card stacks.
+- Clickable rows use a native button or link covering the full row, not a click handler on a generic `div`.
+- Dividers and section headings provide structure before adding another container.
 
-### Cards
+### Inputs and selectors
 
-```css
-.card {
-  background: #0F172A;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: var(--shadow-md);
-  transition: all 200ms ease;
-  cursor: pointer;
-}
+- Inputs and custom selectors have a visible label, 44px target height, clear focus ring, and inline validation.
+- Error copy explains the remedy. Do not rely on color alone.
+- Imported settings are treated as untrusted input and rebuilt from the known settings schema.
 
-.card:hover {
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-2px);
-}
-```
+### Toggles
 
-### Inputs
+- The native button target is 44×44px minimum; the visual track remains compact inside it.
+- Use `role="switch"`, an accessible name, and `aria-checked`.
 
-```css
-.input {
-  padding: 12px 16px;
-  border: 1px solid #E2E8F0;
-  border-radius: 8px;
-  font-size: 16px;
-  transition: border-color 200ms ease;
-}
+### Dialogs and menus
 
-.input:focus {
-  border-color: #1E3A5F;
-  outline: none;
-  box-shadow: 0 0 0 3px #1E3A5F20;
-}
-```
-
-### Modals
-
-```css
-.modal-overlay {
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
-}
-
-.modal {
-  background: white;
-  border-radius: 16px;
-  padding: 32px;
-  box-shadow: var(--shadow-xl);
-  max-width: 500px;
-  width: 90%;
-}
-```
-
----
-
-## Style Guidelines
-
-**Style:** Minimalism & Swiss Style
-
-**Keywords:** Clean, simple, spacious, functional, white space, high contrast, geometric, sans-serif, grid-based, essential
-
-**Best For:** Enterprise apps, dashboards, documentation sites, SaaS platforms, professional tools
-
-**Key Effects:** Subtle hover (200-250ms), smooth transitions, sharp shadows if any, clear type hierarchy, fast loading
-
-### Page Pattern
-
-**Pattern Name:** Trust & Authority + Conversion
-
-- **Conversion Strategy:** Security badges. Case studies. Transparent pricing. Low-friction form. Provide pause/stop and stop the logo carousel on focus, hover, and reduced motion. Previous/next controls provide the keyboard equivalent; pause offscreen/hidden and render a static logo set under reduced motion.
-- **CTA Placement:** Contact Sales / Get Quote (primary) + Nav
-- **Section Order:** Hero (mission/credibility) > Proof (logos, certs, stats) > Solution overview > Clear CTA path
-
----
+- Trap focus, close on Escape, restore prior focus, and isolate siblings from keyboard and assistive technology.
+- Dialog entrance: opacity plus a small translate/scale. No blur animation.
+- One obvious completion action; avoid redundant close controls in tiny dialogs.
 
 ## Motion
 
-**Stagger List** (Standard) — Trigger: load or scroll | Duration: 300-450ms | Easing: `back.out(1.4)`
+Motion explains state and preserves context. It is not decoration.
 
-```js
-gsap.from('.grid-item', { opacity: 0, scale: 0.92, y: 16, duration: 0.4, stagger: { each: 0.06, from: 'start', grid: 'auto' }, ease: 'back.out(1.4)' });
-```
+- Default durations: 120ms feedback, 160–220ms state/view changes, up to 340ms for a rare large surface.
+- Default easing: `cubic-bezier(0.16, 1, 0.3, 1)`.
+- Animate compositor-friendly `transform` and `opacity`. Avoid animated blur, large shadows, height when a transform can express the same relationship, and persistent `will-change`.
+- Frequent keyboard actions are instant. List rows do not stagger in the inbox.
+- Semantic progress may continue under reduced motion at a calm rate; decorative movement is removed.
+- Honor both CSS `prefers-reduced-motion` and Framer Motion’s `reducedMotion="user"`.
 
-**Framework notes:** grid: 'auto' lets GSAP infer rows/columns from a CSS grid layout for a natural wave stagger; Use matchMedia('(prefers-reduced-motion: reduce)') to skip non-essential motion and render the final state immediately
+## Accessibility and responsive baseline
 
-- ✅ Combine with from: 'center' for a bento-grid layout to draw the eye inward first
-- ❌ Don't use back.out on dense data tables; the overshoot reads as sloppy on informational UI
-- ⚡ Group DOM writes; avoid interleaving layout reads (getBoundingClientRect) between staggered tweens
+- Semantic landmarks, headings, tablists/tabs, switches, dialogs, and status regions must expose correct roles and names.
+- Keyboard focus is always visible; never suppress outlines without a stronger replacement.
+- Touch targets are 44×44px minimum. Pointer-only hover states must not be necessary to understand or operate the UI.
+- Verify popup at 375×400 and 360px width; verify options at 375, 768, 1024, and 1440px.
+- Check light and dark themes, 200% zoom-equivalent layouts, long localized strings, empty/loading/error/success states, and reduced motion.
 
----
+## Privacy presentation
 
-## Anti-Patterns (Do NOT Use)
+- Never load sender avatars, favicons, email images, fonts, or CSS from remote hosts without explicit user intent.
+- Email HTML renders in a sandbox with a deny-by-default document CSP; remote assets are blocked and the user is told why.
+- Sensitive values are not used as external URL parameters or third-party image lookups.
+- Security and privacy states use plain, specific language—no fear-driven decoration.
 
-- ❌ Excessive decoration
-- ❌ Pure white backgrounds
+## Pre-delivery checklist
 
-### Additional Forbidden Patterns
-
-- ❌ **Emojis as icons** — Use SVG icons (Heroicons, Lucide, Simple Icons)
-- ❌ **Missing cursor:pointer** — All clickable elements must have cursor:pointer
-- ❌ **Layout-shifting hovers** — Avoid scale transforms that shift layout
-- ❌ **Low contrast text** — Maintain 4.5:1 minimum contrast ratio
-- ❌ **Instant state changes** — Always use transitions (150-300ms)
-- ❌ **Invisible focus states** — Focus states must be visible for a11y
-
----
-
-## Pre-Delivery Checklist
-
-Before delivering any UI code, verify:
-
-- [ ] No emojis used as icons (use SVG instead)
-- [ ] All icons from consistent icon set (Heroicons/Lucide)
-- [ ] `cursor-pointer` on all clickable elements
-- [ ] Hover states with smooth transitions (150-300ms)
-- [ ] Light mode: text contrast 4.5:1 minimum
-- [ ] Focus states visible for keyboard navigation
-- [ ] `prefers-reduced-motion` respected
-- [ ] Responsive: 375px, 768px, 1024px, 1440px
-- [ ] No content hidden behind fixed navbars
-- [ ] No horizontal scroll on mobile
+- [ ] No runtime crash in any popup or options route.
+- [ ] No unnamed control, generic clickable container, or undersized interactive target.
+- [ ] No page-level horizontal overflow at supported widths.
+- [ ] Light/dark contrast and visible focus verified.
+- [ ] Reduced-motion behavior verified; no decorative infinite motion.
+- [ ] Loading, empty, failure, success, and disconnected states remain usable.
+- [ ] CSP, sanitization, settings import, and message boundaries remain hardened.
+- [ ] Type-check, lint, complete tests, production build, bundle budget, cycle check, service-worker smoke test, and dependency audit pass.

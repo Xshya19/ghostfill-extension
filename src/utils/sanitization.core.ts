@@ -343,7 +343,7 @@ export function sanitizeHtml(dirty: string, options?: SanitizerConfig): string {
 export function sanitizeEmailBody(
   htmlBody: string,
   textBody?: string,
-  options?: { allowStyleTag?: boolean }
+  options?: { allowStyleTag?: boolean; allowRemoteImages?: boolean }
 ): string {
   if (htmlBody) {
     const allowedTags = [
@@ -355,12 +355,13 @@ export function sanitizeEmailBody(
       'img', 'center', 'section', 'header', 'footer', 'font',
       'small', 'mark', 'caption', 'article', 'aside',
       'figure', 'figcaption',
+      'picture', 'source',
     ];
     if (options?.allowStyleTag) {
       allowedTags.push('style');
     }
 
-    return sanitizeHtml(htmlBody, {
+    const sanitized = sanitizeHtml(htmlBody, {
       WHOLE_DOCUMENT: true,
       FORCE_BODY: false,
       ALLOWED_TAGS: allowedTags,
@@ -368,12 +369,145 @@ export function sanitizeEmailBody(
         'href', 'alt', 'title', 'target', 'rel', 'src', 'style', 'class', 'id',
         'width', 'height', 'align', 'valign', 'bgcolor', 'color', 'border',
         'cellpadding', 'cellspacing', 'dir', 'charset', 'name', 'content',
+        'background', 'srcset', 'sizes', 'role', 'aria-label', 'aria-hidden',
       ],
       ADD_ATTR: ['target', 'rel'],
     });
+
+    return options?.allowRemoteImages ? sanitized : stripRemoteEmailAssets(sanitized);
   }
 
   return textBody ? sanitizeText(textBody) : '';
+}
+
+const REMOTE_ABSOLUTE_ASSET_URL = /https?:\/\//i;
+const REMOTE_PROTOCOL_RELATIVE_ASSET_URL = /(?:^|,\s*)\/\//i;
+
+function containsRemoteAssetUrl(value: string): boolean {
+  return (
+    REMOTE_ABSOLUTE_ASSET_URL.test(value) ||
+    REMOTE_PROTOCOL_RELATIVE_ASSET_URL.test(value.trim())
+  );
+}
+
+function scrubRemoteCss(css: string): string {
+  return css
+    .replace(/@import\s+(?:url\()?\s*(['"]?)(?:https?:)?\/\/[^;)'"\s]+\1\s*\)?\s*;?/gi, '')
+    .replace(/url\(\s*(['"]?)(?:https?:)?\/\/[^)'"\s]+\1\s*\)/gi, 'none');
+}
+
+/**
+ * Remove network-backed visual assets from an email while retaining layout,
+ * text, links, and embedded data/blob images. Loading arbitrary sender assets
+ * would disclose the user's IP address and message-open event to tracking
+ * pixels, so remote content is blocked by default.
+ */
+export function stripRemoteEmailAssets(html: string): string {
+  if (!html) {
+    return '';
+  }
+
+  if (typeof DOMParser !== 'undefined') {
+    try {
+      const documentRoot = new DOMParser().parseFromString(html, 'text/html');
+      const assetAttributes = ['src', 'srcset', 'background'] as const;
+
+      for (const element of Array.from(documentRoot.querySelectorAll<HTMLElement>('*'))) {
+        for (const attribute of assetAttributes) {
+          const value = element.getAttribute(attribute);
+          if (value && containsRemoteAssetUrl(value)) {
+            element.removeAttribute(attribute);
+          }
+        }
+
+        const inlineStyle = element.getAttribute('style');
+        if (inlineStyle) {
+          const scrubbedStyle = scrubRemoteCss(inlineStyle).trim();
+          if (scrubbedStyle === inlineStyle.trim()) {
+            // Preserve benign inline presentation exactly as sanitized.
+          } else if (scrubbedStyle) {
+            element.setAttribute('style', scrubbedStyle);
+          } else {
+            element.removeAttribute('style');
+          }
+        }
+
+        if (element.tagName === 'A') {
+          element.setAttribute('target', '_blank');
+          element.setAttribute('rel', 'noopener noreferrer');
+        }
+      }
+
+      for (const styleElement of Array.from(documentRoot.querySelectorAll('style'))) {
+        styleElement.textContent = scrubRemoteCss(styleElement.textContent ?? '');
+      }
+
+      return documentRoot.documentElement.outerHTML;
+    } catch {
+      // Fall through to the worker-safe string scrubber below.
+    }
+  }
+
+  return html
+    .replace(
+      /\s(?:src|srcset|background)\s*=\s*(['"])(.*?)\1/gi,
+      (attribute, _quote: string, value: string) =>
+        containsRemoteAssetUrl(value) ? '' : attribute
+    )
+    .replace(/(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi, (_match, open, css, close) =>
+      `${open}${scrubRemoteCss(css)}${close}`
+    )
+    .replace(/\sstyle\s*=\s*(['"])(.*?)\1/gi, (attribute, _quote: string, value: string) => {
+      const scrubbedStyle = scrubRemoteCss(value).trim();
+      if (scrubbedStyle === value.trim()) {
+        return attribute;
+      }
+      return scrubbedStyle ? ` style="${scrubbedStyle.replace(/"/g, '&quot;')}"` : '';
+    });
+}
+
+export function containsRemoteEmailAssets(html: string): boolean {
+  if (!html) {
+    return false;
+  }
+
+  if (typeof DOMParser !== 'undefined') {
+    try {
+      const documentRoot = new DOMParser().parseFromString(html, 'text/html');
+      for (const element of Array.from(documentRoot.querySelectorAll<HTMLElement>('*'))) {
+        for (const attribute of ['src', 'srcset', 'background'] as const) {
+          const value = element.getAttribute(attribute);
+          if (value && containsRemoteAssetUrl(value)) {
+            return true;
+          }
+        }
+
+        const inlineStyle = element.getAttribute('style');
+        if (inlineStyle && scrubRemoteCss(inlineStyle) !== inlineStyle) {
+          return true;
+        }
+      }
+
+      return Array.from(documentRoot.querySelectorAll('style')).some((styleElement) => {
+        const css = styleElement.textContent ?? '';
+        return scrubRemoteCss(css) !== css;
+      });
+    } catch {
+      // Fall through to the worker-safe checks below.
+    }
+  }
+
+  const attributePattern = /\s(?:src|srcset|background)\s*=\s*(['"])(.*?)\1/gi;
+  let attributeMatch: RegExpExecArray | null;
+  while ((attributeMatch = attributePattern.exec(html))) {
+    if (attributeMatch[2] && containsRemoteAssetUrl(attributeMatch[2])) {
+      return true;
+    }
+  }
+
+  return (
+    /(?:url\(|@import\s+)(?:\s*['"]?)(?:https?:)?\/\//i.test(html)
+  );
 }
 
 /**
@@ -479,4 +613,3 @@ export function setHTML(el: Element, markup: string): void {
 export function clearHTML(el: Element): void {
   el.replaceChildren();
 }
-

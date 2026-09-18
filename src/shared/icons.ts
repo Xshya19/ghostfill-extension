@@ -46,10 +46,11 @@ const ICONS: Readonly<Record<ButtonMode, string>> = {
   `),
 
   otp: fabIcon(`
-    <path d="m12 4 6.5 2.45v5.3c0 3.65-2.6 6.5-6.5 8.25-3.9-1.75-6.5-4.6-6.5-8.25v-5.3L12 4Z" fill="currentColor" opacity=".18"/>
-    <path d="m12 4 6.5 2.45v5.3c0 3.65-2.6 6.5-6.5 8.25-3.9-1.75-6.5-4.6-6.5-8.25v-5.3L12 4Z" stroke="currentColor" stroke-width="${STROKE}" stroke-linejoin="round"/>
-    <circle cx="8.8" cy="11.4" r="1" fill="currentColor"/><circle cx="12" cy="11.4" r="1" fill="currentColor"/><circle cx="15.2" cy="11.4" r="1" fill="currentColor"/>
-    <path d="m9.7 15 1.45 1.35 3.2-3.05" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="4.25" y="5.1" width="15.5" height="13.8" rx="3" fill="currentColor" opacity=".18"/>
+    <rect x="4.25" y="5.1" width="15.5" height="13.8" rx="3" stroke="currentColor" stroke-width="${STROKE}"/>
+    <path d="M7.2 8.4h9.6" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" opacity=".72"/>
+    <circle cx="8.2" cy="12.5" r="1.05" fill="currentColor"/><circle cx="12" cy="12.5" r="1.05" fill="currentColor"/><circle cx="15.8" cy="12.5" r="1.05" fill="currentColor"/>
+    <path d="M8.2 15.6h7.6" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" opacity=".82"/>
   `),
 
   user: fabIcon(`

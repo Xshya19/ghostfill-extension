@@ -747,7 +747,7 @@ export function openGmailCompose(opts?: { to?: string; subject?: string; body?: 
   const url = 'https://mail.google.com/mail/?view=cm&fs=1&' + params.toString();
   chrome.tabs.create({ url }).catch(() => {
     if (typeof window !== 'undefined') {
-      window.open(url, '_blank');
+      window.open(url, '_blank', 'noopener,noreferrer');
     } else {
       log.warn('Cannot open Gmail compose: no tabs API and no window context');
     }
@@ -758,7 +758,7 @@ export function openGmailSearch(query: string): void {
   const url = 'https://mail.google.com/mail/u/0/#search/' + encodeURIComponent(query);
   chrome.tabs.create({ url }).catch(() => {
     if (typeof window !== 'undefined') {
-      window.open(url, '_blank');
+      window.open(url, '_blank', 'noopener,noreferrer');
     } else {
       log.warn('Cannot open Gmail search: no tabs API and no window context');
     }

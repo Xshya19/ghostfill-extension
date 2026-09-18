@@ -17,6 +17,7 @@ import {
   sanitizeUrl,
   sanitizeActivationLink,
   sanitizeEmailBody,
+  containsRemoteEmailAssets,
   isLikelySafe,
   setHTML,
   clearHTML,
@@ -355,6 +356,36 @@ describe('sanitizeEmailBody() deep tests', () => {
     const result = sanitizeEmailBody(html);
     expect(result).toContain('Safe');
     expect(result).toContain('content');
+  });
+
+  it('blocks remote email assets and tracking pixels by default', () => {
+    const html =
+      '<table background="https://cdn.example.com/bg.png"><tr><td><picture><source srcset="https://cdn.example.com/logo@2x.png 2x"><img src="https://cdn.example.com/logo.png" srcset="https://cdn.example.com/logo@2x.png 2x" sizes="32px" alt="Company logo"></picture></td></tr></table>';
+    const result = sanitizeEmailBody(html);
+    expect(result).not.toContain('https://cdn.example.com');
+    expect(result).toContain('alt="Company logo"');
+  });
+
+  it('preserves embedded data images without allowing network requests', () => {
+    const html = '<img src="data:image/png;base64,AA//AA" alt="Embedded logo">';
+    const result = sanitizeEmailBody(html);
+    expect(result).toContain('data:image/png;base64,AA//AA');
+    expect(result).toContain('alt="Embedded logo"');
+    expect(containsRemoteEmailAssets(html)).toBe(false);
+  });
+
+  it('forces rendered email links into an isolated new tab', () => {
+    const result = sanitizeEmailBody('<a href="https://example.com">Continue</a>');
+    expect(result).toContain('target="_blank"');
+    expect(result).toContain('rel="noopener noreferrer"');
+  });
+
+  it('strips remote CSS imports and background URLs', () => {
+    const html =
+      '<style>@import url("https://track.example.com/open.css"); .hero{background:url(https://track.example.com/pixel.gif)}</style><div style="background-image:url(https://track.example.com/open.png)">Hello</div>';
+    const result = sanitizeEmailBody(html, undefined, { allowStyleTag: true });
+    expect(result).not.toContain('track.example.com');
+    expect(result).toContain('Hello');
   });
 });
 

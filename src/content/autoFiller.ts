@@ -4,7 +4,7 @@ import {
   VerificationLoop,
   AdaptiveStrategyEngine,
 } from '../intelligence/IntelligenceCore';
-import { extractFieldRecord } from '../intelligence/pageAnalyzer';
+import { extractFieldRecord, resolveLabelText } from '../intelligence/pageAnalyzer';
 import {
   PageContext,
   FormInputElement,
@@ -98,6 +98,20 @@ const TRUSTED_SELECTOR_FIELD_TYPES: ReadonlySet<FieldType> = new Set<FieldType>(
   'full-name',
   'phone',
 ]);
+
+// Resolver safety contracts. These are intentionally conservative: a target
+// may be skipped when its meaning is unclear, but a credential must never be
+// written into a nearby generic/profile field.
+const EMAIL_FIELD_SIGNAL = /\b(?:e[-_ ]?mail|email address|correo|courriel|mailbox)\b/i;
+const USERNAME_FIELD_SIGNAL =
+  /\b(?:username|user[-_ ]?name|user[-_ ]?id|login(?:[-_ ]?(?:name|id))?|handle|nickname|screen[-_ ]?name|alias|member[-_ ]?id|uid|uname)\b/i;
+const PERSON_NAME_FIELD_SIGNAL =
+  /\b(?:first|given|middle|last|family|full|display|preferred|legal|your)\s*[-_ ]?name\b|\b(?:name|surname)\b/i;
+const PASSWORD_FIELD_SIGNAL = /\b(?:password|passwd|pwd|passphrase|passcode)\b/i;
+const OTP_FIELD_SIGNAL =
+  /\b(?:otp|one[-_ ]?time|verification[-_ ]?code|verify[-_ ]?code|security[-_ ]?code|auth(?:entication)?[-_ ]?code|confirmation[-_ ]?code|passcode|2fa|mfa|totp)\b/i;
+const PHONE_FIELD_SIGNAL = /\b(?:phone|mobile|telephone|tel|contact[-_ ]?number)\b/i;
+const EMAIL_VALUE_PATTERN = /^[^\s@]+@[^\s@]+(?:\.[^\s@]+)?$/;
 
 /** Field types that should never be overwritten if they already have a value. */
 function isOverwritableWhenFilled(type: FieldType): boolean {
@@ -586,8 +600,9 @@ export class AutoFiller {
     );
   }
 
-  private getFieldDescriptor(field: HTMLInputElement): string {
+  private getFieldDescriptor(field: FormInputElement): string {
     const labels = field.labels ? Array.from(field.labels, (label) => label.textContent ?? '') : [];
+    const resolvedLabel = resolveLabelText(field);
     const ariaLabelledBy = field
       .getAttribute('aria-labelledby')
       ?.split(/\s+/)
@@ -595,14 +610,17 @@ export class AutoFiller {
       .join(' ');
 
     return [
-      field.type,
+      field instanceof HTMLInputElement ? field.type : field.tagName.toLowerCase(),
       field.name,
       field.id,
       field.placeholder,
-      field.autocomplete,
+      field.getAttribute('autocomplete'),
       field.inputMode,
       field.getAttribute('aria-label'),
       field.getAttribute('aria-describedby'),
+      field.getAttribute('class'),
+      field.getAttribute('title'),
+      resolvedLabel,
       ariaLabelledBy,
       ...labels,
     ]
@@ -888,6 +906,17 @@ export class AutoFiller {
       }
 
       if (
+        candidate.element instanceof HTMLInputElement &&
+        !this.isCompatibleTarget(candidate.fieldType, candidate.element)
+      ) {
+        log.debug('Smart Fill skipped: candidate contract does not match field type', {
+          fieldType: candidate.fieldType,
+          selector: candidate.selector,
+        });
+        continue;
+      }
+
+      if (
         this.shouldPreserveExistingValue(candidate.element as HTMLInputElement, candidate.fieldType)
       ) {
         continue;
@@ -1015,11 +1044,8 @@ export class AutoFiller {
         if (calibrated.decision === 'BLOCK' || calibrated.decision === 'ABSTAIN') {continue;}
 
         const type = calibrated.fieldType;
-        const looksLikeIdentifier =
-          type === 'unknown' &&
-          /user|login|name|email/i.test(`${input.name} ${input.id} ${input.placeholder}`);
 
-        if (relevantTypes.has(type) || looksLikeIdentifier) {
+        if (relevantTypes.has(type) && this.isCompatibleTarget(type, input)) {
           this.attachGhostIcon(input, type);
         }
       }
@@ -1084,6 +1110,9 @@ export class AutoFiller {
   }
 
   private attachGhostIcon(input: HTMLInputElement, type: FieldType): void {
+    if (!this.isCompatibleTarget(type, input)) {
+      return;
+    }
     const ghost = document.createElement('ghost-label') as GhostLabelElement;
     // Only commit the element to the DOM if it can actually attach; otherwise we
     // would leak an orphaned, non-functional <ghost-label> node.
@@ -1098,6 +1127,10 @@ export class AutoFiller {
   }
 
   private async handleIconClick(input: HTMLInputElement, type: FieldType): Promise<void> {
+    if (!this.isCompatibleTarget(type, input)) {
+      log.warn('Ghost icon fill blocked: field contract changed', { fieldType: type });
+      return;
+    }
     const { identity: fetchedIdentity, otpCode } = await this.fetchIdentityAndOTP();
     let identity = fetchedIdentity;
     const context = this.getContext();
@@ -1181,8 +1214,23 @@ export class AutoFiller {
     return !nonText.has(el.type);
   }
 
-  async fillField(selector: string, value: string): Promise<boolean> {
+  async fillField(selector: string, value: string, fieldType?: FieldType): Promise<boolean> {
     const el = deepQuerySelectorAll<FormInputElement>(selector)[0] ?? null;
+    if (el && fieldType && fieldType !== 'unknown' && !this.isCompatibleTarget(fieldType, el)) {
+      log.warn('Direct field fill blocked: field contract does not match', { fieldType, selector });
+      return false;
+    }
+    if (
+      el &&
+      (!fieldType || fieldType === 'unknown') &&
+      EMAIL_VALUE_PATTERN.test(value.trim()) &&
+      this.isPersonNameField(el)
+    ) {
+      log.warn('Direct field fill blocked: email-like value targeted a profile name field', {
+        selector,
+      });
+      return false;
+    }
     return el ? FieldSetter.setValue(el, value, this.getContext().framework) : false;
   }
 
@@ -1199,6 +1247,14 @@ export class AutoFiller {
       return false;
     }
 
+    if (
+      (!fieldType || fieldType === 'unknown') &&
+      EMAIL_VALUE_PATTERN.test(value.trim()) &&
+      this.isPersonNameField(el)
+    ) {
+      return false;
+    }
+
     // If a fieldType is specified, verify the active element matches before filling.
     if (fieldType && fieldType !== 'unknown') {
       const calibrated = this.getClassification(el);
@@ -1207,6 +1263,9 @@ export class AutoFiller {
         return false;
       }
       if (calibrated.decision === 'ABSTAIN') {
+        return false;
+      }
+      if (!this.isCompatibleTarget(fieldType, el)) {
         return false;
       }
       const classified = calibrated.fieldType;
@@ -1300,6 +1359,89 @@ export class AutoFiller {
     }
   }
 
+  private isPersonNameField(element: FormInputElement, descriptor = this.getFieldDescriptor(element)): boolean {
+    const autocomplete = (element.getAttribute('autocomplete') ?? '').toLowerCase();
+    const hasStrongNameLabel = /\b(?:first|given|middle|last|family|full|display|preferred|legal|your)\s*[-_ ]?name\b/i.test(
+      descriptor
+    );
+    if (hasStrongNameLabel) {
+      return true;
+    }
+    if (autocomplete.split(/\s+/).some((token) => ['given-name', 'family-name', 'name'].includes(token))) {
+      return true;
+    }
+    // An explicit username contract wins over a generic `name` token. This
+    // keeps GitHub-style `user[name]` handles usable without treating a
+    // profile field labelled “Your name” as an email target.
+    if (USERNAME_FIELD_SIGNAL.test(descriptor)) {
+      return false;
+    }
+    return PERSON_NAME_FIELD_SIGNAL.test(descriptor);
+  }
+
+  private isExplicitUsernameField(
+    element: FormInputElement,
+    descriptor = this.getFieldDescriptor(element)
+  ): boolean {
+    const autocomplete = (element.getAttribute('autocomplete') ?? '').toLowerCase();
+    return autocomplete.split(/\s+/).includes('username') || USERNAME_FIELD_SIGNAL.test(descriptor);
+  }
+
+  /**
+   * Guard every targeted fill with a semantic contract. Resolver fallbacks
+   * are allowed to be incomplete, but they are never allowed to cross from a
+   * credential target into a person-name/profile field.
+   */
+  private isCompatibleTarget(fieldType: FieldType, element: FormInputElement): boolean {
+    const descriptor = this.getFieldDescriptor(element);
+    const type = element instanceof HTMLInputElement ? element.type.toLowerCase() : '';
+    const autocomplete = (element.getAttribute('autocomplete') ?? '').toLowerCase();
+    const autocompleteTokens = autocomplete.split(/\s+/).filter(Boolean);
+    const hasEmailContract =
+      type === 'email' ||
+      autocompleteTokens.includes('email') ||
+      EMAIL_FIELD_SIGNAL.test(descriptor) ||
+      /\bmail\b/i.test(descriptor);
+    const hasPersonNameContract = this.isPersonNameField(element, descriptor);
+    const hasUsernameContract = this.isExplicitUsernameField(element, descriptor);
+    const hasPasswordContract =
+      type === 'password' ||
+      autocompleteTokens.includes('current-password') ||
+      autocompleteTokens.includes('new-password') ||
+      PASSWORD_FIELD_SIGNAL.test(descriptor);
+
+    switch (fieldType) {
+      case 'email':
+        if (hasPersonNameContract || hasPasswordContract) {
+          return false;
+        }
+        // A username autocomplete is only a valid email target in a login-like
+        // identifier field. Do not use it when a dedicated email field exists.
+        return hasEmailContract ||
+          (hasUsernameContract && !this.hasSiblingEmailField(element) && !hasPersonNameContract);
+      case 'username':
+        return hasUsernameContract && !hasPersonNameContract && !hasEmailContract && !hasPasswordContract;
+      case 'password':
+      case 'confirm-password':
+        return hasPasswordContract && !hasEmailContract && !hasPersonNameContract;
+      case 'first-name':
+        return !hasEmailContract && !hasPasswordContract && /\b(?:first|given|forename)\s*[-_ ]?name\b|\bfirst\b/i.test(descriptor);
+      case 'last-name':
+        return !hasEmailContract && !hasPasswordContract && /\b(?:last|family|surname)\s*[-_ ]?name\b|\blast\b/i.test(descriptor);
+      case 'full-name':
+      case 'name':
+        return !hasEmailContract && !hasPasswordContract && hasPersonNameContract;
+      case 'phone':
+        return !hasEmailContract && !hasPasswordContract &&
+          (autocompleteTokens.includes('tel') || PHONE_FIELD_SIGNAL.test(descriptor));
+      case 'otp':
+        return !hasEmailContract && !hasPasswordContract &&
+          (autocompleteTokens.includes('one-time-code') || OTP_FIELD_SIGNAL.test(descriptor));
+      default:
+        return false;
+    }
+  }
+
   private shouldPreserveExistingValue(element: FormInputElement, type: FieldType): boolean {
     if (isOverwritableWhenFilled(type)) {
       return false;
@@ -1347,6 +1489,12 @@ export class AutoFiller {
       return 0;
     }
     const type = calibrated.fieldType;
+    if (!this.isCompatibleTarget(type, input)) {
+      log.debug('Focused fill skipped: field contract does not match classifier', {
+        expected: type,
+      });
+      return 0;
+    }
     if (this.shouldPreserveExistingValue(input, type)) {
       return 0;
     }
@@ -1430,7 +1578,10 @@ export class AutoFiller {
       return identity.email;
     }
 
-    return identity.username ?? identity.email ?? null;
+    // An ambiguous identifier is safer as a handle than as an email. The
+    // email branch above already requires an explicit mail/auth contract;
+    // falling back to email here is how profile name fields were polluted.
+    return identity.username ?? null;
   }
 
   /** True when this field's form already has a dedicated email input elsewhere. */
@@ -1495,7 +1646,11 @@ export class AutoFiller {
         const hits = deepQuerySelectorAll<HTMLInputElement>(entry.selector);
         const live = hits.find(
           (el: HTMLInputElement) =>
-            el.isConnected && !el.disabled && !el.readOnly && this.isVisibleInput(el)
+            el.isConnected &&
+            !el.disabled &&
+            !el.readOnly &&
+            this.isVisibleInput(el) &&
+            this.isCompatibleTarget(fieldType, el)
         );
         if (live) {
           log.debug(`FieldResolver: Stage 0 hit (learned selector for ${fieldType})`, {
@@ -1531,7 +1686,11 @@ export class AutoFiller {
       if (calibrated.decision === 'BLOCK') {continue;}
       const type = calibrated.fieldType;
 
-      if (fieldType === 'email' && type === 'username') {
+      if (
+        fieldType === 'email' &&
+        type === 'username' &&
+        this.isCompatibleTarget('email', input)
+      ) {
         if (calibrated.confidence > fallbackScore) {
           fallbackScore = calibrated.confidence;
           fallbackEl = input;
@@ -1539,7 +1698,11 @@ export class AutoFiller {
         continue;
       }
 
-      if (type === fieldType && calibrated.confidence > bestScore) {
+      if (
+        type === fieldType &&
+        this.isCompatibleTarget(fieldType, input) &&
+        calibrated.confidence > bestScore
+      ) {
         bestScore = calibrated.confidence;
         bestEl = input;
       }
@@ -1579,7 +1742,7 @@ export class AutoFiller {
           match = type === (fieldType as any);
         }
 
-        if (match) {
+        if (match && this.isCompatibleTarget(fieldType, contextHint)) {
           const selector = this.buildFieldSelector(contextHint);
           log.debug(
             `FieldResolver: Stage 2 hit (shared classifier on contextHint for ${fieldType})`
@@ -1692,7 +1855,12 @@ export class AutoFiller {
           try {
             const candidates = Array.from(root.querySelectorAll<HTMLInputElement>(sel));
             const hit = candidates.find(
-              (el) => el.isConnected && !el.disabled && !el.readOnly && this.isVisibleInput(el)
+              (el) =>
+                el.isConnected &&
+                !el.disabled &&
+                !el.readOnly &&
+                this.isVisibleInput(el) &&
+                this.isCompatibleTarget(fieldType, el)
             );
             if (hit) {
               const selector = this.buildFieldSelector(hit);
@@ -1713,7 +1881,8 @@ export class AutoFiller {
       contextHint instanceof HTMLInputElement &&
       !contextHint.disabled &&
       !contextHint.readOnly &&
-      this.isVisibleInput(contextHint)
+      this.isVisibleInput(contextHint) &&
+      this.isCompatibleTarget(fieldType, contextHint)
     ) {
       const selector = this.buildFieldSelector(contextHint);
       log.debug(`FieldResolver: Stage 4 fallback hit (contextHint for ${fieldType})`, { selector });
@@ -1765,6 +1934,12 @@ export class AutoFiller {
     }
 
     const { element, selector } = resolved;
+    if (!this.isCompatibleTarget(fieldType, element)) {
+      log.warn(`fillFieldIntoTarget: resolved ${fieldType} target failed contract check`, {
+        selector,
+      });
+      return false;
+    }
     const context = this.getContext();
 
     // Re-focus the resolved element. If the user clicked the FAB menu,

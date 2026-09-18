@@ -1,37 +1,21 @@
 #!/usr/bin/env node
 /**
- * Bundle Size Checker for GhostFill
+ * Bundle budget gate for the complete unpacked extension.
  *
- * This script verifies that the extension bundle size is within acceptable limits.
- * Chrome extensions have a 10MB limit for unpacked extensions and stricter
- * limits for Chrome Web Store submissions.
- *
- * Usage:
- *   node scripts/check-bundle-size.js
- *
- * Environment variables:
- *   BUNDLE_SIZE_LIMIT_KB - Maximum bundle size in KB (default: 2048)
- *   BUNDLE_SIZE_WARNING_KB - Warning threshold in KB (default: 1536)
- *
- * Exit codes:
- *   0 - Bundle size within limits
- *   1 - Bundle size exceeds limits
+ * Webpack does not emit dist/stats.json in the normal production build, so
+ * this checker reads it when supplied by analysis tooling and otherwise walks
+ * dist directly. That keeps `npm run build && node scripts/check-bundle-size.js`
+ * useful locally and in CI.
  */
 
-import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
+const { existsSync, readFileSync, readdirSync, statSync } = require('fs');
+const { join, relative, sep } = require('path');
 
-// ==========================================
-// Configuration
-// ==========================================
-
-const STATS_FILE = join(process.cwd(), 'dist', 'stats.json');
-const BUNDLE_SIZE_LIMIT_KB = parseInt(process.env.BUNDLE_SIZE_LIMIT_KB || '2048', 10);
-const BUNDLE_SIZE_WARNING_KB = parseInt(process.env.BUNDLE_SIZE_WARNING_KB || '1536', 10);
-
-// ==========================================
-// Colors for output
-// ==========================================
+const DIST_DIR = join(process.cwd(), 'dist');
+const STATS_FILE = join(DIST_DIR, 'stats.json');
+const TOTAL_LIMIT_KB = Number.parseInt(process.env.BUNDLE_SIZE_LIMIT_KB || '4096', 10);
+const TOTAL_WARNING_KB = Number.parseInt(process.env.BUNDLE_SIZE_WARNING_KB || '3072', 10);
+const ASSET_LIMIT_KB = Number.parseInt(process.env.BUNDLE_ASSET_LIMIT_KB || '1024', 10);
 
 const colors = {
   reset: '\x1b[0m',
@@ -42,151 +26,105 @@ const colors = {
   cyan: '\x1b[36m',
 };
 
-function log(color, message) {
+function log(color, message = '') {
   console.log(`${color}${message}${colors.reset}`);
 }
 
 function formatSize(bytes) {
   if (bytes < 1024) {
     return `${bytes} B`;
-  } else if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(2)} KB`;
-  } else {
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(2)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-// ==========================================
-// Main function
-// ==========================================
+function walkAssets(directory, root = directory) {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const absolutePath = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      return walkAssets(absolutePath, root);
+    }
+    if (!entry.isFile() || entry.name === 'stats.json' || entry.name.endsWith('.map')) {
+      return [];
+    }
+    return [
+      {
+        name: relative(root, absolutePath).split(sep).join('/'),
+        size: statSync(absolutePath).size,
+      },
+    ];
+  });
+}
+
+function readAssets() {
+  if (existsSync(STATS_FILE)) {
+    try {
+      const parsed = JSON.parse(readFileSync(STATS_FILE, 'utf8'));
+      if (Array.isArray(parsed.assets) && parsed.assets.length > 0) {
+        return { assets: parsed.assets, source: 'dist/stats.json' };
+      }
+    } catch (error) {
+      log(colors.yellow, `Ignoring unreadable stats.json: ${error.message}`);
+    }
+  }
+
+  if (!existsSync(DIST_DIR)) {
+    throw new Error(`Build directory not found: ${DIST_DIR}. Run "npm run build" first.`);
+  }
+
+  return { assets: walkAssets(DIST_DIR), source: 'dist directory' };
+}
 
 function checkBundleSize() {
   log(colors.blue, '========================================');
-  log(colors.blue, '📦 Bundle Size Checker');
+  log(colors.blue, 'Bundle Size Checker');
   log(colors.blue, '========================================');
-  log(colors.blue, '');
 
-  // Check if stats file exists
-  if (!existsSync(STATS_FILE)) {
-    log(colors.red, '❌ Bundle stats file not found!');
-    log(colors.yellow, `Expected: ${STATS_FILE}`);
-    log(colors.yellow, 'Run "npm run build" first.');
-    process.exit(1);
-  }
-
-  // Read stats
-  let stats;
+  let result;
   try {
-    const statsContent = readFileSync(STATS_FILE, 'utf-8');
-    stats = JSON.parse(statsContent);
+    result = readAssets();
   } catch (error) {
-    log(colors.red, '❌ Failed to parse stats file!');
-    log(colors.yellow, error.message);
+    log(colors.red, `ERROR: ${error.message}`);
     process.exit(1);
   }
 
-  // ==========================================
-  // Calculate total bundle size
-  // ==========================================
+  const assets = result.assets
+    .map((asset) => ({ name: String(asset.name), size: Number(asset.size) || 0 }))
+    .sort((a, b) => b.size - a.size);
+  const totalSize = assets.reduce((sum, asset) => sum + asset.size, 0);
+  const oversizedAssets = assets.filter((asset) => asset.size / 1024 > ASSET_LIMIT_KB);
 
-  const assets = stats.assets || [];
-  let totalSize = 0;
-  let largestAsset = null;
-  let largestSize = 0;
-
-  log(colors.cyan, 'Bundle Assets:');
-  log(colors.cyan, '--------------');
-
-  assets.forEach((asset) => {
-    const size = asset.size || 0;
-    totalSize += size;
-
-    if (size > largestSize) {
-      largestSize = size;
-      largestAsset = asset.name;
-    }
-
-    const sizeFormatted = formatSize(size);
-    log(colors.cyan, `  ${asset.name}: ${sizeFormatted}`);
-  });
-
-  log(colors.blue, '');
-
-  // ==========================================
-  // Check limits
-  // ==========================================
-
-  const totalSizeKB = totalSize / 1024;
-  const limitKB = BUNDLE_SIZE_LIMIT_KB;
-  const warningKB = BUNDLE_SIZE_WARNING_KB;
-
-  log(colors.cyan, 'Bundle Summary:');
-  log(colors.cyan, '---------------');
-  log(colors.cyan, `  Total size: ${formatSize(totalSize)}`);
-  log(colors.cyan, `  Largest asset: ${largestAsset} (${formatSize(largestSize)})`);
-  log(colors.cyan, `  Warning threshold: ${warningKB} KB`);
-  log(colors.cyan, `  Limit: ${limitKB} KB`);
-  log(colors.blue, '');
-
-  // ==========================================
-  // Determine status
-  // ==========================================
-
-  let status = 'pass';
-  let statusColor = colors.green;
-  let statusMessage = '✅ Bundle size within limits!';
-
-  if (totalSizeKB > limitKB) {
-    status = 'fail';
-    statusColor = colors.red;
-    statusMessage = '❌ Bundle size exceeds limit!';
-  } else if (totalSizeKB > warningKB) {
-    status = 'warning';
-    statusColor = colors.yellow;
-    statusMessage = '⚠️  Bundle size approaching limit!';
+  log(colors.cyan, `Source: ${result.source}`);
+  log(colors.cyan, 'Largest assets:');
+  for (const asset of assets.slice(0, 12)) {
+    log(colors.cyan, `  ${asset.name}: ${formatSize(asset.size)}`);
   }
 
-  log(statusColor, '========================================');
-  log(statusColor, statusMessage);
-  log(statusColor, '========================================');
+  log(colors.blue);
+  log(colors.cyan, `Unpacked total: ${formatSize(totalSize)}`);
+  log(colors.cyan, `Warning threshold: ${TOTAL_WARNING_KB} KB`);
+  log(colors.cyan, `Total limit: ${TOTAL_LIMIT_KB} KB`);
+  log(colors.cyan, `Per-asset limit: ${ASSET_LIMIT_KB} KB`);
 
-  // ==========================================
-  // Recommendations
-  // ==========================================
-
-  if (status !== 'pass') {
-    log(colors.blue, '');
-    log(colors.yellow, 'Recommendations to reduce bundle size:');
-    log(colors.yellow, '  - Enable code splitting');
-    log(colors.yellow, '  - Tree-shake unused code');
-    log(colors.yellow, '  - Use dynamic imports for large dependencies');
-    log(colors.yellow, '  - Optimize images and assets');
-    log(colors.yellow, '  - Remove unused dependencies');
-    log(colors.yellow, '  - Use production builds');
-    log(colors.yellow, '');
-    log(colors.yellow, 'View detailed analysis:');
-    log(colors.yellow, '  npm run analyze');
-  }
-
-  // ==========================================
-  // Output size for CI
-  // ==========================================
-
-  console.log(`\n${Math.round(totalSizeKB)}`);
-
-  // ==========================================
-  // Exit with appropriate code
-  // ==========================================
-
-  if (status === 'fail') {
+  const totalKB = totalSize / 1024;
+  if (oversizedAssets.length > 0) {
+    log(colors.red, `FAIL: ${oversizedAssets.length} asset(s) exceed the per-asset limit.`);
     process.exit(1);
+  }
+  if (totalKB > TOTAL_LIMIT_KB) {
+    log(colors.red, 'FAIL: unpacked extension exceeds the total bundle limit.');
+    process.exit(1);
+  }
+  if (totalKB > TOTAL_WARNING_KB) {
+    log(colors.yellow, 'WARNING: unpacked extension is approaching the total bundle limit.');
   } else {
-    process.exit(0);
+    log(colors.green, 'PASS: bundle is within its size budgets.');
   }
-}
 
-// ==========================================
-// Run
-// ==========================================
+  // Machine-readable final line retained for CI consumers.
+  console.log(Math.round(totalKB));
+}
 
 checkBundleSize();

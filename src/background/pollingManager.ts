@@ -1229,6 +1229,7 @@ function persistSessionState(): void {
 // ═══════════════════════════════════════════════════════════════
 
 let activeCheckPromise: Promise<void> | null = null;
+let emailSessionGeneration = 0;
 
 async function performCheck(mode: CheckMode): Promise<void> {
   const flowId = diag.startFlow('polling', 'inbox-check', `mode=${mode}`);
@@ -1248,6 +1249,7 @@ async function performCheck(mode: CheckMode): Promise<void> {
   }
 
   const t0 = Date.now();
+  const sessionGeneration = emailSessionGeneration;
   metrics.totalChecks++;
   rateLimiter.stamp();
   let checkSucceeded = false;
@@ -1256,6 +1258,11 @@ async function performCheck(mode: CheckMode): Promise<void> {
   activeCheckPromise = (async () => {
     try {
     const currentEmail = await emailService.getCurrentEmail();
+    if (sessionGeneration !== emailSessionGeneration) {
+      checkSucceeded = true;
+      finalDetail = 'Email session changed before inbox fetch';
+      return;
+    }
     if (!currentEmail) {
       log.debug('No current email configured');
       diag.step(flowId, 'polling', 'no-current-email', 'No active email account');
@@ -1269,6 +1276,11 @@ async function performCheck(mode: CheckMode): Promise<void> {
     });
 
     const freshInbox = await emailService.checkInbox(currentEmail);
+    if (sessionGeneration !== emailSessionGeneration) {
+      checkSucceeded = true;
+      finalDetail = 'Email session changed after inbox fetch';
+      return;
+    }
     diag.step(flowId, 'polling', 'inbox-fetched', 'Inbox fetched', {
       freshCount: freshInbox.length,
     });
@@ -1286,6 +1298,10 @@ async function performCheck(mode: CheckMode): Promise<void> {
         log.debug('Skipping old email', { id: e.id });
         continue;
       }
+      // Claim the message before dispatching parallel batches. A fast-watch
+      // tick, SSE event, or manual refresh can otherwise observe the same
+      // message between isProcessed() and processEmail().
+      await dedupCache.markPending(String(e.id), currentEmail.fullEmail);
       newEmails.push(e);
     }
 
@@ -1311,7 +1327,7 @@ async function performCheck(mode: CheckMode): Promise<void> {
       const batches = chunk(newEmails, 6);
       for (const batch of batches) {
         await Promise.allSettled(
-          batch.map((email) => processEmail(String(email.id), currentEmail))
+          batch.map((email) => processEmail(String(email.id), currentEmail, sessionGeneration))
         );
       }
     }
@@ -1371,33 +1387,53 @@ async function performCheck(mode: CheckMode): Promise<void> {
 //  §12  CORE: EMAIL PROCESSING PIPELINE
 // ═══════════════════════════════════════════════════════════════
 
-async function processEmail(emailId: string, currentEmail: EmailAccount): Promise<void> {
+async function processEmail(
+  emailId: string,
+  currentEmail: EmailAccount,
+  sessionGeneration: number
+): Promise<void> {
   const flowId = diag.startFlow('email', 'process-email', emailId);
   try {
+    if (sessionGeneration !== emailSessionGeneration) {
+      await dedupCache.clearPending(emailId, currentEmail.fullEmail);
+      diag.endFlow(flowId, 'email', 'process-email', true, 'Email session changed before processing');
+      return;
+    }
+
     // PERF: Removed redundant dedupCache.isProcessed() check here.
     // The caller's newEmails filter (performCheck §11) already guarantees
     // only unprocessed emails reach this function. extractEmailOnce()
     // provides idempotency for concurrent/retry paths.
 
-    const extractionResult = await extractEmailOnce(emailId, async () => {
-      const fullEmail = await emailService.readEmail(emailId, currentEmail);
-      metrics.emailsProcessed++;
-      const expectedDomains = collectExpectedDomains();
-      const detection = await smartDetectionService.detect(
-        fullEmail.subject,
-        fullEmail.body,
-        fullEmail.htmlBody,
-        fullEmail.from,
-        expectedDomains.length > 0 ? expectedDomains : undefined
-      );
-      const code = OTPCodeExtractor.extract(detection, fullEmail);
-      return {
-        code,
-        link: detection.link ?? null,
-        fullEmail,
-        detection,
-      };
-    });
+    const extractionResult = await extractEmailOnce(
+      emailId,
+      async () => {
+        const fullEmail = await emailService.readEmail(emailId, currentEmail);
+        metrics.emailsProcessed++;
+        const expectedDomains = collectExpectedDomains();
+        const detection = await smartDetectionService.detect(
+          fullEmail.subject,
+          fullEmail.body,
+          fullEmail.htmlBody,
+          fullEmail.from,
+          expectedDomains.length > 0 ? expectedDomains : undefined
+        );
+        const code = OTPCodeExtractor.extract(detection, fullEmail);
+        return {
+          code,
+          link: detection.link ?? null,
+          fullEmail,
+          detection,
+        };
+      },
+      `${sessionGeneration}:${currentEmail.service}:${currentEmail.fullEmail}`
+    );
+
+    if (sessionGeneration !== emailSessionGeneration) {
+      await dedupCache.clearPending(emailId, currentEmail.fullEmail);
+      diag.endFlow(flowId, 'email', 'process-email', true, 'Email session changed after extraction');
+      return;
+    }
 
     const fullEmail = extractionResult.fullEmail as Email;
     const detection = extractionResult.detection as DetectionResult;
@@ -1498,9 +1534,6 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
 
       log.info('🎯 Matching tab found — inline OTP delivery');
       otpDelivered = await deliverOTP(otpCodeStr, detection.confidence ?? 0.9, emailCtx);
-      if (otpDelivered) {
-        await dedupCache.markProcessed(emailId, currentEmail.fullEmail, true, false);
-      }
     }
 
     // Deliver to generic waiting tabs if no specific match was found but OTP exists
@@ -1510,11 +1543,6 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
     }
 
     const hasOTP = Boolean(otpCodeStr) && shouldDeliverOTP;
-
-    // Mark OTP-only emails as processed immediately
-    if (hasOTP && !hasLink && !otpDelivered) {
-      await dedupCache.markProcessed(emailId, currentEmail.fullEmail, hasOTP, false);
-    }
 
     // 3. Link Delegation (Respecting Smart Context)
     const finalShouldDelegateLink = shouldDelegateLink && !suppressLinkDelegation;
@@ -1543,12 +1571,6 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
       });
     } else if (hasLink && detection.link && suppressLinkDelegation) {
       log.info('🔗 Link held back by Smart Context Priority (OTP form is active). User will submit form with filled OTP.');
-      await dedupCache.markProcessed(
-        emailId,
-        currentEmail.fullEmail,
-        Boolean(otpCodeStr),
-        true
-      );
       diag.step(flowId, 'email', 'link', 'Link held by Smart Context', {
         link: detection.link,
       });
@@ -1559,12 +1581,6 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
         risk: linkDecision?.risk,
         warnings: linkDecision?.warnings,
       });
-      await dedupCache.markProcessed(
-        emailId,
-        currentEmail.fullEmail,
-        Boolean(otpCodeStr),
-        true
-      );
       diag.step(flowId, 'email', 'link', 'Link held for review', {
         link: detection.link,
         action: linkDecision?.action,
@@ -1574,16 +1590,19 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
 
     // ── FINAL STEP: SINGLE NOTIFICATION ──
     // Consolidate findings and notify exactly once
+    // Mark the polling record once all routing decisions have completed.
+    // Delegated links used to skip this mark, so every fast-watch tick could
+    // rediscover and notify the same message.
+    await dedupCache.markProcessed(emailId, currentEmail.fullEmail, hasOTP, hasLink);
     if (hasOTP || hasLink) {
       void notifyNewEmail(
         toSafeString(fullEmail.from),
         safeSubject,
         otpCodeStr || undefined,
         hasLink ? toSafeString(detection.link) : undefined
-      );
+      ).catch((error) => log.warn('Notification delivery failed after email was marked processed', error));
     } else {
       log.info('Ignoring email: no OTP or activation link found', { emailId });
-      await dedupCache.markProcessed(emailId, currentEmail.fullEmail, false, false);
     }
     diag.endFlow(flowId, 'email', 'process-email', true, 'Email decision complete', {
       hasOTP: Boolean(otpCodeStr),
@@ -1591,6 +1610,9 @@ async function processEmail(emailId: string, currentEmail: EmailAccount): Promis
       otpDelivered,
     });
   } catch (error) {
+    // Failed reads/detection remain retryable. markProcessed() above already
+    // clears this claim on successful completion.
+    await dedupCache.clearPending(emailId, currentEmail.fullEmail).catch(() => {});
     diag.endFlow(flowId, 'email', 'process-email', false, 'Email processing failed', {
       error: error instanceof Error ? error.message : String(error),
     });
@@ -1892,7 +1914,7 @@ async function handleEmailTypeTransition(newType: 'disposable' | 'gmail'): Promi
 
   // 2. Clear processed-email dedup cache so new inbox is scanned fresh
   //    Also clears otpWaitingTabs + circuit breaker
-  resetEmailSession();
+  await resetEmailSession();
 
   // 3. Clear linkService activation history/queue so old links don't replay
   linkService.clearHistory();
@@ -2286,7 +2308,11 @@ export function destroyPollingManager(): void {
   }
 
   otpWaitingTabs.clear();
+  void persistWaiters(otpWaitingTabs);
   clearAllActivationRegistrations();
+  emailSessionGeneration++;
+  extractionCacheByEmailId.clear();
+  sseManager.reset();
   dedupCache.clear();
   rateLimiter.reset();
   initialized = false;
@@ -2303,13 +2329,30 @@ export function destroyPollingManager(): void {
  * Clears processed-email dedup cache so new emails on the fresh address
  * are processed immediately. Does NOT stop polling or unregister tabs.
  */
-export function resetEmailSession(): void {
+export async function resetEmailSession(): Promise<void> {
+  emailSessionGeneration++;
+
   // 1. Clear processed-email dedup so new inbox is scanned fresh
-  dedupCache.clear();
+  await dedupCache.clear();
+
+  // Invalidate work and transport state tied to the previous inbox. Active
+  // fetches may settle, but their results can no longer affect this session.
+  emailService.invalidateInboxSession();
+  extractionCacheByEmailId.clear();
+  sseManager.reset();
+  stopFastWatchBurst('email_session_reset');
+  stopGmailFastWatch('email_session_reset');
+  lastGlobalCheckTime = 0;
+  pendingCheckMode = null;
+  if (pendingCheckTimer) {
+    clearTimeout(pendingCheckTimer);
+    pendingCheckTimer = null;
+  }
 
   // 2. Clear tab OTP-wait registrations — tabs registered for the old email
   //    must not receive OTPs from the new email's inbox.
   otpWaitingTabs.clear();
+  void persistWaiters(otpWaitingTabs);
   clearAllActivationRegistrations();
 
   // 3. Reset circuit breaker so any previous failure streak doesn't block
@@ -2548,29 +2591,31 @@ function pruneExtractionCache(): void {
 
 export async function extractEmailOnce(
   emailId: string,
-  run: () => Promise<ExtractionPayload>
+  run: () => Promise<ExtractionPayload>,
+  scope = 'global'
 ): Promise<ExtractionPayload> {
-  const cached = extractionCacheByEmailId.get(emailId);
+  const cacheKey = `${scope}:${emailId}`;
+  const cached = extractionCacheByEmailId.get(cacheKey);
   if (cached && Date.now() - cached.savedAt < EXTRACTION_CACHE_TTL_MS) {
     return cached.result;
   }
 
-  const active = activeExtractionsByEmailId.get(emailId);
+  const active = activeExtractionsByEmailId.get(cacheKey);
   if (active) {
     return active;
   }
 
-    const promise = run()
+  const promise = run()
     .then((result) => {
-      extractionCacheByEmailId.set(emailId, { result, savedAt: Date.now() });
+      extractionCacheByEmailId.set(cacheKey, { result, savedAt: Date.now() });
       pruneExtractionCache();
       return result;
     })
     .finally(() => {
-      activeExtractionsByEmailId.delete(emailId);
+      activeExtractionsByEmailId.delete(cacheKey);
     });
 
-  activeExtractionsByEmailId.set(emailId, promise);
+  activeExtractionsByEmailId.set(cacheKey, promise);
   return promise;
 }
 

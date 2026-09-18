@@ -1,21 +1,13 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mail, Copy, RefreshCw, Inbox, Clock, ChevronRight, ChevronLeft, Zap } from 'lucide-react';
+import { Mail, Copy, RefreshCw, Inbox, Clock, ChevronRight, ChevronLeft, Zap, Hash } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { EmailAccount, Email } from '../../../types';
 import { formatRelativeTime, copyToClipboard, openSafeUrl, contentToString } from '../../../utils/core';
 import { safeSendMessage } from '../../../utils/messaging';
+import { t } from '../../i18n';
 import { Button, interactiveSurface, springSoft } from '../../ui';
 import { useOTPExtractor, useStorageSubscription } from '../hooks';
 import { ConfirmModal, EmailAvatar, EmailViewerModal } from './SharedComponents';
-
-// i18n helper
-const t = (key: string): string => {
-  try {
-    return chrome.i18n.getMessage(key) || key;
-  } catch {
-    return key;
-  }
-};
 
 /**
  * Detects text direction (e.g. RTL for Arabic/Hebrew) and returns appropriate attributes.
@@ -446,28 +438,16 @@ const EmailGenerator: React.FC<Props> = ({
                 {/* Email List - Dashboard Style */}
                 <div className="inbox-list inbox-list-scroll">
                   {latestInbox.length > 0 ? (
-                    latestInbox.map((item: Email, i: number) => {
+                    latestInbox.map((item: Email) => {
                       // Use shared utility functions
                       const verificationCode =
                         emailOTPs[item.id] !== undefined ? emailOTPs[item.id] : undefined;
                       const activationLink = emailLinks[item.id] || null;
 
                       return (
-                        <motion.div
+                        <div
                           key={item.id}
                           className="inbox-item"
-                          onClick={(e) => {
-                            if ((e.target as HTMLElement).closest('button')) {
-                              return;
-                            }
-                            void openEmailInViewer(item);
-                          }}
-                          initial={{ opacity: 0, y: 16 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{
-                            ...springSoft,
-                            delay: Math.min(i * 0.03, 0.3),
-                          }}
                         >
                           <EmailAvatar from={item.from} className="inbox-item-avatar">
                             {!item.read && <div className="unread-dot" title="Unread" />}
@@ -494,16 +474,19 @@ const EmailGenerator: React.FC<Props> = ({
                                     e.stopPropagation();
                                     void copyCode(verificationCode);
                                   }}
+                                  aria-label={`Copy verification code ${verificationCode}`}
                                   {...interactiveSurface}
                                 >
-                                  <span className="otp-badge-code">🔢 {verificationCode}</span>
-                                  <Copy size={12} />
+                                  <Hash size={12} aria-hidden="true" />
+                                  <span className="otp-badge-code">{verificationCode}</span>
+                                  <Copy size={12} aria-hidden="true" />
                                 </motion.button>
                               )}
                               {activationLink && (
                                 <motion.button
                                   className="link-badge"
                                   onClick={(e) => void openActivationLink(e, activationLink)}
+                                  aria-label="Open verification link"
                                   {...interactiveSurface}
                                 >
                                   <span className="otp-badge-code">Verify link</span>
@@ -520,7 +503,7 @@ const EmailGenerator: React.FC<Props> = ({
                           >
                             <ChevronRight size={14} className="inbox-item-open-chevron" aria-hidden="true" />
                           </button>
-                        </motion.div>
+                        </div>
                       );
                     })
                   ) : (
@@ -544,20 +527,14 @@ const EmailGenerator: React.FC<Props> = ({
                 </div>
                 <div className="inbox-list-default">
                   {inbox.length > 0 ? (
-                    inbox.slice(0, 50).map((item: Email, i: number) => {
+                    inbox.slice(0, 50).map((item: Email) => {
                       // Use intelligently extracted payload maps
                       const verificationCode = emailOTPs[item.id] || null;
                       const activationLink = emailLinks[item.id] || null;
 
                       return (
-                        <motion.div
+                        <div
                           key={item.id}
-                          initial={{ opacity: 0, y: 16 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{
-                            ...springSoft,
-                            delay: Math.min(i * 0.03, 0.3),
-                          }}
                           className="inbox-item-default"
                         >
                           {/* Avatar */}
@@ -594,16 +571,19 @@ const EmailGenerator: React.FC<Props> = ({
                                     e.stopPropagation();
                                     void copyCode(verificationCode);
                                   }}
+                                  aria-label={`Copy verification code ${verificationCode}`}
                                   {...interactiveSurface}
                                 >
-                                  🔢 {verificationCode}
-                                  <Copy size={12} />
+                                  <Hash size={12} aria-hidden="true" />
+                                  <span className="otp-badge-code">{verificationCode}</span>
+                                  <Copy size={12} aria-hidden="true" />
                                 </motion.button>
                               )}
                               {activationLink && (
                                 <motion.button
                                   className="link-badge"
                                   onClick={(e) => void openActivationLink(e, activationLink)}
+                                  aria-label="Open verification link"
                                   {...interactiveSurface}
                                 >
                                   Verify Link
@@ -613,8 +593,15 @@ const EmailGenerator: React.FC<Props> = ({
                             </div>
                           </div>
 
-                          <ChevronRight size={18} color="var(--gf-text-muted)" strokeWidth={2.5} />
-                        </motion.div>
+                          <button
+                            type="button"
+                            className="inbox-item-open-button"
+                            aria-label={`Open email from ${item.from}: ${item.subject}`}
+                            onClick={() => void openEmailInViewer(item)}
+                          >
+                            <ChevronRight size={14} className="inbox-item-open-chevron" aria-hidden="true" />
+                          </button>
+                        </div>
                       );
                     })
                   ) : (
@@ -681,6 +668,7 @@ const EmailGenerator: React.FC<Props> = ({
                 date: viewerEmail.date,
                 snippet: viewerEmail.snippet,
                 body: viewerEmail.body,
+                textBody: viewerEmail.textBody,
                 htmlBody: viewerEmail.htmlBody,
                 otp: viewerOtp,
                 link: viewerLink,
