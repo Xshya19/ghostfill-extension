@@ -86,7 +86,7 @@
     "@types/chrome": "^0.0.254",
     "@types/dompurify": "^3.0.5",
     "@types/jsdom": "^28.0.1",
-    "@types/node": "^20.19.37",
+    "@types/node": "^26.6.1",
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
     "@typescript-eslint/eslint-plugin": "^8.60.1",
