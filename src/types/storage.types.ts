@@ -360,4 +360,3 @@ export interface PatternMatch {
   startIndex: number;
   endIndex: number;
 }
-

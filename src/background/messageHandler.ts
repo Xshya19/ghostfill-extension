@@ -1,4 +1,5 @@
 import { emailService } from '../services/emailServices';
+import { IS_GMAIL_ENABLED } from '../config/buildProfile';
 import * as gmailApiService from '../services/gmailApiService';
 import {
   getRandomizedGmailAlias,
@@ -72,6 +73,27 @@ import { sseManager } from './sseManager';
 
 const log = createLogger('MessageHandler');
 let gmailInboxFetchSeq = 0;
+
+const REAL_MAIL_ACTIONS = new Set<ExtensionMessage['action']>([
+  'GENERATE_GMAIL_ALIAS',
+  'GMAIL_GET_STATUS',
+  'GMAIL_SIGN_IN',
+  'GMAIL_SIGN_OUT',
+  'GMAIL_FETCH_INBOX',
+  'GMAIL_GET_MESSAGE',
+  'GMAIL_SEARCH',
+  'GMAIL_LIST_LABELS',
+  'ZOHO_GET_STATUS',
+  'ZOHO_CONNECT',
+  'ZOHO_DISCONNECT',
+  'ZOHO_GENERATE_ALIAS',
+  'ZOHO_SEARCH_INBOX',
+  'MICROSOFT_GET_STATUS',
+  'MICROSOFT_CONNECT',
+  'MICROSOFT_DISCONNECT',
+  'MICROSOFT_GENERATE_ALIAS',
+  'MICROSOFT_SEARCH_INBOX',
+]);
 
 function invalidateGmailInboxFetches(): void {
   gmailInboxFetchSeq += 1;
@@ -534,6 +556,13 @@ async function handleMessage(
   sender: chrome.runtime.MessageSender
 ): Promise<ExtensionResponse> {
   log.debug('Incoming message', { action: message.action, origin: sender.url });
+
+  if (!IS_GMAIL_ENABLED && REAL_MAIL_ACTIONS.has(message.action)) {
+    return {
+      success: false,
+      error: 'Real-mail integrations are unavailable in the public build.',
+    };
+  }
 
   switch (message.action) {
     // ── EMAIL ACTIONS ─────────────────────────────────────────────

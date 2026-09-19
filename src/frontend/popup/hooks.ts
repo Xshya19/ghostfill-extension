@@ -109,7 +109,9 @@ export function useOTPExtractor(emails: Email[]): {
               emailId: email.id,
               emailFrom: typeof email.from === 'string' ? email.from : String(email.from || ''),
               emailDate: email.date,
-              saveToLastOTP: false,
+              // Keep the shared OTP cache in sync so the content-side floating
+              // fill action can use the code extracted from the inbox row.
+              saveToLastOTP: true,
             },
           })) as { success: boolean; otp?: string; link?: string };
 

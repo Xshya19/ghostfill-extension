@@ -10,3 +10,4 @@ declare module '*.shadow.css' {
 }
 
 declare const process: { env: Record<string, string | undefined> };
+declare const __GHOSTFILL_BUILD_PROFILE__: 'public' | 'full';

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
 
+import { IS_GMAIL_ENABLED } from '../../../config/buildProfile';
 import { storageService } from '../../../services/storageService';
 import { UserSettings } from '../../../types/storage.types';
 import { APP_VERSION } from '../../../utils/core';
@@ -675,7 +676,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
         )}
       </SettingsSection>
 
-      <SettingsSection
+      {IS_GMAIL_ENABLED && <SettingsSection
         id="gmail-oauth"
         title={t('gmailOauthSection')}
         icon={<GmailLogo size={18} />}
@@ -754,7 +755,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
             </Button>
           </div>
         </div>
-      </SettingsSection>
+      </SettingsSection>}
 
       <SettingsSection
         id="inbox-polling"
@@ -1030,7 +1031,7 @@ export const PrivacyTab: React.FC<PrivacyTabProps> = ({
         </div>
       </SettingsSection>
 
-      <SettingsSection
+      {IS_GMAIL_ENABLED && <SettingsSection
         id="gmail-privacy"
         title={t('gmailPrivacySection')}
         icon={<MailCheck size={18} />}
@@ -1050,7 +1051,7 @@ export const PrivacyTab: React.FC<PrivacyTabProps> = ({
             disabled
           />
         </div>
-      </SettingsSection>
+      </SettingsSection>}
     </div>
   );
 };

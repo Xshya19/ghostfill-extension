@@ -158,6 +158,13 @@ describe('GhostFill visual contract', () => {
     expect(inbox).not.toContain('className="inbox-item"\n                          role="button"');
   });
 
+  it('persists OTPs extracted from the popup inbox for the floating fill action', () => {
+    const popupHooks = readSource('src/frontend/popup/hooks.ts');
+
+    expect(popupHooks).toContain('saveToLastOTP: true');
+    expect(popupHooks).not.toContain('saveToLastOTP: false');
+  });
+
   it('keeps the command palette and quiet FAB keyboard-safe', () => {
     const optionsApp = readSource('src/frontend/options/OptionsApp.tsx');
     const fabCss = readSource('src/content/floatingButton.shadow.css');

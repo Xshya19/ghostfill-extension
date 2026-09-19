@@ -1,0 +1,39 @@
+name: Bug report
+description: Report a reproducible GhostFill problem without exposing private data.
+title: 'bug: '
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include passwords, verification codes, email contents, tokens, browser profiles, or other private information.
+  - type: input
+    id: version
+    attributes:
+      label: Extension version or commit
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and safe reproduction steps
+    validations:
+      required: true
+  - type: dropdown
+    id: feature
+    attributes:
+      label: Affected area
+      options:
+        - Temporary email
+        - OTP extraction or fill
+        - Password generation or form fill
+        - Popup or options
+        - Build or packaging
+        - Other
+    validations:
+      required: true

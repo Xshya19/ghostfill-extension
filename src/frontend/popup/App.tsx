@@ -1,6 +1,7 @@
 import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import { ChevronLeft } from 'lucide-react';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { IS_GMAIL_ENABLED } from '../../config/buildProfile';
 import { storageService } from '../../services/storageService';
 import { EmailAccount } from '../../types';
 import { APP_VERSION } from '../../utils/core';
@@ -87,6 +88,10 @@ const App: React.FC = () => {
 
   const safeSetView = useCallback(
     (newView: AppView, options?: { aliasTab?: AliasPanelTab }) => {
+      if (!IS_GMAIL_ENABLED && newView === 'aliases') {
+        setView('hub');
+        return;
+      }
       if (options?.aliasTab) {
         setAliasInitialTab(options.aliasTab);
       } else if (newView === 'aliases') {
@@ -195,41 +200,52 @@ const App: React.FC = () => {
           ]);
 
           if (mounted) {
-            if (storedConnected !== undefined) {
-              setGmailConnected(Boolean(storedConnected));
-            }
-            if (storedProfile !== undefined) {
-              setGmailProfile(storedProfile as any);
-            }
-            if (storedBase !== undefined) {
-              setGmailBase(storedBase as string);
-            }
-            if (storedIsManual !== undefined) {
-              setGmailIsManual(Boolean(storedIsManual));
-            }
-            if (storedPreferredType !== undefined) {
-              setPreferredEmailType(storedPreferredType as any);
-            }
-            if (storedSelectedRealProvider !== undefined) {
-              setSelectedRealProvider(storedSelectedRealProvider as any);
-            }
-            if (storedZohoConnected !== undefined) {
-              setZohoConnected(Boolean(storedZohoConnected));
-            }
-            if (storedZohoProfile !== undefined) {
-              setZohoProfile(storedZohoProfile as any);
-            }
-            if (storedMicrosoftConnected !== undefined) {
-              setMicrosoftConnected(Boolean(storedMicrosoftConnected));
-            }
-            if (storedMicrosoftProfile !== undefined) {
-              setMicrosoftProfile(storedMicrosoftProfile as any);
-            }
-            if (Array.isArray(storedHistory)) {
-              setAliasHistory(storedHistory);
-            }
-            if (Array.isArray(storedGmailInbox)) {
-              setGmailInbox(storedGmailInbox);
+            if (IS_GMAIL_ENABLED) {
+              if (storedConnected !== undefined) {
+                setGmailConnected(Boolean(storedConnected));
+              }
+              if (storedProfile !== undefined) {
+                setGmailProfile(storedProfile as any);
+              }
+              if (storedBase !== undefined) {
+                setGmailBase(storedBase as string);
+              }
+              if (storedIsManual !== undefined) {
+                setGmailIsManual(Boolean(storedIsManual));
+              }
+              if (storedPreferredType !== undefined) {
+                setPreferredEmailType(storedPreferredType as any);
+              }
+              if (storedSelectedRealProvider !== undefined) {
+                setSelectedRealProvider(storedSelectedRealProvider as any);
+              }
+              if (storedZohoConnected !== undefined) {
+                setZohoConnected(Boolean(storedZohoConnected));
+              }
+              if (storedZohoProfile !== undefined) {
+                setZohoProfile(storedZohoProfile as any);
+              }
+              if (storedMicrosoftConnected !== undefined) {
+                setMicrosoftConnected(Boolean(storedMicrosoftConnected));
+              }
+              if (storedMicrosoftProfile !== undefined) {
+                setMicrosoftProfile(storedMicrosoftProfile as any);
+              }
+              if (Array.isArray(storedHistory)) {
+                setAliasHistory(storedHistory);
+              }
+              if (Array.isArray(storedGmailInbox)) {
+                setGmailInbox(storedGmailInbox);
+              }
+            } else {
+              // A public package must never reactivate a saved OAuth-backed
+              // account when a developer build has previously used this profile.
+              setGmailConnected(false);
+              setGmailProfile(null);
+              setGmailBase(null);
+              setGmailIsManual(false);
+              setGmailInbox([]);
+              setPreferredEmailType('disposable');
             }
           }
         } catch (e) {
@@ -326,7 +342,7 @@ const App: React.FC = () => {
           if (changes.preferredEmailType) {
             const val = await storageService.get('preferredEmailType');
             if (mounted) {
-              setPreferredEmailType(val as any);
+              setPreferredEmailType(IS_GMAIL_ENABLED ? (val as any) : 'disposable');
             }
           }
           if (changes.aliasHistory) {

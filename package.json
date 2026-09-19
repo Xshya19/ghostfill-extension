@@ -1,7 +1,7 @@
 {
   "name": "ghostfill-extension",
   "version": "1.1.0",
-  "description": "GhostFill: Privacy-first Chrome Extension - Instant disposable temporary emails, cryptographically secure passwords, automatic OTP code detection & autofill, Gmail dot/plus alias support, and magic activation link auto-opening. Manifest V3. 17 temp mail backends. 100% local heuristics. Zero cloud tracking. Free & Open Source.",
+  "description": "Chrome extension for disposable email, password generation, and deterministic OTP extraction during signup verification.",
   "private": true,
   "homepage": "https://github.com/Xshya19/ghostfill-extension#readme",
   "repository": {
@@ -14,9 +14,11 @@
   "scripts": {
     "dev": "webpack --watch --mode=development",
     "logs": "node scripts/log_server.js",
-    "build": "npm run clean && webpack --mode=production",
+    "build": "npm run clean && webpack --env profile=public --mode=production",
     "bundle:check": "node scripts/check-bundle-size.js",
-    "build:dev": "npm run clean && webpack --mode=development",
+    "build:dev": "npm run clean && webpack --env profile=public --mode=development",
+    "build:full": "npm run clean && webpack --env profile=full --mode=production",
+    "build:full:dev": "npm run clean && webpack --env profile=full --mode=development",
     "lint": "eslint src/ --ext .ts,.tsx",
     "lint:fix": "eslint src/ --ext .ts,.tsx --fix",
     "format:check": "prettier --check \"*.{json,md,cjs,js,ts}\" \"{src,scripts,tests,public}/**/*.{ts,tsx,js,cjs,json,css,html,md}\"",

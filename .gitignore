@@ -102,6 +102,7 @@ tsconfig.tsbuildinfo
 extension-unpacked/
 crxmake-*
 *.zip
+*.sha256
 ghostfill-*.zip
 
 # ───────────────────────────────────────────────────────────────────

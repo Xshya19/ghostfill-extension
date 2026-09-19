@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">GhostFill temporary email and OTP workflow</title>
+  <desc id="desc">A four-step diagram showing a temporary email, signup form, inbox message, and verification code fields.</desc>
+  <rect width="1200" height="630" fill="#10151e" rx="32"/>
+  <rect x="48" y="48" width="1104" height="534" fill="#171e29" stroke="#344155" stroke-width="2" rx="24"/>
+  <text x="92" y="112" fill="#f3f6fa" font-family="Arial, sans-serif" font-size="42" font-weight="700">GhostFill workflow</text>
+  <text x="92" y="152" fill="#aab5c4" font-family="Arial, sans-serif" font-size="22">Temporary email, password, and code assistance in one signup flow</text>
+  <g font-family="Arial, sans-serif">
+    <g transform="translate(92 218)">
+      <rect width="220" height="246" fill="#1d2632" stroke="#344155" stroke-width="2" rx="16"/>
+      <circle cx="42" cy="42" r="22" fill="#2f5fd0"/>
+      <text x="35" y="50" fill="#fff" font-size="22" font-weight="700">1</text>
+      <text x="24" y="98" fill="#f3f6fa" font-size="23" font-weight="700">Create an address</text>
+      <rect x="24" y="122" width="172" height="42" fill="#10151e" rx="8"/>
+      <text x="36" y="150" fill="#aab5c4" font-size="16">temp@example.test</text>
+      <text x="24" y="204" fill="#aab5c4" font-size="17">A provider creates a</text>
+      <text x="24" y="228" fill="#aab5c4" font-size="17">temporary mailbox.</text>
+    </g>
+    <g transform="translate(362 218)">
+      <rect width="220" height="246" fill="#1d2632" stroke="#344155" stroke-width="2" rx="16"/>
+      <circle cx="42" cy="42" r="22" fill="#2f5fd0"/>
+      <text x="35" y="50" fill="#fff" font-size="22" font-weight="700">2</text>
+      <text x="24" y="98" fill="#f3f6fa" font-size="23" font-weight="700">Fill the form</text>
+      <rect x="24" y="122" width="172" height="18" fill="#334056" rx="5"/>
+      <rect x="24" y="151" width="172" height="18" fill="#334056" rx="5"/>
+      <text x="24" y="204" fill="#aab5c4" font-size="17">Use generated email</text>
+      <text x="24" y="228" fill="#aab5c4" font-size="17">and password values.</text>
+    </g>
+    <g transform="translate(632 218)">
+      <rect width="220" height="246" fill="#1d2632" stroke="#344155" stroke-width="2" rx="16"/>
+      <circle cx="42" cy="42" r="22" fill="#14805c"/>
+      <text x="35" y="50" fill="#fff" font-size="22" font-weight="700">3</text>
+      <text x="24" y="98" fill="#f3f6fa" font-size="23" font-weight="700">Review the inbox</text>
+      <rect x="24" y="122" width="172" height="62" fill="#10151e" rx="8"/>
+      <text x="36" y="148" fill="#f3f6fa" font-size="16">Verification email</text>
+      <text x="36" y="170" fill="#5ac89e" font-size="17" font-weight="700">Code: 482 091</text>
+      <text x="24" y="218" fill="#aab5c4" font-size="17">Confirm the suggested</text>
+      <text x="24" y="242" fill="#aab5c4" font-size="17">code before filling.</text>
+    </g>
+    <g transform="translate(902 218)">
+      <rect width="202" height="246" fill="#1d2632" stroke="#344155" stroke-width="2" rx="16"/>
+      <circle cx="42" cy="42" r="22" fill="#14805c"/>
+      <text x="35" y="50" fill="#fff" font-size="22" font-weight="700">4</text>
+      <text x="24" y="98" fill="#f3f6fa" font-size="23" font-weight="700">Fill the code</text>
+      <g fill="#10151e" stroke="#5ac89e" stroke-width="2">
+        <rect x="24" y="124" width="22" height="38" rx="5"/><rect x="51" y="124" width="22" height="38" rx="5"/><rect x="78" y="124" width="22" height="38" rx="5"/><rect x="105" y="124" width="22" height="38" rx="5"/><rect x="132" y="124" width="22" height="38" rx="5"/><rect x="159" y="124" width="22" height="38" rx="5"/>
+      </g>
+      <text x="24" y="208" fill="#aab5c4" font-size="17">The site validates the</text>
+      <text x="24" y="232" fill="#aab5c4" font-size="17">real verification code.</text>
+    </g>
+  </g>
+  <g stroke="#5e85e6" stroke-width="4" fill="none"><path d="M316 341h38"/><path d="M586 341h38"/><path d="M856 341h38"/></g>
+</svg>

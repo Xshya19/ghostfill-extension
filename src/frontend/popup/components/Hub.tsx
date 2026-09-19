@@ -1,5 +1,6 @@
 import { Mail } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { IS_GMAIL_ENABLED } from '../../../config/buildProfile';
 import {
   getDeterministicCombinedAlias,
   rememberGmailAliasSession,
@@ -840,7 +841,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       {/* ───────────────────────────────────────────────────────────
                  📊 EMAIL TYPE SELECTOR (Temp Mail vs Mail Provider)
                ─────────────────────────────────────────────────────────── */}
-      <div className="hub-email-selector" role="tablist">
+      {IS_GMAIL_ENABLED && <div className="hub-email-selector" role="tablist">
         {/* PERF: CSS transform slide (180ms expo-out, compositor-only).
             Old framer-motion spring overshot + ran on JS thread. */}
         <div
@@ -881,7 +882,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
             <span>Gmail</span>
           </span>
         </button>
-      </div>
+      </div>}
 
       {/* ═══════════════════════════════════════════════════════════
                  🎴 IDENTITY CARD - Combined Email & Password

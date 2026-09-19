@@ -6,6 +6,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const archiver = require('archiver');
 
 const ROOT_DIR = path.join(__dirname, '..');
@@ -15,6 +16,7 @@ const PACKAGE_JSON = path.join(ROOT_DIR, 'package.json');
 const packageJson = JSON.parse(fs.readFileSync(PACKAGE_JSON, 'utf8'));
 const zipFileName = `ghostfill-extension-v${packageJson.version}.zip`;
 const zipFilePath = path.join(ROOT_DIR, zipFileName);
+const checksumFilePath = `${zipFilePath}.sha256`;
 
 function toPosix(filePath) {
   return filePath.split(path.sep).join('/');
@@ -75,6 +77,12 @@ function validateDist() {
     manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   } catch (error) {
     return [`manifest.json is missing or invalid: ${error.message}`];
+  }
+
+  if (manifest.version !== packageJson.version) {
+    errors.push(
+      `Manifest version (${manifest.version ?? 'missing'}) does not match package version (${packageJson.version}).`
+    );
   }
 
   if (manifest.background?.service_worker) {
@@ -150,12 +158,19 @@ if (fs.existsSync(zipFilePath)) {
   fs.unlinkSync(zipFilePath);
 }
 
+if (fs.existsSync(checksumFilePath)) {
+  fs.unlinkSync(checksumFilePath);
+}
+
 const output = fs.createWriteStream(zipFilePath);
 const archive = archiver('zip', { zlib: { level: 9 } });
 
 output.on('close', () => {
+  const hash = crypto.createHash('sha256').update(fs.readFileSync(zipFilePath)).digest('hex');
+  fs.writeFileSync(checksumFilePath, `${hash} *${zipFileName}\n`, 'utf8');
   const sizeKB = (archive.pointer() / 1024).toFixed(2);
   console.log(`Created ${zipFileName} (${sizeKB} KB)`);
+  console.log(`Created ${path.basename(checksumFilePath)}`);
 });
 
 archive.on('error', (error) => {

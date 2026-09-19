@@ -1,4 +1,5 @@
 const path = require('path');
+const fs = require('fs');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
@@ -34,9 +35,20 @@ class CssMinifyPlugin {
   }
 }
 
-module.exports = (env, argv) => {
+module.exports = (env = {}, argv = {}) => {
   const isDev = argv.mode !== 'production';
+  const buildProfile = env.profile === 'full' ? 'full' : 'public';
   const trustedTypesFallback = './src/utils/sanitization.core.ts';
+  const publicManifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'manifest.json'), 'utf8'));
+  const fullManifestOverrides = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, 'manifest.full-overrides.json'), 'utf8')
+  );
+  const buildManifest = () =>
+    JSON.stringify(
+      buildProfile === 'full' ? { ...publicManifest, ...fullManifestOverrides } : publicManifest,
+      null,
+      2
+    );
 
   const commonConfig = {
     mode: isDev ? 'development' : 'production',
@@ -163,6 +175,7 @@ module.exports = (env, argv) => {
       new webpack.DefinePlugin({
         global: 'globalThis',
         'process.env.NODE_ENV': JSON.stringify(isDev ? 'development' : 'production'),
+        __GHOSTFILL_BUILD_PROFILE__: JSON.stringify(buildProfile),
       }),
       new MiniCssExtractPlugin({
         filename: '[name].css',
@@ -241,6 +254,7 @@ module.exports = (env, argv) => {
       new webpack.DefinePlugin({
         global: 'globalThis',
         'process.env.NODE_ENV': JSON.stringify(isDev ? 'development' : 'production'),
+        __GHOSTFILL_BUILD_PROFILE__: JSON.stringify(buildProfile),
       }),
       new MiniCssExtractPlugin({
         filename: '[name].css',
@@ -280,7 +294,7 @@ module.exports = (env, argv) => {
       // Copy assets only once
       new CopyWebpackPlugin({
         patterns: [
-          { from: 'manifest.json', to: 'manifest.json' },
+          { from: 'manifest.json', to: 'manifest.json', transform: buildManifest },
           { from: 'public/assets', to: 'assets' },
           { from: 'public/_locales', to: '_locales' },
         ],
