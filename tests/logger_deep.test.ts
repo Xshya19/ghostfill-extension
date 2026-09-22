@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { createLogger } from '../src/utils/logger';
+import { createLogger, diag, initRemoteLogger } from '../src/utils/logger';
 
 describe('Logger deep tests', () => {
   let consoleSpy: { debug: any; info: any; warn: any; error: any };
@@ -198,6 +198,66 @@ describe('Logger deep tests', () => {
       log.info('Config', { auth: { token: 'abc123xyz' } });
       const output = consoleSpy.info.mock.calls[0].join(' ');
       expect(output).not.toContain('abc123xyz');
+    });
+  });
+
+  describe('diagnostic redaction', () => {
+    it('redacts diagnostic details and structured payloads', () => {
+      diag.clear();
+      diag.log(
+        'error',
+        'otp',
+        'delivery',
+        'Opening https://service.example/verify?token=secret_token_1234567890',
+        {
+          email: 'person@example.com',
+          code: '123456',
+          nested: { token: 'secret_token_1234567890' },
+        }
+      );
+
+      const entry = diag.getEntries({ category: 'otp', lastN: 1 })[0];
+      expect(entry.detail).not.toContain('secret_token_1234567890');
+      expect(entry.data).toEqual({
+        email: '[REDACTED]',
+        code: '[REDACTED]',
+        nested: { token: '[REDACTED]' },
+      });
+      diag.clear();
+    });
+  });
+
+  describe('remote redaction', () => {
+    it('redacts serialized development log payloads before transport', async () => {
+      const remoteConfigKey = '__GHOSTFILL_REMOTE_LOGGER__';
+      const previousConfig = (globalThis as Record<string, unknown>)[remoteConfigKey];
+      const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
+
+      vi.stubEnv('NODE_ENV', 'development');
+      vi.stubGlobal('fetch', fetchSpy);
+      (globalThis as Record<string, unknown>)[remoteConfigKey] = {
+        enabled: true,
+        url: 'https://logs.example.test/collect',
+      };
+
+      initRemoteLogger('LoggerTest');
+      console.error(
+        'Authorization: Bearer secret_token_1234567890',
+        new Error('Failed for person@example.com')
+      );
+
+      expect(fetchSpy).toHaveBeenCalled();
+      const request = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
+      const body = JSON.parse(String(request?.body));
+      expect(body.message).not.toContain('secret_token_1234567890');
+      expect(body.message).not.toContain('person@example.com');
+
+      if (previousConfig === undefined) {
+        delete (globalThis as Record<string, unknown>)[remoteConfigKey];
+      } else {
+        (globalThis as Record<string, unknown>)[remoteConfigKey] = previousConfig;
+      }
+      vi.unstubAllEnvs();
     });
   });
 

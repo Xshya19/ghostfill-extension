@@ -55,7 +55,9 @@ function isRecoverableError(errorMsg: string): boolean {
     // on the next attempt (e.g. after the service worker has fully warmed up).
     'timeout after',
   ];
-  return recoverablePatterns.some((pattern) => errorMsg.toLowerCase().includes(pattern.toLowerCase()));
+  return recoverablePatterns.some((pattern) =>
+    errorMsg.toLowerCase().includes(pattern.toLowerCase())
+  );
 }
 
 function getErrorMessage(error: unknown): string {
@@ -226,7 +228,13 @@ export async function safeSendTabMessage(
       return null;
     }
 
-    log.info(`[Messaging] Sending message to Tab ${tabId}: "${message.action}"`, (message as any).payload);
+    // Never log message payloads here: this transport carries OTPs, passwords,
+    // form values, and email bodies. The action/tab metadata is sufficient for
+    // diagnosing routing failures and keeps secrets out of debug history.
+    log.info(`[Messaging] Sending message to Tab ${tabId}: "${message.action}"`, {
+      hasPayload: 'payload' in message && message.payload !== undefined,
+      ...(typeof frameId === 'number' ? { frameId } : {}),
+    });
 
     let lastError: Error | null = null;
 
@@ -257,7 +265,10 @@ export async function safeSendTabMessage(
           timeoutPromise,
         ])) as ExtensionResponse | null;
 
-        log.info(`[Messaging] Received response from Tab ${tabId} for "${message.action}":`, response);
+        log.info(
+          `[Messaging] Received response from Tab ${tabId} for "${message.action}":`,
+          response
+        );
         return response;
       } catch (error) {
         const errorMsg = getErrorMessage(error);

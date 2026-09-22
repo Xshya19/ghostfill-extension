@@ -149,11 +149,7 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
     <div>
       <div className="identity-row">
         <div className="identity-icon">
-          {isReal ? (
-            <GmailLogo size={18} />
-          ) : (
-            <Mail size={18} className="icon-premium" />
-          )}
+          {isReal ? <GmailLogo size={18} /> : <Mail size={18} className="icon-premium" />}
         </div>
         <div className="identity-content">
           <div className="identity-label-group">
@@ -1014,7 +1010,10 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
       if (modalBody && htmlContainer) {
         const fixedChildrenHeight = Array.from(modalBody.children)
           .filter((child) => child !== htmlContainer)
-          .reduce((total, child) => total + (child as HTMLElement).getBoundingClientRect().height, 0);
+          .reduce(
+            (total, child) => total + (child as HTMLElement).getBoundingClientRect().height,
+            0
+          );
         const gapBudget = Math.max(0, (modalBody.children.length - 1) * 10);
         availableHeight = Math.max(160, modalBody.clientHeight - fixedChildrenHeight - gapBudget);
       }
@@ -1121,10 +1120,12 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
   // Some providers always include an `htmlBody` key, even when its value is
   // plain text. Select the first body that actually contains email markup;
   // otherwise the plain-text reader is the reliable fallback.
-  const htmlBodyPattern = /<\/?(?:html|body|head|meta|title|table|thead|tbody|tfoot|tr|td|th|div|p|br|a|img|picture|source|h[1-6]|ul|ol|li|center|section|article|header|footer|span|strong|em|b|i|u|blockquote|pre|code|hr|font|small|mark|figure|figcaption|style)\b[^>]*>/i;
-  const rawHtml = [message?.htmlBody, message?.body]
-    .map((candidate) => contentToString(candidate ?? ''))
-    .find((candidate) => htmlBodyPattern.test(candidate)) || '';
+  const htmlBodyPattern =
+    /<\/?(?:html|body|head|meta|title|table|thead|tbody|tfoot|tr|td|th|div|p|br|a|img|picture|source|h[1-6]|ul|ol|li|center|section|article|header|footer|span|strong|em|b|i|u|blockquote|pre|code|hr|font|small|mark|figure|figcaption|style)\b[^>]*>/i;
+  const rawHtml =
+    [message?.htmlBody, message?.body]
+      .map((candidate) => contentToString(candidate ?? ''))
+      .find((candidate) => htmlBodyPattern.test(candidate)) || '';
   const hasHtml = Boolean(rawHtml);
   const remoteAssetsBlocked = useMemo(
     () => containsRemoteEmailAssets(rawHtml.slice(0, MAX_RENDERABLE_HTML_CHARS)),
@@ -1198,7 +1199,9 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
     if (!hasHtml || !rawHtml) {
       return '';
     }
-    return sanitizeEmailBody(rawHtml.slice(0, MAX_RENDERABLE_HTML_CHARS), undefined, { allowStyleTag: true });
+    return sanitizeEmailBody(rawHtml.slice(0, MAX_RENDERABLE_HTML_CHARS), undefined, {
+      allowStyleTag: true,
+    });
   }, [hasHtml, rawHtml]);
 
   const iframeSrcDoc = useMemo(() => {
@@ -1364,7 +1367,8 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
     } else if (hasBody) {
       return htmlString.replace(
         /<body[\s>]/i,
-        (match) => `\n<head>\n${contentPolicyTag}\n${baseTargetTag}\n${responsiveStyle}\n</head>\n${match}`
+        (match) =>
+          `\n<head>\n${contentPolicyTag}\n${baseTargetTag}\n${responsiveStyle}\n</head>\n${match}`
       );
     } else {
       return `<!DOCTYPE html><html><head><meta charset="utf-8">${contentPolicyTag}${baseTargetTag}${responsiveStyle}</head><body>${htmlString}</body></html>`;
@@ -1685,6 +1689,8 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
 };
 
 // --- ErrorBoundary.tsx ---
+const errorBoundaryLog = createLogger('PopupErrorBoundary');
+
 interface ErrorBoundaryProps {
   children: ReactNode;
 }
@@ -1707,7 +1713,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
   }
 
   public override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Uncaught error:', error, errorInfo);
+    errorBoundaryLog.error('Uncaught popup render error', { error, errorInfo });
   }
 
   public override componentDidMount() {
@@ -1725,7 +1731,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
     // (storage timeouts, network hiccups, third-party listeners) don't nuke
     // the whole popup into the crash screen. Only render errors that come
     // through getDerivedStateFromError get the crash UI.
-    console.error('Unhandled promise rejection:', event.reason);
+    errorBoundaryLog.error('Unhandled popup promise rejection', event.reason);
   }
 
   private handleGlobalError(event: ErrorEvent) {
@@ -1742,7 +1748,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
     if (!event.error) {
       return;
     }
-    console.error('Global error:', event.error);
+    errorBoundaryLog.error('Global popup error', event.error);
     this.setState({ hasError: true, error: event.error });
   }
 
@@ -1845,7 +1851,11 @@ const Header: React.FC<HeaderProps> = React.memo(({ onOpenSettings, onOpenHelp }
         </div>
       </div>
       <div className="header-actions">
-        <IconButton label="Open help center" title="Help center (guides & FAQ)" onClick={onOpenHelp}>
+        <IconButton
+          label="Open help center"
+          title="Help center (guides & FAQ)"
+          onClick={onOpenHelp}
+        >
           <HelpCircle size={18} strokeWidth={2} />
         </IconButton>
         <IconButton label="Open settings" title="Settings" onClick={onOpenSettings}>
@@ -2083,20 +2093,14 @@ const InboxListComponent: React.FC<InboxListProps> = ({
               // PERF: rows mount instantly — no stagger delay, no JS spring.
               // Hover is pure CSS (:hover border + chevron).
               return (
-                <div
-                  key={emailItem.id}
-                  className="inbox-item"
-                >
+                <div key={emailItem.id} className="inbox-item">
                   <EmailAvatar
                     from={getSenderSource(emailItem.from, emailItem.senderEmail)}
                     className="inbox-item-avatar"
                   />
                   <div className="inbox-item-content">
                     <div className="inbox-item-header">
-                      <span
-                        className="inbox-item-from"
-                        title={emailItem.from || undefined}
-                      >
+                      <span className="inbox-item-from" title={emailItem.from || undefined}>
                         {getSenderLabel(emailItem.from, emailItem.subject)}
                       </span>
                       <span className="inbox-item-date">
@@ -2150,7 +2154,11 @@ const InboxListComponent: React.FC<InboxListProps> = ({
                     aria-busy={openingEmailId === emailItem.id}
                     onClick={() => openDisplayedEmail(emailItem)}
                   >
-                    <ChevronRight size={14} className="inbox-item-open-chevron" aria-hidden="true" />
+                    <ChevronRight
+                      size={14}
+                      className="inbox-item-open-chevron"
+                      aria-hidden="true"
+                    />
                   </button>
                 </div>
               );
@@ -2284,7 +2292,10 @@ const OTPTimerBar: React.FC<{ lastOTP: LastOTP | null }> = ({ lastOTP }) => {
     const updateTimer = () => {
       const elapsed = Date.now() - lastOTP.extractedAt;
       const hasExplicitExpiry = !!lastOTP.expiresAt;
-      const expiry = Math.min(lastOTP.expiresAt ?? Infinity, lastOTP.extractedAt + LAST_OTP_MAX_AGE_MS);
+      const expiry = Math.min(
+        lastOTP.expiresAt ?? Infinity,
+        lastOTP.extractedAt + LAST_OTP_MAX_AGE_MS
+      );
       const total = Math.max(1, expiry - lastOTP.extractedAt);
       const remaining = total - elapsed;
 
@@ -2354,7 +2365,10 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
     if (!lastOTP) {
       return;
     }
-    const expiry = Math.min(lastOTP.expiresAt ?? Infinity, lastOTP.extractedAt + LAST_OTP_MAX_AGE_MS);
+    const expiry = Math.min(
+      lastOTP.expiresAt ?? Infinity,
+      lastOTP.extractedAt + LAST_OTP_MAX_AGE_MS
+    );
     const remaining = expiry - Date.now();
     if (remaining <= 0) {
       return;

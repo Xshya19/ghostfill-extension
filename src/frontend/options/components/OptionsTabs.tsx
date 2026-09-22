@@ -172,7 +172,17 @@ export const ProviderHealthMeter: React.FC = () => {
       <div className="provider-health-meter">
         <h3 className="health-title">{t('providerHealthTitle')}</h3>
         <div className="health-grid">
-          {['driftz', 'catchmail', 'throwawaymail', 'tempmailplus', 'mailtm', 'mailgw', 'guerrilla', 'maildrop', 'yopmail'].map((name) => (
+          {[
+            'driftz',
+            'catchmail',
+            'throwawaymail',
+            'tempmailplus',
+            'mailtm',
+            'mailgw',
+            'guerrilla',
+            'maildrop',
+            'yopmail',
+          ].map((name) => (
             <div key={name} className="health-pill-card" title="No calls recorded yet">
               <span className="health-provider-name">{getEmailServiceLabel(name)}</span>
               <div className="health-status-group">
@@ -193,50 +203,57 @@ export const ProviderHealthMeter: React.FC = () => {
       <div className="health-grid">
         {healthData
           .filter((h) =>
-            ['driftz', 'catchmail', 'throwawaymail', 'tempmailplus', 'mailtm', 'mailgw', 'guerrilla', 'maildrop', 'yopmail', 'custom'].includes(h.name)
+            [
+              'driftz',
+              'catchmail',
+              'throwawaymail',
+              'tempmailplus',
+              'mailtm',
+              'mailgw',
+              'guerrilla',
+              'maildrop',
+              'yopmail',
+              'custom',
+            ].includes(h.name)
           )
           .map((h) => {
-          const pct = Math.round(h.successRate * 100);
-          const isWarning =
-            (h.successRate <= 0.7 && h.successRate > 0 && !h.circuitOpen) ||
-            h.consecutiveFailures > 0;
-          const isDead = h.circuitOpen || h.successRate === 0;
+            const pct = Math.round(h.successRate * 100);
+            const isWarning =
+              (h.successRate <= 0.7 && h.successRate > 0 && !h.circuitOpen) ||
+              h.consecutiveFailures > 0;
+            const isDead = h.circuitOpen || h.successRate === 0;
 
-          let statusClass = 'health-status-good';
-          let statusText = 'Healthy';
-          if (isDead) {
-            statusClass = 'health-status-dead';
-            statusText = h.circuitOpen ? 'Circuit open — cooling down' : 'Offline';
-          } else if (isWarning) {
-            statusClass = 'health-status-warning';
-            statusText = 'Degraded';
-          }
+            let statusClass = 'health-status-good';
+            let statusText = 'Healthy';
+            if (isDead) {
+              statusClass = 'health-status-dead';
+              statusText = h.circuitOpen ? 'Circuit open — cooling down' : 'Offline';
+            } else if (isWarning) {
+              statusClass = 'health-status-warning';
+              statusText = 'Degraded';
+            }
 
-          const ms = Math.round(h.avgResponseTime);
-          const detail =
-            `${h.name}: ${statusText} · ${pct}% success · ~${ms}ms avg` +
-            (h.consecutiveFailures > 0
-              ? ` · ${h.consecutiveFailures} failure${h.consecutiveFailures === 1 ? '' : 's'} in a row`
-              : '');
+            const ms = Math.round(h.avgResponseTime);
+            const detail =
+              `${h.name}: ${statusText} · ${pct}% success · ~${ms}ms avg` +
+              (h.consecutiveFailures > 0
+                ? ` · ${h.consecutiveFailures} failure${h.consecutiveFailures === 1 ? '' : 's'} in a row`
+                : '');
 
-          return (
-            <div key={h.name} className="health-pill-card" title={detail}>
-              <span className="health-provider-name" title={h.name}>
-                {getEmailServiceLabel(h.name)}
-              </span>
-              <div className="health-status-group">
-                <span className="health-percent" aria-label={detail}>
-                  {pct}% · {ms}ms
+            return (
+              <div key={h.name} className="health-pill-card" title={detail}>
+                <span className="health-provider-name" title={h.name}>
+                  {getEmailServiceLabel(h.name)}
                 </span>
-                <span
-                  className={`health-dot ${statusClass}`}
-                  role="img"
-                  aria-label={detail}
-                />
+                <div className="health-status-group">
+                  <span className="health-percent" aria-label={detail}>
+                    {pct}% · {ms}ms
+                  </span>
+                  <span className={`health-dot ${statusClass}`} role="img" aria-label={detail} />
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
       </div>
     </div>
   );
@@ -360,7 +377,12 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChang
             </Button>
             <span
               id="tutorial-reset-toast"
-              style={{ display: 'none', fontSize: '12px', color: 'var(--gf-mint)', fontWeight: 600 }}
+              style={{
+                display: 'none',
+                fontSize: '12px',
+                color: 'var(--gf-mint)',
+                fontWeight: 600,
+              }}
             >
               ✓ Tutorial will replay on next popup open!
             </span>
@@ -583,9 +605,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
               id="preferred-email-service"
               ariaLabel="Preferred email service"
               ariaDescribedBy={
-                fieldHasError('preferredEmailService')
-                  ? 'preferred-email-service-error'
-                  : undefined
+                fieldHasError('preferredEmailService') ? 'preferred-email-service-error' : undefined
               }
               value={settings.preferredEmailService}
               onChange={(val) =>
@@ -676,86 +696,90 @@ export const EmailTab: React.FC<EmailTabProps> = ({
         )}
       </SettingsSection>
 
-      {IS_GMAIL_ENABLED && <SettingsSection
-        id="gmail-oauth"
-        title={t('gmailOauthSection')}
-        icon={<GmailLogo size={18} />}
-      >
-        <div className="setting-item vertical-group">
-          <div className="setting-info w-full">
-            <label htmlFor="gmail-client-id" className="fs-15-fw-600">
-              OAuth client ID
-              <span className={`client-id-status-badge ${gmailClientId ? 'client-id-status-badge--configured' : 'client-id-status-badge--none'}`}>
-                {gmailClientId ? 'Configured' : 'Not configured'}
-              </span>
-            </label>
-            <p>Required for Gmail API sign-in.</p>
-          </div>
-          <input
-            id="gmail-client-id"
-            type="text"
-            inputMode="text"
-            spellCheck={false}
-            autoComplete="off"
-            placeholder="1234567890-example.apps.googleusercontent.com"
-            value={gmailClientId}
-            onChange={(e) => {
-              setGmailClientId(e.target.value);
-              setGmailClientIdError(null);
-              setGmailClientIdSaveStatus('idle');
-            }}
-            aria-invalid={!!gmailClientIdError}
-            aria-describedby={gmailClientIdError ? 'gmail-client-id-error' : undefined}
-          />
-          {gmailClientIdError && (
-            <span id="gmail-client-id-error" className="field-error" role="alert">
-              {gmailClientIdError}
-            </span>
-          )}
-          <div className="gmail-client-id-actions">
-            <Button
-              type="button"
-              variant="primary"
-              size="sm"
-              className={
-                gmailClientIdSaveStatus === 'saving'
-                  ? 'save-btn--saving'
-                  : gmailClientIdSaveStatus === 'saved'
-                    ? 'save-btn--saved'
-                    : ''
-              }
-              onClick={() => void saveGmailClientId()}
-              disabled={gmailClientIdSaveStatus === 'saving'}
-            >
-              {gmailClientIdSaveStatus === 'saved' ? <Check size={16} /> : <Save size={16} />}
-              <span>{gmailClientIdSaveStatus === 'saved' ? 'Saved' : 'Save'}</span>
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => {
-                setGmailClientId('');
+      {IS_GMAIL_ENABLED && (
+        <SettingsSection
+          id="gmail-oauth"
+          title={t('gmailOauthSection')}
+          icon={<GmailLogo size={18} />}
+        >
+          <div className="setting-item vertical-group">
+            <div className="setting-info w-full">
+              <label htmlFor="gmail-client-id" className="fs-15-fw-600">
+                OAuth client ID
+                <span
+                  className={`client-id-status-badge ${gmailClientId ? 'client-id-status-badge--configured' : 'client-id-status-badge--none'}`}
+                >
+                  {gmailClientId ? 'Configured' : 'Not configured'}
+                </span>
+              </label>
+              <p>Required for Gmail API sign-in.</p>
+            </div>
+            <input
+              id="gmail-client-id"
+              type="text"
+              inputMode="text"
+              spellCheck={false}
+              autoComplete="off"
+              placeholder="1234567890-example.apps.googleusercontent.com"
+              value={gmailClientId}
+              onChange={(e) => {
+                setGmailClientId(e.target.value);
                 setGmailClientIdError(null);
-                setGmailClientIdSaveStatus('saving');
-                void storageService
-                  .set('gmailClientId', '')
-                  .then(() => {
-                    setGmailClientIdSaveStatus('saved');
-                    window.setTimeout(() => setGmailClientIdSaveStatus('idle'), SAVE_FEEDBACK_MS);
-                  })
-                  .catch(() => {
-                    setGmailClientIdSaveStatus('idle');
-                    setGmailClientIdError('Could not clear Gmail Client ID.');
-                  });
+                setGmailClientIdSaveStatus('idle');
               }}
-              disabled={gmailClientIdSaveStatus === 'saving'}
-            >
-              <X size={16} />
-              <span>Clear</span>
-            </Button>
+              aria-invalid={!!gmailClientIdError}
+              aria-describedby={gmailClientIdError ? 'gmail-client-id-error' : undefined}
+            />
+            {gmailClientIdError && (
+              <span id="gmail-client-id-error" className="field-error" role="alert">
+                {gmailClientIdError}
+              </span>
+            )}
+            <div className="gmail-client-id-actions">
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                className={
+                  gmailClientIdSaveStatus === 'saving'
+                    ? 'save-btn--saving'
+                    : gmailClientIdSaveStatus === 'saved'
+                      ? 'save-btn--saved'
+                      : ''
+                }
+                onClick={() => void saveGmailClientId()}
+                disabled={gmailClientIdSaveStatus === 'saving'}
+              >
+                {gmailClientIdSaveStatus === 'saved' ? <Check size={16} /> : <Save size={16} />}
+                <span>{gmailClientIdSaveStatus === 'saved' ? 'Saved' : 'Save'}</span>
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  setGmailClientId('');
+                  setGmailClientIdError(null);
+                  setGmailClientIdSaveStatus('saving');
+                  void storageService
+                    .set('gmailClientId', '')
+                    .then(() => {
+                      setGmailClientIdSaveStatus('saved');
+                      window.setTimeout(() => setGmailClientIdSaveStatus('idle'), SAVE_FEEDBACK_MS);
+                    })
+                    .catch(() => {
+                      setGmailClientIdSaveStatus('idle');
+                      setGmailClientIdError('Could not clear Gmail Client ID.');
+                    });
+                }}
+                disabled={gmailClientIdSaveStatus === 'saving'}
+              >
+                <X size={16} />
+                <span>Clear</span>
+              </Button>
+            </div>
           </div>
-        </div>
-      </SettingsSection>}
+        </SettingsSection>
+      )}
 
       <SettingsSection
         id="inbox-polling"
@@ -924,8 +948,17 @@ export const AutomationTab: React.FC<AutomationTabProps> = ({ settings, onSettin
           role="group"
           aria-label={t('shortcutReferenceAriaLabel')}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-            <h3 className="shortcut-reference-title" style={{ margin: 0 }}>{t('quickReference')}</h3>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '12px',
+            }}
+          >
+            <h3 className="shortcut-reference-title" style={{ margin: 0 }}>
+              {t('quickReference')}
+            </h3>
             <Button
               size="sm"
               type="button"
@@ -1031,27 +1064,30 @@ export const PrivacyTab: React.FC<PrivacyTabProps> = ({
         </div>
       </SettingsSection>
 
-      {IS_GMAIL_ENABLED && <SettingsSection
-        id="gmail-privacy"
-        title={t('gmailPrivacySection')}
-        icon={<MailCheck size={18} />}
-      >
-        <div className="setting-item">
-          <div className="setting-info">
-            <label id="gmail-session-fallback-label">
-              {t('gmailSessionDetection')} <span className="coming-soon-label">(coming soon)</span>
-            </label>
-            <p>{t('gmailSessionDetectionDescription')}</p>
+      {IS_GMAIL_ENABLED && (
+        <SettingsSection
+          id="gmail-privacy"
+          title={t('gmailPrivacySection')}
+          icon={<MailCheck size={18} />}
+        >
+          <div className="setting-item">
+            <div className="setting-info">
+              <label id="gmail-session-fallback-label">
+                {t('gmailSessionDetection')}{' '}
+                <span className="coming-soon-label">(coming soon)</span>
+              </label>
+              <p>{t('gmailSessionDetectionDescription')}</p>
+            </div>
+            <ToggleSwitch
+              checked={settings.allowGmailSessionFallback}
+              onChange={(checked) => onSettingChange('allowGmailSessionFallback', checked)}
+              ariaLabel={t('gmailSessionDetectionAriaLabel')}
+              ariaLabelledBy="gmail-session-fallback-label"
+              disabled
+            />
           </div>
-          <ToggleSwitch
-            checked={settings.allowGmailSessionFallback}
-            onChange={(checked) => onSettingChange('allowGmailSessionFallback', checked)}
-            ariaLabel={t('gmailSessionDetectionAriaLabel')}
-            ariaLabelledBy="gmail-session-fallback-label"
-            disabled
-          />
-        </div>
-      </SettingsSection>}
+        </SettingsSection>
+      )}
     </div>
   );
 };
@@ -1122,7 +1158,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
         if (onError) {
           onError('Invalid settings file. Please select a valid GhostFill settings JSON.');
         } else {
-          console.warn('Invalid settings file. Please select a valid GhostFill settings JSON.');
+          log.warn('Invalid settings file. Please select a valid GhostFill settings JSON.');
         }
       }
     };
@@ -1130,7 +1166,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
       if (onError) {
         onError('GhostFill could not read that settings file.');
       } else {
-        console.warn('GhostFill could not read that settings file.');
+        log.warn('GhostFill could not read that settings file.');
       }
     };
     reader.readAsText(file);

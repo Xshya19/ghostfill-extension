@@ -11,13 +11,14 @@ This is a risk-based audit of the public Manifest V3 build, not a claim that eve
 | OTP expiry            | Provider-specific expiry was ignored, and the popup could continue to show an expired code.                                                                                                           | Enforced the earlier of provider expiry and the ten-minute fallback in retrieval and popup presentation.                                                                                                         |
 | Verification links    | A short `token`, `secret`, `oobCode`, or path segment could be stored and typed as an OTP. The auto-open threshold also accepted weak evidence and HTTP.                                              | Only explicit short OTP parameters or numeric code/path values are fillable; automatic opening now requires strong evidence and HTTPS. The requested `autoConfirmLinks: true` default remains unchanged.         |
 | Popup interactions    | The OTP timer animated width every second, and alias text re-entered on every keystroke.                                                                                                              | Timer progress now uses a compositor-friendly transform; live alias text updates immediately. Reduced-motion handling remains in place.                                                                          |
+| Diagnostic privacy    | Structured diagnostic entries, remote development logging, error stacks, and tab-message transport logs could retain OTPs, passwords, email addresses, or token-bearing URLs.                         | Applied recursive redaction at every diagnostic/export/remote-transport boundary and replaced payload logging with metadata-only routing diagnostics.                                                            |
 
 ## Verification
 
-- All 1,092 Vitest tests, TypeScript check, ESLint, both production build profiles, public bundle-size budget, dependency-cycle check, and public service-worker boot smoke test passed locally. The final `dist` directory contains the public build.
+- All 1,094 Vitest tests, TypeScript check, ESLint, both production build profiles, public bundle-size budget, dependency-cycle check, and public service-worker boot smoke test passed locally. The final `dist` directory contains the public build.
 - V8 coverage remains low despite the test count: 31.1% statements, 26.1% branches, 29.3% functions. The next QA investment should target background message routing, live provider failures, and browser-level popup/content-script flows.
 - The production-only npm audit found zero known vulnerabilities at the time of this run. The full development-dependency audit could not complete because the npm advisory endpoint returned HTTP 503; retry it before a release.
-- Regression tests cover saved full-build state in the public build, reused/expired OTPs, and activation-token versus OTP discrimination.
+- Regression tests cover saved full-build state in the public build, reused/expired OTPs, activation-token versus OTP discrimination, and diagnostic/remote-log redaction.
 - The project UI detector returned no findings for changed popup files.
 
 ## Remaining risks and required checks

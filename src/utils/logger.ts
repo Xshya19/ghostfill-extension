@@ -35,29 +35,35 @@ const PERSISTED_LOG_KEY = 'ghostfill_debug_logs';
 
 const SENSITIVE_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
   {
-    pattern: /(api[_-]?key|apikey|token|bearer|auth|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|jwt|jws|jwe)\s*[=:]\s*["']?[a-zA-Z0-9\-_.]{20,}["']?/gi,
+    pattern:
+      /(api[_-]?key|apikey|token|bearer|auth|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|jwt|jws|jwe)\s*[=:]\s*["']?[a-zA-Z0-9\-_.]{20,}["']?/gi,
     replacement: '$1=[REDACTED]',
   },
   {
-    pattern: /(oauth|oauth2|oauth[_-]?token|social[_-]?token|provider[_-]?token)\s*[=:]\s*["']?[a-zA-Z0-9\-_.]{10,}["']?/gi,
+    pattern:
+      /(oauth|oauth2|oauth[_-]?token|social[_-]?token|provider[_-]?token)\s*[=:]\s*["']?[a-zA-Z0-9\-_.]{10,}["']?/gi,
     replacement: '$1=[REDACTED]',
   },
   {
-    pattern: /(AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|aws[_-]?secret|aws[_-]?key|gcp[_-]?key|azure[_-]?secret)/gi,
+    pattern:
+      /(AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|aws[_-]?secret|aws[_-]?key|gcp[_-]?key|azure[_-]?secret)/gi,
     replacement: '[REDACTED_CLOUD_CREDENTIAL]',
   },
   {
-    pattern: /(password|passwd|pwd|secret|credentials|passphrase|private[_-]?key|secret[_-]?key|signing[_-]?key)\s*[=:]\s*["']?[^"'\s]{4,}["']?/gi,
+    pattern:
+      /(password|passwd|pwd|secret|credentials|passphrase|private[_-]?key|secret[_-]?key|signing[_-]?key)\s*[=:]\s*["']?[^"'\s]{4,}["']?/gi,
     replacement: '$1=[REDACTED]',
   },
   { pattern: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, replacement: '[EMAIL]' },
   { pattern: /(\+?1?[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g, replacement: '[PHONE]' },
   {
-    pattern: /\b(otp|code|verification|confirm|auth|security|pin|token|passcode).{0,50}\b([0-9]{4,10})\b/gi,
+    pattern:
+      /\b(otp|code|verification|confirm|auth|security|pin|token|passcode).{0,50}\b([0-9]{4,10})\b/gi,
     replacement: '$2=[REDACTED]',
   },
   {
-    pattern: /\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12}|(?:2131|1800|35\d{3})\d{11})\b/g,
+    pattern:
+      /\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12}|(?:2131|1800|35\d{3})\d{11})\b/g,
     replacement: '[CARD_NUMBER]',
   },
   { pattern: /\b\d{3}-\d{2}-\d{4}\b/g, replacement: '[SSN]' },
@@ -73,7 +79,8 @@ const SENSITIVE_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
   },
   { pattern: /\b[A-Za-z0-9+/]{40,}={0,2}\b/g, replacement: '[REDACTED_BASE64]' },
   {
-    pattern: /-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----[\s\S]*?-----END\s+(RSA\s+)?PRIVATE\s+KEY-----/gi,
+    pattern:
+      /-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----[\s\S]*?-----END\s+(RSA\s+)?PRIVATE\s+KEY-----/gi,
     replacement: '[REDACTED_PRIVATE_KEY]',
   },
   {
@@ -84,24 +91,111 @@ const SENSITIVE_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
 ];
 
 const REDACT_KEYS = new Set([
-  'password', 'passwd', 'pwd', 'secret', 'token', 'apikey', 'api_key', 'auth',
-  'bearer', 'accesstoken', 'refreshtoken', 'access_token', 'refresh_token',
-  'credentials', 'privatekey', 'private_key', 'secretkey', 'secret_key', 'otp',
-  'code', 'idtoken', 'id_token', 'sessiontoken', 'session_token', 'jwt', 'jws',
-  'jwe', 'signingkey', 'signing_key', 'encryptionkey', 'encryption_key', 'clientid',
-  'client_id', 'clientsecret', 'client_secret', 'oauthtoken', 'oauth_token',
-  'providertoken', 'provider_token', 'awskey', 'aws_key', 'awssecret', 'aws_secret',
-  'gpckey', 'azuresecret', 'authorization', 'authheader', 'auth_header',
-  'ssn', 'socialsecurity', 'social_security', 'taxid', 'tax_id', 'creditcard',
-  'credit_card', 'cardnumber', 'card_number', 'cvv', 'cvc', 'cardcvv', 'phonenumber',
-  'phone_number', 'mobile', 'telephone', 'fax', 'dateofbirth', 'date_of_birth',
-  'dob', 'birthdate', 'birth_date', 'address', 'streetaddress', 'street_address',
-  'zipcode', 'zip_code', 'postalcode', 'ipaddress', 'ip_address', 'macaddress',
-  'mac_address', 'email', 'emailaddress', 'email_address', 'maidenname', 'passport',
-  'passportnumber', 'driverslicense', 'license_number', 'accountnumber', 'account_number',
-  'routingnumber', 'routing_number', 'iban', 'swift', 'bic', 'bankaccount',
-  'privatekey', 'publickey', 'symmetrickey', 'masterkey', 'rootkey', 'certificate',
-  'cert', 'sslkey', 'sshkey',
+  'password',
+  'passwd',
+  'pwd',
+  'secret',
+  'token',
+  'apikey',
+  'api_key',
+  'auth',
+  'bearer',
+  'accesstoken',
+  'refreshtoken',
+  'access_token',
+  'refresh_token',
+  'credentials',
+  'privatekey',
+  'private_key',
+  'secretkey',
+  'secret_key',
+  'otp',
+  'code',
+  'idtoken',
+  'id_token',
+  'sessiontoken',
+  'session_token',
+  'jwt',
+  'jws',
+  'jwe',
+  'signingkey',
+  'signing_key',
+  'encryptionkey',
+  'encryption_key',
+  'clientid',
+  'client_id',
+  'clientsecret',
+  'client_secret',
+  'oauthtoken',
+  'oauth_token',
+  'providertoken',
+  'provider_token',
+  'awskey',
+  'aws_key',
+  'awssecret',
+  'aws_secret',
+  'gpckey',
+  'azuresecret',
+  'authorization',
+  'authheader',
+  'auth_header',
+  'ssn',
+  'socialsecurity',
+  'social_security',
+  'taxid',
+  'tax_id',
+  'creditcard',
+  'credit_card',
+  'cardnumber',
+  'card_number',
+  'cvv',
+  'cvc',
+  'cardcvv',
+  'phonenumber',
+  'phone_number',
+  'mobile',
+  'telephone',
+  'fax',
+  'dateofbirth',
+  'date_of_birth',
+  'dob',
+  'birthdate',
+  'birth_date',
+  'address',
+  'streetaddress',
+  'street_address',
+  'zipcode',
+  'zip_code',
+  'postalcode',
+  'ipaddress',
+  'ip_address',
+  'macaddress',
+  'mac_address',
+  'email',
+  'emailaddress',
+  'email_address',
+  'maidenname',
+  'passport',
+  'passportnumber',
+  'driverslicense',
+  'license_number',
+  'accountnumber',
+  'account_number',
+  'routingnumber',
+  'routing_number',
+  'iban',
+  'swift',
+  'bic',
+  'bankaccount',
+  'privatekey',
+  'publickey',
+  'symmetrickey',
+  'masterkey',
+  'rootkey',
+  'certificate',
+  'cert',
+  'sslkey',
+  'sshkey',
 ]);
 
 function redactSensitiveData(data: unknown, depth = 0): unknown {
@@ -112,7 +206,12 @@ function redactSensitiveData(data: unknown, depth = 0): unknown {
   // PERF: Short-circuit for primitives that can never contain secrets.
   // Numbers, booleans, null, undefined are the most common log arguments
   // on hot paths (confidence scores, tab IDs, counts, flags).
-  if (data === null || data === undefined || typeof data === 'number' || typeof data === 'boolean') {
+  if (
+    data === null ||
+    data === undefined ||
+    typeof data === 'number' ||
+    typeof data === 'boolean'
+  ) {
     return data;
   }
 
@@ -132,7 +231,7 @@ function redactSensitiveData(data: unknown, depth = 0): unknown {
   if (data instanceof Error) {
     const redacted = new Error(redactSensitiveData(data.message, depth + 1) as string);
     if (data.stack) {
-      redacted.stack = data.stack;
+      redacted.stack = redactSensitiveData(data.stack, depth + 1) as string;
     }
     return redacted;
   }
@@ -518,17 +617,21 @@ export function initRemoteLogger(sourceName: string): void {
   const serializeArgs = (args: any[]) => {
     return args
       .map((arg) => {
-        if (typeof arg === 'object') {
-          if (arg instanceof Error) {
-            return arg.stack || arg.message;
+        // Remote development logging is still an exfiltration boundary. Apply
+        // the same redaction used by local history before serializing anything
+        // for transport (including non-enumerable Error.message/stack fields).
+        const safeArg = redactSensitiveData(arg);
+        if (safeArg && typeof safeArg === 'object') {
+          if (safeArg instanceof Error) {
+            return safeArg.stack || safeArg.message;
           }
           try {
-            return JSON.stringify(arg, Object.getOwnPropertyNames(arg));
+            return JSON.stringify(safeArg, Object.getOwnPropertyNames(safeArg));
           } catch {
-            return String(arg);
+            return String(safeArg);
           }
         }
-        return String(arg);
+        return String(safeArg);
       })
       .join(' ');
   };
@@ -574,8 +677,17 @@ export function initRemoteLogger(sourceName: string): void {
 
 export type DiagLevel = 'step' | 'info' | 'warn' | 'error' | 'state' | 'perf';
 export type DiagCategory =
-  | 'email' | 'otp' | 'sse' | 'polling' | 'messaging' | 'storage' | 'link'
-  | 'notification' | 'system' | 'field-fill' | 'detection';
+  | 'email'
+  | 'otp'
+  | 'sse'
+  | 'polling'
+  | 'messaging'
+  | 'storage'
+  | 'link'
+  | 'notification'
+  | 'system'
+  | 'field-fill'
+  | 'detection';
 
 export interface DiagEntry {
   ts: number;
@@ -630,6 +742,13 @@ export const diag = {
   ): string {
     const flow = flowId || null;
     const s = step ?? null;
+    // Diagnostic tracing is exposed through the debug surface and can be
+    // copied/exported independently of the structured logger. Apply the same
+    // recursive redaction here so OTPs, inbox addresses, URLs, and auth
+    // credentials never bypass the logger's privacy boundary.
+    const safeDetail = redactSensitiveData(detail) as string;
+    const safeData =
+      data === undefined ? undefined : (redactSensitiveData(data) as Record<string, unknown>);
     const entry: DiagEntry = {
       ts: Date.now(),
       time: fmtDiagTime(Date.now()),
@@ -638,39 +757,49 @@ export const diag = {
       flowId: flow,
       step: s,
       action,
-      detail,
+      detail: safeDetail,
     };
 
-    if (data) {
-      entry.data = data;
+    if (safeData) {
+      entry.data = safeData;
     }
 
-    if (level === 'error' && data?.error instanceof Error) {
-      entry.stack = data.error.stack || '';
+    if (level === 'error' && safeData?.error instanceof Error) {
+      entry.stack = safeData.error.stack || '';
     }
 
     pushDiag(entry);
 
     const prefix = flow ? `[${flow}${s !== null ? `:${s}` : ''}]` : '[diag]';
     const levelIcon =
-      level === 'error' ? '🔴' : level === 'warn' ? '🟡' : level === 'state' ? '🔵' : level === 'perf' ? '⚡' : level === 'step' ? '▸' : 'ℹ️';
+      level === 'error'
+        ? '🔴'
+        : level === 'warn'
+          ? '🟡'
+          : level === 'state'
+            ? '🔵'
+            : level === 'perf'
+              ? '⚡'
+              : level === 'step'
+                ? '▸'
+                : 'ℹ️';
 
     const catTag = `[${category.toUpperCase()}]`;
-    const msg = `${levelIcon} ${prefix} ${catTag} ${action} — ${detail}`;
+    const msg = `${levelIcon} ${prefix} ${catTag} ${action} — ${safeDetail}`;
 
     if (SHOULD_PRINT_DIAG_TO_CONSOLE || level === 'error') {
       switch (level) {
         case 'error':
-          console.error(`[GhostFill-DIAG] ${msg}`, data);
+          console.error(`[GhostFill-DIAG] ${msg}`, safeData);
           break;
         case 'warn':
-          console.warn(`[GhostFill-DIAG] ${msg}`, data);
+          console.warn(`[GhostFill-DIAG] ${msg}`, safeData);
           break;
         case 'perf':
-          console.info(`[GhostFill-DIAG] ${msg}`, data);
+          console.info(`[GhostFill-DIAG] ${msg}`, safeData);
           break;
         default:
-          console.log(`[GhostFill-DIAG] ${msg}`, data ?? '');
+          console.log(`[GhostFill-DIAG] ${msg}`, safeData ?? '');
       }
     }
 
@@ -803,7 +932,15 @@ export const diag = {
     for (const e of recent) {
       const flowTag = e.flowId ? `[${e.flowId}${e.step !== null ? `:${e.step}` : ''}]` : '[--]';
       const icon =
-        e.level === 'error' ? '🔴' : e.level === 'warn' ? '🟡' : e.level === 'state' ? '🔵' : e.level === 'perf' ? '⚡' : '  ';
+        e.level === 'error'
+          ? '🔴'
+          : e.level === 'warn'
+            ? '🟡'
+            : e.level === 'state'
+              ? '🔵'
+              : e.level === 'perf'
+                ? '⚡'
+                : '  ';
       lines.push(
         `  ${icon} ${e.time} ${flowTag.padEnd(20)} [${e.category.padEnd(14)}] ${e.action} — ${e.detail}`
       );
