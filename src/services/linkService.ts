@@ -27,6 +27,7 @@ import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
 
 import { dedupService } from './dedupService';
+import { isAutoOpenableActivationLink } from './extraction/activationLinkGuard';
 import { smartDetectionService } from './otpService';
 import { storageService } from './storageService';
 
@@ -122,22 +123,16 @@ const CONFIG = {
   MAX_HISTORY_ENTRIES: 50,
 } as const;
 
-// ── Verification code parameter names (ranked by frequency) ──
+// Only explicit OTP parameter names. Generic token/secret/key/oobCode values
+// are activation credentials, not codes to type into an OTP field.
 const CODE_PARAM_NAMES = [
-  'code',
-  'token',
   'otp',
   'verification_code',
   'verificationCode',
-  'verify',
-  'key',
   'pin',
   'confirmation_code',
   'confirmationCode',
-  'auth_code',
-  'authCode',
   'passcode',
-  'secret',
   'vcode',
 ] as const;
 
@@ -231,8 +226,6 @@ class LinkService {
     this.markScanning(emailId);
     this.metrics.emailsScanned++;
 
-    await this.markProcessed(emailId, accId, true);
-
     try {
       this.metrics.linksDetected++;
 
@@ -243,6 +236,14 @@ class LinkService {
         log.warn('⛔ Blocked unsafe link', {
           url: maskUrl(linkUrl),
           reason: validation.reason,
+        });
+        return;
+      }
+
+      if (!isAutoOpenableActivationLink(linkUrl, '', email.subject || '')) {
+        this.metrics.linksBlocked++;
+        log.info('Holding low-confidence activation link for user review', {
+          url: maskUrl(linkUrl),
         });
         return;
       }
@@ -292,6 +293,7 @@ class LinkService {
         durationMs: null,
       };
 
+      await this.markProcessed(emailId, accId, true);
       this.enqueue(record);
     } catch (error) {
       log.error('Pre-detected link handling failed', {
@@ -358,6 +360,15 @@ class LinkService {
         return;
       }
 
+      if (!isAutoOpenableActivationLink(detection.link, '', email.subject || '')) {
+        this.metrics.linksBlocked++;
+        log.info('Holding low-confidence activation link for user review', {
+          url: maskUrl(detection.link),
+        });
+        await dedupService.clearPending(emailId, accId);
+        return;
+      }
+
       log.info('🔗 Link detected & validated', {
         url: maskUrl(detection.link),
         confidence: detection.confidence,
@@ -391,14 +402,9 @@ class LinkService {
           risk: decision.risk,
           warnings: decision.warnings,
         });
+        await dedupService.clearPending(emailId, accId);
         return;
       }
-
-      // isAutoOpenableActivationLink guard removed:
-      // GhostFill only processes emails at user-generated signup addresses.
-      // The validateUrl() call above already blocks unsafe/malformed URLs.
-      // Hard-reject patterns (unsubscribe, marketing footer, social) are
-      // handled inside the extractor before the link ever reaches this point.
 
       if (
         decision &&
@@ -410,6 +416,7 @@ class LinkService {
           action: decision.action,
           risk: decision.risk,
         });
+        await dedupService.clearPending(emailId, accId);
         return;
       }
 
@@ -838,10 +845,9 @@ class LinkService {
     if (BLOCKED_SCHEMES.has(parsed.protocol)) {
       return { safe: false, reason: `Blocked scheme: ${parsed.protocol}` };
     }
-    // Prefer secure transport for auto-activation (still allows http only if
-    // nothing else — http is accepted for rare legacy providers).
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      return { safe: false, reason: `Non-HTTP scheme: ${parsed.protocol}` };
+    // Activation URLs can carry one-time credentials; never send them in cleartext.
+    if (parsed.protocol !== 'https:') {
+      return { safe: false, reason: `Non-HTTPS scheme: ${parsed.protocol}` };
     }
 
     // ── Localhost / loopback ──
@@ -944,6 +950,10 @@ class LinkService {
         return value;
       }
     }
+    const genericCode = params.get('code');
+    if (genericCode && this.isPlausibleNumericCode(genericCode)) {
+      return genericCode;
+    }
     return null;
   }
 
@@ -952,7 +962,7 @@ class LinkService {
     for (const prefix of CODE_PATH_PREFIXES) {
       if (lower.startsWith(prefix)) {
         const remainder = pathname.substring(prefix.length).replace(/\/+$/, ''); // trim trailing slashes
-        if (remainder && this.isPlausibleCode(remainder)) {
+        if (remainder && this.isPlausibleNumericCode(remainder)) {
           return remainder;
         }
       }
@@ -962,15 +972,14 @@ class LinkService {
 
   /**
    * Determines whether a string looks like a verification code.
-   * Must be 4-12 characters, alphanumeric, not all zeros,
+   * Must be 4-10 characters, alphanumeric, not all zeros,
    * and not a common English word that happens to be short.
    */
   private isPlausibleCode(value: string): boolean {
-    if (value.length < 4 || value.length > 64) {
+    if (value.length < 4 || value.length > 10) {
       return false;
     }
-    // Allow alphanumeric plus common token separators (-, _)
-    if (!/^[a-zA-Z0-9\-_]+$/.test(value)) {
+    if (!/^[a-zA-Z0-9]+$/.test(value)) {
       return false;
     }
     if (/^0+$/.test(value)) {
@@ -984,6 +993,10 @@ class LinkService {
     }
 
     return true;
+  }
+
+  private isPlausibleNumericCode(value: string): boolean {
+    return /^\d{4,8}$/.test(value) && !/^0+$/.test(value);
   }
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

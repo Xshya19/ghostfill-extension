@@ -83,12 +83,6 @@ export const tweenOut: Transition = {
   ease: [0.4, 0, 1, 1],
 };
 
-/** 1s smooth tween — used for the OTP timer bar width animation. */
-export const tweenTimerBar: Transition = {
-  duration: 1,
-  ease: 'linear',
-};
-
 /* ── Hover / Press / Focus (the interactive vocabulary) ──────────── */
 
 export const hoverLift = {

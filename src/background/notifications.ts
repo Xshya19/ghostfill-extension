@@ -438,7 +438,7 @@ function registerDefaultActions(): void {
     if (!otp) {
       // Fallback: get last OTP from service
       const { otpService } = await import('../services/otpService');
-      const lastOTP = await otpService.getLastOTP();
+      const lastOTP = await otpService.getLastOTP({ includeUsed: true });
       if (lastOTP) {
         await copyToClipboard(lastOTP.code);
         await notify({

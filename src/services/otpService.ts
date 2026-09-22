@@ -2,6 +2,7 @@
 // Consolidates local OTP store and background Smart Detection pipeline.
 
 import { PatternMatch, LastOTP } from '../types';
+import { LAST_OTP_MAX_AGE_MS } from '../types/storage.types';
 import { encrypt, decrypt } from '../utils/encryption';
 import { createLogger } from '../utils/logger';
 import { sanitizeText } from '../utils/sanitization.core';
@@ -526,15 +527,18 @@ class OTPService {
     }
   }
 
-  async getLastOTP(): Promise<LastOTP | null> {
+  async getLastOTP({ includeUsed = false }: { includeUsed?: boolean } = {}): Promise<LastOTP | null> {
     const lastOTP = await storageService.get('lastOTP');
 
-    if (lastOTP && Date.now() - lastOTP.extractedAt > 10 * 60 * 1000) {
+    if (
+      lastOTP &&
+      Date.now() >= Math.min(lastOTP.expiresAt ?? Infinity, lastOTP.extractedAt + LAST_OTP_MAX_AGE_MS)
+    ) {
       log.debug('Last OTP expired');
       return null;
     }
 
-    if (lastOTP && lastOTP.usedAt) {
+    if (lastOTP && lastOTP.usedAt && !includeUsed) {
       log.debug('Last OTP already used');
       return null;
     }
@@ -553,7 +557,11 @@ class OTPService {
       return false;
     }
     const age = Date.now() - lastOTP.extractedAt;
-    return age < OTP_FRESHNESS.FRESH_WINDOW_MS && !lastOTP.usedAt;
+    return (
+      age < OTP_FRESHNESS.FRESH_WINDOW_MS &&
+      Date.now() < Math.min(lastOTP.expiresAt ?? Infinity, lastOTP.extractedAt + LAST_OTP_MAX_AGE_MS) &&
+      !lastOTP.usedAt
+    );
   }
 
   async waitForFreshOTP(maxWaitMs: number = OTP_FRESHNESS.MAX_WAIT_MS): Promise<LastOTP | null> {

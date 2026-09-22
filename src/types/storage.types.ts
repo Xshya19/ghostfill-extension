@@ -119,6 +119,8 @@ export interface LastOTP {
   confidence: number;
 }
 
+export const LAST_OTP_MAX_AGE_MS = 10 * 60_000;
+
 export interface BehaviorData {
   sitePreferences: Record<string, SitePreference>;
   usagePatterns: UsagePattern[];

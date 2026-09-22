@@ -1,5 +1,10 @@
+import {
+  getEffectiveEmailType,
+  IS_GMAIL_ENABLED,
+  isRealMailServiceAvailable,
+  isTemporaryMailAccount,
+} from '../config/buildProfile';
 import { emailService } from '../services/emailServices';
-import { IS_GMAIL_ENABLED } from '../config/buildProfile';
 import * as gmailApiService from '../services/gmailApiService';
 import {
   getRandomizedGmailAlias,
@@ -737,6 +742,9 @@ async function handleMessage(
 
     case 'CHECK_INBOX': {
       const payload = message.action === 'CHECK_INBOX' ? message.payload : undefined;
+      if (payload?.service && !isRealMailServiceAvailable(payload.service)) {
+        return { success: false, error: 'Real-mail integrations are unavailable in the public build.' };
+      }
       const current =
         payload?.email && payload?.service
           ? {
@@ -768,6 +776,9 @@ async function handleMessage(
       const login = typeof payload.login === 'string' ? payload.login : '';
       const domain = typeof payload.domain === 'string' ? payload.domain : '';
       const service = typeof payload.service === 'string' ? payload.service : 'mailtm';
+      if (!isRealMailServiceAvailable(service)) {
+        return { success: false, error: 'Real-mail integrations are unavailable in the public build.' };
+      }
       const email = await emailService.readEmail(emailId, {
         login,
         domain,
@@ -795,7 +806,9 @@ async function handleMessage(
       if (senderTabId) {
         onContentScriptReady(senderTabId);
       }
-      const lastOTP = await otpService.getLastOTP();
+      // Explicit copy/fill requests may reuse a recently auto-filled code.
+      // usedAt still excludes that code from fresh-code polling and auto-delivery.
+      const lastOTP = await otpService.getLastOTP({ includeUsed: true });
 
       if (senderTabId && lastOTP) {
         const reg = getOTPWaitingTabs().get(senderTabId);
@@ -894,12 +907,14 @@ async function handleMessage(
       log.info('⚡ Registration form submitted — triggering ultra polling');
       startFastWatchBurst('form_submit');
 
-      const currentEmail = await storageService.get('currentEmail');
-      if (currentEmail && typeof currentEmail === 'object' && currentEmail.service === 'gmail') {
-        startGmailAliasFastPolling('registration_form_submitted', {
-          intervalMs: 2_000,
-          durationMs: 60_000,
-        });
+      if (IS_GMAIL_ENABLED) {
+        const currentEmail = await storageService.get('currentEmail');
+        if (currentEmail && typeof currentEmail === 'object' && currentEmail.service === 'gmail') {
+          startGmailAliasFastPolling('registration_form_submitted', {
+            intervalMs: 2_000,
+            durationMs: 60_000,
+          });
+        }
       }
       return { success: true };
     }
@@ -1080,8 +1095,7 @@ async function handleMessage(
       // Never cross-fill: disposable tab → temp mail only; Gmail tab → gmail only.
       // getFresh avoids stale SW cache after popup tab switch.
       const freshPref = await storageService.getFresh('preferredEmailType');
-      const preferredEmailType: 'disposable' | 'gmail' =
-        freshPref === 'gmail' ? 'gmail' : 'disposable';
+      const preferredEmailType = getEffectiveEmailType(freshPref);
 
       const identity = await identityService.getCompleteIdentity();
       // Trust disk preference over identity snapshot (identity may race)
@@ -1134,39 +1148,20 @@ async function handleMessage(
       } else {
         // ── Temp Mail tab: force disposable only ──
         let disposableEmail = await storageService.get('disposableEmail');
-        if (
-          !disposableEmail?.fullEmail ||
-          disposableEmail.service === 'gmail' ||
-          disposableEmail.domain === 'gmail.com'
-        ) {
+        if (!isTemporaryMailAccount(disposableEmail)) {
           const currentEmail = await storageService.get('currentEmail');
-          if (
-            currentEmail?.fullEmail &&
-            currentEmail.service !== 'gmail' &&
-            currentEmail.domain !== 'gmail.com'
-          ) {
-            disposableEmail = currentEmail;
-          }
+          disposableEmail = isTemporaryMailAccount(currentEmail) ? currentEmail : null;
         }
 
-        if (
-          disposableEmail?.fullEmail &&
-          disposableEmail.service !== 'gmail' &&
-          disposableEmail.domain !== 'gmail.com'
-        ) {
+        if (isTemporaryMailAccount(disposableEmail)) {
           identity.email = disposableEmail.fullEmail;
           log.info('GET_IDENTITY fill source=disposable', {
             email: disposableEmail.fullEmail,
             preferredEmailType,
           });
         } else {
-          // No temp mail yet — do NOT fill a Gmail address on Temp Mail tab
-          const looksGmail =
-            typeof identity.email === 'string' &&
-            /@(gmail|googlemail)\.com$/i.test(identity.email);
-          if (looksGmail) {
-            identity.email = '';
-          }
+          // No temp mail yet — never reuse an identity snapshot from a real-mail account.
+          identity.email = '';
           log.info('GET_IDENTITY: Temp Mail tab active, no disposable email yet');
         }
       }

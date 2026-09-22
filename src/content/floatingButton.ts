@@ -778,10 +778,8 @@ export class FloatingButton {
     }
     try {
       const resp = (await safeSendMessage({ action: 'GET_LAST_OTP' })) as GetLastOTPResponse | null;
-      if (resp?.lastOTP?.code) {
-        this.hasOTPReady = true;
-        this.updateBadge();
-      }
+      this.hasOTPReady = Boolean(resp?.lastOTP?.code);
+      this.updateBadge();
     } catch {
       /* ignore */
     }
@@ -1622,8 +1620,11 @@ export class FloatingButton {
         this.setState('error', 'No OTP field found');
       }
     } else {
-      pageStatus.error('No OTP available', TIMING_MS.ERROR_DISPLAY);
-      this.setState('error', 'No OTP available');
+      const message = resp?.error === 'Still waiting for new email...'
+        ? 'Waiting for a new code'
+        : 'No code yet — check your inbox';
+      pageStatus.error(message, TIMING_MS.ERROR_DISPLAY);
+      this.setState('error', message);
     }
   }
 

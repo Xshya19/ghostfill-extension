@@ -1,7 +1,7 @@
 import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import { ChevronLeft } from 'lucide-react';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { IS_GMAIL_ENABLED } from '../../config/buildProfile';
+import { IS_GMAIL_ENABLED, isTemporaryMailAccount } from '../../config/buildProfile';
 import { storageService } from '../../services/storageService';
 import { EmailAccount } from '../../types';
 import { APP_VERSION } from '../../utils/core';
@@ -257,9 +257,11 @@ const App: React.FC = () => {
             storageService.get('disposableEmail'),
             storageService.get('currentEmail'),
           ]);
-          const storedEmail =
-            storedDisposableEmail ||
-            (storedCurrentEmail?.service !== 'gmail' ? storedCurrentEmail : null);
+          const storedEmail = isTemporaryMailAccount(storedDisposableEmail)
+            ? storedDisposableEmail
+            : isTemporaryMailAccount(storedCurrentEmail)
+              ? storedCurrentEmail
+              : null;
           if (mounted) {
             if (storedEmail && typeof storedEmail === 'object' && 'fullEmail' in storedEmail) {
               setEmailAccount(storedEmail as EmailAccount);
@@ -285,55 +287,55 @@ const App: React.FC = () => {
     const unsubscribe = storageService.onChanged((changes) => {
       void (async () => {
         try {
-          if (changes.gmailConnected) {
+          if (IS_GMAIL_ENABLED && changes.gmailConnected) {
             const val = await storageService.get('gmailConnected');
             if (mounted) {
               setGmailConnected(Boolean(val));
             }
           }
-          if (changes.gmailProfile) {
+          if (IS_GMAIL_ENABLED && changes.gmailProfile) {
             const val = await storageService.get('gmailProfile');
             if (mounted) {
               setGmailProfile(val as any);
             }
           }
-          if (changes.gmailBase) {
+          if (IS_GMAIL_ENABLED && changes.gmailBase) {
             const val = await storageService.get('gmailBase');
             if (mounted) {
               setGmailBase(val as string);
             }
           }
-          if (changes.gmailIsManual) {
+          if (IS_GMAIL_ENABLED && changes.gmailIsManual) {
             const val = await storageService.get('gmailIsManual');
             if (mounted) {
               setGmailIsManual(Boolean(val));
             }
           }
-          if (changes.zohoConnected) {
+          if (IS_GMAIL_ENABLED && changes.zohoConnected) {
             const val = await storageService.get('zohoConnected');
             if (mounted) {
               setZohoConnected(Boolean(val));
             }
           }
-          if (changes.zohoProfile) {
+          if (IS_GMAIL_ENABLED && changes.zohoProfile) {
             const val = await storageService.get('zohoProfile');
             if (mounted) {
               setZohoProfile(val as any);
             }
           }
-          if (changes.microsoftConnected) {
+          if (IS_GMAIL_ENABLED && changes.microsoftConnected) {
             const val = await storageService.get('microsoftConnected');
             if (mounted) {
               setMicrosoftConnected(Boolean(val));
             }
           }
-          if (changes.microsoftProfile) {
+          if (IS_GMAIL_ENABLED && changes.microsoftProfile) {
             const val = await storageService.get('microsoftProfile');
             if (mounted) {
               setMicrosoftProfile(val as any);
             }
           }
-          if (changes.selectedRealProvider) {
+          if (IS_GMAIL_ENABLED && changes.selectedRealProvider) {
             const val = await storageService.get('selectedRealProvider');
             if (mounted) {
               setSelectedRealProvider(val as any);
@@ -345,13 +347,13 @@ const App: React.FC = () => {
               setPreferredEmailType(IS_GMAIL_ENABLED ? (val as any) : 'disposable');
             }
           }
-          if (changes.aliasHistory) {
+          if (IS_GMAIL_ENABLED && changes.aliasHistory) {
             const val = await storageService.get('aliasHistory');
             if (mounted && Array.isArray(val)) {
               setAliasHistory(val);
             }
           }
-          if (changes.gmailInbox) {
+          if (IS_GMAIL_ENABLED && changes.gmailInbox) {
             const val = await storageService.get('gmailInbox');
             if (mounted) {
               setGmailInbox(Array.isArray(val) ? val : []);
@@ -362,9 +364,11 @@ const App: React.FC = () => {
               storageService.get('disposableEmail'),
               storageService.get('currentEmail'),
             ]);
-            const storedEmail =
-              storedDisposableEmail ||
-              (storedCurrentEmail?.service !== 'gmail' ? storedCurrentEmail : null);
+            const storedEmail = isTemporaryMailAccount(storedDisposableEmail)
+              ? storedDisposableEmail
+              : isTemporaryMailAccount(storedCurrentEmail)
+                ? storedCurrentEmail
+                : null;
             if (mounted) {
               if (storedEmail && typeof storedEmail === 'object' && 'fullEmail' in storedEmail) {
                 setEmailAccount(storedEmail as EmailAccount);

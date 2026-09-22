@@ -34,13 +34,11 @@ export interface ActivationLinkVerdict {
 /** Minimum quality to surface as the extracted activation link */
 export const SELECT_MIN_QUALITY = 20;
 /**
- * Minimum quality to auto-open without user review.
- * NOTE: Set equal to SELECT_MIN_QUALITY — GhostFill only processes emails at
- * addresses the user generated (from a signup flow), so every detected link
- * comes from a service the user explicitly signed up with. The hard-reject
- * filter (unsubscribe, social, marketing footer) is sufficient protection.
+ * Automatic opening needs two independent activation signals, such as a
+ * verification path plus an auth token. A disposable inbox can receive mail
+ * from anyone, so selection alone is not consent to open the URL.
  */
-export const AUTO_OPEN_MIN_QUALITY = SELECT_MIN_QUALITY;
+export const AUTO_OPEN_MIN_QUALITY = 80;
 
 /**
  * Path / route synonyms: verify · activate · confirm · validate · complete ·
@@ -261,11 +259,8 @@ export function scoreActivationLink(
 
   const hardReject = quality < 20 || cls === 'reject';
 
-  // GhostFill only processes emails at user-generated addresses used for
-  // signup — every email is from a service the user registered with.
-  // The hard-reject filter (unsubscribe, marketing footer, social links)
-  // is sufficient protection. Any non-hard-rejected link can auto-open.
-  const canAutoOpen = !hardReject;
+  const canAutoOpen =
+    !hardReject && cls !== 'unknown' && quality >= AUTO_OPEN_MIN_QUALITY && url.startsWith('https://');
 
   if (hardReject) {
     cls = 'reject';

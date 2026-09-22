@@ -1,0 +1,30 @@
+# GhostFill system audit — 2026-09-19
+
+This is a risk-based audit of the public Manifest V3 build, not a claim that every live provider and website has been exercised. The work covers the public/full build boundary, message routing, temporary-account selection, OTP retrieval and expiry, verification links, popup state and motion, dependency exposure, build integrity, and service-worker startup.
+
+## Fixed in this pass
+
+| Area                  | Confirmed failure                                                                                                                                                                                     | Change                                                                                                                                                                                                           |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Public build boundary | Saved Gmail preference and connection could be returned by `GET_CURRENT_EMAIL` or identity fill after switching from a full build. Saved Zoho/Microsoft accounts could also appear as temporary mail. | Centralized effective email-type and temporary-account checks; applied them to services, message routing, polling, popup hydration, and tab switches. Real-mail inbox requests are rejected in the public build. |
+| Manual OTP fill       | Automatic delivery marked a code used, then manual Fill/Copy paths reported no OTP even while the code was recent.                                                                                    | Explicit user actions can reuse a recent used code. Fresh-code polling still excludes it.                                                                                                                        |
+| OTP expiry            | Provider-specific expiry was ignored, and the popup could continue to show an expired code.                                                                                                           | Enforced the earlier of provider expiry and the ten-minute fallback in retrieval and popup presentation.                                                                                                         |
+| Verification links    | A short `token`, `secret`, `oobCode`, or path segment could be stored and typed as an OTP. The auto-open threshold also accepted weak evidence and HTTP.                                              | Only explicit short OTP parameters or numeric code/path values are fillable; automatic opening now requires strong evidence and HTTPS. The requested `autoConfirmLinks: true` default remains unchanged.         |
+| Popup interactions    | The OTP timer animated width every second, and alias text re-entered on every keystroke.                                                                                                              | Timer progress now uses a compositor-friendly transform; live alias text updates immediately. Reduced-motion handling remains in place.                                                                          |
+
+## Verification
+
+- All 1,092 Vitest tests, TypeScript check, ESLint, both production build profiles, public bundle-size budget, dependency-cycle check, and public service-worker boot smoke test passed locally. The final `dist` directory contains the public build.
+- V8 coverage remains low despite the test count: 31.1% statements, 26.1% branches, 29.3% functions. The next QA investment should target background message routing, live provider failures, and browser-level popup/content-script flows.
+- The production-only npm audit found zero known vulnerabilities at the time of this run. The full development-dependency audit could not complete because the npm advisory endpoint returned HTTP 503; retry it before a release.
+- Regression tests cover saved full-build state in the public build, reused/expired OTPs, and activation-token versus OTP discrimination.
+- The project UI detector returned no findings for changed popup files.
+
+## Remaining risks and required checks
+
+1. **Live extension QA is still required.** The local browser tool blocked opening the built popup file, so no real-browser visual or end-to-end claim is made. Verify the popup at 375×400 and 360px, light/dark themes, zoom, keyboard navigation, reduced motion, and actual signup/OTP/link flows on a loaded extension.
+2. **Site access is broad by design.** The content script matches HTTP(S) pages in all frames, with sensitive-site exclusions. Changing to per-site/`activeTab` grants would reduce exposure but also change automatic detection. Treat this as a product/permission redesign, not a safe mechanical manifest edit. [Chrome's extension privacy guidance](https://developer.chrome.com/docs/extensions/develop/security-privacy/user-privacy) recommends minimizing access and considering `activeTab` or optional permissions where practical.
+3. **Automatic link opening remains a tradeoff.** The user-requested default is enabled. Even with the stronger HTTPS/evidence gate, any inbox that accepts untrusted mail may receive a convincing verification link. Review whether a future version should require sender/site correlation or user confirmation for ambiguous links.
+4. **Provider and hosted CI checks are external.** Unit tests and a service-worker stub cannot prove third-party inbox uptime, OAuth behavior in the full profile, or hosted CI status. Those need separate live checks.
+
+Do not reuse the existing `v1.1.0` release artifact for this branch without a versioned release process; this audit changes behavior after that release.

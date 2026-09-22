@@ -1,6 +1,7 @@
 // Identity Service - Generates consistent, realistic identities for auto-fill
 // FIX: Externalized name pools to separate data module for better maintainability
 
+import { getEffectiveEmailType, isTemporaryMailAccount } from '../config/buildProfile';
 import { STORAGE_KEYS, IdentityProfile } from '../types';
 import { getRandomInt } from '../utils/encryption';
 import { createLogger } from '../utils/logger';
@@ -91,8 +92,7 @@ class IdentityService {
     // getFresh: popup writes preferredEmailType in a different JS context;
     // never trust a stale service-worker LRU cache for this key.
     const rawPref = await storageService.getFresh('preferredEmailType');
-    const preferredEmailType: 'disposable' | 'gmail' =
-      rawPref === 'gmail' ? 'gmail' : 'disposable';
+    const preferredEmailType = getEffectiveEmailType(rawPref);
 
     if (preferredEmailType === 'gmail') {
       // Prefer active alias in currentEmail, then gmail base / profile
@@ -121,7 +121,7 @@ class IdentityService {
 
     // Temp Mail tab — never leak Gmail into fill
     const disposableEmail = await storageService.getFresh('disposableEmail');
-    if (disposableEmail?.fullEmail && !this.isGmailAccount(disposableEmail)) {
+    if (isTemporaryMailAccount(disposableEmail)) {
       return {
         email: disposableEmail.fullEmail,
         preferredEmailType,
@@ -129,7 +129,7 @@ class IdentityService {
       };
     }
     const currentEmail = await storageService.getFresh('currentEmail');
-    if (currentEmail?.fullEmail && !this.isGmailAccount(currentEmail)) {
+    if (isTemporaryMailAccount(currentEmail)) {
       return {
         email: currentEmail.fullEmail,
         preferredEmailType,

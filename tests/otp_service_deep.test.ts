@@ -208,6 +208,18 @@ describe('OTPService deep tests', () => {
       expect(result).toBeNull();
     });
 
+    it('honors a provider expiry even before the ten-minute fallback', async () => {
+      (storageService as any)._store.set('lastOTP', {
+        code: '123456',
+        source: 'email',
+        extractedAt: Date.now() - 60_000,
+        expiresAt: Date.now() - 1_000,
+        confidence: 0.9,
+      });
+
+      expect(await otpService.getLastOTP({ includeUsed: true })).toBeNull();
+    });
+
     it('returns null for already-used OTP', async () => {
       (storageService as any)._store.set('lastOTP', {
         code: '123456',
@@ -219,6 +231,31 @@ describe('OTPService deep tests', () => {
 
       const result = await otpService.getLastOTP();
       expect(result).toBeNull();
+    });
+
+    it('lets an explicit user action retrieve a recently autofilled OTP', async () => {
+      (storageService as any)._store.set('lastOTP', {
+        code: '654321',
+        source: 'email',
+        extractedAt: Date.now(),
+        confidence: 0.9,
+        usedAt: Date.now(),
+      });
+
+      const result = await otpService.getLastOTP({ includeUsed: true });
+      expect(result?.code).toBe('654321');
+    });
+
+    it('never returns an expired OTP even for an explicit user action', async () => {
+      (storageService as any)._store.set('lastOTP', {
+        code: '654321',
+        source: 'email',
+        extractedAt: Date.now() - 11 * 60_000,
+        confidence: 0.9,
+        usedAt: Date.now() - 11 * 60_000,
+      });
+
+      expect(await otpService.getLastOTP({ includeUsed: true })).toBeNull();
     });
   });
 

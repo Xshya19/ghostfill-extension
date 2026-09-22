@@ -48,14 +48,14 @@ import {
 } from '../../../types';
 import { type GmailMessage, type AliasHistoryItem } from '../../../types/email.types';
 import { type GeneratePasswordResponse } from '../../../types/message.types';
-import { LastOTP } from '../../../types/storage.types';
+import { LastOTP, LAST_OTP_MAX_AGE_MS } from '../../../types/storage.types';
 import { TIMING, formatRelativeTime, copyToClipboard, contentToString } from '../../../utils/core';
 import { getSenderEmail, getSenderLabel } from '../../../utils/emailIdentity';
 import { createLogger } from '../../../utils/logger';
 import { safeSendMessage, safeSendTabMessage } from '../../../utils/messaging';
 import { containsRemoteEmailAssets, sanitizeEmailBody } from '../../../utils/sanitization.core';
 import { t } from '../../i18n';
-import { tweenIn, tweenOut, tweenTimerBar, Button, IconButton } from '../../ui';
+import { tweenIn, tweenOut, Button, IconButton } from '../../ui';
 import { useStorageSubscription } from '../hooks';
 import { GmailLogo } from './ProviderLogos';
 
@@ -2284,9 +2284,8 @@ const OTPTimerBar: React.FC<{ lastOTP: LastOTP | null }> = ({ lastOTP }) => {
     const updateTimer = () => {
       const elapsed = Date.now() - lastOTP.extractedAt;
       const hasExplicitExpiry = !!lastOTP.expiresAt;
-      const total = hasExplicitExpiry
-        ? Math.max(1, lastOTP.expiresAt! - lastOTP.extractedAt)
-        : 10 * 60 * 1000;
+      const expiry = Math.min(lastOTP.expiresAt ?? Infinity, lastOTP.extractedAt + LAST_OTP_MAX_AGE_MS);
+      const total = Math.max(1, expiry - lastOTP.extractedAt);
       const remaining = total - elapsed;
 
       if (remaining <= 0) {
@@ -2315,11 +2314,10 @@ const OTPTimerBar: React.FC<{ lastOTP: LastOTP | null }> = ({ lastOTP }) => {
         aria-valuemax={100}
         aria-label={`OTP timer urgency: ${timePercentage < 20 ? 'Critical' : 'Safe'}`}
       >
-        <motion.div
-          animate={{ width: `${timePercentage}%` }}
-          transition={tweenTimerBar}
+        <div
           className="otp-timer-fill"
           style={{
+            transform: `scaleX(${Math.max(0, Math.min(1, timePercentage / 100))})`,
             '--timer-color': timePercentage < 20 ? 'var(--gf-coral)' : 'var(--gf-primary)',
           }}
         />
@@ -2348,8 +2346,28 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
   // local preference here to gate the looping empty-state pulse.
   const prefersReducedMotion = useReducedMotion();
   const lastOTP = useStorageSubscription('lastOTP', null);
+  const [, setExpiryTick] = useState(0);
   const [copied, setCopied] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!lastOTP) {
+      return;
+    }
+    const expiry = Math.min(lastOTP.expiresAt ?? Infinity, lastOTP.extractedAt + LAST_OTP_MAX_AGE_MS);
+    const remaining = expiry - Date.now();
+    if (remaining <= 0) {
+      return;
+    }
+    const timer = setTimeout(() => setExpiryTick((tick) => tick + 1), remaining);
+    return () => clearTimeout(timer);
+  }, [lastOTP]);
+
+  const activeOTP =
+    lastOTP &&
+    Date.now() < Math.min(lastOTP.expiresAt ?? Infinity, lastOTP.extractedAt + LAST_OTP_MAX_AGE_MS)
+      ? lastOTP
+      : null;
 
   useEffect(() => {
     // Immediate sync on mount
@@ -2364,11 +2382,11 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
   }, []);
 
   const copyOTP = useCallback(async () => {
-    if (!lastOTP) {
+    if (!activeOTP) {
       return;
     }
     try {
-      const copiedToClipboard = await copyToClipboard(lastOTP.code);
+      const copiedToClipboard = await copyToClipboard(activeOTP.code);
       if (!copiedToClipboard) {
         onToast('Copy failed');
         return;
@@ -2383,10 +2401,10 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
     } catch {
       onToast('Copy failed');
     }
-  }, [lastOTP, onToast]);
+  }, [activeOTP, onToast]);
 
   const fillOTP = useCallback(async () => {
-    if (!lastOTP) {
+    if (!activeOTP) {
       return;
     }
     try {
@@ -2394,7 +2412,7 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
       if (tab?.id) {
         const res = await safeSendTabMessage(tab.id, {
           action: 'FILL_OTP',
-          payload: { otp: lastOTP.code },
+          payload: { otp: activeOTP.code },
         });
         if (res?.success) {
           onToast('OTP filled successfully!');
@@ -2406,7 +2424,7 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
     } catch {
       onToast('Failed to fill');
     }
-  }, [lastOTP, onToast]);
+  }, [activeOTP, onToast]);
 
   const handleCopyOTP = () => {
     void copyOTP();
@@ -2427,7 +2445,7 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
           <ShieldCheck size={22} color="var(--gf-mint)" />
         </div>
 
-        {lastOTP ? (
+        {activeOTP ? (
           <div className="otp-focus-area">
             {/* PERF: plain div — CSS .otp-digit animation (140ms pop, 20ms
                 cascade) replaces 6 parallel JS springs. Hover is CSS. */}
@@ -2435,36 +2453,36 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
               type="button"
               className="otp-box"
               onClick={handleCopyOTP}
-              aria-label={`Copy OTP code ${lastOTP.code.split('').join(' ')}`}
+              aria-label={`Copy OTP code ${activeOTP.code.split('').join(' ')}`}
             >
-              {lastOTP.code.split('').map((char: string, i: number) => (
+              {activeOTP.code.split('').map((char: string, i: number) => (
                 <span key={i} className="otp-digit">
                   {char}
                 </span>
               ))}
             </button>
 
-            <OTPTimerBar lastOTP={lastOTP} />
+            <OTPTimerBar lastOTP={activeOTP} />
 
-            {lastOTP.confidence && (
+            {activeOTP.confidence && (
               <div className="otp-confidence-row">
                 <span className="otp-confidence-label">Confidence</span>
                 <div className="otp-confidence-bar">
                   <div
                     className="otp-confidence-fill"
                     style={{
-                      '--confidence-scale': lastOTP.confidence,
+                      '--confidence-scale': activeOTP.confidence,
                       '--confidence-color':
-                        lastOTP.confidence >= 0.9
+                        activeOTP.confidence >= 0.9
                           ? 'var(--gf-mint)'
-                          : lastOTP.confidence >= 0.7
+                          : activeOTP.confidence >= 0.7
                             ? 'var(--gf-amber)'
                             : 'var(--gf-coral)',
                     }}
                   />
                 </div>
                 <span className="otp-confidence-value">
-                  {Math.round(lastOTP.confidence * 100)}%
+                  {Math.round(activeOTP.confidence * 100)}%
                 </span>
               </div>
             )}
@@ -2508,9 +2526,11 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
               </motion.div>
             </motion.div>
 
-            <h3 className="otp-empty-title">Listening for codes</h3>
+            <h3 className="otp-empty-title">{lastOTP ? 'Code expired' : 'Listening for codes'}</h3>
             <p className="otp-empty-desc">
-              Verification codes from your ghost inbox will appear here instantly.
+              {lastOTP
+                ? 'Check your inbox for a fresh verification code.'
+                : 'Verification codes from your ghost inbox will appear here instantly.'}
             </p>
           </div>
         )}

@@ -1,6 +1,12 @@
 // Email Service Aggregator
 // REFACTORED: Uses IProviderHealthManager interface to break circular dependencies
 
+import {
+  getEffectiveEmailType,
+  isRealMailService,
+  isRealMailServiceAvailable,
+  isTemporaryMailAccount,
+} from '../../config/buildProfile';
 import { EmailAccount, Email, EmailService } from '../../types';
 import { createLogger } from '../../utils/logger';
 import { sanitizeEmailFrom, sanitizeEmailSubject } from '../../utils/sanitization.core';
@@ -496,7 +502,7 @@ class EmailServiceAggregator {
     // Always store disposable account. Only set currentEmail when Temp Mail tab
     // is active (or preferred not set) so Gmail-tab fill is never overwritten mid-session.
     await storageService.set('disposableEmail', account);
-    const preferred = (await storageService.get('preferredEmailType')) ?? 'disposable';
+    const preferred = getEffectiveEmailType(await storageService.get('preferredEmailType'));
     if (preferred !== 'gmail') {
       await storageService.set('currentEmail', account);
     }
@@ -546,12 +552,9 @@ class EmailServiceAggregator {
 
     this.getCurrentEmailPromise = (async () => {
       // Check user preference first
-      let preferredEmailType = 'disposable';
+      let preferredEmailType: 'disposable' | 'gmail' = 'disposable';
       try {
-        const prefRes = await storageService.get('preferredEmailType');
-        if (prefRes === 'gmail') {
-          preferredEmailType = 'gmail';
-        }
+        preferredEmailType = getEffectiveEmailType(await storageService.get('preferredEmailType'));
       } catch {
         /* Intentionally ignored */
       }
@@ -593,21 +596,19 @@ class EmailServiceAggregator {
 
       const disposableEmail = (await storageService.get('disposableEmail')) as EmailAccount | null;
       const currentEmail = (await storageService.get('currentEmail')) as EmailAccount | null;
-      const email =
-        disposableEmail || (currentEmail && currentEmail.service !== 'gmail' ? currentEmail : null);
-
-      // Ensure object is actually a valid EmailAccount (e.g. not an empty object or string)
-      // And filter out Gmail accounts when in disposable mode.
-      if (email && (typeof email !== 'object' || !email.fullEmail || email.service === 'gmail')) {
-        log.warn(
-          'Found non-disposable or corrupted disposable email object in storage, clearing it',
-          {
-            email,
-          }
-        );
+      if (
+        disposableEmail &&
+        !isTemporaryMailAccount(disposableEmail) &&
+        !isRealMailService((disposableEmail as EmailAccount).service)
+      ) {
+        log.warn('Found corrupted disposable email object in storage, clearing it');
         await storageService.remove('disposableEmail');
-        return null;
       }
+      const email = isTemporaryMailAccount(disposableEmail)
+        ? disposableEmail
+        : isTemporaryMailAccount(currentEmail)
+          ? currentEmail
+          : null;
 
       // Check if expired
       if (email && email.expiresAt < Date.now()) {
@@ -677,6 +678,9 @@ class EmailServiceAggregator {
 
   private async checkInboxInternal(account: EmailAccount, signal?: AbortSignal): Promise<Email[]> {
     try {
+      if (!isRealMailServiceAvailable(account?.service)) {
+        throw new Error('Real-mail integrations are unavailable in the public build.');
+      }
       if (!account || typeof account.fullEmail !== 'string' || !account.fullEmail) {
         log.error('Invalid account for inbox check', { account });
         throw new Error('Invalid email account: missing fullEmail');
@@ -1001,6 +1005,9 @@ class EmailServiceAggregator {
     signal?: AbortSignal
   ): Promise<Email> {
     try {
+      if (!isRealMailServiceAvailable(account?.service)) {
+        throw new Error('Real-mail integrations are unavailable in the public build.');
+      }
       const inboxSessionGeneration = this.inboxSessionGeneration;
       let email: Email;
 

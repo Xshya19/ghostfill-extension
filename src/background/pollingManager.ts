@@ -13,6 +13,7 @@
 // └────────────────────────────────────────────────────────────────┘
 // ─────────────────────────────────────────────────────────────────────
 
+import { getEffectiveEmailType } from '../config/buildProfile';
 import { dedupService } from '../services/dedupService';
 import { emailService } from '../services/emailServices';
 import { isAutoOpenableActivationLink } from '../services/extraction/activationLinkGuard';
@@ -1981,12 +1982,9 @@ export function setupPollingManager(): void {
   if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName === 'local' && changes.preferredEmailType) {
-        const newValue = changes.preferredEmailType.newValue;
-        const oldValue = changes.preferredEmailType.oldValue;
-        if (newValue === 'disposable' || newValue === 'gmail') {
-          if (oldValue === newValue) {
-            return;
-          }
+        const newValue = getEffectiveEmailType(changes.preferredEmailType.newValue);
+        const oldValue = getEffectiveEmailType(changes.preferredEmailType.oldValue);
+        if (oldValue !== newValue) {
           log.info(`🔄 preferredEmailType changed to: ${newValue} — performing transition`);
           enqueueEmailTypeTransition(newValue);
         }

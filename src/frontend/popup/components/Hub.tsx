@@ -1,6 +1,6 @@
 import { Mail } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { IS_GMAIL_ENABLED } from '../../../config/buildProfile';
+import { IS_GMAIL_ENABLED, isTemporaryMailAccount } from '../../../config/buildProfile';
 import {
   getDeterministicCombinedAlias,
   rememberGmailAliasSession,
@@ -220,7 +220,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     }
     void (async () => {
       const disposableEmail = emailAccount || (await storageService.get('disposableEmail'));
-      if (disposableEmail?.fullEmail && disposableEmail.service !== 'gmail') {
+      if (isTemporaryMailAccount(disposableEmail)) {
         await storageService.set('currentEmail', disposableEmail);
       }
     })();
@@ -808,7 +808,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       await storageService.setImmediate('preferredEmailType', 'disposable');
       setPreferredEmailType('disposable');
       const disposableEmail = emailAccount || (await storageService.get('disposableEmail'));
-      if (disposableEmail?.fullEmail && disposableEmail.service !== 'gmail') {
+      if (isTemporaryMailAccount(disposableEmail)) {
         await storageService.setImmediate('currentEmail', disposableEmail);
         onToast(`Temp Mail active: ${disposableEmail.fullEmail}`);
       } else {
