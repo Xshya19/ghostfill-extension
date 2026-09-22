@@ -4,8 +4,8 @@ This project uses a zero-cost GitHub Actions release path. It does not create a 
 
 1. Update `package.json`, `manifest.json`, and `CHANGELOG.md` for the intended version.
 2. Run `npm ci`, `npm run type-check`, `npm run lint`, `npm test`, `npm run build`, `npm run bundle:check`, and `npm run build:zip` locally.
-3. Inspect `dist/manifest.json` and list the ZIP contents. Confirm it is the public temporary-email-only profile.
-4. In a clean Chrome profile, load the extracted ZIP and manually test the disposable-email flow as far as the available provider permits.
+3. Inspect `dist/manifest.json` and list the ZIP contents. Confirm it is the full profile with the expected Gmail OAuth, permissions, and host access.
+4. In a clean Chrome profile, load the extracted ZIP and manually test the disposable-email flow plus Gmail setup, Google sign-in, alias generation, and inbox access as far as the configured OAuth client permits.
 5. Confirm `Get-FileHash` matches the generated `.sha256` file.
 6. Commit the verified changes and create a signed or reviewed `v<package-version>` tag. Do not reuse a tag for a different commit.
 7. Push the tag. The release workflow reruns required checks, creates the ZIP and checksum, uploads them, and creates GitHub-generated release notes.

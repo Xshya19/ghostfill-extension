@@ -5,7 +5,7 @@ No recording was produced in this workspace. The removed historical GIF showed a
 ## Preparation
 
 1. Use a new Chrome profile with no signed-in accounts, saved passwords, autofill records, bookmarks, or extensions beyond GhostFill.
-2. Build the public package with `npm run build:zip`, then load the extracted package through `chrome://extensions` with Developer mode enabled.
+2. Build the full package with `npm run build:zip`, then load the extracted package through `chrome://extensions` with Developer mode enabled. Use `npm run build:public:zip` only for a temporary-email-only demo.
 3. From the repository root, serve the local demo page with `python -m http.server 4173 --directory docs/demo`.
 4. Open `http://localhost:4173/mock-signup.html`. Confirm the page displays the local-demo notice.
 5. Use a disposable provider and a sender you control for a single test message. Do not record a personal mailbox, customer data, a third-party product signup, or a saved browser profile.

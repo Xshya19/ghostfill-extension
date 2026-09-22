@@ -14,7 +14,7 @@ These are drafts. Do not post them until a release package has been verified and
 
 ## Chrome-extension community announcement
 
-I am preparing GhostFill, an open-source Manifest V3 extension for disposable-email signup workflows. It can generate a temporary address, generate a password, inspect a temporary inbox, and suggest or fill a verification code. The public build deliberately excludes Gmail OAuth and lets users disable automatic verification-link opening in Options. I am looking for feedback on reproducible signup and OTP flows, especially error states and provider failures. Please do not post private inbox content, passwords, or codes in issues.
+I am preparing GhostFill, an open-source Manifest V3 extension for disposable-email signup workflows. It can generate a temporary address, generate a password, inspect a temporary inbox, use Gmail/Google aliases, and suggest or fill a verification code. The default full build includes Gmail OAuth, while `npm run build:public` remains available for a temporary-email-only package. I am looking for feedback on reproducible signup and OTP flows, especially error states and provider failures. Please do not post private inbox content, passwords, or codes in issues.
 
 ## Independent-maker announcement
 
@@ -24,7 +24,7 @@ I am releasing an early version of GhostFill for people who test signups frequen
 
 Show HN: GhostFill - an open-source Chrome extension for disposable email and OTP assistance
 
-GhostFill is a Manifest V3 extension that creates a temporary email address, generates a password, polls the selected provider's inbox, and uses deterministic heuristics to identify likely verification codes for the originating signup tab. The public package removes Gmail OAuth and lets users disable external verification-link opening in Options. I am publishing it as an early, manually installed build and would appreciate feedback on reproducible flows, provider failures, and false OTP candidates. It should not be used for financial accounts, password managers, or anything needing a durable inbox.
+GhostFill is a Manifest V3 extension that creates a temporary email address, generates a password, can create site-specific Gmail aliases, polls the selected provider's inbox, and uses deterministic heuristics to identify likely verification codes for the originating signup tab. The default package includes Gmail OAuth; a restricted temporary-email-only package is available with `npm run build:public:zip`. I am publishing it as an early, manually installed build and would appreciate feedback on reproducible flows, provider failures, OAuth setup, and false OTP candidates. It should not be used for financial accounts, password managers, or anything needing a durable inbox.
 
 ## Technical article outline
 

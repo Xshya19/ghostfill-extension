@@ -19,8 +19,26 @@ const fullOverrides = JSON.parse(readProjectFile('manifest.full-overrides.json')
   oauth2?: unknown;
 };
 
-describe('public build profile', () => {
-  it('keeps the default package temporary-email-only', () => {
+const packageJson = JSON.parse(readProjectFile('package.json')) as {
+  scripts: Record<string, string>;
+};
+
+const webpackConfig = readProjectFile('webpack.config.cjs');
+
+describe('build profiles', () => {
+  it('makes the full profile the default for normal builds and packages', () => {
+    expect(packageJson.scripts.build).toContain('profile=full');
+    expect(packageJson.scripts['build:dev']).toContain('profile=full');
+    expect(packageJson.scripts['build:full']).toBe('npm run build');
+    expect(packageJson.scripts['build:full:dev']).toBe('npm run build:dev');
+    expect(packageJson.scripts['build:zip']).toContain('npm run build');
+    expect(packageJson.scripts['build:public']).toContain('profile=public');
+    expect(packageJson.scripts['build:public:dev']).toContain('profile=public');
+    expect(packageJson.scripts['build:public:zip']).toContain('npm run build:public');
+    expect(webpackConfig).toContain("env.profile === 'public' ? 'public' : 'full'");
+  });
+
+  it('keeps the restricted manifest available only through the explicit public profile', () => {
     expect(publicManifest.permissions).not.toContain('identity');
     expect(publicManifest.permissions).not.toContain('scripting');
     expect(publicManifest.oauth2).toBeUndefined();
@@ -29,14 +47,14 @@ describe('public build profile', () => {
     expect(publicManifest.content_security_policy.extension_pages).not.toContain('googleapis.com');
   });
 
-  it('keeps the legacy real-mail manifest isolated to the full profile', () => {
+  it('includes Gmail OAuth and provider access in the full profile', () => {
     expect(fullOverrides.permissions).toContain('identity');
     expect(fullOverrides.permissions).toContain('scripting');
     expect(fullOverrides.oauth2).toBeDefined();
     expect(fullOverrides.host_permissions).toContain('https://www.googleapis.com/*');
   });
 
-  it('gates public UI and message routing behind the build profile', () => {
+  it('gates real-mail UI and message routing behind the build profile', () => {
     expect(readProjectFile('src/frontend/popup/components/Hub.tsx')).toContain(
       'IS_GMAIL_ENABLED && <div className="hub-email-selector"'
     );

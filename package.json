@@ -14,11 +14,13 @@
   "scripts": {
     "dev": "webpack --watch --mode=development",
     "logs": "node scripts/log_server.js",
-    "build": "npm run clean && webpack --env profile=public --mode=production",
+    "build": "npm run clean && webpack --env profile=full --mode=production",
+    "build:public": "npm run clean && webpack --env profile=public --mode=production",
     "bundle:check": "node scripts/check-bundle-size.js",
-    "build:dev": "npm run clean && webpack --env profile=public --mode=development",
-    "build:full": "npm run clean && webpack --env profile=full --mode=production",
-    "build:full:dev": "npm run clean && webpack --env profile=full --mode=development",
+    "build:dev": "npm run clean && webpack --env profile=full --mode=development",
+    "build:full": "npm run build",
+    "build:full:dev": "npm run build:dev",
+    "build:public:dev": "npm run clean && webpack --env profile=public --mode=development",
     "lint": "eslint src/ --ext .ts,.tsx",
     "lint:fix": "eslint src/ --ext .ts,.tsx --fix",
     "format:check": "prettier --check \"*.{json,md,cjs,js,ts}\" \"{src,scripts,tests,public}/**/*.{ts,tsx,js,cjs,json,css,html,md}\"",
@@ -31,7 +33,8 @@
     "clean": "rimraf dist",
     "zip": "node scripts/build-zip.js",
     "icons:brand": "python scripts/update-brand-icons.py",
-    "build:zip": "npm run build && npm run zip"
+    "build:zip": "npm run build && npm run zip",
+    "build:public:zip": "npm run build:public && npm run zip"
   },
   "keywords": [
     "chrome-extension",
