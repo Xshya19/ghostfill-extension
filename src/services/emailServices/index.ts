@@ -551,7 +551,9 @@ class EmailServiceAggregator {
     }
 
     this.getCurrentEmailPromise = (async () => {
-      // Check user preference first
+      // Resolve the preference first, then only read the hot keys for the
+      // active provider concurrently. Sequential storage reads used to add
+      // one extension IPC round-trip per key on a cold service worker.
       let preferredEmailType: 'disposable' | 'gmail' = 'disposable';
       try {
         preferredEmailType = getEffectiveEmailType(await storageService.get('preferredEmailType'));
@@ -561,9 +563,12 @@ class EmailServiceAggregator {
 
       if (preferredEmailType === 'gmail') {
         try {
-          const gmailConnected = await storageService.get('gmailConnected');
-          const profile = await storageService.get('gmailProfile');
-          const gmailBase = await storageService.get('gmailBase');
+          const [gmailConnected, profile, gmailBase, aliasSession] = await Promise.all([
+            storageService.get('gmailConnected'),
+            storageService.get('gmailProfile'),
+            storageService.get('gmailBase'),
+            getMostRecentGmailAliasSession(),
+          ]);
           const baseEmail =
             (profile && typeof profile === 'object' && 'email' in profile
               ? (profile as any).email
@@ -574,7 +579,6 @@ class EmailServiceAggregator {
             typeof baseEmail === 'string' &&
             baseEmail.includes('@')
           ) {
-            const aliasSession = await getMostRecentGmailAliasSession();
             const fullEmail = aliasSession?.alias || baseEmail;
             return {
               id: `gmail_${fullEmail.replace(/[@.+]/g, '_')}`,
@@ -594,8 +598,10 @@ class EmailServiceAggregator {
         }
       }
 
-      const disposableEmail = (await storageService.get('disposableEmail')) as EmailAccount | null;
-      const currentEmail = (await storageService.get('currentEmail')) as EmailAccount | null;
+      const [disposableEmail, currentEmail] = await Promise.all([
+        storageService.get('disposableEmail'),
+        storageService.get('currentEmail'),
+      ]);
       if (
         disposableEmail &&
         !isTemporaryMailAccount(disposableEmail) &&
@@ -646,7 +652,10 @@ class EmailServiceAggregator {
     if (existing) {
       log.debug('Coalescing concurrent inbox check', {
         service: account.service,
-        email: account.fullEmail.replace(/^(.)(.*)(@.*)$/, (_, f, m, d) => `${f}${'*'.repeat(Math.min(m.length, 5))}${d}`),
+        email: account.fullEmail.replace(
+          /^(.)(.*)(@.*)$/,
+          (_, f, m, d) => `${f}${'*'.repeat(Math.min(m.length, 5))}${d}`
+        ),
       });
       return existing;
     }
@@ -728,11 +737,16 @@ class EmailServiceAggregator {
         case 'gmail': {
           let gmailMessages: any[] = [];
           try {
-            const aliasSession =
+            // Alias lookup is storage-only and authentication is token/storage
+            // work. Run them together so a warm Gmail poll pays one latency
+            // interval instead of two.
+            const [aliasSession, authenticated] = await Promise.all([
               account.fullEmail && account.fullEmail !== account.gmailBaseEmail
-                ? await getGmailAliasSession(account.fullEmail)
-                : await getMostRecentGmailAliasSession();
-            if (await gmailApiService.ensureAuthenticated(false)) {
+                ? getGmailAliasSession(account.fullEmail)
+                : getMostRecentGmailAliasSession(),
+              gmailApiService.ensureAuthenticated(false),
+            ]);
+            if (authenticated) {
               if (!aliasSession) {
                 if (inboxSessionGeneration === this.inboxSessionGeneration) {
                   await storageService.set('inbox', []);
@@ -886,7 +900,10 @@ class EmailServiceAggregator {
           emails = await dropmailService.getMessages(account, signal);
           break;
         case 'tempmaillol':
-          emails = await tempMailLolService.getMessages(account.token || account.login || '', signal);
+          emails = await tempMailLolService.getMessages(
+            account.token || account.login || '',
+            signal
+          );
           break;
         case 'tempmailplus':
           emails = await tempmailPlusService.getMessages(account.fullEmail, signal);
@@ -1139,16 +1156,28 @@ class EmailServiceAggregator {
           email = await evilmailService.getMessage(account.fullEmail, emailId.toString(), signal);
           break;
         case 'mailboxtemp':
-          email = await mailboxtempService.getMessage(account.fullEmail, emailId.toString(), signal);
+          email = await mailboxtempService.getMessage(
+            account.fullEmail,
+            emailId.toString(),
+            signal
+          );
           break;
         case 'dropmail':
           email = await dropmailService.getMessage(account, emailId.toString(), signal);
           break;
         case 'tempmaillol':
-          email = await tempMailLolService.getMessage(account.token || account.login || '', emailId.toString(), signal);
+          email = await tempMailLolService.getMessage(
+            account.token || account.login || '',
+            emailId.toString(),
+            signal
+          );
           break;
         case 'tempmailplus':
-          email = await tempmailPlusService.getMessage(account.fullEmail, emailId.toString(), signal);
+          email = await tempmailPlusService.getMessage(
+            account.fullEmail,
+            emailId.toString(),
+            signal
+          );
           break;
         case 'mailcx':
           email = await mailCxService.getMessage(account.fullEmail, emailId.toString(), signal);
@@ -1219,13 +1248,12 @@ class EmailServiceAggregator {
   private lastPrewarmTs = 0;
   async prewarmConnections(): Promise<void> {
     const now = Date.now();
-    if (now - this.lastPrewarmTs < 30_000) {return;}
+    if (now - this.lastPrewarmTs < 30_000) {
+      return;
+    }
     this.lastPrewarmTs = now;
 
-    const endpoints = [
-      'https://api.mail.tm/domains',
-      'https://api.mail.gw/domains',
-    ];
+    const endpoints = ['https://api.mail.tm/domains', 'https://api.mail.gw/domains'];
 
     for (const url of endpoints) {
       fetch(url, { method: 'HEAD', cache: 'no-cache' }).catch(() => {});

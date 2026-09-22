@@ -36,13 +36,23 @@ import {
 } from './SharedComponents';
 
 const toSafeStr = (v: unknown): string => {
-  if (typeof v === 'string') {return v;}
-  if (!v) {return '';}
+  if (typeof v === 'string') {
+    return v;
+  }
+  if (!v) {
+    return '';
+  }
   if (typeof v === 'object') {
     const obj = v as Record<string, unknown>;
-    if (typeof obj.text === 'string') {return obj.text;}
-    if (typeof obj.html === 'string') {return obj.html;}
-    if (typeof obj.body === 'string') {return obj.body;}
+    if (typeof obj.text === 'string') {
+      return obj.text;
+    }
+    if (typeof obj.html === 'string') {
+      return obj.html;
+    }
+    if (typeof obj.body === 'string') {
+      return obj.body;
+    }
   }
   return '';
 };
@@ -55,6 +65,10 @@ const RATE_LIMIT_MS = {
 };
 
 const HUB_INBOX_PREVIEW_LIMIT = 2;
+// The Hub renders only two rows. Asking Gmail for twenty message details on
+// every popup open made the first paint wait on needless API work; the full
+// history remains available from the Alias inbox view.
+const HUB_GMAIL_FETCH_LIMIT = 5;
 
 interface Props {
   readonly onNavigate: (tab: 'email' | 'password' | 'otp' | 'aliases') => void;
@@ -270,7 +284,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
           action: 'GMAIL_FETCH_INBOX',
           payload: {
             ...(activeGmailAlias ? { alias: activeGmailAlias } : {}),
-            maxResults: 20,
+            maxResults: HUB_GMAIL_FETCH_LIMIT,
           },
         })) as any;
         if (res?.success && Array.isArray(res.messages)) {
@@ -310,13 +324,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     if (preferredEmailType === 'gmail' && gmailConnected && !gmailIsManual) {
       void fetchProviderInbox();
     }
-  }, [
-    fetchProviderInbox,
-    activeGmailAlias,
-    gmailConnected,
-    gmailIsManual,
-    preferredEmailType,
-  ]);
+  }, [fetchProviderInbox, activeGmailAlias, gmailConnected, gmailIsManual, preferredEmailType]);
 
   // Generate password with the Options > Passwords recipe when loaded,
   // otherwise the service defaults (length 20).
@@ -847,46 +855,46 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
                  📊 EMAIL TYPE SELECTOR (Temp Mail vs Mail Provider)
                ─────────────────────────────────────────────────────────── */}
       {IS_GMAIL_ENABLED && <div className="hub-email-selector" role="tablist">
-        {/* PERF: CSS transform slide (180ms expo-out, compositor-only).
+          {/* PERF: CSS transform slide (180ms expo-out, compositor-only).
             Old framer-motion spring overshot + ran on JS thread. */}
-        <div
-          className="hub-email-selector-bg"
-          aria-hidden
-          style={{
-            position: 'absolute',
-            top: 3,
-            bottom: 3,
-            left: 3,
-            width: 'calc(50% - 3px)',
-            margin: 0,
-            transform:
-              preferredEmailType === 'disposable' ? 'translateX(0%)' : 'translateX(100%)',
-          }}
-        />
-        <button
-          role="tab"
-          aria-selected={preferredEmailType === 'disposable'}
-          className={`hub-email-selector-btn ${preferredEmailType === 'disposable' ? 'hub-email-selector-btn--active' : ''}`}
-          onClick={handleSwitchToDisposable}
-        >
-          <span className="hub-email-selector-label">
-            <Mail size={13} strokeWidth={2.5} />
-            <span>Temp mail</span>
-          </span>
-        </button>
-        <button
-          role="tab"
-          aria-selected={preferredEmailType !== 'disposable'}
-          className={`hub-email-selector-btn ${preferredEmailType !== 'disposable' ? 'hub-email-selector-btn--active' : ''}`}
-          onClick={handleSwitchToRealProvider}
-        >
-          <span className="hub-email-selector-label">
-            <span aria-hidden="true">
-              <GmailLogo size={14} />
+          <div
+            className="hub-email-selector-bg"
+            aria-hidden
+            style={{
+              position: 'absolute',
+              top: 3,
+              bottom: 3,
+              left: 3,
+              width: 'calc(50% - 3px)',
+              margin: 0,
+              transform:
+                preferredEmailType === 'disposable' ? 'translateX(0%)' : 'translateX(100%)',
+            }}
+          />
+          <button
+            role="tab"
+            aria-selected={preferredEmailType === 'disposable'}
+            className={`hub-email-selector-btn ${preferredEmailType === 'disposable' ? 'hub-email-selector-btn--active' : ''}`}
+            onClick={handleSwitchToDisposable}
+          >
+            <span className="hub-email-selector-label">
+              <Mail size={13} strokeWidth={2.5} />
+              <span>Temp mail</span>
             </span>
-            <span>Gmail</span>
-          </span>
-        </button>
+          </button>
+          <button
+            role="tab"
+            aria-selected={preferredEmailType !== 'disposable'}
+            className={`hub-email-selector-btn ${preferredEmailType !== 'disposable' ? 'hub-email-selector-btn--active' : ''}`}
+            onClick={handleSwitchToRealProvider}
+          >
+            <span className="hub-email-selector-label">
+              <span aria-hidden="true">
+                <GmailLogo size={14} />
+              </span>
+              <span>Gmail</span>
+            </span>
+          </button>
       </div>}
 
       {/* ═══════════════════════════════════════════════════════════

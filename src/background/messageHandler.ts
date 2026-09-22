@@ -52,10 +52,7 @@ import { DEFAULT_SETTINGS } from '../types/storage.types';
 import { createLogger, diag } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
 import { validateMessage } from '../utils/validation';
-import {
-  isActivationTab,
-  onContentScriptReady,
-} from './activationRegistry';
+import { isActivationTab, onContentScriptReady } from './activationRegistry';
 import { updateOTPMenuItem } from './contextMenu';
 import { ensureInitialized } from './initGuard';
 import { notifySuccess, notifyError, resetNotificationSession } from './notifications';
@@ -347,7 +344,6 @@ async function activateDetectedLink(params: {
   await linkService.handleDetectedLink(email, params.linkUrl, accountId);
 }
 
-
 /**
  * Main message router for the background script.
  * Handles all core extension actions from popup and content scripts.
@@ -389,20 +385,38 @@ const MAX_DEDUP_HASH_AGE_MS = 2000;
 const _MAX_DEDUP_MAP_SIZE = 100;
 
 function getPayloadFingerprint(payload: any): string {
-  if (!payload || typeof payload !== 'object') {return '';}
+  if (!payload || typeof payload !== 'object') {
+    return '';
+  }
   // GRANDMASTER FIX: Only hash stable, small identifiers.
   // NEVER stringify HTML, DOM, or Email bodies.
   // Every data-affecting field must be listed: omitting one (e.g. linkUrl,
   // query, sinceMs) collapses DISTINCT requests into one hash and drops real
   // work as "duplicate".
   const keys = [
-    'emailId', 'url', 'domain', 'service', 'messageId', 'alias', 'website',
-    'linkUrl', 'query', 'sinceMs', 'title', 'message', 'maxResults',
-    'timestamp', 'id', 'email', 'state',
+    'emailId',
+    'url',
+    'domain',
+    'service',
+    'messageId',
+    'alias',
+    'website',
+    'linkUrl',
+    'query',
+    'sinceMs',
+    'title',
+    'message',
+    'maxResults',
+    'timestamp',
+    'id',
+    'email',
+    'state',
   ];
   const parts = [];
   for (const k of keys) {
-    if (payload[k] !== undefined) {parts.push(`${k}:${payload[k]}`);}
+    if (payload[k] !== undefined) {
+      parts.push(`${k}:${payload[k]}`);
+    }
   }
   return parts.join('|');
 }
@@ -502,9 +516,7 @@ export function setupMessageHandler(): void {
         return false;
       }
 
-      log.debug(
-        `📩 "${message.action}" from tab=${sender.tab?.id ?? 'bg'}`
-      );
+      log.debug(`📩 "${message.action}" from tab=${sender.tab?.id ?? 'bg'}`);
 
       const wrappedSendResponse = (response: ExtensionResponse) => {
         log.debug(`📤 "${message.action}" success=${response?.success !== false}`);
@@ -613,7 +625,7 @@ async function handleMessage(
       // 6. Finally generate the new email address
       // Refresh identity so username, names, and email prefix are all new
       const identity = await identityService.refreshIdentity();
-      
+
       // Generate a new cached password for this new identity to ensure everything changes
       const passwordResult = await passwordService.generate();
       identity.cachedPassword = passwordResult.password;
@@ -743,19 +755,25 @@ async function handleMessage(
     case 'CHECK_INBOX': {
       const payload = message.action === 'CHECK_INBOX' ? message.payload : undefined;
       if (payload?.service && !isRealMailServiceAvailable(payload.service)) {
-        return { success: false, error: 'Real-mail integrations are unavailable in the public build.' };
+        return {
+          success: false,
+          error: 'Real-mail integrations are unavailable in the public build.',
+        };
       }
+      const storedCurrent = await emailService.getCurrentEmail();
       const current =
         payload?.email && payload?.service
-          ? {
-              id: payload.email,
-              fullEmail: payload.email,
-              domain: payload.email.split('@')[1] || '',
-              service: payload.service,
-              createdAt: Date.now(),
-              expiresAt: Date.now() + 60 * 60 * 1000,
-            }
-          : await emailService.getCurrentEmail();
+          ? storedCurrent?.fullEmail === payload.email && storedCurrent.service === payload.service
+            ? storedCurrent
+            : {
+                id: payload.email,
+                fullEmail: payload.email,
+                domain: payload.email.split('@')[1] || '',
+                service: payload.service,
+                createdAt: Date.now(),
+                expiresAt: Date.now() + 60 * 60 * 1000,
+              }
+          : storedCurrent;
       if (!current) {
         return { success: false, error: 'No active email account' };
       }
@@ -777,7 +795,10 @@ async function handleMessage(
       const domain = typeof payload.domain === 'string' ? payload.domain : '';
       const service = typeof payload.service === 'string' ? payload.service : 'mailtm';
       if (!isRealMailServiceAvailable(service)) {
-        return { success: false, error: 'Real-mail integrations are unavailable in the public build.' };
+        return {
+          success: false,
+          error: 'Real-mail integrations are unavailable in the public build.',
+        };
       }
       const email = await emailService.readEmail(emailId, {
         login,
@@ -881,14 +902,7 @@ async function handleMessage(
             });
             onContentScriptReady(sender.tab.id);
           }
-          startFastOTPPolling(
-            sender.tab.id,
-            url,
-            selectors,
-            sender.frameId,
-            confidence,
-            verdict
-          );
+          startFastOTPPolling(sender.tab.id, url, selectors, sender.frameId, confidence, verdict);
         }
       }
       return { success: true };
@@ -923,15 +937,31 @@ async function handleMessage(
     case 'EXTRACT_OTP': {
       const payload = message.payload as ExtractOTPPayloadWithMetadata | undefined;
       const toSafeStr = (v: unknown): string => {
-        if (typeof v === 'string') {return v;}
-        if (!v) {return '';}
+        if (typeof v === 'string') {
+          return v;
+        }
+        if (!v) {
+          return '';
+        }
         if (typeof v === 'object') {
           const obj = v as Record<string, unknown>;
-          if (typeof obj.text === 'string') {return obj.text;}
-          if (typeof obj.html === 'string') {return obj.html;}
-          if (typeof obj.body === 'string') {return obj.body;}
-          if (typeof obj.content === 'string') {return obj.content;}
-          try { return JSON.stringify(v); } catch { return String(v); }
+          if (typeof obj.text === 'string') {
+            return obj.text;
+          }
+          if (typeof obj.html === 'string') {
+            return obj.html;
+          }
+          if (typeof obj.body === 'string') {
+            return obj.body;
+          }
+          if (typeof obj.content === 'string') {
+            return obj.content;
+          }
+          try {
+            return JSON.stringify(v);
+          } catch {
+            return String(v);
+          }
         }
         return String(v);
       };
@@ -1014,7 +1044,10 @@ async function handleMessage(
         const emailCtx: EmailContext = {
           from: toSafeStr(payload?.emailFrom) || '',
           subject: subject || '',
-          bodySnippet: (toSafeStr(payload?.textBody) || toSafeStr(payload?.text) || '').substring(0, 500),
+          bodySnippet: (toSafeStr(payload?.textBody) || toSafeStr(payload?.text) || '').substring(
+            0,
+            500
+          ),
         };
         void deliverOTP(otpCode, otpConfidence, emailCtx).catch((e) =>
           log.warn('OTP delivery error (EXTRACT_OTP path)', e)
@@ -1135,7 +1168,10 @@ async function handleMessage(
           const aliasSession = await getMostRecentGmailAliasSession();
           if (aliasSession) {
             identity.email = aliasSession.alias;
-            log.info('GET_IDENTITY fill source=gmail', { aliasEmail: aliasSession.alias, preferredEmailType });
+            log.info('GET_IDENTITY fill source=gmail', {
+              aliasEmail: aliasSession.alias,
+              preferredEmailType,
+            });
           } else {
             identity.email = ''; // Let the popup call GENERATE_GMAIL_ALIAS explicitly
             log.info('GET_IDENTITY: Gmail tab active, no active alias session — email left empty');
@@ -1361,11 +1397,7 @@ async function handleMessage(
         // Seed an initial alias session for the base email so that
         // GMAIL_FETCH_INBOX calls arriving immediately after sign-in
         // can find an active session (fixes race condition).
-        await rememberGmailAliasSession(
-          profile.email,
-          profile.email,
-          'global',
-        ).catch(() => {});
+        await rememberGmailAliasSession(profile.email, profile.email, 'global').catch(() => {});
         log.info('Gmail sign-in completed', { email: profile.email });
         return { success: true, profile };
       } catch (e: unknown) {
@@ -1423,15 +1455,20 @@ async function handleMessage(
         let messages: GmailMessage[] = [];
         let syncSource: 'cache' | 'full' | 'history' = 'cache';
         let syncCached = false;
-        const aliasSession = inboxPayload?.alias
-          ? await getGmailAliasSession(inboxPayload.alias)
-          : await getMostRecentGmailAliasSession();
+        // These reads are independent. Resolve them together so a popup
+        // refresh does not pay an avoidable storage round-trip before OAuth
+        // can start validating the request.
+        const [aliasSession, gmailIsManual] = await Promise.all([
+          inboxPayload?.alias
+            ? getGmailAliasSession(inboxPayload.alias)
+            : getMostRecentGmailAliasSession(),
+          storageService.get('gmailIsManual'),
+        ]);
 
         if (!aliasSession) {
           return { success: false, error: 'No active Gmail alias session.' };
         }
 
-        const gmailIsManual = !!(await storageService.get('gmailIsManual'));
         if (
           !gmailApiService.isConfigured() ||
           gmailIsManual ||
@@ -1644,7 +1681,9 @@ async function handleMessage(
     case 'ZOHO_SEARCH_INBOX': {
       try {
         const p = (message as any).payload as { alias?: string; sinceMs?: number } | undefined;
-        if (!p?.alias) {return { success: false, error: 'alias is required' };}
+        if (!p?.alias) {
+          return { success: false, error: 'alias is required' };
+        }
         const messages = await searchZohoInbox(p.alias, p.sinceMs);
         return { success: true, messages };
       } catch (e: unknown) {
@@ -1693,7 +1732,9 @@ async function handleMessage(
     case 'MICROSOFT_SEARCH_INBOX': {
       try {
         const p = (message as any).payload as { alias?: string; sinceMs?: number } | undefined;
-        if (!p?.alias) {return { success: false, error: 'alias is required' };}
+        if (!p?.alias) {
+          return { success: false, error: 'alias is required' };
+        }
         const messages = await searchMicrosoftInbox(p.alias, p.sinceMs);
         return { success: true, messages };
       } catch (e: unknown) {

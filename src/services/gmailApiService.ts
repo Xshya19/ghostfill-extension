@@ -14,6 +14,7 @@ import {
   GMAIL_SCOPES,
   GMAIL_API_BASE,
   OAUTH_USERINFO,
+  fetchWithTimeout,
 } from '../utils/core';
 import { createLogger } from '../utils/logger';
 import { storageService } from './storageService';
@@ -25,6 +26,10 @@ const DEFAULT_TOKEN_TTL_MS = 3540 * 1000;
 const SILENT_AUTH_BACKOFF_MS = 2 * 60_000;
 const CLIENT_CONFIG_BACKOFF_MS = Number.POSITIVE_INFINITY;
 const MAX_SYNC_CACHE_ENTRIES = 25;
+// Gmail requests are user-visible and should fail fast enough for the popup
+// to recover, while still allowing a cold connection/TLS handshake on a
+// slower network. The message layer has its own larger safety timeout.
+const GMAIL_REQUEST_TIMEOUT_MS = 12_000;
 
 export interface GmailAuthIssue {
   silentAuthBlocked: boolean;
@@ -378,8 +383,16 @@ async function acquireToken(interactive: boolean): Promise<string> {
   // Clear the lock slot only when THIS promise settles, so an overlapping
   // caller see it as still-in-flight (and joins) rather than starting a new one.
   promise.then(
-    () => { if (pendingTokenAcquisitions.get(key) === promise) {pendingTokenAcquisitions.delete(key);} },
-    () => { if (pendingTokenAcquisitions.get(key) === promise) {pendingTokenAcquisitions.delete(key);} }
+    () => {
+      if (pendingTokenAcquisitions.get(key) === promise) {
+        pendingTokenAcquisitions.delete(key);
+      }
+    },
+    () => {
+      if (pendingTokenAcquisitions.get(key) === promise) {
+        pendingTokenAcquisitions.delete(key);
+      }
+    }
   );
   pendingTokenAcquisitions.set(key, promise);
   return promise;
@@ -464,9 +477,10 @@ async function gmailFetch<T>(path: string, options: RequestInit = {}, retried = 
   }
   headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     ...options,
     headers,
+    timeout: GMAIL_REQUEST_TIMEOUT_MS,
   });
 
   if (res.status === 401 && !retried) {
@@ -598,28 +612,25 @@ export async function checkSilentAuth(): Promise<GmailProfile | null> {
 
 // ─── Profile ───────────────────────────────────────
 export async function fetchProfile(): Promise<GmailProfile> {
-  const info = await gmailFetch<{
-    email: string;
-    name?: string;
-    picture?: string;
-  }>(OAUTH_USERINFO);
-
-  let messagesTotal: number | undefined;
-  let historyId: string | undefined;
-  try {
-    const gp = await fetchMailboxProfile();
-    messagesTotal = gp.messagesTotal;
-    historyId = gp.historyId;
-  } catch {
-    /* Intentionally ignored */
-  }
+  // The two profile endpoints share the same token but are independent
+  // network requests. Parallelizing them removes one full RTT from sign-in.
+  const [info, mailboxProfile] = await Promise.all([
+    gmailFetch<{
+      email: string;
+      name?: string;
+      picture?: string;
+    }>(OAUTH_USERINFO),
+    fetchMailboxProfile().catch(() => null),
+  ]);
 
   return {
     email: info.email,
     ...(info.name ? { name: info.name } : {}),
     ...(info.picture ? { picture: info.picture } : {}),
-    ...(messagesTotal !== undefined ? { messagesTotal } : {}),
-    ...(historyId ? { historyId } : {}),
+    ...(mailboxProfile?.messagesTotal !== undefined
+      ? { messagesTotal: mailboxProfile.messagesTotal }
+      : {}),
+    ...(mailboxProfile?.historyId ? { historyId: mailboxProfile.historyId } : {}),
   };
 }
 
@@ -791,10 +802,6 @@ function collectHistoryIds(history: RESTHistoryItem[] | undefined): {
 
 async function fetchMailboxProfile(): Promise<RESTMailboxProfile> {
   return gmailFetch<RESTMailboxProfile>('/profile');
-}
-
-async function fetchMailboxHistoryId(): Promise<string | undefined> {
-  return (await fetchMailboxProfile()).historyId;
 }
 
 async function fetchHistoryDelta(startHistoryId: string): Promise<{
@@ -1161,12 +1168,18 @@ export async function syncInbox(
     const cachedMessages = sortAndLimitMessages(cachedEntry?.messages ?? [], maxResults);
 
     const doFullSync = async (): Promise<GmailInboxSyncResult> => {
-      const fetchedMessages = await fetchInbox(query, maxResults, { full: false });
+      // The list/detail requests and the mailbox cursor request are
+      // independent. Fetch them together so first sync does not wait for an
+      // extra profile RTT after all message metadata has arrived.
+      const [fetchedMessages, mailboxProfile] = await Promise.all([
+        fetchInbox(query, maxResults, { full: false }),
+        fetchMailboxProfile().catch(() => null),
+      ]);
       const messages = sortAndLimitMessages(
         options.filterMessage ? fetchedMessages.filter(options.filterMessage) : fetchedMessages,
         maxResults
       );
-      const historyId = await fetchMailboxHistoryId().catch(() => cachedEntry?.historyId);
+      const historyId = mailboxProfile?.historyId ?? cachedEntry?.historyId;
       await writeSyncEntry(syncKey, {
         query,
         ...(options.alias ? { alias: options.alias } : {}),
@@ -1201,18 +1214,24 @@ export async function syncInbox(
       );
       const historyId = delta.historyId ?? cachedEntry.historyId;
 
-      await writeSyncEntry(syncKey, {
-        query,
-        ...(options.alias ? { alias: options.alias } : {}),
-        historyId,
-        messages,
-        syncedAt: Date.now(),
-      });
+      const hasChanges = delta.changedIds.size > 0 || delta.deletedIds.size > 0;
+      // A no-op history poll should not encrypt and rewrite the complete
+      // inbox cache. Fast OTP polling can run every ~1.2s; avoiding that disk
+      // churn keeps the service worker responsive and reduces storage wakeups.
+      if (hasChanges || historyId !== cachedEntry.historyId) {
+        await writeSyncEntry(syncKey, {
+          query,
+          ...(options.alias ? { alias: options.alias } : {}),
+          ...(historyId ? { historyId } : {}),
+          messages,
+          syncedAt: Date.now(),
+        });
+      }
       historyFailStreak.delete(syncKey);
 
       return {
         messages,
-        source: delta.changedIds.size > 0 || delta.deletedIds.size > 0 ? 'history' : 'cache',
+        source: hasChanges ? 'history' : 'cache',
         historyId,
         cached: delta.changedIds.size === 0 && delta.deletedIds.size === 0,
       };
@@ -1288,4 +1307,3 @@ export async function listLabels(): Promise<Array<{ id: string; name: string; ty
     type: l.type || 'user',
   }));
 }
-
