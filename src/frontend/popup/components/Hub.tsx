@@ -805,6 +805,11 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
   // ── Tab-switch: popup tab IS the fill source of truth ──
   const handleSwitchToDisposable = useCallback(() => {
     void (async () => {
+      // Invalidate any in-flight Gmail request so a late response cannot
+      // surface a Gmail error after the user has switched back to Temp mail.
+      gmailInboxRequestSeqRef.current += 1;
+      setGmailInboxError(null);
+      setGmailInboxLoading(false);
       await storageService.setImmediate('preferredEmailType', 'disposable');
       setPreferredEmailType('disposable');
       const disposableEmail = emailAccount || (await storageService.get('disposableEmail'));

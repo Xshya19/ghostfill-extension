@@ -2072,7 +2072,7 @@ const InboxListComponent: React.FC<InboxListProps> = ({
             <RefreshCw size={18} strokeWidth={1.5} className="spin" color="var(--gf-primary)" />
             <span>Syncing Gmail</span>
           </div>
-        ) : gmailInboxError ? (
+        ) : preferredEmailType === 'gmail' && gmailInboxError ? (
           <button
             className="hub-empty-state hub-empty-state--action"
             onClick={() => void onFetchGmailInbox()}

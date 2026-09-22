@@ -15,7 +15,7 @@ This is a risk-based audit of the default full Manifest V3 build and its explici
 
 ## Verification
 
-- All 1,098 Vitest tests, TypeScript check, ESLint, both production build profiles, full bundle-size budget, dependency-cycle check, full service-worker boot smoke test, and GitHub workflow-policy check passed locally. The final `dist` directory contains the full build.
+- All 1,099 Vitest tests, TypeScript check, ESLint, both production build profiles, full bundle-size budget, dependency-cycle check, full service-worker boot smoke test, and GitHub workflow-policy check passed locally. The final `dist` directory contains the full build.
 - V8 coverage remains low despite the test count: 31.1% statements, 26.1% branches, 29.3% functions. The next QA investment should target background message routing, live provider failures, and browser-level popup/content-script flows.
 - The production-only npm audit found zero known vulnerabilities at the time of this run. The full development-dependency audit could not complete because the npm advisory endpoint returned HTTP 503; retry it before a release.
 - Regression tests cover saved full-build state in the restricted build, reused/expired OTPs, activation-token versus OTP discrimination, and diagnostic/remote-log redaction.

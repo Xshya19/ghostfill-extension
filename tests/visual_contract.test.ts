@@ -158,6 +158,15 @@ describe('GhostFill visual contract', () => {
     expect(inbox).not.toContain('className="inbox-item"\n                          role="button"');
   });
 
+  it('keeps Gmail-only inbox errors out of the Temp mail empty state', () => {
+    const sharedComponents = readSource('src/frontend/popup/components/SharedComponents.tsx');
+    const hub = readSource('src/frontend/popup/components/Hub.tsx');
+
+    expect(sharedComponents).toContain("preferredEmailType === 'gmail' && gmailInboxError ?");
+    expect(hub).toContain('gmailInboxRequestSeqRef.current += 1;');
+    expect(hub).toContain('setGmailInboxError(null);');
+  });
+
   it('persists OTPs extracted from the popup inbox for the floating fill action', () => {
     const popupHooks = readSource('src/frontend/popup/hooks.ts');
 
