@@ -22,6 +22,7 @@
     "lint": "eslint src/ --ext .ts,.tsx",
     "lint:fix": "eslint src/ --ext .ts,.tsx --fix",
     "format:check": "prettier --check \"*.{json,md,cjs,js,ts}\" \"{src,scripts,tests,public}/**/*.{ts,tsx,js,cjs,json,css,html,md}\"",
+    "workflow:check": "node scripts/validate-workflows.cjs",
     "test": "vitest run",
     "test:ui": "vitest --ui",
     "test:watch": "vitest",

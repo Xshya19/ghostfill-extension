@@ -9,3 +9,4 @@ All notable changes are documented here. This project has not published a GitHub
 - Added a public temporary-email-only build profile that removes real-mail OAuth permissions and controls.
 - Removed the unsafe historical demo GIF and added a clean local recording harness and workflow poster.
 - Added release, privacy, security, contribution, and GitHub-maintenance documentation.
+- Hardened GitHub Actions with immutable action pins, bounded CI jobs, dependency review, CodeQL scanning, and retry-safe tagged releases.

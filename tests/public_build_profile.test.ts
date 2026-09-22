@@ -40,8 +40,8 @@ describe('public build profile', () => {
     expect(readProjectFile('src/frontend/popup/components/Hub.tsx')).toContain(
       'IS_GMAIL_ENABLED && <div className="hub-email-selector"'
     );
-    expect(readProjectFile('src/frontend/options/components/OptionsTabs.tsx')).toContain(
-      'IS_GMAIL_ENABLED && <SettingsSection\n        id="gmail-oauth"'
+    expect(readProjectFile('src/frontend/options/components/OptionsTabs.tsx')).toMatch(
+      /IS_GMAIL_ENABLED\s*&&\s*\(?\s*<SettingsSection\s+id="gmail-oauth"/
     );
     expect(readProjectFile('src/background/messageHandler.ts')).toContain(
       'Real-mail integrations are unavailable in the public build.'

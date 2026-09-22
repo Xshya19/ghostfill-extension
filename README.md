@@ -86,6 +86,7 @@ The default `npm run build` creates the public temporary-email-only package. `np
 GitHub Actions runs type checks, lint, tests, the public production build, and the bundle-size gate on Node.js 20 and 22. A verified `v<package-version>` tag runs the release workflow, creates the ZIP and SHA-256 file, then uses GitHub-generated release notes.
 
 The repository currently has no published release. The exact manual process is in [docs/RELEASING.md](docs/RELEASING.md).
+Maintainers should also follow the [GitHub operations and recovery guide](docs/GITHUB_OPERATIONS.md) for branch protection, Actions recovery, and dependency-update handling.
 
 ## Contributing and support
 
