@@ -4,9 +4,18 @@ GhostFill is a Chrome extension that generates disposable email addresses, creat
 
 It is an early public build. The default package is temporary-email-only. It does not request Gmail access or require a paid API, hosting account, database, domain, or Chrome Web Store listing.
 
-![Illustrated GhostFill workflow: generate a temporary address, fill the signup form, review the inbox, and fill the verification code.](docs/assets/ghostfill-workflow.svg)
+![Illustrated GhostFill showcase: provider failover, signup form fill, verification, and an optional Gmail alias.](docs/demo/ghostfill-showcase.gif)
 
-The image is an illustrative workflow diagram, not a recording. A clean local demo surface and reproducible recording procedure are in [docs/demo/RECORDING.md](docs/demo/RECORDING.md). No public recording is currently published.
+Watch the [19-second MP4 showcase](docs/demo/ghostfill-showcase.mp4) or view the [still poster](docs/demo/ghostfill-showcase-poster.png). This is an illustrated workflow, not a screen recording. Regenerate it with the [render script](docs/demo/build-showcase.py). A clean local demo surface and recording procedure are in [docs/demo/RECORDING.md](docs/demo/RECORDING.md).
+
+The Gmail alias scene shows the optional full integration profile. The default public package is temporary-email-only and does not request Gmail access.
+
+## Problems it solves
+
+- **Disposable providers fail:** GhostFill supports multiple temporary-email providers and tries another when address generation fails.
+- **Signup forms take repetitive typing:** Smart Fill detects and fills username, email, and password fields. It can generate a temporary address and password when needed.
+- **Email verification interrupts signup:** GhostFill extracts likely one-time codes and can automatically fill a matching field. It can also open detected activation links in a new tab. Both automation options can be changed under Options.
+- **Some sites reject disposable domains:** The optional full integration profile can use a site-specific Gmail dot/plus alias connected to your own Gmail inbox.
 
 ## Install
 
@@ -43,7 +52,7 @@ Manual installs do not receive automatic Chrome Web Store updates. Replace the e
 
 - **Disposable email:** requests an address from one of the supported public temporary-email providers and polls its inbox.
 - **Password generation:** creates a configurable password with browser cryptography and can fill it into a detected field.
-- **OTP assistance:** extracts likely verification codes using deterministic text, layout, and pattern heuristics. It associates an active email session with the originating signup tab before offering a fill action.
+- **OTP assistance:** extracts likely verification codes using deterministic text, layout, and pattern heuristics. It associates an active email session with the originating signup tab before attempting to fill a matching field (enabled by default).
 
 GhostFill can also identify activation links. Automatic external-link opening is enabled by default and can be disabled under Options -> Automation. Users should still review each destination.
 
