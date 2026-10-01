@@ -1,11 +1,12 @@
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout, contentToString } from '../../utils/core';
+import { fetchWithTimeout, contentToString, isValidEmail } from '../../utils/core';
 import { getSenderSource } from '../../utils/emailIdentity';
 import { createLogger } from '../../utils/logger';
 import { isRetryableError, throttledWarn } from './isRetryableError';
 
 const log = createLogger('DriftzService');
 const BASE_URL = 'https://api.driftz.net';
+const PREFERRED_DOMAIN = 'bbjbinin.mn';
 
 export class DriftzService {
   async getDomains(signal?: AbortSignal): Promise<string[]> {
@@ -23,44 +24,50 @@ export class DriftzService {
       const tempDomains: string[] =
         Array.isArray(data.result?.temp) && data.result.temp.length > 0
           ? data.result.temp
-          : ['bbjbinin.mn', 'manornewtech.org'];
-      return tempDomains.sort((a, b) => (a === 'bbjbinin.mn' ? -1 : b === 'bbjbinin.mn' ? 1 : 0));
+          : [PREFERRED_DOMAIN, 'manornewtech.org'];
+      return tempDomains.sort((a, b) => (a === PREFERRED_DOMAIN ? -1 : b === PREFERRED_DOMAIN ? 1 : 0));
     } catch (error) {
       log.debug('Driftz domains unavailable, using fallback domains', { error: String(error) });
-      return ['bbjbinin.mn', 'manornewtech.org']; // Real active temp domains fallback with bbjbinin.mn default
+      return [PREFERRED_DOMAIN, 'manornewtech.org'];
     }
   }
 
   async createAccount(signal?: AbortSignal, requestedDomain?: string): Promise<EmailAccount> {
-    const targetDomain = requestedDomain || 'bbjbinin.mn';
-    const response = await fetchWithTimeout(`${BASE_URL}/temp/generate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ domain: targetDomain }),
-      signal: signal ?? null,
-    });
-    if (!response.ok) {
-      throw new Error(`Driftz email generation failed: HTTP ${response.status}`);
+    const targetDomain = requestedDomain?.trim().toLowerCase() || PREFERRED_DOMAIN;
+    // Bound domain retries; the aggregator's timeout and provider fallback still apply.
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const response = await fetchWithTimeout(`${BASE_URL}/temp/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: targetDomain }),
+        signal: signal ?? null,
+      });
+      if (!response.ok) {
+        throw new Error(`Driftz email generation failed: HTTP ${response.status}`);
+      }
+      const data = await response.json();
+      const address = data.result?.address;
+      if (!data.success || typeof address !== 'string' || !isValidEmail(address)) {
+        throw new Error(data.error || 'Driftz did not return a valid email address');
+      }
+      const domain = address.split('@')[1]!.toLowerCase();
+      if (domain !== targetDomain) {
+        log.debug('Driftz returned a different domain', { targetDomain, domain, attempt });
+        continue;
+      }
+      const expiresAt = data.result.expiresAt
+        ? Number(data.result.expiresAt) * 1000
+        : Date.now() + 24 * 60 * 60 * 1000;
+      return {
+        id: address,
+        fullEmail: address,
+        domain,
+        service: 'driftz',
+        createdAt: Date.now(),
+        expiresAt,
+      };
     }
-    const data = await response.json();
-    const address = data.result?.address;
-    if (!data.success || typeof address !== 'string' || !address.includes('@')) {
-      throw new Error(data.error || 'Driftz did not return a valid email address');
-    }
-    const expiresAt = data.result.expiresAt
-      ? Number(data.result.expiresAt) * 1000
-      : Date.now() + 24 * 60 * 60 * 1000;
-    const domain = address.split('@')[1]!;
-    return {
-      id: address,
-      fullEmail: address,
-      domain,
-      service: 'driftz',
-      createdAt: Date.now(),
-      expiresAt,
-    };
+    throw new Error(`Driftz did not provide ${targetDomain} after 3 attempts`);
   }
 
   async getMessages(address: string, signal?: AbortSignal): Promise<Email[]> {

@@ -605,6 +605,12 @@ export const EmailTab: React.FC<EmailTabProps> = ({
               Preferred email service
             </label>
             <p>Choose the default service for generating temporary emails</p>
+            {settings.preferredEmailService === 'driftz' && (
+              <p>
+                Driftz uses <strong>bbjbinin.mn</strong> by default. GhostFill checks the returned
+                domain and retries when needed. Site acceptance can vary.
+              </p>
+            )}
           </div>
           <div className="email-service-select">
             <CustomSelect
@@ -1084,6 +1090,7 @@ interface AdvancedTabProps {
 
 export const AdvancedTab: React.FC<AdvancedTabProps> = ({
   settings,
+  onSettingChange,
   onReset,
   onClearData,
   onSettingsImport,
@@ -1157,6 +1164,41 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
 
   return (
     <div>
+      <SettingsSection id="debugging" title="Debugging" icon={<Info size={18} />}>
+        <div className="setting-item">
+          <div className="setting-info">
+            <label id="debug-mode-label" htmlFor="debug-mode" className="fs-15-fw-600">
+              Debug logging
+            </label>
+            <p>Show detailed GhostFill activity in the browser console. Save changes to apply.</p>
+            <p>Logs stay in your browser. Sensitive values are masked.</p>
+          </div>
+          <ToggleSwitch
+            id="debug-mode"
+            checked={settings.debugMode}
+            onChange={(value) => onSettingChange('debugMode', value)}
+            ariaLabelledBy="debug-mode-label"
+          />
+        </div>
+        <div className="setting-item vertical-group">
+          <div className="setting-info w-full">
+            <span className="fs-15-fw-600">View the logs</span>
+            <p>
+              For inbox and verification activity, open <code>chrome://extensions</code>, find
+              GhostFill, and click <strong>service worker</strong>. Select <strong>Console</strong>.
+            </p>
+            <p>
+              For field detection and filling, open Developer Tools on the signup page (F12 on
+              Windows/Linux, Option + Command + I on macOS) and select <strong>Console</strong>.
+            </p>
+            <p>
+              Filter for <code>GhostFill</code>, enable <strong>Preserve log</strong>, then repeat
+              the action that failed. Turn debug logging off when finished.
+            </p>
+          </div>
+        </div>
+      </SettingsSection>
+
       <SettingsSection id="backup" title={t('backupRestoreSection')} icon={<Save size={18} />}>
         <div className="setting-item">
           <div className="setting-info">

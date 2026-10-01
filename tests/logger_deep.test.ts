@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { createLogger, diag, initRemoteLogger } from '../src/utils/logger';
+import { createLogger, diag, initRemoteLogger, logger } from '../src/utils/logger';
 
 describe('Logger deep tests', () => {
   let consoleSpy: { debug: any; info: any; warn: any; error: any };
@@ -51,10 +51,11 @@ describe('Logger deep tests', () => {
   // ═══════════════════════════════════════════════════════════════
 
   describe('log levels', () => {
-    it('debug calls console.debug', () => {
+    it('keeps debug history without printing it when debug mode is off', () => {
       const log = createLogger('Test');
       log.debug('debug message');
-      expect(consoleSpy.debug).toHaveBeenCalled();
+      expect(consoleSpy.debug).not.toHaveBeenCalled();
+      expect(logger.getHistory().at(-1)?.message).toBe('debug message');
     });
 
     it('info calls console.info', () => {

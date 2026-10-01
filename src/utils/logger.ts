@@ -10,6 +10,8 @@
  * @security Prevents credential leakage via console logs and intercepts console calls securely.
  */
 
+import { STORAGE_KEYS } from '../types/storage.types';
+
 // ─── Logger & Redaction Types ────────────────────────────────────────
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -28,8 +30,13 @@ type LoggerGlobal = typeof globalThis & {
 };
 
 const PERSISTED_LOG_KEY = 'ghostfill_debug_logs';
+let consoleDebugMode = false;
 
 const SENSITIVE_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
+  {
+    pattern: /(https?:\/\/[^\s"'<>?#]+)([?#])[^\s"'<>]*/gi,
+    replacement: '$1$2[REDACTED]',
+  },
   {
     pattern:
       /(api[_-]?key|apikey|token|bearer|auth|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|jwt|jws|jwe)\s*[=:]\s*["']?[a-zA-Z0-9\-_.]{20,}["']?/gi,
@@ -212,6 +219,9 @@ function redactSensitiveData(data: unknown, depth = 0): unknown {
   }
 
   if (typeof data === 'string') {
+    if (/^\d{4,10}$/.test(data)) {
+      return '[REDACTED]';
+    }
     // PERF: Short strings (< 8 chars) can't match any sensitive pattern
     // (shortest pattern match is ~10 chars). Covers OTP codes, status flags, etc.
     if (data.length < 8) {
@@ -269,6 +279,32 @@ class Logger {
 
   constructor() {
     this.installGlobalDebugHelpers();
+    this.watchDebugMode();
+  }
+
+  private watchDebugMode(): void {
+    if (typeof chrome === 'undefined' || !chrome.storage?.local || !chrome.storage.onChanged) {
+      return;
+    }
+    // A saved change must win over an older startup read that finishes later.
+    let settingsChanged = false;
+    try {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && STORAGE_KEYS.SETTINGS in changes) {
+          settingsChanged = true;
+          consoleDebugMode = changes[STORAGE_KEYS.SETTINGS]?.newValue?.debugMode === true;
+        }
+      });
+      void Promise.resolve(chrome.storage.local.get(STORAGE_KEYS.SETTINGS))
+        .then((stored) => {
+          if (!settingsChanged) {
+            consoleDebugMode = stored?.[STORAGE_KEYS.SETTINGS]?.debugMode === true;
+          }
+        })
+        .catch(() => {});
+    } catch {
+      // Keep routine logs available if the extension context has been invalidated.
+    }
   }
 
   setEnabled(enabled: boolean): void {
@@ -280,7 +316,7 @@ class Logger {
   }
 
   private log(level: LogLevel, message: string, data?: unknown, source?: string): void {
-    // Keep every level observable in release builds, with the same redaction.
+    // Keep redacted history available even when console debugging is off.
     const redactedMessage = redactSensitiveData(message) as string;
     const redactedData = data !== undefined ? redactSensitiveData(data) : undefined;
 
@@ -303,7 +339,7 @@ class Logger {
     this.syncGlobalHistory();
     this.persistHistory();
 
-    if (!this.enabled && level !== 'error') {
+    if ((!this.enabled && level !== 'error') || (level === 'debug' && !consoleDebugMode)) {
       return;
     }
 
@@ -313,9 +349,9 @@ class Logger {
     switch (level) {
       case 'debug':
         if (redactedData !== undefined) {
-          console.debug(formattedMessage, redactedData);
+          console.log(formattedMessage, redactedData);
         } else {
-          console.debug(formattedMessage);
+          console.log(formattedMessage);
         }
         break;
       case 'info':
@@ -710,6 +746,7 @@ export const diag = {
     // copied/exported independently of the structured logger. Apply the same
     // recursive redaction here so OTPs, inbox addresses, URLs, and auth
     // credentials never bypass the logger's privacy boundary.
+    const safeAction = redactSensitiveData(action) as string;
     const safeDetail = redactSensitiveData(detail) as string;
     const safeData =
       data === undefined ? undefined : (redactSensitiveData(data) as Record<string, unknown>);
@@ -720,7 +757,7 @@ export const diag = {
       category,
       flowId: flow,
       step: s,
-      action,
+      action: safeAction,
       detail: safeDetail,
     };
 
@@ -749,9 +786,9 @@ export const diag = {
                 : 'ℹ️';
 
     const catTag = `[${category.toUpperCase()}]`;
-    const msg = `${levelIcon} ${prefix} ${catTag} ${action} — ${safeDetail}`;
+    const msg = `${levelIcon} ${prefix} ${catTag} ${safeAction} — ${safeDetail}`;
 
-    {
+    if (consoleDebugMode || level === 'warn' || level === 'error') {
       switch (level) {
         case 'error':
           console.error(`[GhostFill-DIAG] ${msg}`, safeData);

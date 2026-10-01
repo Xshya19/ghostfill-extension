@@ -61,6 +61,8 @@ These are Chrome's standard [local extension installation steps](https://develop
 
 **Setup worked** when the popup opens, an address is generated, and its inbox can be opened. Email arrival and acceptance depend on the mail provider and the signup site.
 
+Driftz requests **`bbjbinin.mn` by default**. GhostFill checks the returned address and retries up to three times if Driftz returns another domain, such as `manornewtech.org`. If the requested domain remains unavailable, it uses the existing provider fallback instead of retrying forever. An explicitly selected domain is still respected. A domain's acceptance depends on the signup site.
+
 Automatic code filling and verification-link opening are enabled by default. Change them under **Options → Automation**. A message containing both a code and a link uses the code when it can fill the waiting form. If there is no matching code form, or filling fails, an approved verification link can open in a new tab. A successful code fill keeps the alternative link available in the reader without opening another tab.
 
 Automatic actions require a matching sender and signup site, a fresh unused code, or a verified activation destination. Uncertain codes and links stay available for review. If a verification field appears after its email arrives, GhostFill can resume filling a fresh approved code.
@@ -108,11 +110,13 @@ The shortcut updates the built installation. If you also develop GhostFill, upda
 
 ### See console logs
 
+Open **GhostFill → Options → Advanced**, turn on **Debug logging**, and click **Save changes**. The saved setting applies to open extension pages and signup tabs, and stays enabled after a browser restart. Turn it off when finished; routine information, warnings, and errors remain visible.
+
 - **Inbox and verification decisions:** open `chrome://extensions`, find GhostFill, and click its **service worker** link.
 - **Floating button and form filling:** open Developer Tools on the signup page (**F12** on Windows/Linux, **Option + Command + I** on macOS).
 - **Popup:** open GhostFill, right-click inside the popup, and choose **Inspect**.
 
-In each **Console**, enable all log levels, including **Verbose**, and turn on **Preserve log**. Filter for `GhostFill` to find the extension's messages. Codes, mailbox credentials, and verification-link secrets are redacted from diagnostic logs.
+In each **Console**, turn on **Preserve log** and filter for `GhostFill`. Debug mode prints detailed logs at the ordinary console level, so enabling **Verbose** is unnecessary. Repeat the action that failed. Logs stay in your browser; sensitive values and URL query/fragment values are masked. Review logs before sharing them.
 
 See the [October 1 reliability audit](docs/RELIABILITY_AUDIT_2026-10-01.md) for the reported failures, fixes, verification results, and remaining compatibility limits.
 

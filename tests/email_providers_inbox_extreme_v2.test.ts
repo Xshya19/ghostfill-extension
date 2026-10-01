@@ -83,6 +83,50 @@ describe('CatchmailService — extreme', () => {
 });
 
 describe('DriftzService generation fallback', () => {
+  it('retries an unwanted domain and returns only the preferred domain', async () => {
+    let attempt = 0;
+    const fetchSpy = mockFetchOnce(async (_url, init) => {
+      expect(JSON.parse(String(init?.body))).toEqual({ domain: 'bbjbinin.mn' });
+      attempt++;
+      return jsonResponse({ success: true, result: { address: attempt === 1 ? 'test@manornewtech.org' : 'test@bbjbinin.mn' } });
+    });
+    const account = await driftzService.createAccount();
+    expect(account.fullEmail).toBe('test@bbjbinin.mn');
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('limits domain retries so the aggregator can fall back without accepting the wrong domain', async () => {
+    const fetchSpy = mockFetchOnce(async () => jsonResponse({ success: true, result: { address: 'test@manornewtech.org' } }));
+    await expect(driftzService.createAccount()).rejects.toThrow('bbjbinin.mn after 3 attempts');
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it('honors a domain explicitly selected by the user', async () => {
+    const fetchSpy = mockFetchOnce(async (_url, init) => {
+      expect(JSON.parse(String(init?.body))).toEqual({ domain: 'manornewtech.org' });
+      return jsonResponse({ success: true, result: { address: 'test@manornewtech.org' } });
+    });
+    const account = await driftzService.createAccount(undefined, ' MANORNEWTECH.ORG ');
+    expect(account.domain).toBe('manornewtech.org');
+    expect(fetchSpy).toHaveBeenCalledOnce();
+  });
+
+  it('stops retrying when generation is cancelled', async () => {
+    const controller = new AbortController();
+    const fetchSpy = mockFetchOnce(async () => {
+      controller.abort();
+      return jsonResponse({ success: true, result: { address: 'test@manornewtech.org' } });
+    });
+    await expect(driftzService.createAccount(controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    expect(fetchSpy).toHaveBeenCalledOnce();
+  });
+
+  it('rejects malformed addresses without retrying', async () => {
+    const fetchSpy = mockFetchOnce(async () => jsonResponse({ success: true, result: { address: 'test@bbjbinin.mn@other.example' } }));
+    await expect(driftzService.createAccount()).rejects.toThrow('valid email address');
+    expect(fetchSpy).toHaveBeenCalledOnce();
+  });
+
   it('surfaces API failures so the aggregator can try another provider', async () => {
     mockFetchOnce(async () => new Response('', { status: 503 }));
     await expect(driftzService.createAccount()).rejects.toThrow('HTTP 503');
