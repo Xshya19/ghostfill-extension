@@ -31,11 +31,15 @@ Under **Security → Advanced Security**, enable the dependency graph, Dependabo
 
 ## Dependabot backlog
 
-The current nine Dependabot pull requests were created while Actions was locked, so none received a real CI result. The workflow action upgrades are now incorporated in this branch with immutable pins; after this branch merges, close the now-stale action-only pull requests (#1, #2, and #3) rather than merging duplicate changes.
+The earlier individual dependency pull requests are closed, and the audit changes are now on `main`. On October 2, 2026, the open Dependabot queue is:
 
 Review the remaining npm updates after CI is restored:
 
-- Patch/minor candidates: #4, #6, #7, and #9.
-- Major-version candidates that need an explicit compatibility pass: #5 and #8.
+- [#12](https://github.com/Xshya19/ghostfill-extension/pull/12): four grouped GitHub Actions updates.
+- [#13](https://github.com/Xshya19/ghostfill-extension/pull/13): fourteen grouped minor/patch npm updates.
+- [#14](https://github.com/Xshya19/ghostfill-extension/pull/14): Node type definitions 20 → 26; review against the supported Node runtime.
+- [#15](https://github.com/Xshya19/ghostfill-extension/pull/15): Vitest 4 → 5; validate test-runner compatibility before merging.
+
+[#11](https://github.com/Xshya19/ghostfill-extension/pull/11) is a separate showcase change, not a dependency update or bug report. Review its visual changes separately.
 
 Dependabot is now weekly and groups low-risk updates, preventing another large unreviewed queue. Never merge dependency pull requests solely because a bot opened them; require the normal CI and dependency-review results.

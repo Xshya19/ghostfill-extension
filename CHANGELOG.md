@@ -1,6 +1,14 @@
 # Changelog
 
-All notable changes are documented here. This project has not published a GitHub Release yet.
+All notable changes are documented here.
+
+## 1.1.2 — 2026-10-02
+
+- Report temporary inbox timeouts, network failures, and throttling as warnings with the cause visible; retain automatic retries and error-level reporting for unexpected failures.
+- Add **Options → About → Updates** to check stable GitHub releases, download a newer built ZIP and checksum, and reload after the files are updated.
+- Prevent downgrade offers and explain updates for the temporary-email-only build.
+- Include the Windows update shortcut in source checkouts and built packages.
+- Normalize workflow-test line endings so Windows checkouts pass the same policy checks.
 
 ## Unreleased
 

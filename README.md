@@ -12,6 +12,8 @@ The Gmail alias scene shows the optional full integration profile. The default p
 
 **Start here:** [Install GhostFill](#install) → [Try your first signup](#first-use) → [Update GhostFill](#update-an-existing-install) → [Fix a setup problem](#setup-help).
 
+**Just want to use GhostFill?** [Download the latest built package](https://github.com/Xshya19/ghostfill-extension/releases/latest). Choose `ghostfill-extension-v<version>.zip` under **Assets**, extract it, and follow [Load it in Chrome](#2-load-it-in-chrome). You do not need Node.js or Git for this package.
+
 ## Install
 
 Use **Google Chrome on a desktop computer** (Windows, macOS, or Linux). Temporary email works without connecting Gmail or entering an API key.
