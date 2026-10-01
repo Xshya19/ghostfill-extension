@@ -93,11 +93,15 @@ Gmail is optional. Start with temporary email, then follow [Gmail and Google ali
 
 ### Update an existing install
 
+Open **GhostFill → Options → About → Updates**. Click **Check for updates** to compare your installed version with the latest stable release. A newer release shows links to its built ZIP and matching checksum. A local build newer than the published release will not be offered a downgrade. The temporary-email-only build needs a package with the same build profile from your maintainer.
+
+For an unpacked installation, Chrome cannot replace the files in your installation folder from inside the extension. Apply the package using the steps below, then click **Reload after updating** in GhostFill and refresh your signup tabs. Reloading alone does not download or install a package. [Chrome's automatic extension updates](https://developer.chrome.com/docs/extensions/develop/concepts/extensions-update-lifecycle) use store or managed distribution.
+
 **Windows: double-click to update — no Node.js, Git, or administrator account needed.**
 
 1. Open your permanent GhostFill folder and double-click **`Update GhostFill.cmd`**. For a source install, this shortcut is in the project folder; it updates the built `dist` installation.
 2. Wait for the shortcut to check the latest stable [GitHub release](https://github.com/Xshya19/ghostfill-extension/releases), download a newer built ZIP, verify its SHA-256 checksum, and apply it. If it says **No newer published version**, your installed version stays as it is.
-3. Open `chrome://extensions`, click **Reload** on GhostFill, then **refresh your signup tabs**. Chrome still needs this reload for a local installation.
+3. In GhostFill, open **Options → About → Updates** and click **Reload after updating**, then **refresh your signup tabs**. You can also reload from GhostFill's card at `chrome://extensions`.
 
 The shortcut keeps the installation at the same path and checks its extension identity, so you can update without removing GhostFill or resetting its browser settings. It keeps a backup named `.ghostfill-backup-<version>-<id>` beside the installed folder and restores the old folder if replacement fails. Keep the installed folder in its permanent location. Updates run when you launch the shortcut; they do not run in the background.
 

@@ -819,7 +819,8 @@ export const diag = {
     action: string,
     success: boolean,
     detail?: string,
-    data?: Record<string, unknown>
+    data?: Record<string, unknown>,
+    failureLevel: 'warn' | 'error' = 'error'
   ): void {
     const stepNum = (diagStepCounters.get(flowId) ?? 0) + 1;
     diagStepCounters.set(flowId, stepNum);
@@ -829,7 +830,7 @@ export const diag = {
     diagStepCounters.delete(flowId);
     diagFlowStartTs.delete(flowId);
     diag.log(
-      success ? 'info' : 'error',
+      success ? 'info' : failureLevel,
       category,
       `◀ END ${action}`,
       `${success ? '✅ Success' : '❌ Failed'} — ${detail || ''} (${duration}ms)`,
