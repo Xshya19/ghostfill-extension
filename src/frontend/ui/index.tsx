@@ -1,60 +1,30 @@
 /**
- * GhostFill shared UI — Private Workspace component vocabulary + motion system.
+ * GhostFill shared UI — Apple-inspired component vocabulary + motion system.
  *
  * One module for both frontends (popup and options): the primitives
- * (Button, Card, Input, Modal, Toast, Toggle…) and the spring/tween
+ * (Button, Card, Input, Modal, Toast, Toggle…) and the tween
  * definitions they animate with. Styling lives in frontend/styles/globals.css.
  *
  * Motion is coupled to the CSS tokens in frontend/styles/globals.css:
- *   --gf-dur-fast = 140ms · --gf-dur = 200ms · --gf-dur-slow = 360ms
+ *   --gf-dur-fast = 120ms · --gf-dur = 200ms · --gf-dur-slow = 340ms
  *   --gf-ease-out = cubic-bezier(0.16, 1, 0.3, 1)
- *   --gf-ease     = cubic-bezier(0.22, 1, 0.36, 1)
- *   --gf-ease-back = cubic-bezier(0.34, 1.56, 0.64, 1)
+ *   --gf-ease     = cubic-bezier(0.16, 1, 0.3, 1)
  */
-import { AnimatePresence, motion, type Transition, type Variants } from 'framer-motion';
-import { Loader2 } from 'lucide-react';
-import React, { useEffect } from 'react';
+import {
+  AnimatePresence,
+  motion,
+  useReducedMotion,
+  type Transition,
+  type Variants,
+} from 'framer-motion';
+import { Info, Loader2 } from 'lucide-react';
+import React, { useEffect, useId, useRef } from 'react';
 
-
-/* ── Springs ─────────────────────────────────────────────────────── */
-
-/** Default spring — buttons, toggles, FAB press. Fast, snappy. */
-export const springDefault: Transition = {
-  type: 'spring',
-  stiffness: 380,
-  damping: 35,
-  mass: 0.8,
-};
-
-/** Soft tween — page transitions, sheet enter. Springs overshoot and feel
- *  laggy in a 375×400 popup; a short expo-out tween stays on the compositor. */
-export const springSoft: Transition = {
+/** Short surface entrance; frequent control feedback belongs to CSS. */
+export const tweenSurface: Transition = {
   type: 'tween',
   duration: 0.18,
   ease: [0.16, 1, 0.3, 1],
-};
-
-/** Tab pill — fast compositor-only slide. No spring overshoot in a 375px popup. */
-export const springTab: Transition = {
-  type: 'tween',
-  duration: 0.18,
-  ease: [0.16, 1, 0.3, 1],
-};
-
-/** Per-digit spring — tight, snappy entrance for OTP characters. */
-export const springDigit: Transition = {
-  type: 'spring',
-  stiffness: 300,
-  damping: 15,
-  mass: 0.7,
-};
-
-/** Playful spring with a small overshoot — success toasts, copy button. */
-export const springBounce: Transition = {
-  type: 'spring',
-  stiffness: 500,
-  damping: 22,
-  mass: 0.65,
 };
 
 /* ── Tweens (state transitions) ─────────────────────────────────── */
@@ -65,70 +35,16 @@ export const tweenIn: Transition = {
   ease: [0.16, 1, 0.3, 1],
 };
 
-/** Slow entrance — page-level fade. */
-export const tweenFade: Transition = {
-  duration: 0.32,
-  ease: [0.22, 1, 0.36, 1],
-};
-
-/** Spring-back entrance. */
-export const tweenBack: Transition = {
-  duration: 0.4,
-  ease: [0.34, 1.56, 0.64, 1],
-};
-
 /** Quick exit. */
 export const tweenOut: Transition = {
-  duration: 0.16,
-  ease: [0.4, 0, 1, 1],
-};
-
-/** 1s smooth tween — used for the OTP timer bar width animation. */
-export const tweenTimerBar: Transition = {
-  duration: 1,
-  ease: 'linear',
-};
-
-/* ── Hover / Press / Focus (the interactive vocabulary) ──────────── */
-
-export const hoverLift = {
-  // Transform-only: box-shadow animation forces a main-thread repaint every
-  // frame. Shadows are handled by CSS :hover (instant swap, no tween).
-  y: -1,
-  transition: { type: 'tween', duration: 0.12, ease: [0.16, 1, 0.3, 1] } as Transition,
-};
-
-export const pressDown = {
-  y: 0,
-  scale: 0.97,
-  transition: { type: 'tween', duration: 0.08, ease: [0.4, 0, 1, 1] } as Transition,
-};
-
-export const rest = {
-  y: 0,
-  scale: 1,
-  transition: { type: 'tween', duration: 0.12, ease: [0.16, 1, 0.3, 1] } as Transition,
-};
-
-export const fabHover = {
-  scale: 1.06,
-  rotate: -3,
-  boxShadow: 'var(--gf-shadow-lg)',
-  transition: { type: 'spring', stiffness: 480, damping: 20 } as Transition,
-};
-
-export const fabPress = {
-  scale: 0.94,
-  rotate: 0,
-  boxShadow: 'var(--gf-shadow-sm)',
-  transition: { type: 'spring', stiffness: 640, damping: 24 } as Transition,
+  duration: 0.12,
+  ease: [0.16, 1, 0.3, 1],
 };
 
 /* ── Page / view transitions ────────────────────────────────────── */
 
 export const viewFade: Variants = {
-  // Opacity + tiny translate only — both compositor-friendly. No scale:
-  // scale (even 0.99) forces a text re-raster + backdrop-filter repaint.
+  // Keep labels at their original size during the short view transition.
   initial: { opacity: 0, y: 6 },
   animate: {
     opacity: 1,
@@ -138,36 +54,9 @@ export const viewFade: Variants = {
   exit: {
     opacity: 0,
     y: -4,
-    transition: { duration: 0.11, ease: [0.4, 0, 1, 1] },
+    transition: { duration: 0.11, ease: [0.16, 1, 0.3, 1] },
   },
 };
-
-export const sheetUp: Variants = {
-  initial: { opacity: 0, y: 24 },
-  animate: { opacity: 1, y: 0, transition: { duration: 0.32, ease: [0.16, 1, 0.3, 1] } },
-  exit: { opacity: 0, y: 12, transition: { duration: 0.18, ease: [0.4, 0, 1, 1] } },
-};
-
-export const stagger: Variants = {
-  // Near-instant cascade — a 40ms+ stagger per card is what reads as "laggy".
-  animate: { transition: { staggerChildren: 0.015, delayChildren: 0 } },
-};
-
-export const itemRise: Variants = {
-  initial: { opacity: 0, y: 4 },
-  animate: { opacity: 1, y: 0, transition: { duration: 0.16, ease: [0.16, 1, 0.3, 1] } },
-};
-
-/**
- * Drop-in preset — now intentionally minimal. Prefer pure CSS :hover/:active
- * (see popup.css) for icon buttons: zero JS overhead, 60fps. Kept for API
- * compat; only drives transform, never box-shadow.
- */
-export const interactiveSurface = {
-  whileHover: hoverLift,
-  whileTap: pressDown,
-};
-
 
 /** Tiny className joiner — filters out falsy values. */
 export function cx(...parts: Array<string | false | null | undefined>): string {
@@ -235,6 +124,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function 
     size = 'md',
     block = false,
     loading = false,
+    type = 'button',
     leftIcon,
     rightIcon,
     className,
@@ -254,7 +144,9 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function 
         block && 'gf-btn--block',
         className
       )}
+      type={type}
       disabled={disabled || loading}
+      aria-busy={loading || undefined}
       {...rest}
     >
       {loading ? <Loader2 size={16} className="gf-spin" aria-hidden /> : leftIcon}
@@ -457,20 +349,57 @@ export const Modal: React.FC<ModalProps> = ({
   labelledBy,
   children,
 }) => {
+  const generatedTitleId = useId();
+  const descriptionId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!open) {
       return;
     }
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const dialog = dialogRef.current;
+    const focusableSelector =
+      'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const focusable = dialog?.querySelectorAll<HTMLElement>(focusableSelector);
+    const first = focusable?.[0] ?? dialog;
+    if (dialog && !focusable?.length) {
+      dialog.tabIndex = -1;
+    }
+    first?.focus();
+
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
+        e.preventDefault();
+        onCloseRef.current();
+      } else if (e.key === 'Tab' && dialog) {
+        const items = Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector));
+        if (items.length === 0) {
+          e.preventDefault();
+          dialog.focus();
+          return;
+        }
+        const firstItem = items[0];
+        const lastItem = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === firstItem) {
+          e.preventDefault();
+          lastItem?.focus();
+        } else if (!e.shiftKey && document.activeElement === lastItem) {
+          e.preventDefault();
+          firstItem?.focus();
+        }
       }
     };
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      previouslyFocused?.focus();
+    };
+  }, [open]);
 
-  const titleId = labelledBy ?? (title ? 'gf-modal-title' : undefined);
+  const titleId = labelledBy ?? (title ? generatedTitleId : undefined);
 
   return (
     <AnimatePresence>
@@ -483,22 +412,28 @@ export const Modal: React.FC<ModalProps> = ({
           exit={{ opacity: 0, transition: { duration: 0.1 } }}
         >
           <motion.div
+            ref={dialogRef}
             className={cx('gf-modal', className)}
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
+            aria-describedby={description ? descriptionId : undefined}
             onClick={(e) => e.stopPropagation()}
             initial={{ opacity: 0, scale: 0.95, y: 8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 8 }}
-            transition={springSoft}
+            transition={tweenSurface}
           >
             {title && (
-              <h2 id={titleId} className="gf-modal__title">
+              <h2 id={generatedTitleId} className="gf-modal__title">
                 {title}
               </h2>
             )}
-            {description && <p className="gf-modal__desc">{description}</p>}
+            {description && (
+              <p id={descriptionId} className="gf-modal__desc">
+                {description}
+              </p>
+            )}
             {children}
             {actions && <div className="gf-modal__actions">{actions}</div>}
           </motion.div>
@@ -527,27 +462,47 @@ export const Spinner: React.FC<SpinnerProps> = ({ size = 18, className, label = 
 
 export interface ToastProps {
   message: string | null;
+  revision?: number;
 }
 
-/** Bottom-centered transient toast. Render once near the app root. */
-export const Toast: React.FC<ToastProps> = ({ message }) => (
-  <AnimatePresence>
-    {message && (
-      <motion.div
-        className="gf-toast"
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-        initial={{ opacity: 0, y: 10, x: '-50%' }}
-        animate={{ opacity: 1, y: 0, x: '-50%' }}
-        exit={{ opacity: 0, y: 8, x: '-50%' }}
-        transition={{ type: 'tween', duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-      >
-        {message}
-      </motion.div>
-    )}
-  </AnimatePresence>
-);
+/** One nonblocking capsule; repeated feedback updates the persistent live region. */
+export const Toast: React.FC<ToastProps> = ({ message, revision }) => {
+  const reducedMotion = useReducedMotion();
+  return (
+    <>
+      <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {message && <span key={revision ?? message}>{message}</span>}
+      </span>
+      <div className="gf-toast-viewport" aria-hidden="true">
+        <AnimatePresence>
+          {message && (
+            <motion.div
+              className="gf-toast"
+              initial={{
+                opacity: 0,
+                transform: reducedMotion ? 'none' : 'translateY(8px) scale(0.98)',
+              }}
+              animate={{ opacity: 1, transform: 'none' }}
+              exit={{
+                opacity: 0,
+                transform: reducedMotion ? 'none' : 'translateY(4px) scale(0.99)',
+                transition: { duration: 0.1 },
+              }}
+              transition={{
+                type: 'tween',
+                duration: reducedMotion ? 0.08 : 0.2,
+                ease: [0.16, 1, 0.3, 1],
+              }}
+            >
+              <Info className="gf-toast__icon" size={18} />
+              <span className="gf-toast__message">{message}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </>
+  );
+};
 
 /* ── Toggle ─────────────────────────────────────────────────────────────── */
 

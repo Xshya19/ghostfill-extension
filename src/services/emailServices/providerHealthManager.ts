@@ -114,7 +114,7 @@ class ProviderHealthManager implements IProviderHealthManager {
         const serialized = JSON.stringify(Array.from(this.health.entries()));
         chrome.storage.session
           .set({ phm_health: serialized })
-          .catch((e) => console.debug('PHM session save failed', e));
+          .catch((e) => log.debug('PHM session save failed', e));
       } catch (error) {
         log.warn('Failed to save provider health state', error);
       }

@@ -10,249 +10,109 @@
 // §1  D E S I G N   T O K E N S   &   S T Y L E S
 // ─────────────────────────────────────────────────────────────────────────────
 
-import {
-  classifyField,
-  getFieldTooltip,
-  FieldType,
-} from '../../shared/fieldClassifier';
-import { generateHostTokens } from '../../shared/theme';
+import { classifyField, getFieldTooltip, FieldType } from '../../shared/fieldClassifier';
+import { generateHostThemeStyles, initTheme } from '../../shared/theme';
 import { setHTML } from '../../utils/sanitization.core';
 import { evaluateFab } from '../fab';
 
 const STYLES = `
-/* ═══════════════════════════════════════════════════
-   GhostLabel 3.0 — Spatial Glass Inline Icon
-   ═══════════════════════════════════════════════════ */
-
+${generateHostThemeStyles()}
 :host {
   display: block;
   position: absolute;
   z-index: 2147483646;
   isolation: isolate;
   cursor: pointer;
-  font-family: "Space Grotesk", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   pointer-events: auto;
+  box-sizing: content-box;
   width: 28px;
   height: 28px;
   padding: 8px;
   margin: -8px;
-
-  /* Premium Spatial Tokens */
-  ${generateHostTokens()}
-
-  --brand:           var(--gf-primary);
-  --brand-rgb:       var(--gf-primary-rgb);
-  --brand-light:     var(--gf-primary-deep);
-  --success:         var(--gf-mint);
-  --success-rgb:     var(--gf-mint-rgb);
-  --error:           var(--gf-coral);
-  --error-rgb:       var(--gf-coral-rgb);
-  
-  --sticker-bg: var(--gf-primary-deep, #4f46e5);
-  --sticker-bg-hover: var(--gf-primary, #6366f1);
-  --shadow-hard: 0 4px 14px -4px rgba(var(--gf-primary-rgb, 99, 102, 241), 0.7), 0 1px 0 rgba(255,255,255,0.28) inset;
-
-  --ease-out-expo:   cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-spring:     cubic-bezier(0.16, 1, 0.3, 1);
+  border-radius: 14px;
+  transition: opacity 160ms ease-out;
 }
-
 .ghost-icon-container {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
   width: 100%;
   height: 100%;
-  border-radius: var(--gf-control-radius, 10px);
-  background: var(--sticker-bg);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow: var(--shadow-hard);
-  overflow: hidden;
-  opacity: 1;
-  position: relative;
-  color: #fff;
-  transition: transform 0.15s var(--ease-spring), box-shadow 0.15s, filter 0.15s;
+  border-radius: 9px;
+  border: 1px solid var(--gf-glass-stroke);
+  background: var(--gf-glass-solid);
+  color: var(--gf-primary-text);
+  box-shadow: var(--gf-glass-inner);
+  transition: transform 120ms ease-out;
 }
-
-.ghost-icon-container:hover {
-  background: var(--sticker-bg-hover);
-  transform: translateY(-1px) scale(1.06);
-  box-shadow: 0 8px 20px -6px rgba(var(--brand-rgb, 99, 102, 241), 0.8), 0 1px 0 rgba(255,255,255,0.12) inset;
-  filter: brightness(1.06);
-}
-
-.ghost-icon-container:active {
-  transform: translateY(0) scale(0.96);
-  box-shadow: 0 3px 10px -4px rgba(var(--gf-primary-rgb, 99, 102, 241), 0.7), 0 1px 2px rgba(0,0,0,0.25) inset;
-}
-
-.ghost-icon-container:focus-visible {
-  outline: 2px solid var(--gf-primary, #818cf8);
-  outline-offset: 2px;
-  box-shadow:
-    0 0 0 2px var(--gf-bg, #0c0f14),
-    0 3px 10px -4px rgba(var(--gf-primary-rgb, 99, 102, 241), 0.7);
-}
-
-:host(:focus-visible) {
-  outline: 2px solid var(--gf-primary, #818cf8);
-  outline-offset: 2px;
-  border-radius: var(--gf-control-radius, 10px);
-}
-
-/* ── SVG Icons ── */
-.ghost-svg {
+.ghost-icon-container:active { transform: scale(0.97); }
+:host(:focus-visible) { outline: 2px solid var(--gf-primary); outline-offset: 2px; }
+.ghost-svg { width: 15px; height: 15px; }
+.gl-spinner {
   width: 14px;
   height: 14px;
-  position: relative;
-  z-index: 2;
-  transition: transform 0.3s var(--ease-spring);
-  will-change: transform;
-}
-
-.ghost-icon-container:hover .ghost-svg {
-  transform: scale(1.15);
-}
-
-.ghost-icon-container:active .ghost-svg {
-  transform: scale(0.92);
-}
-
-/* ── Spinner ── */
-.gl-spinner {
-  width: 13px;
-  height: 13px;
-  border: 1.5px solid rgba(var(--brand-rgb), 0.15);
+  border: 1.5px solid var(--gf-glass-stroke);
+  border-top-color: var(--gf-primary);
   border-radius: 50%;
-  border-top-color: var(--brand);
-  animation: glSpin 0.7s linear infinite;
-  z-index: 2;
+  animation: glSpin 0.8s linear infinite;
 }
-
-@keyframes glSpin {
-  to { transform: rotate(360deg); }
-}
-
-/* ── Success Animation ── */
-.gl-success-icon {
-  animation: glPop 0.3s var(--ease-spring);
-}
-
-@keyframes glPop {
-  0% { transform: scale(.92) rotate(-8deg); opacity: 0; }
-  100% { transform: scale(1) rotate(0); opacity: 1; }
-}
-
-/* ── Spatial Tooltip (Cyberpunk styled) ── */
+@keyframes glSpin { to { transform: rotate(360deg); } }
+.ghost-icon-container.gl-loading { cursor: wait; }
+.ghost-icon-container.gl-success { color: var(--gf-mint-text); border-color: var(--gf-mint-text); }
+.ghost-icon-container.gl-error { color: var(--gf-coral-text); border-color: var(--gf-coral-text); }
+.ghost-icon-container.gl-otp-ready { color: var(--gf-primary-text); border-color: var(--gf-primary-text); }
 .gl-tooltip {
   position: absolute;
-  bottom: 100%;
+  bottom: calc(100% + 8px);
   left: 50%;
-  transform: translateX(-50%) translateY(4px) scale(0.85);
-  transform-origin: bottom center;
-  background: var(--gf-card-elevated);
-  border: 1px solid var(--gf-line-2, rgba(255,255,255,0.13));
+  width: max-content;
+  max-width: min(280px, calc(100vw - 24px));
+  transform: translateX(calc(-50% + var(--gl-tooltip-shift, 0px))) translateY(3px);
+  padding: 7px 10px;
+  background: var(--gf-glass-solid);
+  border: 1px solid var(--gf-glass-stroke);
+  border-radius: 10px;
   color: var(--gf-ink);
-  font-size: 10.5px;
-  font-weight: 600;
-  padding: 5px 9px;
-  border-radius: var(--gf-radius-sm, 9px);
-  box-shadow: 0 6px 18px -6px rgba(0,0,0,0.55), 0 1px 0 var(--gf-hi) inset;
-  white-space: nowrap;
+  box-shadow: var(--gf-glass-shadow);
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  text-align: center;
   pointer-events: none;
   opacity: 0;
-  z-index: 1000;
-  transition:
-    opacity 0.25s var(--ease-out-expo),
-    transform 0.25s var(--ease-out-expo);
-  will-change: opacity, transform;
+  visibility: hidden;
+  transition: opacity 120ms ease-out, transform 120ms ease-out, visibility 120ms;
 }
-
-.gl-tooltip::after {
-  content: "";
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  margin-left: -4px;
-  border-width: 4px;
-  border-style: solid;
-  border-color: var(--gf-card-elevated) transparent transparent transparent;
-}
-
-:host(:hover) .gl-tooltip {
+:host(:hover) .gl-tooltip, :host(:focus-visible) .gl-tooltip {
   opacity: 1;
-  transform: translateX(-50%) translateY(-6px) scale(1);
+  visibility: visible;
+  transform: translateX(calc(-50% + var(--gl-tooltip-shift, 0px))) translateY(0);
 }
-
-/* State Modifiers — Spectre glass tints */
-.ghost-icon-container.gl-loading {
-  background: var(--gf-surface);
-  border-color: var(--gf-line);
-  cursor: wait;
+:host(.gl-entering), :host(.gl-exiting) { opacity: 0; }
+:host(.gl-exiting) { pointer-events: none; }
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .ghost-icon-container { background: var(--gf-glass-control); -webkit-backdrop-filter: blur(4px) saturate(150%); backdrop-filter: blur(4px) saturate(150%); }
+  .gl-tooltip { background: var(--gf-glass-elevated); -webkit-backdrop-filter: blur(24px) saturate(135%); backdrop-filter: blur(24px) saturate(135%); }
 }
-.ghost-icon-container.gl-success {
-  background: var(--gf-mint, #34d399);
-  border-color: var(--gf-line-2, rgba(255,255,255,0.10));
-  box-shadow: 0 6px 18px -6px rgba(63, 224, 197, 0.7), 0 1px 0 rgba(255,255,255,0.06) inset;
-}
-.ghost-icon-container.gl-error {
-  background: var(--gf-coral, #f87171);
-  border-color: var(--gf-line-2, rgba(255,255,255,0.10));
-  box-shadow: 0 6px 18px -6px rgba(255, 107, 107, 0.7), 0 1px 0 rgba(255,255,255,0.06) inset;
-  animation: glShake2D 0.35s ease;
-}
-.ghost-icon-container.gl-otp-ready {
-  background: var(--gf-primary-deep, #4f46e5);
-  border-color: var(--gf-line-2, rgba(255,255,255,0.10));
-  box-shadow: 0 6px 18px -6px rgba(var(--brand-rgb, 124,131,255), 0.7), 0 1px 0 rgba(255,255,255,0.06) inset;
-  animation: glPulse2D 2s ease-in-out infinite;
-}
-
-@keyframes glPulse2D {
-  0%, 100% { box-shadow: 0 6px 18px -6px rgba(var(--brand-rgb, 124,131,255), 0.7), 0 1px 0 rgba(255,255,255,0.06) inset; }
-  50% { box-shadow: 0 6px 22px -4px rgba(var(--brand-rgb, 124,131,255), 0.95), 0 0 0 4px rgba(var(--brand-rgb, 124,131,255), 0.18), 0 1px 0 rgba(255,255,255,0.06) inset; }
-}
-@keyframes glShake2D {
-  0%, 100% { transform: translateX(0); }
-  20%, 60% { transform: translateX(-3px); }
-  40%, 80% { transform: translateX(3px); }
-}
-
-/* ── Entrance/Exit ── */
-:host {
-  transition: opacity 0.25s var(--ease-out-expo), transform 0.25s var(--ease-out-expo);
-}
-:host(.gl-entering) {
-  opacity: 0;
-  transform: scale(0.7) rotate(-5deg);
-}
-:host(.gl-exiting) {
-  opacity: 0;
-  transform: scale(0.8) translateY(2px);
-  pointer-events: none;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .ghost-icon-container, .ghost-svg, .gl-tooltip, :host {
-    transition: none !important;
-    animation: none !important;
-  }
-  .ghost-icon-container:hover {
-    transform: none !important;
-  }
-  .ghost-icon-container:active {
-    transform: none !important;
-  }
+  :host, .ghost-icon-container, .gl-tooltip { transition: none; }
+  .ghost-icon-container:active { transform: none; }
+  .gl-spinner { animation-duration: 1.6s; }
+  :host(.gl-entering) { opacity: 1; }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .ghost-icon-container, .gl-tooltip { background: var(--gf-glass-solid); border-color: var(--gf-line-2); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 `;
+let sharedStyleSheet: CSSStyleSheet | null = null;
 
 class GhostLabelIcons {
   static readonly GHOST = `
     <svg class="ghost-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <defs><linearGradient id="gf-brand-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stop-color="var(--gf-violet)"/><stop offset="100%" stop-color="var(--gf-magenta)"/>
-      </linearGradient></defs>
       <path d="M12 2C8.13 2 5 5.13 5 9v11l2-2 2 2 2-2 2 2 2-2 2 2V9c0-3.87-3.13-7-7-7z"
-            fill="url(#gf-brand-gradient)"/>
+            fill="var(--gf-primary)"/>
       <circle cx="9" cy="10" r="1.5" fill="white"/>
       <circle cx="15" cy="10" r="1.5" fill="white"/>
     </svg>`;
@@ -300,8 +160,8 @@ class GhostLabelIcons {
 
   static readonly SUCCESS = `
     <svg class="gl-success-icon ghost-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="10" fill="var(--gf-mint)"/>
-      <path d="M8 12.5l2.5 2.5 5-5" stroke="var(--gf-ink)" stroke-width="2"
+      <circle cx="12" cy="12" r="10" fill="var(--gf-success-fill)"/>
+      <path d="M8 12.5l2.5 2.5 5-5" stroke="var(--gf-on-success)" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round"/>
     </svg>`;
 
@@ -433,6 +293,7 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
   private currentState: LabelState = 'idle';
   private isAttached = false;
   private ariaLiveEl: HTMLElement | null = null;
+  private unsubscribeTheme: (() => void) | null = null;
 
   // ── Observers & timers ───────────────────────────────────
   private resizeObserver: ResizeObserver | null = null;
@@ -450,6 +311,8 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
   constructor() {
     super();
     this.root = this.attachShadow({ mode: 'open' });
+    this.addEventListener('mouseenter', () => this.positionTooltip());
+    this.addEventListener('focus', () => this.positionTooltip());
 
     // Pre-bind for efficient listener add/remove
     this._onScroll = this.schedulePositionUpdateThrottled.bind(this);
@@ -462,11 +325,12 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
 
   connectedCallback(): void {
     this.render();
+    this.unsubscribeTheme = initTheme(this);
 
     // Entry animation
     this.classList.add('gl-entering');
     requestAnimationFrame(() => {
-      setTimeout(() => this.classList.remove('gl-entering'), 350);
+      this.classList.remove('gl-entering');
     });
 
     this.updatePosition();
@@ -572,7 +436,7 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
     });
     this.inputObserver.observe(input, {
       attributes: true,
-      attributeFilter: ['type', 'disabled', 'readonly', 'style', 'class', 'hidden'],
+      attributeFilter: ['type', 'disabled', 'readonly', 'style', 'class', 'hidden', 'data-ghostfill-fab-active'],
     });
 
     // Listen for value changes to adjust opacity
@@ -633,8 +497,28 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
         break;
     }
 
+    const fieldName: Record<FieldType, string> = {
+      email: 'email address',
+      password: 'password',
+      otp: 'verification code',
+      user: 'name',
+      generic: 'field',
+    };
+    const target = fieldName[this.fieldType];
+    const stateLabel: Record<Exclude<LabelState, 'idle'>, string> = {
+      loading: `Filling ${target}…`,
+      success: `${target[0]?.toUpperCase() ?? ''}${target.slice(1)} filled`,
+      error: `Couldn’t fill ${target}. Try again`,
+      'otp-ready': 'Verification code ready. Activate to fill',
+    };
+    const label = state === 'idle' ? getFieldTooltip(this.fieldType) : stateLabel[state];
+    this.setAttribute('aria-label', label);
+    this.toggleAttribute('aria-busy', state === 'loading');
+    if (this.tooltipEl) {
+      this.tooltipEl.textContent = label;
+    }
     if (this.ariaLiveEl) {
-      this.ariaLiveEl.textContent = `GhostFill state changed to ${state}`;
+      this.ariaLiveEl.textContent = state === 'idle' || state === 'loading' ? '' : label;
     }
 
     // Auto-reset to idle
@@ -665,12 +549,15 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
   // ═══════════════════════════════════════════════════════════
 
   private render(): void {
+    this.root.replaceChildren();
     // Apply styles via adoptedStyleSheets where possible (CSP-safe)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if ('adoptedStyleSheets' in (document as any)) {
-      const sheet = new CSSStyleSheet();
-      sheet.replaceSync(STYLES);
-      this.root.adoptedStyleSheets = [sheet];
+      if (!sharedStyleSheet) {
+        sharedStyleSheet = new CSSStyleSheet();
+        sharedStyleSheet.replaceSync(STYLES);
+      }
+      this.root.adoptedStyleSheets = [sharedStyleSheet];
     } else {
       const style = document.createElement('style');
       style.textContent = STYLES;
@@ -686,6 +573,7 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
     // Tooltip
     this.tooltipEl = document.createElement('div');
     this.tooltipEl.className = 'gl-tooltip';
+    this.tooltipEl.setAttribute('role', 'tooltip');
     this.tooltipEl.textContent = 'GhostFill';
     this.root.appendChild(this.tooltipEl);
 
@@ -712,6 +600,22 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
     }
     this.tooltipEl.textContent = getFieldTooltip(this.fieldType);
     this.setAttribute('aria-label', getFieldTooltip(this.fieldType));
+  }
+
+  private positionTooltip(): void {
+    if (!this.tooltipEl) {
+      return;
+    }
+    this.tooltipEl.style.setProperty('--gl-tooltip-shift', '0px');
+    this.tooltipEl.style.top = '';
+    this.tooltipEl.style.bottom = '';
+    const rect = this.tooltipEl.getBoundingClientRect();
+    const shift = Math.max(8 - rect.left, Math.min(0, window.innerWidth - 8 - rect.right));
+    this.tooltipEl.style.setProperty('--gl-tooltip-shift', `${shift}px`);
+    if (rect.top < 8) {
+      this.tooltipEl.style.top = 'calc(100% + 8px)';
+      this.tooltipEl.style.bottom = 'auto';
+    }
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -745,6 +649,12 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
 
     if (!this.inputElement.isConnected || evaluateFab(this.inputElement).presence !== 'active') {
       this.animateExit();
+      return;
+    }
+
+    // The focused floating control owns this field; keep its inline fallback out of the way.
+    if (this.inputElement.hasAttribute('data-ghostfill-fab-active')) {
+      this.style.setProperty('display', 'none', 'important');
       return;
     }
 
@@ -787,6 +697,8 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
   // ═══════════════════════════════════════════════════════════
 
   private cleanup(): void {
+    this.unsubscribeTheme?.();
+    this.unsubscribeTheme = null;
     if (this.inputElement && sharedResizeObserver) {
       sharedResizeObserver.unobserve(this.inputElement);
       ghostLabelObserveMap.delete(this.inputElement);
@@ -837,7 +749,9 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
 
 if (typeof customElements !== 'undefined' && customElements && !customElements.get('ghost-label')) {
   try {
-    customElements.define('ghost-label', GhostLabel);
+    if (!customElements.get('ghost-label')) {
+      customElements.define('ghost-label', GhostLabel);
+    }
   } catch (e) {
     // Silently ignore if already defined in another context
     // eslint-disable-next-line no-console

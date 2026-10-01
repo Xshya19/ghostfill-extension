@@ -2,7 +2,7 @@
 
 Last updated: 2026-09-19
 
-GhostFill is a browser extension. This policy describes the public temporary-email-only build in this repository.
+GhostFill is a browser extension. This policy describes the default full build in this repository, which includes optional Gmail/Google alias and inbox features. The explicitly named `build:public` profile is temporary-email-only.
 
 ## Information processed
 
@@ -12,7 +12,9 @@ To provide its features, GhostFill processes generated identity values, generate
 
 When the user generates an address or checks an inbox, GhostFill makes requests to the selected temporary-email provider. Those providers receive the request data necessary to operate that mailbox and may have their own logs, retention, availability, rate limits, or privacy policies. GhostFill does not make claims about those providers' privacy practices.
 
-The public build does not request Gmail OAuth and does not include Google, Microsoft, or Zoho host permissions. The separately documented full maintainer build is not the public distribution path.
+The explicitly named `build:public` profile does not request Gmail OAuth and does not include Google, Microsoft, or Zoho host permissions. The default build is the full profile and includes the real-mail permissions described below.
+
+The default full build can request Gmail OAuth with the restricted `gmail.readonly` scope and basic profile scopes. When the user chooses Gmail, Google handles the sign-in flow through Chrome's identity API; GhostFill does not operate a hosted mail backend. The extension uses the authorized account to read the inbox needed for verification flows and stores the associated profile, alias sessions, inbox metadata, and settings in extension storage. OAuth access tokens are handled by Chrome's identity flow and in-memory service state rather than sent to a GhostFill server. Google may process data under Google's own terms and privacy policy.
 
 ## Storage and deletion
 

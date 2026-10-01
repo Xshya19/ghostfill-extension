@@ -12,6 +12,7 @@
 
 import { EmailAccount, Email, TempMailMessage, TempMailFullMessage } from '../../types';
 import { API, TEMP_MAIL_DOMAINS, contentToString, safeParseDate } from '../../utils/core';
+import { getSenderSource } from '../../utils/emailIdentity';
 import { getRandomInt } from '../../utils/encryption';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
@@ -397,7 +398,7 @@ class TempMailService {
   private convertMessage(msg: TempMailMessage, login: string, domain: string): Email {
     return {
       id: msg.id,
-      from: contentToString(msg.from, 'Unknown Sender'),
+      from: getSenderSource(undefined, msg.from),
       to: `${login}@${domain}`,
       subject: contentToString(msg.subject, '(No Subject)'),
       date: safeParseDate(msg.date),
@@ -417,7 +418,7 @@ class TempMailService {
     const textStr = contentToString(msg.textBody || rawBody);
     return {
       id: msg.id,
-      from: contentToString(msg.from, 'Unknown Sender'),
+      from: getSenderSource(undefined, msg.from),
       to: `${login}@${domain}`,
       subject: contentToString(msg.subject, '(No Subject)'),
       date: safeParseDate(msg.date),

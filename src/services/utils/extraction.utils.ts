@@ -187,7 +187,7 @@ export { truncate };
 /**
  * Check if a string is a valid HTTP/HTTPS URL
  */
-export function isValidUrl(url: string): boolean {
+export function isValidUrl(url: string, explicitLink = false): boolean {
   if (!url || typeof url !== 'string') {
     return false;
   }
@@ -210,6 +210,7 @@ export function isValidUrl(url: string): boolean {
       return false;
     }
     if (
+      !explicitLink &&
       /\.(png|jpg|jpeg|gif|svg|ico|woff2?|ttf|eot|css|webp|avif|bmp|tiff?|js)(\?|$)/i.test(
         parsed.pathname
       )

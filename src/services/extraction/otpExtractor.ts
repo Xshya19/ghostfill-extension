@@ -72,7 +72,8 @@ function sliceAround(text: string, index: number, length: number, radius: number
 function isInsideUrlLikeSpan(text: string, index: number, length: number): boolean {
   if (!text || index < 0) {return false;}
 
-  const start = Math.max(0, index - 160);
+  // Long tracking URLs can extend far beyond a fixed context radius.
+  const start = Math.max(0, text.slice(0, index).search(/\S+$/));
   const window = text.slice(start, Math.min(text.length, index + length + 160));
   const localIndex = index - start;
   const localEnd = localIndex + Math.max(length, 1);

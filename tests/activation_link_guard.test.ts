@@ -25,6 +25,17 @@ describe('activationLinkGuard — semantic (not brand-scripted)', () => {
     expect(v.canAutoOpen).toBe(true);
   });
 
+  it('requires strong evidence and HTTPS before opening a link automatically', () => {
+    expect(isAutoOpenableActivationLink('https://service.example/verify')).toBe(false);
+    expect(isAutoOpenableActivationLink('https://service.example/auth?token=tracking123456')).toBe(false);
+    expect(
+      isAutoOpenableActivationLink('http://service.example/verify?token=verification123456')
+    ).toBe(false);
+    expect(
+      isAutoOpenableActivationLink('https://service.example/verify?token=verification123456')
+    ).toBe(true);
+  });
+
   it('accepts many activation wording synonyms without brand lists', () => {
     const cases: Array<[string, string]> = [
       ['https://a.test/validate?token=tok_validate_12345678', 'Validate your email'],
@@ -173,6 +184,19 @@ describe('end-to-end extractAll — smart multi-link discrimination', () => {
       'promo@shop.example.com'
     );
     expect(result.link).toBeNull();
+  });
+
+  it('does not present a short activation token as a fillable OTP', () => {
+    const url = 'https://service.example/verify?token=ABC12345';
+    const result = extractAll(
+      'Verify your email',
+      `Click the verification link: ${url}`,
+      `<a href="${url}">Verify email</a>`,
+      'noreply@service.example'
+    );
+
+    expect(result.link?.url).toBe(url);
+    expect(result.otp).toBeNull();
   });
 
   it('still wins when wrong link has higher "popularity" tokens', () => {

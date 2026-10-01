@@ -300,10 +300,15 @@ describe('sleep()', () => {
     expect(Date.now() - start).toBeGreaterThanOrEqual(40);
   });
 
-  it('resolves immediately for 0ms', async () => {
-    const start = Date.now();
-    await sleep(0);
-    expect(Date.now() - start).toBeLessThan(50);
+  it('resolves on a zero-delay timer for 0ms', async () => {
+    vi.useFakeTimers();
+    try {
+      const result = sleep(0);
+      await vi.runAllTimersAsync();
+      await expect(result).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

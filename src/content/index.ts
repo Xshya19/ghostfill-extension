@@ -4,10 +4,10 @@
 // Debug console only in development — excluded from production bundle via DefinePlugin
 import { errorTracker } from '../services/performanceService';
 import { FieldType } from '../types/form.types';
-import { deepQuerySelectorAll } from '../utils/core';
+import { deepQuerySelectorAll, getDeepActiveElement } from '../utils/core';
 import { createLogger, initRemoteLogger } from '../utils/logger';
 import { AutoFiller } from './autoFiller';
-import { isAppSurfaceHost, AUTH_PATH_RE } from './fab';
+import { evaluateFab } from './fab';
 import { FloatingButton } from './floatingButton';
 import { FormDetector, FieldAnalyzer, DOMObserver, collectFieldDiagnostics } from './formDetector';
 import { OTPPageDetector } from './otpPageDetector';
@@ -15,19 +15,38 @@ import { pageStatus } from './ui/pageStatus';
 import './styles/content.css';
 import './ui/GhostLabel';
 
-if (process.env.NODE_ENV !== 'production') {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  require('./dev/debugConsole');
-}
-
 // Register web component
 
 const log = createLogger('ContentScript');
-initRemoteLogger('Content');
+const isTopFrame = window.top === window;
+const alreadyInjected = Boolean((window as any).ghostfill_injected);
+const tinyIframe = !isTopFrame && (window.innerWidth < 100 || window.innerHeight < 100);
+const shouldRunContentScript = !alreadyInjected && !tinyIframe;
+
+if (alreadyInjected) {
+  log.debug('GhostFill content script already injected on this window — skipping');
+} else if (tinyIframe) {
+  log.debug('Skipping GhostFill content script in tiny iframe');
+} else {
+  (window as any).ghostfill_injected = true;
+}
+
+if (shouldRunContentScript) {
+  if (process.env.NODE_ENV !== 'production') {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require('./dev/debugConsole');
+  }
+  initRemoteLogger('Content');
+}
 
 // Handle context invalidation globally
 function isContextValid(): boolean {
-  return typeof chrome !== 'undefined' && !!chrome.runtime?.id;
+  try {
+    return typeof chrome !== 'undefined' && !!chrome.runtime?.id;
+  } catch {
+    // Chrome can throw while exposing runtime properties during extension reload.
+    return false;
+  }
 }
 
 function isKnownLifecycleMessage(text: string): boolean {
@@ -70,19 +89,35 @@ function isExtensionOwnedRejection(reason: unknown): boolean {
 }
 
 function runSafely(taskName: string, task: () => Promise<unknown> | void): void {
+  if (!isContextValid()) {
+    log.debug(`Skipping content task "${taskName}" after extension context invalidation`);
+    return;
+  }
+
+  const reportFailure = (error: unknown) => {
+    const errorText =
+      error instanceof Error ? `${error.message}\n${error.stack ?? ''}` : String(error ?? '');
+    if (!isContextValid() || isKnownLifecycleMessage(errorText)) {
+      log.debug(`Content task "${taskName}" stopped during extension lifecycle change`);
+      return;
+    }
+    log.warn(`Content task "${taskName}" failed`, error);
+  };
+
   try {
     const result = task();
     if (result && typeof (result as Promise<unknown>).then === 'function') {
       void (result as Promise<unknown>).catch((error) => {
-        log.warn(`Content task "${taskName}" failed`, error);
+        reportFailure(error);
       });
     }
   } catch (error) {
-    log.warn(`Content task "${taskName}" failed`, error);
+    reportFailure(error);
   }
 }
 
 // Global error boundary for content script
+if (shouldRunContentScript) {
 window.addEventListener('error', (event) => {
   const msg = event.message?.toLowerCase() ?? '';
   const filename = event.filename ?? '';
@@ -99,7 +134,9 @@ window.addEventListener('error', (event) => {
 
   log.error('Unhandled content script error:', event.error);
 });
+}
 
+if (shouldRunContentScript) {
 window.addEventListener('unhandledrejection', (event) => {
   const reason = event.reason;
   const reasonStr = reason instanceof Error ? reason.message : String(reason);
@@ -117,19 +154,11 @@ window.addEventListener('unhandledrejection', (event) => {
 
   log.error('Unhandled content script promise rejection:', event.reason);
 });
-
-// Idempotency and frame size guards
-if ((window as any).ghostfill_injected) {
-  log.debug('GhostFill content script already injected on this window — skipping');
-}
-(window as any).ghostfill_injected = true;
-
-const isTopFrame = window.top === window;
-if (!isTopFrame && (window.innerWidth < 100 || window.innerHeight < 100)) {
-  log.debug('Skipping GhostFill content script in tiny iframe');
 }
 
-log.info('GhostFill content script loaded');
+if (shouldRunContentScript) {
+  log.info('GhostFill content script loaded');
+}
 
 // Safe component factory that ensures all method calls are caught, avoiding crashes
 function createSafeComponent<T extends object>(methods: Partial<T>, componentName: string): T {
@@ -205,9 +234,6 @@ const ACTIVATION_MESSAGE_ACTIONS = new Set([
 const PAGE_ACTIVATION_PATTERN =
   /login|log[\s_-]?in|sign[\s_-]?in|sign[\s_-]?up|signup|register|create[\s_-]?account|verification|verify|otp|one[\s_-]?time|2fa|mfa|password[\s_-]?reset|email[\s_-]?address/i;
 
-const FIELD_ACTIVATION_PATTERN =
-  /email|e-mail|username|user[\s_-]?name|login|password|passcode|otp|one[\s_-]?time|verification|verify|security[\s_-]?code|auth[\s_-]?code|first[\s_-]?name|last[\s_-]?name|full[\s_-]?name|surname/i;
-
 const RELEVANT_FIELD_SELECTOR = [
   'input[type="email"]',
   'input[type="password"]',
@@ -232,63 +258,13 @@ const RELEVANT_FIELD_SELECTOR = [
   'input[id*="last" i]',
 ].join(',');
 
-function isIgnorableInput(input: HTMLInputElement | HTMLTextAreaElement): boolean {
-  if (input.disabled || input.readOnly) {
-    return true;
-  }
-  if (input instanceof HTMLTextAreaElement) {
-    return false;
-  }
-  return [
-    'hidden',
-    'submit',
-    'button',
-    'reset',
-    'checkbox',
-    'radio',
-    'file',
-    'image',
-    'range',
-    'color',
-    'search',
-  ].includes((input.type ?? '').toLowerCase());
-}
-
 function isLikelyRelevantInput(input: HTMLInputElement | HTMLTextAreaElement): boolean {
-  if (isIgnorableInput(input)) {
-    return false;
-  }
-
-  const descriptor = [
-    input instanceof HTMLInputElement ? input.type : '',
-    input.name,
-    input.id,
-    input.placeholder,
-    input.getAttribute('autocomplete'),
-    input.getAttribute('aria-label'),
-  ]
-    .filter(Boolean)
-    .join(' ');
-
-  if (input instanceof HTMLInputElement) {
-    const type = input.type.toLowerCase();
-    if (type === 'email' || type === 'password') {
-      return true;
-    }
-    if (
-      input.autocomplete === 'one-time-code' ||
-      (input.maxLength >= 4 && input.maxLength <= 10 && input.inputMode === 'numeric')
-    ) {
-      return true;
-    }
-  }
-
-  return FIELD_ACTIVATION_PATTERN.test(descriptor);
+  return evaluateFab(input).presence !== 'hidden';
 }
 
 function hasRelevantField(): boolean {
   try {
-    if (deepQuerySelectorAll(RELEVANT_FIELD_SELECTOR).length > 0) {
+    if (deepQuerySelectorAll<HTMLInputElement>(RELEVANT_FIELD_SELECTOR).some(isLikelyRelevantInput)) {
       return true;
     }
   } catch {
@@ -323,10 +299,8 @@ function hasPageActivationSignals(): boolean {
 }
 
 function shouldActivateImmediately(): boolean {
-  if (isAppSurfaceHost(location.hostname) && !AUTH_PATH_RE.test(location.href)) {
-    return false; // Docs / Slack / WhatsApp / feeds — wait for a real signal
-  }
-  return hasRelevantField() && (hasPageActivationSignals() || AUTH_PATH_RE.test(location.href));
+  const active = getDeepActiveElement();
+  return (active instanceof HTMLElement && evaluateFab(active).presence !== 'hidden') || hasRelevantField();
 }
 
 function removePassiveActivationHooks(): void {
@@ -350,7 +324,7 @@ function installPassiveActivationHooks(): void {
   }
 
   passiveActivationHandler = (event: Event) => {
-    const target = event.target;
+    const target = event.composedPath()[0] ?? event.target;
     if (
       target instanceof HTMLInputElement ||
       target instanceof HTMLTextAreaElement ||
@@ -876,28 +850,30 @@ function safeInitFromEvent(): void {
   safeInit(false);
 }
 
-installPassiveMessageListener();
+if (shouldRunContentScript) {
+  installPassiveMessageListener();
 
-// Listen for developer keyboard shortcut (Alt+Shift+H) to collect field diagnostics.
-document.addEventListener(
-  'keydown',
-  (event: KeyboardEvent) => {
-    if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'h') {
-      event.preventDefault();
-      event.stopPropagation();
-      log.info('Dev shortcut Alt+Shift+H triggered: collecting field diagnostics');
-      void collectFieldDiagnostics();
-    }
-  },
-  true
-);
+  // Listen for developer keyboard shortcut (Alt+Shift+H) to collect field diagnostics.
+  document.addEventListener(
+    'keydown',
+    (event: KeyboardEvent) => {
+      if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'h') {
+        event.preventDefault();
+        event.stopPropagation();
+        log.info('Dev shortcut Alt+Shift+H triggered: collecting field diagnostics');
+        void collectFieldDiagnostics();
+      }
+    },
+    true
+  );
 
-// Initialize safely preventing DOM node load hazards
-if (document.readyState === 'complete') {
-  safeInit();
-} else {
-  document.addEventListener('DOMContentLoaded', safeInitFromEvent);
-  window.addEventListener('load', safeInitFromEvent);
+  // Initialize safely preventing DOM node load hazards
+  if (document.readyState === 'complete') {
+    safeInit();
+  } else {
+    document.addEventListener('DOMContentLoaded', safeInitFromEvent);
+    window.addEventListener('load', safeInitFromEvent);
+  }
 }
 
 // Export for testing

@@ -262,7 +262,7 @@ chrome.runtime.onInstalled.addListener((details) => {
     previousVer: details.previousVersion,
   });
 
-  initialize(details.reason).catch((e) => {
+  initialize(details.reason, details.previousVersion).catch((e) => {
     const errorMsg = extractMsg(e);
     const errorStack = e instanceof Error ? e.stack : 'No stack trace';
     log.error('❌ Init failed (onInstalled)', {
@@ -293,7 +293,7 @@ chrome.runtime.onStartup.addListener(() => {
 //  CORE — INITIALIZE
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-async function initialize(trigger: InitTrigger): Promise<void> {
+async function initialize(trigger: InitTrigger, previousVersion?: string): Promise<void> {
   pendingTriggers.add(trigger);
 
   if (activeInitPromise) {
@@ -324,7 +324,7 @@ async function initialize(trigger: InitTrigger): Promise<void> {
         if (mainTrigger === 'install') {
           await onFreshInstall();
         } else if (mainTrigger === 'update') {
-          await onUpdate();
+          await onUpdate(previousVersion);
         }
         return;
       }
@@ -359,7 +359,7 @@ async function initialize(trigger: InitTrigger): Promise<void> {
       if (mainTrigger === 'install') {
         await onFreshInstall();
       } else if (mainTrigger === 'update') {
-        await onUpdate();
+        await onUpdate(previousVersion);
       } else if (mainTrigger === 'startup') {
         await handleStartupSessionWipe();
       }
@@ -452,19 +452,22 @@ async function onFreshInstall(): Promise<void> {
 }
 
 // ISSUE #2 FIX: onUpdate() is now properly async and returns Promise<void>
-async function onUpdate(): Promise<void> {
+async function onUpdate(previousVersionFromEvent?: string): Promise<void> {
   log.info('🔄 Extension updated');
 
   try {
     const { storageService } = await import('../services/storageService');
-    const previousVersion = (await storageService.get('extensionVersion')) || 'unknown';
+    const previousVersion =
+      previousVersionFromEvent || (await storageService.get('extensionVersion')) || 'unknown';
     const currentVersion = chrome.runtime.getManifest().version;
 
     if (previousVersion !== currentVersion) {
       log.info(`Migrating storage from ${previousVersion} to ${currentVersion}`);
 
-      // Future: Add specific version migration branches here if state schemas change
-      // e.g. if (previousVersion === 'unknown' && currentVersion === '1.1.0') { ... }
+      const settings = await storageService.getSettings();
+      if (settings.preferredEmailService === 'catchmail') {
+        await storageService.updateSettings({ preferredEmailService: 'driftz' });
+      }
 
       await storageService.set('extensionVersion', currentVersion);
       log.info('Migration complete');

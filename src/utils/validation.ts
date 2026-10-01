@@ -142,7 +142,7 @@ export const userSettingsSchema = z.object({
   }),
 
   // Email settings
-  preferredEmailService: emailServiceSchema.default('catchmail'),
+  preferredEmailService: emailServiceSchema.default('driftz'),
   autoCheckInbox: safeBoolean.default(true),
   checkIntervalSeconds: safeNumber.min(3).max(60).default(5),
   // Present in UserSettings and written directly by the popup — must be
@@ -192,6 +192,7 @@ export const generateEmailPayloadSchema = z
     prefix: safeString.optional(),
     domain: safeString.optional(),
     service: emailServiceSchema.optional(),
+    originUrl: safeString.url().optional(),
   })
   .optional();
 
@@ -219,14 +220,26 @@ export const savePasswordPayloadSchema = z.object({
 
 const safeBodyString = (maxLen: number) =>
   z.preprocess((val) => {
-    if (typeof val === 'string') {return val;}
-    if (val === null || val === undefined) {return undefined;}
+    if (typeof val === 'string') {
+      return val;
+    }
+    if (val === null || val === undefined) {
+      return undefined;
+    }
     if (typeof val === 'object') {
       const obj = val as Record<string, unknown>;
-      if (typeof obj.text === 'string') {return obj.text;}
-      if (typeof obj.html === 'string') {return obj.html;}
-      if (typeof obj.body === 'string') {return obj.body;}
-      if (typeof obj.content === 'string') {return obj.content;}
+      if (typeof obj.text === 'string') {
+        return obj.text;
+      }
+      if (typeof obj.html === 'string') {
+        return obj.html;
+      }
+      if (typeof obj.body === 'string') {
+        return obj.body;
+      }
+      if (typeof obj.content === 'string') {
+        return obj.content;
+      }
       try {
         return JSON.stringify(val);
       } catch {
@@ -397,7 +410,7 @@ export const messagePayloadSchemas: Record<string, z.ZodSchema> = {
   FILL_OTP: fillOTPPayloadSchema,
   OTP_PAGE_DETECTED: otpPageDetectedPayloadSchema,
   OTP_PAGE_LEFT: z.undefined().optional(),
-  MARK_OTP_USED: z.undefined().optional(),
+  MARK_OTP_USED: z.object({ code: safeString.trim().min(4).max(16) }).optional(),
   AUTO_FILL_OTP: autoFillOTPPayloadSchema,
   DETECT_FORMS: z.undefined().optional(),
   FILL_FIELD: fillFieldPayloadSchema,

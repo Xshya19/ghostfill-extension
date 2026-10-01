@@ -1,6 +1,6 @@
 # Frontend
 
-GhostFill’s user-facing extension surfaces use the **Private Workspace** design system: calm cobalt accents, opaque paper/slate surfaces, hairline structure, local Space Grotesk and IBM Plex Mono fonts, and purposeful motion.
+GhostFill’s user-facing surfaces use an Apple-inspired system: restrained Liquid Glass on controls and navigation, opaque content, system blue accents, platform UI typography, bundled IBM Plex Mono for generated values, and purposeful motion.
 
 | Entry point                                    | Surface                       |
 | ---------------------------------------------- | ----------------------------- |

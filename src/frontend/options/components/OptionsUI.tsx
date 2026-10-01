@@ -53,67 +53,101 @@ const ALL_TABS = TAB_GROUPS.flatMap((group) => group.items);
 
 interface SidebarProps {
   activeTab: TabId;
-  onTabChange: (tab: TabId) => void;
+  onTabChange: (tab: TabId, input: 'pointer' | 'keyboard') => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => (
-  <div className="settings-sidebar" role="tablist" aria-label="Settings navigation">
-    {TAB_GROUPS.map((group, groupIdx) => (
-      <div key={group.title} className="sidebar-group">
-        <div className="sidebar-nav-section-label">{group.title}</div>
-        <div className="sidebar-nav">
-          {group.items.map((tab) => {
-            const globalIndex = ALL_TABS.findIndex((item) => item.id === tab.id);
-            const isActive = activeTab === tab.id;
+export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
+  const [compact, setCompact] = useState(() =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(max-width: 860px)').matches
+      : false
+  );
 
-            return (
-              <button
-                key={tab.id}
-                role="tab"
-                aria-selected={isActive}
-                aria-controls={`tabpanel-${tab.id}`}
-                id={`tab-${tab.id}`}
-                tabIndex={isActive ? 0 : -1}
-                className={`sidebar-nav-item${isActive ? ' active' : ''}`}
-                onClick={() => onTabChange(tab.id)}
-                onKeyDown={(event) => {
-                  let targetIndex = -1;
-                  if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
-                    event.preventDefault();
-                    targetIndex = (globalIndex + 1) % ALL_TABS.length;
-                  } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
-                    event.preventDefault();
-                    targetIndex = (globalIndex - 1 + ALL_TABS.length) % ALL_TABS.length;
-                  } else if (event.key === 'Home') {
-                    event.preventDefault();
-                    targetIndex = 0;
-                  } else if (event.key === 'End') {
-                    event.preventDefault();
-                    targetIndex = ALL_TABS.length - 1;
-                  }
-                  if (targetIndex >= 0) {
-                    const target = ALL_TABS[targetIndex];
-                    if (target) {
-                      onTabChange(target.id);
-                      document.getElementById(`tab-${target.id}`)?.focus();
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') {
+      return;
+    }
+    const query = window.matchMedia('(max-width: 860px)');
+    const update = () => setCompact(query.matches);
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+
+  return (
+    <nav className="settings-sidebar liquid-glass" aria-label="Settings navigation">
+      <div
+        className="settings-tablist"
+        role="tablist"
+        aria-label="Settings sections"
+        aria-orientation={compact ? 'horizontal' : 'vertical'}
+      >
+        {TAB_GROUPS.map((group, groupIdx) => (
+          <div
+            key={group.title}
+            className="sidebar-group"
+            role="group"
+            aria-labelledby={`settings-nav-group-${groupIdx}`}
+          >
+            <div id={`settings-nav-group-${groupIdx}`} className="sidebar-nav-section-label">
+              {group.title}
+            </div>
+            <div className="sidebar-nav">
+              {group.items.map((tab) => {
+                const globalIndex = ALL_TABS.findIndex((item) => item.id === tab.id);
+                const isActive = activeTab === tab.id;
+
+                return (
+                  <button
+                    key={tab.id}
+                    role="tab"
+                    aria-selected={isActive}
+                    aria-controls="settings-tab-panel"
+                    id={`tab-${tab.id}`}
+                    tabIndex={isActive ? 0 : -1}
+                    className={`sidebar-nav-item${isActive ? ' active' : ''}`}
+                    onClick={(event) =>
+                      onTabChange(tab.id, event.detail === 0 ? 'keyboard' : 'pointer')
                     }
-                  }
-                }}
-                type="button"
-              >
-                <span className="sidebar-nav-icon" aria-hidden="true">
-                  {tab.icon}
-                </span>
-                <span className="sidebar-tab-label">{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-        {groupIdx < TAB_GROUPS.length - 1 && <div className="sidebar-nav-divider" />}
+                    onKeyDown={(event) => {
+                      let targetIndex = -1;
+                      if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+                        event.preventDefault();
+                        targetIndex = (globalIndex + 1) % ALL_TABS.length;
+                      } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+                        event.preventDefault();
+                        targetIndex = (globalIndex - 1 + ALL_TABS.length) % ALL_TABS.length;
+                      } else if (event.key === 'Home') {
+                        event.preventDefault();
+                        targetIndex = 0;
+                      } else if (event.key === 'End') {
+                        event.preventDefault();
+                        targetIndex = ALL_TABS.length - 1;
+                      }
+                      if (targetIndex >= 0) {
+                        const target = ALL_TABS[targetIndex];
+                        if (target) {
+                          onTabChange(target.id, 'keyboard');
+                          document.getElementById(`tab-${target.id}`)?.focus();
+                        }
+                      }
+                    }}
+                    type="button"
+                  >
+                    <span className="sidebar-nav-icon" aria-hidden="true">
+                      {tab.icon}
+                    </span>
+                    <span className="sidebar-tab-label">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {groupIdx < TAB_GROUPS.length - 1 && <div className="sidebar-nav-divider" />}
+          </div>
+        ))}
       </div>
-    ))}
-  </div>
-);
+    </nav>
+  );
+};
 
 interface SettingsSectionProps {
   id: string;
@@ -131,15 +165,15 @@ export const SettingsSection: React.FC<SettingsSectionProps> = ({
   variant = 'default',
 }) => (
   <section
-    className={`ghost-card settings-section${variant === 'danger' ? ' danger' : ''}`}
+    className={`settings-section${variant === 'danger' ? ' danger' : ''}`}
     aria-labelledby={`${id}-title`}
   >
-    <h2 id={`${id}-title`}>
+    <h3 id={`${id}-title`}>
       <span className="section-icon" aria-hidden="true">
         {icon}
       </span>
       {title}
-    </h2>
+    </h3>
     {children}
   </section>
 );
@@ -190,6 +224,7 @@ interface CustomSelectProps {
   options: CustomSelectOption[];
   ariaLabel?: string | undefined;
   ariaDescribedBy?: string | undefined;
+  ariaInvalid?: boolean | undefined;
   disabled?: boolean | undefined;
 }
 
@@ -205,16 +240,22 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
   options,
   ariaLabel,
   ariaDescribedBy,
+  ariaInvalid,
   disabled = false,
 }) => {
   const [open, setOpen] = useState(false);
   const [openUp, setOpenUp] = useState(false);
   const [highlightIdx, setHighlightIdx] = useState(() =>
-    Math.max(0, options.findIndex((option) => option.value === value))
+    Math.max(
+      0,
+      options.findIndex((option) => option.value === value)
+    )
   );
   const buttonRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const typeaheadRef = useRef('');
+  const typeaheadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listboxId = useId();
 
   const selected = options.find((option) => option.value === value);
@@ -231,7 +272,7 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
     }
     try {
       const rect = trigger.getBoundingClientRect();
-      const panelH = Math.min(options.length * 38 + 12, 220);
+      const panelH = Math.min(options.length * 44 + 12, 280, window.innerHeight * 0.45);
       const spaceBelow = window.innerHeight - rect.bottom;
       const spaceAbove = rect.top;
       setOpenUp(spaceBelow < panelH + 12 && spaceAbove > panelH + 12);
@@ -254,7 +295,13 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
       return;
     }
     const element = listRef.current.querySelector<HTMLElement>(`[data-idx="${highlightIdx}"]`);
-    element?.scrollIntoView({ block: 'nearest' });
+    if (element) {
+      const itemBounds = element.getBoundingClientRect();
+      const listBounds = listRef.current.getBoundingClientRect();
+      listRef.current.scrollTop +=
+        Math.min(0, itemBounds.top - listBounds.top) +
+        Math.max(0, itemBounds.bottom - listBounds.bottom);
+    }
   }, [highlightIdx, open]);
 
   const close = useCallback(() => {
@@ -285,6 +332,15 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
     };
   }, [open, close]);
 
+  useEffect(
+    () => () => {
+      if (typeaheadTimerRef.current) {
+        clearTimeout(typeaheadTimerRef.current);
+      }
+    },
+    []
+  );
+
   const selectIdx = (idx: number) => {
     const option = options[idx];
     if (!option) {
@@ -302,8 +358,40 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
       if (['ArrowDown', 'ArrowUp', 'Enter', ' ', 'Spacebar'].includes(event.key)) {
         event.preventDefault();
         setOpen(true);
-        const current = Math.max(0, options.findIndex((option) => option.value === value));
+        const current = Math.max(
+          0,
+          options.findIndex((option) => option.value === value)
+        );
         setHighlightIdx(current);
+      }
+      return;
+    }
+    if (
+      event.key.length === 1 &&
+      /^[a-z0-9]$/i.test(event.key) &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey
+    ) {
+      event.preventDefault();
+      const previousQuery = typeaheadRef.current;
+      const query = `${previousQuery}${event.key}`.toLocaleLowerCase();
+      typeaheadRef.current = query;
+      if (typeaheadTimerRef.current) {
+        clearTimeout(typeaheadTimerRef.current);
+      }
+      typeaheadTimerRef.current = setTimeout(() => {
+        typeaheadRef.current = '';
+      }, 700);
+      const start = previousQuery
+        ? (highlightIdx + 1) % Math.max(options.length, 1)
+        : Math.max(0, highlightIdx);
+      const matchIndex = Array.from(
+        { length: options.length },
+        (_, idx) => (start + idx) % options.length
+      ).find((idx) => options[idx]?.label.toLocaleLowerCase().startsWith(query));
+      if (matchIndex !== undefined) {
+        setHighlightIdx(matchIndex);
       }
       return;
     }
@@ -352,9 +440,11 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
         role="combobox"
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-controls={listboxId}
+        aria-controls={open ? listboxId : undefined}
+        aria-activedescendant={open ? `${listboxId}-opt-${highlightIdx}` : undefined}
         aria-label={ariaLabel}
         aria-describedby={ariaDescribedBy}
+        aria-invalid={ariaInvalid}
         aria-disabled={disabled ? 'true' : undefined}
         disabled={disabled}
         className="gf-custom-select-trigger"
@@ -375,9 +465,8 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
           id={listboxId}
           ref={listRef}
           role="listbox"
-          className="gf-custom-select-panel"
+          className="gf-custom-select-panel liquid-glass"
           aria-label={ariaLabel}
-          aria-activedescendant={`${listboxId}-opt-${highlightIdx}`}
           tabIndex={-1}
         >
           {options.map((option, idx) => {

@@ -10,6 +10,7 @@ import {
   extractHtmlFromBody,
   extractTextFromBody,
 } from '../../utils/core';
+import { getSenderSource } from '../../utils/emailIdentity';
 import { createLogger } from '../../utils/logger';
 
 const log = createLogger('ThrowawaymailService');
@@ -127,7 +128,7 @@ export class ThrowawaymailService {
 
         const email: Email = {
           id: String(msg.message_id || msg.id || `${mailboxId}_${idx}`),
-          from: contentToString(fromAddr, 'Unknown Sender'),
+          from: getSenderSource(msg.fromName || msg.sender_name, fromAddr),
           to: contentToString(msg.to || account.fullEmail),
           subject: contentToString(msg.subject, '(No Subject)'),
           date: safeParseDate(msg.created_at || msg.date || Date.now()),

@@ -6,10 +6,14 @@
  */
 import { useState, useEffect, useMemo, useRef } from 'react';
 
+import {
+  extractExplicitVerificationCode,
+  isSubjectDomainToken,
+} from '../../services/extraction/explicitCode';
 import { storageService } from '../../services/storageService';
 import { Email, StorageSchema } from '../../types';
+import { isWebUrl } from '../../utils/core';
 import { safeSendMessage } from '../../utils/messaging';
-
 
 const normalizePopupOTP = (otp: string | undefined): string | null => {
   if (!otp) {
@@ -82,15 +86,31 @@ export function useOTPExtractor(emails: Email[]): {
 
         try {
           const toSafeStr = (v: unknown): string => {
-            if (typeof v === 'string') {return v;}
-            if (!v) {return '';}
+            if (typeof v === 'string') {
+              return v;
+            }
+            if (!v) {
+              return '';
+            }
             if (typeof v === 'object') {
               const obj = v as Record<string, unknown>;
-              if (typeof obj.text === 'string') {return obj.text;}
-              if (typeof obj.html === 'string') {return obj.html;}
-              if (typeof obj.body === 'string') {return obj.body;}
-              if (typeof obj.content === 'string') {return obj.content;}
-              try { return JSON.stringify(v); } catch { return String(v); }
+              if (typeof obj.text === 'string') {
+                return obj.text;
+              }
+              if (typeof obj.html === 'string') {
+                return obj.html;
+              }
+              if (typeof obj.body === 'string') {
+                return obj.body;
+              }
+              if (typeof obj.content === 'string') {
+                return obj.content;
+              }
+              try {
+                return JSON.stringify(v);
+              } catch {
+                return String(v);
+              }
             }
             return String(v);
           };
@@ -102,7 +122,8 @@ export function useOTPExtractor(emails: Email[]): {
           const response = (await safeSendMessage({
             action: 'EXTRACT_OTP',
             payload: {
-              subject: typeof email.subject === 'string' ? email.subject : String(email.subject || ''),
+              subject:
+                typeof email.subject === 'string' ? email.subject : String(email.subject || ''),
               textBody: rawTextBody,
               htmlBody: rawHtmlBody,
               source: 'popup-inbox',
@@ -116,10 +137,19 @@ export function useOTPExtractor(emails: Email[]): {
           })) as { success: boolean; otp?: string; link?: string };
 
           if (mounted) {
-            const otpVal =
+            const labeledCode = extractExplicitVerificationCode(rawTextBody);
+            const responseCode =
               response?.success && response?.otp ? normalizePopupOTP(response.otp) : null;
-            const linkVal = response?.success && response?.link ? response.link : null;
-            if (otpVal !== null) {
+            const otpVal =
+              labeledCode ||
+              (responseCode && !isSubjectDomainToken(responseCode, email.subject)
+                ? responseCode
+                : null);
+            const linkVal =
+              response?.success && response?.link && isWebUrl(response.link)
+                ? response.link
+                : null;
+            if (response?.success) {
               otpsRef.current = { ...otpsRef.current, [email.id]: otpVal };
               setEmailOTPs((prev) => ({ ...prev, [email.id]: otpVal }));
             }
@@ -143,7 +173,6 @@ export function useOTPExtractor(emails: Email[]): {
 
   return { otps: emailOTPs, links: emailLinks };
 }
-
 
 export function useStorageSubscription<K extends keyof StorageSchema>(
   key: K,

@@ -4,6 +4,7 @@
 
 import { EmailAccount, Email } from '../../types';
 import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
+import { getSenderSource } from '../../utils/emailIdentity';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 
@@ -306,7 +307,7 @@ class MaildropService {
   private convertMessage(msg: MaildropInboxMessage, toEmail: string): Email {
     return {
       id: msg.id,
-      from: contentToString(msg.headerfrom || msg.mailfrom, 'Unknown Sender'),
+      from: getSenderSource(undefined, msg.headerfrom || msg.mailfrom),
       to: toEmail,
       subject: contentToString(msg.subject, '(no subject)'),
       date: safeParseDate(msg.date),
@@ -325,7 +326,7 @@ class MaildropService {
     const textStr = contentToString(msg.data);
     return {
       id: msg.id,
-      from: contentToString(msg.headerfrom || msg.mailfrom, 'Unknown Sender'),
+      from: getSenderSource(undefined, msg.headerfrom || msg.mailfrom),
       to: toEmail,
       subject: contentToString(msg.subject, '(no subject)'),
       date: safeParseDate(msg.date),

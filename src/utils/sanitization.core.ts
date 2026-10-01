@@ -235,68 +235,6 @@ function sanitizeHtmlInternal(dirty: string, options?: SanitizerConfig): string 
   }
 }
 
-function secondaryValidation(html: string): string {
-  if (!html) {
-    return '';
-  }
-
-  const dangerousPatterns = [
-    /j\s*a\s*v\s*a\s*s\s*c\s*r\s*i\s*p\s*t\s*:/gi,
-    /d\s*a\s*t\s*a\s*:\s*text\/html/gi,
-    /v\s*b\s*s\s*c\s*r\s*i\s*p\s*t\s*:/gi,
-    /e\s*x\s*p\s*r\s*e\s*s\s*s\s*i\s*o\s*n\s*\(/gi,
-    /\bon\w+\s*=\s*["'][^"']*["']/gi,
-    /&#(x)?[0-9a-f]+;/gi,
-  ];
-
-  let sanitized = html;
-  for (const pattern of dangerousPatterns) {
-    if (pattern.test(sanitized)) {
-      log.warn('SecondaryValidation blocked dangerous pattern');
-      sanitized = sanitized.replace(pattern, '');
-    }
-  }
-
-  let decoded = sanitized;
-  let previous = '';
-  let iter = 0;
-
-  while (decoded !== previous && iter < 5) {
-    previous = decoded;
-    decoded = decoded
-      .replace(/&lt;/gi, '<')
-      .replace(/&gt;/gi, '>')
-      .replace(/&amp;/gi, '&')
-      .replace(/&quot;/gi, '"')
-      .replace(/&#39;/gi, "'")
-      .replace(/&#x2F;/gi, '/')
-      .replace(/&#x60;/gi, '`')
-      .replace(/&#x3D;/gi, '=');
-
-    decoded = decoded.replace(/&#([0-9]+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)));
-    decoded = decoded.replace(/&#x([0-9a-f]+);/gi, (_, hex) =>
-      String.fromCharCode(parseInt(hex, 16))
-    );
-
-    try {
-      const newDecoded = decodeURIComponent(decoded);
-      if (newDecoded !== decoded) {
-        decoded = newDecoded;
-      }
-    } catch {
-      /* Suppress decode errors */
-    }
-    iter++;
-  }
-
-  if (/<script/i.test(decoded) || /javascript:/i.test(decoded) || /on\w+\s*=/i.test(decoded)) {
-    log.warn('SecondaryValidation blocked encoded dangerous content');
-    return '';
-  }
-
-  return sanitized;
-}
-
 /**
  * Unified sanitizeHtml: Uses DOMPurify in DOM contexts, and regex-only fallback in SW context.
  */
@@ -310,7 +248,6 @@ export function sanitizeHtml(dirty: string, options?: SanitizerConfig): string {
     try {
       let basicClean = sanitizeHtmlInternal(dirty, options);
       basicClean = basicClean.replace(/href\s*=\s*(['"])javascript:(?:(?!\1).)*?\1/gi, `href=$1#$1`);
-      basicClean = secondaryValidation(basicClean);
       if (trustedTypesPolicy) {
         return String(trustedTypesPolicy.createHTML(basicClean));
       }

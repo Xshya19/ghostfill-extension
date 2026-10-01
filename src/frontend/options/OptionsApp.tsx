@@ -1,5 +1,5 @@
-import { Sun, Moon, Search } from 'lucide-react';
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Sun, Moon, Search, X, Check, AlertCircle, Clock, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef, useMemo, useId } from 'react';
 
 import { storageService } from '../../services/storageService';
 import { applyTheme, resolveTheme } from '../../shared/theme';
@@ -31,7 +31,7 @@ const hasRuntimeMessaging = (): boolean =>
 //  §1  T Y P E S
 // ═══════════════════════════════════════════════════════════════
 
-export type SaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'failed';
+export type SaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'failed' | 'invalid';
 
 type SettingsFormErrors = Record<string, string> & {
   passwordDefaults?: Record<string, string>;
@@ -47,6 +47,8 @@ interface ConfirmModalState {
   message: string;
   action: () => void;
   type: 'danger' | 'warning';
+  confirmText?: string;
+  showCancel?: boolean;
 }
 
 const EMPTY_MODAL: ConfirmModalState = {
@@ -56,6 +58,16 @@ const EMPTY_MODAL: ConfirmModalState = {
   action: () => {},
   type: 'warning',
 };
+
+const TAB_ORDER: Array<{ id: TabId; label: string; hint: string }> = [
+  { id: 'general', label: 'General', hint: 'Appearance, notifications, and app data' },
+  { id: 'email', label: 'Email', hint: 'Providers and custom domains' },
+  { id: 'password', label: 'Passwords', hint: 'Secure password defaults' },
+  { id: 'automation', label: 'Automation', hint: 'Verification codes, links, and shortcuts' },
+  { id: 'privacy', label: 'Privacy', hint: 'History and data retention' },
+  { id: 'advanced', label: 'Advanced', hint: 'Debug logging, console help, import, and reset' },
+  { id: 'about', label: 'About', hint: 'Version, storage, and support' },
+];
 
 // ═══════════════════════════════════════════════════════════════
 //  §2  V A L I D A T I O N
@@ -81,6 +93,18 @@ function validateSettings(s: UserSettings): SettingsFormErrors {
     };
   }
 
+  if (
+    !s.passwordDefaults.uppercase &&
+    !s.passwordDefaults.lowercase &&
+    !s.passwordDefaults.numbers &&
+    !s.passwordDefaults.symbols
+  ) {
+    errors.passwordDefaults = {
+      ...errors.passwordDefaults,
+      characterSet: t('passwordCharacterTypeRequired'),
+    };
+  }
+
   // checkIntervalSeconds: 3..60 integer seconds.
   if (
     !Number.isFinite(s.checkIntervalSeconds) ||
@@ -101,32 +125,34 @@ function validateSettings(s: UserSettings): SettingsFormErrors {
     errors.historyRetentionDays = t('historyRetentionRange');
   }
 
-  // customDomain: optional, but if non-empty must be a plain hostname
-  // (no scheme, no path, no query).
-  if (s.customDomain && s.customDomain.trim().length > 0) {
-    const domain = s.customDomain.trim();
-    if (/^https?:\/\//i.test(domain)) {
-      errors.customDomain = t('customDomainInvalid');
-    } else if (!/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/i.test(domain)) {
-      errors.customDomain = t('customDomainInvalid');
-    } else if (domain.includes('..')) {
-      errors.customDomain = t('customDomainInvalid');
+  // A custom provider needs both fields; inactive custom values stay saved
+  // for later edits without blocking a different provider's settings.
+  if (s.preferredEmailService === 'custom') {
+    const domain = s.customDomain?.trim() ?? '';
+    if (!domain) {
+      errors.customDomain = t('customDomainRequired');
+    } else if (
+      /^https?:\/\//i.test(domain) ||
+      !/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/i.test(domain) ||
+      domain.includes('..')
+    ) {
+      errors.customDomain = t('customDomainHostInvalid');
     }
-  }
 
-  // customDomainUrl: optional, but if non-empty must be a valid
-  // https URL pointing at the worker.
-  if (s.customDomainUrl && s.customDomainUrl.trim().length > 0) {
-    const trimmed = s.customDomainUrl.trim();
-    try {
-      const url = new URL(trimmed);
-      if (url.protocol !== 'https:') {
-        errors.customDomainUrl = t('customDomainHttps');
-      } else if (url.hostname.length === 0) {
+    const endpoint = s.customDomainUrl?.trim() ?? '';
+    if (!endpoint) {
+      errors.customDomainUrl = t('customDomainUrlRequired');
+    } else {
+      try {
+        const url = new URL(endpoint);
+        if (url.protocol !== 'https:') {
+          errors.customDomainUrl = t('customDomainHttps');
+        } else if (url.hostname.length === 0) {
+          errors.customDomainUrl = t('customDomainInvalid');
+        }
+      } catch {
         errors.customDomainUrl = t('customDomainInvalid');
       }
-    } catch {
-      errors.customDomainUrl = t('customDomainInvalid');
     }
   }
 
@@ -146,6 +172,7 @@ const ALL_VALIDATED_FIELDS = new Set<string>([
   'checkIntervalSeconds',
   'historyRetentionDays',
   'passwordDefaults.length',
+  'passwordDefaults.characterSet',
   'customDomain',
   'customDomainUrl',
   'preferredEmailService',
@@ -199,6 +226,12 @@ function useModalFocusTrap(
       }
 
       if (e.key !== 'Tab') {
+        return;
+      }
+
+      if (!modal.contains(document.activeElement)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first)?.focus();
         return;
       }
 
@@ -277,69 +310,24 @@ const MOD_KEY = navigator.userAgent.includes('Mac') ? '⌘' : 'Ctrl';
 /** Full-page loading spinner shown during initial data fetch. */
 const LoadingSpinner: React.FC = () => (
   <div className="loading" role="status" aria-live="polite">
-    <div className="spinner" aria-hidden="true" />
+    <Loader2 size={28} className="gf-spin" aria-hidden="true" />
     <p>{t('loadingSettings')}</p>
   </div>
 );
 
-/**
- * Posture strip — a live readout of what GhostFill will do on this browser,
- * assembled from settings already in state. No new data flow.
- */
-const PostureStrip: React.FC<{ settings: UserSettings }> = ({ settings }) => {
-  const items: { text: string; on: boolean }[] = [
-    { text: `Mail: ${settings.preferredEmailService}`, on: true },
-    {
-      text: settings.autoCheckInbox
-        ? `Inbox: every ${settings.checkIntervalSeconds} seconds`
-        : 'Inbox: on demand',
-      on: settings.autoCheckInbox,
-    },
-    {
-      text: settings.autoFillOTP ? 'Codes: automatic' : 'Codes: manual',
-      on: settings.autoFillOTP,
-    },
-    {
-      text: settings.showFloatingButton
-        ? `Button: ${settings.floatingButtonPosition}`
-        : 'Button: hidden',
-      on: settings.showFloatingButton,
-    },
-    {
-      text: settings.autoConfirmLinks ? 'Links: automatic' : 'Links: ask first',
-      on: settings.autoConfirmLinks,
-    },
-    {
-      text: settings.saveHistory
-        ? `History: ${settings.historyRetentionDays} days`
-        : 'History: off',
-      on: settings.saveHistory,
-    },
-  ];
-
-  return (
-    <div className="posture-strip">
-      <div className="posture-inner">
-        <span className="posture-label">Active settings</span>
-        <ul className="posture-list" aria-label="Current behavior summary">
-          {items.map((item) => (
-            <li
-              key={item.text}
-              className={`posture-item ${item.on ? 'posture-item--on' : 'posture-item--off'}`}
-            >
-              {item.text}
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
-};
-
 /** Accessible live region for screen readers. */
-const ScreenReaderAnnouncer: React.FC<{ saved: boolean }> = ({ saved }) => (
+const SAVE_LABELS = {
+  idle: '',
+  pending: 'Changes pending…',
+  saving: 'Saving…',
+  saved: 'Saved',
+  failed: 'Save failed — retry?',
+  invalid: 'Review settings to save',
+} as const;
+
+const ScreenReaderAnnouncer: React.FC<{ state: keyof typeof SAVE_LABELS }> = ({ state }) => (
   <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
-    {saved && t('settingsSavedSuccessfully')}
+    {state === 'saved' ? t('settingsSavedSuccessfully') : SAVE_LABELS[state]}
   </div>
 );
 
@@ -350,7 +338,10 @@ const ConfirmModal: React.FC<{
   modalRef: React.RefObject<HTMLDivElement>;
 }> = ({ modal, onClose, modalRef }) => {
   const overlayRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const descriptionId = useId();
   useSiblingIsolation(modal.open, overlayRef);
+  useModalFocusTrap(modal.open, modalRef, onClose);
 
   if (!modal.open) {
     return null;
@@ -363,20 +354,29 @@ const ConfirmModal: React.FC<{
     <div
       ref={overlayRef}
       className="modal-overlay"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="confirm-modal-title"
-      aria-describedby="confirm-modal-description"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
     >
       {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
-      <div ref={modalRef} className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <h3 id="confirm-modal-title">{modal.title}</h3>
-        <p id="confirm-modal-description">{modal.message}</p>
+      <div
+        ref={modalRef}
+        className="modal-content liquid-glass"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+      >
+        <h3 id={titleId}>{modal.title}</h3>
+        <p id={descriptionId}>{modal.message}</p>
         <div className="modal-actions" role="group" aria-label="Confirmation actions">
-          <Button onClick={onClose} type="button">
-            {t('cancel')}
-          </Button>
+          {modal.showCancel !== false && (
+            <Button onClick={onClose} type="button">
+              {t('cancel')}
+            </Button>
+          )}
           <Button
             variant={modal.type === 'danger' ? 'danger' : 'primary'}
             onClick={() => {
@@ -385,7 +385,7 @@ const ConfirmModal: React.FC<{
             }}
             type="button"
           >
-            {t('confirm')}
+            {modal.confirmText ?? t('confirm')}
           </Button>
         </div>
       </div>
@@ -413,17 +413,35 @@ const OptionsApp: React.FC = () => {
   const [formErrors, setFormErrors] = useState<SettingsFormErrors>({});
   const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<TabId>('general');
+  const [tabMotion, setTabMotion] = useState<'pointer' | 'instant'>('instant');
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState>(EMPTY_MODAL);
   // Ctrl+K command palette.
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const closeCommandPalette = useCallback(() => setCommandPaletteOpen(false), []);
+  const selectTabInstant = useCallback((tab: TabId) => {
+    setTabMotion('instant');
+    setActiveTab(tab);
+  }, []);
+  const selectTabFromSidebar = useCallback((tab: TabId, input: 'pointer' | 'keyboard') => {
+    setTabMotion(input === 'pointer' ? 'pointer' : 'instant');
+    setActiveTab(tab);
+  }, []);
 
   // ── Refs ─────────────────────────────────────────────────
   const isFirstLoad = useRef(true);
   const previousSettingsRef = useRef<UserSettings | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
+  const previousActiveTabRef = useRef<TabId>(activeTab);
 
   const version = APP_VERSION;
+
+  useEffect(() => {
+    if (previousActiveTabRef.current === activeTab) {
+      return;
+    }
+    previousActiveTabRef.current = activeTab;
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }, [activeTab]);
 
   // ═══════════════════════════════════════════════════════════
   //  §5.1  V A L I D A T I O N   H E L P E R S
@@ -511,6 +529,7 @@ const OptionsApp: React.FC = () => {
   // ═══════════════════════════════════════════════════════════
 
   const settingsRef = useRef(settings);
+  const immediateSaveRef = useRef<UserSettings | null>(null);
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
@@ -518,68 +537,98 @@ const OptionsApp: React.FC = () => {
   const isSavingRef = useRef(false);
   const pendingSaveRef = useRef(false);
 
-  const saveSettings = useCallback(async (settingsOverride?: UserSettings): Promise<boolean> => {
-    if (isSavingRef.current) {
-      pendingSaveRef.current = true;
-      return false;
-    }
-    isSavingRef.current = true;
-    try {
-      const currentSettings = settingsOverride ?? settingsRef.current;
-      const errors = validateSettings(currentSettings);
-      setFormErrors(errors);
-      setTouchedFields(ALL_VALIDATED_FIELDS);
-
-      if (Object.keys(errors).length > 0) {
-        log.error('Validation failed', errors);
+  const saveSettings = useCallback(
+    async (settingsOverride?: UserSettings, revealValidationErrors = false): Promise<boolean> => {
+      if (isSavingRef.current) {
+        pendingSaveRef.current = true;
         return false;
       }
-
-      // The localhost build is intentionally usable for visual regression and
-      // accessibility checks. It has no extension service worker to persist to,
-      // so keep its save state quiet instead of presenting a false failure.
-      if (!hasRuntimeMessaging()) {
-        previousSettingsRef.current = currentSettings;
-        setSaveState('idle');
-        return true;
-      }
-
+      isSavingRef.current = true;
       try {
-        const response = await chrome.runtime.sendMessage({
-          action: 'UPDATE_SETTINGS',
-          payload: currentSettings,
-        });
+        const currentSettings = settingsOverride ?? settingsRef.current;
+        const errors = validateSettings(currentSettings);
+        setFormErrors(errors);
+        if (revealValidationErrors || Object.keys(errors).length > 0) {
+          setTouchedFields(ALL_VALIDATED_FIELDS);
+        }
 
-        if (!response || !response.success) {
-          const reason =
-            response && typeof response.error === 'string' && response.error.length > 0
-              ? `: ${response.error}`
-              : '';
-          log.error(`Failed to save settings: backend rejected${reason}`);
-          setSaveState('failed');
+        if (Object.keys(errors).length > 0) {
+          // Appearance is independent of the form fields below. An unfinished
+          // custom provider or invalid number must not trap the popup in the
+          // previous theme while this page already shows the new one.
+          if (
+            hasRuntimeMessaging() &&
+            previousSettingsRef.current?.darkMode !== currentSettings.darkMode
+          ) {
+            try {
+              const themeResponse = await chrome.runtime.sendMessage({
+                action: 'UPDATE_SETTINGS',
+                payload: { darkMode: currentSettings.darkMode },
+              });
+              if (themeResponse?.success && previousSettingsRef.current) {
+                previousSettingsRef.current = {
+                  ...previousSettingsRef.current,
+                  darkMode: currentSettings.darkMode,
+                };
+              } else if (!themeResponse?.success) {
+                log.error('Failed to save theme preference', themeResponse?.error);
+              }
+            } catch (error) {
+              log.error('Failed to save theme preference', error);
+            }
+          }
+          log.error('Validation failed', errors);
+          setSaveState('invalid');
           return false;
         }
 
-        setSaveState('saved');
-        if (savedToastTimerRef.current) {
-          clearTimeout(savedToastTimerRef.current);
+        // The localhost build is intentionally usable for visual regression and
+        // accessibility checks. It has no extension service worker to persist to,
+        // so keep its save state quiet instead of presenting a false failure.
+        if (!hasRuntimeMessaging()) {
+          previousSettingsRef.current = currentSettings;
+          setSaveState('idle');
+          return true;
         }
-        savedToastTimerRef.current = setTimeout(() => setSaveState('idle'), 2500);
-        previousSettingsRef.current = { ...currentSettings };
-        return true;
-      } catch (error) {
-        log.error('Failed to save settings', error);
-        setSaveState('failed');
-        return false;
+
+        try {
+          const response = await chrome.runtime.sendMessage({
+            action: 'UPDATE_SETTINGS',
+            payload: currentSettings,
+          });
+
+          if (!response || !response.success) {
+            const reason =
+              response && typeof response.error === 'string' && response.error.length > 0
+                ? `: ${response.error}`
+                : '';
+            log.error(`Failed to save settings: backend rejected${reason}`);
+            setSaveState('failed');
+            return false;
+          }
+
+          setSaveState('saved');
+          if (savedToastTimerRef.current) {
+            clearTimeout(savedToastTimerRef.current);
+          }
+          savedToastTimerRef.current = setTimeout(() => setSaveState('idle'), 2500);
+          previousSettingsRef.current = { ...currentSettings };
+          return true;
+        } catch (error) {
+          log.error('Failed to save settings', error);
+          setSaveState('failed');
+          return false;
+        }
+      } finally {
+        isSavingRef.current = false;
+        if (pendingSaveRef.current) {
+          pendingSaveRef.current = false;
+          setTimeout(() => void saveSettings(undefined, false), 100);
+        }
       }
-    } finally {
-      isSavingRef.current = false;
-      if (pendingSaveRef.current) {
-        pendingSaveRef.current = false;
-        setTimeout(() => void saveSettings(), 100);
-      }
-    }
-  }, []);
+    },
+    []
+  );
 
   // Auto-save when settings change (skip first load)
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -620,6 +669,10 @@ const OptionsApp: React.FC = () => {
     if (previousSettingsRef.current === settings) {
       return;
     }
+    if (immediateSaveRef.current === settings) {
+      immediateSaveRef.current = null;
+      return;
+    }
     if (!loading) {
       if (autoSaveTimerRef.current) {
         clearTimeout(autoSaveTimerRef.current);
@@ -631,7 +684,7 @@ const OptionsApp: React.FC = () => {
       setSaveState('pending');
       autoSaveTimerRef.current = setTimeout(() => {
         setSaveState('saving');
-        void saveSettings();
+        void saveSettings(undefined, false);
       }, 500);
       return () => {
         if (autoSaveTimerRef.current) {
@@ -645,7 +698,7 @@ const OptionsApp: React.FC = () => {
   // don't get lost if the user closes the tab during the debounce.
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent): void => {
-      if (saveState === 'pending' || saveState === 'saving') {
+      if (saveState === 'pending' || saveState === 'saving' || saveState === 'invalid') {
         e.preventDefault();
         e.returnValue = '';
       }
@@ -679,13 +732,13 @@ const OptionsApp: React.FC = () => {
         const idx = parseInt(e.key, 10) - 1;
         const next = order[idx];
         if (next) {
-          setActiveTab(next);
+          selectTabInstant(next);
         }
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, []);
+  }, [selectTabInstant]);
 
   // ═══════════════════════════════════════════════════════════
   //  §5.4  C H A N G E   H A N D L E R S
@@ -694,39 +747,42 @@ const OptionsApp: React.FC = () => {
   const handleChange = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (key: keyof UserSettings, value: any) => {
-      setSettings((prev) => ({ ...prev, [key]: value }));
-      setTouchedFields((prev) => {
-        if (prev.has(key as string)) {
-          return prev;
+      if (key === 'darkMode' && (value === true || value === false || value === 'system')) {
+        const nextSettings = { ...settingsRef.current, darkMode: value };
+        settingsRef.current = nextSettings;
+        applyTheme(resolveTheme(value));
+        if (!loadError) {
+          if (!isSavingRef.current) {
+            immediateSaveRef.current = nextSettings;
+          }
+          setSaveState('saving');
+          void saveSettings(nextSettings, false);
         }
-        const next = new Set(prev);
-        next.add(key as string);
-        return next;
-      });
-    },
-    []
-  );
-
-  const handleSessionSecretChange = useCallback(
-    (key: 'customDomainKey', value: string) => {
-      setSessionSecrets((prev) => ({ ...prev, [key]: value }));
-
-      if (secretSaveTimersRef.current[key]) {
-        clearTimeout(secretSaveTimersRef.current[key]);
+        setSettings(nextSettings);
+        return;
       }
-
-      secretSaveTimersRef.current[key] = setTimeout(() => {
-        try {
-          void (value
-            ? storageService.setCustomDomainKey(value)
-            : storageService.clearSessionSecret(key));
-        } catch (error) {
-          log.error('Failed to set session secret', error);
-        }
-      }, 500);
+      setSettings((prev) => ({ ...prev, [key]: value }));
     },
-    []
+    [loadError, saveSettings]
   );
+
+  const handleSessionSecretChange = useCallback((key: 'customDomainKey', value: string) => {
+    setSessionSecrets((prev) => ({ ...prev, [key]: value }));
+
+    if (secretSaveTimersRef.current[key]) {
+      clearTimeout(secretSaveTimersRef.current[key]);
+    }
+
+    secretSaveTimersRef.current[key] = setTimeout(() => {
+      try {
+        void (value
+          ? storageService.setCustomDomainKey(value)
+          : storageService.clearSessionSecret(key));
+      } catch (error) {
+        log.error('Failed to set session secret', error);
+      }
+    }, 500);
+  }, []);
 
   const handlePasswordDefaultChange = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -735,15 +791,6 @@ const OptionsApp: React.FC = () => {
         ...prev,
         passwordDefaults: { ...prev.passwordDefaults, [key]: value },
       }));
-      setTouchedFields((prev) => {
-        const field = `passwordDefaults.${key}`;
-        if (prev.has(field)) {
-          return prev;
-        }
-        const next = new Set(prev);
-        next.add(field);
-        return next;
-      });
     },
     []
   );
@@ -752,16 +799,23 @@ const OptionsApp: React.FC = () => {
     (imported: UserSettings) => {
       settingsRef.current = imported;
       setSettings(imported);
-      // On validation failure the field errors render on their own tabs
-      // (e.g. preferredEmailService on Email) — jump there so the failure
-      // is visible instead of failing silently on Advanced.
-      void saveSettings(imported).then((ok) => {
-        if (!ok) {
-          setActiveTab('email');
+      const validationErrors = validateSettings(imported);
+      void saveSettings(imported, true).then((ok) => {
+        if (!ok && Object.keys(validationErrors).length > 0) {
+          const firstError = Object.keys(validationErrors)[0];
+          const targetTab: TabId =
+            firstError === 'passwordDefaults'
+              ? 'password'
+              : firstError === 'customDomain'
+                ? 'email'
+                : firstError === 'historyRetentionDays'
+                  ? 'privacy'
+                  : 'general';
+          selectTabInstant(targetTab);
         }
       });
     },
-    [saveSettings]
+    [saveSettings, selectTabInstant]
   );
 
   // ═══════════════════════════════════════════════════════════
@@ -772,23 +826,26 @@ const OptionsApp: React.FC = () => {
     setConfirmModal((prev) => ({ ...prev, open: false }));
   }, []);
 
-  useModalFocusTrap(confirmModal.open, modalRef, closeModal);
-
   const handleReset = useCallback(() => {
     setConfirmModal({
       open: true,
       title: t('resetSettingsTitle'),
       message: t('resetSettingsMessage'),
       type: 'warning',
+      confirmText: t('resetSettingsAction'),
       action: () => {
         settingsRef.current = DEFAULT_SETTINGS;
+        previousSettingsRef.current = DEFAULT_SETTINGS;
+        if (autoSaveTimerRef.current) {
+          clearTimeout(autoSaveTimerRef.current);
+          autoSaveTimerRef.current = null;
+        }
         setSettings(DEFAULT_SETTINGS);
         setFormErrors({});
         setTouchedFields(new Set());
         setSaveState('saving');
         // Persist immediately instead of relying on auto-save debounce
-        void saveSettings(DEFAULT_SETTINGS);
-        setTimeout(() => setSaveState('idle'), 2000);
+        void saveSettings(DEFAULT_SETTINGS, false);
       },
     });
   }, [saveSettings]);
@@ -799,6 +856,7 @@ const OptionsApp: React.FC = () => {
       title: t('clearAllDataTitle'),
       message: t('clearAllDataMessage'),
       type: 'danger',
+      confirmText: t('clearAllDataAction'),
       action: () => {
         void (async () => {
           await storageService.clear();
@@ -869,6 +927,8 @@ const OptionsApp: React.FC = () => {
                 title: t('errorTitle'),
                 message: msg,
                 type: 'warning',
+                confirmText: t('acknowledge'),
+                showCancel: false,
                 action: () => {},
               });
             }}
@@ -904,12 +964,32 @@ const OptionsApp: React.FC = () => {
     return <LoadingSpinner />;
   }
 
+  const activePage = TAB_ORDER.find((tab) => tab.id === activeTab) ?? TAB_ORDER[0]!;
+
+  const reviewInvalidSettings = (): void => {
+    const errorTab: TabId = formErrors.passwordDefaults
+      ? 'password'
+      : formErrors.historyRetentionDays
+        ? 'privacy'
+        : 'email';
+    selectTabInstant(errorTab);
+    window.requestAnimationFrame(() => {
+      const invalidControl = document.querySelector<HTMLElement>(
+        '.tab-panel [aria-invalid="true"], .tab-panel .password-character-error'
+      );
+      invalidControl?.focus();
+    });
+  };
+
   return (
     <div className="options-app" aria-label="GhostFill Settings">
+      <a className="options-skip-link" href="#main-content">
+        Skip to settings
+      </a>
       {/* ── Header ── */}
-      <header className="options-header" role="banner">
+      <header className="options-header liquid-glass" role="banner">
         <div className="header-content">
-          <div className="ghost-card logo-box logo-box--no-padding" aria-hidden="true">
+          <div className="logo-box" aria-hidden="true">
             <GhostLogo size={32} />
           </div>
           <div className="header-text-group">
@@ -919,10 +999,11 @@ const OptionsApp: React.FC = () => {
           <div className="header-actions">
             <button
               className="command-palette-trigger-btn"
+              aria-keyshortcuts="Control+k Meta+k"
               onClick={() => setCommandPaletteOpen(true)}
               type="button"
-              aria-label="Search settings"
-              title={`Search settings (${MOD_KEY}+K)`}
+              aria-label="Search settings sections"
+              title={`Search settings sections (${MOD_KEY}+K)`}
             >
               <Search size={15} />
               <span>Search</span>
@@ -935,14 +1016,11 @@ const OptionsApp: React.FC = () => {
                 handleChange('darkMode', !isCurrentlyDark);
               }}
               type="button"
-              aria-label="Toggle theme mode"
-              title={`Switch to ${resolveTheme(settings.darkMode) === 'dark' ? 'Light' : 'Dark'} mode`}
+              aria-pressed={resolveTheme(settings.darkMode) === 'dark'}
+              aria-label={`Current theme: ${resolveTheme(settings.darkMode)}. Switch to ${resolveTheme(settings.darkMode) === 'dark' ? 'light' : 'dark'}.`}
+              title={`Current theme: ${resolveTheme(settings.darkMode)}. Switch to ${resolveTheme(settings.darkMode) === 'dark' ? 'light' : 'dark'}.`}
             >
-              {resolveTheme(settings.darkMode) === 'dark' ? (
-                <Sun size={17} className="theme-icon-sun" />
-              ) : (
-                <Moon size={17} className="theme-icon-moon" />
-              )}
+              {resolveTheme(settings.darkMode) === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
               <span className="theme-toggle-label">
                 {resolveTheme(settings.darkMode) === 'dark' ? 'Light' : 'Dark'}
               </span>
@@ -950,9 +1028,6 @@ const OptionsApp: React.FC = () => {
           </div>
         </div>
       </header>
-
-      {/* ── Posture: what GhostFill will do right now ── */}
-      <PostureStrip settings={settings} />
 
       {loadError && (
         <div className="settings-load-error" role="alert">
@@ -983,20 +1058,27 @@ const OptionsApp: React.FC = () => {
           }
         }}
       >
-        <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
-        <main className="options-main" role="main" id="main-content">
-          {/* The rail's tabs point at aria-controls="tabpanel-<id>", so the panel
-              has to exist. key= also remounts it, which replays the enter
-              animation on every tab switch. */}
-          <div
-            key={activeTab}
-            id={`tabpanel-${activeTab}`}
-            role="tabpanel"
-            aria-labelledby={`tab-${activeTab}`}
-            tabIndex={-1}
-            className="tab-panel"
-          >
-            {activeTabContent}
+        <Sidebar activeTab={activeTab} onTabChange={selectTabFromSidebar} />
+        <main
+          className="options-main"
+          id="main-content"
+          tabIndex={-1}
+          aria-labelledby="options-page-title"
+        >
+          <div key={activeTab} className="options-page-content" data-motion={tabMotion}>
+            <div className="options-page-heading">
+              <h2 id="options-page-title">{activePage.label}</h2>
+              <p>{activePage.hint}</p>
+            </div>
+            <div
+              id="settings-tab-panel"
+              role="tabpanel"
+              aria-labelledby={`tab-${activeTab}`}
+              tabIndex={-1}
+              className="tab-panel"
+            >
+              {activeTabContent}
+            </div>
           </div>
         </main>
       </div>
@@ -1007,17 +1089,21 @@ const OptionsApp: React.FC = () => {
       </footer>
 
       {/* ── Live Announcements ── */}
-      <ScreenReaderAnnouncer saved={saveState === 'saved'} />
+      <ScreenReaderAnnouncer state={saveState} />
 
       {/* ── Save state, including the saved confirmation ── */}
-      <SaveStatusIndicator state={saveState} onRetry={() => void saveSettings()} />
+      <SaveStatusIndicator
+        state={saveState}
+        onRetry={() => void saveSettings(undefined, true)}
+        onReview={reviewInvalidSettings}
+      />
 
       {/* ── Ctrl+K command palette ── */}
       <CommandPalette
         isOpen={commandPaletteOpen}
         onClose={closeCommandPalette}
         activeTab={activeTab}
-        onSelectTab={setActiveTab}
+        onSelectTab={selectTabInstant}
       />
 
       {/* ── Confirmation Modal ── */}
@@ -1031,43 +1117,28 @@ const OptionsApp: React.FC = () => {
 // ═══════════════════════════════════════════════════════════════
 
 const SaveStatusIndicator: React.FC<{
-  state: 'idle' | 'pending' | 'saving' | 'saved' | 'failed';
+  state: 'idle' | 'pending' | 'saving' | 'saved' | 'failed' | 'invalid';
   onRetry: () => void;
-}> = ({ state, onRetry }) => {
+  onReview: () => void;
+}> = ({ state, onRetry, onReview }) => {
   if (state === 'idle') {
     return null;
   }
-  let label = '';
-  let cls = 'options-save-indicator ';
-  switch (state) {
-    case 'pending':
-      label = 'Changes pending…';
-      cls += 'options-save-indicator-pending';
-      break;
-    case 'saving':
-      label = 'Saving…';
-      cls += 'options-save-indicator-saving';
-      break;
-    case 'saved':
-      label = 'Saved';
-      cls += 'options-save-indicator-saved';
-      break;
-    case 'failed':
-      label = 'Save failed — retry?';
-      cls += 'options-save-indicator-failed';
-      break;
-  }
-  if (state === 'failed') {
+  const label = SAVE_LABELS[state];
+  const cls = `options-save-indicator liquid-glass options-save-indicator-${state === 'invalid' ? 'failed' : state}`;
+  const StatusIcon =
+    state === 'saved' ? Check : state === 'failed' || state === 'invalid' ? AlertCircle : Clock;
+  if (state === 'failed' || state === 'invalid') {
     return (
-      <button type="button" className={cls} aria-live="polite" onClick={onRetry}>
-        <span className="options-save-indicator-dot" aria-hidden="true" />
+      <button type="button" className={cls} onClick={state === 'failed' ? onRetry : onReview}>
+        <StatusIcon className="options-save-indicator-icon" size={17} aria-hidden="true" />
         <span>{label}</span>
       </button>
     );
   }
   return (
-    <div className={cls} role="status" aria-live="polite">
-      <span className="options-save-indicator-dot" aria-hidden="true" />
+    <div className={cls} aria-hidden="true">
+      <StatusIcon className="options-save-indicator-icon" size={17} />
       <span>{label}</span>
     </div>
   );
@@ -1084,16 +1155,6 @@ interface CommandPaletteProps {
   onSelectTab: (tab: TabId) => void;
 }
 
-const TAB_ORDER: Array<{ id: TabId; label: string; hint: string }> = [
-  { id: 'general', label: 'General', hint: 'Appearance, polling, sounds' },
-  { id: 'email', label: 'Email', hint: 'Service, custom domain, Gmail OAuth' },
-  { id: 'password', label: 'Passwords', hint: 'Generator defaults' },
-  { id: 'automation', label: 'Automation', hint: 'Auto-fill, shortcuts' },
-  { id: 'privacy', label: 'Privacy', hint: 'Telemetry, permissions' },
-  { id: 'advanced', label: 'Advanced', hint: 'Cache, debugging, danger zone' },
-  { id: 'about', label: 'About', hint: 'Version, storage, tech stack' },
-];
-
 const CommandPalette: React.FC<CommandPaletteProps> = ({
   isOpen,
   onClose,
@@ -1105,8 +1166,8 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
   const paletteRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  useModalFocusTrap(isOpen, paletteRef, onClose);
   useSiblingIsolation(isOpen, overlayRef);
+  useModalFocusTrap(isOpen, paletteRef, onClose);
 
   const q = query.trim().toLowerCase();
   const filtered = TAB_ORDER.filter(
@@ -1121,28 +1182,12 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
   }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen) {
-      return;
+    if (isOpen) {
+      paletteRef.current
+        ?.querySelector('.command-palette-item-active')
+        ?.scrollIntoView({ block: 'nearest' });
     }
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setHighlightIdx((i) => Math.min(i + 1, filtered.length - 1));
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setHighlightIdx((i) => Math.max(0, i - 1));
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        const target = filtered[highlightIdx];
-        if (target) {
-          onSelectTab(target.id);
-          onClose();
-        }
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [isOpen, query, highlightIdx, filtered, onClose, onSelectTab]);
+  }, [isOpen, highlightIdx, query]);
 
   if (!isOpen) {
     return null;
@@ -1150,34 +1195,63 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
 
   return (
     /* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions, jsx-a11y/no-noninteractive-element-interactions */
-    <div
-      ref={overlayRef}
-      className="command-palette-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Jump to settings section"
-      onClick={onClose}
-    >
+    <div ref={overlayRef} className="command-palette-overlay" onClick={onClose}>
       {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions, jsx-a11y/no-noninteractive-element-interactions */}
-      <div ref={paletteRef} className="command-palette" onClick={(e) => e.stopPropagation()}>
-        <input
-          id="command-palette-input"
-          className="command-palette-input"
-          placeholder="Jump to… (try 'email' or 'privacy')"
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setHighlightIdx(0);
-          }}
-          aria-label="Search settings"
-          role="combobox"
-          aria-autocomplete="list"
-          aria-controls="command-palette-list"
-          aria-expanded="true"
-          aria-activedescendant={
-            filtered[highlightIdx] ? `command-option-${filtered[highlightIdx].id}` : undefined
-          }
-        />
+      <div
+        ref={paletteRef}
+        className="command-palette liquid-glass"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Jump to settings section"
+      >
+        <div className="command-palette-search">
+          <Search size={19} aria-hidden="true" />
+          <input
+            id="command-palette-input"
+            className="command-palette-input"
+            placeholder="Search settings sections…"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setHighlightIdx(0);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                setHighlightIdx((i) => Math.max(0, Math.min(i + 1, filtered.length - 1)));
+              } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                setHighlightIdx((i) => Math.max(0, i - 1));
+              } else if (event.key === 'Enter') {
+                event.preventDefault();
+                const target = filtered[highlightIdx];
+                if (target) {
+                  onSelectTab(target.id);
+                  onClose();
+                }
+              }
+            }}
+            aria-label="Search settings sections"
+            autoComplete="off"
+            spellCheck={false}
+            role="combobox"
+            aria-autocomplete="list"
+            aria-controls="command-palette-list"
+            aria-expanded="true"
+            aria-activedescendant={
+              filtered[highlightIdx] ? `command-option-${filtered[highlightIdx].id}` : undefined
+            }
+          />
+          <button
+            type="button"
+            className="command-palette-close"
+            aria-label="Close search"
+            onClick={onClose}
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
         <ul id="command-palette-list" className="command-palette-list" role="listbox">
           {filtered.length === 0 ? (
             <li className="command-palette-empty">No matches</li>
@@ -1208,7 +1282,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
               >
                 <span className="command-palette-item-label">{t.label}</span>
                 <span className="command-palette-item-hint">{t.hint}</span>
-                {t.id === activeTab && <span className="command-palette-item-badge">current</span>}
+                {t.id === activeTab && <span className="command-palette-item-badge">Current</span>}
               </li>
             ))
           )}

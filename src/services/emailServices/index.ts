@@ -1,9 +1,16 @@
 // Email Service Aggregator
 // REFACTORED: Uses IProviderHealthManager interface to break circular dependencies
 
+import {
+  getEffectiveEmailType,
+  isRealMailService,
+  isRealMailServiceAvailable,
+  isTemporaryMailAccount,
+} from '../../config/buildProfile';
 import { EmailAccount, Email, EmailService } from '../../types';
+import { getSenderSource } from '../../utils/emailIdentity';
 import { createLogger } from '../../utils/logger';
-import { sanitizeEmailFrom, sanitizeEmailSubject } from '../../utils/sanitization.core';
+import { sanitizeEmailSubject } from '../../utils/sanitization.core';
 import * as gmailApiService from '../gmailApiService';
 import {
   buildGmailAliasSearchQuery,
@@ -242,7 +249,7 @@ class EmailServiceAggregator {
 
   /**
    * Generate a new email using the specified or default service
-   * CatchMail is now the primary service.
+   * Driftz is the default service; health-aware fallback handles outages.
    */
   private lastGenerationTime: number = 0;
   private readonly GENERATION_COOLDOWN_MS = 150; // snappy UI without hammering providers
@@ -281,7 +288,7 @@ class EmailServiceAggregator {
 
       const settings = await storageService.getSettings();
       // Use preferred if valid/healthy, otherwise pick best healthy
-      let service = options.service || settings.preferredEmailService || 'catchmail';
+      let service = options.service || settings.preferredEmailService || 'driftz';
 
       // Custom precedence
       if (settings.preferredEmailService === 'custom' && !options.service) {
@@ -496,7 +503,7 @@ class EmailServiceAggregator {
     // Always store disposable account. Only set currentEmail when Temp Mail tab
     // is active (or preferred not set) so Gmail-tab fill is never overwritten mid-session.
     await storageService.set('disposableEmail', account);
-    const preferred = (await storageService.get('preferredEmailType')) ?? 'disposable';
+    const preferred = getEffectiveEmailType(await storageService.get('preferredEmailType'));
     if (preferred !== 'gmail') {
       await storageService.set('currentEmail', account);
     }
@@ -545,22 +552,24 @@ class EmailServiceAggregator {
     }
 
     this.getCurrentEmailPromise = (async () => {
-      // Check user preference first
-      let preferredEmailType = 'disposable';
+      // Resolve the preference first, then only read the hot keys for the
+      // active provider concurrently. Sequential storage reads used to add
+      // one extension IPC round-trip per key on a cold service worker.
+      let preferredEmailType: 'disposable' | 'gmail' = 'disposable';
       try {
-        const prefRes = await storageService.get('preferredEmailType');
-        if (prefRes === 'gmail') {
-          preferredEmailType = 'gmail';
-        }
+        preferredEmailType = getEffectiveEmailType(await storageService.get('preferredEmailType'));
       } catch {
         /* Intentionally ignored */
       }
 
       if (preferredEmailType === 'gmail') {
         try {
-          const gmailConnected = await storageService.get('gmailConnected');
-          const profile = await storageService.get('gmailProfile');
-          const gmailBase = await storageService.get('gmailBase');
+          const [gmailConnected, profile, gmailBase, aliasSession] = await Promise.all([
+            storageService.get('gmailConnected'),
+            storageService.get('gmailProfile'),
+            storageService.get('gmailBase'),
+            getMostRecentGmailAliasSession(),
+          ]);
           const baseEmail =
             (profile && typeof profile === 'object' && 'email' in profile
               ? (profile as any).email
@@ -571,7 +580,6 @@ class EmailServiceAggregator {
             typeof baseEmail === 'string' &&
             baseEmail.includes('@')
           ) {
-            const aliasSession = await getMostRecentGmailAliasSession();
             const fullEmail = aliasSession?.alias || baseEmail;
             return {
               id: `gmail_${fullEmail.replace(/[@.+]/g, '_')}`,
@@ -591,23 +599,23 @@ class EmailServiceAggregator {
         }
       }
 
-      const disposableEmail = (await storageService.get('disposableEmail')) as EmailAccount | null;
-      const currentEmail = (await storageService.get('currentEmail')) as EmailAccount | null;
-      const email =
-        disposableEmail || (currentEmail && currentEmail.service !== 'gmail' ? currentEmail : null);
-
-      // Ensure object is actually a valid EmailAccount (e.g. not an empty object or string)
-      // And filter out Gmail accounts when in disposable mode.
-      if (email && (typeof email !== 'object' || !email.fullEmail || email.service === 'gmail')) {
-        log.warn(
-          'Found non-disposable or corrupted disposable email object in storage, clearing it',
-          {
-            email,
-          }
-        );
+      const [disposableEmail, currentEmail] = await Promise.all([
+        storageService.get('disposableEmail'),
+        storageService.get('currentEmail'),
+      ]);
+      if (
+        disposableEmail &&
+        !isTemporaryMailAccount(disposableEmail) &&
+        !isRealMailService((disposableEmail as EmailAccount).service)
+      ) {
+        log.warn('Found corrupted disposable email object in storage, clearing it');
         await storageService.remove('disposableEmail');
-        return null;
       }
+      const email = isTemporaryMailAccount(disposableEmail)
+        ? disposableEmail
+        : isTemporaryMailAccount(currentEmail)
+          ? currentEmail
+          : null;
 
       // Check if expired
       if (email && email.expiresAt < Date.now()) {
@@ -645,7 +653,10 @@ class EmailServiceAggregator {
     if (existing) {
       log.debug('Coalescing concurrent inbox check', {
         service: account.service,
-        email: account.fullEmail.replace(/^(.)(.*)(@.*)$/, (_, f, m, d) => `${f}${'*'.repeat(Math.min(m.length, 5))}${d}`),
+        email: account.fullEmail.replace(
+          /^(.)(.*)(@.*)$/,
+          (_, f, m, d) => `${f}${'*'.repeat(Math.min(m.length, 5))}${d}`
+        ),
       });
       return existing;
     }
@@ -677,6 +688,9 @@ class EmailServiceAggregator {
 
   private async checkInboxInternal(account: EmailAccount, signal?: AbortSignal): Promise<Email[]> {
     try {
+      if (!isRealMailServiceAvailable(account?.service)) {
+        throw new Error('Real-mail integrations are unavailable in the public build.');
+      }
       if (!account || typeof account.fullEmail !== 'string' || !account.fullEmail) {
         log.error('Invalid account for inbox check', { account });
         throw new Error('Invalid email account: missing fullEmail');
@@ -724,11 +738,16 @@ class EmailServiceAggregator {
         case 'gmail': {
           let gmailMessages: any[] = [];
           try {
-            const aliasSession =
+            // Alias lookup is storage-only and authentication is token/storage
+            // work. Run them together so a warm Gmail poll pays one latency
+            // interval instead of two.
+            const [aliasSession, authenticated] = await Promise.all([
               account.fullEmail && account.fullEmail !== account.gmailBaseEmail
-                ? await getGmailAliasSession(account.fullEmail)
-                : await getMostRecentGmailAliasSession();
-            if (await gmailApiService.ensureAuthenticated(false)) {
+                ? getGmailAliasSession(account.fullEmail)
+                : getMostRecentGmailAliasSession(),
+              gmailApiService.ensureAuthenticated(false),
+            ]);
+            if (authenticated) {
               if (!aliasSession) {
                 if (inboxSessionGeneration === this.inboxSessionGeneration) {
                   await storageService.set('inbox', []);
@@ -769,7 +788,7 @@ class EmailServiceAggregator {
           // Map GmailMessage[] to Email[]
           emails = gmailMessages.map((msg) => ({
             id: msg.id,
-            from: msg.fromEmail || msg.from,
+            from: getSenderSource(msg.fromName, msg.fromEmail || msg.from),
             to: msg.to,
             subject: msg.subject,
             date: msg.date,
@@ -785,7 +804,7 @@ class EmailServiceAggregator {
             const zohoMsgs = await searchZohoInbox(account.fullEmail);
             emails = zohoMsgs.map((msg) => ({
               id: msg.id,
-              from: msg.fromEmail || msg.from,
+              from: getSenderSource(msg.fromName, msg.fromEmail || msg.from),
               to: msg.to || account.fullEmail,
               subject: msg.subject,
               date: msg.date,
@@ -805,7 +824,7 @@ class EmailServiceAggregator {
             const msMsgs = await searchMicrosoftInbox(account.fullEmail);
             emails = msMsgs.map((msg) => ({
               id: msg.id,
-              from: msg.fromEmail || msg.from,
+              from: getSenderSource(msg.fromName, msg.fromEmail || msg.from),
               to: msg.to || account.fullEmail,
               subject: msg.subject,
               date: msg.date,
@@ -882,7 +901,10 @@ class EmailServiceAggregator {
           emails = await dropmailService.getMessages(account, signal);
           break;
         case 'tempmaillol':
-          emails = await tempMailLolService.getMessages(account.token || account.login || '', signal);
+          emails = await tempMailLolService.getMessages(
+            account.token || account.login || '',
+            signal
+          );
           break;
         case 'tempmailplus':
           emails = await tempmailPlusService.getMessages(account.fullEmail, signal);
@@ -924,13 +946,13 @@ class EmailServiceAggregator {
       const safeEmails = emails.map((email) => ({
         ...email,
         subject: sanitizeEmailSubject(email.subject || '(No Subject)'),
-        from: sanitizeEmailFrom(email.from || 'Unknown Sender'),
+        from: getSenderSource(undefined, email.from),
       }));
 
       // PERFORMANCE FIX: Efficient comparison using ID concatenation
       const slicedSafeEmails = safeEmails.slice(0, 50);
       const cachedInbox = (await storageService.get('inbox')) || [];
-      const inboxHash = (list: Email[]) => list.map((e) => `${e.id}:${e.read}`).join('|');
+      const inboxHash = (list: Email[]) => JSON.stringify(list.map((e) => [e.id, e.read, e.from, e.subject]));
 
       if (
         inboxSessionGeneration === this.inboxSessionGeneration &&
@@ -1001,6 +1023,9 @@ class EmailServiceAggregator {
     signal?: AbortSignal
   ): Promise<Email> {
     try {
+      if (!isRealMailServiceAvailable(account?.service)) {
+        throw new Error('Real-mail integrations are unavailable in the public build.');
+      }
       const inboxSessionGeneration = this.inboxSessionGeneration;
       let email: Email;
 
@@ -1024,7 +1049,7 @@ class EmailServiceAggregator {
           }
           email = {
             id: emailDetail.id,
-            from: emailDetail.fromEmail || emailDetail.from,
+            from: getSenderSource(emailDetail.fromName, emailDetail.fromEmail || emailDetail.from),
             subject: emailDetail.subject,
             date: emailDetail.date,
             body: emailDetail.body || emailDetail.snippet || '',
@@ -1051,7 +1076,7 @@ class EmailServiceAggregator {
           }
           email = {
             id: found.id,
-            from: found.fromEmail || found.from,
+            from: getSenderSource(found.fromName, found.fromEmail || found.from),
             to: found.to || account.fullEmail,
             subject: found.subject,
             date: found.date,
@@ -1070,7 +1095,7 @@ class EmailServiceAggregator {
           }
           email = {
             id: found.id,
-            from: found.fromEmail || found.from,
+            from: getSenderSource(found.fromName, found.fromEmail || found.from),
             to: found.to || account.fullEmail,
             subject: found.subject,
             date: found.date,
@@ -1132,16 +1157,28 @@ class EmailServiceAggregator {
           email = await evilmailService.getMessage(account.fullEmail, emailId.toString(), signal);
           break;
         case 'mailboxtemp':
-          email = await mailboxtempService.getMessage(account.fullEmail, emailId.toString(), signal);
+          email = await mailboxtempService.getMessage(
+            account.fullEmail,
+            emailId.toString(),
+            signal
+          );
           break;
         case 'dropmail':
           email = await dropmailService.getMessage(account, emailId.toString(), signal);
           break;
         case 'tempmaillol':
-          email = await tempMailLolService.getMessage(account.token || account.login || '', emailId.toString(), signal);
+          email = await tempMailLolService.getMessage(
+            account.token || account.login || '',
+            emailId.toString(),
+            signal
+          );
           break;
         case 'tempmailplus':
-          email = await tempmailPlusService.getMessage(account.fullEmail, emailId.toString(), signal);
+          email = await tempmailPlusService.getMessage(
+            account.fullEmail,
+            emailId.toString(),
+            signal
+          );
           break;
         case 'mailcx':
           email = await mailCxService.getMessage(account.fullEmail, emailId.toString(), signal);
@@ -1170,7 +1207,7 @@ class EmailServiceAggregator {
       const safeEmail: Email = {
         ...email,
         subject: sanitizeEmailSubject(email.subject || '(No Subject)'),
-        from: sanitizeEmailFrom(email.from || 'Unknown Sender'),
+        from: getSenderSource(undefined, email.from),
       };
 
       const inbox = await storageService.get('inbox');
@@ -1212,13 +1249,12 @@ class EmailServiceAggregator {
   private lastPrewarmTs = 0;
   async prewarmConnections(): Promise<void> {
     const now = Date.now();
-    if (now - this.lastPrewarmTs < 30_000) {return;}
+    if (now - this.lastPrewarmTs < 30_000) {
+      return;
+    }
     this.lastPrewarmTs = now;
 
-    const endpoints = [
-      'https://api.mail.tm/domains',
-      'https://api.mail.gw/domains',
-    ];
+    const endpoints = ['https://api.mail.tm/domains', 'https://api.mail.gw/domains'];
 
     for (const url of endpoints) {
       fetch(url, { method: 'HEAD', cache: 'no-cache' }).catch(() => {});

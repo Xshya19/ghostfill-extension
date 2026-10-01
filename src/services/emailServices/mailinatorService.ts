@@ -1,5 +1,6 @@
 import { EmailAccount, Email } from '../../types';
 import { fetchWithTimeout, contentToString } from '../../utils/core';
+import { getSenderSource } from '../../utils/emailIdentity';
 import { getRandomInt } from '../../utils/encryption';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
@@ -91,7 +92,7 @@ export class MailinatorService {
         );
         return {
           id: stableId,
-          from: contentToString(msg.fromfull || msg.from || msg.sender, 'Unknown Sender'),
+          from: getSenderSource(undefined, msg.fromfull || msg.from || msg.sender),
           to: fullEmail,
           subject: contentToString(msg.subject, '(No Subject)'),
           date: msg.time ? Number(msg.time) : Date.now(),
@@ -165,7 +166,7 @@ export class MailinatorService {
       htmlBody: finalHtml,
       textBody: finalText,
       subject: contentToString(fullMsg?.subject, '(No Subject)'),
-      from: contentToString(fullMsg?.origfrom || fullMsg?.fromfull || fullMsg?.from, 'Unknown Sender'),
+      from: getSenderSource(undefined, fullMsg?.origfrom || fullMsg?.fromfull || fullMsg?.from),
       date: fullMsg?.time ? Number(fullMsg.time) : Date.now(),
     };
   }

@@ -13,17 +13,21 @@
 // └────────────────────────────────────────────────────────────────┘
 // ─────────────────────────────────────────────────────────────────────
 
+import { getEffectiveEmailType } from '../config/buildProfile';
 import { dedupService } from '../services/dedupService';
+import { selectVerificationAction } from '../services/emailDecisionEngine';
 import { emailService } from '../services/emailServices';
-import { isAutoOpenableActivationLink } from '../services/extraction/activationLinkGuard';
+import { senderMatchesSite } from '../services/emailServices/privacy';
 import { linkService } from '../services/linkService';
-import { otpService , smartDetectionService } from '../services/otpService';
+import { otpService, smartDetectionService } from '../services/otpService';
 
 import { storageService } from '../services/storageService';
 import type { DetectionResult } from '../services/types/extraction.types';
 import { Email, EmailAccount } from '../types';
+import { getSenderDomain } from '../utils/emailIdentity';
 import { createLogger, diag } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
+import { sameVerificationSite } from '../utils/verificationSite';
 
 import {
   unregisterActivationTab,
@@ -40,17 +44,32 @@ import { persistWaiters, rehydrateWaiters } from './waiterStore';
 // Using a getter avoids holding a stale reference after the registry clears.
 const getActivationTabs = (): ReadonlySet<number> => getActivationTabsSet();
 
-
 function toSafeString(v: unknown): string {
-  if (typeof v === 'string') {return v;}
-  if (!v) {return '';}
+  if (typeof v === 'string') {
+    return v;
+  }
+  if (!v) {
+    return '';
+  }
   if (typeof v === 'object') {
     const obj = v as Record<string, unknown>;
-    if (typeof obj.text === 'string') {return obj.text;}
-    if (typeof obj.html === 'string') {return obj.html;}
-    if (typeof obj.body === 'string') {return obj.body;}
-    if (typeof obj.content === 'string') {return obj.content;}
-    try { return JSON.stringify(v); } catch { return String(v); }
+    if (typeof obj.text === 'string') {
+      return obj.text;
+    }
+    if (typeof obj.html === 'string') {
+      return obj.html;
+    }
+    if (typeof obj.body === 'string') {
+      return obj.body;
+    }
+    if (typeof obj.content === 'string') {
+      return obj.content;
+    }
+    try {
+      return JSON.stringify(v);
+    } catch {
+      return String(v);
+    }
   }
   return String(v);
 }
@@ -147,6 +166,7 @@ interface TabRegistration {
   readonly pageConfidence?: number;
   readonly verdict?: string;
   readonly registeredAt: number;
+  readonly lastDetectedAt?: number;
   readonly priority: number;
   deliveryAttempts: number;
 }
@@ -186,6 +206,8 @@ type CheckMode = 'fast' | 'general';
 export interface EmailContext {
   readonly from: string;
   readonly subject: string;
+  readonly emailId?: string | number;
+  readonly emailDate?: number;
   readonly provider?: string;
   readonly linkUrl?: string | null;
   /** First ~500 chars of the plain-text email body for content-based matching */
@@ -415,10 +437,14 @@ class SlidingRateLimiter {
    * expired entries in one operation.
    */
   private prune(): void {
-    if (this.timestamps.length === 0) {return;}
+    if (this.timestamps.length === 0) {
+      return;
+    }
     const cutoff = Date.now() - RATE.WINDOW_MS;
     // Fast path: oldest entry is still within window
-    if (this.timestamps[0]! >= cutoff) {return;}
+    if (this.timestamps[0]! >= cutoff) {
+      return;
+    }
     // Fast path: all entries expired
     if (this.timestamps[this.timestamps.length - 1]! < cutoff) {
       this.timestamps.length = 0;
@@ -522,21 +548,21 @@ class DomainMatcher {
 
   private static readonly SCORE = {
     // Structural signals
-    ROOT_DOMAIN:      100, // Definitive: sender domain matches tab domain
-    CLUSTER:          100, // Definitive: both in same corporate ecosystem
-    LINK_DOMAIN:       85, // Very strong: link in email points to tab's service
-    PROVIDER_KEYWORD:  75, // Strong: detected provider name found in tab hostname
+    ROOT_DOMAIN: 100, // Definitive: sender domain matches tab domain
+    CLUSTER: 100, // Definitive: both in same corporate ecosystem
+    LINK_DOMAIN: 85, // Very strong: link in email points to tab's service
+    PROVIDER_KEYWORD: 75, // Strong: detected provider name found in tab hostname
 
     // Content signals (no hardcoded lists needed — always evaluated)
-    SUBJECT_BRAND:     58, // Email subject mentions tab's brand name
-    BODY_BRAND:        48, // Email body text mentions tab's hostname/brand
-    SUBJECT_AND_BODY:  12, // Bonus when brand appears in both subject + body
+    SUBJECT_BRAND: 58, // Email subject mentions tab's brand name
+    BODY_BRAND: 48, // Email body text mentions tab's hostname/brand
+    SUBJECT_AND_BODY: 12, // Bonus when brand appears in both subject + body
 
     // Contextual signals (from tab registration state)
-    SINGLE_WAITER:     18, // Only one non-activation tab is waiting (low ambiguity)
-    STRONG_VERDICT:    14, // Tab's OTP page detector gave a trusted verdict
-    TEMPORAL:          12, // Tab registered recently (< 2 min ago)
-    HAS_SELECTORS:      6, // Tab has specific field selectors registered
+    SINGLE_WAITER: 18, // Only one non-activation tab is waiting (low ambiguity)
+    STRONG_VERDICT: 14, // Tab's OTP page detector gave a trusted verdict
+    TEMPORAL: 12, // Tab registered recently (< 2 min ago)
+    HAS_SELECTORS: 6, // Tab has specific field selectors registered
   } as const;
 
   // ─── Public API ─────────────────────────────────────────────
@@ -552,12 +578,15 @@ class DomainMatcher {
   static correlate(
     email: EmailContext,
     tab: TabRegistration,
-    context: { waitingTabs: ReadonlyMap<number, TabRegistration>; activationTabs: ReadonlySet<number> }
+    context: {
+      waitingTabs: ReadonlyMap<number, TabRegistration>;
+      activationTabs: ReadonlySet<number>;
+    }
   ): CorrelationResult {
     const signals: CorrelationSignal[] = [];
     let score = 0;
 
-    const senderDomain = (email.from.split('@')[1] ?? '').toLowerCase();
+    const senderDomain = getSenderDomain(email.from);
     if (!senderDomain) {
       return { score: 0, tier: 'none', signals };
     }
@@ -568,11 +597,7 @@ class DomainMatcher {
     // ─── STRUCTURAL SIGNALS ───────────────────────────────────
 
     // 1. Root domain overlap
-    if (
-      tabRoot === senderRoot ||
-      tab.hostname.includes(senderRoot) ||
-      senderDomain.includes(tabRoot)
-    ) {
+    if (sameVerificationSite(tabRoot, senderRoot)) {
       signals.push({ name: 'root-domain', score: this.SCORE.ROOT_DOMAIN });
       score += this.SCORE.ROOT_DOMAIN;
     }
@@ -679,11 +704,7 @@ class DomainMatcher {
 
     // ─── Classify tier ────────────────────────────────────────
     const tier: CorrelationTier =
-      score >= CORRELATION.STRONG
-        ? 'strong'
-        : score >= CORRELATION.MODERATE
-          ? 'moderate'
-          : 'none';
+      score >= CORRELATION.STRONG ? 'strong' : score >= CORRELATION.MODERATE ? 'moderate' : 'none';
 
     return { score: Math.min(100, score), tier, signals };
   }
@@ -728,7 +749,10 @@ class DomainMatcher {
         linkUrl: linkUrl ?? null,
       };
 
-      const correlationContext = { waitingTabs: otpWaitingTabs, activationTabs: getActivationTabs() };
+      const correlationContext = {
+        waitingTabs: otpWaitingTabs,
+        activationTabs: getActivationTabs(),
+      };
       const result = this.correlate(email, pseudoTab, correlationContext);
       // Structural-only matches (domain/cluster) score ≥ 75,
       // so MODERATE threshold is appropriate for backward compat.
@@ -796,7 +820,9 @@ class DomainMatcher {
   // ─── Domain utilities ───────────────────────────────────────
 
   private static getRootDomain(hostname: string): string {
-    if (!hostname) {return '';}
+    if (!hostname) {
+      return '';
+    }
     // Defensive exit for raw IPv4 or IPv6 addresses
     if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) || hostname.includes(':')) {
       return hostname;
@@ -885,7 +911,8 @@ class OTPDeliveryEngine {
           tabId,
           attempt: attempt + 1,
           isBackgroundTab,
-          result,
+          hasResponse: result !== null,
+          success: result?.success === true,
         });
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -907,7 +934,7 @@ class OTPDeliveryEngine {
 //  §9  OTP CODE EXTRACTOR (multi-source)
 // ═══════════════════════════════════════════════════════════════
 
-class OTPCodeExtractor {
+export class OTPCodeExtractor {
   private static readonly EMERGENCY_PATTERNS: readonly RegExp[] = [
     // Specific labeled patterns (high confidence)
     /(?:use|enter|type|input)\s+(?:this\s+)?(?:code|otp|pin|passcode|verification\s+code)\s*(?:is|:|=)?\s*\b([A-Z0-9]{4,10})\b/i,
@@ -928,11 +955,19 @@ class OTPCodeExtractor {
    * 4. Emergency regex patterns
    */
   static isPlausibleOtp(v: string): boolean {
-    if (!v || v.length < 4 || v.length > 10) {return false;}
-    if (!/\d/.test(v)) {return false;}
-    if (/^(19|20)\d{2}$/.test(v)) {return false;}
+    if (!v || v.length < 4 || v.length > 10) {
+      return false;
+    }
+    if (!/\d/.test(v)) {
+      return false;
+    }
+    if (/^(19|20)\d{2}$/.test(v)) {
+      return false;
+    }
     const lower = v.toLowerCase();
-    if (lower === 'true' || lower === 'false' || lower === 'null' || lower === 'undefined') {return false;}
+    if (lower === 'true' || lower === 'false' || lower === 'null' || lower === 'undefined') {
+      return false;
+    }
     return true;
   }
 
@@ -948,25 +983,38 @@ class OTPCodeExtractor {
       }
     }
 
-    const plainText = typeof fullEmail.body === 'string' 
-      ? fullEmail.body 
-      : (typeof fullEmail.textBody === 'string' ? fullEmail.textBody : '');
+    const plainText =
+      typeof fullEmail.body === 'string'
+        ? fullEmail.body
+        : typeof fullEmail.textBody === 'string'
+          ? fullEmail.textBody
+          : '';
     const htmlText = typeof fullEmail.htmlBody === 'string' ? fullEmail.htmlBody : '';
     const subjectText = typeof fullEmail.subject === 'string' ? fullEmail.subject : '';
     const emailText = plainText || subjectText || '';
+    const textOutsideLinks = emailText.replace(/https?:\/\/[^\s"'<>]+/gi, ' ');
 
     // Source 2: Emergency regex (labeled human copy)
     for (const rx of this.EMERGENCY_PATTERNS) {
-      const match = emailText.match(rx);
+      const match = textOutsideLinks.match(rx);
       if (match?.[1] && this.isPlausibleOtp(match[1])) {
         log.info('🚨 OTP via emergency regex', { code: match[1] });
         return match[1];
       }
     }
 
+    // The intelligent extractor already chose a link over a code. Do not
+    // resurrect a number embedded in that link as an OTP. A separately labeled
+    // code above remains eligible for the emergency text fallback.
+    if (detection.type === 'link' && detection.link) {
+      return null;
+    }
+
     // Source 3: Short email standalone number
-    if (emailText.length < 300) {
-      const standaloneMatch = emailText.match(/\b(?!(?:20[0-9]{2})\b)(?!\d{9,})(\d{6,8})(?!\d)\b/);
+    if (textOutsideLinks.length < 300) {
+      const standaloneMatch = textOutsideLinks.match(
+        /\b(?!(?:20[0-9]{2})\b)(?!\d{9,})(\d{6,8})(?!\d)\b/
+      );
       if (standaloneMatch?.[1] && this.isPlausibleOtp(standaloneMatch[1])) {
         log.info('🚨 OTP from short email', { code: standaloneMatch[1] });
         return standaloneMatch[1];
@@ -985,10 +1033,10 @@ class OTPCodeExtractor {
     // Source 5: URLs in email body
     // GRANDMASTER FIX: Prevent ReDoS and Service Worker freezes on massive HTML emails.
     // 1. Prefer plain text body (usually contains the link cleanly).
-    // 2. If HTML must be searched, truncate to first 50KB. OTP links are rarely buried 
+    // 2. If HTML must be searched, truncate to first 50KB. OTP links are rarely buried
     //    after 50KB of base64 images and tracking pixels.
     let urlMatches = plainText ? plainText.match(/https?:\/\/[^\s"'<>]+/gi) : null;
-    
+
     if (!urlMatches && htmlText) {
       const safeHtml = htmlText.substring(0, 50_000); // 50KB limit
       urlMatches = safeHtml.match(/https?:\/\/[^\s"'<>]+/gi);
@@ -1021,7 +1069,6 @@ const rateLimiter = new SlidingRateLimiter();
 const dedupCache = dedupService;
 // activationTabs is now managed by activationRegistry — use getActivationTabs()
 const activationCodesByTab = new Map<number, ActivationCodeRegistration>();
-
 
 const metrics: PollingMetrics = {
   startedAt: 0,
@@ -1121,7 +1168,9 @@ function runHealthSweep(): void {
   if (pollingActive && now - lastGlobalCheckTime > 2 * 60 * 1000) {
     log.warn('💔 Heartbeat: Polling is active but no checks run in 2m. Restarting alarms.');
     void performCheck('general').then(() => {
-      if (generalTimer) {clearTimeout(generalTimer);}
+      if (generalTimer) {
+        clearTimeout(generalTimer);
+      }
       void scheduleGeneralPoll();
     });
   }
@@ -1257,127 +1306,128 @@ async function performCheck(mode: CheckMode): Promise<void> {
 
   activeCheckPromise = (async () => {
     try {
-    const currentEmail = await emailService.getCurrentEmail();
-    if (sessionGeneration !== emailSessionGeneration) {
-      checkSucceeded = true;
-      finalDetail = 'Email session changed before inbox fetch';
-      return;
-    }
-    if (!currentEmail) {
-      log.debug('No current email configured');
-      diag.step(flowId, 'polling', 'no-current-email', 'No active email account');
-      checkSucceeded = true;
-      finalDetail = 'No active email account';
-      return;
-    }
-    diag.step(flowId, 'polling', 'current-email', 'Resolved active email', {
-      service: currentEmail.service,
-      fullEmail: currentEmail.fullEmail,
-    });
-
-    const freshInbox = await emailService.checkInbox(currentEmail);
-    if (sessionGeneration !== emailSessionGeneration) {
-      checkSucceeded = true;
-      finalDetail = 'Email session changed after inbox fetch';
-      return;
-    }
-    diag.step(flowId, 'polling', 'inbox-fetched', 'Inbox fetched', {
-      freshCount: freshInbox.length,
-    });
-
-    const cutoff = Date.now() - TIMING.MAX_EMAIL_AGE_MS;
-
-    const newEmails: Email[] = [];
-    for (const e of freshInbox) {
-      if (await dedupCache.isProcessed(String(e.id), currentEmail.fullEmail)) {
-        continue;
+      const currentEmail = await emailService.getCurrentEmail();
+      if (sessionGeneration !== emailSessionGeneration) {
+        checkSucceeded = true;
+        finalDetail = 'Email session changed before inbox fetch';
+        return;
       }
-      // Parse string date/timestamp properly before comparing to numeric cutoff
-      const emailTs = typeof e.date === 'number' ? e.date : (typeof e.date === 'string' ? Date.parse(e.date) : 0);
-      if (emailTs > 0 && emailTs < cutoff) {
-        log.debug('Skipping old email', { id: e.id });
-        continue;
+      if (!currentEmail) {
+        log.debug('No current email configured');
+        diag.step(flowId, 'polling', 'no-current-email', 'No active email account');
+        checkSucceeded = true;
+        finalDetail = 'No active email account';
+        return;
       }
-      // Claim the message before dispatching parallel batches. A fast-watch
-      // tick, SSE event, or manual refresh can otherwise observe the same
-      // message between isProcessed() and processEmail().
-      await dedupCache.markPending(String(e.id), currentEmail.fullEmail);
-      newEmails.push(e);
-    }
-
-    if (newEmails.length > 0) {
-      log.info(`📬 ${newEmails.length} new email(s)`, { mode });
-      diag.step(flowId, 'polling', 'new-emails', 'New emails detected', {
-        count: newEmails.length,
+      diag.step(flowId, 'polling', 'current-email', 'Resolved active email', {
+        service: currentEmail.service,
+        fullEmail: currentEmail.fullEmail,
       });
 
-      stopFastWatchBurst('email_detected');
+      const freshInbox = await emailService.checkInbox(currentEmail);
+      if (sessionGeneration !== emailSessionGeneration) {
+        checkSucceeded = true;
+        finalDetail = 'Email session changed after inbox fetch';
+        return;
+      }
+      diag.step(flowId, 'polling', 'inbox-fetched', 'Inbox fetched', {
+        freshCount: freshInbox.length,
+      });
 
-      // Broadcast to UI that we are actively analyzing a new email
-      for (const tabId of otpWaitingTabs.keys()) {
-        chrome.tabs
-          .sendMessage(tabId, {
-            action: 'POLLING_STATE_CHANGE',
-            payload: { state: 'ANALYZING_EMAIL' },
-          })
-          .catch(() => {});
+      const cutoff = Date.now() - TIMING.MAX_EMAIL_AGE_MS;
+
+      const newEmails: Email[] = [];
+      for (const e of freshInbox) {
+        if (await dedupCache.isProcessed(String(e.id), currentEmail.fullEmail)) {
+          continue;
+        }
+        // Parse string date/timestamp properly before comparing to numeric cutoff
+        const emailTs =
+          typeof e.date === 'number' ? e.date : typeof e.date === 'string' ? Date.parse(e.date) : 0;
+        if (emailTs > 0 && emailTs < cutoff) {
+          log.debug('Skipping old email', { id: e.id });
+          continue;
+        }
+        // Claim the message before dispatching parallel batches. A fast-watch
+        // tick, SSE event, or manual refresh can otherwise observe the same
+        // message between isProcessed() and processEmail().
+        await dedupCache.markPending(String(e.id), currentEmail.fullEmail);
+        newEmails.push(e);
       }
 
-      // Process many emails in parallel for max throughput
-      const batches = chunk(newEmails, 6);
-      for (const batch of batches) {
-        await Promise.allSettled(
-          batch.map((email) => processEmail(String(email.id), currentEmail, sessionGeneration))
-        );
+      if (newEmails.length > 0) {
+        log.info(`📬 ${newEmails.length} new email(s)`, { mode });
+        diag.step(flowId, 'polling', 'new-emails', 'New emails detected', {
+          count: newEmails.length,
+        });
+
+        stopFastWatchBurst('email_detected');
+
+        // Broadcast to UI that we are actively analyzing a new email
+        for (const tabId of otpWaitingTabs.keys()) {
+          chrome.tabs
+            .sendMessage(tabId, {
+              action: 'POLLING_STATE_CHANGE',
+              payload: { state: 'ANALYZING_EMAIL' },
+            })
+            .catch(() => {});
+        }
+
+        // Process many emails in parallel for max throughput
+        const batches = chunk(newEmails, 6);
+        for (const batch of batches) {
+          await Promise.allSettled(
+            batch.map((email) => processEmail(String(email.id), currentEmail, sessionGeneration))
+          );
+        }
       }
+
+      circuitBreaker.recordSuccess();
+      metrics.successfulChecks++;
+      metrics.lastSuccessTime = Date.now();
+      checkSucceeded = true;
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      const isRateLimited = /\b(429|rate limit|too many requests)\b/i.test(errorMsg);
+      if (isRateLimited) {
+        stopFastWatchBurst('rate_limited');
+      }
+
+      circuitBreaker.recordFailure(error);
+      metrics.failedChecks++;
+      metrics.lastErrorMessage = errorMsg;
+      metrics.lastErrorTime = Date.now();
+
+      log.warn(`Inbox check failed [${mode}]`, {
+        error: metrics.lastErrorMessage,
+        circuit: circuitBreaker.currentState,
+        failures: circuitBreaker.failures,
+      });
+      diag.step(flowId, 'polling', 'error', 'Inbox check failed', {
+        error: metrics.lastErrorMessage,
+        mode,
+      });
+      finalDetail = 'Inbox check failed';
+    } finally {
+      activeCheckPromise = null;
+
+      const elapsed = Date.now() - t0;
+      metrics.avgCheckMs =
+        metrics.avgCheckMs === 0
+          ? elapsed
+          : metrics.avgCheckMs * (1 - EMA_ALPHA) + elapsed * EMA_ALPHA;
+
+      lastGlobalCheckTime = Date.now();
+      persistSessionState();
+      diag.endFlow(flowId, 'polling', 'inbox-check', checkSucceeded, finalDetail, {
+        mode,
+        totalChecks: metrics.totalChecks,
+        emailsProcessed: metrics.emailsProcessed,
+        otpsFound: metrics.otpsFound,
+        linksProcessed: metrics.linksProcessed,
+      });
+      flushPendingCheck();
     }
-
-    circuitBreaker.recordSuccess();
-    metrics.successfulChecks++;
-    metrics.lastSuccessTime = Date.now();
-    checkSucceeded = true;
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    const isRateLimited = /\b(429|rate limit|too many requests)\b/i.test(errorMsg);
-    if (isRateLimited) {
-      stopFastWatchBurst('rate_limited');
-    }
-
-    circuitBreaker.recordFailure(error);
-    metrics.failedChecks++;
-    metrics.lastErrorMessage = errorMsg;
-    metrics.lastErrorTime = Date.now();
-
-    log.warn(`Inbox check failed [${mode}]`, {
-      error: metrics.lastErrorMessage,
-      circuit: circuitBreaker.currentState,
-      failures: circuitBreaker.failures,
-    });
-    diag.step(flowId, 'polling', 'error', 'Inbox check failed', {
-      error: metrics.lastErrorMessage,
-      mode,
-    });
-    finalDetail = 'Inbox check failed';
-  } finally {
-    activeCheckPromise = null;
-
-    const elapsed = Date.now() - t0;
-    metrics.avgCheckMs =
-      metrics.avgCheckMs === 0
-        ? elapsed
-        : metrics.avgCheckMs * (1 - EMA_ALPHA) + elapsed * EMA_ALPHA;
-
-    lastGlobalCheckTime = Date.now();
-    persistSessionState();
-    diag.endFlow(flowId, 'polling', 'inbox-check', checkSucceeded, finalDetail, {
-      mode,
-      totalChecks: metrics.totalChecks,
-      emailsProcessed: metrics.emailsProcessed,
-      otpsFound: metrics.otpsFound,
-      linksProcessed: metrics.linksProcessed,
-    });
-    flushPendingCheck();
-  }
   })();
 
   return activeCheckPromise;
@@ -1396,7 +1446,13 @@ async function processEmail(
   try {
     if (sessionGeneration !== emailSessionGeneration) {
       await dedupCache.clearPending(emailId, currentEmail.fullEmail);
-      diag.endFlow(flowId, 'email', 'process-email', true, 'Email session changed before processing');
+      diag.endFlow(
+        flowId,
+        'email',
+        'process-email',
+        true,
+        'Email session changed before processing'
+      );
       return;
     }
 
@@ -1431,7 +1487,13 @@ async function processEmail(
 
     if (sessionGeneration !== emailSessionGeneration) {
       await dedupCache.clearPending(emailId, currentEmail.fullEmail);
-      diag.endFlow(flowId, 'email', 'process-email', true, 'Email session changed after extraction');
+      diag.endFlow(
+        flowId,
+        'email',
+        'process-email',
+        true,
+        'Email session changed after extraction'
+      );
       return;
     }
 
@@ -1464,94 +1526,64 @@ async function processEmail(
 
     let otpDelivered = false;
 
-    // ── PRIORITY 2 setup first (link vs OTP policy) ──
-    const hasLink =
-      (detection.type === 'link' || detection.type === 'both') && Boolean(detection.link);
-    const linkDecision = detection.decision;
-    // Strong activation path (verify/activate/confirm) → open link even if a
-    // weak alphanumeric "OTP" was also scored (common false positive).
-    const linkUrlString = typeof detection.link === 'string' ? detection.link : (detection.link as any)?.url || '';
+    const hasLink = Boolean(detection.link);
     const safeSubject = toSafeString(fullEmail.subject);
-    const linkIsStrongActivation =
-      Boolean(linkUrlString) &&
-      isAutoOpenableActivationLink(linkUrlString, '', safeSubject);
     const otpCodeStr = extractedOTPCode ? toSafeString(extractedOTPCode) : null;
-    const otpLooksWeak = Boolean(
-      otpCodeStr &&
-        (!/^\d{4,8}$/.test(otpCodeStr.replace(/[-\s]/g, '')) ||
-          otpCodeStr.length > 10)
-    );
-    // When we have a real activation link, open it. Don't require decision.action
-    // to be perfect when the guard already says auto-openable.
-    const shouldDelegateLink =
-      hasLink &&
-      Boolean(detection.link) &&
-      (linkIsStrongActivation ||
-        !linkDecision ||
-        (linkDecision.canAutoAct &&
-          (linkDecision.action === 'open-link' ||
-            linkDecision.action === 'fill-otp-and-open-link')));
-
-    // Skip OTP delivery when the email is clearly link-activation and OTP is weak
-    const shouldDeliverOTP =
-      Boolean(otpCodeStr) &&
-      !(linkIsStrongActivation && otpLooksWeak && detection.type !== 'otp');
-
-    if (!shouldDeliverOTP && otpCodeStr && hasLink) {
-      const linkStr = toSafeString(detection.link);
-      log.info('⏭️ Skipping weak OTP delivery — prefer activation link', {
-        code: otpCodeStr.substring(0, 3) + '…',
-        link: linkStr.substring(0, 60),
-      });
-    }
+    const otpConfidence = detection.otpConfidence ?? detection.confidence ?? 0;
+    const canAutoFillCode = detection.decision?.canAutoAct === true && otpConfidence >= 0.7;
 
     const safeBodySnippet = toSafeString(fullEmail.body || fullEmail.textBody).substring(0, 500);
     const emailCtx: EmailContext = {
       from: toSafeString(fullEmail.from),
       subject: safeSubject,
+      emailId: fullEmail.id,
+      emailDate: fullEmail.date,
       ...(detection.provider !== undefined ? { provider: detection.provider } : {}),
       ...(detection.link !== undefined ? { linkUrl: detection.link } : {}),
       bodySnippet: safeBodySnippet,
     };
 
-    // 1. Evaluate Tab Context BEFORE taking action (Smart Context Priority)
-    const bestTabMatch = otpWaitingTabs.size > 0 ? findBestTab(emailCtx) : null;
-    let suppressLinkDelegation = false;
-
-    // 2. OTP Delivery & Contextual Link Suppression
-    if (shouldDeliverOTP && bestTabMatch !== null && otpCodeStr) {
-      const reg = bestTabMatch.reg;
-      const hasActiveOtpForm = (reg.fieldSelectors && reg.fieldSelectors.length > 0) || (reg.pageConfidence ?? 0) > 0.6;
-
-      if (hasActiveOtpForm) {
-        suppressLinkDelegation = true;
-        log.info('🧠 Smart Context: Active OTP form detected on tab. Suppressing background link to prevent session-fingerprint mismatch.', {
-          tabId: bestTabMatch.tabId,
-          hostname: reg.hostname,
-          score: bestTabMatch.result.score,
-        });
+    const hasMatchingOTPPage = Boolean(otpCodeStr && hasMatchingOTPWaiter(emailCtx));
+    let otpDeliveryComplete = false;
+    if (otpCodeStr) {
+      if (canAutoFillCode) {
+        log.info('🔢 OTP detected — delivering to waiting tabs');
+        otpDelivered = await deliverOTP(otpCodeStr, otpConfidence, emailCtx);
+        otpDeliveryComplete = true;
+      } else {
+        log.info('OTP requires review — saving without automatic delivery');
+        await otpService.saveLastOTP(
+          otpCodeStr,
+          'email',
+          emailCtx.from,
+          safeSubject,
+          otpConfidence,
+          {
+            emailId: fullEmail.id,
+            emailDate: fullEmail.date,
+            autoFillEligible: false,
+          }
+        );
       }
-
-      log.info('🎯 Matching tab found — inline OTP delivery');
-      otpDelivered = await deliverOTP(otpCodeStr, detection.confidence ?? 0.9, emailCtx);
     }
 
-    // Deliver to generic waiting tabs if no specific match was found but OTP exists
-    if (shouldDeliverOTP && otpCodeStr && !otpDelivered) {
-      log.info('🔢 OTP detected — delivering to waiting tabs');
-      otpDelivered = await deliverOTP(otpCodeStr, detection.confidence ?? 0.9, emailCtx);
-    }
+    const hasOTP = Boolean(otpCodeStr);
 
-    const hasOTP = Boolean(otpCodeStr) && shouldDeliverOTP;
-
-    // 3. Link Delegation (Respecting Smart Context)
-    const finalShouldDelegateLink = shouldDelegateLink && !suppressLinkDelegation;
-
-    if (finalShouldDelegateLink && detection.link) {
-      log.info('🔗 Link detected & context allows delegation', {
-        strongActivation: linkIsStrongActivation,
-        action: linkDecision?.action,
-      });
+    const action = detection.decision
+      ? selectVerificationAction(detection.decision, {
+          otpDelivered,
+          hasMatchingOTPPage,
+          otpDeliveryComplete,
+        })
+      : 'show-review';
+    diag.step(flowId, 'email', 'route', 'Selected verification action for the current page', {
+      action,
+      hasMatchingOTPPage,
+      otpDelivered,
+      otpDeliveryComplete,
+    });
+    if (hasLink && detection.link && detection.decision?.canAutoAct && action === 'open-link') {
+      log.info('🔗 Link detected — opening activation tab');
       metrics.linksProcessed++;
 
       for (const tabId of otpWaitingTabs.keys()) {
@@ -1564,27 +1596,10 @@ async function processEmail(
       }
 
       await linkService
-        .handleDetectedLink(fullEmail, detection.link, currentEmail.fullEmail)
+        .handleDetectedLink(fullEmail, detection.link, currentEmail.fullEmail, canAutoFillCode ? otpCodeStr : null)
         .catch((e) => log.warn('linkService error', e));
       diag.step(flowId, 'email', 'link', 'Link handling delegated', {
         link: detection.link,
-      });
-    } else if (hasLink && detection.link && suppressLinkDelegation) {
-      log.info('🔗 Link held back by Smart Context Priority (OTP form is active). User will submit form with filled OTP.');
-      diag.step(flowId, 'email', 'link', 'Link held by Smart Context', {
-        link: detection.link,
-      });
-    } else if (hasLink && detection.link) {
-      log.info('Link detected but held by decision engine', {
-        link: detection.link,
-        action: linkDecision?.action,
-        risk: linkDecision?.risk,
-        warnings: linkDecision?.warnings,
-      });
-      diag.step(flowId, 'email', 'link', 'Link held for review', {
-        link: detection.link,
-        action: linkDecision?.action,
-        risk: linkDecision?.risk,
       });
     }
 
@@ -1599,8 +1614,11 @@ async function processEmail(
         toSafeString(fullEmail.from),
         safeSubject,
         otpCodeStr || undefined,
-        hasLink ? toSafeString(detection.link) : undefined
-      ).catch((error) => log.warn('Notification delivery failed after email was marked processed', error));
+        hasLink ? toSafeString(detection.link) : undefined,
+        toSafeString(fullEmail.htmlBody || fullEmail.textBody || fullEmail.body)
+      ).catch((error) =>
+        log.warn('Notification delivery failed after email was marked processed', error)
+      );
     } else {
       log.info('Ignoring email: no OTP or activation link found', { emailId });
     }
@@ -1618,36 +1636,6 @@ async function processEmail(
     });
     throw error;
   }
-}
-
-// ── Find the highest-scoring waiting tab above the MODERATE threshold ──
-function findBestTab(
-  email: EmailContext
-): { tabId: number; reg: TabRegistration; result: CorrelationResult } | null {
-  let bestTabId: number | null = null;
-  let bestReg: TabRegistration | null = null;
-  let bestResult: CorrelationResult = { score: 0, tier: 'none', signals: [] };
-
-  const correlationContext = { waitingTabs: otpWaitingTabs, activationTabs: getActivationTabs() };
-
-  for (const [tabId, reg] of otpWaitingTabs.entries()) {
-    if (getActivationTabs().has(tabId)) {
-      continue;
-    }
-
-    const result = DomainMatcher.correlate(email, reg, correlationContext);
-    if (result.score > bestResult.score) {
-      bestResult = result;
-      bestTabId = tabId;
-      bestReg = reg;
-    }
-  }
-
-  if (bestTabId === null || bestReg === null || bestResult.tier === 'none') {
-    return null;
-  }
-
-  return { tabId: bestTabId, reg: bestReg, result: bestResult };
 }
 
 async function deliverToRegisteredTab(
@@ -1688,20 +1676,64 @@ async function deliverToRegisteredTab(
  *
  * @returns true if OTP was successfully delivered to at least one tab
  */
-let lastDeliveredOtpCode = '';
-let lastDeliveredOtpTimestamp = 0;
+const activeOTPDeliveries = new Map<string, Promise<boolean>>();
 
-export async function deliverOTP(code: string, confidence: number, email: EmailContext): Promise<boolean> {
-  const now = Date.now();
-  if (code && code === lastDeliveredOtpCode && now - lastDeliveredOtpTimestamp < 3000) {
-    log.debug('Skipping duplicate concurrent OTP delivery (debounced within 3s)');
-    return true;
+export function deliverOTP(
+  code: string,
+  confidence: number,
+  email: EmailContext
+): Promise<boolean> {
+  const generation = emailSessionGeneration;
+  const key = `${generation}:${getSenderDomain(email.from)}:${code}`;
+  const active = activeOTPDeliveries.get(key);
+  if (active) {
+    return active;
   }
-  lastDeliveredOtpCode = code;
-  lastDeliveredOtpTimestamp = now;
+  const delivery = deliverOTPForSession(code, confidence, email, generation).finally(() => {
+    if (activeOTPDeliveries.get(key) === delivery) {
+      activeOTPDeliveries.delete(key);
+    }
+  });
+  activeOTPDeliveries.set(key, delivery);
+  return delivery;
+}
 
-  await otpService.saveLastOTP(code, 'email', email.from, email.subject, confidence);
-  await updateOTPMenuItem();
+/** A waiter belongs to its own site, independently of where the mailbox was generated. */
+export function hasMatchingOTPWaiter(email: EmailContext): boolean {
+  return [...otpWaitingTabs.entries()].some(
+    ([tabId, reg]) =>
+      !getActivationTabs().has(tabId) &&
+      reg.fieldSelectors.length > 0 &&
+      senderMatchesSite(email.from, reg.url)
+  );
+}
+
+async function deliverOTPForSession(
+  code: string,
+  confidence: number,
+  email: EmailContext,
+  generation: number
+): Promise<boolean> {
+  if (generation !== emailSessionGeneration) {
+    return false;
+  }
+  const autoFillEligible = Number.isFinite(confidence) && confidence >= 0.7 && confidence <= 1;
+  const saved = await otpService.saveLastOTP(code, 'email', email.from, email.subject, confidence, {
+    autoFillEligible,
+    ...(email.emailId !== undefined ? { emailId: email.emailId } : {}),
+    ...(email.emailDate !== undefined ? { emailDate: email.emailDate } : {}),
+  });
+  if (!saved.saved) {
+    return false;
+  }
+  if (generation !== emailSessionGeneration) {
+    return false;
+  }
+  if (!autoFillEligible) {
+    log.info('Uncertain code saved for review; automatic delivery skipped', { confidence });
+    return false;
+  }
+  void updateOTPMenuItem().catch((error) => log.debug('OTP menu update failed', error));
 
   // The Auto-fill toggle owns TAB FILL only. Detection, saving, popup and
   // notifications keep working with it off — we just don't type into pages.
@@ -1711,10 +1743,15 @@ export async function deliverOTP(code: string, confidence: number, email: EmailC
       log.info('autoFillOTP disabled — code saved, skipping tab fill', {
         waitingTabs: otpWaitingTabs.size,
       });
-      return true;
+      return false;
     }
   } catch (e) {
-    log.warn('Failed to read autoFillOTP setting, defaulting to fill', e);
+    log.warn('Failed to read autoFillOTP setting; code saved for review', e);
+    return false;
+  }
+
+  if (generation !== emailSessionGeneration) {
+    return false;
   }
 
   const masked =
@@ -1738,6 +1775,15 @@ export async function deliverOTP(code: string, confidence: number, email: EmailC
       continue;
     }
 
+    if (!senderMatchesSite(email.from, reg.url)) {
+      log.info('OTP saved for review; sender domain does not match the signup site', {
+        tabId,
+        senderDomain: getSenderDomain(email.from),
+        expectedSite: reg.hostname,
+      });
+      continue;
+    }
+
     const result = DomainMatcher.correlate(email, reg, correlationContext);
 
     log.info(`📊 Tab ${reg.hostname} correlation: ${result.score}pts (${result.tier})`, {
@@ -1752,44 +1798,6 @@ export async function deliverOTP(code: string, confidence: number, email: EmailC
 
   // Sort by score descending — highest confidence tab first
   scored.sort((a, b) => b.result.score - a.result.score);
-
-  if (scored.length === 0) {
-    const nonActivation = Array.from(otpWaitingTabs.entries()).filter(
-      ([tabId]) => !getActivationTabs().has(tabId)
-    );
-    if (nonActivation.length === 1) {
-      const [soleTabId, reg] = nonActivation[0]!;
-      log.info('📮 Sole-waiter fallback delivery triggered', { tabId: soleTabId, hostname: reg.hostname });
-      scored.push({
-        tabId: soleTabId,
-        reg,
-        result: {
-          score: 55,
-          tier: 'moderate',
-          signals: [{ name: 'sole-waiter-fallback', score: 55 }],
-        },
-      });
-    } else if (nonActivation.length > 1) {
-      try {
-        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (activeTab?.id && otpWaitingTabs.has(activeTab.id) && !getActivationTabs().has(activeTab.id)) {
-          const reg = otpWaitingTabs.get(activeTab.id)!;
-          log.info('🎯 Active-tab fallback delivery triggered', { tabId: activeTab.id, hostname: reg.hostname });
-          scored.push({
-            tabId: activeTab.id,
-            reg,
-            result: {
-              score: 55,
-              tier: 'moderate',
-              signals: [{ name: 'active-waiter-fallback', score: 55 }],
-            },
-          });
-        }
-      } catch {
-        /* ignore tab query errors */
-      }
-    }
-  }
 
   if (scored.length === 0) {
     log.info('OTP saved, but no tab scored above delivery threshold', {
@@ -1828,6 +1836,9 @@ export async function deliverOTP(code: string, confidence: number, email: EmailC
   }
 
   const deliveryPromises = deliverTargets.map(async ({ tabId, reg, result }) => {
+    if (generation !== emailSessionGeneration || otpWaitingTabs.get(tabId) !== reg) {
+      return null;
+    }
     const deliveredTabId = await deliverToRegisteredTab(tabId, reg, code, confidence);
     if (deliveredTabId === null) {
       log.debug('OTP delivery attempt failed', {
@@ -1843,9 +1854,12 @@ export async function deliverOTP(code: string, confidence: number, email: EmailC
   const results = await Promise.all(deliveryPromises);
   const delivered = results.filter((id): id is number => id !== null);
 
+  if (generation !== emailSessionGeneration) {
+    return false;
+  }
   if (delivered.length > 0) {
     metrics.otpsFound++;
-    await otpService.markAsUsed();
+    await otpService.markAsUsed(code);
   }
 
   // Unregister delivered tabs
@@ -1912,7 +1926,7 @@ async function handleEmailTypeTransition(newType: 'disposable' | 'gmail'): Promi
   // 1. Clear stale OTP so old codes can't fire on the new email session
   await otpService.clearLastOTP();
 
-  // 2. Clear processed-email dedup cache so new inbox is scanned fresh
+  // 2. Reset pending work; processed history is already scoped to each account
   //    Also clears otpWaitingTabs + circuit breaker
   await resetEmailSession();
 
@@ -1981,12 +1995,9 @@ export function setupPollingManager(): void {
   if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName === 'local' && changes.preferredEmailType) {
-        const newValue = changes.preferredEmailType.newValue;
-        const oldValue = changes.preferredEmailType.oldValue;
-        if (newValue === 'disposable' || newValue === 'gmail') {
-          if (oldValue === newValue) {
-            return;
-          }
+        const newValue = getEffectiveEmailType(changes.preferredEmailType.newValue);
+        const oldValue = getEffectiveEmailType(changes.preferredEmailType.oldValue);
+        if (oldValue !== newValue) {
           log.info(`🔄 preferredEmailType changed to: ${newValue} — performing transition`);
           enqueueEmailTypeTransition(newValue);
         }
@@ -2151,6 +2162,8 @@ export function startFastOTPPolling(
 
   // Capture existing registration before overwrite (for cooldown check).
   const existing = otpWaitingTabs.get(tabId);
+  const sameWait = existing?.url === url && existing.frameId === frameId;
+  const detectedAt = Date.now();
 
   otpWaitingTabs.set(tabId, {
     url,
@@ -2159,9 +2172,10 @@ export function startFastOTPPolling(
     ...(frameId !== undefined ? { frameId } : {}),
     ...(pageConfidence !== undefined ? { pageConfidence } : {}),
     ...(verdict !== undefined ? { verdict } : {}),
-    registeredAt: Date.now(),
-    priority: priorityCounter++,
-    deliveryAttempts: 0,
+    registeredAt: sameWait ? existing.registeredAt : detectedAt,
+    lastDetectedAt: detectedAt,
+    priority: sameWait ? existing.priority : priorityCounter++,
+    deliveryAttempts: sameWait ? existing.deliveryAttempts : 0,
   });
 
   void emailService.prewarmConnections();
@@ -2180,7 +2194,7 @@ export function startFastOTPPolling(
   // Re-registration cooldown: if the same tab re-registers within 3s
   // (e.g. OTP detector oscillation), skip the immediate check blast.
   const wasRecentlyRegistered =
-    existing && Date.now() - existing.registeredAt < 3_000;
+    sameWait && detectedAt - (existing.lastDetectedAt ?? existing.registeredAt) < 3_000;
   if (wasRecentlyRegistered) {
     log.debug('⏸️ Fast OTP re-registered within cooldown, skipping immediate check');
     updateKeepAliveAlarm();
@@ -2248,9 +2262,9 @@ export function startGmailAliasFastPolling(
 // ───────────────────────────────────────────────────────────────────
 if (typeof chrome !== 'undefined' && chrome.tabs?.onRemoved) {
   chrome.tabs.onRemoved.addListener((tabId) => {
-  if (activationCodesByTab.has(tabId) || getActivationTabs().has(tabId)) {
-    unregisterActivationTab(tabId);
-    log.debug('Cleaned up closed activation tab', { tabId, remaining: getActivationTabs().size });
+    if (activationCodesByTab.has(tabId) || getActivationTabs().has(tabId)) {
+      unregisterActivationTab(tabId);
+      log.debug('Cleaned up closed activation tab', { tabId, remaining: getActivationTabs().size });
     }
   });
 }
@@ -2261,7 +2275,7 @@ export function getOTPWaitingTabs(): ReadonlyMap<number, TabRegistration> {
 
 export function updateKeepAliveAlarm(): void {
   const hasActiveWaiters = otpWaitingTabs.size > 0 || sseManager.isConnected();
-  
+
   if (hasActiveWaiters) {
     // Only keep alive when actively waiting for an OTP
     chrome.alarms.create('ghostfill-keepalive', { periodInMinutes: 1 }); // 1 min min limit
@@ -2313,7 +2327,7 @@ export function destroyPollingManager(): void {
   emailSessionGeneration++;
   extractionCacheByEmailId.clear();
   sseManager.reset();
-  dedupCache.clear();
+  dedupCache.resetPending();
   rateLimiter.reset();
   initialized = false;
   priorityCounter = 0;
@@ -2326,14 +2340,14 @@ export function destroyPollingManager(): void {
 
 /**
  * Full session reset triggered by email change.
- * Clears processed-email dedup cache so new emails on the fresh address
- * are processed immediately. Does NOT stop polling or unregister tabs.
+ * Retains processed-message history by account so returning to an inbox
+ * never replays its old messages. Clears pending work and waiting tabs.
  */
 export async function resetEmailSession(): Promise<void> {
   emailSessionGeneration++;
 
-  // 1. Clear processed-email dedup so new inbox is scanned fresh
-  await dedupCache.clear();
+  // 1. Drop in-flight claims; processed history is already scoped by account.
+  dedupCache.resetPending();
 
   // Invalidate work and transport state tied to the previous inbox. Active
   // fetches may settle, but their results can no longer affect this session.
@@ -2360,7 +2374,7 @@ export async function resetEmailSession(): Promise<void> {
   circuitBreaker.reset();
 
   log.info(
-    '🔄 Email session reset — dedup cache, OTP waiting tabs, activation tabs, and circuit breaker cleared'
+    '🔄 Email session reset — pending work and waiting tabs cleared; processed history retained'
   );
 }
 
@@ -2414,11 +2428,7 @@ let fastWatchBurstRunning = false;
  * Starts an aggressive background burst check window (e.g. after email generation or form submit)
  * to ensure rapid pickup without waiting for the 1-minute alarm or popup opening.
  */
-export function startFastWatchBurst(
-  reason: string,
-  durationMs = 90_000,
-  intervalMs = 2_500
-): void {
+export function startFastWatchBurst(reason: string, durationMs = 90_000, intervalMs = 2_500): void {
   const now = Date.now();
   const nextUntil = now + durationMs;
   fastWatchBurstUntil = Math.max(fastWatchBurstUntil, nextUntil);
@@ -2618,4 +2628,3 @@ export async function extractEmailOnce(
   activeExtractionsByEmailId.set(cacheKey, promise);
   return promise;
 }
-

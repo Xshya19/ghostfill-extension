@@ -34,7 +34,6 @@ const MAX_URLS = 500;
 const ATTR_URL_PATTERNS = [
   /href\s*=\s*["']([^"']{10,})["']/gi,
   /href\s*=\s*([^\s>"']{10,})/gi,
-  /src\s*=\s*["']([^"']{10,})["']/gi,
   /action\s*=\s*["']([^"']{10,})["']/gi,
   /data-(?:href|url|link|redirect|target|action)\s*=\s*["']([^"']{10,})["']/gi,
   /content\s*=\s*["']\d+;\s*url=([^"']{10,})["']/gi,
@@ -293,7 +292,7 @@ export function unwrapEspTrackingUrl(url: string): string | null {
 // ═══════════════════════════════════════════════════════════════════════
 
 /**
- * Extracts all URLs from HTML content using 8-layer deep analysis
+ * Extracts navigable email URLs; embedded artwork is not a message action.
  * @param html - The HTML content to extract URLs from
  * @returns Array of unique, validated URLs
  */
@@ -304,14 +303,17 @@ export function extractUrls(html: string): string[] {
   }
 
   const urls = new Set<string>();
-  const decoded = decodeHtmlEntities(html);
+  const decoded = decodeHtmlEntities(html)
+    .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
+    .replace(/<(?:img|source|link|iframe|object|embed)\b[^>]*>/gi, ' ')
+    .replace(/\bstyle\s*=\s*(?:"[^"]*"|'[^']*')/gi, ' ');
 
   // Layer 1: Attribute extraction
   for (const regex of ATTR_URL_PATTERNS) {
     regex.lastIndex = 0;
     let match;
     while ((match = regex.exec(decoded)) !== null) {
-      processUrl(decodeHtmlEntities(match[1]?.trim() ?? ''), urls);
+      processUrl(decodeHtmlEntities(match[1]?.trim() ?? ''), urls, true);
     }
   }
 
@@ -386,7 +388,7 @@ export function extractUrls(html: string): string[] {
   }
 
   // Layer 7: Line-broken URLs
-  const brokenRegex = /https?:\/\/[^\s<"']*[\r\n]+[^\s<"']*/gi;
+  const brokenRegex = /https?:\/\/[^\s<"'\])}]*[\r\n]+[^\s<"'\])}]*/gi;
   while ((match = brokenRegex.exec(decoded)) !== null) {
     processUrl(match[0].replace(/[\r\n\s]+/g, '').trim(), urls);
   }
@@ -411,13 +413,7 @@ export function extractUrls(html: string): string[] {
     }
   }
 
-  if (urls.size === 0) {
-    log.debug(
-      'Extracted 0 unique URLs. RAW HTML START:\n' + html.substring(0, 1500) + '\nRAW HTML END'
-    );
-  } else {
-    log.debug(`Extracted ${urls.size} unique URLs`);
-  }
+  log.debug(`Extracted ${urls.size} unique URLs`);
 
   return Array.from(urls);
 }
@@ -427,13 +423,15 @@ export function extractUrls(html: string): string[] {
  * @param url - The URL to process
  * @param set - The set to add the URL to
  */
-function processUrl(url: string, set: Set<string>): void {
+function processUrl(url: string, set: Set<string>, explicitLink = false): void {
   if (set.size >= MAX_URLS) {
     return;
   }
-  if (!isValidUrl(url)) {
+  if (!isValidUrl(url, explicitLink)) {
     return;
   }
+  // An explicit hyperlink may target any endpoint. Bare image URLs in MIME
+  // text (including [image.png]) are artwork, even beside sign-in instructions.
   set.add(url);
   const inner = unwrapTrackingUrl(url, 0);
   if (inner && inner !== url && isValidUrl(inner) && set.size < MAX_URLS) {

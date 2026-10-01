@@ -5,7 +5,7 @@
  * sanitizeUrl, sanitizeActivationLink, sanitizeEmailBody, isLikelySafe,
  * setHTML, clearHTML.
  *
- * Note: secondaryValidation is a private function and cannot be directly tested.
+ * Regression tests cover sanitizer behavior through its public entry points.
  */
 import { describe, it, expect } from 'vitest';
 
@@ -110,6 +110,13 @@ describe('sanitizeHtml() deep tests', () => {
   it('strips event handlers', () => {
     const result = sanitizeHtml('<div onclick="alert(1)">Click</div>');
     expect(result).not.toContain('onclick');
+  });
+
+  it('preserves safe verification-token and content attributes', () => {
+    const result = sanitizeHtml(
+      '<p content="Confirm" data-confirmation_token="abc123">Confirm</p>'
+    );
+    expect(result).toContain('Confirm');
   });
 
   it('strips iframe tags', () => {
@@ -328,6 +335,14 @@ describe('sanitizeActivationLink() deep tests', () => {
 describe('sanitizeEmailBody() deep tests', () => {
   it('preserves plain text via textBody fallback', () => {
     expect(sanitizeEmailBody('', 'Your code is 123456')).toContain('123456');
+  });
+
+  it('preserves transactional verification email content', () => {
+    const result = sanitizeEmailBody(
+      '<p content="Confirm">Confirm your account</p><a href="https://example.com/verify?confirmation_token=abc123">Verify</a>'
+    );
+    expect(result).toContain('Confirm your account');
+    expect(result).toContain('Verify');
   });
 
   it('strips script tags from HTML body', () => {

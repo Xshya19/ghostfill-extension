@@ -1,5 +1,5 @@
 import { FieldType } from '../types/form.types';
-import { deepQuerySelectorAll } from '../utils/core';
+import { deepQuerySelectorAll, getDeepActiveElement } from '../utils/core';
 import {
   NUM_STRUCTURAL_FEATURES,
   STRUCT,
@@ -111,71 +111,6 @@ export const OTP_PATTERNS = {
       signal: 'page:2fa',
     },
   ],
-  PROVIDERS: [
-    [/clerk\.(dev|com)/i, 'Clerk'],
-    [/auth0\.com/i, 'Auth0'],
-    [/supabase/i, 'Supabase'],
-    [/firebase/i, 'Firebase'],
-    [/cognito|amazonaws/i, 'AWS Cognito'],
-    [/okta\.com/i, 'Okta'],
-    [/ory\.|kratos/i, 'Ory Kratos'],
-    [/stytch\.com/i, 'Stytch'],
-    [/workos\.com/i, 'WorkOS'],
-    [/keycloak/i, 'Keycloak'],
-    [/linear\.app/i, 'Linear'],
-    [/notion\.so/i, 'Notion'],
-    [/github\.com/i, 'GitHub'],
-    [/gitlab\.com/i, 'GitLab'],
-    [/slack\.com/i, 'Slack'],
-    [/discord\.com/i, 'Discord'],
-    [/vercel\.com/i, 'Vercel'],
-    [/stripe\.com/i, 'Stripe'],
-    [/mistral\.ai/i, 'Mistral'],
-    [/aliyun\.com|alibaba/i, 'Alibaba'],
-    [/microsoft\.com|login\.live/i, 'Microsoft'],
-    [/google\.com[\w./]*accounts/i, 'Google'],
-    [/apple\.com[\w./]*appleid/i, 'Apple'],
-    [/twilio\.com\/verify/i, 'Twilio Verify'],
-    [/magic\.link/i, 'Magic.link'],
-    [/descope\.com/i, 'Descope'],
-    [/passage\.id/i, 'Passage'],
-    [/hanko\.io/i, 'Hanko'],
-    [/frontegg\.com/i, 'Frontegg'],
-    [/nhost\.io/i, 'Nhost'],
-    [/appwrite\.io/i, 'Appwrite'],
-    [/pocketbase\.io/i, 'PocketBase'],
-    [/zitadel\.ch|zitadel\.com/i, 'Zitadel'],
-    [/authentik/i, 'Authentik'],
-    [/casdoor\.org/i, 'Casdoor'],
-    [/fusionauth\.io/i, 'FusionAuth'],
-    [/userfront\.com/i, 'Userfront'],
-    [/supertokens\.com/i, 'SuperTokens'],
-    [/bitwarden\.com/i, 'Bitwarden'],
-    [/lastpass\.com/i, 'LastPass'],
-    [/dashlane\.com/i, 'Dashlane'],
-    [/1password\.com/i, '1Password'],
-    [/proton\.me|protonmail\.com/i, 'Proton'],
-    [/tutanota\.com/i, 'Tutanota'],
-    [/binance\.com/i, 'Binance'],
-    [/coinbase\.com/i, 'Coinbase'],
-    [/kraken\.com/i, 'Kraken'],
-    [/kucoin\.com/i, 'KuCoin'],
-    [/bybit\.com/i, 'Bybit'],
-    [/metamask\.io/i, 'MetaMask'],
-    [/phantom\.app/i, 'Phantom'],
-    [/amazon\.(com|in|co\.uk)/i, 'Amazon'],
-    [/ebay\.com/i, 'eBay'],
-    [/paypal\.com/i, 'PayPal'],
-    [/venmo\.com/i, 'Venmo'],
-    [/cash\.app/i, 'Cash App'],
-    [/revolut\.com/i, 'Revolut'],
-    [/wise\.com/i, 'Wise'],
-    [/adobe\.com/i, 'Adobe'],
-    [/dropbox\.com/i, 'Dropbox'],
-    [/zoom\.us/i, 'Zoom'],
-    [/slack-edge\.com/i, 'Slack Edge'],
-    [/microsoftonline\.com/i, 'Microsoft Online'],
-  ],
 };
 
 export class OTPDetectionCore {
@@ -198,7 +133,7 @@ export class OTPDetectionCore {
       }
     }
 
-    if (el.getAttribute('autocomplete') === 'one-time-code') {
+    if (el.matches('[autocomplete~="one-time-code" i]')) {
       score += 100;
     }
 
@@ -723,7 +658,7 @@ export class MultilingualKeywordEngine {
         } else if (prof.partial_patterns.test(signal)) {
           scores[prof.field_class]! += 0.5;
         }
-        
+
         if (prof.negative_signals.test(signal)) {
           scores[prof.field_class]! -= 0.8;
         }
@@ -808,10 +743,10 @@ export class VisualStateTracker {
 
     const isVisibleVal = this.checkVisibility(el, style);
     const inViewport = this.isInViewport(rect);
-    
+
     // GRANDMASTER FIX: Only check obscuration if it's actually visible and in viewport
-    const isObscuredVal = isVisibleVal && inViewport 
-      ? this.checkIfObscured(el, rect, style) 
+    const isObscuredVal = isVisibleVal && inViewport
+      ? this.checkIfObscured(el, rect, style)
       : false;
 
     return {
@@ -827,15 +762,15 @@ export class VisualStateTracker {
   }
 
   private checkVisibility(el: HTMLElement, style: CSSStyleDeclaration): boolean {
-    if (style.display === 'none') {return false;}
-    if (style.visibility === 'hidden') {return false;}
-    if (parseFloat(style.opacity) < 0.01) {return false;}
-    if (el.offsetWidth <= 0 || el.offsetHeight <= 0) {return false;}
+    if (style.display === 'none') { return false; }
+    if (style.visibility === 'hidden') { return false; }
+    if (parseFloat(style.opacity) < 0.01) { return false; }
+    if (el.offsetWidth <= 0 || el.offsetHeight <= 0) { return false; }
 
     let curr: HTMLElement | null = el.parentElement;
     while (curr) {
       const pStyle = this.getCachedStyle(curr);
-      if (pStyle.display === 'none') {return false;}
+      if (pStyle.display === 'none') { return false; }
       if (pStyle.overflow === 'hidden' && (curr.offsetWidth === 0 || curr.offsetHeight === 0)) {
         return false;
       }
@@ -845,7 +780,7 @@ export class VisualStateTracker {
   }
 
   private checkIfObscured(el: HTMLElement, rect: DOMRect, style: CSSStyleDeclaration): boolean {
-    if (rect.width === 0 || rect.height === 0) {return false;}
+    if (rect.width === 0 || rect.height === 0) { return false; }
 
     const points = [
       { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
@@ -863,7 +798,7 @@ export class VisualStateTracker {
         continue;
       }
       const elementAtPoint = document.elementFromPoint(pt.x, pt.y);
-      if (!elementAtPoint) {continue;}
+      if (!elementAtPoint) { continue; }
       if (elementAtPoint !== el && !el.contains(elementAtPoint) && !elementAtPoint.contains(el)) {
         const obsStyle = this.getCachedStyle(elementAtPoint as HTMLElement);
         const obsZ = parseInt(obsStyle.zIndex, 10) || 0;
@@ -892,7 +827,7 @@ export class VisualStateTracker {
   }
 
   private predictFutureVisibility(el: HTMLElement, style: CSSStyleDeclaration): boolean {
-    if (this.checkVisibility(el, style)) {return true;}
+    if (this.checkVisibility(el, style)) { return true; }
     const transition = style.transitionProperty || '';
     if (parseFloat(style.opacity) === 0 && (transition.includes('opacity') || transition.includes('all'))) {
       return true;
@@ -909,7 +844,7 @@ export class VisualStateTracker {
       ) {
         return true;
       }
-      if (curr.tagName === 'DIALOG') {return true;}
+      if (curr.tagName === 'DIALOG') { return true; }
       curr = curr.parentElement;
     }
 
@@ -944,7 +879,7 @@ export class FuzzyFormFingerprint {
 
     const l2 = inputs
       .map((el) => {
-        if (el.tagName === 'SELECT') {return 'select';}
+        if (el.tagName === 'SELECT') { return 'select'; }
         return (el as HTMLInputElement).type || 'text';
       })
       .join(',');
@@ -965,8 +900,8 @@ export class FuzzyFormFingerprint {
 
     for (const hist of history) {
       let score = 0;
-      if (current.l1 === hist.l1) {score += 0.5;}
-      if (current.l2 === hist.l2) {score += 0.3;}
+      if (current.l1 === hist.l1) { score += 0.5; }
+      if (current.l2 === hist.l2) { score += 0.3; }
 
       if (current.l3 && hist.l3) {
         const currTokens = current.l3.split(',');
@@ -996,47 +931,44 @@ function rootOf(el: Element): Document | ShadowRoot {
   return r instanceof ShadowRoot ? r : document;
 }
 
+function labelTextWithoutActions(label: Element): string {
+  const copy = label.cloneNode(true) as Element;
+  copy.querySelectorAll('a, button, [role="button"], [role="link"]').forEach((action) => action.remove());
+  return copy.textContent?.trim() || '';
+}
+
 function textById(root: Document | ShadowRoot, id: string): string {
   const byId = (root as Document).getElementById
     ? (root as Document).getElementById(id)
     : root.querySelector('#' + (window.CSS ? CSS.escape(id) : id));
-  return byId?.textContent?.trim() || '';
+  return byId ? labelTextWithoutActions(byId) : '';
 }
 
-export function resolveLabelText(el: Fillable): string {
+export function resolveLabelText(el: HTMLElement): string {
   const root = rootOf(el);
+
+  const labelledBy = el.getAttribute('aria-labelledby');
+  if (labelledBy) {
+    const parts = labelledBy.split(/\s+/).map((id) => textById(root, id)).filter(Boolean);
+    if (parts.length) { return parts.join(' '); }
+  }
+  const ariaLabel = el.getAttribute('aria-label')?.trim();
+  if (ariaLabel) { return ariaLabel; }
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    const labels = Array.from(el.labels ?? [], labelTextWithoutActions).filter(Boolean);
+    if (labels.length) { return labels.join(' '); }
+  }
 
   if (el.id) {
     const sel = 'label[for="' + (window.CSS ? CSS.escape(el.id) : el.id) + '"]';
     const label = root.querySelector(sel);
-    if (label?.textContent) {
-      return label.textContent.trim();
+    if (label) {
+      return labelTextWithoutActions(label);
     }
   }
   const wrapping = el.closest ? el.closest('label') : null;
-  if (wrapping?.textContent) {
-    return wrapping.textContent.trim();
-  }
-
-  const labelledBy = el.getAttribute('aria-labelledby');
-  if (labelledBy) {
-    const parts = labelledBy
-      .split(/[ \t\r\n]+/)
-      .map((id) => textById(root, id))
-      .filter(Boolean);
-    if (parts.length) {
-      return parts.join(' ');
-    }
-  }
-  const describedBy = el.getAttribute('aria-describedby');
-  if (describedBy) {
-    const parts = describedBy
-      .split(/[ \t\r\n]+/)
-      .map((id) => textById(root, id))
-      .filter(Boolean);
-    if (parts.length) {
-      return parts.join(' ');
-    }
+  if (wrapping) {
+    return labelTextWithoutActions(wrapping);
   }
 
   const titleAttr = el.getAttribute('title');
@@ -1044,37 +976,17 @@ export function resolveLabelText(el: Fillable): string {
     return titleAttr.trim();
   }
 
-  if (el.previousElementSibling) {
-    let prev: Element | null = el.previousElementSibling;
-    while (prev) {
-      const tag = prev.tagName.toLowerCase();
-      if (
-        tag === 'label' ||
-        prev.classList.contains('label') ||
-        prev.classList.contains('title') ||
-        prev.classList.contains('placeholder') ||
-        prev.classList.contains('caption') ||
-        prev.classList.contains('text') ||
-        prev.classList.contains('input-label')
-      ) {
-        const text = prev.textContent?.trim();
-        if (text && text.length < 100) {
-          return text;
-        }
-      }
-      prev = prev.previousElementSibling;
-    }
-  }
-
-  const parent = el.parentElement;
-  if (parent) {
-    const prevSibling = parent.previousElementSibling;
-    if (prevSibling) {
-      const text = prevSibling.textContent?.trim();
-      if (text && text.length < 100) {
-        return text;
-      }
-    }
+  // ponytail: inspect four single-control wrappers; deeper layouts need explicit labels.
+  for (let node: HTMLElement | null = el, depth = 0; node && depth < 4; node = node.parentElement, depth++) {
+    if (node.matches('form, fieldset') ||
+      (node !== el && node.querySelectorAll('input, textarea, select').length !== 1)) { break; }
+    const sibling = node.previousElementSibling;
+    if (!sibling || sibling.matches('input, textarea, select, button') ||
+      sibling.querySelector('input, textarea, select, button') ||
+      sibling.matches('a, [role="button"], [role="link"]') ||
+      (sibling.hasAttribute('for') && sibling.getAttribute('for') !== el.id)) { continue; }
+    const text = labelTextWithoutActions(sibling);
+    if (text && text.length < 100) { return text; }
   }
 
   return '';
@@ -1114,13 +1026,13 @@ function surroundingText(el: Fillable): string {
 
 export class LayoutCache {
   private rects = new WeakMap<Element, DOMRect>();
-  
+
   public capture(elements: Element[]): void {
     for (const el of elements) {
       this.rects.set(el, el.getBoundingClientRect());
     }
   }
-  
+
   public getRect(el: Element): DOMRect {
     let rect = this.rects.get(el);
     if (!rect) {
@@ -1217,7 +1129,7 @@ export function extractFieldRecord(el: Fillable, layoutCache?: LayoutCache): Raw
   const isAnimating = style.animationName !== 'none' || style.transitionProperty !== 'none';
   const form = el.closest('form') as HTMLFormElement | null;
   const formFieldCount = form ? form.querySelectorAll('input:not([type="hidden"]), textarea').length : 0;
-  const formAction = form?.action || '';
+  const formAction = form?.getAttribute('action') || '';
   const closestHeadingText = findClosestHeadingText(el);
 
   const rec: RawFieldRecord = {
@@ -1225,6 +1137,7 @@ export function extractFieldRecord(el: Fillable, layoutCache?: LayoutCache): Raw
     selector: id ? '#' + id : name ? tag + '[name="' + name + '"]' : tag,
     tag,
     type,
+    role: el.closest('[role="search"]') ? 'searchbox' : (el.getAttribute('role') || '').toLowerCase(),
     autocomplete,
     name,
     id,
@@ -1238,7 +1151,7 @@ export function extractFieldRecord(el: Fillable, layoutCache?: LayoutCache): Raw
     required,
     visible: vis.visible,
     widthPx: Math.round(vis.width),
-    focused: document.activeElement === el,
+    focused: getDeepActiveElement() === el,
     opacityZero: vis.opacityZero,
     offscreen: vis.offscreen,
     tiny: vis.tiny,
@@ -1316,7 +1229,7 @@ export function buildStructural(rec: RawFieldRecord, vis: {
   if (ac.includes('new-password')) {
     set(STRUCT.AC_NEW_PASSWORD);
   }
-  if (ac.includes('one-time-code')) {
+  if (ac.split(/\s+/).includes('one-time-code')) {
     set(STRUCT.AC_ONE_TIME_CODE);
   }
   if (ac.includes('tel')) {
@@ -1574,7 +1487,7 @@ export class IFrameProxyV2 {
   public static init(): void {
     if (!this.instance) {
       this.instance = new IFrameProxyV2();
-      this.instance.listenForResults(() => {});
+      this.instance.listenForResults(() => { });
     }
   }
 
@@ -1595,13 +1508,13 @@ export class IFrameProxyV2 {
 
   private sendProbe(iframe: HTMLIFrameElement): void {
     const target = iframe.contentWindow;
-    if (!target) {return;}
+    if (!target) { return; }
 
     let targetOrigin: string;
     try {
       if (iframe.src) {
         targetOrigin = new URL(iframe.src).origin;
-        if (targetOrigin === 'null') {return;}
+        if (targetOrigin === 'null') { return; }
       } else {
         targetOrigin = window.location.origin;
       }
@@ -1620,12 +1533,12 @@ export class IFrameProxyV2 {
   public listenForResults(callback: (results: any) => void): void {
     window.addEventListener('message', (event: MessageEvent) => {
       const origin = event.origin;
-      
+
       // GRANDMASTER FIX: Explicit guard against sandboxed/local "null" origins
       if (origin === 'null' || origin === '' || origin === window.location.origin) {
         if (origin === window.location.origin) {
-           const message = event.data as IFrameMessage;
-           if (message && message.type === 'SENTINEL_RESULT') {callback(message.payload);}
+          const message = event.data as IFrameMessage;
+          if (message && message.type === 'SENTINEL_RESULT') { callback(message.payload); }
         }
         return;
       }
@@ -1633,7 +1546,7 @@ export class IFrameProxyV2 {
       let isTrusted = false;
       try {
         const url = new URL(origin);
-        if (url.protocol !== 'https:') {return;}
+        if (url.protocol !== 'https:') { return; }
         const hostname = url.hostname;
 
         isTrusted = IFrameProxyV2.TRUSTED_ORIGINS.some((trusted) => {
@@ -1646,7 +1559,7 @@ export class IFrameProxyV2 {
         return;
       }
 
-      if (!isTrusted) {return;}
+      if (!isTrusted) { return; }
 
       const message = event.data as IFrameMessage;
       if (message && message.type === 'SENTINEL_RESULT') {
@@ -1659,299 +1572,289 @@ export class IFrameProxyV2 {
 // ─── 6. FRAMEWORK & PAGE ANALYZER (formerly pageAnalyzer.ts) ──────────
 
 export class PageAnalyzer {
-  private static readonly PROVIDER_MAP: ReadonlyArray<readonly [RegExp, string]> = [
-    [/clerk\.(dev|com)/i, 'Clerk'],
-    [/auth0\.com/i, 'Auth0'],
-    [/supabase/i, 'Supabase'],
-    [/firebase/i, 'Firebase'],
-    [/cognito|amazonaws/i, 'AWS Cognito'],
-    [/okta/i, 'Okta'],
-    [/ory\.|kratos/i, 'Ory Kratos'],
-    [/stytch/i, 'Stytch'],
-    [/keycloak/i, 'Keycloak'],
-    [/supertokens/i, 'SuperTokens'],
-    [/magic\.link/i, 'Magic Link'],
-    [/workos/i, 'WorkOS'],
-    [/kinde/i, 'Kinde Auth'],
-    [/logto/i, 'Logto'],
-    [/b2c\.login\.microsoft/i, 'Azure B2C'],
-    [/auth\.pingidentity/i, 'Ping Identity'],
-    [/github\.com/i, 'GitHub'],
-    [/gitlab/i, 'GitLab'],
-    [/bitbucket/i, 'Bitbucket'],
-    [/slack\.com/i, 'Slack'],
-    [/discord\.com|discordapp\.com/i, 'Discord'],
-    [/linear\.app/i, 'Linear'],
-    [/notion\.so/i, 'Notion'],
-    [/vercel\.com/i, 'Vercel'],
-    [/netlify\.com/i, 'Netlify'],
-    [/stripe/i, 'Stripe'],
-    [/paypal/i, 'PayPal'],
-    [/shopify/i, 'Shopify'],
-    [/amazon/i, 'Amazon'],
-    [/paddle/i, 'Paddle'],
-    [/mistral/i, 'Mistral'],
-    [/microsoft|login\.live/i, 'Microsoft'],
-    [/google[\w./]*accounts/i, 'Google'],
-    [/apple\.com[\w./]*appleid/i, 'Apple ID'],
-    [/linkedin\.com/i, 'LinkedIn'],
-    [/x\.com|twitter\.com/i, 'X (Twitter)'],
-  ] as const;
-
   private static readonly PAGE_PATTERNS: ReadonlyArray<{
     readonly type: PageType;
     readonly pattern: RegExp;
     readonly signal: string;
   }> = [
-    {
-      type: 'verification',
-      pattern:
-        /verify|verification|confirm[\s._-]*email|activate[\s._-]*account|enter[\s._-]*(your\s+)?code|one[-_\s]?time|otp|self[-_\s]?service[\s._-]*verification/i,
-      signal: 'page:verification',
-    },
-    {
-      type: '2fa',
-      pattern: /two[-_\s]?factor|2fa|mfa|authenticat[\w]*[\s._-]*code|security[\s._-]*code/i,
-      signal: 'page:2fa',
-    },
-    {
-      type: 'password-reset',
-      pattern:
-        /reset[\s._-]*password|forgot[\s._-]*password|recover|new[\s._-]*password|change[\s._-]*password/i,
-      signal: 'page:password-reset',
-    },
-    {
-      type: 'signup',
-      pattern: /sign\s*up|register|create\s*account|get\s*started|join\s*(us|now|free)|enroll/i,
-      signal: 'page:signup',
-    },
-    {
-      type: 'login',
-      pattern: /sign\s*in|log\s*in|login|authenticate/i,
-      signal: 'page:login',
-    },
-    {
-      type: 'checkout',
-      pattern: /checkout|billing|payment|subscribe|purchase/i,
-      signal: 'page:checkout',
-    },
-    {
-      type: 'profile',
-      pattern: /profile|settings|account\s*settings|edit\s*profile|preferences/i,
-      signal: 'page:profile',
-    },
-  ] as const;
-
-  private static readonly FIELD_SELECTORS = {
-    email:
-      'input[type="email"], input[name*="email" i], input[id*="email" i], input[autocomplete*="email"], input[placeholder*="email" i], input[aria-label*="email" i]',
-    password: 'input[type="password"]',
-    otp: [
-      'input[autocomplete="one-time-code"]',
-      'input[name*="otp" i]',
-      'input[name="code"]',
-      'input[id*="otp" i]',
-      'input[maxlength="1"][type="text"]',
-      'input[maxlength="1"][type="tel"]',
-      'input[maxlength="4"]',
-      'input[maxlength="6"]',
-      'input[maxlength="8"]',
-    ].join(', '),
-    name: 'input[name*="name" i]:not([name*="user" i]), input[autocomplete="given-name"], input[autocomplete="family-name"]',
-  } as const;
-
-  private static readonly FRAMEWORK_DETECTORS: ReadonlyArray<{
-    readonly name: string;
-    readonly detect: () => boolean;
-  }> = [
-    {
-      name: 'nextjs',
-      detect: () => !!safeQuerySelector(document, 'script[id="__NEXT_DATA__"]'),
-    },
-    {
-      name: 'react',
-      detect: () => {
-        const el =
-          safeQuerySelector<HTMLElement>(document, 'input') ??
-          safeQuerySelector<HTMLElement>(document, 'div');
-        if (!el) {
-          return false;
-        }
-        return Object.keys(el).some(
-          (k) =>
-            k.startsWith('__reactFiber$') ||
-            k.startsWith('__reactProps$') ||
-            k.startsWith('__reactInternalInstance$')
-        );
+      {
+        type: 'verification',
+        pattern:
+          /verify|verification|confirm[\s._-]*email|activate[\s._-]*account|enter[\s._-]*(your\s+)?code|one[-_\s]?time|otp|self[-_\s]?service[\s._-]*verification/i,
+        signal: 'page:verification',
       },
-    },
-    {
-      name: 'vue',
-      detect: () => {
-        if ((document as Document & { __vue_app__?: unknown }).__vue_app__) {
-          return true;
-        }
-        if (!document.body) {return false;}
-        // GRANDMASTER FIX: Use TreeWalker to avoid querySelectorAll('*') memory spike
-        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
-        let count = 0;
-        let node = walker.nextNode() as Element | null;
-        
-        while (node && count < 100) {
-          // Vue 2 and 3 add data-v-xxxxxxxx attributes to scoped elements
-          for (let i = 0; i < node.attributes.length; i++) {
-            if (node.attributes[i]!.name.startsWith('data-v-')) {
-              return true;
-            }
+      {
+        type: '2fa',
+        pattern: /two[-_\s]?factor|2fa|mfa|authenticat[\w]*[\s._-]*code|security[\s._-]*code/i,
+        signal: 'page:2fa',
+      },
+      {
+        type: 'password-reset',
+        pattern:
+          /reset[\s._-]*password|forgot[\s._-]*password|recover|new[\s._-]*password|change[\s._-]*password/i,
+        signal: 'page:password-reset',
+      },
+      {
+        type: 'signup',
+        pattern: /sign\s*up|register|create\s*account|get\s*started|join\s*(us|now|free)|enroll/i,
+        signal: 'page:signup',
+      },
+      {
+        type: 'login',
+        pattern: /sign\s*in|log\s*in|login|authenticate/i,
+        signal: 'page:login',
+      },
+      {
+        type: 'checkout',
+        pattern: /checkout|billing|payment|subscribe|purchase/i,
+        signal: 'page:checkout',
+      },
+      {
+        type: 'profile',
+        pattern: /profile|settings|account\s*settings|edit\s*profile|preferences/i,
+        signal: 'page:profile',
+      },
+    ] as const;
+
+    private static readonly FIELD_SELECTORS = {
+      email:
+        'input[type="email"], input[name*="email" i], input[id*="email" i], input[autocomplete*="email"], input[placeholder*="email" i], input[aria-label*="email" i]',
+      password: 'input[type="password"]',
+      otp: [
+        'input[autocomplete~="one-time-code" i]',
+        'input[name*="otp" i]',
+        'input[name="code"]',
+        'input[id*="otp" i]',
+      ].join(', '),
+      name: 'input[name*="name" i]:not([name*="user" i]), input[autocomplete="given-name"], input[autocomplete="family-name"]',
+    } as const;
+
+    private static readonly FRAMEWORK_DETECTORS: ReadonlyArray<{
+      readonly name: string;
+      readonly detect: () => boolean;
+    }> = [
+      {
+        name: 'nextjs',
+        detect: () => !!safeQuerySelector(document, 'script[id="__NEXT_DATA__"]'),
+      },
+      {
+        name: 'react',
+        detect: () => {
+          const el =
+            safeQuerySelector<HTMLElement>(document, 'input') ??
+            safeQuerySelector<HTMLElement>(document, 'div');
+          if (!el) {
+            return false;
           }
-          node = walker.nextNode() as Element | null;
-          count++;
-        }
-        return false;
+          return Object.keys(el).some(
+            (k) =>
+              k.startsWith('__reactFiber$') ||
+              k.startsWith('__reactProps$') ||
+              k.startsWith('__reactInternalInstance$')
+          );
+        },
       },
-    },
-    {
-      name: 'angular',
-      detect: () =>
-        !!(
-          (window as Window & { ng?: unknown }).ng ??
-          safeQuerySelector(document, '[ng-version]') ??
-          safeQuerySelector(document, '[_nghost]') ??
-          safeQuerySelector(document, '[ng-app]')
-        ),
-    },
-    {
-      name: 'svelte',
-      detect: () =>
-        !!(
-          safeQuerySelector(document, '[class*="svelte-"]') ??
-          safeQuerySelector(document, 'script[type="svelte-data"]')
-        ),
-    },
-    {
-      name: 'solid',
-      detect: () =>
-        !!(
-          (window as Window & { _$HY?: unknown })._$HY ?? safeQuerySelector(document, '[data-hk]')
-        ),
-    },
-    {
-      name: 'htmx',
-      detect: () => !!safeQuerySelector(document, '[hx-get], [hx-post], [hx-trigger]'),
-    },
-    {
-      name: 'qwik',
-      detect: () => !!safeQuerySelector(document, '[q\\:container], [q\\:id]'),
-    },
-  ];
+      {
+        name: 'vue',
+        detect: () => {
+          if ((document as Document & { __vue_app__?: unknown }).__vue_app__) {
+            return true;
+          }
+          if (!document.body) { return false; }
+          // GRANDMASTER FIX: Use TreeWalker to avoid querySelectorAll('*') memory spike
+          const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+          let count = 0;
+          let node = walker.nextNode() as Element | null;
 
-  static analyze(): PageAnalysis {
-    const url = window.location.href.toLowerCase();
-    const path = window.location.pathname.toLowerCase();
-    const title = document.title.toLowerCase();
-    const bodyText = (document.body?.textContent ?? '')
-      .slice(0, PAGE_TEXT_SCAN_LIMIT)
-      .toLowerCase();
-    const metaContent = Array.from(document.querySelectorAll('meta'))
-      .map((m) => (m.getAttribute('content') ?? '').toLowerCase())
-      .join(' ');
-    const combined = `${url} ${path} ${title} ${bodyText} ${metaContent}`;
-    const signals: string[] = [];
+          while (node && count < 100) {
+            // Vue 2 and 3 add data-v-xxxxxxxx attributes to scoped elements
+            for (let i = 0; i < node.attributes.length; i++) {
+              if (node.attributes[i]!.name.startsWith('data-v-')) {
+                return true;
+              }
+            }
+            node = walker.nextNode() as Element | null;
+            count++;
+          }
+          return false;
+        },
+      },
+      {
+        name: 'angular',
+        detect: () =>
+          !!(
+            (window as Window & { ng?: unknown }).ng ??
+            safeQuerySelector(document, '[ng-version]') ??
+            safeQuerySelector(document, '[_nghost]') ??
+            safeQuerySelector(document, '[ng-app]')
+          ),
+      },
+      {
+        name: 'svelte',
+        detect: () =>
+          !!(
+            safeQuerySelector(document, '[class*="svelte-"]') ??
+            safeQuerySelector(document, 'script[type="svelte-data"]')
+          ),
+      },
+      {
+        name: 'solid',
+        detect: () =>
+          !!(
+            (window as Window & { _$HY?: unknown })._$HY ?? safeQuerySelector(document, '[data-hk]')
+          ),
+      },
+      {
+        name: 'htmx',
+        detect: () => !!safeQuerySelector(document, '[hx-get], [hx-post], [hx-trigger]'),
+      },
+      {
+        name: 'qwik',
+        detect: () => !!safeQuerySelector(document, '[q\\:container], [q\\:id]'),
+      },
+    ];
 
-    const hasEmailField = deepQuerySelectorAll(this.FIELD_SELECTORS.email).length > 0;
-    const hasPasswordField = deepQuerySelectorAll(this.FIELD_SELECTORS.password).length > 0;
-    const hasOTPField = deepQuerySelectorAll(this.FIELD_SELECTORS.otp).length > 0;
-    const hasNameFields = deepQuerySelectorAll(this.FIELD_SELECTORS.name).length > 0;
-    const formCount = deepQuerySelectorAll('form').length;
-    const inputCount = deepQuerySelectorAll(
-      'input:not([type="hidden"]):not([type="submit"]):not([type="button"])' +
-      ':not([type="reset"]):not([type="checkbox"]):not([type="radio"])' +
-      ':not([type="file"]):not([type="image"]):not([type="range"])' +
-      ':not([type="color"]):not([type="search"])'
-    ).length;
+    static analyze(): PageAnalysis {
+      const url = window.location.href.toLowerCase();
+      const path = window.location.pathname.toLowerCase();
+      const title = document.title.toLowerCase();
+      const bodyText = this.pageText();
+      const metaContent = Array.from(document.querySelectorAll('meta'))
+        .map((m) => (m.getAttribute('content') ?? '').toLowerCase())
+        .join(' ');
+      const combined = `${url} ${path} ${title} ${bodyText} ${metaContent}`;
+      const routeAndTitle = `${path} ${window.location.search.toLowerCase()} ${title}`;
+      const signals: string[] = [];
 
-    const pageType = this.classifyPage(
-      combined,
-      hasOTPField,
-      hasPasswordField,
-      hasEmailField,
-      signals
-    );
+      const hasEmailField = deepQuerySelectorAll(this.FIELD_SELECTORS.email).length > 0;
+      const hasPasswordField = deepQuerySelectorAll(this.FIELD_SELECTORS.password).length > 0;
+      const hasOTPField =
+        deepQuerySelectorAll(this.FIELD_SELECTORS.otp).length > 0 || this.hasSplitOTPGroup();
+      const hasNameFields = deepQuerySelectorAll(this.FIELD_SELECTORS.name).length > 0;
+      const formCount = deepQuerySelectorAll('form').length;
+      const inputCount = deepQuerySelectorAll(
+        'input:not([type="hidden"]):not([type="submit"]):not([type="button"])' +
+        ':not([type="reset"]):not([type="checkbox"]):not([type="radio"])' +
+        ':not([type="file"]):not([type="image"]):not([type="range"])' +
+        ':not([type="color"]):not([type="search"])'
+      ).length;
 
-    const provider = this.detectProvider(url, signals);
+      const pageType = this.classifyPage(
+        routeAndTitle,
+        combined,
+        hasOTPField,
+        hasPasswordField,
+        hasEmailField,
+        signals
+      );
 
-    const framework = this.detectFramework();
-    signals.push(`framework:${framework}`);
+      const provider = this.detectProvider(url, signals);
 
-    return Object.freeze({
-      pageType,
-      hasEmailField,
-      hasPasswordField,
-      hasOTPField,
-      hasNameFields,
-      formCount,
-      inputCount,
-      isAuthRelated: pageType !== 'non-auth',
-      provider,
-      framework,
-      signals: Object.freeze(signals),
-    });
-  }
+      const framework = this.detectFramework();
+      signals.push(`framework:${framework}`);
+
+      return Object.freeze({
+        pageType,
+        hasEmailField,
+        hasPasswordField,
+        hasOTPField,
+        hasNameFields,
+        formCount,
+        inputCount,
+        isAuthRelated: pageType !== 'non-auth',
+        provider,
+        framework,
+        signals: Object.freeze(signals),
+      });
+    }
 
   private static classifyPage(
-    combined: string,
-    hasOTPField: boolean,
-    hasPasswordField: boolean,
-    hasEmailField: boolean,
-    signals: string[]
-  ): PageType {
-    if (hasOTPField || this.PAGE_PATTERNS[0]!.pattern.test(combined)) {
+      routeAndTitle: string,
+      combined: string,
+      hasOTPField: boolean,
+      hasPasswordField: boolean,
+      hasEmailField: boolean,
+      signals: string[]
+    ): PageType {
+      if(hasOTPField || this.PAGE_PATTERNS[0]!.pattern.test(combined)) {
       const is2FA = this.PAGE_PATTERNS[1]!.pattern.test(combined);
       const type = is2FA ? '2fa' : 'verification';
       signals.push(`page:${type}`);
       return type;
     }
 
-    for (const { type, pattern, signal } of this.PAGE_PATTERNS) {
-      if (type === 'verification' || type === '2fa') {
-        continue;
-      }
-      if (pattern.test(combined)) {
-        signals.push(signal);
-        return type;
-      }
+    for(const { type, pattern, signal } of this.PAGE_PATTERNS) {
+    if (pattern.test(routeAndTitle)) {
+      signals.push(signal);
+      return type;
     }
-
-    if (hasPasswordField || hasEmailField) {
-      signals.push('page:generic-form');
-      return 'generic-form';
-    }
-
-    return 'non-auth';
   }
 
-  private static detectProvider(url: string, signals: string[]): string | null {
-    for (const [pattern, name] of this.PROVIDER_MAP) {
-      if (pattern.test(url)) {
-        signals.push(`provider:${name}`);
-        return name;
-      }
+  for(const { type, pattern, signal } of this.PAGE_PATTERNS) {
+    if (pattern.test(combined)) {
+      signals.push(signal);
+      return type;
     }
+  }
+
+  if(hasPasswordField || hasEmailField) {
+  signals.push('page:generic-form');
+  return 'generic-form';
+}
+
+return 'non-auth';
+  }
+
+  private static pageText(): string {
+  if (!document.body) { return ''; }
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  let text = '';
+  while (walker.nextNode() && text.length < PAGE_TEXT_SCAN_LIMIT) {
+    const node = walker.currentNode;
+    if (node.parentElement?.closest('a, button, [role="button"], [role="link"], script, style, noscript')) {
+      continue;
+    }
+    const chunk = node.textContent?.trim();
+    if (chunk) { text += ` ${chunk}`; }
+  }
+  return text.slice(0, PAGE_TEXT_SCAN_LIMIT).toLowerCase();
+}
+
+  private static hasSplitOTPGroup(): boolean {
+  const digitInputs = deepQuerySelectorAll<HTMLInputElement>(
+    'input[maxlength="1"][type="text"], input[maxlength="1"][type="tel"], input[maxlength="1"][type="number"]'
+  );
+  const groupCounts = new Map<Element, number>();
+  for (const input of digitInputs) {
+    for (const group of [input.parentElement, input.parentElement?.parentElement]) {
+      if (!group) { continue; }
+      const count = (groupCounts.get(group) ?? 0) + 1;
+      groupCounts.set(group, count);
+    }
+  }
+  return Array.from(groupCounts.values()).some(
+    (count) =>
+      count >= OTP_CONSTANTS.MIN_SPLIT_FIELDS &&
+      count <= OTP_CONSTANTS.MAX_SPLIT_FIELDS
+  );
+}
+
+  private static detectProvider(_url: string, _signals: string[]): string | null {
     return null;
   }
 
   private static detectFramework(): string {
-    for (const detector of this.FRAMEWORK_DETECTORS) {
-      try {
-        if (detector.detect()) {
-          return detector.name;
-        }
-      } catch {
-        // ignore
+  for (const detector of this.FRAMEWORK_DETECTORS) {
+    try {
+      if (detector.detect()) {
+        return detector.name;
       }
+    } catch {
+      // ignore
     }
-    return 'unknown';
   }
+  return 'unknown';
+}
 }
 
 // ─── 7. LAYOUT PATTERN DETECTOR (formerly layout.ts) ──────────────────

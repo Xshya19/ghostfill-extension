@@ -31,6 +31,13 @@ const MESSAGE_TIMEOUT_MS = 25_000;
 const MAX_RETRY_ATTEMPTS = 2;
 const RETRY_DELAY_MS = 80;
 
+class MessageTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MessageTimeoutError';
+  }
+}
+
 /**
  * Check if extension context is valid
  */
@@ -51,11 +58,10 @@ function isRecoverableError(errorMsg: string): boolean {
     'Could not establish connection',
     'Receiving end does not exist',
     'The message port closed before a response was received',
-    // Treat timeouts as recoverable so the retry loop has a chance to succeed
-    // on the next attempt (e.g. after the service worker has fully warmed up).
-    'timeout after',
   ];
-  return recoverablePatterns.some((pattern) => errorMsg.toLowerCase().includes(pattern.toLowerCase()));
+  return recoverablePatterns.some((pattern) =>
+    errorMsg.toLowerCase().includes(pattern.toLowerCase())
+  );
 }
 
 function getErrorMessage(error: unknown): string {
@@ -121,7 +127,7 @@ export async function safeSendMessage(
       try {
         const timeoutPromise = new Promise<never>((_resolve, reject) => {
           timeoutId = setTimeout(
-            () => reject(new Error(`Message timeout after ${timeout}ms`)),
+            () => reject(new MessageTimeoutError(`Message timeout after ${timeout}ms`)),
             timeout
           );
         });
@@ -145,6 +151,14 @@ export async function safeSendMessage(
       } catch (error) {
         const errorMsg = getErrorMessage(error);
         lastError = error instanceof Error ? error : new Error(errorMsg);
+
+        if (error instanceof MessageTimeoutError) {
+          log.warn('Message timed out; outcome is unknown, so it will not be retried', {
+            action: message.action,
+            timeout,
+          });
+          return null;
+        }
 
         // Check if error is recoverable
         if (isRecoverableError(errorMsg)) {
@@ -226,7 +240,13 @@ export async function safeSendTabMessage(
       return null;
     }
 
-    log.info(`[Messaging] Sending message to Tab ${tabId}: "${message.action}"`, (message as any).payload);
+    // Never log message payloads here: this transport carries OTPs, passwords,
+    // form values, and email bodies. The action/tab metadata is sufficient for
+    // diagnosing routing failures and keeps secrets out of debug history.
+    log.info(`[Messaging] Sending message to Tab ${tabId}: "${message.action}"`, {
+      hasPayload: 'payload' in message && message.payload !== undefined,
+      ...(typeof frameId === 'number' ? { frameId } : {}),
+    });
 
     let lastError: Error | null = null;
 
@@ -235,7 +255,7 @@ export async function safeSendTabMessage(
       try {
         const timeoutPromise = new Promise<never>((_resolve, reject) => {
           timeoutId = setTimeout(
-            () => reject(new Error(`Tab message timeout after ${timeout}ms`)),
+            () => reject(new MessageTimeoutError(`Tab message timeout after ${timeout}ms`)),
             timeout
           );
         });
@@ -257,11 +277,25 @@ export async function safeSendTabMessage(
           timeoutPromise,
         ])) as ExtensionResponse | null;
 
-        log.info(`[Messaging] Received response from Tab ${tabId} for "${message.action}":`, response);
+        // Content-script responses can carry OTPs, passwords, or form values.
+        // Record only delivery metadata so debug logging never stores payloads.
+        log.info(`[Messaging] Received response from Tab ${tabId} for "${message.action}"`, {
+          success: response?.success !== false,
+          hasResponse: Boolean(response),
+        });
         return response;
       } catch (error) {
         const errorMsg = getErrorMessage(error);
         lastError = error instanceof Error ? error : new Error(errorMsg);
+
+        if (error instanceof MessageTimeoutError) {
+          log.warn('Tab message timed out; delivery outcome is unknown, so it will not be retried', {
+            tabId,
+            action: message.action,
+            timeout,
+          });
+          return null;
+        }
 
         // Check if error is expected (content script not available)
         if (

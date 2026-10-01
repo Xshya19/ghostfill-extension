@@ -16,6 +16,7 @@ import {
   MICROSOFT_SCOPES,
   MICROSOFT_DOMAINS,
 } from '../utils/core';
+import { getSenderSource, parseEmailIdentity } from '../utils/emailIdentity';
 import { createLogger } from '../utils/logger';
 import { getAliasPlusSuffix } from './gmailConnectionService';
 import { storageService } from './storageService';
@@ -255,7 +256,7 @@ export async function searchMicrosoftInbox(
     value?: Array<{
       id: string;
       conversationId: string;
-      from: { emailAddress: { address: string } };
+      from: { emailAddress: { address: string; name?: string } };
       toRecipients: Array<{ emailAddress: { address: string } }>;
       subject: string;
       receivedDateTime: string;
@@ -267,15 +268,16 @@ export async function searchMicrosoftInbox(
 
   return (data.value ?? []).map((m): GmailMessage => {
     const fromAddr = m.from?.emailAddress?.address ?? '';
+    const sender = parseEmailIdentity(m.from?.emailAddress);
     const at = Number.isFinite(new Date(m.receivedDateTime).getTime())
       ? new Date(m.receivedDateTime).getTime()
       : Date.now();
     const msg: GmailMessage = {
       id: m.id,
       threadId: m.conversationId,
-      from: fromAddr,
+      from: getSenderSource(undefined, m.from?.emailAddress),
       fromEmail: fromAddr,
-      fromName: fromAddr,
+      fromName: sender.displayName,
       to: m.toRecipients?.map((r) => r.emailAddress.address).join(', ') ?? '',
       subject: m.subject ?? '',
       date: at,

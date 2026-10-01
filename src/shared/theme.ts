@@ -6,7 +6,7 @@
  * 2. Design token constants (TOKENS) and Shadow DOM CSS generator functions.
  */
 import { storageService } from '../services/storageService';
-import { STORAGE_KEYS } from '../types/storage.types';
+import { DEFAULT_SETTINGS, STORAGE_KEYS } from '../types/storage.types';
 
 /* ── Theme Controller ─────────────────────────────────────────────────────── */
 
@@ -45,7 +45,8 @@ export function applyTheme(
 export function initTheme(
   root: HTMLElement | null = typeof document !== 'undefined' ? document.documentElement : null
 ): () => void {
-  let pref: ThemeMode = 'system';
+  let pref: ThemeMode = DEFAULT_SETTINGS.darkMode;
+  let readGeneration = 0;
   const mql = darkMediaQuery();
 
   const render = (): void => applyTheme(resolveTheme(pref), root);
@@ -56,37 +57,37 @@ export function initTheme(
     }
   };
 
-  // Paint immediately from the default, then refine once settings load so the
-  // popup never flashes the wrong theme for longer than a frame.
+  // Paint from the product default until the stored preference is available.
   render();
 
-  void storageService
-    .getSettings()
-    .then((settings) => {
-      pref = settings.darkMode ?? 'system';
-      render();
-    })
-    .catch(() => {
-      /* keep the 'system' default on failure */
-    });
+  const loadPreference = (): void => {
+    const generation = ++readGeneration;
+    void storageService
+      .getSettings()
+      .then((settings) => {
+        if (generation !== readGeneration) {
+          return;
+        }
+        pref = settings.darkMode ?? DEFAULT_SETTINGS.darkMode;
+        render();
+      })
+      .catch(() => {
+        /* keep the last applied preference on failure */
+      });
+  };
+
+  loadPreference();
 
   const unsubscribeStore = storageService.onChanged((changes) => {
     if (STORAGE_KEYS.SETTINGS in changes) {
-      void storageService
-        .getSettings()
-        .then((settings) => {
-          pref = settings.darkMode ?? 'system';
-          render();
-        })
-        .catch(() => {
-          /* ignore */
-        });
+      loadPreference();
     }
   });
 
   mql?.addEventListener?.('change', onSystemChange);
 
   return () => {
+    readGeneration += 1;
     unsubscribeStore();
     mql?.removeEventListener?.('change', onSystemChange);
   };
@@ -95,119 +96,137 @@ export function initTheme(
 /* ── Design Tokens Source of Truth ───────────────────────────────────────── */
 
 /**
- * GhostFill design token source of truth for Shadow DOM and content UI.
- * Keep this aligned with src/shared/styles/design-tokens.css.
+ * GhostFill dark material tokens for Shadow DOM and content UI.
+ * Keep this aligned with src/frontend/styles/globals.css and the design-system baseline.
  */
 export const TOKENS = {
-  // Raw accent swatches (200 tint, 300 base, 400 deep)
-  xxxViolet200: 'rgba(136, 168, 255, 0.16)',
-  xxxViolet200Rgb: '136, 168, 255',
-  xxxViolet300: '#B8CBFF',
-  xxxViolet300Rgb: '184, 203, 255',
-  xxxViolet400: '#88A8FF',
-  xxxViolet400Rgb: '136, 168, 255',
-  xxxPink200: 'rgba(136, 168, 255, 0.16)',
-  xxxPink200Rgb: '136, 168, 255',
-  xxxPink300: '#B8CBFF',
-  xxxPink300Rgb: '184, 203, 255',
-  xxxPink400: '#88A8FF',
-  xxxPink400Rgb: '136, 168, 255',
-  xxxRed200: 'rgba(241, 132, 132, 0.16)',
-  xxxRed200Rgb: '241, 132, 132',
-  xxxRed300: '#F18484',
-  xxxRed300Rgb: '241, 132, 132',
-  xxxRed400: '#D75B5B',
-  xxxRed400Rgb: '215, 91, 91',
-  xxxOrange200: 'rgba(242, 182, 77, 0.16)',
-  xxxOrange200Rgb: '242, 182, 77',
-  xxxOrange300: '#F2B64D',
-  xxxOrange300Rgb: '242, 182, 77',
-  xxxOrange400: '#D79425',
-  xxxOrange400Rgb: '215, 148, 37',
-  xxxYellow200: 'rgba(242, 182, 77, 0.16)',
-  xxxYellow200Rgb: '242, 182, 77',
-  xxxYellow300: '#F2B64D',
-  xxxYellow300Rgb: '242, 182, 77',
-  xxxYellow400: '#D79425',
-  xxxYellow400Rgb: '215, 148, 37',
-  xxxLime200: 'rgba(90, 200, 158, 0.16)',
-  xxxLime200Rgb: '90, 200, 158',
-  xxxLime300: '#5AC89E',
-  xxxLime300Rgb: '90, 200, 158',
-  xxxLime400: '#3EA97E',
-  xxxLime400Rgb: '62, 169, 126',
-  xxxCyan200: 'rgba(136, 168, 255, 0.16)',
-  xxxCyan200Rgb: '136, 168, 255',
-  xxxCyan300: '#B8CBFF',
-  xxxCyan300Rgb: '184, 203, 255',
-  xxxCyan400: '#88A8FF',
-  xxxCyan400Rgb: '136, 168, 255',
+  // Semantic accent swatches for the in-page controls and states
+  xxxViolet200: 'rgba(10, 132, 255, 0.18)',
+  xxxViolet200Rgb: '10, 132, 255',
+  xxxViolet300: '#69B5FF',
+  xxxViolet300Rgb: '105, 181, 255',
+  xxxViolet400: '#0A84FF',
+  xxxViolet400Rgb: '10, 132, 255',
+  xxxPink200: 'rgba(191, 155, 255, 0.16)',
+  xxxPink200Rgb: '191, 155, 255',
+  xxxPink300: '#D6BFFF',
+  xxxPink300Rgb: '214, 191, 255',
+  xxxPink400: '#BF9BFF',
+  xxxPink400Rgb: '191, 155, 255',
+  xxxRed200: 'rgba(255, 69, 58, 0.16)',
+  xxxRed200Rgb: '255, 69, 58',
+  xxxRed300: '#FF6961',
+  xxxRed300Rgb: '255, 105, 97',
+  xxxRed400: '#FF453A',
+  xxxRed400Rgb: '255, 69, 58',
+  xxxOrange200: 'rgba(255, 159, 10, 0.16)',
+  xxxOrange200Rgb: '255, 159, 10',
+  xxxOrange300: '#FFB340',
+  xxxOrange300Rgb: '255, 179, 64',
+  xxxOrange400: '#FF9F0A',
+  xxxOrange400Rgb: '255, 159, 10',
+  xxxYellow200: 'rgba(255, 159, 10, 0.16)',
+  xxxYellow200Rgb: '255, 159, 10',
+  xxxYellow300: '#FFB340',
+  xxxYellow300Rgb: '255, 179, 64',
+  xxxYellow400: '#FF9F0A',
+  xxxYellow400Rgb: '255, 159, 10',
+  xxxLime200: 'rgba(48, 209, 88, 0.16)',
+  xxxLime200Rgb: '48, 209, 88',
+  xxxLime300: '#5EE27A',
+  xxxLime300Rgb: '94, 226, 122',
+  xxxLime400: '#30D158',
+  xxxLime400Rgb: '48, 209, 88',
+  xxxCyan200: 'rgba(10, 132, 255, 0.18)',
+  xxxCyan200Rgb: '10, 132, 255',
+  xxxCyan300: '#69B5FF',
+  xxxCyan300Rgb: '105, 181, 255',
+  xxxCyan400: '#0A84FF',
+  xxxCyan400Rgb: '10, 132, 255',
 
-  // Canvas (Private Workspace night slate)
-  bg: '#10151E',
-  bgRgb: '16, 21, 30',
-  surface: '#171E29',
-  surfaceRgb: '23, 30, 41',
-  surface2: '#1D2632',
-  card: '#171E29',
-  cardRgb: '23, 30, 41',
-  cardElevated: '#202A37',
-  sunken: '#111721',
-  sunkenRgb: '17, 23, 33',
-  line: 'rgba(243, 246, 250, 0.10)',
-  line2: 'rgba(243, 246, 250, 0.18)',
-  hi: 'rgba(255, 255, 255, 0.06)',
+  // Dark system palette for UI attached to arbitrary webpages
+  bg: '#1C1C1E',
+  bgRgb: '28, 28, 30',
+  surface: '#2C2C2E',
+  surfaceRgb: '44, 44, 46',
+  surface2: '#38383A',
+  card: '#2C2C2E',
+  cardRgb: '44, 44, 46',
+  cardElevated: '#38383A',
+  sunken: '#18181A',
+  sunkenRgb: '24, 24, 26',
+  line: 'rgba(132, 132, 137, 0.32)',
+  line2: 'rgba(174, 174, 178, 0.48)',
+  hi: 'rgba(255, 255, 255, 0.09)',
+  glass: 'rgba(42, 48, 58, 0.53)',
+  glassSolid: '#29292B',
+  glassBorder: 'rgba(255, 255, 255, 0.12)',
+  glassHighlight: 'rgba(255, 255, 255, 0.2)',
+  glassShadow: '0 14px 34px rgba(0, 0, 0, 0.26), 0 2px 8px rgba(0, 0, 0, 0.14)',
+  glassBlur: '26px',
+  glassControl:
+    'radial-gradient(ellipse at 25% 0%, rgba(255, 255, 255, 0.09), transparent 65%), linear-gradient(155deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.02))',
+  glassPanel: 'linear-gradient(150deg, rgba(57, 60, 68, 0.7), rgba(39, 42, 48, 0.55))',
+  glassElevated: 'rgba(42, 45, 52, 0.96)',
+  glassContentStrong: 'rgba(43, 46, 53, 0.88)',
+  glassStroke: 'rgba(255, 255, 255, 0.1)',
+  glassInner: 'inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.12)',
+  glassSaturate: '155%',
 
-  // Ink (clear contrast under ambient light)
-  ink: '#F3F6FA',
-  inkRgb: '243, 246, 250',
-  inkSoft: '#AAB5C4',
-  inkSoftRgb: '170, 181, 196',
-  cream: '#F3F6FA',
-  textMuted: '#AAB5C4',
-  textDim: '#7E8B9C',
+  // High-contrast neutral ink
+  ink: '#F5F5F7',
+  inkRgb: '245, 245, 247',
+  inkSoft: '#AEAEB2',
+  inkSoftRgb: '174, 174, 178',
+  cream: '#F5F5F7',
+  textMuted: '#AEAEB2',
+  textDim: '#AEAEB2',
 
-  // Semantic legacy aliases
-  mustard: '#F2B64D',
-  mustardRgb: '242, 182, 77',
-  sienna: '#F18484',
-  siennaRgb: '241, 132, 132',
-  teal: '#5AC89E',
-  tealRgb: '90, 200, 158',
-  coralWarm: '#B8CBFF',
-  coralWarmRgb: '184, 203, 255',
+  // Semantic status colors
+  mustard: '#FF9F0A',
+  mustardRgb: '255, 159, 10',
+  sienna: '#FF453A',
+  siennaRgb: '255, 69, 58',
+  teal: '#30D158',
+  tealRgb: '48, 209, 88',
+  coralWarm: '#69B5FF',
+  coralWarmRgb: '105, 181, 255',
 
-  magenta: '#B8CBFF',
-  magentaRgb: '184, 203, 255',
-  cyan: '#88A8FF',
-  cyanRgb: '136, 168, 255',
-  violet: '#AFB6FF',
-  violetRgb: '175, 182, 255',
-  yellow: '#F2B64D',
-  yellowRgb: '242, 182, 77',
-  coral: '#F18484',
-  coralRgb: '241, 132, 132',
-  mint: '#5AC89E',
-  mintRgb: '90, 200, 158',
+  magenta: '#BF9BFF',
+  magentaRgb: '191, 155, 255',
+  cyan: '#0A84FF',
+  cyanRgb: '10, 132, 255',
+  violet: '#BF9BFF',
+  violetRgb: '191, 155, 255',
+  yellow: '#FF9F0A',
+  yellowRgb: '255, 159, 10',
+  coral: '#FF453A',
+  coralRgb: '255, 69, 58',
+  coralText: '#FF6961',
+  mint: '#30D158',
+  mintRgb: '48, 209, 88',
 
-  // Primary blue
-  primary: '#88A8FF',
-  primaryRgb: '136, 168, 255',
-  primaryDeep: '#5E85E6',
-  primarySoft: 'rgba(136, 168, 255, 0.16)',
+  // System blue
+  primary: '#0A84FF',
+  primaryRgb: '10, 132, 255',
+  primaryDeep: '#0066CC',
+  primaryText: '#69B5FF',
+  primarySoft: 'rgba(10, 132, 255, 0.18)',
 
-  primaryFillDeep: '#456BC7',
-  dangerFill: '#D75B5B',
-  dangerFillDeep: '#BD4545',
+  primaryFillDeep: '#0057B8',
+  warningFill: '#805500',
+  dangerFill: '#D70015',
+  dangerFillDeep: '#A40010',
   onFillLight: '#ffffff',
-  successSoft: 'rgba(90, 200, 158, 0.16)',
-  warningSoft: 'rgba(242, 182, 77, 0.16)',
-  dangerSoft: 'rgba(241, 132, 132, 0.16)',
-  scrim: 'rgba(7, 10, 15, 0.76)',
-  fontMono: "'IBM Plex Mono', 'Space Mono', 'JetBrains Mono', ui-monospace, monospace",
-  panelRadius: '12px',
-  controlRadius: '8px',
-  controlHeight: '36px',
+  onFillDark: '#1C1C1E',
+  successSoft: 'rgba(48, 209, 88, 0.16)',
+  warningSoft: 'rgba(255, 159, 10, 0.16)',
+  dangerSoft: 'rgba(255, 69, 58, 0.16)',
+  scrim: 'rgba(0, 0, 0, 0.52)',
+  fontMono: "ui-monospace, 'SFMono-Regular', Consolas, monospace",
+  panelRadius: '16px',
+  controlRadius: '10px',
+  controlHeight: '44px',
 } as const;
 
 /**
@@ -272,6 +291,19 @@ export function generateHostTokens(): string {
     --gf-line: ${TOKENS.line};
     --gf-line-2: ${TOKENS.line2};
     --gf-hi: ${TOKENS.hi};
+    --gf-glass: ${TOKENS.glass};
+    --gf-glass-solid: ${TOKENS.glassSolid};
+    --gf-glass-border: ${TOKENS.glassBorder};
+    --gf-glass-highlight: ${TOKENS.glassHighlight};
+    --gf-glass-shadow: ${TOKENS.glassShadow};
+    --gf-glass-blur: ${TOKENS.glassBlur};
+    --gf-glass-control: ${TOKENS.glassControl};
+    --gf-glass-panel: ${TOKENS.glassPanel};
+    --gf-glass-elevated: ${TOKENS.glassElevated};
+    --gf-glass-content-strong: ${TOKENS.glassContentStrong};
+    --gf-glass-stroke: ${TOKENS.glassStroke};
+    --gf-glass-inner: ${TOKENS.glassInner};
+    --gf-glass-saturate: ${TOKENS.glassSaturate};
     --gf-ink: ${TOKENS.ink};
     --gf-ink-rgb: ${TOKENS.inkRgb};
     --gf-ink-soft: ${TOKENS.inkSoft};
@@ -306,8 +338,8 @@ export function generateHostTokens(): string {
     --nb-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
     --nb-shadow-sm: 0 3px 8px rgba(0, 0, 0, 0.26);
     --nb-shadow-lg: 0 14px 30px rgba(0, 0, 0, 0.38);
-    --nb-radius: 12px;
-    --nb-radius-sm: 8px;
+    --nb-radius: 16px;
+    --nb-radius-sm: 10px;
     --gf-paper: ${TOKENS.bg};
     --gf-paper-2: ${TOKENS.surface};
     --gf-ink-dim: ${TOKENS.textDim};
@@ -315,12 +347,13 @@ export function generateHostTokens(): string {
     --gf-primary: ${TOKENS.primary};
     --gf-primary-rgb: ${TOKENS.primaryRgb};
     --gf-primary-deep: ${TOKENS.primaryDeep};
+    --gf-primary-text: ${TOKENS.primaryText};
     --gf-primary-soft: ${TOKENS.primarySoft};
     --gf-on-primary: ${TOKENS.onFillLight};
     --gf-success: ${TOKENS.mint};
     --gf-warning: ${TOKENS.yellow};
     --gf-danger: ${TOKENS.coral};
-    --gf-accent: ${TOKENS.violet};
+    --gf-accent: ${TOKENS.primary};
     --gf-success-rgb: ${TOKENS.mintRgb};
     --gf-warning-rgb: ${TOKENS.yellowRgb};
     --gf-danger-rgb: ${TOKENS.coralRgb};
@@ -333,17 +366,21 @@ export function generateHostTokens(): string {
        so the -text tokens alias the hue rather than darkening it. */
     --gf-mint-text: ${TOKENS.mint};
     --gf-amber-text: ${TOKENS.yellow};
-    --gf-coral-text: ${TOKENS.coral};
-    --gf-danger-text: ${TOKENS.coral};
+    --gf-coral-text: ${TOKENS.coralText};
+    --gf-danger-text: ${TOKENS.coralText};
     /* Solid fills + the ink guaranteed readable on each. */
     --gf-primary-fill: ${TOKENS.primaryDeep};
     --gf-primary-fill-deep: ${TOKENS.primaryFillDeep};
     --gf-success-fill: ${TOKENS.mint};
-    --gf-warning-fill: ${TOKENS.yellow};
+    --gf-warning-fill: ${TOKENS.warningFill};
     --gf-danger-fill: ${TOKENS.dangerFill};
     --gf-danger-fill-deep: ${TOKENS.dangerFillDeep};
+    --gf-on-primary: ${TOKENS.onFillLight};
+    --gf-on-danger: ${TOKENS.onFillLight};
+    --gf-on-success: ${TOKENS.onFillDark};
+    --gf-on-warning: ${TOKENS.onFillLight};
     --gf-on-fill-light: ${TOKENS.onFillLight};
-    --gf-on-fill-dark: ${TOKENS.bg};
+    --gf-on-fill-dark: ${TOKENS.onFillDark};
     --gf-scrim: ${TOKENS.scrim};
     --gf-font-mono: ${TOKENS.fontMono};
     --brand-font-mono: ${TOKENS.fontMono};
@@ -354,13 +391,13 @@ export function generateHostTokens(): string {
     --gf-border: 1px solid ${TOKENS.line};
     --gf-border-strong: 1px solid ${TOKENS.line2};
     --gf-border-thin: 1px solid ${TOKENS.line};
-    --gf-shadow-sm: 0 3px 8px rgba(0, 0, 0, 0.26);
-    --gf-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
-    --gf-shadow-lg: 0 14px 30px rgba(0, 0, 0, 0.38);
+    --gf-shadow-sm: 0 3px 8px rgba(0, 0, 0, 0.28);
+    --gf-shadow: 0 6px 18px rgba(0, 0, 0, 0.32);
+    --gf-shadow-lg: 0 14px 32px rgba(0, 0, 0, 0.4);
     --shadow-hard-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
     --shadow-hard: 0 5px 14px rgba(0, 0, 0, 0.3);
-    --gf-radius: 12px;
-    --gf-radius-sm: 8px;
+    --gf-radius: ${TOKENS.panelRadius};
+    --gf-radius-sm: 10px;
     --gf-panel-radius: ${TOKENS.panelRadius};
     --gf-control-radius: ${TOKENS.controlRadius};
     --gf-control-h: ${TOKENS.controlHeight};
@@ -372,4 +409,69 @@ export function generateHostTokens(): string {
  */
 export function generateFabScopeTokens(): string {
   return generateHostTokens();
+}
+
+/** Theme palette for isolated in-page UI. Keep light values aligned with globals.css. */
+export function generateHostThemeStyles(): string {
+  return `
+    :host { ${generateHostTokens()} }
+    :host([data-theme='dark']) { color-scheme: dark; }
+    :host([data-theme='light']) {
+      color-scheme: light;
+      --gf-bg: #f5f5f7;
+      --gf-bg-rgb: 245, 245, 247;
+      --gf-surface: #fff;
+      --gf-surface-rgb: 255, 255, 255;
+      --gf-surface-2: #f2f2f7;
+      --gf-sunken: #e5e5ea;
+      --gf-card: #fff;
+      --gf-card-rgb: 255, 255, 255;
+      --gf-card-elevated: #fff;
+      --gf-line: rgba(60, 60, 67, 0.16);
+      --gf-line-2: rgba(60, 60, 67, 0.28);
+      --gf-hi: rgba(255, 255, 255, 0.92);
+      --gf-ink: #1d1d1f;
+      --gf-ink-rgb: 29, 29, 31;
+      --gf-ink-soft: #60646c;
+      --gf-ink-soft-rgb: 96, 100, 108;
+      --gf-text-muted: #60646c;
+      --gf-text-dim: #60646c;
+      --gf-cream: #1d1d1f;
+      --gf-glass: rgba(255, 255, 255, 0.62);
+      --gf-glass-solid: #f5f5f7;
+      --gf-glass-border: rgba(255, 255, 255, 0.72);
+      --gf-glass-highlight: rgba(255, 255, 255, 0.78);
+      --gf-glass-shadow: 0 8px 24px rgba(29, 38, 54, 0.07), 0 1px 3px rgba(29, 38, 54, 0.04);
+      --gf-glass-control:
+        radial-gradient(ellipse at 25% 0%, rgba(255, 255, 255, 0.42), transparent 65%),
+        linear-gradient(155deg, rgba(255, 255, 255, 0.54), rgba(255, 255, 255, 0.22));
+      --gf-glass-panel: linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.82) 60%, rgba(255, 255, 255, 0.86));
+      --gf-glass-elevated: rgba(250, 251, 253, 0.94);
+      --gf-glass-content-strong: rgba(255, 255, 255, 0.9);
+      --gf-glass-stroke: rgba(60, 67, 80, 0.16);
+      --gf-glass-inner: inset 0 1px 0 rgba(255, 255, 255, 0.78);
+      --gf-primary: #0066cc;
+      --gf-primary-rgb: 0, 102, 204;
+      --gf-primary-text: #0066cc;
+      --gf-primary-deep: #0057b8;
+      --gf-primary-fill: #0066cc;
+      --gf-primary-fill-deep: #0057b8;
+      --gf-primary-soft: #eaf4ff;
+      --gf-mint: #248a3d;
+      --gf-mint-text: #207a36;
+      --gf-mint-rgb: 36, 138, 61;
+      --gf-success-fill: #207a36;
+      --gf-on-success: #fff;
+      --gf-amber: #9a6700;
+      --gf-amber-text: #805500;
+      --gf-coral: #d70015;
+      --gf-coral-rgb: 215, 0, 21;
+      --gf-coral-text: #bd0013;
+      --gf-violet: #5b61b9;
+      --gf-cyan: #0066cc;
+      --gf-danger: #d70015;
+      --gf-on-fill-dark: #1d1d1f;
+      --gf-on-fill-light: #fff;
+    }
+  `;
 }

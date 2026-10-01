@@ -2,6 +2,7 @@
 
 import { EmailAccount, Email } from '../../types';
 import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
+import { getSenderSource } from '../../utils/emailIdentity';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 import { isRetryableError, throttledWarn, throwIfRetryableStatus } from './isRetryableError';
@@ -80,7 +81,7 @@ export class TempmailPlusService {
 
         return {
           id: String(msg.mail_id || msg.id),
-          from: contentToString(msg.from_mail || msg.from, 'Unknown Sender'),
+          from: getSenderSource(undefined, msg.from_mail || msg.from),
           to: fullEmail,
           subject: contentToString(msg.subject, '(No Subject)'),
           date: safeParseDate(msg.date),
@@ -120,7 +121,7 @@ export class TempmailPlusService {
 
       return {
         id: String(msg.mail_id || msg.id || emailId),
-        from: contentToString(msg.from_mail || msg.from, 'Unknown Sender'),
+        from: getSenderSource(undefined, msg.from_mail || msg.from),
         to: fullEmail,
         subject: contentToString(msg.subject, '(No Subject)'),
         date: safeParseDate(msg.date),

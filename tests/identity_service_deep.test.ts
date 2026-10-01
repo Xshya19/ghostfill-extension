@@ -206,6 +206,7 @@ describe('IdentityService deep tests', () => {
       (storageService as any)._store.set('currentEmail', {
         fullEmail: 'fallback@example.com',
         domain: 'example.com',
+        service: 'mailtm',
       });
 
       const result = await identityService.resolveEmailForActiveTab();

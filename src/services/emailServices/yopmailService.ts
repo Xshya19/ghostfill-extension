@@ -26,6 +26,7 @@
 
 import { EmailAccount, Email } from '../../types';
 import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
+import { getSenderSource } from '../../utils/emailIdentity';
 import { getRandomInt } from '../../utils/encryption';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
@@ -709,7 +710,7 @@ export class YopmailService {
     const cleanSubject = decodeHtmlEntities((subject ?? '').trim() || '(No Subject)');
     return {
       id: String(id),
-      from: contentToString(cleanFrom, 'Unknown Sender'),
+      from: getSenderSource(undefined, cleanFrom),
       to: fullEmail,
       subject: contentToString(cleanSubject, '(No Subject)'),
       date: safeParseDate((timeStr ?? '').trim() || undefined),
@@ -824,7 +825,7 @@ export class YopmailService {
 
     return {
       id: String(emailId),
-      from: contentToString(from, 'Unknown Sender'),
+      from: getSenderSource(undefined, from),
       to: fullEmail,
       subject: contentToString(subject, '(No Subject)'),
       date,

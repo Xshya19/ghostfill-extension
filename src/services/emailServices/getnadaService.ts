@@ -2,6 +2,7 @@
 
 import { EmailAccount, Email } from '../../types';
 import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
+import { getSenderSource } from '../../utils/emailIdentity';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 import { isRetryableError, throttledWarn, throwIfRetryableStatus } from './isRetryableError';
@@ -113,7 +114,7 @@ export class GetnadaService {
       return messages.map((msg: any, idx: number) => {
         const email: Email = {
           id: String(msg.uid || msg.id || msg.messageId),
-          from: contentToString(msg.fe || msg.from, 'Unknown Sender'),
+          from: getSenderSource(undefined, msg.fe || msg.from),
           to: contentToString(fullEmail),
           subject: contentToString(msg.s || msg.subject, '(No Subject)'),
           date: safeParseDate(msg.rf || msg.date),
@@ -158,7 +159,7 @@ export class GetnadaService {
 
       return {
         id: String(msg.uid || msg.id || emailId),
-        from: contentToString(msg.fe || msg.from, 'Unknown Sender'),
+        from: getSenderSource(undefined, msg.fe || msg.from),
         to: contentToString(fullEmail),
         subject: contentToString(msg.s || msg.subject, '(No Subject)'),
         date: safeParseDate(msg.rf || msg.date),

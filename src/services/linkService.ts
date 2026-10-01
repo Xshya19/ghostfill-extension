@@ -3,7 +3,7 @@
 //
 // ┌──────────────────────────────────────────────────────────────────┐
 // │  Features                                                       │
-// │  ─ URL security gate (scheme, TLD, IP, homoglyph checks)        │
+// │  ─ Web URL parsing before tab navigation                         │
 // │  ─ Multi-source code extraction (params, path, hash fragment)   │
 // │  ─ Sequential activation queue with dedup                       │
 // │  ─ Retry with linear backoff                                    │
@@ -15,34 +15,20 @@
 // └──────────────────────────────────────────────────────────────────┘
 // ─────────────────────────────────────────────────────────────────────
 
-import {
-  registerActivationTab,
-  unregisterActivationTab,
-  isActivationTab,
-} from '../background/activationRegistry';
 import { Email } from '../types';
-import { DEFAULT_SETTINGS } from '../types/storage.types';
 import { sleep } from '../utils/core';
+import { getSenderDomain } from '../utils/emailIdentity';
 import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
 
 import { dedupService } from './dedupService';
-import { smartDetectionService } from './otpService';
+import { canAutoOpenVerificationLink } from './emailServices/privacy';
+import { isAutoOpenableActivationLink } from './extraction/activationLinkGuard';
+import { getAnchorInfo } from './extraction/linkExtractor';
+import { otpService, smartDetectionService } from './otpService';
 import { storageService } from './storageService';
 
 const log = createLogger('LinkEngine');
-
-// ═══════════════════════════════════════════════════════════════
-//  MODULE SCOPE: Global Tab Cleanup (Prevents SW Sleep Leaks)
-// ═══════════════════════════════════════════════════════════════
-if (typeof chrome !== 'undefined' && chrome.tabs?.onRemoved) {
-  chrome.tabs.onRemoved.addListener((closedTabId) => {
-    if (isActivationTab(closedTabId)) {
-      unregisterActivationTab(closedTabId);
-      log.debug('🧹 Global cleanup: Unregistered closed activation tab', { closedTabId });
-    }
-  });
-}
 
 // FIX #12: Hoisted to module level to avoid allocating a new Set on every isPlausibleCode() call
 const FALSE_POSITIVE_CODES = new Set([
@@ -68,11 +54,14 @@ const FALSE_POSITIVE_CODES = new Set([
 type ActivationStatus = 'queued' | 'activating' | 'activated' | 'delivered' | 'failed' | 'blocked';
 
 interface ActivationRecord {
+  readonly accountId: string;
   url: string;
   emailId: string;
+  emailDate: number;
   from: string;
   subject: string;
   extractedCode: string | null;
+  codeSource: 'email' | 'url-extracted';
   detectedAt: number;
   activatedAt: number | null;
   completedAt: number | null;
@@ -122,22 +111,16 @@ const CONFIG = {
   MAX_HISTORY_ENTRIES: 50,
 } as const;
 
-// ── Verification code parameter names (ranked by frequency) ──
+// Only explicit OTP parameter names. Generic token/secret/key/oobCode values
+// are activation credentials, not codes to type into an OTP field.
 const CODE_PARAM_NAMES = [
-  'code',
-  'token',
   'otp',
   'verification_code',
   'verificationCode',
-  'verify',
-  'key',
   'pin',
   'confirmation_code',
   'confirmationCode',
-  'auth_code',
-  'authCode',
   'passcode',
-  'secret',
   'vcode',
 ] as const;
 
@@ -152,33 +135,6 @@ const CODE_PATH_PREFIXES = [
   '/token/',
   '/check/',
 ] as const;
-
-// ── Blocked URL schemes ──
-const BLOCKED_SCHEMES: ReadonlySet<string> = new Set([
-  'javascript:',
-  'data:',
-  'blob:',
-  'file:',
-  'chrome:',
-  'chrome-extension:',
-  'about:',
-  'vbscript:',
-]);
-
-// ── Suspicious free TLDs commonly abused in phishing ──
-const SUSPICIOUS_TLDS: ReadonlySet<string> = new Set([
-  '.tk',
-  '.ml',
-  '.ga',
-  '.cf',
-  '.gq',
-  '.buzz',
-  '.top',
-  '.xyz',
-]);
-
-// ── Homoglyph / punycode indicator ──
-const PUNYCODE_PREFIX = 'xn--';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  LINK SERVICE
@@ -216,7 +172,13 @@ class LinkService {
    * Skips re-detection entirely to avoid the "both → skip" bug where
    * emails containing both OTP + link would skip link activation.
    */
-  async handleDetectedLink(email: Email, linkUrl: string, accountId?: string): Promise<void> {
+  async handleDetectedLink(
+    email: Email,
+    linkUrl: string,
+    accountId?: string,
+    emailCode?: string | null,
+    linkAnchorText = ''
+  ): Promise<void> {
     const emailId = String(email.id);
     const accId = accountId || email.to || 'unknown';
 
@@ -231,16 +193,14 @@ class LinkService {
     this.markScanning(emailId);
     this.metrics.emailsScanned++;
 
-    await this.markProcessed(emailId, accId, true);
-
     try {
       this.metrics.linksDetected++;
 
-      // ── Security gate ──
+      // Check the destination independently of the extraction caller.
       const validation = this.validateUrl(linkUrl);
       if (!validation.safe) {
         this.metrics.linksBlocked++;
-        log.warn('⛔ Blocked unsafe link', {
+        log.warn('Cannot open non-web link', {
           url: maskUrl(linkUrl),
           reason: validation.reason,
         });
@@ -252,14 +212,17 @@ class LinkService {
       });
 
       // ── Auto-confirm: Check user setting before opening link ──
-      const rawSettings = await storageService.get('settings');
-      const autoConfirm = rawSettings?.autoConfirmLinks ?? DEFAULT_SETTINGS.autoConfirmLinks;
-
-      if (!autoConfirm) {
-        log.info('⏭️ Skipping auto-confirm (user disabled)', {
-          url: maskUrl(linkUrl),
-          setting: 'autoConfirmLinks',
+      const account = await storageService.get('currentEmail');
+      if (!canAutoOpenVerificationLink(account, email.from, linkUrl)) {
+        this.metrics.linksBlocked++;
+        log.info('Link saved for review; sender or signup site does not match its destination', {
+          senderDomain: getSenderDomain(email.from),
+          destination: maskUrl(linkUrl),
+          hasSignupOrigin: Boolean(account?.originUrl),
         });
+        return;
+      }
+      if (!(await this.canAutomaticallyActivate(linkUrl, email, linkAnchorText))) {
         return;
       }
 
@@ -268,7 +231,7 @@ class LinkService {
       });
 
       // ── Build activation record & enqueue ──
-      const extractedCode = this.extractCodeFromUrl(linkUrl);
+      const extractedCode = emailCode || this.extractCodeFromUrl(linkUrl);
       if (extractedCode) {
         this.metrics.codesExtracted++;
         log.info('🔑 Code extracted from URL', {
@@ -277,11 +240,14 @@ class LinkService {
       }
 
       const record: ActivationRecord = {
+        accountId: accId,
         url: linkUrl,
         emailId,
+        emailDate: email.date,
         from: email.from || 'unknown',
         subject: email.subject || '',
         extractedCode,
+        codeSource: emailCode ? 'email' : 'url-extracted',
         detectedAt: Date.now(),
         activatedAt: null,
         completedAt: null,
@@ -292,6 +258,7 @@ class LinkService {
         durationMs: null,
       };
 
+      await this.markProcessed(emailId, accId, true);
       this.enqueue(record);
     } catch (error) {
       log.error('Pre-detected link handling failed', {
@@ -335,8 +302,7 @@ class LinkService {
         email.from || ''
       );
 
-      const hasLink =
-        (detection.type === 'link' || detection.type === 'both') && Boolean(detection.link);
+      const hasLink = Boolean(detection.link);
 
       if (!hasLink || !detection.link) {
         log.debug('No activation link found', { emailId });
@@ -346,11 +312,11 @@ class LinkService {
 
       this.metrics.linksDetected++;
 
-      // ── Security gate ──
+      // Check the destination independently of the extraction caller.
       const validation = this.validateUrl(detection.link);
       if (!validation.safe) {
         this.metrics.linksBlocked++;
-        log.warn('⛔ Blocked unsafe link', {
+        log.warn('Cannot open non-web link', {
           url: maskUrl(detection.link),
           reason: validation.reason,
         });
@@ -365,59 +331,21 @@ class LinkService {
       });
 
       // ── Auto-confirm: Check user setting before opening link ──
-      const rawSettings = await storageService.get('settings');
-      const autoConfirm = rawSettings?.autoConfirmLinks ?? DEFAULT_SETTINGS.autoConfirmLinks;
+      const account = await storageService.get('currentEmail');
+      const canAutomaticallyActivate =
+        detection.decision?.canAutoAct === true &&
+        (detection.decision.action === 'open-link' || detection.decision.action === 'fill-otp-and-open-link') &&
+        canAutoOpenVerificationLink(account, email.from, detection.link) &&
+        await this.canAutomaticallyActivate(detection.link, email);
 
       log.info('🔘 autoConfirmLinks resolved', {
-        raw: rawSettings?.autoConfirmLinks,
-        effective: autoConfirm,
+        effective: canAutomaticallyActivate,
       });
 
-      if (!autoConfirm) {
-        log.info('⏭️ Skipping auto-confirm (user disabled)', {
-          url: maskUrl(detection.link),
-          setting: 'autoConfirmLinks',
-        });
+      if (!canAutomaticallyActivate) {
         await dedupService.clearPending(emailId, accId);
         return;
       }
-
-      const decision = detection.decision;
-      if (decision && !decision.canAutoAct) {
-        this.metrics.linksBlocked++;
-        log.info('Skipping auto-confirm (decision requires review)', {
-          url: maskUrl(detection.link),
-          action: decision.action,
-          risk: decision.risk,
-          warnings: decision.warnings,
-        });
-        return;
-      }
-
-      // isAutoOpenableActivationLink guard removed:
-      // GhostFill only processes emails at user-generated signup addresses.
-      // The validateUrl() call above already blocks unsafe/malformed URLs.
-      // Hard-reject patterns (unsubscribe, marketing footer, social) are
-      // handled inside the extractor before the link ever reaches this point.
-
-      if (
-        decision &&
-        decision.action !== 'open-link' &&
-        decision.action !== 'fill-otp-and-open-link'
-      ) {
-        log.info('Skipping auto-confirm (decision prefers another action)', {
-          url: maskUrl(detection.link),
-          action: decision.action,
-          risk: decision.risk,
-        });
-        return;
-      }
-
-      // Previously we skipped opening the link when type=both (OTP+link) so OTP
-      // fill could win. That broke pure activation flows (e.g. Qwen) where a
-      // weak/false OTP was extracted alongside a real /activate link — the link
-      // never opened and FILL_OTP spammed a dead tab. Always open a high-quality
-      // activation link; OTP delivery is handled separately by pollingManager.
 
       log.info('🔓 Auto-confirming link (user enabled)', {
         url: maskUrl(detection.link),
@@ -426,7 +354,9 @@ class LinkService {
       });
 
       // ── Build activation record & enqueue ──
-      const extractedCode = this.extractCodeFromUrl(detection.link);
+      const otpConfidence = detection.otpConfidence ?? detection.confidence;
+      const emailCode = otpConfidence >= 0.7 && otpConfidence <= 1 ? detection.code : null;
+      const extractedCode = emailCode || this.extractCodeFromUrl(detection.link);
       if (extractedCode) {
         this.metrics.codesExtracted++;
         log.info('🔑 Code extracted from URL', {
@@ -435,11 +365,14 @@ class LinkService {
       }
 
       const record: ActivationRecord = {
+        accountId: accId,
         url: detection.link,
         emailId,
+        emailDate: email.date,
         from: email.from || 'unknown',
         subject: email.subject || '',
         extractedCode,
+        codeSource: emailCode ? 'email' : 'url-extracted',
         detectedAt: Date.now(),
         activatedAt: null,
         completedAt: null,
@@ -501,7 +434,9 @@ class LinkService {
   private enqueue(record: ActivationRecord): void {
     // Permanent URL deduplication
     if (this.activatedUrls.has(record.url)) {
-      log.info('Link URL was already activated, skipping duplicate execution', { url: maskUrl(record.url) });
+      log.info('Link URL was already activated, skipping duplicate execution', {
+        url: maskUrl(record.url),
+      });
       return;
     }
 
@@ -573,22 +508,22 @@ class LinkService {
 
       // ── Pre-save extracted code for manual paste fallback ──
       if (record.extractedCode) {
-        await storageService.set('lastOTP', {
-          code: record.extractedCode,
-          extractedAt: Date.now(),
-          source: 'email',
-          confidence: 1.0,
-        });
+        await otpService.saveLastOTP(
+          record.extractedCode,
+          'email',
+          record.from,
+          record.subject,
+          1,
+          { emailId: record.emailId, emailDate: record.emailDate, autoFillEligible: record.codeSource === 'email' }
+        );
       }
 
-      // ── Open the verification URL in a background tab ──
-      // URL safety is already enforced by validateUrl() above (blocks bad
-      // schemes, localhost, raw IPs, suspicious TLDs, punycode domains).
-      log.info('🌐 Opening activation link in background tab', { url: maskUrl(record.url) });
+      // Open the detected action where the user can see the next step.
+      log.info('🌐 Opening activation link in a new tab', { url: maskUrl(record.url) });
 
       const tab = await chrome.tabs.create({
         url: record.url,
-        active: false,
+        active: true,
       });
 
       if (!tab.id) {
@@ -598,20 +533,15 @@ class LinkService {
       record.tabId = tab.id;
       log.info('🪟 Tab opened', { tabId: tab.id });
 
-      // Register as activation tab to prevent OTP delivery to this tab
-      registerActivationTab(tab.id, record.extractedCode ?? undefined);
-
-      // GRANDMASTER FIX: Removed local `cleanupOnClose` listener.
-      // The global module-scope listener now handles this safely across SW restarts.
-
       // GRANDMASTER FIX: Do not wait for tab load (which can block for 10s on heavy SPAs).
       // We proceed immediately to probeContentScript, which will poll until the content
       // script is injected. This shaves off massive amounts of unnecessary waiting time.
       log.info('📡 Probing content script (bypassing redundant load wait)', { tabId: tab.id });
 
       // ── Deliver code to the loaded page (if we extracted one) ──
-      if (record.extractedCode) {
-        const delivered = await this.deliverCode(tab.id, record.extractedCode);
+      const { autoFillOTP } = await storageService.getSettings();
+      if (record.extractedCode && autoFillOTP) {
+        const delivered = await this.deliverCode(tab.id, record.extractedCode, record.codeSource);
         record.status = delivered ? 'delivered' : 'activated';
         if (delivered) {
           this.metrics.codesDelivered++;
@@ -624,8 +554,7 @@ class LinkService {
       await sleep(350);
       log.info('✨ Tab is ready and waiting for user', { tabId: tab.id });
 
-      // The polling manager keeps this tab excluded from generic OTP delivery
-      // until the tab closes. The global onRemoved cleanup handles unregistering.
+      // Keep the tab eligible for OTPs that arrive in a later email.
 
       this.metrics.linksActivated++;
       this.metrics.lastActivationAt = Date.now();
@@ -645,7 +574,7 @@ class LinkService {
       });
 
       // ── Retry? ──
-      if (record.attempts <= CONFIG.MAX_RETRIES) {
+      if (record.tabId === null && record.attempts <= CONFIG.MAX_RETRIES) {
         const backoff = CONFIG.RETRY_BASE_DELAY_MS * record.attempts;
         log.info('🔄 Retrying', {
           nextAttempt: record.attempts + 1,
@@ -656,8 +585,21 @@ class LinkService {
         return; // finalize happens in the retry
       }
 
+      if (record.tabId !== null) {
+        // A later fill or bookkeeping error must never open a duplicate tab.
+        record.status = 'activated';
+        this.metrics.linksActivated++;
+        this.metrics.lastActivationAt = Date.now();
+        this.lastActivationTime = Date.now();
+        this.finalize(record, t0);
+        return;
+      }
+
       record.status = 'failed';
       this.metrics.linksFailed++;
+      // No tab was opened: release only the link claim so an explicit retry works.
+      this.activatedUrls.delete(record.url);
+      await this.updateProcessed(record.emailId, record.accountId, false);
       // Use messaging pattern instead of direct import
       safeSendMessage({
         action: 'SHOW_NOTIFICATION',
@@ -756,47 +698,47 @@ class LinkService {
    * Uses a ping loop instead of a hardcoded delay so we send as soon
    * as the content script is ready (or give up after the timeout).
    */
-  private async deliverCode(tabId: number, code: string): Promise<boolean> {
-    // NOTE: Do NOT check isActivationTab here.
-    // This function IS the code delivery for activation tabs.
-    // The isActivationTab flag is only for preventing the *general polling engine*
-    // from accidentally treating verification tabs as normal OTP targets.
+  private async deliverCode(
+    tabId: number,
+    code: string,
+    source: 'email' | 'url-extracted'
+  ): Promise<boolean> {
+    const deadline = Date.now() + 22_000;
+    while (Date.now() < deadline) {
+      const ready = await this.probeContentScript(tabId);
+      if (!ready) {
+        log.warn('Content script never responded — delivery skipped', { tabId });
+        return false;
+      }
 
-    const ready = await this.probeContentScript(tabId);
-
-    if (!ready) {
-      log.warn('Content script never responded — delivery skipped', { tabId });
-      return false;
-    }
-
-    try {
-      // GRANDMASTER FIX: Fire and forget! Do NOT await the response.
-      // OTPPageDetector's handleAutoFill will wait up to 12.7s for the DOM to settle.
-      // If we await this, the background SW queue blocks for 15 seconds.
-      chrome.tabs.sendMessage(tabId, {
-        action: 'AUTO_FILL_OTP',
-        payload: {
-          otp: code,
-          source: 'url-extracted',
-          confidence: 1.0,
-          isBackgroundTab: true,
-        },
-      }).catch((error) => {
-        log.debug('Delivery send failed — page may not have an OTP field', {
+      try {
+        const response = await chrome.tabs.sendMessage(tabId, {
+          action: 'AUTO_FILL_OTP',
+          payload: {
+            otp: code,
+            source,
+            confidence: 1.0,
+            isBackgroundTab: true,
+          },
+        });
+        if (response?.success) {
+          log.info('📲 Code delivered', { tabId, code: maskCode(code) });
+          return true;
+        }
+      } catch (error) {
+        log.debug('Page navigated while delivering code; retrying', {
           tabId,
           error: errorMessage(error),
         });
-      });
-      
-      log.info('📲 Code delivered (async)', { tabId, code: maskCode(code) });
-      return true;
-    } catch (error) {
-      log.warn('Delivery send failed — page may not have an OTP field to accept the code', {
-        tabId,
-        error: errorMessage(error),
-      });
-      return false;
+      }
+
+      if (Date.now() < deadline) {
+        await sleep(700);
+      }
     }
+
+    log.info('Opened link has no usable OTP field', { tabId });
+    return false;
   }
 
   /**
@@ -822,74 +764,42 @@ class LinkService {
   }
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  //  URL SECURITY VALIDATION
+  //  ACTIVATION URL VALIDATION
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+  private async canAutomaticallyActivate(linkUrl: string, email: Email, extractedAnchorText = ''): Promise<boolean> {
+    const anchorText = getAnchorInfo(email.htmlBody || email.body, linkUrl).anchorText || extractedAnchorText;
+    if (!isAutoOpenableActivationLink(linkUrl, anchorText)) {
+      log.info('Skipping link without independent activation proof', { url: maskUrl(linkUrl) });
+      return false;
+    }
+    const settings = await storageService.getSettings();
+    if (!settings.autoConfirmLinks) {
+      log.info('Skipping link activation because automatic opening is disabled', {
+        url: maskUrl(linkUrl),
+      });
+      return false;
+    }
+    return true;
+  }
+
   private validateUrl(url: string): UrlValidation {
-    // ── Parse ──
-    let parsed: URL;
     try {
-      parsed = new URL(url);
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'https:') {
+        return { safe: false, reason: 'Activation links require HTTPS' };
+      }
+      const host = parsed.hostname.toLowerCase();
+      if (parsed.username || parsed.password || host === 'localhost' ||
+          host.endsWith('.localhost') || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host) ||
+          host.startsWith('[') || host.split('.').some((label) => label.startsWith('xn--')) ||
+          /\.(?:tk|ml|ga|cf|gq|buzz|top|xyz)$/.test(host) || host.split('.').length > 10) {
+        return { safe: false, reason: 'Untrusted activation destination' };
+      }
+      return { safe: true };
     } catch {
       return { safe: false, reason: 'Malformed URL' };
     }
-
-    // ── Scheme ──
-    if (BLOCKED_SCHEMES.has(parsed.protocol)) {
-      return { safe: false, reason: `Blocked scheme: ${parsed.protocol}` };
-    }
-    // Prefer secure transport for auto-activation (still allows http only if
-    // nothing else — http is accepted for rare legacy providers).
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      return { safe: false, reason: `Non-HTTP scheme: ${parsed.protocol}` };
-    }
-
-    // ── Localhost / loopback ──
-    const host = parsed.hostname.toLowerCase();
-    if (
-      host === 'localhost' ||
-      host === '127.0.0.1' ||
-      host === '0.0.0.0' ||
-      host === '[::1]' ||
-      host.endsWith('.localhost')
-    ) {
-      return { safe: false, reason: 'Localhost / loopback' };
-    }
-
-    // ── Raw IP address ──
-    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
-      return { safe: false, reason: 'Raw IPv4 host' };
-    }
-    if (host.startsWith('[') && host.endsWith(']')) {
-      return { safe: false, reason: 'Raw IPv6 host' };
-    }
-
-    // ── Suspicious free TLDs ──
-    for (const tld of SUSPICIOUS_TLDS) {
-      if (host.endsWith(tld)) {
-        return { safe: false, reason: `Suspicious TLD: ${tld}` };
-      }
-    }
-
-    // ── Punycode / IDN homoglyph domains ──
-    const labels = host.split('.');
-    if (labels.some((l) => l.startsWith(PUNYCODE_PREFIX))) {
-      return { safe: false, reason: 'Punycode/IDN domain (homoglyph risk)' };
-    }
-
-    // ── Excessively deep subdomain nesting (common phishing pattern) ──
-    // Allow up to 10 levels to support legitimate enterprise services like:
-    //   auth.dev.internal.region.corp.client.com (7 levels)
-    if (labels.length > 10) {
-      return { safe: false, reason: `Excessive subdomains (${labels.length} levels)` };
-    }
-
-    // ── Embedded credentials ──
-    if (parsed.username || parsed.password) {
-      return { safe: false, reason: 'URL contains embedded credentials' };
-    }
-
-    return { safe: true };
   }
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -944,6 +854,10 @@ class LinkService {
         return value;
       }
     }
+    const genericCode = params.get('code');
+    if (genericCode && this.isPlausibleNumericCode(genericCode)) {
+      return genericCode;
+    }
     return null;
   }
 
@@ -952,7 +866,7 @@ class LinkService {
     for (const prefix of CODE_PATH_PREFIXES) {
       if (lower.startsWith(prefix)) {
         const remainder = pathname.substring(prefix.length).replace(/\/+$/, ''); // trim trailing slashes
-        if (remainder && this.isPlausibleCode(remainder)) {
+        if (remainder && this.isPlausibleNumericCode(remainder)) {
           return remainder;
         }
       }
@@ -962,15 +876,14 @@ class LinkService {
 
   /**
    * Determines whether a string looks like a verification code.
-   * Must be 4-12 characters, alphanumeric, not all zeros,
+   * Must be 4-10 characters, alphanumeric, not all zeros,
    * and not a common English word that happens to be short.
    */
   private isPlausibleCode(value: string): boolean {
-    if (value.length < 4 || value.length > 64) {
+    if (value.length < 4 || value.length > 10) {
       return false;
     }
-    // Allow alphanumeric plus common token separators (-, _)
-    if (!/^[a-zA-Z0-9\-_]+$/.test(value)) {
+    if (!/^[a-zA-Z0-9]+$/.test(value)) {
       return false;
     }
     if (/^0+$/.test(value)) {
@@ -984,6 +897,10 @@ class LinkService {
     }
 
     return true;
+  }
+
+  private isPlausibleNumericCode(value: string): boolean {
+    return /^\d{4,8}$/.test(value) && !/^0+$/.test(value);
   }
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1063,13 +980,15 @@ class LinkService {
     }
 
     try {
-      chrome.runtime.sendMessage({
-        action: 'LINK_ACTIVATED',
-        payload: {
-          timestamp: Date.now(),
-          source: 'linkService',
-        },
-      }).catch(() => {});
+      chrome.runtime
+        .sendMessage({
+          action: 'LINK_ACTIVATED',
+          payload: {
+            timestamp: Date.now(),
+            source: 'linkService',
+          },
+        })
+        .catch(() => {});
       log.debug('📡 Signaled activation complete');
     } catch {
       // Ignored if no external extension listeners are active

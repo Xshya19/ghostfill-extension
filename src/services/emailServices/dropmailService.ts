@@ -2,6 +2,7 @@
 
 import { EmailAccount, Email } from '../../types';
 import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
+import { getSenderSource } from '../../utils/emailIdentity';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 import { isRetryableError, throttledWarn, throwIfRetryableStatus } from './isRetryableError';
@@ -119,7 +120,7 @@ export class DropmailService {
         const textStr = contentToString(m.text || m.html);
         return {
           id: String(m.id),
-          from: contentToString(m.fromAddr, 'Unknown Sender'),
+          from: getSenderSource(undefined, m.fromAddr),
           to: contentToString(m.toAddr || account.fullEmail),
           subject: contentToString(m.headerSubject, '(No Subject)'),
           date: safeParseDate(m.receivedAt),

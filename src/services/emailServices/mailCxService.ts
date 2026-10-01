@@ -8,6 +8,7 @@ import {
   extractHtmlFromBody,
   extractTextFromBody,
 } from '../../utils/core';
+import { getSenderSource } from '../../utils/emailIdentity';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 import { isRetryableError, throttledWarn, throwIfRetryableStatus } from './isRetryableError';
@@ -84,7 +85,7 @@ export class MailCxService {
       return messages.map((msg: any, idx: number) => {
         const email: Email = {
           id: String(msg.id || msg.messageId),
-          from: contentToString(msg.from || msg.sender, 'Unknown Sender'),
+          from: getSenderSource(undefined, msg.from || msg.sender),
           to: contentToString(msg.to || fullEmail),
           subject: contentToString(msg.subject, '(No Subject)'),
           date: safeParseDate(msg.date || msg.createdAt),
@@ -129,7 +130,7 @@ export class MailCxService {
 
       return {
         id: String(msg.id || emailId),
-        from: contentToString(msg.from || msg.sender, 'Unknown Sender'),
+        from: getSenderSource(undefined, msg.from || msg.sender),
         to: contentToString(msg.to || fullEmail),
         subject: contentToString(msg.subject, '(No Subject)'),
         date: safeParseDate(msg.date || msg.createdAt),

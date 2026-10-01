@@ -302,7 +302,7 @@ function registerDefaultActions(): void {
 
   // ── Copy Last OTP ──
   register('copy-last-otp', async (ctx) => {
-    const lastOTP = await otpService.getLastOTP();
+    const lastOTP = await otpService.getLastOTP({ includeUsed: true });
     if (!lastOTP) {
       return { notifyType: 'error', notifyTitle: 'No OTP', notifyMessage: 'No OTP available' };
     }
@@ -637,7 +637,7 @@ async function processResult(result: ActionResult, ctx: ActionContext): Promise<
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 export async function updateOTPMenuItem(): Promise<void> {
-  const lastOTP = await otpService.getLastOTP();
+  const lastOTP = await otpService.getLastOTP({ includeUsed: true });
 
   if (!lastOTP) {
     if (lastOTPState !== null) {

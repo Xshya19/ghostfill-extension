@@ -117,7 +117,11 @@ export interface LastOTP {
   expiresAt?: number;
   usedAt?: number;
   confidence: number;
+  /** Set only after the extraction decision allows automatic code delivery. */
+  autoFillEligible?: boolean;
 }
+
+export const LAST_OTP_MAX_AGE_MS = 10 * 60_000;
 
 export interface BehaviorData {
   sitePreferences: Record<string, SitePreference>;
@@ -279,7 +283,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
     minNumbers: 2,
     minSymbols: 2,
   },
-  preferredEmailService: 'catchmail',
+  preferredEmailService: 'driftz',
   autoCheckInbox: true,
   checkIntervalSeconds: 5,
   darkMode: true,
@@ -289,7 +293,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   keyboardShortcuts: true,
   notifications: true,
   soundEnabled: true,
-  autoConfirmLinks: true, // Automatically open activation links in new tabs
+  autoConfirmLinks: true,
   saveHistory: true,
   historyRetentionDays: 30,
   clearOnClose: false,

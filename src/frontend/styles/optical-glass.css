@@ -1,0 +1,814 @@
+/* Shared material composition, imported after each page's layout CSS.
+   Global tokens own color. Shape-matched controls bend only their backdrop;
+   the reading layer remains stable. Directional rim lighting and meniscus
+   depth adapt liquid_glass_widgets' material model to CSS/SVG. */
+:root {
+  --gf-lens-fill: var(--gf-glass-control);
+  --gf-lens-fill-hover: var(--gf-glass-control-hover);
+  --gf-lens-accent: var(--gf-glass-accent);
+  --gf-lens-accent-hover: var(--gf-primary-fill-deep);
+  --gf-lens-rim: var(--gf-glass-stroke);
+  --gf-lens-specular: var(--gf-glass-highlight);
+  --gf-lens-side: var(--gf-glass-border);
+  --gf-lens-shadow: var(--gf-glass-control-shadow);
+  --gf-content-glass: var(--gf-glass-content);
+  --gf-content-glass-strong: var(--gf-glass-content-strong);
+  --gf-content-rim: var(--gf-glass-stroke);
+  --gf-optic-canvas: var(--gf-ambient-canvas);
+}
+
+/* A visible color field gives the optical rim something to bend. */
+.app,
+.app .detail-view-content,
+.app .onboarding-overlay,
+body:has(.options-app) {
+  background: var(--gf-optic-canvas);
+}
+
+body:has(.options-app) {
+  background-attachment: fixed;
+}
+
+/* Text-heavy surfaces are translucent but stable. Nested backdrop filters
+   made the prior design muddy and obscured the bending on the control layer. */
+.app
+  :is(
+    .memphis-card,
+    .identity-card,
+    .inbox-section,
+    .alias-profile-card,
+    .alias-inbox-card,
+    .alias-history-card,
+    .email-generator-card,
+    .hub-gmail-not-connected,
+    .hub-provider-not-connected,
+    .efficiency-tip-card,
+    .alias-setup-card,
+    .onboarding-feature-item
+  ),
+.options-app .settings-section {
+  background: var(--gf-glass-panel);
+  border-color: var(--gf-content-rim);
+  box-shadow:
+    var(--gf-glass-inner),
+    0 6px 20px rgba(var(--gf-ink-rgb), 0.025);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.app :is(.alias-message-modal, .confirmation-modal, .help-card),
+.options-app
+  :is(.modal-content, .command-palette, .gf-custom-select-panel, .options-save-indicator) {
+  background: var(--gf-glass-solid);
+  border-color: var(--gf-glass-stroke);
+  box-shadow: var(--gf-glass-elevated-shadow), var(--gf-glass-inner);
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .app :is(.alias-message-modal, .confirmation-modal, .help-card),
+  .options-app
+    :is(.modal-content, .command-palette, .gf-custom-select-panel, .options-save-indicator) {
+    background: var(--gf-glass-elevated);
+    -webkit-backdrop-filter: blur(var(--gf-glass-blur)) saturate(135%);
+    backdrop-filter: blur(var(--gf-glass-blur)) saturate(135%);
+  }
+}
+
+.options-app .options-save-indicator {
+  transition:
+    opacity 180ms var(--gf-ease),
+    transform 180ms var(--gf-ease);
+}
+
+@starting-style {
+  .options-app .options-save-indicator {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.app
+  :is(
+    .inbox-item,
+    .inbox-item-default,
+    .alias-inbox-item,
+    .alias-history-item,
+    .email-viewer-text-body,
+    .email-hero-link-banner,
+    .alias-message-modal-body
+  ),
+.options-app :is(.setting-item, .shortcut-reference, .storage-monitor, .about-link) {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.app :is(.gf-input, .gf-card),
+.options-app
+  :is(
+    input[type='text'],
+    input[type='number'],
+    input[type='password'],
+    input[type='email'],
+    input[type='url'],
+    select,
+    textarea
+  ) {
+  background: var(--gf-content-glass-strong);
+  border-color: var(--gf-content-rim);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.app :is(.inbox-item, .inbox-item-default, .alias-inbox-item, .alias-history-item) {
+  background: rgba(var(--gf-surface-rgb), 0.25);
+  box-shadow: none;
+}
+
+.app .hub-email-panel > .inbox-section .inbox-item {
+  background: transparent;
+  border-color: transparent;
+}
+
+.app .hub-email-panel > .inbox-section .inbox-item:hover,
+.app .hub-email-panel > .inbox-section .inbox-item:focus-within {
+  background: rgba(var(--gf-primary-rgb), 0.045);
+}
+
+.app :is(.inbox-item-subject, .inbox-subject-default) {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.app .hub-email-panel > .inbox-section .inbox-item-subject {
+  font-size: 12px;
+}
+
+.app .inbox-item-preview {
+  font-size: 11.5px;
+}
+
+.app :is(.inbox-item, .inbox-item-default, .alias-inbox-item, .alias-history-item):hover,
+.app :is(.inbox-item, .inbox-item-default, .alias-inbox-item, .alias-history-item):focus-within {
+  background: rgba(var(--gf-surface-rgb), 0.46);
+  border-color: var(--gf-lens-rim);
+}
+
+.app .email-viewer-text-body {
+  background: var(--gf-content-glass-strong);
+}
+
+/* The inset glint and side light stay visible over bright and dark backdrops. */
+.app
+  :is(
+    .hub-email-selector,
+    .alias-tabs,
+    .hub-email-selector-bg,
+    .alias-tab-bg,
+    .header-actions .icon-button,
+    .header-actions .gf-icon-btn,
+    .identity-actions .action-icon,
+    .email-back-btn,
+    .alias-inbox-refresh,
+    .alias-message-modal-close,
+    .alias-message-modal-view-toggle,
+    .alias-view-toggle-btn--active
+  ),
+.options-app
+  :is(
+    .sidebar-nav-item[aria-selected='true'],
+    .command-palette-trigger-btn,
+    .theme-toggle-header-btn,
+    .gf-custom-select-trigger
+  ),
+:is(.app, .options-app)
+  :is(.gf-btn:not(.gf-btn--ghost, .gf-btn--danger), .gf-icon-btn:not(.gf-icon-btn--danger)) {
+  border-color: var(--gf-lens-rim);
+  background: var(--gf-lens-fill);
+  box-shadow:
+    var(--gf-lens-shadow),
+    inset 0 1px 0 var(--gf-lens-specular),
+    inset 0 -1px 0 var(--gf-lens-side),
+    inset 1px 0 2px -1px var(--gf-lens-side);
+}
+
+.app :is(.hub-email-selector, .alias-tabs, .alias-message-modal-view-toggle) {
+  border-radius: 999px;
+}
+
+.app :is(.hub-email-selector-bg, .alias-tab-bg, .alias-view-toggle-btn--active) {
+  background: var(--gf-lens-fill-hover);
+  box-shadow:
+    0 3px 9px rgba(20, 43, 75, 0.12),
+    inset 0 1px 0 var(--gf-lens-specular);
+}
+
+.app :is(.header, .detail-view-header),
+.options-app :is(.options-header, .settings-sidebar) {
+  background: var(--gf-content-glass);
+  border-color: var(--gf-content-rim);
+  box-shadow: var(--gf-glass-inner);
+  -webkit-backdrop-filter: blur(24px) saturate(135%);
+  backdrop-filter: blur(24px) saturate(135%);
+}
+
+/* The reader's glass backing owns the blur; its chrome never adds a second lens. */
+.app :is(.alias-message-modal-header, .alias-message-modal-actions) {
+  background: var(--gf-glass-clear);
+  border-color: var(--gf-glass-stroke);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.app
+  :is(
+    .gf-btn--primary,
+    .email-hero-otp-btn,
+    .email-hero-link-btn,
+    .alias-message-action-btn--primary,
+    .otp-action-primary,
+    .alias-connect-btn,
+    .alias-oauth-connect-btn,
+    .hub-gmail-connect-btn,
+    .onboarding-btn
+  ),
+.options-app .gf-btn--primary {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.36);
+  background: var(--gf-lens-accent);
+  box-shadow:
+    0 7px 17px rgba(var(--gf-primary-rgb), 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.37),
+    inset 0 -1px 0 rgba(0, 45, 121, 0.14);
+}
+
+.app
+  :is(
+    .gf-btn--primary,
+    .email-hero-otp-btn,
+    .email-hero-link-btn,
+    .alias-message-action-btn--primary,
+    .otp-action-primary,
+    .alias-connect-btn,
+    .alias-oauth-connect-btn,
+    .hub-gmail-connect-btn,
+    .onboarding-btn
+  ):hover:not(:disabled),
+.options-app .gf-btn--primary:hover:not(:disabled) {
+  background: var(--gf-lens-accent-hover);
+}
+
+.app
+  :is(
+    .header-actions .icon-button,
+    .header-actions .gf-icon-btn,
+    .identity-actions .action-icon,
+    .email-back-btn,
+    .alias-inbox-refresh,
+    .alias-message-modal-close
+  ):hover,
+.options-app
+  :is(.command-palette-trigger-btn, .theme-toggle-header-btn, .gf-custom-select-trigger):hover,
+:is(.app, .options-app)
+  :is(
+    .gf-btn:not(.gf-btn--primary, .gf-btn--danger, .gf-btn--ghost),
+    .gf-icon-btn:not(.gf-icon-btn--danger)
+  ):hover:not(:disabled) {
+  background: var(--gf-lens-fill-hover);
+  border-color: var(--gf-lens-rim);
+}
+
+/* Navigation keeps its geometry and labels stable while the lens moves. */
+.app
+  :is(
+    .hub-email-selector,
+    .alias-tabs,
+    .hub-email-selector-bg,
+    .alias-tab-bg,
+    .alias-message-modal-view-toggle
+  ),
+:is(.app, .options-app) .gf-tabs {
+  -webkit-backdrop-filter: blur(8px) saturate(160%);
+  backdrop-filter: blur(8px) saturate(160%);
+}
+
+.app
+  :is(
+    .email-hero-otp-btn,
+    .email-hero-link-btn,
+    .alias-message-action-btn,
+    .alias-view-toggle-btn--active,
+    .otp-action-primary,
+    .alias-connect-btn,
+    .alias-oauth-connect-btn,
+    .hub-gmail-connect-btn,
+    .onboarding-btn
+  ),
+.options-app :is(.command-palette-trigger-btn, .theme-toggle-header-btn, .gf-custom-select-trigger),
+:is(.app, .options-app) .gf-btn:not(.gf-btn--ghost, .gf-btn--danger) {
+  -webkit-backdrop-filter: blur(5px) saturate(160%);
+  backdrop-filter: blur(5px) saturate(160%);
+}
+
+.options-app .gf-custom-select-trigger {
+  -webkit-backdrop-filter: blur(5px) saturate(160%);
+  backdrop-filter: blur(5px) saturate(160%);
+  -webkit-backdrop-filter: blur(5px) url(#gf-optic-wide) saturate(160%);
+  backdrop-filter: blur(5px) url(#gf-optic-wide) saturate(160%);
+}
+
+/* Directional key light and a weaker opposing glint describe the curved rim.
+   The mask excludes the center, so this can never wash out a control's label. */
+.options-app :is(.command-palette-trigger-btn, .theme-toggle-header-btn, .gf-custom-select-trigger),
+:is(.app, .options-app) .gf-btn:not(.gf-btn--ghost, .gf-btn--danger) {
+  position: relative;
+  isolation: isolate;
+}
+
+.options-app
+  :is(.command-palette-trigger-btn, .theme-toggle-header-btn, .gf-custom-select-trigger)::after,
+:is(.app, .options-app) .gf-btn:not(.gf-btn--ghost, .gf-btn--danger)::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  padding: 1px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from 135deg,
+    transparent,
+    var(--gf-glass-highlight) 18%,
+    transparent 32%,
+    transparent 52%,
+    var(--gf-glass-border) 68%,
+    transparent 82%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.7;
+  transition: opacity 160ms var(--gf-ease);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .options-app
+    :is(
+      .command-palette-trigger-btn,
+      .theme-toggle-header-btn,
+      .gf-custom-select-trigger
+    ):hover:not(:disabled)::after,
+  :is(.app, .options-app) .gf-btn:not(.gf-btn--ghost, .gf-btn--danger):hover:not(:disabled)::after {
+    opacity: 1;
+  }
+}
+
+.app
+  :is(
+    .header-actions .icon-button,
+    .header-actions .gf-icon-btn,
+    .identity-actions .action-icon,
+    .email-back-btn,
+    .alias-inbox-refresh,
+    .alias-message-modal-close
+  ),
+:is(.app, .options-app) .gf-icon-btn:not(.gf-icon-btn--danger) {
+  -webkit-backdrop-filter: blur(7px) saturate(160%);
+  backdrop-filter: blur(7px) saturate(160%);
+  -webkit-backdrop-filter: blur(7px) url(#gf-optic-icon) saturate(145%);
+  backdrop-filter: blur(7px) url(#gf-optic-icon) saturate(145%);
+}
+
+/* Inbox actions are the next decision after scanning a message. Give each a
+   full pointer target and its own small optical surface. */
+.app :is(.otp-badge, .link-badge) {
+  min-height: 44px;
+  border-radius: 12px;
+  border-color: var(--gf-lens-rim);
+  background: var(--gf-lens-fill);
+  box-shadow:
+    inset 0 1px 0 var(--gf-lens-specular),
+    0 2px 7px rgba(23, 48, 80, 0.09);
+  -webkit-backdrop-filter: blur(7px) saturate(160%);
+  backdrop-filter: blur(7px) saturate(160%);
+}
+
+.app :is(.otp-badge, .link-badge):hover:not(:disabled) {
+  background: var(--gf-lens-fill-hover);
+}
+
+.options-app .toggle::before {
+  background: rgba(var(--gf-ink-rgb), 0.14);
+  border-color: var(--gf-lens-rim);
+  box-shadow: inset 0 1px 0 var(--gf-lens-specular);
+  -webkit-backdrop-filter: blur(4px) saturate(160%);
+  backdrop-filter: blur(4px) saturate(160%);
+}
+
+.options-app .toggle[aria-checked='true']::before {
+  background: var(--gf-lens-accent);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.options-app .toggle-slider {
+  background: var(--gf-switch-thumb);
+  border-color: rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0 2px 5px rgba(0, 0, 0, 0.17),
+    inset 0 1px 0 var(--gf-lens-specular);
+}
+
+/* First run reads as one grouped list instead of three cards in a card. */
+.app .onboarding-features {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--gf-content-rim);
+  border-radius: 16px;
+  background: var(--gf-content-glass);
+  box-shadow: inset 0 1px 0 var(--gf-lens-specular);
+}
+
+.app .onboarding-feature-item {
+  min-height: 56px;
+  padding: 8px 11px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.app .onboarding-feature-item + .onboarding-feature-item {
+  border-top: 1px solid var(--gf-glass-stroke);
+}
+
+.app .onboarding-feature-title {
+  font-size: 12.5px;
+  font-weight: 680;
+}
+
+.app .onboarding-feature-sub {
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+
+/* Popup scrolling remains available by wheel, touch, and keyboard while the
+   always-visible Windows scrollbar stays out of the 375px reading column. */
+.app
+  :is(
+    .alias-message-modal-body,
+    .hub-inbox-scroll,
+    .inbox-list,
+    .inbox-list-default,
+    .inbox-list-scroll,
+    .detail-content-scroll,
+    .detail-view-content,
+    .alias-tab-content-area,
+    .alias-inbox-list,
+    .alias-history-list
+  ) {
+  scrollbar-width: none;
+}
+
+.app
+  :is(
+    .alias-message-modal-body,
+    .hub-inbox-scroll,
+    .inbox-list,
+    .inbox-list-default,
+    .inbox-list-scroll,
+    .detail-content-scroll,
+    .detail-view-content,
+    .alias-tab-content-area,
+    .alias-inbox-list,
+    .alias-history-list
+  )::-webkit-scrollbar {
+  display: none;
+}
+
+/* Settings uses one grouped surface per topic. A quiet heading and hairline
+   row separators carry structure without a stack of tinted rectangles. */
+.options-app .settings-section {
+  border-radius: 18px;
+  box-shadow:
+    var(--gf-glass-inner),
+    0 6px 20px rgba(var(--gf-ink-rgb), 0.025);
+}
+
+.options-app .settings-section > h3 {
+  min-height: 56px;
+  background: transparent;
+  border-bottom-color: var(--gf-glass-stroke);
+  border-radius: 17px 17px 0 0;
+}
+
+.options-app .setting-item {
+  min-height: 70px;
+  padding-block: 14px;
+}
+
+.options-app .section-icon {
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(var(--gf-primary-rgb), 0.12);
+  border-radius: 9px;
+  background: linear-gradient(
+    145deg,
+    rgba(var(--gf-primary-rgb), 0.14),
+    rgba(var(--gf-primary-rgb), 0.06)
+  );
+  box-shadow: inset 0 1px 0 var(--gf-glass-border);
+}
+
+.options-app .sidebar-nav-item[aria-selected='true'] {
+  background:
+    linear-gradient(130deg, rgba(var(--gf-primary-rgb), 0.14), rgba(var(--gf-primary-rgb), 0.065)),
+    var(--gf-glass-control);
+  border-color: rgba(var(--gf-primary-rgb), 0.18);
+  color: var(--gf-primary-text);
+  box-shadow:
+    var(--gf-glass-inner),
+    0 2px 6px rgba(var(--gf-ink-rgb), 0.04);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.options-app .settings-sidebar {
+  background: var(--gf-glass-panel);
+  box-shadow: var(--gf-glass-shadow), var(--gf-glass-inner);
+  /* The rail supplies a platter, not a second refractive layer under controls. */
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.options-app .options-header {
+  box-shadow:
+    inset 0 -1px 0 var(--gf-glass-border),
+    0 3px 16px rgba(var(--gf-ink-rgb), 0.035);
+}
+
+/* Light material hierarchy: clear navigation over a pearl canvas, with a
+   brighter backing for content. Utility icons keep their 44px targets without
+   each gaining the elevation of a floating window. */
+[data-theme='light'] .app :is(.header-actions, .identity-actions) {
+  --gf-glass-control-shadow: none;
+}
+
+[data-theme='light'] .app :is(.identity-icon, .inbox-item-avatar, .email-viewer-avatar) {
+  border-color: transparent;
+  background: rgba(var(--gf-primary-rgb), 0.075);
+  box-shadow: none;
+}
+
+[data-theme='light'] .app .identity-icon.password {
+  background: rgba(var(--gf-mint-rgb), 0.075);
+}
+
+[data-theme='light'] .app .identity-row + .identity-row {
+  border-top-color: var(--gf-glass-stroke);
+}
+
+[data-theme='light'] .app .hub-email-panel > .inbox-section .inbox-item {
+  min-height: 84px;
+  gap: 11px;
+  padding-block: 13px;
+}
+
+[data-theme='light'] .app .hub-email-panel > .inbox-section .inbox-item-from {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+[data-theme='light'] .app .hub-email-panel > .inbox-section .inbox-item-subject {
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 500;
+}
+
+[data-theme='light'] .app .hub-email-panel > .inbox-section .inbox-item-open-chevron {
+  color: var(--gf-ink-soft);
+  opacity: 1;
+}
+
+[data-theme='light'] .options-app .settings-sidebar {
+  background: var(--gf-glass-content);
+  border-color: var(--gf-glass-stroke);
+  box-shadow: var(--gf-glass-shadow);
+  -webkit-backdrop-filter: blur(24px) saturate(135%);
+  backdrop-filter: blur(24px) saturate(135%);
+}
+
+[data-theme='light'] .options-app .settings-section {
+  border-radius: 16px;
+  box-shadow: inset 0 1px 0 var(--gf-glass-highlight);
+}
+
+[data-theme='light'] .options-app .settings-section > h3 {
+  min-height: 58px;
+  padding-block: 14px;
+  border-radius: 15px 15px 0 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+[data-theme='light'] .options-app .section-icon {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-theme='light'] .options-app .sidebar-nav-item[aria-selected='true'] {
+  background: rgba(var(--gf-primary-rgb), 0.1);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+[data-theme='light'] .options-app .options-header {
+  border-color: var(--gf-glass-stroke);
+  box-shadow: none;
+}
+
+[data-theme='light']
+  .options-app
+  :is(
+    .command-palette-trigger-btn,
+    .theme-toggle-header-btn,
+    .gf-custom-select-trigger,
+    .gf-btn:not(.gf-btn--primary, .gf-btn--danger, .gf-btn--ghost)
+  ) {
+  border-color: var(--gf-glass-stroke);
+  box-shadow: var(--gf-glass-inner), var(--gf-glass-control-shadow);
+}
+
+.options-app button:focus-visible:active {
+  transform: none !important;
+}
+
+/* Respect both user transparency and contrast settings. */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  [data-theme='light'] .options-app :is(.settings-sidebar, .settings-section),
+  [data-theme='light']
+    .options-app
+    :is(
+      .command-palette-trigger-btn,
+      .theme-toggle-header-btn,
+      .gf-custom-select-trigger,
+      .gf-btn:not(.gf-btn--primary, .gf-btn--danger, .gf-btn--ghost)
+    ) {
+    background: var(--gf-surface);
+    border-color: var(--gf-line-2);
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  [data-theme='light'] .options-app .sidebar-nav-item[aria-selected='true'] {
+    background: var(--gf-primary-soft);
+    border-color: var(--gf-primary);
+  }
+
+  .options-app
+    :is(.command-palette-trigger-btn, .theme-toggle-header-btn, .gf-custom-select-trigger)::after,
+  :is(.app, .options-app) .gf-btn::after {
+    display: none;
+  }
+  .app,
+  .app .detail-view-content,
+  .app .onboarding-overlay,
+  .app .onboarding-features,
+  body:has(.options-app) {
+    background: var(--gf-bg);
+  }
+
+  .app
+    :is(
+      .memphis-card,
+      .identity-card,
+      .inbox-section,
+      .alias-profile-card,
+      .alias-inbox-card,
+      .alias-history-card,
+      .email-generator-card,
+      .hub-gmail-not-connected,
+      .hub-provider-not-connected,
+      .efficiency-tip-card,
+      .alias-setup-card,
+      .confirmation-modal,
+      .help-card,
+      .onboarding-feature-item,
+      .alias-message-modal
+    ),
+  .options-app
+    :is(
+      .settings-section,
+      .modal-content,
+      .command-palette,
+      .gf-custom-select-panel,
+      .options-save-indicator
+    ),
+  .app :is(.header, .detail-view-header, .alias-message-modal-header, .alias-message-modal-actions),
+  .options-app :is(.options-header, .settings-sidebar),
+  .app
+    :is(
+      .hub-email-selector,
+      .alias-tabs,
+      .hub-email-selector-bg,
+      .alias-tab-bg,
+      .alias-message-modal-view-toggle,
+      .header-actions .icon-button,
+      .header-actions .gf-icon-btn,
+      .identity-actions .action-icon,
+      .email-back-btn,
+      .alias-inbox-refresh,
+      .alias-message-modal-close,
+      .email-hero-otp-btn,
+      .email-hero-link-btn,
+      .alias-message-action-btn,
+      .alias-view-toggle-btn--active,
+      .otp-action-primary,
+      .alias-connect-btn,
+      .alias-oauth-connect-btn,
+      .hub-gmail-connect-btn,
+      .onboarding-btn,
+      .otp-badge,
+      .link-badge
+    ),
+  .options-app
+    :is(
+      .sidebar-nav-item[aria-selected='true'],
+      .command-palette-trigger-btn,
+      .theme-toggle-header-btn,
+      .gf-custom-select-trigger,
+      .toggle::before,
+      .toggle-slider
+    ),
+  :is(.app, .options-app) :is(.gf-btn, .gf-icon-btn, .gf-tabs),
+  .app
+    :is(
+      .gf-input,
+      .gf-card,
+      .inbox-item,
+      .inbox-item-default,
+      .alias-inbox-item,
+      .alias-history-item,
+      .alias-message-modal-body,
+      .email-viewer-text-body
+    ),
+  .options-app
+    :is(
+      input[type='text'],
+      input[type='number'],
+      input[type='password'],
+      input[type='email'],
+      input[type='url'],
+      select,
+      textarea
+    ) {
+    background: var(--gf-surface);
+    border-color: var(--gf-line-2);
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .app
+    :is(
+      .gf-btn--primary,
+      .email-hero-otp-btn,
+      .email-hero-link-btn,
+      .alias-message-action-btn--primary,
+      .otp-action-primary,
+      .alias-connect-btn,
+      .alias-oauth-connect-btn,
+      .hub-gmail-connect-btn,
+      .onboarding-btn
+    ),
+  .options-app .gf-btn--primary {
+    color: #fff;
+    background: var(--gf-primary-fill);
+  }
+
+  .options-app .toggle[aria-checked='true']::before {
+    background: var(--gf-primary-fill);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .options-app .options-save-indicator {
+    transform: none;
+    transition: none;
+  }
+  .options-app button:active:not(:disabled) {
+    transform: none !important;
+  }
+  .options-app
+    :is(.command-palette-trigger-btn, .theme-toggle-header-btn, .gf-custom-select-trigger)::after,
+  :is(.app, .options-app) .gf-btn::after {
+    transition: none;
+  }
+}

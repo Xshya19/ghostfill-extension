@@ -293,15 +293,15 @@ describe('assessEmailDecision() — action selection', () => {
     expect(d.action).toBe('fill-otp');
   });
 
-  it('fill-otp even for low-confidence OTP (base confidence 0.55)', () => {
+  it('requires review when a confidence floor would otherwise promote a weak code', () => {
     const d = assessEmailDecision({
       extraction: makeExtraction({
         intent: 'verification',
         otp: makeOtp({ code: '123456', confidence: 0.1, strategy: 'emergency-regex' }),
       }),
     });
-    // base confidence = max(0.1, 0.55) = 0.55 >= 0.45 threshold
-    expect(d.action).toBe('fill-otp');
+    expect(d.action).toBe('show-review');
+    expect(d.canAutoAct).toBe(false);
   });
 
   it('ignore for marketing emails with no OTP/link', () => {
@@ -376,7 +376,8 @@ describe('assessEmailDecision() — domain context', () => {
       }),
       sender: 'noreply@example.com',
     });
-    expect(d.reasons).toContain('sender-domain-differs-from-link');
+    expect(d.warnings).toContain('sender-domain-differs-from-link');
+    expect(d.canAutoAct).toBe(false);
   });
 
   it('expected domain matches link — noted', () => {

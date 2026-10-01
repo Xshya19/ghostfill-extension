@@ -37,9 +37,14 @@ class CssMinifyPlugin {
 
 module.exports = (env = {}, argv = {}) => {
   const isDev = argv.mode !== 'production';
-  const buildProfile = env.profile === 'full' ? 'full' : 'public';
+  // Full is the supported default distribution. The restricted profile must
+  // be requested explicitly so a plain webpack invocation cannot silently
+  // omit Gmail/Google alias functionality.
+  const buildProfile = env.profile === 'public' ? 'public' : 'full';
   const trustedTypesFallback = './src/utils/sanitization.core.ts';
-  const publicManifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'manifest.json'), 'utf8'));
+  const publicManifest = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, 'manifest.json'), 'utf8')
+  );
   const fullManifestOverrides = JSON.parse(
     fs.readFileSync(path.resolve(__dirname, 'manifest.full-overrides.json'), 'utf8')
   );
@@ -143,7 +148,6 @@ module.exports = (env = {}, argv = {}) => {
         : [],
     },
     // CSP + perf handled per-config
-
   };
 
   // Configuration for Background Script (Service Worker) -> Target: webworker
@@ -297,6 +301,18 @@ module.exports = (env = {}, argv = {}) => {
           { from: 'manifest.json', to: 'manifest.json', transform: buildManifest },
           { from: 'public/assets', to: 'assets' },
           { from: 'public/_locales', to: '_locales' },
+          { from: 'Update GhostFill.cmd', to: 'Update GhostFill.cmd' },
+          { from: 'scripts/update-extension.ps1', to: 'scripts/update-extension.ps1' },
+          {
+            from: 'docs/third-party/liquid-glass-react-LICENSE',
+            to: 'THIRD_PARTY_NOTICES/liquid-glass-react-LICENSE.txt',
+            toType: 'file',
+          },
+          {
+            from: 'docs/third-party/liquid-glass-widgets-LICENSE',
+            to: 'THIRD_PARTY_NOTICES/liquid-glass-widgets-LICENSE.txt',
+            toType: 'file',
+          },
         ],
       }),
     ],

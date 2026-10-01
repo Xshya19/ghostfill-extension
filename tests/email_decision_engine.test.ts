@@ -115,7 +115,7 @@ describe('Email decision engine', () => {
     expect(decision.reasons).toContain('link-matches-current-site-context');
   });
 
-  it('holds a suspicious standalone link for review', () => {
+  it('requires review for an HTTP link on a raw IP address', () => {
     const decision = assessEmailDecision({
       extraction: extraction({
         intent: 'activation',
@@ -137,7 +137,7 @@ describe('Email decision engine', () => {
     expect(decision.warnings).toContain('non-https-link');
   });
 
-  it('fills the OTP but does not recommend opening a risky companion link', () => {
+  it('fills the OTP without opening a suspicious companion link', () => {
     const decision = assessEmailDecision({
       extraction: extraction({
         intent: 'verification',
@@ -215,7 +215,7 @@ describe('Email decision engine', () => {
     expect(decision.warnings).toContain('link-does-not-match-current-site-context');
   });
 
-  it('holds high link-density activation emails for review', () => {
+  it('requires review when a many-link email points off site', () => {
     const decision = assessEmailDecision({
       extraction: extraction({
         intent: 'activation',

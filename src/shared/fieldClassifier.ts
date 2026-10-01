@@ -118,6 +118,9 @@ export function classifyField(
       case 'otp':
         return 'otp';
       case 'username':
+      case 'first-name':
+      case 'last-name':
+      case 'full-name':
         return 'user';
       default:
         return 'generic';

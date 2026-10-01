@@ -1,5 +1,5 @@
 /**
- * HARD: Intelligent Extraction + DomEngine + ActivationLinkGuard extreme
+ * HARD: Intelligent Extraction + DomEngine extreme
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -7,7 +7,6 @@ import { extractAll } from '../src/services/intelligentExtractor';
 import { extractOTP } from '../src/services/extraction/otpExtractor';
 import { extractActivationLink } from '../src/services/extraction/linkExtractor';
 import { analyzeEmailZones } from '../src/services/extraction/zoneAnalyzer';
-import { scoreActivationLink, isAutoOpenableActivationLink } from '../src/services/extraction/activationLinkGuard';
 import { detectProvider } from '../src/services/extraction/providerDetector';
 import { deepQuerySelectorAll, getUniqueSelector } from '../src/utils/core';
 
@@ -71,32 +70,6 @@ describe('ProviderDetector — phishing boost guard', () => {
   it('detects known providers', () => {
     const provider = detectProvider('security@github.com', 'Your GitHub verification code is 123456', '', 'github.com');
     expect(provider).toBeDefined();
-  });
-});
-
-describe('ActivationLinkGuard — strong 50-synonym path vs unsubscribe trap', () => {
-  it('rejects unsubscribe urls', () => {
-    const evil = 'https://evil.com/unsubscribe?user=123';
-    const canOpen = isAutoOpenableActivationLink(evil, '<a href="https://evil.com/unsubscribe">Unsubscribe</a>');
-    expect(canOpen).toBe(false);
-  });
-
-  it('strong path /confirm_account with token scores high quality and auto-openable', () => {
-    const url = 'https://app.example.com/confirm_account?token=abcdef1234567890';
-    const r = scoreActivationLink(url, `<a href="${url}">Confirm My Account</a>`, 'Please confirm your account');
-    expect(r.quality).toBeGreaterThan(10);
-    expect(isAutoOpenableActivationLink(url, `<a href="${url}">Confirm</a>`)).toBe(true);
-  });
-
-  it('marketing /terms and app store links never auto-open', () => {
-    expect(isAutoOpenableActivationLink('https://example.com/privacy-policy', '<a>Privacy</a>')).toBe(false);
-    expect(isAutoOpenableActivationLink('https://play.google.com/store/apps/details?id=com.example', '<a>App</a>')).toBe(false);
-  });
-
-  it('hash fragment token #token=abc is considered', () => {
-    const url = 'https://example.com/verify#token=sec123';
-    const r = scoreActivationLink(url, `<a href="${url}">Verify</a>`, 'verify');
-    expect(r.quality).toBeGreaterThan(10);
   });
 });
 

@@ -7,7 +7,10 @@
 // the Mail.tm (Mercure) stream is hosted here. When an event arrives we message
 // the background worker, which wakes it up to run the normal inbox pipeline.
 
+import { createLogger } from '../utils/logger';
 import { isAllowedMailTmSseRequest } from '../utils/ssePolicy';
+
+const log = createLogger('Offscreen');
 
 // ─────────────────────────────────────────────────────────────
 // SSE Relay (Mail.tm / Mercure)
@@ -89,7 +92,7 @@ function scheduleRelayReconnect(): void {
   }
 
   if (reconnectAttempts >= SSE_MAX_RECONNECTS) {
-    console.warn('[offscreen] SSE relay gave up after', reconnectAttempts, 'attempts');
+    log.warn('SSE relay gave up after reconnect limit', { attempts: reconnectAttempts });
     notifyBackground('SSE_RELAY_FAILED', { accountId, attempts: reconnectAttempts });
     return;
   }
@@ -141,7 +144,7 @@ async function runSseRelay(url: string, token: string, accountId: string): Promi
     sseRelay.connected = true;
     sseRelay.reconnectAttempts = 0;
     sseRelay.lastEventAt = Date.now();
-    console.info('[offscreen] SSE relay connected');
+    log.info('SSE relay connected');
     notifyBackground('SSE_RELAY_OPEN', { accountId });
 
     // A successful stream means Mercure is healthy — tell the worker so it can
@@ -179,7 +182,7 @@ async function runSseRelay(url: string, token: string, accountId: string): Promi
     }
 
     sseRelay.connected = false;
-    console.warn('[offscreen] SSE relay stream ended');
+    log.warn('SSE relay stream ended');
     notifyBackground('SSE_RELAY_CLOSED', { accountId, reason: 'stream-ended' });
     scheduleRelayReconnect();
   } catch (error) {
@@ -193,7 +196,7 @@ async function runSseRelay(url: string, token: string, accountId: string): Promi
 
     sseRelay.connected = false;
     const reason = error instanceof Error ? error.message : String(error);
-    console.warn('[offscreen] SSE relay error:', reason);
+    log.warn('SSE relay error', { reason });
     notifyBackground('SSE_RELAY_CLOSED', { accountId, reason });
     scheduleRelayReconnect();
   }
@@ -203,7 +206,7 @@ async function runSseRelay(url: string, token: string, accountId: string): Promi
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // SECURITY FIX: Verify message origin
   if (sender.id !== chrome.runtime.id) {
-    console.warn('Blocked message from unauthorized sender:', sender.id);
+    log.warn('Blocked message from unauthorized sender', { senderId: sender.id });
     return false;
   }
 
@@ -270,12 +273,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // ---- Handle unrecognized messages gracefully ----
     // Do not log warning for messages without target='offscreen-doc' as they might be for other listeners
     if (message.target === 'offscreen-doc') {
-      console.warn('Unrecognized message action in offscreen document:', message);
+      log.warn('Unrecognized message action in offscreen document', {
+        action: typeof message.type === 'string' ? message.type : 'unknown',
+      });
       sendResponse({ success: false, error: 'Unrecognized action' });
       return true;
     }
   } catch (error) {
-    console.error('Error handling offscreen message:', error);
+    log.error('Error handling offscreen message', error);
     sendResponse({ success: false, error: String(error) });
   }
 

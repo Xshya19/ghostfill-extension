@@ -34,13 +34,11 @@ export interface ActivationLinkVerdict {
 /** Minimum quality to surface as the extracted activation link */
 export const SELECT_MIN_QUALITY = 20;
 /**
- * Minimum quality to auto-open without user review.
- * NOTE: Set equal to SELECT_MIN_QUALITY — GhostFill only processes emails at
- * addresses the user generated (from a signup flow), so every detected link
- * comes from a service the user explicitly signed up with. The hard-reject
- * filter (unsubscribe, social, marketing footer) is sufficient protection.
+ * Automatic opening needs two independent activation signals, such as a
+ * verification path plus an auth token. A disposable inbox can receive mail
+ * from anyone, so selection alone is not consent to open the URL.
  */
-export const AUTO_OPEN_MIN_QUALITY = SELECT_MIN_QUALITY;
+export const AUTO_OPEN_MIN_QUALITY = 80;
 
 /**
  * Path / route synonyms: verify · activate · confirm · validate · complete ·
@@ -64,6 +62,17 @@ const STRONG_ANCHOR_RE =
 const SOFT_PATH_RE =
   /\/(?:auth|oauth|sso|login|signin|sign[-_]?in|register|account|user|users|members?|session|identity|security)(?:\/|$|\?)/i;
 
+const DIRECT_ACTION_PATH_RE =
+  /\/(?:verify|verification|activate|activation|confirm|confirmation|validate|validation|magic|passwordless|invite|invitation|reset|recover|email\/action|auth\/action|__\/auth\/action)(?:[-_/]|$)/i;
+const EXPLICIT_ACTION_QUERY_RE =
+  /[?&#](?:confirmation[_-]?token|activation[_-]?token|verify[_-]?token|verification[_-]?token|invite[_-]?token|magic[_-]?token|reset[_-]?token|oob[_-]?code|mode=(?:verifyEmail|resetPassword|signIn)|action=(?:verify|confirm|activate|reset|accept))/i;
+const GENERIC_ANCHOR_RE =
+  /^(?:get started|start now|continue(?: to .*)?|proceed(?: to .*)?|click here)$/i;
+// Email login routes may carry opaque state instead of a token= parameter.
+// State only counts as authentication evidence on these specific routes.
+const EMAIL_LOGIN_PATH_RE =
+  /\/(?:login[-_]?with[-_]?email|signin[-_]?with[-_]?email|email[-_]?login|login\/email|signin\/email)(?:\/|$)/i;
+
 // ── Hard reject (never auto-open) ──
 const HARD_REJECT_URL =
   /unsubscribe|opt[-_]?out|email[-_]?preferences|manage[-_]?preferences|privacy(?:[-_]?policy)?|terms(?:[-_]?of)?|cookie|legal|cdn\.|\/static\/|\/assets\/|fonts?\.|images?\.|img\.|\/beacon|\/pixel|analytics|view[-_]?in[-_]?browser|web[-_]?version|facebook\.com|twitter\.com|x\.com\/|linkedin\.com|instagram\.com|youtube\.com|tiktok\.com|pinterest\.com|play\.google\.com|apps\.apple\.com|itunes\.apple\.com|\/(?:dashboard|pricing|plans|billing|settings|preferences|profile|docs|documentation|blog|help|support|shop|store|sale|deals|home)(?:\/|\?|$)|shop\s*now|learn\s*more|read\s*more|download\s*app/i;
@@ -83,7 +92,12 @@ function hasAuthToken(url: string): boolean {
 }
 
 function classifyPath(url: string, anchorText = ''): ActivationLinkClass {
-  const hay = `${url} ${anchorText}`;
+  // Opaque token/state values can contain words such as "reset" by chance.
+  const parsed = new URL(url, 'https://classification.invalid');
+  const actionQuery = ['mode', 'action', 'type']
+    .map((key) => `${key}=${parsed.searchParams.get(key) || ''}`)
+    .join(' ');
+  const hay = `${parsed.pathname} ${actionQuery} ${anchorText}`;
   if (
     /reset|forgot|recover|change[-_]?password|set[-_]?password|create[-_]?password|mode=resetPassword/i.test(
       hay
@@ -92,6 +106,7 @@ function classifyPath(url: string, anchorText = ''): ActivationLinkClass {
     return 'password-reset';
   }
   if (
+    EMAIL_LOGIN_PATH_RE.test(parsed.pathname) ||
     /magic|passwordless|signin[-_]?link|login[-_]?link|email[-_]?login|mode=signIn|one[\s-]?click/i.test(
       hay
     )
@@ -126,12 +141,23 @@ export function scoreActivationLink(
   anchorText = '',
   surroundingText = ''
 ): ActivationLinkVerdict {
-  const url = typeof rawUrl === 'string' ? rawUrl : (rawUrl && typeof rawUrl === 'object' && 'url' in rawUrl && typeof rawUrl.url === 'string' ? rawUrl.url : '');
+  const url =
+    typeof rawUrl === 'string'
+      ? rawUrl
+      : rawUrl && typeof rawUrl === 'object' && 'url' in rawUrl && typeof rawUrl.url === 'string'
+        ? rawUrl.url
+        : '';
   const reasons: string[] = [];
   let quality = 0;
   const combinedText = `${anchorText} ${surroundingText}`.toLowerCase();
 
-  if (!url || !/^https?:\/\//i.test(url)) {
+  let parsed: URL | null = null;
+  try {
+    parsed = new URL(url);
+  } catch {
+    /* Invalid URL is rejected below. */
+  }
+  if (!parsed || !['http:', 'https:'].includes(parsed.protocol)) {
     return {
       cls: 'reject',
       quality: 0,
@@ -143,13 +169,12 @@ export function scoreActivationLink(
 
   const hardUrlHit = HARD_REJECT_URL.test(url);
   const hardAnchorHit = HARD_REJECT_ANCHOR.test(anchorText);
-  const pathStrongEarly = STRONG_PATH_RE.test(url);
-  const queryStrongEarly = STRONG_QUERY.test(url);
-  const tokenEarly = hasAuthToken(url);
-  const anchorStrongEarly = STRONG_ANCHOR_RE.test(anchorText);
+  const emailLoginPath = EMAIL_LOGIN_PATH_RE.test(parsed.pathname);
+  const pathStrongEarly = STRONG_PATH_RE.test(parsed.pathname) || emailLoginPath;
 
-  // Allow hard-reject URL hits only when a strong activation path/query/token/anchor coexists
-  if (hardAnchorHit && !pathStrongEarly && !queryStrongEarly && !tokenEarly) {
+  // Footer and navigation destinations cannot become activation actions just
+  // because the email or even the anchor contains "verify" or a tracking token.
+  if (hardAnchorHit) {
     return {
       cls: 'reject',
       quality: 0,
@@ -158,7 +183,7 @@ export function scoreActivationLink(
       canAutoOpen: false,
     };
   }
-  if (hardUrlHit && !pathStrongEarly && !queryStrongEarly && !tokenEarly && !anchorStrongEarly) {
+  if (hardUrlHit) {
     return {
       cls: 'reject',
       quality: 0,
@@ -169,12 +194,14 @@ export function scoreActivationLink(
   }
 
   const pathStrong = pathStrongEarly;
-  const queryStrong = STRONG_QUERY.test(url);
-  const anchorStrong = STRONG_ANCHOR_RE.test(anchorText);
+  const queryStrong = STRONG_QUERY.test(`${parsed.search}${parsed.hash}`);
+  const anchorStrong =
+    STRONG_ANCHOR_RE.test(anchorText) && !GENERIC_ANCHOR_RE.test(anchorText.trim());
   const contextStrong = STRONG_ANCHOR_RE.test(surroundingText);
-  const softPath = SOFT_PATH_RE.test(url);
-  const token = hasAuthToken(url);
-  let cls = classifyPath(url, anchorText);
+  const softPath = SOFT_PATH_RE.test(parsed.pathname) || emailLoginPath;
+  const token =
+    hasAuthToken(url) || (emailLoginPath && (parsed.searchParams.get('state')?.length ?? 0) >= 16);
+  let cls = classifyPath(`${parsed.pathname}${parsed.search}`, anchorText);
 
   if (pathStrong) {
     quality += 42;
@@ -191,19 +218,16 @@ export function scoreActivationLink(
     quality += 28;
     reasons.push('strong-anchor');
     if (cls === 'unknown') {
-      const fromAnchor = classifyPath(url, anchorText);
+      const fromAnchor = classifyPath(parsed.pathname, anchorText);
       cls = fromAnchor !== 'unknown' ? fromAnchor : 'activation';
     }
   }
-  if (contextStrong && !anchorStrong) {
-    quality += 16;
+  if (contextStrong && !anchorStrong && pathStrong) {
+    quality += 8;
     reasons.push('strong-context');
-    if (cls === 'unknown') {
-      cls = 'activation';
-    }
   }
 
-  if (url.startsWith('https://')) {
+  if (parsed.protocol === 'https:') {
     quality += 6;
   } else {
     quality -= 12;
@@ -215,12 +239,14 @@ export function scoreActivationLink(
     reasons.push('marketing-language');
   }
 
-  const hasActionProof = pathStrong || anchorStrong || contextStrong;
+  const hasActionProof = pathStrong || anchorStrong;
   if (token && !hasActionProof) {
     if (softPath) {
       quality -= 18;
       reasons.push('token-with-soft-path-only');
-      if (cls === 'unknown') {cls = 'activation';}
+      if (cls === 'unknown') {
+        cls = 'activation';
+      }
     } else {
       quality -= 40;
       reasons.push('token-without-action-proof');
@@ -240,6 +266,16 @@ export function scoreActivationLink(
     cls = 'unknown';
   }
 
+  // A generic page plus a token is common in navigation and click tracking.
+  if (
+    !DIRECT_ACTION_PATH_RE.test(parsed.pathname) &&
+    !emailLoginPath &&
+    !anchorStrong &&
+    !EXPLICIT_ACTION_QUERY_RE.test(`${parsed.search}${parsed.hash}`)
+  ) {
+    cls = 'unknown';
+  }
+
   if (pathStrong && (token || queryStrong) && (anchorStrong || contextStrong)) {
     quality = Math.max(quality, 94);
     reasons.push('triple-activation-proof');
@@ -252,20 +288,19 @@ export function scoreActivationLink(
   } else if (anchorStrong && token) {
     quality = Math.max(quality, 82);
     reasons.push('anchor-and-token');
-  } else if (contextStrong && token && softPath) {
-    quality = Math.max(quality, 72);
-    reasons.push('context-token-softpath');
   }
 
   quality = Math.max(0, Math.min(100, quality));
 
   const hardReject = quality < 20 || cls === 'reject';
 
-  // GhostFill only processes emails at user-generated addresses used for
-  // signup — every email is from a service the user registered with.
-  // The hard-reject filter (unsubscribe, marketing footer, social links)
-  // is sufficient protection. Any non-hard-rejected link can auto-open.
-  const canAutoOpen = !hardReject;
+  const canAutoOpen =
+    !hardReject &&
+    cls !== 'unknown' &&
+    quality >= AUTO_OPEN_MIN_QUALITY &&
+    parsed.protocol === 'https:' &&
+    (((DIRECT_ACTION_PATH_RE.test(parsed.pathname) || emailLoginPath) && (token || anchorStrong)) ||
+      (anchorStrong && token && softPath));
 
   if (hardReject) {
     cls = 'reject';
@@ -298,20 +333,24 @@ export function pickBestActivationLink<
   T extends { url: string; anchorText?: string; context?: string; confidence?: number },
 >(a: T | null | undefined, b: T | null | undefined): T | null {
   const score = (c: T | null | undefined) => {
-    if (!c?.url) {return -1;}
+    if (!c?.url) {
+      return -1;
+    }
     const g = scoreActivationLink(c.url, c.anchorText || '', c.context || '');
-    if (g.hardReject || g.cls === 'unknown' || g.quality < SELECT_MIN_QUALITY) {return -1;}
+    if (g.hardReject || g.cls === 'unknown' || g.quality < SELECT_MIN_QUALITY) {
+      return -1;
+    }
     const conf =
-      typeof c.confidence === 'number'
-        ? c.confidence > 1
-          ? c.confidence
-          : c.confidence * 100
-        : 0;
+      typeof c.confidence === 'number' ? (c.confidence > 1 ? c.confidence : c.confidence * 100) : 0;
     return g.quality * 1.15 + conf * 0.25;
   };
   const sa = score(a);
   const sb = score(b);
-  if (sa < 0 && sb < 0) {return null;}
-  if (sa >= sb) {return a ?? null;}
+  if (sa < 0 && sb < 0) {
+    return null;
+  }
+  if (sa >= sb) {
+    return a ?? null;
+  }
   return b ?? null;
 }

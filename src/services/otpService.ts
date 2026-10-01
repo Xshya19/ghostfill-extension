@@ -2,6 +2,8 @@
 // Consolidates local OTP store and background Smart Detection pipeline.
 
 import { PatternMatch, LastOTP } from '../types';
+import { LAST_OTP_MAX_AGE_MS } from '../types/storage.types';
+import { contentFingerprint } from '../utils/contentFingerprint';
 import { encrypt, decrypt } from '../utils/encryption';
 import { createLogger } from '../utils/logger';
 import { sanitizeText } from '../utils/sanitization.core';
@@ -13,15 +15,31 @@ import type { DetectionResult, EncryptedCacheEntry } from './types/extraction.ty
 const log = createLogger('OTPService');
 
 function toSafeString(v: unknown): string {
-  if (typeof v === 'string') {return v;}
-  if (!v) {return '';}
+  if (typeof v === 'string') {
+    return v;
+  }
+  if (!v) {
+    return '';
+  }
   if (typeof v === 'object') {
     const obj = v as Record<string, unknown>;
-    if (typeof obj.text === 'string') {return obj.text;}
-    if (typeof obj.html === 'string') {return obj.html;}
-    if (typeof obj.body === 'string') {return obj.body;}
-    if (typeof obj.content === 'string') {return obj.content;}
-    try { return JSON.stringify(v); } catch { return String(v); }
+    if (typeof obj.text === 'string') {
+      return obj.text;
+    }
+    if (typeof obj.html === 'string') {
+      return obj.html;
+    }
+    if (typeof obj.body === 'string') {
+      return obj.body;
+    }
+    if (typeof obj.content === 'string') {
+      return obj.content;
+    }
+    try {
+      return JSON.stringify(v);
+    } catch {
+      return String(v);
+    }
   }
   return String(v);
 }
@@ -138,7 +156,7 @@ class SmartDetectionService {
       .map((domain) => toSafeString(domain).toLowerCase())
       .sort()
       .join(',');
-    const cacheKey = this.fastCacheKey(sSender, sSubject, sBody, contextKey);
+    const cacheKey = this.fastCacheKey(sSender, sSubject, sBody, sHtml, contextKey);
     const cachedResult = await this.getCachedResult(cacheKey);
     if (cachedResult) {
       log.debug('[SmartDetection] Returning cached result');
@@ -146,8 +164,8 @@ class SmartDetectionService {
     }
 
     let intelligentResult = extractAll(sSubject, sBody, sHtml, sSender, expectedDomains);
-    
-    if ((!intelligentResult.otp && !intelligentResult.link) && sHtml) {
+
+    if (!intelligentResult.otp && !intelligentResult.link && sHtml) {
       log.info('[SmartDetection] Primary extraction returned nothing. Trying HTML fallback...');
       const fallbackPlain = this.cleanHTML(sHtml);
       if (fallbackPlain && fallbackPlain !== sBody) {
@@ -163,10 +181,10 @@ class SmartDetectionService {
 
     log.info(`📊 [SmartDetection] Intent: ${intelligentResult.intent}`);
     log.info(
-      `📊 [SmartDetection] OTP: ${intelligentResult.otp ? `${intelligentResult.otp.code} (${intelligentResult.otp.confidence}%)` : 'none'}`
+      `📊 [SmartDetection] OTP: ${intelligentResult.otp ? `${intelligentResult.otp.code} (${Math.round(intelligentResult.otp.confidence * 100)}%)` : 'none'}`
     );
     log.info(
-      `📊 [SmartDetection] Link: ${intelligentResult.link ? `${intelligentResult.link.type} (${intelligentResult.link.confidence}%)` : 'none'}`
+      `📊 [SmartDetection] Link: ${intelligentResult.link ? `${intelligentResult.link.type} (${Math.round(intelligentResult.link.confidence * 100)}%)` : 'none'}`
     );
 
     const mergedResult: DetectionResult = {
@@ -190,6 +208,7 @@ class SmartDetectionService {
 
     if (intelligentResult.otp) {
       mergedResult.code = intelligentResult.otp.code;
+      mergedResult.otpConfidence = intelligentResult.otp.confidence;
       mergedResult.confidence = Math.max(mergedResult.confidence, intelligentResult.otp.confidence);
     }
     if (intelligentResult.link) {
@@ -197,7 +216,9 @@ class SmartDetectionService {
       // FIX D4: intelligentResult.link.confidence is already in 0..1 scale
       mergedResult.confidence = Math.max(
         mergedResult.confidence,
-        intelligentResult.link.confidence > 1 ? intelligentResult.link.confidence / 100 : intelligentResult.link.confidence
+        intelligentResult.link.confidence > 1
+          ? intelligentResult.link.confidence / 100
+          : intelligentResult.link.confidence
       );
     }
 
@@ -213,7 +234,9 @@ class SmartDetectionService {
   }
 
   async burnCode(code: string, domain: string): Promise<void> {
-    if (!code || !domain) {return;}
+    if (!code || !domain) {
+      return;
+    }
     const allBurned = (await storageService.get('burnedCodes')) ?? {};
     const normalized = code.toUpperCase();
     const domainList = allBurned[domain] ?? [];
@@ -225,7 +248,9 @@ class SmartDetectionService {
   }
 
   async getBurnedCodes(domain: string): Promise<string[]> {
-    if (!domain) {return [];}
+    if (!domain) {
+      return [];
+    }
     const allBurned = (await storageService.get('burnedCodes')) ?? {};
     return allBurned[domain] ?? [];
   }
@@ -250,26 +275,21 @@ class SmartDetectionService {
   }
 
   // GRANDMASTER FIX: Synchronous 32-bit hash. Zero memory allocation.
-  private fastCacheKey(sender: unknown, subject: unknown, body: unknown, contextKey: unknown): string {
+  private fastCacheKey(
+    sender: unknown,
+    subject: unknown,
+    body: unknown,
+    htmlBody: unknown,
+    contextKey: unknown
+  ): string {
     const sSender = toSafeString(sender);
     const sSubject = toSafeString(subject);
     const sBody = toSafeString(body);
     const sContext = toSafeString(contextKey);
-    // Sample head + length + TAIL: same-template OTP mails share the first
-    // 1k and often the total length, differing only in the code near the
-    // bottom. Head-only sampling collided across such mails and served a
-    // stale cached code (wrong OTP delivered).
-    const tail = sBody.length > 500 ? sBody.substring(sBody.length - 500) : '';
-    const sample = `${sSender}|${sSubject}|${sBody.substring(0, 1000)}|len:${sBody.length}|tail:${tail}|ctx:${sContext}`;
-    let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
-    for (let i = 0; i < sample.length; i++) {
-      const ch = sample.charCodeAt(i);
-      h1 = Math.imul(h1 ^ ch, 2654435761);
-      h2 = Math.imul(h2 ^ ch, 1597334677);
-    }
-    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-    return `det_${(h2 >>> 0).toString(16).padStart(8, '0')}${(h1 >>> 0).toString(16).padStart(8, '0')}`;
+    // Hash every text/HTML character: codes can change in the middle of an
+    // otherwise identical template, or arrive only in the full HTML part.
+    const parts = [sSender, sSubject, sBody, toSafeString(htmlBody), sContext];
+    return `det_v2_${contentFingerprint(parts)}`;
   }
 
   private async getCachedResult(key: string): Promise<DetectionResult | null> {
@@ -297,7 +317,12 @@ class SmartDetectionService {
           this.cacheKey
         );
 
-        if (decryptedResult && typeof decryptedResult === 'object' && 'type' in decryptedResult && 'decision' in decryptedResult) {
+        if (
+          decryptedResult &&
+          typeof decryptedResult === 'object' &&
+          'type' in decryptedResult &&
+          'decision' in decryptedResult
+        ) {
           return decryptedResult;
         } else {
           log.warn('Cached result validation failed, removing entry');
@@ -408,6 +433,20 @@ class OTPService {
     this.rateLimitTimestamps.push(now);
   }
 
+  private async acquireStoreLock(): Promise<() => void> {
+    const previous = this.rateLimitMutex;
+    let release: () => void = () => {};
+    const next = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.rateLimitMutex = previous.then(
+      () => next,
+      () => next
+    );
+    await previous;
+    return release;
+  }
+
   /**
    * Extract OTP from email using the 5-layer Intelligent Extraction engine.
    * No API key required. Works on all browsers.
@@ -455,21 +494,40 @@ class OTPService {
     emailFrom?: string,
     emailSubject?: string,
     confidence: number = 0.8,
-    metadata: { emailId?: string | number; emailDate?: number } = {}
+    metadata: { emailId?: string | number; emailDate?: number; autoFillEligible?: boolean } = {}
   ): Promise<{ saved: boolean; reason?: string; retryAfterMs?: number }> {
-    const previousMutex = this.rateLimitMutex;
-    let releaseMutex: () => void = () => {};
-    const nextMutex = new Promise<void>((res) => {
-      releaseMutex = res;
-    });
-    this.rateLimitMutex = previousMutex.then(
-      () => nextMutex,
-      () => nextMutex
-    );
-    await previousMutex;
+    const releaseMutex = await this.acquireStoreLock();
 
     try {
       const now = Date.now();
+
+      if (
+        source === 'email' &&
+        (metadata.emailId !== undefined || metadata.emailDate !== undefined)
+      ) {
+        const existing = await this.getLastOTP({ includeUsed: true });
+        if (existing) {
+          const older =
+            metadata.emailDate !== undefined &&
+            existing.emailDate !== undefined &&
+            metadata.emailDate < existing.emailDate;
+          const sameMessage =
+            metadata.emailId !== undefined &&
+            String(metadata.emailId) === String(existing.emailId) &&
+            otp === existing.code;
+          if (older || (sameMessage && existing.usedAt)) {
+            return { saved: false, reason: older ? 'older-email' : 'already-used' };
+          }
+          // Refreshing the popup must not reset a message's arrival time.
+          if (sameMessage) {
+            if (metadata.autoFillEligible !== undefined && metadata.autoFillEligible !== existing.autoFillEligible) {
+              existing.autoFillEligible = metadata.autoFillEligible;
+              await storageService.set('lastOTP', existing);
+            }
+            return { saved: true };
+          }
+        }
+      }
 
       if (this.isRateLimitedLocked(now)) {
         const msg = `OTP save rate limited - maximum ${RATE_LIMIT.MAX_SAVES_PER_MINUTE} requests per minute allowed`;
@@ -493,6 +551,9 @@ class OTPService {
       if (metadata.emailDate !== undefined) {
         lastOTP.emailDate = metadata.emailDate;
       }
+      if (metadata.autoFillEligible !== undefined) {
+        lastOTP.autoFillEligible = metadata.autoFillEligible;
+      }
       if (emailFrom) {
         lastOTP.emailFrom = emailFrom;
       }
@@ -513,9 +574,9 @@ class OTPService {
     try {
       const msgText = `OTP extraction temporarily paused. Try again in ${Math.round(retryAfterMs / 1000)}s.`;
       if (typeof chrome !== 'undefined' && chrome.notifications?.create) {
-        chrome.notifications.create({
+        await chrome.notifications.create({
           type: 'basic',
-          iconUrl: 'assets/icons/icon128.png',
+          iconUrl: chrome.runtime.getURL('assets/icons/icon128.png'),
           title: 'GhostFill: Too Many OTPs',
           message: msgText,
         });
@@ -526,15 +587,21 @@ class OTPService {
     }
   }
 
-  async getLastOTP(): Promise<LastOTP | null> {
+  async getLastOTP({
+    includeUsed = false,
+  }: { includeUsed?: boolean } = {}): Promise<LastOTP | null> {
     const lastOTP = await storageService.get('lastOTP');
 
-    if (lastOTP && Date.now() - lastOTP.extractedAt > 10 * 60 * 1000) {
+    if (
+      lastOTP &&
+      Date.now() >=
+        Math.min(lastOTP.expiresAt ?? Infinity, lastOTP.extractedAt + LAST_OTP_MAX_AGE_MS)
+    ) {
       log.debug('Last OTP expired');
       return null;
     }
 
-    if (lastOTP && lastOTP.usedAt) {
+    if (lastOTP && lastOTP.usedAt && !includeUsed) {
       log.debug('Last OTP already used');
       return null;
     }
@@ -543,8 +610,13 @@ class OTPService {
   }
 
   async clearLastOTP(): Promise<void> {
-    await storageService.remove('lastOTP');
-    log.info('Last OTP cleared from storage');
+    const release = await this.acquireStoreLock();
+    try {
+      await storageService.remove('lastOTP');
+      log.info('Last OTP cleared from storage');
+    } finally {
+      release();
+    }
   }
 
   async isOTPFresh(): Promise<boolean> {
@@ -553,7 +625,12 @@ class OTPService {
       return false;
     }
     const age = Date.now() - lastOTP.extractedAt;
-    return age < OTP_FRESHNESS.FRESH_WINDOW_MS && !lastOTP.usedAt;
+    return (
+      age < OTP_FRESHNESS.FRESH_WINDOW_MS &&
+      Date.now() <
+        Math.min(lastOTP.expiresAt ?? Infinity, lastOTP.extractedAt + LAST_OTP_MAX_AGE_MS) &&
+      !lastOTP.usedAt
+    );
   }
 
   async waitForFreshOTP(maxWaitMs: number = OTP_FRESHNESS.MAX_WAIT_MS): Promise<LastOTP | null> {
@@ -576,12 +653,22 @@ class OTPService {
     return this.getLastOTP();
   }
 
-  async markAsUsed(): Promise<void> {
-    const lastOTP = await storageService.get('lastOTP');
-    if (lastOTP) {
+  async markAsUsed(expectedCode?: string): Promise<void> {
+    const release = await this.acquireStoreLock();
+    try {
+      const lastOTP = await storageService.get('lastOTP');
+      if (!lastOTP) {
+        return;
+      }
+      const normalize = (code: string) => code.replace(/[-\s]/g, '').toUpperCase();
+      if (expectedCode !== undefined && normalize(expectedCode) !== normalize(lastOTP.code)) {
+        return;
+      }
       lastOTP.usedAt = Date.now();
       await storageService.set('lastOTP', lastOTP);
       log.debug('OTP marked as used');
+    } finally {
+      release();
     }
   }
 
@@ -592,5 +679,3 @@ class OTPService {
 }
 
 export const otpService = new OTPService();
-
-

@@ -153,7 +153,7 @@ class OTPDetector {
       return (
         this.hasSplitCluster(element) ||
         hasExplicitSignal ||
-        element.autocomplete === 'one-time-code' ||
+        element.matches('[autocomplete~="one-time-code" i]') ||
         element.getAttribute('inputmode') === 'numeric'
       );
     }
@@ -166,7 +166,7 @@ class OTPDetector {
       return true;
     }
 
-    if (element.autocomplete === 'one-time-code') {return true;}
+    if (element.matches('[autocomplete~="one-time-code" i]')) {return true;}
 
     if (
       element instanceof HTMLInputElement &&
@@ -194,7 +194,7 @@ class OTPDetector {
       confidence += CONFIDENCE.OTP_INPUTMODE_NUMERIC;
     }
 
-    if (element.autocomplete === 'one-time-code') {
+    if (element.matches('[autocomplete~="one-time-code" i]')) {
       confidence += CONFIDENCE.OTP_AUTOCOMPLETE;
     }
 
@@ -575,9 +575,8 @@ class FormClassifier {
   private static buildFormContext(form: HTMLElement): string {
     const parts: string[] = [];
 
-    if (form.className && typeof form.className === 'string') {parts.push(form.className);}
-    if (form.id) {parts.push(form.id);}
-    if (form instanceof HTMLFormElement && form.action) {parts.push(form.action);}
+    parts.push(form.getAttribute('class') || '', form.getAttribute('id') || '');
+    if (form instanceof HTMLFormElement) {parts.push(form.getAttribute('action') || '');}
 
     const textContent = form.textContent;
     if (textContent) {
@@ -744,7 +743,7 @@ export class FormDetector {
       confidence: classification.confidence,
       fields,
       submitButton: submitButton ?? undefined,
-      actionUrl: form instanceof HTMLFormElement && form.action ? form.action : undefined,
+      actionUrl: form instanceof HTMLFormElement ? form.getAttribute('action') || undefined : undefined,
     };
   }
 
