@@ -1170,7 +1170,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
             <label id="debug-mode-label" htmlFor="debug-mode" className="fs-15-fw-600">
               Debug logging
             </label>
-            <p>Show detailed GhostFill activity in the browser console. Save changes to apply.</p>
+            <p>Show detailed GhostFill activity in the browser console. Changes save automatically.</p>
             <p>Logs stay in your browser. Sensitive values are masked.</p>
           </div>
           <ToggleSwitch

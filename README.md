@@ -110,7 +110,7 @@ The shortcut updates the built installation. If you also develop GhostFill, upda
 
 ### See console logs
 
-Open **GhostFill → Options → Advanced**, turn on **Debug logging**, and click **Save changes**. The saved setting applies to open extension pages and signup tabs, and stays enabled after a browser restart. Turn it off when finished; routine information, warnings, and errors remain visible.
+Open **GhostFill → Options → Advanced**, turn on **Debug logging**, and wait for **Saved**. Changes save automatically. The saved setting applies to open extension pages and signup tabs, and stays enabled after a browser restart. Turn it off when finished; routine information, warnings, and errors remain visible.
 
 - **Inbox and verification decisions:** open `chrome://extensions`, find GhostFill, and click its **service worker** link.
 - **Floating button and form filling:** open Developer Tools on the signup page (**F12** on Windows/Linux, **Option + Command + I** on macOS).
