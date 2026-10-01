@@ -1,147 +1,103 @@
 /* ══════════════════════════════════════════════════════════════
-   GhostFill — Private Workspace — FAB Shadow DOM
-   Quiet slate surface · One clear signal · Browser-native geometry · Dark-first
+   GhostFill — Liquid Glass-inspired FAB Shadow DOM
+   Restrained glass controls · Opaque content · Dark-first
    ══════════════════════════════════════════════════════════════ */
 
 :host {
   all: initial;
-  font-family: "Space Grotesk", "Inter", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   isolation: isolate;
 
-  /* The shadow root owns the same Private Workspace palette as the extension. */
+  /* getStyles() injects the shared theme before this sheet, so the host
+     page cannot replace GhostFill's semantic palette. */
+  --brand: var(--gf-primary, #0a84ff);
 
-  /* Shadow DOM boundary: page styles do not load globals.css, so the FAB
-     carries a local palette instead of inheriting arbitrary site UI. */
-  --brand: var(--gf-primary, #88a8ff);
-  --brand-rgb: var(--gf-primary-rgb, 136, 168, 255);
+  --success: var(--gf-mint, #30d158);
+  --error: var(--gf-coral, #ff453a);
 
-  --success: var(--gf-mint, #5ac89e);
-  --success-rgb: var(--gf-mint-rgb, 90, 200, 158);
-  --success-glow: rgba(var(--success-rgb), 0.25);
-  --error: var(--gf-coral, #f18484);
-  --error-rgb: var(--gf-coral-rgb, 241, 132, 132);
-  --error-glow: rgba(var(--error-rgb), 0.25);
-
-  --gf-surface: #171e29;
-  --gf-surface-2: #1d2632;
-  --gf-sunken: #111721;
-  --gf-card: #171e29;
-  --gf-card-elevated: #202a37;
-  --gf-primary: #88a8ff;
-  --gf-primary-deep: #5e85e6;
-  --gf-primary-rgb: 136, 168, 255;
-  --gf-cyan: #88a8ff;
-  --gf-cyan-rgb: 136, 168, 255;
-  --gf-mint: #5ac89e;
-  --gf-mint-rgb: 90, 200, 158;
-  --gf-amber: #f2b64d;
-  --gf-amber-rgb: 242, 182, 77;
-  --gf-coral: #f18484;
-  --gf-coral-rgb: 241, 132, 132;
-  --gf-violet: #afb6ff;
-  --gf-violet-rgb: 175, 182, 255;
-  --gf-cream: #f3f6fa;
-  --gf-font-mono: 'IBM Plex Mono', 'Space Mono', ui-monospace, monospace;
-  --brand-font-mono: var(--gf-font-mono);
-  --gf-on-fill-light: #ffffff;
-  --gf-on-fill-dark: #10151e;
-  --gf-grad-cobalt: #5e85e6;
-  --gf-grad-mint: #5ac89e;
-  --gf-grad-coral: #d75b5b;
-  --gf-panel-radius: 12px;
-  --gf-control-radius: 8px;
-  --gf-primary-soft: rgba(136, 168, 255, 0.16);
-  --gf-line: rgba(243, 246, 250, 0.10);
-  --gf-line-2: rgba(243, 246, 250, 0.18);
-  --gf-hi: rgba(255, 255, 255, 0.06);
-  --gf-ink: #f3f6fa;
-  --gf-text-muted: #aab5c4;
-  --gf-text-dim: #7e8b9c;
   --text: var(--gf-ink);
   --text-secondary: var(--gf-text-muted);
   --text-tertiary: var(--gf-text-dim);
 
-  /* Elevation is reserved for the floating surface and its menu. */
-  --shadow-hover: 0 8px 18px rgba(0, 0, 0, 0.34);
-  --panel-shadow: 0 14px 30px rgba(0, 0, 0, 0.38);
-
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-spring: cubic-bezier(0.2, 0.8, 0.2, 1);
-  --ease-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
 
-/* ── .gf-pulse class — used by OTP-waiting indicator ring (toggle via class) ── */
-.gf-pulse { animation: gfBadgePulse 1.8s ease-in-out infinite; }
-
-/* Mode-aware signal. The shell stays quiet; only the icon signal changes. */
+/* The hit area and glyph stay fixed. Only the inner glass lens responds to press. */
 .gf-fab {
   --fab-accent: var(--gf-primary);
   --fab-accent-rgb: var(--gf-primary-rgb);
   --fab-core: var(--gf-sunken);
-}
-.gf-fab.gf-mode-otp {
-  --fab-accent: var(--gf-mint);
-  --fab-accent-rgb: var(--gf-mint-rgb);
-}
-.gf-fab.gf-mode-email {
-  --fab-accent: var(--gf-cyan);
-  --fab-accent-rgb: var(--gf-cyan-rgb);
-}
-.gf-fab.gf-mode-password {
-  --fab-accent: var(--gf-amber);
-  --fab-accent-rgb: var(--gf-amber-rgb);
-}
-.gf-fab.gf-mode-user {
-  --fab-accent: var(--gf-violet);
-  --fab-accent-rgb: var(--gf-violet-rgb);
-}
-.gf-fab.gf-otp-armed {
-  animation: gfOtpArmed 1.6s ease-in-out infinite;
-}
-@keyframes gfOtpArmed {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.78; }
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+  border: 1px solid var(--gf-glass-stroke);
+  background: var(--gf-glass-solid);
+  box-shadow: var(--gf-glass-shadow), var(--gf-glass-inner);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: visible;
+  cursor: pointer;
+  touch-action: manipulation;
+  color: var(--fab-accent);
+  outline: none;
+  transition: border-color 160ms var(--ease-out-expo);
 }
 
-/* ── FAB Button — private workspace signal ── */
-.gf-fab {
-  width: 44px; height: 44px; border-radius: var(--gf-panel-radius);
-  background: var(--fab-core);
-  border: 1px solid var(--gf-line-2);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.34);
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  outline: none; position: relative; overflow: visible;
-  color: var(--fab-accent);
-  transition: transform 0.18s var(--ease-spring), box-shadow 0.18s var(--ease-spring), filter 0.18s var(--ease-smooth);
-}
 .gf-fab::before {
   content: '';
   position: absolute;
-  inset: 3px;
-  border-radius: calc(var(--gf-panel-radius) - 3px);
-  background: var(--fab-core);
-  border: 1px solid var(--gf-line);
-  box-shadow: none;
+  inset: 1px;
+  border: 1px solid transparent;
+  border-radius: 15px;
+  /* A readable core protects the glyph over arbitrary host page backgrounds. */
+  background: radial-gradient(
+    ellipse at center,
+    var(--gf-glass-content-strong) 65%,
+    transparent 100%
+  );
+  box-shadow: var(--gf-glass-inner);
   pointer-events: none;
+  transition: transform 150ms var(--ease-out-expo);
 }
+
 .gf-fab::after {
-  display: none;
+  content: '';
+  position: absolute;
+  inset: -1px;
+  padding: 1px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from 135deg,
+    transparent,
+    var(--gf-glass-highlight) 18%,
+    transparent 32%,
+    transparent 52%,
+    var(--gf-glass-border) 68%,
+    transparent 82%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.65;
+  transition: opacity 160ms var(--ease-out-expo);
 }
 
-.gf-fab:hover {
-  transform: translateY(-1px);
-  border-color: rgba(var(--fab-accent-rgb), 0.5);
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.38);
-  filter: none;
-}
-
-.gf-fab:active {
-  transform: translateY(0) scale(0.97);
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.34);
-  transition-duration: 0.05s;
+.gf-fab:active:not(:focus-visible)::before {
+  transform: scale(1.03);
 }
 
 .gf-fab:focus-visible {
@@ -149,182 +105,105 @@
   outline-offset: 3px;
 }
 
-/* Icon */
-.gf-fab svg, .gf-fab img {
-  width: 24px; height: 24px; position: relative; z-index: 3;
-  transition: transform 0.3s var(--ease-spring);
+.gf-fab svg,
+.gf-fab img {
+  width: 24px;
+  height: 24px;
+  position: relative;
+  z-index: 3;
 }
-.gf-fab-symbol { overflow: visible; }
-.gf-fab-symbol__halo { transform-origin: center; transition: opacity .18s ease, transform .18s var(--ease-spring); }
 
-/* ── Quiet presence — keep a full hit area while showing a small dot ── */
+.gf-fab-symbol {
+  overflow: visible;
+}
+
+/* Quiet presence retains the 44px target around a small, unobtrusive dot. */
 .gf-fab.gf-quiet {
-  width: 44px;
-  height: 44px;
   border-radius: 50%;
   background: transparent;
   border-color: transparent;
   box-shadow: none;
-  transition: background 0.18s var(--ease-smooth), border-color 0.18s var(--ease-smooth), border-radius 0.18s var(--ease-smooth), transform 0.18s var(--ease-spring), box-shadow 0.18s var(--ease-spring);
 }
+
 .gf-fab.gf-quiet::before {
-  inset: 15px;
+  inset: 3px;
   border-radius: 50%;
   background: var(--fab-core);
   border-color: rgba(var(--fab-accent-rgb), 0.7);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  transform: scale(0.36);
+  transition: transform 150ms var(--ease-out-expo);
 }
+
 .gf-fab.gf-quiet::after {
-  display: none;
+  content: none;
 }
+
 .gf-fab.gf-quiet svg,
 .gf-fab.gf-quiet img {
   opacity: 0;
-  transform: scale(0.4);
-  transition: opacity 0.15s ease, transform 0.18s var(--ease-spring);
+  transition: opacity 120ms var(--ease-out-expo);
 }
-.gf-fab.gf-quiet .gf-badge {
-  display: none;
-}
-.gf-fab.gf-quiet:hover,
+
 .gf-fab.gf-quiet:focus-visible {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--gf-panel-radius);
-  background: var(--fab-core);
-  border-color: var(--gf-line-2);
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.38);
+  border-radius: 16px;
+  background: var(--gf-glass-solid);
+  border-color: var(--gf-glass-border);
+  box-shadow: var(--gf-glass-shadow), var(--gf-glass-inner);
 }
-.gf-fab.gf-quiet:hover::before,
+
 .gf-fab.gf-quiet:focus-visible::before {
-  inset: 3px;
-  border-radius: calc(var(--gf-panel-radius) - 3px);
+  border-radius: 15px;
+  background: transparent;
   box-shadow: none;
+  transform: scale(1);
+  transition: none;
 }
-.gf-fab.gf-quiet:hover svg,
-.gf-fab.gf-quiet:hover img,
+
 .gf-fab.gf-quiet:focus-visible svg,
 .gf-fab.gf-quiet:focus-visible img {
   opacity: 1;
-  transform: scale(1);
+  transition: none;
 }
-.gf-fab.gf-quiet:hover .gf-badge {
-  display: flex;
-}
-.gf-fab.gf-quiet:focus-visible .gf-badge {
-  display: flex;
-}
-.gf-fab:hover svg, .gf-fab:hover img {
-  transform: scale(1.08);
-}
-.gf-fab:hover .gf-fab-symbol__halo { opacity: .18; transform: scale(1.06); }
-.gf-fab:active svg, .gf-fab:active img { transform: scale(0.92); transition-duration: 0.06s; }
 
-/* Loading */
+/* Status uses a glyph and semantic border, without ongoing pulse or shake. */
 .gf-fab.gf-loading {
   cursor: wait;
-  background: var(--gf-primary-deep);
-  border-color: var(--gf-line-2);
-  animation: gfFabPulse 1.4s ease-in-out infinite;
 }
-.gf-spinner {
-  width: 20px; height: 20px;
-  border: 2.5px solid rgba(255, 255, 255, 0.25);
-  border-radius: 50%; border-top-color: var(--gf-on-fill-light);
-  animation: gfSpin 0.6s cubic-bezier(0.4,0,0.2,1) infinite;
-  position: relative; z-index: 3;
+
+.gf-loading-spinner {
+  animation: gfSpin 0.8s linear infinite;
+  transform-origin: center;
 }
-@keyframes gfSpin { to { transform: rotate(360deg); } }
-@keyframes gfFabPulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.74;
+
+@keyframes gfSpin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
-/* Success — mint glass */
 .gf-fab.gf-success {
-  animation: none;
-  border-color: var(--gf-line-2);
-  background: var(--gf-mint);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.34);
+  color: var(--gf-mint);
+  border-color: rgba(var(--gf-mint-rgb), 0.52);
 }
+
+.gf-fab.gf-error {
+  color: var(--gf-coral);
+  border-color: rgba(var(--gf-coral-rgb), 0.52);
+}
+
 .gf-success-check {
-  animation: gfCheckPop 0.4s var(--ease-out-expo);
-  position: relative; z-index: 3;
+  position: relative;
+  z-index: 3;
 }
-/* SVG is now stroked — remove fill overrides so fill="none" is respected */
 .gf-success-check circle {
   fill: none;
-  stroke: var(--gf-on-fill-light);
 }
+.gf-success-check circle,
 .gf-success-check path {
-  stroke: var(--gf-on-fill-light);
-}
-@keyframes gfCheckPop {
-  0%   { transform: scale(.92) rotate(-20deg); opacity: 0; }
-  55%  { transform: scale(1.04) rotate(3deg); opacity: 1; }
-  100% { transform: scale(1) rotate(0); }
+  stroke: var(--gf-mint);
 }
 
-/* Error — coral glass shake */
-.gf-fab.gf-error {
-  animation: gfShake 0.4s ease;
-  border-color: var(--gf-line-2);
-  background: var(--gf-coral);
-  box-shadow: 0 8px 22px -8px rgba(255, 107, 107, 0.7), 0 1px 0 rgba(255, 255, 255, 0.3) inset;
-}
-@keyframes gfShake {
-  0%,100% { transform: translateX(0); }
-  15%  { transform: translateX(-5px); }
-  30%  { transform: translateX(4px); }
-  45%  { transform: translateX(-3px); }
-  60%  { transform: translateX(2px); }
-  75%  { transform: translateX(-1px); }
-}
-
-/* Badge — Studio Mono Amber with Ink Border */
-.gf-badge {
-  position: absolute; top: -6px; right: -6px;
-  min-width: 18px; height: 18px; border-radius: 50%;
-  background: var(--gf-amber);
-  color: var(--gf-ink);
-  font-size: 10px; font-weight: 800;
-  display: flex; align-items: center; justify-content: center;
-  border: 2px solid var(--gf-ink); z-index: 10; padding: 0 3px;
-  box-shadow: 2px 2px 0 var(--gf-ink);
-  animation: gfBadgePop 0.3s var(--ease-out-expo);
-}
-@keyframes gfBadgePop {
-  0%   { transform: scale(.92) rotate(-12deg); opacity: 0; }
-  60%  { transform: scale(1.06) rotate(3deg); }
-  100% { transform: scale(1) rotate(0); opacity: 1; }
-}
-
-.gf-badge.gf-badge-otp-ready {
-  background: var(--gf-violet);
-  color: white;
-  animation: gfBadgePulse 2s ease-in-out infinite;
-}
-
-/* PERMANENT FIX 2026-06-21: count badge — shows the number of fillable
-   fields on the current page. Subtle mint accent so it doesn't
-   compete with the OTP-ready pulse. */
-.gf-badge.gf-badge-count {
-  background: var(--gf-mint);
-  color: var(--gf-on-fill-dark);
-  font-family: var(--brand-font-mono, monospace);
-  font-weight: 800;
-}
-
-@keyframes gfBadgePulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.12); }
-}
-
-/* OTP Waiting Indicator — Studio Mono cobalt pulse */
 .gf-otp-waiting-indicator {
   position: absolute;
   top: -8px;
@@ -334,8 +213,10 @@
   border-radius: 50%;
   background: var(--gf-primary);
   opacity: 0;
-  transform: scale(.92);
-  transition: opacity 0.2s ease, transform 0.2s var(--ease-spring);
+  transform: scale(0.92);
+  transition:
+    opacity 160ms var(--ease-out-expo),
+    transform 160ms var(--ease-out-expo);
   pointer-events: none;
   z-index: 10;
 }
@@ -343,261 +224,268 @@
 .gf-otp-waiting-indicator.gf-otp-waiting-visible {
   opacity: 1;
   transform: scale(1);
-  animation: gfOTPWaitingPulse 1.5s ease-in-out infinite;
 }
 
-.gf-otp-waiting-indicator::before {
-  content: '';
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  border: 2px solid var(--gf-primary);
-  opacity: 0;
-  animation: gfOTPWaitingRing 1.5s ease-out infinite;
-}
-
-@keyframes gfOTPWaitingPulse {
-  0%, 100% { transform: scale(1); opacity: 0.8; }
-  50% { transform: scale(1.2); opacity: 1; }
-}
-
-@keyframes gfOTPWaitingRing {
-  0% { transform: scale(1); opacity: 0.6; }
-  100% { transform: scale(2.5); opacity: 0; }
-}
-
-/* Tooltip — compact private workspace surface */
+/* Floating text surfaces use a dense material so underlying text cannot bleed through. */
+.gf-menu,
 .gf-tooltip {
-  position: absolute; bottom: calc(100% + 12px); left: 50%;
-  transform: translateX(-50%) translateY(4px);
-  padding: 7px 13px;
-  background: var(--gf-card-elevated);
+  background: var(--gf-glass-solid);
+  border: 1px solid var(--gf-glass-stroke);
+  border-radius: 16px;
+  box-shadow: var(--gf-glass-shadow), var(--gf-glass-inner);
+}
+
+.gf-tooltip {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  transform: translateX(calc(-50% + var(--gf-tooltip-shift, 0px))) translateY(4px);
+  padding: 6px 10px;
+  border-radius: 10px;
+  max-width: min(320px, calc(100vw - 24px));
+  width: max-content;
   color: var(--gf-ink);
-  font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: none;
-  border-radius: var(--gf-control-radius); white-space: nowrap; pointer-events: none;
-  border: 1px solid var(--gf-line-2);
-  box-shadow: 0 8px 22px -8px rgba(0,0,0,0.6), 0 1px 0 var(--gf-hi) inset;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+  pointer-events: none;
   opacity: 0;
   transition:
-    opacity 0.2s var(--ease-out-expo),
-    transform 0.2s var(--ease-out-expo);
+    opacity 120ms var(--ease-out-expo),
+    transform 120ms var(--ease-out-expo);
   z-index: 1001;
 }
-.gf-tooltip::after {
-  content: ''; position: absolute; top: 100%; left: 50%;
-  transform: translateX(-50%);
-  border: 6px solid transparent; border-top-color: var(--gf-card-elevated);
-}
-.gf-tooltip-visible { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-/* Menu — compact private workspace panel */
+.gf-tooltip-visible {
+  opacity: 1;
+  transform: translateX(calc(-50% + var(--gf-tooltip-shift, 0px))) translateY(0);
+}
+
 .gf-menu {
-  position: absolute; top: calc(100% + 8px); right: 0;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
   width: 236px;
   max-width: calc(100vw - 24px);
-  background: var(--gf-card);
-  border-radius: var(--gf-panel-radius);
-  border: 1px solid var(--gf-line-2, rgba(255,255,255,0.13));
-  box-shadow: var(--panel-shadow);
-  padding: 6px; z-index: 999; overflow: hidden;
-  opacity: 0; visibility: hidden;
-  transform: translateY(-6px) scale(0.96);
+  padding: 6px;
+  z-index: 999;
+  overflow: hidden;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px) scale(0.985);
   transform-origin: top right;
   transition:
-    opacity 0.25s var(--ease-out-expo), visibility 0.25s var(--ease-out-expo),
-    transform 0.3s var(--ease-spring);
+    opacity 180ms var(--ease-out-expo),
+    visibility 180ms var(--ease-out-expo),
+    transform 180ms var(--ease-out-expo);
 }
-/* faint spectral glow at the top edge */
-.gf-menu::before {
-  display: none;
-}
-.gf-menu::after {
-  display: none;
-}
+
 .gf-menu-open {
-  opacity: 1; visibility: visible;
+  opacity: 1;
+  visibility: visible;
   transform: translateY(0) scale(1);
 }
 
-@keyframes gfMenuSpring {
-  0% { transform: translateY(-10px) scale(0.92); opacity: 0; }
-  60% { transform: translateY(2px) scale(1.01); opacity: 1; }
-  100% { transform: translateY(0) scale(1); opacity: 1; }
+.gf-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  padding: 8px 9px;
+  width: 100%;
+  cursor: pointer;
+  border-radius: 11px;
+  border: 1px solid transparent;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: left;
+  outline: none;
+  position: relative;
+  z-index: 2;
 }
 
-.gf-menu-item {
-  display: flex; align-items: center; gap: 9px;
-  padding: 8px 9px; width: 100%;
-  cursor: pointer; border-radius: var(--gf-control-radius); border: 1px solid transparent; background: transparent;
-  font: inherit; font-size: 12.5px; font-weight: 600; letter-spacing: 0;
-  color: var(--text); text-align: left; outline: none;
-  position: relative; z-index: 2;
-  transition: background 0.15s var(--ease-smooth), border-color 0.15s var(--ease-smooth);
-  transform-origin: center center;
-}
-.gf-menu-item:hover, .gf-menu-item:focus-visible {
-  background: var(--gf-surface-2);
-  border-color: var(--gf-line);
-  color: var(--gf-ink);
-}
-.gf-menu-item:active {
+.gf-menu-item:focus-visible {
+  outline: 2px solid var(--gf-primary);
+  outline-offset: -2px;
   background: var(--gf-primary-soft);
-  transition-duration: 0.05s;
+  border-color: var(--gf-glass-stroke);
 }
-.gf-menu-item:focus-visible { outline: 2px solid var(--gf-primary); outline-offset: -2px; }
+
+.gf-menu-item:active:not(:focus-visible) {
+  background: var(--gf-primary-soft);
+}
 
 .gf-menu-icon {
-  flex-shrink: 0; width: 28px; height: 28px;
-  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--gf-control-radius);
-  background: rgba(var(--gf-primary-rgb), .07);
-  border: 1px solid rgba(var(--gf-primary-rgb), .14);
+  background: rgba(var(--gf-primary-rgb), 0.07);
+  border: 1px solid rgba(var(--gf-primary-rgb), 0.14);
   color: var(--gf-primary);
-  transition: transform 0.15s var(--ease-spring), background 0.15s ease, color 0.15s ease;
 }
+
 .gf-menu-symbol {
   width: 20px;
   height: 20px;
   display: block;
-}
-.gf-menu-item:hover .gf-menu-icon {
-  background: rgba(var(--gf-primary-rgb), 0.12);
-  border-color: rgba(var(--gf-primary-rgb), 0.25);
 }
 .gf-menu-label {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
 .gf-menu-shortcut {
-  font-size: 10.5px; color: var(--text-tertiary); font-weight: 600;
-  letter-spacing: 0; opacity: 0.85;
-  display: inline-flex; align-items: center;
-  padding: 2px 6px; background: var(--gf-surface-2);
-  border-radius: 5px; border: 1px solid var(--gf-line);
-  font-family: var(--gf-font-mono, monospace);
-  transition: opacity 0.15s ease;
+  font: 600 10.5px/1 var(--gf-font-mono, monospace);
+  color: var(--text-tertiary);
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  background: var(--gf-surface-2);
+  border-radius: 5px;
+  border: 1px solid var(--gf-line);
 }
-.gf-menu-item:hover .gf-menu-shortcut { opacity: 1; }
 
 .gf-menu-divider {
-  height: 1px; margin: 6px 10px;
+  height: 1px;
+  margin: 6px 10px;
   background: var(--gf-line);
-  position: relative; z-index: 2;
 }
 
-/* Staggered entry */
-.gf-menu-open .gf-menu-item { animation: gfMIE 0.3s var(--ease-out-expo) both; animation-delay: calc(var(--i, 0) * 0.02s); }
-@keyframes gfMIE {
-  from { opacity: 0; transform: translateX(-5px) translateY(3px); }
-  to   { opacity: 1; transform: translateX(0) translateY(0); }
+.gf-menu-confirmation {
+  padding: 8px;
+  color: var(--gf-ink);
 }
-.gf-menu-open .gf-menu-divider { animation: gfDF 0.35s var(--ease-out-expo) 0.08s both; }
-@keyframes gfDF {
-  from { opacity: 0; transform: scaleX(0.3); }
-  to   { opacity: 1; transform: scaleX(1); }
-}
-
-/* ── Sentinel Toast ── */
-.gf-sentinel-toast {
-  position: absolute;
-  z-index: 2147483645;
-  pointer-events: none;
-  opacity: 0;
-  transform: translateX(-10px) scale(0.95);
-  transition: opacity 0.3s var(--ease-out-expo), transform 0.3s var(--ease-spring);
-  will-change: opacity, transform;
-}
-
-.gf-sentinel-toast-visible {
-  opacity: 1;
-  transform: translateX(0) scale(1);
-  pointer-events: auto;
-}
-
-.gf-sentinel-toast-inner {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  background: var(--gf-card);
-  border: 2px solid var(--gf-ink);
-  border-radius: 8px;
-  box-shadow: var(--shadow-hover);
-  white-space: nowrap;
-}
-
-.gf-sentinel-toast-icon {
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-}
-
-.gf-sentinel-toast-icon svg {
-  width: 100%;
-  height: 100%;
-  animation: gf-toast-icon-float 2s ease-in-out infinite;
-}
-
-@keyframes gf-toast-icon-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-3px); }
-}
-
-.gf-sentinel-toast-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.gf-sentinel-toast-title {
+.gf-menu-confirmation strong {
+  display: block;
   font-size: 13px;
-  font-weight: 700;
-  color: var(--gf-cream);
-  letter-spacing: 0;
+  line-height: 1.3;
 }
-
-.gf-sentinel-toast-subtitle {
-  font-size: 11px;
+.gf-menu-confirmation p {
+  margin: 5px 0 12px;
   color: var(--gf-text-muted);
-  transition: opacity 0.3s ease;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.gf-menu-confirmation-actions {
+  display: flex;
+  gap: 6px;
+}
+.gf-menu-confirmation-actions .gf-menu-item {
+  justify-content: center;
+  text-align: center;
+}
+.gf-menu-item-danger {
+  color: var(--gf-danger);
 }
 
-/* ── Reduced Motion — respect user OS preference ── */
+@media (hover: hover) and (pointer: fine) {
+  .gf-fab:not(.gf-quiet):hover::after {
+    opacity: 1;
+  }
+
+  .gf-fab.gf-quiet:hover {
+    border-radius: 16px;
+    background: var(--gf-glass-solid);
+    border-color: var(--gf-glass-border);
+    box-shadow: var(--gf-glass-shadow), var(--gf-glass-inner);
+  }
+
+  .gf-fab.gf-quiet:hover::before {
+    border-radius: 15px;
+    background: transparent;
+    box-shadow: none;
+    transform: scale(1);
+  }
+
+  .gf-fab.gf-quiet:hover svg,
+  .gf-fab.gf-quiet:hover img {
+    opacity: 1;
+  }
+  .gf-menu-item:hover {
+    background: var(--gf-primary-soft);
+    border-color: var(--gf-glass-stroke);
+  }
+  .gf-menu-item:hover .gf-menu-icon {
+    background: rgba(var(--gf-primary-rgb), 0.12);
+  }
+}
+
+/* Refraction is enabled after the bundled displacement map loads. */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .gf-fab:not(.gf-quiet) {
+    background: var(--gf-glass-control);
+    -webkit-backdrop-filter: blur(4px) saturate(160%);
+    backdrop-filter: blur(4px) saturate(160%);
+  }
+
+  .gf-fab.gf-refractive:not(.gf-quiet) {
+    -webkit-backdrop-filter: blur(4px) url(#gf-fab-optic) saturate(160%);
+    backdrop-filter: blur(4px) url(#gf-fab-optic) saturate(160%);
+  }
+
+  .gf-menu,
+  .gf-tooltip {
+    background: var(--gf-glass-elevated);
+    -webkit-backdrop-filter: blur(24px) saturate(135%);
+    backdrop-filter: blur(24px) saturate(135%);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .gf-fab:not(.gf-quiet),
+  .gf-fab.gf-refractive:not(.gf-quiet),
+  .gf-menu,
+  .gf-tooltip {
+    background: var(--gf-glass-solid);
+    border-color: var(--gf-line-2);
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .gf-fab::before {
+    background: transparent;
+    border-color: var(--gf-line-2);
+    box-shadow: none;
+  }
+  .gf-fab.gf-quiet::before {
+    background: var(--fab-core);
+  }
+  .gf-fab::after {
+    content: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .gf-fab,
   .gf-fab *,
+  .gf-fab::before,
+  .gf-fab::after,
   .gf-menu,
   .gf-menu-item,
   .gf-tooltip {
     animation: none !important;
     transition: none !important;
   }
-  .gf-spinner {
-    animation: none !important;
-    border-top-color: var(--gf-cyan);
+
+  .gf-fab:not(.gf-quiet):active::before {
+    transform: none;
   }
-  .gf-badge.gf-badge-otp-ready,
-  .gf-otp-waiting-indicator,
-  .gf-otp-waiting-indicator::before {
-    animation: none !important;
+  .gf-fab .gf-loading-spinner {
+    animation: gfSpin 1.6s linear infinite !important;
   }
-  .gf-sentinel-toast-icon svg {
-    animation: none !important;
-  }
-  /* Keep visibility transitions for menu open/close (accessibility needs it) */
-  .gf-menu {
-    transition: opacity 0.1s ease, visibility 0.1s ease !important;
-  }
-  .gf-fab::after {
-    display: none;
-  }
-  .gf-fab svg circle[animate],
-  .gf-fab svg path[animate],
-  .gf-fab svg animate,
-  .gf-fab svg animateTransform {
-    animation: none !important;
-    transform: none !important;
-    opacity: 1 !important;
+  .gf-otp-waiting-indicator {
+    transform: none;
   }
 }

@@ -1,5 +1,6 @@
 import { IEmailProvider, Email, EmailAccount } from '../../types';
 import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
+import { getSenderSource } from '../../utils/emailIdentity';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 import { storageService } from '../storageService';
@@ -176,7 +177,7 @@ export class CustomDomainService implements IEmailProvider {
           const fallbackId = `custom_${Date.now()}_${idx}_${bodyStr.length}_${hashBody(bodyStr)}`;
           return {
             id: msg.id || fallbackId,
-            from: contentToString(msg.from, 'Unknown Sender'),
+            from: getSenderSource(undefined, msg.from),
             to: account.fullEmail,
             subject: contentToString(msg.subject, '(No Subject)'),
             body: bodyStr,

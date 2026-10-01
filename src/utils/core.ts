@@ -606,6 +606,15 @@ export function isValidUrl(url: string): boolean {
   }
 }
 
+export function isWebUrl(url: string): boolean {
+  try {
+    const { protocol } = new URL(url);
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 export async function fetchWithTimeout(
   resource: RequestInfo | URL,
   options: RequestInit & { timeout?: number } = {}
@@ -647,6 +656,12 @@ export async function fetchWithTimeout(
 }
 
 // ─── DOM Helper Utilities ────────────────────────────────────────────
+
+export function getDeepActiveElement(): Element | null {
+  let active = document.activeElement;
+  while (active?.shadowRoot?.activeElement) {active = active.shadowRoot.activeElement;}
+  return active;
+}
 
 export function getUniqueSelector(element: Element): string {
   if (!element) {
@@ -1399,7 +1414,7 @@ export function extractActivationLink(text: string): string | null {
 
 export const APP_NAME = 'GhostFill';
 export const APP_VERSION = (() => {
-  try { return chrome.runtime.getManifest().version; } catch { return '1.1.0'; }
+  try { return chrome.runtime.getManifest().version; } catch { return '1.1.1'; }
 })();
 
 export const API = {
@@ -1508,10 +1523,10 @@ export const CONTEXT_MENU_IDS = {
 } as const;
 
 export const SHORTCUTS = {
-  OPEN_POPUP: 'Ctrl+Shift+E',
-  GENERATE_EMAIL: 'Ctrl+Shift+M',
-  GENERATE_PASSWORD: 'Ctrl+Shift+G',
-  AUTO_FILL: 'Ctrl+Shift+F',
+  OPEN_POPUP: 'Alt+Shift+E',
+  GENERATE_EMAIL: 'Alt+Shift+M',
+  GENERATE_PASSWORD: 'Alt+Shift+G',
+  AUTO_FILL: 'Alt+Shift+F',
 } as const;
 
 export const ERRORS = {
@@ -1619,4 +1634,3 @@ export const MICROSOFT_DOMAINS = new Set([
   'live.com.au',
   'msn.com',
 ]);
-

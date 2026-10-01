@@ -13,7 +13,7 @@ import {
   IdentityWithCredentials,
   FieldType,
 } from '../types/form.types';
-import { deepQuerySelectorAll } from '../utils/core';
+import { deepQuerySelectorAll, getDeepActiveElement } from '../utils/core';
 import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
 import {
@@ -21,8 +21,9 @@ import {
   FieldSetter,
   PhantomTyper,
   OTPFieldGroup,
- UniversalFiller } from './autofill/formFiller';
-import { PageIntelligence, OTPFieldDiscovery, OTPFiller, FieldWatcher } from './autofill/otpEngine';
+  UniversalFiller,
+} from './autofill/formFiller';
+import { PageIntelligence, OTPFieldDiscovery, OTPFiller, FieldWatcher, NegativePatternMatcher } from './autofill/otpEngine';
 import { UltraDetector, ContextEngine } from './formDetector';
 
 const log = createLogger('AutoFiller');
@@ -105,8 +106,6 @@ const TRUSTED_SELECTOR_FIELD_TYPES: ReadonlySet<FieldType> = new Set<FieldType>(
 const EMAIL_FIELD_SIGNAL = /\b(?:e[-_ ]?mail|email address|correo|courriel|mailbox)\b/i;
 const USERNAME_FIELD_SIGNAL =
   /\b(?:username|user[-_ ]?name|user[-_ ]?id|login(?:[-_ ]?(?:name|id))?|handle|nickname|screen[-_ ]?name|alias|member[-_ ]?id|uid|uname)\b/i;
-const PERSON_NAME_FIELD_SIGNAL =
-  /\b(?:first|given|middle|last|family|full|display|preferred|legal|your)\s*[-_ ]?name\b|\b(?:name|surname)\b/i;
 const PASSWORD_FIELD_SIGNAL = /\b(?:password|passwd|pwd|passphrase|passcode)\b/i;
 const OTP_FIELD_SIGNAL =
   /\b(?:otp|one[-_ ]?time|verification[-_ ]?code|verify[-_ ]?code|security[-_ ]?code|auth(?:entication)?[-_ ]?code|confirmation[-_ ]?code|passcode|2fa|mfa|totp)\b/i;
@@ -152,21 +151,10 @@ export class AutoFiller {
   private adaptive = new AdaptiveStrategyEngine();
   private intelligence = new IntelligenceCore();
   private contextEngine = new ContextEngine(this.detector);
-  private classificationCache = new WeakMap<
-    HTMLInputElement | HTMLTextAreaElement,
-    ReturnType<IntelligenceCore['classify']>
-  >();
-
   private getClassification(
     el: HTMLInputElement | HTMLTextAreaElement
   ): ReturnType<IntelligenceCore['classify']> {
-    let cached = this.classificationCache.get(el);
-    if (!cached) {
-      const record = extractFieldRecord(el);
-      cached = this.intelligence.classify(record);
-      this.classificationCache.set(el, cached);
-    }
-    return cached;
+    return this.intelligence.classify(extractFieldRecord(el));
   }
 
   constructor() {
@@ -282,7 +270,7 @@ export class AutoFiller {
         );
         if (result.success) {
           void AutoSubmitDetector.checkAndHighlight(safeGroup);
-          this.markOTPUsed();
+          this.markOTPUsed(otp);
           this.saveTrustedSelector('otp', this.buildFieldSelector(safeGroup.fields[0]));
           return true;
         }
@@ -325,7 +313,7 @@ export class AutoFiller {
     if (focusedField) {
       const focusedValue = focusedField.type === 'number' ? cleanOTP : otp;
       if (await this.fillFocusedOTPField(focusedField, focusedValue, context, isBackgroundTab)) {
-        this.markOTPUsed();
+        this.markOTPUsed(otp);
         this.saveTrustedSelector('otp', this.buildFieldSelector(focusedField));
         return true;
       }
@@ -349,11 +337,19 @@ export class AutoFiller {
     context: PageContext,
     isBackgroundTab = false
   ): Promise<boolean> {
-    const rawFields = selectors
-      .map((selector) => deepQuerySelectorAll<HTMLInputElement>(selector)[0] ?? null)
+    const active = getDeepActiveElement();
+    const activeRoot = active?.getRootNode();
+    const rawFields = [...new Set(selectors
+      .map((selector) => {
+        const candidates = deepQuerySelectorAll<HTMLInputElement>(selector)
+          .filter((field) => !field.disabled && !field.readOnly);
+        return candidates.find((field) => field === active) ??
+          candidates.find((field) => field.getRootNode() === activeRoot) ??
+          (candidates.length === 1 ? candidates[0] ?? null : null);
+      })
       .filter(
         (field): field is HTMLInputElement => field !== null && !field.disabled && !field.readOnly
-      );
+      ))];
 
     if (rawFields.length === 0) {
       return false;
@@ -377,7 +373,7 @@ export class AutoFiller {
     const result = await OTPFiller.fill(finalOtp, group, context.framework, isBackgroundTab);
     if (result.success) {
       void AutoSubmitDetector.checkAndHighlight(group);
-      this.markOTPUsed();
+      this.markOTPUsed(originalOtp);
       this.saveTrustedSelector('otp', selectors[0] ?? this.buildFieldSelector(group.fields[0]));
       return true;
     }
@@ -388,7 +384,7 @@ export class AutoFiller {
       if (
         await this.fillFocusedOTPField(controllerField, controllerValue, context, isBackgroundTab)
       ) {
-        this.markOTPUsed();
+        this.markOTPUsed(originalOtp);
         this.saveTrustedSelector('otp', this.buildFieldSelector(controllerField));
         return true;
       }
@@ -405,7 +401,7 @@ export class AutoFiller {
     expectedLength: number,
     context: PageContext
   ): HTMLInputElement | null {
-    const active = document.activeElement;
+    const active = getDeepActiveElement();
     if (!(active instanceof HTMLInputElement) || active.disabled || active.readOnly) {
       return null;
     }
@@ -418,8 +414,8 @@ export class AutoFiller {
     context: PageContext
   ): HTMLInputElement | null {
     const ignored = new Set(ignoreFields);
-    const active =
-      document.activeElement instanceof HTMLInputElement ? document.activeElement : null;
+    const focused = getDeepActiveElement();
+    const active = focused instanceof HTMLInputElement ? focused : null;
 
     const candidates = deepQuerySelectorAll<HTMLInputElement>('input')
       .filter((field: HTMLInputElement) => !ignored.has(field))
@@ -438,7 +434,7 @@ export class AutoFiller {
       if (field === active) {
         score += 5;
       }
-      if (field.autocomplete.toLowerCase() === 'one-time-code') {
+      if (field.matches('[autocomplete~="one-time-code" i]')) {
         score += 4;
       }
       if (
@@ -531,6 +527,7 @@ export class AutoFiller {
     if (!this.isOTPCompatibleInput(field)) {
       return false;
     }
+    if (field.maxLength > 0 && field.maxLength < expectedLength) {return false;}
 
     const calibrated = this.getClassification(field);
     if (calibrated.decision === 'BLOCK') {
@@ -546,7 +543,7 @@ export class AutoFiller {
       return true;
     }
 
-    const hasAutocompleteOTP = field.autocomplete.toLowerCase() === 'one-time-code';
+    const hasAutocompleteOTP = field.matches('[autocomplete~="one-time-code" i]');
     const descriptor = this.getFieldDescriptor(field);
     if (CAPTCHA_DESCRIPTOR_PATTERN.test(descriptor) && !hasAutocompleteOTP) {
       return false;
@@ -558,7 +555,7 @@ export class AutoFiller {
   }
 
   private isOTPCompatibleInput(field: HTMLInputElement): boolean {
-    return OTP_COMPATIBLE_INPUT_TYPES.has(field.type);
+    return OTP_COMPATIBLE_INPUT_TYPES.has(field.type) && !NegativePatternMatcher.isLikelyNotOTP(field);
   }
 
   private hasStrongOTPSignal(
@@ -566,7 +563,7 @@ export class AutoFiller {
     expectedLength: number,
     context: PageContext
   ): boolean {
-    if (field.autocomplete.toLowerCase() === 'one-time-code') {
+    if (field.matches('[autocomplete~="one-time-code" i]')) {
       return true;
     }
 
@@ -601,13 +598,7 @@ export class AutoFiller {
   }
 
   private getFieldDescriptor(field: FormInputElement): string {
-    const labels = field.labels ? Array.from(field.labels, (label) => label.textContent ?? '') : [];
     const resolvedLabel = resolveLabelText(field);
-    const ariaLabelledBy = field
-      .getAttribute('aria-labelledby')
-      ?.split(/\s+/)
-      .map((id) => document.getElementById(id)?.textContent ?? '')
-      .join(' ');
 
     return [
       field instanceof HTMLInputElement ? field.type : field.tagName.toLowerCase(),
@@ -621,8 +612,6 @@ export class AutoFiller {
       field.getAttribute('class'),
       field.getAttribute('title'),
       resolvedLabel,
-      ariaLabelledBy,
-      ...labels,
     ]
       .filter(Boolean)
       .join(' ')
@@ -745,10 +734,16 @@ export class AutoFiller {
       let hasPasswordField = false;
       for (const input of inputs) {
         const calibrated = this.getClassification(input);
-        if (calibrated.decision === 'BLOCK') {continue;}
+        if (calibrated.decision === 'BLOCK') {
+          continue;
+        }
         const type = calibrated.fieldType;
-        if (type === 'email' || type === 'username') {hasEmailOrIdentifierField = true;}
-        if (type === 'password' || type === 'confirm-password') {hasPasswordField = true;}
+        if (type === 'email' || type === 'username') {
+          hasEmailOrIdentifierField = true;
+        }
+        if (type === 'password' || type === 'confirm-password') {
+          hasPasswordField = true;
+        }
       }
 
       // Auto-generate disposable email only when Temp Mail tab is active.
@@ -764,13 +759,15 @@ export class AutoFiller {
             const genResp = await safeSendMessage(
               {
                 action: 'GENERATE_EMAIL',
-                payload: { domain: window.location.hostname },
+                payload: { originUrl: window.location.origin },
               },
               { timeout: 20_000, retries: 1 }
             );
             if (genResp?.success && (genResp as any).email?.fullEmail) {
               const refetched = await this.fetchIdentityAndOTP();
-              if (refetched.identity) {identity = refetched.identity;}
+              if (refetched.identity) {
+                identity = refetched.identity;
+              }
             }
           } catch (e) {
             log.warn('Failed to auto-generate email during Smart Fill', e);
@@ -793,7 +790,9 @@ export class AutoFiller {
           );
           if (genPass?.success) {
             const refetched = await this.fetchIdentityAndOTP();
-            if (refetched.identity) {identity = refetched.identity;}
+            if (refetched.identity) {
+              identity = refetched.identity;
+            }
           }
         } catch (e) {
           log.warn('Failed to auto-generate password during Smart Fill', e);
@@ -803,7 +802,7 @@ export class AutoFiller {
 
     // Pass 0 — ultra-fast: fill the currently focused field if fillable
     let pass0Count = 0;
-    const active = document.activeElement;
+    const active = getDeepActiveElement();
     if (active instanceof HTMLInputElement && this.isVisibleInput(active) && !active.disabled) {
       try {
         pass0Count = await this.fillFocusedField(active, identity, otpCode, context, details);
@@ -1013,8 +1012,12 @@ export class AutoFiller {
   }
 
   async injectIcons(): Promise<void> {
-    if (this.destroyed) {return;}
-    if (this.isInjectionExcludedHost(window.location.hostname)) {return;}
+    if (this.destroyed) {
+      return;
+    }
+    if (this.isInjectionExcludedHost(window.location.hostname)) {
+      return;
+    }
 
     const relevantTypes: ReadonlySet<FieldType> = new Set([
       'email',
@@ -1030,18 +1033,26 @@ export class AutoFiller {
     const BATCH_SIZE = 15; // Process 15 inputs, then yield to the browser
 
     const processBatch = async () => {
-      if (this.destroyed) {return;}
+      if (this.destroyed) {
+        return;
+      }
 
       const end = Math.min(index + BATCH_SIZE, inputs.length);
       for (; index < end; index++) {
         const input = inputs[index]!;
-        if (input.hasAttribute('data-ghost-attached')) {continue;}
+        if (input.hasAttribute('data-ghost-attached')) {
+          continue;
+        }
 
         // Skip off-screen inputs to save CPU (they aren't visible to the user yet)
-        if (!this.isVisibleInput(input)) {continue;}
+        if (!this.isVisibleInput(input)) {
+          continue;
+        }
 
         const calibrated = this.getClassification(input);
-        if (calibrated.decision === 'BLOCK' || calibrated.decision === 'ABSTAIN') {continue;}
+        if (calibrated.decision === 'BLOCK' || calibrated.decision === 'ABSTAIN') {
+          continue;
+        }
 
         const type = calibrated.fieldType;
 
@@ -1150,7 +1161,7 @@ export class AutoFiller {
           const genResp = await safeSendMessage(
             {
               action: 'GENERATE_EMAIL',
-              payload: { domain: window.location.hostname },
+              payload: { originUrl: window.location.origin },
             },
             { timeout: 20_000, retries: 1 }
           );
@@ -1242,7 +1253,7 @@ export class AutoFiller {
   }
 
   async fillCurrentField(value: string, fieldType?: FieldType): Promise<boolean> {
-    const el = document.activeElement;
+    const el = getDeepActiveElement();
     if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
       return false;
     }
@@ -1359,24 +1370,12 @@ export class AutoFiller {
     }
   }
 
-  private isPersonNameField(element: FormInputElement, descriptor = this.getFieldDescriptor(element)): boolean {
-    const autocomplete = (element.getAttribute('autocomplete') ?? '').toLowerCase();
-    const hasStrongNameLabel = /\b(?:first|given|middle|last|family|full|display|preferred|legal|your)\s*[-_ ]?name\b/i.test(
-      descriptor
+  private isPersonNameField(element: FormInputElement): boolean {
+    const result = this.getClassification(element);
+    return (
+      result.decision === 'FILL' &&
+      ['first-name', 'last-name', 'full-name'].includes(result.fieldType)
     );
-    if (hasStrongNameLabel) {
-      return true;
-    }
-    if (autocomplete.split(/\s+/).some((token) => ['given-name', 'family-name', 'name'].includes(token))) {
-      return true;
-    }
-    // An explicit username contract wins over a generic `name` token. This
-    // keeps GitHub-style `user[name]` handles usable without treating a
-    // profile field labelled “Your name” as an email target.
-    if (USERNAME_FIELD_SIGNAL.test(descriptor)) {
-      return false;
-    }
-    return PERSON_NAME_FIELD_SIGNAL.test(descriptor);
   }
 
   private isExplicitUsernameField(
@@ -1393,6 +1392,10 @@ export class AutoFiller {
    * credential target into a person-name/profile field.
    */
   private isCompatibleTarget(fieldType: FieldType, element: FormInputElement): boolean {
+    const classified = this.getClassification(element);
+    if (classified.decision === 'BLOCK') {
+      return false;
+    }
     const descriptor = this.getFieldDescriptor(element);
     const type = element instanceof HTMLInputElement ? element.type.toLowerCase() : '';
     const autocomplete = (element.getAttribute('autocomplete') ?? '').toLowerCase();
@@ -1401,8 +1404,9 @@ export class AutoFiller {
       type === 'email' ||
       autocompleteTokens.includes('email') ||
       EMAIL_FIELD_SIGNAL.test(descriptor) ||
-      /\bmail\b/i.test(descriptor);
-    const hasPersonNameContract = this.isPersonNameField(element, descriptor);
+      /\bmail\b/i.test(descriptor) ||
+      (classified.decision === 'FILL' && classified.fieldType === 'email');
+    const hasPersonNameContract = this.isPersonNameField(element);
     const hasUsernameContract = this.isExplicitUsernameField(element, descriptor);
     const hasPasswordContract =
       type === 'password' ||
@@ -1417,26 +1421,56 @@ export class AutoFiller {
         }
         // A username autocomplete is only a valid email target in a login-like
         // identifier field. Do not use it when a dedicated email field exists.
-        return hasEmailContract ||
-          (hasUsernameContract && !this.hasSiblingEmailField(element) && !hasPersonNameContract);
+        return (
+          hasEmailContract ||
+          (hasUsernameContract && !this.hasSiblingEmailField(element) && !hasPersonNameContract)
+        );
       case 'username':
-        return hasUsernameContract && !hasPersonNameContract && !hasEmailContract && !hasPasswordContract;
+        return (
+          hasUsernameContract && !hasPersonNameContract && !hasEmailContract && !hasPasswordContract
+        );
       case 'password':
-      case 'confirm-password':
-        return hasPasswordContract && !hasEmailContract && !hasPersonNameContract;
+      case 'confirm-password': {
+        if (!hasPasswordContract || hasEmailContract || hasPersonNameContract) {
+          return false;
+        }
+        const passwordRole = [
+          element.getAttribute('name'),
+          element.id,
+          element.getAttribute('placeholder'),
+          element.getAttribute('aria-label'),
+          element.getAttribute('data-testid'),
+          element.getAttribute('data-cy'),
+          resolveLabelText(element),
+        ]
+          .filter(Boolean)
+          .join(' ');
+        const isConfirmation =
+          /confirm|repeat|retype|re.?enter|again|(?:password|passwd|pwd)[-_ ]?2/i.test(
+            passwordRole
+          ) ||
+          (classified.decision === 'FILL' && classified.fieldType === 'confirm-password');
+        return (fieldType === 'confirm-password') === isConfirmation;
+      }
       case 'first-name':
-        return !hasEmailContract && !hasPasswordContract && /\b(?:first|given|forename)\s*[-_ ]?name\b|\bfirst\b/i.test(descriptor);
+        return hasPersonNameContract && classified.fieldType === 'first-name';
       case 'last-name':
-        return !hasEmailContract && !hasPasswordContract && /\b(?:last|family|surname)\s*[-_ ]?name\b|\blast\b/i.test(descriptor);
+        return hasPersonNameContract && classified.fieldType === 'last-name';
       case 'full-name':
       case 'name':
-        return !hasEmailContract && !hasPasswordContract && hasPersonNameContract;
+        return hasPersonNameContract && classified.fieldType === 'full-name';
       case 'phone':
-        return !hasEmailContract && !hasPasswordContract &&
-          (autocompleteTokens.includes('tel') || PHONE_FIELD_SIGNAL.test(descriptor));
+        return (
+          !hasEmailContract &&
+          !hasPasswordContract &&
+          (autocompleteTokens.includes('tel') || PHONE_FIELD_SIGNAL.test(descriptor))
+        );
       case 'otp':
-        return !hasEmailContract && !hasPasswordContract &&
-          (autocompleteTokens.includes('one-time-code') || OTP_FIELD_SIGNAL.test(descriptor));
+        return (
+          !hasEmailContract &&
+          !hasPasswordContract &&
+          (autocompleteTokens.includes('one-time-code') || OTP_FIELD_SIGNAL.test(descriptor))
+        );
       default:
         return false;
     }
@@ -1539,7 +1573,7 @@ export class AutoFiller {
       element?.id,
       element?.placeholder,
       element?.getAttribute('aria-label'),
-      element instanceof HTMLInputElement ? (element.labels?.[0]?.textContent ?? '') : '',
+      element ? resolveLabelText(element) : '',
     ]
       .filter(Boolean)
       .join(' ')
@@ -1604,8 +1638,10 @@ export class AutoFiller {
     return false;
   }
 
-  markOTPUsed(): void {
-    void safeSendMessage({ action: 'MARK_OTP_USED' }).catch(() => {});
+  markOTPUsed(code?: string): void {
+    void safeSendMessage({ action: 'MARK_OTP_USED', ...(code ? { payload: { code } } : {}) }).catch(
+      () => {}
+    );
   }
 
   private delay(ms: number): Promise<void> {
@@ -1638,6 +1674,18 @@ export class AutoFiller {
     contextHint: HTMLElement | null
   ): Promise<{ element: HTMLInputElement; selector: string } | null> {
     const domain = window.location.hostname;
+
+    // The field the user selected wins over saved selectors and similar inputs.
+    if (
+      contextHint instanceof HTMLInputElement &&
+      contextHint.isConnected &&
+      !contextHint.disabled &&
+      !contextHint.readOnly &&
+      this.isVisibleInput(contextHint) &&
+      this.isCompatibleTarget(fieldType, contextHint)
+    ) {
+      return { element: contextHint, selector: this.buildFieldSelector(contextHint) };
+    }
 
     // ── Stage 0: ranked trusted-selector memory (multi-hit adaptive) ──
     const ranked = await HistoryManager.getRankedSelectors(domain, fieldType);
@@ -1683,14 +1731,12 @@ export class AutoFiller {
 
     for (const input of allInputs) {
       const calibrated = this.getClassification(input);
-      if (calibrated.decision === 'BLOCK') {continue;}
+      if (calibrated.decision === 'BLOCK') {
+        continue;
+      }
       const type = calibrated.fieldType;
 
-      if (
-        fieldType === 'email' &&
-        type === 'username' &&
-        this.isCompatibleTarget('email', input)
-      ) {
+      if (fieldType === 'email' && type === 'username' && this.isCompatibleTarget('email', input)) {
         if (calibrated.confidence > fallbackScore) {
           fallbackScore = calibrated.confidence;
           fallbackEl = input;
@@ -1783,6 +1829,7 @@ export class AutoFiller {
         'input[data-field*="password" i]',
       ],
       'confirm-password': [
+        'input[type="password"]',
         'input[name*="confirm" i][name*="password" i]',
         'input[id*="confirm" i][id*="password" i]',
         'input[placeholder*="confirm" i][placeholder*="password" i]',
@@ -1847,7 +1894,9 @@ export class AutoFiller {
     if (selectors) {
       const searchRoots: ParentNode[] = [];
       const form = contextHint?.closest?.('form');
-      if (form) {searchRoots.push(form);}
+      if (form) {
+        searchRoots.push(form);
+      }
       searchRoots.push(document);
 
       for (const root of searchRoots) {
@@ -1876,20 +1925,8 @@ export class AutoFiller {
       }
     }
 
-    // ── Stage 4: contextHint fallback if it matches basic constraints ──
-    if (
-      contextHint instanceof HTMLInputElement &&
-      !contextHint.disabled &&
-      !contextHint.readOnly &&
-      this.isVisibleInput(contextHint) &&
-      this.isCompatibleTarget(fieldType, contextHint)
-    ) {
-      const selector = this.buildFieldSelector(contextHint);
-      log.debug(`FieldResolver: Stage 4 fallback hit (contextHint for ${fieldType})`, { selector });
-      return { element: contextHint, selector };
-    }
-
-    log.warn(`FieldResolver: all stages exhausted, no ${fieldType} field found`);
+    // Optional companion fields are often absent (e.g. a single full-name input).
+    log.debug(`FieldResolver: no ${fieldType} field found`);
     return null;
   }
 
@@ -1900,7 +1937,9 @@ export class AutoFiller {
       if (rect.width <= 0 || rect.height <= 0) {
         const style = window.getComputedStyle(el);
         const isAnimating = style.animationName !== 'none' || style.transitionProperty !== 'none';
-        if (!isAnimating) {return false;}
+        if (!isAnimating) {
+          return false;
+        }
       }
       const style = window.getComputedStyle(el);
       return (
@@ -1929,7 +1968,7 @@ export class AutoFiller {
   ): Promise<boolean> {
     const resolved = await this.resolveField(fieldType, contextHint);
     if (!resolved) {
-      log.warn(`fillFieldIntoTarget: no ${fieldType} field found on page`);
+      log.debug(`fillFieldIntoTarget: no ${fieldType} field found on page`);
       return false;
     }
 
@@ -1960,9 +1999,16 @@ export class AutoFiller {
       // Intelligent co-filling for confirmation passwords
       if (fieldType === 'password') {
         const confirmResolved = await this.resolveField('confirm-password', contextHint);
-        if (confirmResolved) {
+        if (
+          confirmResolved &&
+          confirmResolved.element !== element &&
+          (!element.form || confirmResolved.element.form === element.form)
+        ) {
           log.info('fillFieldIntoTarget: Autofilling confirm-password field as well');
-          await FieldSetter.setValue(confirmResolved.element, value, context.framework);
+          if (!(await FieldSetter.setValue(confirmResolved.element, value, context.framework))) {
+            log.warn('fillFieldIntoTarget: could not fill confirm-password field');
+            return false;
+          }
           this.saveTrustedSelector('confirm-password', confirmResolved.selector);
         }
       }
@@ -2028,7 +2074,6 @@ export class AutoFiller {
       this.latestPendingOTP.resolve(false);
       this.latestPendingOTP = null;
     }
-    this.classificationCache = new WeakMap();
     deepQuerySelectorAll('ghost-label').forEach((el: Element) => el.remove());
     document.body.removeAttribute('data-ghost-injected');
   }

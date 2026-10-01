@@ -4,15 +4,22 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { IS_GMAIL_ENABLED, isTemporaryMailAccount } from '../../config/buildProfile';
 import { storageService } from '../../services/storageService';
 import { EmailAccount } from '../../types';
-import { APP_VERSION } from '../../utils/core';
 import { createLogger } from '../../utils/logger';
 import { safeSendMessage } from '../../utils/messaging';
 import { t } from '../i18n';
-import { viewFade , Toast } from '../ui';
+import { viewFade, Toast } from '../ui';
 import AliasPanel from './components/AliasPanel';
 import EmailGenerator from './components/EmailGenerator';
 import Hub from './components/Hub';
-import { AppSkeleton, ErrorBoundary, Header, HelpModal, Onboarding, OTPDisplay, PasswordGenerator } from './components/SharedComponents';
+import {
+  AppSkeleton,
+  ErrorBoundary,
+  Header,
+  HelpModal,
+  Onboarding,
+  OTPDisplay,
+  PasswordGenerator,
+} from './components/SharedComponents';
 import { useAppStore } from './store';
 
 const log = createLogger('App');
@@ -49,8 +56,23 @@ const App: React.FC = () => {
 
   const [isInitialized, setIsInitialized] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [toastRevision, setToastRevision] = useState(0);
   const [aliasInitialTab, setAliasInitialTab] = useState<AliasPanelTab>('generator');
   const helpTriggerRef = useRef<HTMLElement | null>(null);
+  const previousRouteRef = useRef({ view, isFirstTime });
+
+  useEffect(() => {
+    const routeChanged = previousRouteRef.current.view !== view;
+    const onboardingDismissed = previousRouteRef.current.isFirstTime && !isFirstTime;
+    previousRouteRef.current = { view, isFirstTime };
+    if (!routeChanged && !onboardingDismissed) {
+      return;
+    }
+    const focusTimer = setTimeout(() => {
+      document.getElementById('main-content')?.focus();
+    }, 140);
+    return () => clearTimeout(focusTimer);
+  }, [view, isFirstTime]);
 
   // Track toast timeout to prevent race conditions
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -70,7 +92,11 @@ const App: React.FC = () => {
         clearTimeout(toastTimeoutRef.current);
       }
       setToast(message);
-      toastTimeoutRef.current = setTimeout(() => setToast(null), 3000);
+      setToastRevision((revision) => revision + 1);
+      toastTimeoutRef.current = setTimeout(
+        () => setToast(null),
+        Math.min(8000, Math.max(3000, message.length * 60))
+      );
     },
     [setToast]
   );
@@ -116,10 +142,22 @@ const App: React.FC = () => {
     setLoading(true);
     try {
       log.info('Generating new identity...');
+      let originUrl: string | undefined;
+      try {
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (activeTab?.url) {
+          const pageUrl = new URL(activeTab.url);
+          if (pageUrl.protocol === 'https:' || pageUrl.protocol === 'http:') {
+            originUrl = pageUrl.origin;
+          }
+        }
+      } catch {
+        // Generation still works when Chrome does not expose the active tab URL.
+      }
       // safeSendMessage has its own retry logic — don't wrap in withRetry
       // which caused 7+ second freezes when the service worker was cold.
       const res = await safeSendMessage(
-        { action: 'GENERATE_EMAIL' },
+        { action: 'GENERATE_EMAIL', ...(originUrl ? { payload: { originUrl } } : {}) },
         { timeout: 45_000 }
       );
       if (
@@ -137,7 +175,10 @@ const App: React.FC = () => {
       }
     } catch (e: unknown) {
       log.error('Exception during identity generation:', e);
-      if ((e instanceof Error && e.message === 'Timeout') || (e as { message?: string })?.message === 'Timeout') {
+      if (
+        (e instanceof Error && e.message === 'Timeout') ||
+        (e as { message?: string })?.message === 'Timeout'
+      ) {
         showToast('Server took too long. Try again.');
       } else {
         showToast(t('generationFailed'));
@@ -425,7 +466,11 @@ const App: React.FC = () => {
       } else if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
         window.open(chrome.runtime.getURL('options.html'), '_blank', 'noopener,noreferrer');
       } else {
-        window.open(new URL('options.html', window.location.href).href, '_blank', 'noopener,noreferrer');
+        window.open(
+          new URL('options.html', window.location.href).href,
+          '_blank',
+          'noopener,noreferrer'
+        );
       }
     } catch (e) {
       log.error('Failed to open settings', e);
@@ -443,25 +488,16 @@ const App: React.FC = () => {
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
-      <main className="main-content-area" id="main-content" role="main">
-        <Toast message={toast} />
-
-        <AnimatePresence initial={false}>
+      <Toast message={toast} revision={toastRevision} />
+      <main className="main-content-area" id="main-content" tabIndex={-1}>
+        <AnimatePresence mode="wait" initial={false}>
           {!isInitialized ? (
             <AppSkeleton key="app-skeleton" />
           ) : isFirstTime ? (
-            <Onboarding
-              key="onboarding"
-              onDismiss={dismissOnboarding}
-              version={APP_VERSION}
-            />
+            <Onboarding key="onboarding" onDismiss={dismissOnboarding} />
           ) : null}
-        </AnimatePresence>
-
-        {/* mode="wait": popLayout forces layout measurements on every view
-            switch (layout thrash in a 375px popup). wait gives a clean
-            110ms fade-out → 170ms fade-in with zero overlap jank. */}
-        <AnimatePresence mode="wait" initial={false}>
+          {/* One presence boundary coordinates onboarding, loading, and views,
+            so the next surface waits for the previous one to exit. */}
           {isInitialized && !isFirstTime && view === 'hub' && (
             <motion.div
               key="hub-view"
@@ -516,6 +552,7 @@ const App: React.FC = () => {
                 <div className="header detail-view-header">
                   <div className="detail-view-header-left">
                     <button
+                      type="button"
                       className="icon-button detail-view-back-btn"
                       onClick={() => safeSetView('hub')}
                       aria-label="Go back to hub"
@@ -526,7 +563,7 @@ const App: React.FC = () => {
                       {view === 'otp'
                         ? t('passcodeSync')
                         : view === 'aliases'
-                          ? 'Gmail Aliases'
+                          ? t('gmailAliasesTitle')
                           : t('vaultSettings')}
                     </span>
                   </div>
@@ -541,7 +578,7 @@ const App: React.FC = () => {
                   )}
                   {view === 'otp' && <OTPDisplay onToast={showToast} />}
                   {view === 'aliases' && (
-                    <AliasPanel initialTab={aliasInitialTab} onToast={showToast} onBack={() => safeSetView('hub')} />
+                    <AliasPanel initialTab={aliasInitialTab} onToast={showToast} />
                   )}
                 </div>
               </motion.div>

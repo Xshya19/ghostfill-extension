@@ -22,14 +22,14 @@
 // │               Notify background → start fast OTP polling        │
 // │               Listen for AUTO_FILL_OTP → fill → feedback        │
 // └──────────────────────────────────────────────────────────────────┘
-import { PageAnalyzer } from '../intelligence/pageAnalyzer';
+import { PageAnalyzer, resolveLabelText } from '../intelligence/pageAnalyzer';
 import { safeGetComputedStyle as _safeGetComputedStyle } from '../shared/safeStyles';
-import { generateHostTokens } from '../shared/theme';
+
 import { ExtensionMessage } from '../types';
+import { deepQuerySelectorAll, getDeepActiveElement } from '../utils/core';
 import { getRandomString } from '../utils/encryption';
 import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
-import { setHTML } from '../utils/sanitization.core';
 import { AutoFiller } from './autoFiller';
 import { FormDetector } from './formDetector';
 import { pageStatus } from './ui/pageStatus';
@@ -175,7 +175,7 @@ const CONFIG = {
   INITIAL_DELAY_MS: 20,
   OBSERVER_THROTTLE_MS: 100,
   TOAST_DURATION_MS: 3_500,
-  TOAST_ANIMATION_MS: 300,
+
   MAX_BODY_SCAN_CHARS: 3_000,
   MAX_DOM_SNAPSHOT_CHARS: 5_000,
   MAX_FORM_SNAPSHOT_CHARS: 2_000,
@@ -458,7 +458,23 @@ class KeywordMatcher {
       .join(' ')
       .toLowerCase();
 
-    return CAPTCHA_PATTERN.test(combined);
+    if (CAPTCHA_PATTERN.test(combined)) {
+      return true;
+    }
+
+    // Some signup forms put the CAPTCHA label beside the input without an
+    // associated <label>. Restrict this check to the immediate field wrapper
+    // so a separate OTP input elsewhere in the form remains eligible.
+    const wrapper = input.parentElement;
+    const hasExplicitOTPHint = /otp|one[-_\s]?time|verification[-_\s]?code|passcode/i.test(
+      `${input.name} ${input.id} ${input.autocomplete}`
+    );
+    return Boolean(
+      !hasExplicitOTPHint &&
+      wrapper &&
+      wrapper !== input.form &&
+      CAPTCHA_PATTERN.test((wrapper.textContent ?? '').slice(0, 200))
+    );
   }
 }
 
@@ -472,48 +488,8 @@ class LabelResolver {
    * Strategies: label[for] → wrapping label → aria-labelledby
    */
   static getAssociatedLabelText(input: HTMLInputElement): string {
-    // 1. Explicit label[for]
-    if (input.id) {
-      const label = safeQuerySelector<HTMLLabelElement>(
-        document,
-        `label[for="${escapeCSS(input.id)}"]`
-      );
-      if (label?.textContent) {
-        const text = label.textContent.trim();
-        if (text.length <= CONFIG.MAX_LABEL_TEXT_LENGTH) {
-          return text.toLowerCase();
-        }
-      }
-    }
-
-    // 2. Wrapping <label>
-    const wrapping = input.closest('label');
-    if (wrapping?.textContent) {
-      const text = wrapping.textContent.trim();
-      if (text.length <= CONFIG.MAX_LABEL_TEXT_LENGTH) {
-        return text.toLowerCase();
-      }
-    }
-
-    // 3. aria-labelledby (supports multiple IDs)
-    const labelledBy = input.getAttribute('aria-labelledby');
-    if (labelledBy) {
-      const texts: string[] = [];
-      for (const id of labelledBy.split(/\s+/)) {
-        const el = document.getElementById(id.trim());
-        if (el?.textContent) {
-          texts.push(el.textContent.trim());
-        }
-      }
-      if (texts.length > 0) {
-        const combined = texts.join(' ');
-        if (combined.length <= CONFIG.MAX_LABEL_TEXT_LENGTH) {
-          return combined.toLowerCase();
-        }
-      }
-    }
-
-    return '';
+    const text = resolveLabelText(input);
+    return text.length <= CONFIG.MAX_LABEL_TEXT_LENGTH ? text.toLowerCase() : '';
   }
 }
 
@@ -549,10 +525,10 @@ class SelectorGenerator {
 
       // Strategy 3: autocomplete=one-time-code
       () => {
-        if (el.autocomplete !== 'one-time-code') {
+        if (!el.matches('[autocomplete~="one-time-code" i]')) {
           return null;
         }
-        const sel = 'input[autocomplete="one-time-code"]';
+        const sel = 'input[autocomplete~="one-time-code" i]';
         return this.verify(sel, el) ? sel : null;
       },
 
@@ -637,13 +613,9 @@ class SelectorGenerator {
   }
 
   private static verify(selector: string, expected: HTMLInputElement): boolean {
-    // GRANDMASTER FIX: Fast paths for inherently unique selectors
-    if (selector.startsWith('#')) {return true;} // ID is unique
-    if (selector.includes('autocomplete="one-time-code"')) {return true;} // Usually unique
-    
     try {
-      // Only run expensive querySelectorAll for ambiguous selectors (classes, nth-of-type)
-      const all = document.querySelectorAll<HTMLInputElement>(selector);
+      const root = expected.getRootNode() as Document | ShadowRoot;
+      const all = root.querySelectorAll<HTMLInputElement>(selector);
       return all.length === 1 && all[0] === expected;
     } catch {
       return false;
@@ -829,10 +801,7 @@ class SplitDigitDetector {
     const hGapLimit = Math.max(ra.width, 20) * 1.5;
     const vDeltaLimit = Math.max(ra.height, 20) * 0.5;
 
-    if (
-      Math.abs(rb.left - ra.right) > hGapLimit ||
-      Math.abs(rb.top - ra.top) > vDeltaLimit
-    ) {
+    if (Math.abs(rb.left - ra.right) > hGapLimit || Math.abs(rb.top - ra.top) > vDeltaLimit) {
       return false;
     }
 
@@ -988,207 +957,6 @@ class AIContainerAnalyzer {
 //  §13  T O A S T   F E E D B A C K
 // ═══════════════════════════════════════════════════════════════
 
-class ToastFeedback {
-  private static readonly TOAST_ID = 'ghostfill-otp-toast';
-
-  /**
-   * Show a brief success toast after OTP auto-fill.
-   * Uses Shadow DOM for style isolation.
-   */
-  static show(otp: string, source: string): void {
-    // Remove any existing toast
-    document.getElementById(this.TOAST_ID)?.remove();
-
-    const masked = this.maskOTP(otp);
-    const sourceLabel = source === 'url-extracted' ? 'from link' : 'from email';
-
-    const container = document.createElement('div');
-    container.id = this.TOAST_ID;
-    container.setAttribute('role', 'status');
-    container.setAttribute('aria-live', 'polite');
-
-    const shadow = container.attachShadow({ mode: 'closed' });
-    const styles = this.getStyles();
-
-    const toast = document.createElement('div');
-    toast.className = 'toast';
-    setHTML(
-      toast,
-      `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-        <path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/>
-      </svg>
-      <div>
-        <div class="title">OTP Auto-Filled ✓</div>
-        <div class="sub"></div>
-      </div>`
-    );
-
-    // Set text content safely (not innerHTML) to prevent XSS
-    const subEl = toast.querySelector('.sub');
-    if (subEl) {
-      subEl.textContent = `${masked} · ${sourceLabel}`;
-    }
-
-    // Apply styles
-    if (typeof CSSStyleSheet !== 'undefined' && 'replaceSync' in CSSStyleSheet.prototype) {
-      const sheet = new CSSStyleSheet();
-      sheet.replaceSync(styles);
-      shadow.adoptedStyleSheets = [sheet];
-      shadow.appendChild(toast);
-    } else {
-      const styleEl = document.createElement('style');
-      styleEl.textContent = styles;
-      shadow.appendChild(styleEl);
-      shadow.appendChild(toast);
-    }
-
-    document.body.appendChild(container);
-
-    // Animate out then remove
-    setTimeout(() => {
-      toast.classList.add('out');
-      setTimeout(() => {
-        if (container.isConnected) {
-          container.remove();
-        }
-      }, CONFIG.TOAST_ANIMATION_MS);
-    }, CONFIG.TOAST_DURATION_MS);
-  }
-
-  /**
-   * Show a dynamic state toast (e.g. Studying Email, Link Found)
-   */
-  static showState(message: string, type: 'working' | 'success', durationMs: number = 3000): void {
-    document.getElementById(this.TOAST_ID)?.remove();
-
-    const container = document.createElement('div');
-    container.id = this.TOAST_ID;
-    container.setAttribute('role', 'status');
-    container.setAttribute('aria-live', 'polite');
-
-    const shadow = container.attachShadow({ mode: 'closed' });
-    const styles = this.getStyles();
-    const toast = document.createElement('div');
-    toast.className = 'toast';
-
-    const icon =
-      type === 'working'
-        ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="spin"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>`
-        : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>`;
-
-    setHTML(
-      toast,
-      `${icon}
-      <div>
-        <div class="title">GhostFill</div>
-        <div class="sub"></div>
-      </div>`
-    );
-
-    const subEl = toast.querySelector('.sub');
-    if (subEl) {
-      subEl.textContent = message;
-    }
-
-    if (typeof CSSStyleSheet !== 'undefined' && 'replaceSync' in CSSStyleSheet.prototype) {
-      const sheet = new CSSStyleSheet();
-      sheet.replaceSync(styles);
-      shadow.adoptedStyleSheets = [sheet];
-      shadow.appendChild(toast);
-    } else {
-      const styleEl = document.createElement('style');
-      styleEl.textContent = styles;
-      shadow.appendChild(styleEl);
-      shadow.appendChild(toast);
-    }
-
-    document.body.appendChild(container);
-
-    if (type !== 'working' || durationMs > 0) {
-      setTimeout(() => {
-        toast.classList.add('out');
-        setTimeout(() => {
-          if (container.isConnected) {
-            container.remove();
-          }
-        }, CONFIG.TOAST_ANIMATION_MS);
-      }, durationMs);
-    }
-  }
-
-  static remove(): void {
-    document.getElementById(this.TOAST_ID)?.remove();
-  }
-
-  private static maskOTP(otp: string): string {
-    if (otp.length <= 2) {
-      return '●'.repeat(otp.length);
-    }
-    return '●'.repeat(otp.length - 2) + otp.slice(-2);
-  }
-
-  private static getStyles(): string {
-    return `
-      :host {
-        all: initial;
-        ${generateHostTokens()}
-        position: fixed; top: 20px; right: 20px;
-        z-index: 2147483645;
-        isolation: isolate;
-        font-family: "Space Grotesk", -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        pointer-events: none;
-      }
-      .toast {
-        background: var(--gf-primary, #7C83FF);
-        color: #fff;
-        padding: 12px 18px;
-        border-radius: 12px;
-        border: 1px solid var(--gf-line-2, rgba(255,255,255,0.10));
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), inset 0 1px 0 var(--gf-hi, rgba(255,255,255,0.06));
-        font-size: 13px;
-        font-weight: 600;
-        font-family: "Space Grotesk", sans-serif;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        max-width: 300px;
-        letter-spacing: 0.02em;
-        animation: slideIn ${CONFIG.TOAST_ANIMATION_MS}ms cubic-bezier(0.22, 1, 0.36, 1);
-      }
-      .toast.out {
-        animation: slideOut ${CONFIG.TOAST_ANIMATION_MS}ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-      }
-      .title { font-weight: 800; font-size: 14px; color: var(--gf-on-primary, #fff); }
-      .sub { opacity: 0.9; font-size: 12px; font-family: "IBM Plex Mono", monospace; margin-top: 2px; color: var(--gf-on-primary, #fff); font-weight: 700; }
-      svg { flex-shrink: 0; }
-      @keyframes slideIn {
-        from { transform: translateX(120%); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
-      }
-      @keyframes slideOut {
-        from { transform: translateX(0); opacity: 1; }
-        to {
-          transform: translateY(10px);
-          opacity: 0;
-        }
-      }
-      .spin {
-        animation: spin 3s linear infinite;
-        opacity: 0.8;
-      }
-      @keyframes spin {
-        100% { transform: rotate(360deg); }
-      }
-      @media (prefers-reduced-motion: reduce) {
-        .toast, .toast.out {
-          animation-duration: 0.01ms !important;
-        }
-      }
-    `;
-  }
-}
-
 // ═══════════════════════════════════════════════════════════════
 //  §14  S C O R I N G   E N G I N E
 // ═══════════════════════════════════════════════════════════════
@@ -1214,13 +982,15 @@ class ScoringEngine {
     const fields = new FieldRegistry();
 
     // ── 1. Gather candidate inputs ────────────────────────
-    const allInputs = document.querySelectorAll<HTMLInputElement>(CANDIDATE_INPUT_SELECTOR);
+    const allInputs = deepQuerySelectorAll<HTMLInputElement>(CANDIDATE_INPUT_SELECTOR);
 
     // GRANDMASTER FIX: Batch all geometry reads BEFORE scoring
     const cache = new LayoutCache();
     cache.capture(Array.from(allInputs));
 
-    const visibleInputs = Array.from(allInputs).filter((el) => VisibilityEngine.isVisible(el, cache));
+    const visibleInputs = Array.from(allInputs).filter((el) =>
+      VisibilityEngine.isVisible(el, cache)
+    );
 
     if (visibleInputs.length === 0) {
       return {
@@ -1315,7 +1085,8 @@ class ScoringEngine {
     // Negative: password field present (only apply if page is not signup or reset)
     const hasPassword = visibleInputs.some((i) => i.type === 'password');
     const pageAnalysis = PageAnalyzer.analyze();
-    const isSignupOrReset = pageAnalysis.pageType === 'signup' || pageAnalysis.pageType === 'password-reset';
+    const isSignupOrReset =
+      pageAnalysis.pageType === 'signup' || pageAnalysis.pageType === 'password-reset';
     if (hasPassword && !isSignupOrReset) {
       signals.push('password-field-negative', SIGNAL_WEIGHTS.LOGIN_FORM_PRESENT, true);
     }
@@ -1356,7 +1127,7 @@ class ScoringEngine {
       verdict = 'otp-page';
     } else if (sortedFields.length > 0 && composite >= CONFIDENCE_THRESHOLD) {
       verdict = 'possible-otp';
-    } else if (composite >= AI_FALLBACK_THRESHOLD && contextScore > 0) {
+    } else if (sortedFields.length > 0 && composite >= AI_FALLBACK_THRESHOLD && contextScore > 0) {
       verdict = 'possible-otp';
     } else {
       verdict = 'not-otp';
@@ -1386,7 +1157,7 @@ class ScoringEngine {
     let bestSource: DetectionSource = 'maxlength-heuristic';
 
     // autocomplete="one-time-code"
-    if (input.autocomplete === 'one-time-code') {
+    if (input.matches('[autocomplete~="one-time-code" i]')) {
       inputScore += SIGNAL_WEIGHTS.AUTOCOMPLETE_OTC;
       bestSource = 'autocomplete-attr';
       signals.push(
@@ -1557,9 +1328,10 @@ class ScoringEngine {
     const text = (document.body?.textContent ?? '')
       .toLowerCase()
       .substring(0, CONFIG.MAX_BODY_SCAN_CHARS);
-    
+
     const matchesContext = KeywordMatcher.matchesContextPhrase(text);
-    const hasTimer = /\b\d+:\d+\b/i.test(text) || /expires?\s*in|remaining|seconds?\s*left/i.test(text);
+    const hasTimer =
+      /\b\d+:\d+\b/i.test(text) || /expires?\s*in|remaining|seconds?\s*left/i.test(text);
     const hasResend = /resend|re-send|send\s*again|send\s*another/i.test(text);
 
     let hasHeadingKeyword = false;
@@ -1749,7 +1521,7 @@ export class OTPPageDetector {
     this.restoreHistoryMethods();
 
     // Remove toast
-    ToastFeedback.remove();
+    pageStatus.hide();
 
     // Notify background if we were on an OTP page
     if (this.verdict !== 'not-otp') {
@@ -1787,22 +1559,30 @@ export class OTPPageDetector {
               }
               // GRANDMASTER FIX: Ignore mutations that don't contain form elements
               // If a div is added but it has no inputs/forms, it's likely just UI chrome
-              if (!node.querySelector?.('input, form, button, select, textarea') && 
-                  node.tagName !== 'INPUT' && node.tagName !== 'FORM') {
+              if (
+                !node.querySelector?.('input, form, button, select, textarea') &&
+                node.tagName !== 'INPUT' &&
+                node.tagName !== 'FORM'
+              ) {
                 continue;
               }
               return true;
             }
           }
-          return m.removedNodes.length > 0 && Array.from(m.removedNodes).some((node) => {
-            if (!(node instanceof HTMLElement)) {return false;}
-            return (
-              node.tagName === 'INPUT' ||
-              node.tagName === 'FORM' ||
-              node.tagName === 'TEXTAREA' ||
-              !!node.querySelector?.('input, form, textarea')
-            );
-          }); // Only rescan when removed nodes contain form elements
+          return (
+            m.removedNodes.length > 0 &&
+            Array.from(m.removedNodes).some((node) => {
+              if (!(node instanceof HTMLElement)) {
+                return false;
+              }
+              return (
+                node.tagName === 'INPUT' ||
+                node.tagName === 'FORM' ||
+                node.tagName === 'TEXTAREA' ||
+                !!node.querySelector?.('input, form, textarea')
+              );
+            })
+          ); // Only rescan when removed nodes contain form elements
         }
         // Only care about attribute changes on actual inputs
         return m.type === 'attributes' && m.target instanceof HTMLInputElement;
@@ -1827,7 +1607,7 @@ export class OTPPageDetector {
       if (this.destroyed) {
         return;
       }
-      if (e.target instanceof HTMLInputElement) {
+      if (e.target instanceof HTMLInputElement || getDeepActiveElement() instanceof HTMLInputElement) {
         this.scheduleDetection('focus');
       }
     };
@@ -1889,8 +1669,8 @@ export class OTPPageDetector {
 
       if (isRegistrationForm) {
         log.info('⚡ Registration form submitted', {
-          action: form.action,
-          method: form.method,
+          action: form.getAttribute('action'),
+          method: form.getAttribute('method'),
         });
 
         this.formSubmittedRecently = true;
@@ -1903,7 +1683,7 @@ export class OTPPageDetector {
           action: 'REGISTRATION_FORM_SUBMITTED',
           payload: {
             url: location.href,
-            formAction: form.action,
+            formAction: form.getAttribute('action') || '',
             timestamp: Date.now(),
           },
         }).catch(() => {});
@@ -1921,10 +1701,11 @@ export class OTPPageDetector {
     let score = 0;
 
     // Check form attributes
-    const action = (form.action || '').toLowerCase();
-    const id = (form.id || '').toLowerCase();
-    const name = (form.name || '').toLowerCase();
-    const className = (form.className || '').toLowerCase();
+    // Named controls (e.g. <input name="name">) can shadow form IDL properties.
+    const action = (form.getAttribute('action') || '').toLowerCase();
+    const id = (form.getAttribute('id') || '').toLowerCase();
+    const name = (form.getAttribute('name') || '').toLowerCase();
+    const className = (form.getAttribute('class') || '').toLowerCase();
 
     const registrationKeywords = [
       'signup',
@@ -2197,7 +1978,7 @@ export class OTPPageDetector {
 
   /** Fast deterministic fingerprint of current input structure (no DOM allocation). */
   private getDOMHash(): string {
-    const inputs = document.querySelectorAll<HTMLInputElement>('input:not([type="hidden"])');
+    const inputs = deepQuerySelectorAll<HTMLInputElement>('input:not([type="hidden"])');
     const parts: string[] = [];
     for (const el of inputs) {
       parts.push(`${el.type}|${el.name}|${el.id}|${el.autocomplete}`);
@@ -2207,15 +1988,19 @@ export class OTPPageDetector {
 
   private buildLightweightSnapshot(): string {
     const parts: string[] = [];
-    
+
     const walk = (node: Node) => {
-      if (node.nodeType !== Node.ELEMENT_NODE) {return;}
+      if (node.nodeType !== Node.ELEMENT_NODE) {
+        return;
+      }
       const el = node as Element;
       const tag = el.tagName.toLowerCase();
-      
+
       // Skip heavy/non-form elements
-      if (['script', 'style', 'svg', 'path', 'iframe', 'object'].includes(tag)) {return;}
-      
+      if (['script', 'style', 'svg', 'path', 'iframe', 'object'].includes(tag)) {
+        return;
+      }
+
       if (tag === 'input' || tag === 'select' || tag === 'textarea' || tag === 'button') {
         const type = el.getAttribute('type') || '';
         const name = el.getAttribute('name') || '';
@@ -2228,26 +2013,28 @@ export class OTPPageDetector {
       } else if (tag === 'form') {
         parts.push(`<form action="${el.getAttribute('action') || ''}">`);
       }
-      
+
       Array.from(el.childNodes).forEach(walk);
     };
-    
+
     // Walk forms
-    document.querySelectorAll('form').forEach(f => walk(f));
-    
+    document.querySelectorAll('form').forEach((f) => walk(f));
+
     // Walk orphan inputs
-    document.querySelectorAll('input:not([type="hidden"])').forEach(i => {
-      if (!i.closest('form')) {walk(i);}
+    document.querySelectorAll('input:not([type="hidden"])').forEach((i) => {
+      if (!i.closest('form')) {
+        walk(i);
+      }
     });
-    
+
     return parts.join('\n').substring(0, CONFIG.MAX_DOM_SNAPSHOT_CHARS);
   }
 
   private async waitForOtpInput(timeoutMs = 1500): Promise<boolean> {
     const find = () =>
-      document.querySelector<HTMLInputElement>(
-        'input[autocomplete="one-time-code"], input[name*="otp" i], input[name*="code" i], input[type="tel"], input[type="text"][maxlength="1"], input[type="text"][maxlength="6"], input[type="text"][maxlength="8"], input[inputmode="numeric"]'
-      );
+      deepQuerySelectorAll<HTMLInputElement>(
+        'input[autocomplete~="one-time-code" i], input[name*="otp" i], input[name*="code" i], input[type="tel"], input[type="text"][maxlength="1"], input[type="text"][maxlength="6"], input[type="text"][maxlength="8"], input[inputmode="numeric"]'
+      )[0];
 
     const check = () => {
       if (find()) {
@@ -2313,7 +2100,9 @@ export class OTPPageDetector {
     // Run detection with fast progressive retries if fields are still not indexed.
     if (selectors.length === 0 && this.fields.length === 0) {
       log.info('⏳ No fields found initially, waiting for OTP input via MutationObserver...');
-      const foundInput = await this.waitForOtpInput(1500);
+      const foundInput = await this.waitForOtpInput(
+        source === 'email' || source === 'url-extracted' ? 5000 : 1500
+      );
       if (foundInput) {
         log.info('✨ OTP input detected via MutationObserver');
         this.runDetection('auto-fill-trigger-mutated');
@@ -2395,7 +2184,10 @@ export class OTPPageDetector {
     if (success) {
       this.metrics.otpsFilled++;
       log.info('✅ OTP filled successfully');
-      ToastFeedback.show(otp, source);
+      pageStatus.success(
+        `Verification code filled · ending ${otp.slice(-2)} · ${source === 'url-extracted' ? 'from link' : 'from email'}`,
+        CONFIG.TOAST_DURATION_MS
+      );
       return true;
     } else {
       this.metrics.otpsFillFailed++;
@@ -2415,10 +2207,10 @@ export class OTPPageDetector {
 
     if (state === 'ANALYZING_EMAIL') {
       log.info('🔄 PollingManager is analyzing a new email...');
-      ToastFeedback.showState('Studying new email…', 'working', 4000);
+      pageStatus.show('Studying new email…', 'loading', 4000);
     } else if (state === 'LINK_ACTIVATION_STARTED') {
       log.info('🔗 PollingManager activated a background link');
-      ToastFeedback.showState('Activation link handled in background', 'success', 5000);
+      pageStatus.success('Activation link handled in background', 5000);
     }
   }
 

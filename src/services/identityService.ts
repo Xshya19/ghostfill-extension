@@ -122,19 +122,29 @@ class IdentityService {
     // Temp Mail tab — never leak Gmail into fill
     const disposableEmail = await storageService.getFresh('disposableEmail');
     if (isTemporaryMailAccount(disposableEmail)) {
-      return {
+      if (!disposableEmail.expiresAt || disposableEmail.expiresAt > Date.now()) {
+        return {
+          email: disposableEmail.fullEmail,
+          preferredEmailType,
+          source: 'disposable',
+        };
+      }
+      log.warn('Skipping expired disposable email during autofill', {
         email: disposableEmail.fullEmail,
-        preferredEmailType,
-        source: 'disposable',
-      };
+      });
     }
     const currentEmail = await storageService.getFresh('currentEmail');
     if (isTemporaryMailAccount(currentEmail)) {
-      return {
+      if (!currentEmail.expiresAt || currentEmail.expiresAt > Date.now()) {
+        return {
+          email: currentEmail.fullEmail,
+          preferredEmailType,
+          source: 'current',
+        };
+      }
+      log.warn('Skipping expired current email during autofill', {
         email: currentEmail.fullEmail,
-        preferredEmailType,
-        source: 'current',
-      };
+      });
     }
     log.info('Temp Mail tab active but no disposable email configured');
     return { email: '', preferredEmailType, source: 'none' };

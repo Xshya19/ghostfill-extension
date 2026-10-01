@@ -554,6 +554,8 @@ export interface DetectionResult {
   code?: string;
   link?: string;
   confidence: number;
+  /** Confidence in the code alone; a companion link must not raise it. */
+  otpConfidence?: number;
   engine: 'intelligent' | 'ensemble-consensus';
   debug?: string;
   provider?: string;

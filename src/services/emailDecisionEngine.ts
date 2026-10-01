@@ -1,4 +1,5 @@
-import { isAutoOpenableActivationLink, scoreActivationLink } from './extraction/activationLinkGuard';
+import { verificationSiteRoot } from '../utils/verificationSite';
+import { scoreActivationLink } from './extraction/activationLinkGuard';
 import type {
   EmailDecision,
   EmailDecisionAction,
@@ -207,9 +208,11 @@ function scoreDomainContext(input: DecisionInput): {
   }
 
   try {
-    const linkRoot = rootDomain(new URL(link.url).hostname);
-    const sender = senderRoot(input.sender);
-    const expectedRoots = expectedRootSet(input.expectedDomains);
+    const linkRoot = verificationSiteRoot(new URL(link.url).hostname);
+    const sender = verificationSiteRoot(senderRoot(input.sender) || '');
+    const expectedRoots = new Set(
+      [...expectedRootSet(input.expectedDomains)].map(verificationSiteRoot)
+    );
     const reasons: string[] = [];
     const warnings: string[] = [];
     let points = 0;
@@ -218,7 +221,9 @@ function scoreDomainContext(input: DecisionInput): {
       reasons.push('sender-domain-matches-link');
     } else if (sender) {
       points += 10;
-      reasons.push('sender-domain-differs-from-link');
+      warnings.push('sender-domain-differs-from-link');
+    } else {
+      warnings.push('sender-domain-unavailable');
     }
 
     if (expectedRoots.size > 0) {
@@ -246,10 +251,6 @@ function chooseRisk(points: number): EmailDecisionRisk {
   return 'low';
 }
 
-function actionIncludesLink(action: EmailDecisionAction): boolean {
-  return action === 'open-link' || action === 'fill-otp-and-open-link';
-}
-
 function chooseAction(
   extraction: ExtractionResult,
   purpose: EmailDecisionPurpose,
@@ -261,6 +262,13 @@ function chooseAction(
 
   if (risk === 'high' && hasLink && !hasOTP) {
     return 'show-review';
+  }
+
+  // Intent/provider/link confidence cannot promote an uncertain code into a fill.
+  if (hasOTP && normalizeConfidence(extraction.otp?.confidence) < 0.7) {
+    return hasLink && risk === 'low' && normalizeConfidence(extraction.link?.confidence) >= 0.65
+      ? 'open-link'
+      : 'show-review';
   }
 
   if (hasOTP && hasLink) {
@@ -349,35 +357,21 @@ export function assessEmailDecision(input: DecisionInput): EmailDecision {
   const confidence = clamp01(signalConfidence - riskPenalty);
   let action = chooseAction(extraction, purpose, risk, confidence);
 
-  // Hard gate: never auto-open non-activation / marketing / token-only links
-  let linkAutoOpenable = true;
-  if (extraction.link?.url && actionIncludesLink(action)) {
-    const linkCtx =
-      'context' in extraction.link && typeof extraction.link.context === 'string'
-        ? extraction.link.context
-        : '';
-    const anchor = extraction.link.anchorText || '';
-    const gate = scoreActivationLink(extraction.link.url, anchor, linkCtx);
-    reasons.push(`link-gate:${gate.cls}:q${gate.quality}:${gate.reasons.slice(0, 3).join('+')}`);
-    
-    // User requested: "it should only activate the activation link , verificatin link etc"
-    // Restored this check so we don't open junk URLs, but it is no longer blocked by security risk.
-    linkAutoOpenable = isAutoOpenableActivationLink(extraction.link.url, anchor, linkCtx);
-    if (!linkAutoOpenable) {
-      if (action === 'fill-otp-and-open-link' && extraction.otp) {
-        action = 'fill-otp';
-        warnings.push('link-not-auto-openable-otp-only');
-      } else if (action === 'open-link') {
-        action = 'show-review';
-        warnings.push('link-not-auto-openable');
-      }
+  if (extraction.link?.url && (action === 'open-link' || action === 'fill-otp-and-open-link')) {
+    const link = extraction.link;
+    const gate = scoreActivationLink(
+      link.url,
+      link.anchorText || '',
+      'context' in link ? link.context || '' : ''
+    );
+    reasons.push(`link-gate:${gate.cls}:q${gate.quality}`);
+    if (!gate.canAutoOpen || risk !== 'low' || domainContext.warnings.length > 0) {
+      action = extraction.otp ? 'fill-otp' : 'show-review';
+      warnings.push('link-requires-review');
     }
   }
 
-  const canAutoAct =
-    action !== 'show-review' &&
-    action !== 'ignore' &&
-    (!actionIncludesLink(action) || (risk === 'low' && linkAutoOpenable));
+  const canAutoAct = action !== 'show-review' && action !== 'ignore';
 
   return {
     purpose,
@@ -388,4 +382,23 @@ export function assessEmailDecision(input: DecisionInput): EmailDecision {
     reasons,
     warnings,
   };
+}
+
+/** Resolve paired alternatives against the live page, without racing two sign-ins. */
+export function selectVerificationAction(
+  decision: EmailDecision,
+  context: {
+    otpDelivered: boolean;
+    hasMatchingOTPPage: boolean;
+    otpDeliveryComplete?: boolean;
+  }
+): EmailDecisionAction {
+  if (decision.action !== 'fill-otp-and-open-link') {
+    return decision.action;
+  }
+  // Prefer the code while delivery is pending. Once delivery has finished,
+  // a refused fill may use the independently approved companion link.
+  return context.otpDelivered || (context.hasMatchingOTPPage && !context.otpDeliveryComplete)
+    ? 'fill-otp'
+    : 'open-link';
 }

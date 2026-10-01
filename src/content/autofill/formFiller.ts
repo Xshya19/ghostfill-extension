@@ -50,7 +50,8 @@ const log = createLogger('AutofillFormFiller');
 //  DOM Utilities (inlined for zero-import-overhead)
 // ─────────────────────────────────────────────────────────────
 
-export const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+export const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 function safeQuerySelector<T extends Element>(root: ParentNode, selector: string): T | null {
   try {
@@ -62,14 +63,20 @@ function safeQuerySelector<T extends Element>(root: ParentNode, selector: string
 
 export class VisibilityEngine {
   static isVisible(element: HTMLElement): boolean {
-    if (!element.isConnected) {return false;}
+    if (!element.isConnected) {
+      return false;
+    }
     const rect = element.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) {return false;}
+    if (rect.width <= 0 || rect.height <= 0) {
+      return false;
+    }
     const style = window.getComputedStyle(element);
     return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
   }
   static isVisibleRelaxed(element: HTMLElement): boolean {
-    if (!element.isConnected) {return false;}
+    if (!element.isConnected) {
+      return false;
+    }
     const style = window.getComputedStyle(element);
     return style.display !== 'none';
   }
@@ -146,15 +153,25 @@ class KeyMapper {
   };
 
   static getCode(char: string): string {
-    if (/^[a-zA-Z]$/.test(char)) {return `Key${char.toUpperCase()}`;}
-    if (/^[0-9]$/.test(char)) {return `Digit${char}`;}
-    if (this.SPECIAL_CHARS[char]) {return this.SPECIAL_CHARS[char];}
-    if (char.charCodeAt(0) > 127) {return 'Unidentified';}
+    if (/^[a-zA-Z]$/.test(char)) {
+      return `Key${char.toUpperCase()}`;
+    }
+    if (/^[0-9]$/.test(char)) {
+      return `Digit${char}`;
+    }
+    if (this.SPECIAL_CHARS[char]) {
+      return this.SPECIAL_CHARS[char];
+    }
+    if (char.charCodeAt(0) > 127) {
+      return 'Unidentified';
+    }
     return `Key${char.toUpperCase()}`;
   }
 
   static requiresShift(char: string): boolean {
-    if (/^[A-Z]$/.test(char)) {return true;}
+    if (/^[A-Z]$/.test(char)) {
+      return true;
+    }
     return '~!@#$%^&*()_+{}|:"<>?'.includes(char);
   }
 }
@@ -183,8 +200,27 @@ export class EventFactory {
       keyCode = char.toUpperCase().charCodeAt(0);
     } else if (KeyMapper.requiresShift(char)) {
       const unshiftedMap: Record<string, string> = {
-        '~': '`', '!': '1', '@': '2', '#': '3', '$': '4', '%': '5', '^': '6', '&': '7', '*': '8', '(': '9', ')': '0',
-        '_': '-', '+': '=', '{': '[', '}': ']', '|': '\\', ':': ';', '"': "'", '<': ',', '>': '.', '?': '/',
+        '~': '`',
+        '!': '1',
+        '@': '2',
+        '#': '3',
+        $: '4',
+        '%': '5',
+        '^': '6',
+        '&': '7',
+        '*': '8',
+        '(': '9',
+        ')': '0',
+        _: '-',
+        '+': '=',
+        '{': '[',
+        '}': ']',
+        '|': '\\',
+        ':': ';',
+        '"': "'",
+        '<': ',',
+        '>': '.',
+        '?': '/',
       };
       if (unshiftedMap[char]) {
         keyCode = unshiftedMap[char].charCodeAt(0);
@@ -267,24 +303,34 @@ export class PhantomTyper {
     }
 
     if (text.length > MAX_INPUT_LENGTH) {
-      log.warn('PhantomTyper: text exceeds maximum length', { length: text.length, max: MAX_INPUT_LENGTH });
+      log.warn('PhantomTyper: text exceeds maximum length', {
+        length: text.length,
+        max: MAX_INPUT_LENGTH,
+      });
       text = text.slice(0, MAX_INPUT_LENGTH);
     }
 
     const sessionId = ++this.sessionCounter;
     this.sessionMap.set(element, sessionId);
 
-    const isActive = (): boolean => this.sessionMap.get(element) === sessionId && element.isConnected;
+    const isActive = (): boolean =>
+      this.sessionMap.get(element) === sessionId && element.isConnected;
 
     try {
-      if (!this.dispatchPointerEngagement(element, isActive)) {return;}
+      if (!this.dispatchPointerEngagement(element, isActive)) {
+        return;
+      }
 
-      if (!isActive()) {return;}
+      if (!isActive()) {
+        return;
+      }
       element.focus({ preventScroll: true });
       element.dispatchEvent(EventFactory.focus('focus'));
       element.dispatchEvent(EventFactory.focus('focusin'));
 
-      if (!isActive()) {return;}
+      if (!isActive()) {
+        return;
+      }
 
       NativeValueWriter.setValue(element, '');
       element.dispatchEvent(EventFactory.generic('input', { bubbles: true }));
@@ -309,7 +355,9 @@ export class PhantomTyper {
         }
       }
 
-      if (!isActive()) {return;}
+      if (!isActive()) {
+        return;
+      }
 
       element.dispatchEvent(EventFactory.generic('change', { bubbles: true }));
       element.dispatchEvent(EventFactory.pointer('pointerout'));
@@ -322,7 +370,10 @@ export class PhantomTyper {
     }
   }
 
-  private static dispatchPointerEngagement(element: FormInputElement, isActive: () => boolean): boolean {
+  private static dispatchPointerEngagement(
+    element: FormInputElement,
+    isActive: () => boolean
+  ): boolean {
     const pointerEvents: Array<[string, { buttons?: number }?]> = [
       ['pointerover'],
       ['pointerenter'],
@@ -330,11 +381,15 @@ export class PhantomTyper {
     ];
 
     for (const [type, opts] of pointerEvents) {
-      if (!isActive()) {return false;}
+      if (!isActive()) {
+        return false;
+      }
       element.dispatchEvent(EventFactory.pointer(type, opts));
     }
 
-    if (!isActive()) {return false;}
+    if (!isActive()) {
+      return false;
+    }
     element.dispatchEvent(EventFactory.mouse('mousedown', { buttons: 1 }));
     return true;
   }
@@ -373,16 +428,18 @@ export class FieldSetter {
 
     const strategies = [
       {
+        name: 'NativeSetter',
+        fn: () => this.setViaNativeSetter(element, value),
+      },
+      {
         name: 'PhantomTyper',
         fn: async () => {
-          if (isBackgroundTab) {return false;}
+          if (isBackgroundTab) {
+            return false;
+          }
           await PhantomTyper.typeSimulatedString(element, value);
           return element.value === value;
         },
-      },
-      {
-        name: 'NativeSetter',
-        fn: () => this.setViaNativeSetter(element, value),
       },
       {
         name: 'InputEventSequence',
@@ -416,7 +473,7 @@ export class FieldSetter {
     for (const strategy of strategies) {
       try {
         const success = await strategy.fn();
-        if (success) {
+        if (success && element.value === value) {
           log.debug(`Field set via ${strategy.name}`);
           return true;
         }
@@ -427,7 +484,10 @@ export class FieldSetter {
 
     log.warn('All field-setting strategies exhausted, using brute-force fallback');
     try {
-      const proto = element instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+      const proto =
+        element instanceof HTMLInputElement
+          ? HTMLInputElement.prototype
+          : HTMLTextAreaElement.prototype;
       const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
       if (nativeSetter) {
         nativeSetter.call(element, value);
@@ -440,8 +500,17 @@ export class FieldSetter {
       element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
       element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
       element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      element.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: value }));
-      element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }));
+      element.dispatchEvent(
+        new InputEvent('beforeinput', {
+          bubbles: true,
+          cancelable: true,
+          inputType: 'insertText',
+          data: value,
+        })
+      );
+      element.dispatchEvent(
+        new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value })
+      );
       element.dispatchEvent(new Event('change', { bubbles: true }));
       element.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
       element.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
@@ -452,7 +521,7 @@ export class FieldSetter {
         document.execCommand('insertText', false, value);
       }
 
-      const success = element.value === value || (element.value.length > 0 && element.type === 'password');
+      const success = element.value === value;
       if (success) {
         log.debug('Field set via brute-force fallback');
         return true;
@@ -461,7 +530,10 @@ export class FieldSetter {
       log.warn('Brute-force fallback also failed', err);
     }
 
-    log.warn('All field-setting strategies exhausted (including brute-force fallback)', { id: element.id, name: element.name });
+    log.warn('All field-setting strategies exhausted (including brute-force fallback)', {
+      id: element.id,
+      name: element.name,
+    });
     return false;
   }
 
@@ -470,35 +542,63 @@ export class FieldSetter {
     char: string,
     isBackgroundTab: boolean = false
   ): Promise<boolean> {
-    if (!element.isConnected) {return false;}
+    if (!element.isConnected) {
+      return false;
+    }
 
     if (isBackgroundTab) {
       return this.setViaNativeSetter(element, char);
     }
 
     const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-    const writeValue = (v: string) => (nativeSetter ? nativeSetter.call(element, v) : (element.value = v));
+    const writeValue = (v: string) =>
+      nativeSetter ? nativeSetter.call(element, v) : (element.value = v);
 
     try {
       element.focus({ preventScroll: true });
       const tracker = (element as any)._valueTracker;
-      if (tracker) {tracker.setValue('');}
+      if (tracker) {
+        tracker.setValue('');
+      }
       writeValue('');
       element.dispatchEvent(new Event('input', { bubbles: true }));
 
       const keyCode = char.charCodeAt(0);
       const code = /^[0-9]$/.test(char) ? `Digit${char}` : `Key${char.toUpperCase()}`;
 
-      element.dispatchEvent(new KeyboardEvent('keydown', { key: char, code, keyCode, bubbles: true }));
-      element.dispatchEvent(new KeyboardEvent('keypress', { key: char, code, keyCode, charCode: keyCode, bubbles: true }));
+      element.dispatchEvent(
+        new KeyboardEvent('keydown', { key: char, code, keyCode, bubbles: true })
+      );
+      element.dispatchEvent(
+        new KeyboardEvent('keypress', {
+          key: char,
+          code,
+          keyCode,
+          charCode: keyCode,
+          bubbles: true,
+        })
+      );
 
-      const beforeInput = new InputEvent('beforeinput', { data: char, inputType: 'insertText', bubbles: true, cancelable: true });
-      if (!element.dispatchEvent(beforeInput)) {return false;}
+      const beforeInput = new InputEvent('beforeinput', {
+        data: char,
+        inputType: 'insertText',
+        bubbles: true,
+        cancelable: true,
+      });
+      if (!element.dispatchEvent(beforeInput)) {
+        return false;
+      }
 
-      if (tracker) {tracker.setValue('');}
+      if (tracker) {
+        tracker.setValue('');
+      }
       writeValue(char);
-      element.dispatchEvent(new InputEvent('input', { data: char, inputType: 'insertText', bubbles: true }));
-      element.dispatchEvent(new KeyboardEvent('keyup', { key: char, code, keyCode, bubbles: true }));
+      element.dispatchEvent(
+        new InputEvent('input', { data: char, inputType: 'insertText', bubbles: true })
+      );
+      element.dispatchEvent(
+        new KeyboardEvent('keyup', { key: char, code, keyCode, bubbles: true })
+      );
       element.dispatchEvent(new Event('change', { bubbles: true }));
 
       return element.value === char || (element.value.length > 0 && element.type === 'password');
@@ -506,22 +606,29 @@ export class FieldSetter {
       log.warn('setCharDirect failed', err);
       writeValue(char);
       const tracker = (element as any)._valueTracker;
-      if (tracker) {tracker.setValue('');}
+      if (tracker) {
+        tracker.setValue('');
+      }
       element.dispatchEvent(new Event('input', { bubbles: true }));
       return element.value === char;
     }
   }
 
   private static setViaNativeSetter(element: FormInputElement, value: string): boolean {
-    const proto = element instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+    const proto =
+      element instanceof HTMLInputElement
+        ? HTMLInputElement.prototype
+        : HTMLTextAreaElement.prototype;
     const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
     const oldValue = element.value;
 
     if (!nativeSetter) {
       element.value = value;
       const tracker = (element as any)._valueTracker;
-      if (tracker) {tracker.setValue(oldValue);}
-      element.dispatchEvent(new Event('input', { bubbles: true }));
+      if (tracker) {
+        tracker.setValue(oldValue);
+      }
+      element.dispatchEvent(EventFactory.input(value));
       element.dispatchEvent(new Event('change', { bubbles: true }));
       return element.value === value;
     }
@@ -529,44 +636,75 @@ export class FieldSetter {
     element.focus();
     nativeSetter.call(element, value);
     const tracker = (element as any)._valueTracker;
-    if (tracker) {tracker.setValue(oldValue);}
-    element.dispatchEvent(new Event('input', { bubbles: true }));
+    if (tracker) {
+      tracker.setValue(oldValue);
+    }
+    element.dispatchEvent(EventFactory.input(value));
     element.dispatchEvent(new Event('change', { bubbles: true }));
     return element.value === value;
   }
 
   private static setViaInputEvent(element: FormInputElement, value: string): void {
     element.focus();
-    const proto = element instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+    const proto =
+      element instanceof HTMLInputElement
+        ? HTMLInputElement.prototype
+        : HTMLTextAreaElement.prototype;
     const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-    const writeValue = (v: string) => nativeSetter ? nativeSetter.call(element, v) : (element.value = v);
+    const writeValue = (v: string) =>
+      nativeSetter ? nativeSetter.call(element, v) : (element.value = v);
 
     writeValue('');
     let accumulated = '';
     for (const char of value) {
-      element.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: char }));
+      element.dispatchEvent(
+        new InputEvent('beforeinput', {
+          bubbles: true,
+          cancelable: true,
+          inputType: 'insertText',
+          data: char,
+        })
+      );
       accumulated += char;
       writeValue(accumulated);
-      element.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: false, inputType: 'insertText', data: char }));
+      element.dispatchEvent(
+        new InputEvent('input', {
+          bubbles: true,
+          cancelable: false,
+          inputType: 'insertText',
+          data: char,
+        })
+      );
     }
     element.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   private static dispatchFullEventChain(element: FormInputElement, value: string): void {
     element.dispatchEvent(new FocusEvent('focus', { bubbles: false }));
-    element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }));
+    element.dispatchEvent(
+      new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value })
+    );
     element.dispatchEvent(new Event('change', { bubbles: true }));
     element.dispatchEvent(new FocusEvent('blur', { bubbles: false }));
   }
 
-  private static async setViaClipboardPaste(element: FormInputElement, value: string): Promise<boolean> {
+  private static async setViaClipboardPaste(
+    element: FormInputElement,
+    value: string
+  ): Promise<boolean> {
     try {
-      if (!navigator.clipboard) {return false;}
+      if (!navigator.clipboard) {
+        return false;
+      }
       element.focus();
 
       const dataTransfer = new DataTransfer();
       dataTransfer.setData('text/plain', value);
-      const pasteEvent = new ClipboardEvent('paste', { clipboardData: dataTransfer, bubbles: true, cancelable: true });
+      const pasteEvent = new ClipboardEvent('paste', {
+        clipboardData: dataTransfer,
+        bubbles: true,
+        cancelable: true,
+      });
       element.dispatchEvent(pasteEvent);
 
       if (element.value !== value) {
@@ -583,7 +721,10 @@ export class FieldSetter {
     try {
       let reactElement: Element | null = element;
       const fiberKey = Object.keys(reactElement).find(
-        (key) => key.startsWith('__reactFiber$') || key.startsWith('__reactInternalInstance$') || key.startsWith('__reactProps$')
+        (key) =>
+          key.startsWith('__reactFiber$') ||
+          key.startsWith('__reactInternalInstance$') ||
+          key.startsWith('__reactProps$')
       );
 
       if (!fiberKey) {
@@ -600,19 +741,28 @@ export class FieldSetter {
         }
       }
 
-      if (!reactElement) {return false;}
+      if (!reactElement) {
+        return false;
+      }
 
       const fiberKeyFound = Object.keys(reactElement).find(
         (key) => key.startsWith('__reactFiber$') || key.startsWith('__reactInternalInstance$')
       );
-      if (!fiberKeyFound) {return false;}
+      if (!fiberKeyFound) {
+        return false;
+      }
 
       const fiber = (reactElement as any)[fiberKeyFound];
-      if (!fiber || !fiber.memoizedProps) {return false;}
+      if (!fiber || !fiber.memoizedProps) {
+        return false;
+      }
 
       const onChange = fiber.memoizedProps.onChange;
       if (typeof onChange === 'function') {
-        const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+        const nativeSetter = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          'value'
+        )?.set;
         if (nativeSetter) {
           nativeSetter.call(element, value);
         } else {
@@ -637,7 +787,10 @@ export class FieldSetter {
 
       const stateNode = fiber.stateNode;
       if (stateNode && stateNode instanceof HTMLInputElement) {
-        const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+        const nativeSetter = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          'value'
+        )?.set;
         if (nativeSetter) {
           nativeSetter.call(stateNode, value);
         } else {
@@ -656,13 +809,17 @@ export class FieldSetter {
   private static setViaContentEditable(element: FormInputElement, value: string): boolean {
     try {
       const editableEl = this.findEditableAncestor(element);
-      if (!editableEl) {return false;}
+      if (!editableEl) {
+        return false;
+      }
 
       editableEl.focus();
       editableEl.textContent = '';
       editableEl.textContent = value;
 
-      editableEl.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }));
+      editableEl.dispatchEvent(
+        new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value })
+      );
       editableEl.dispatchEvent(new Event('change', { bubbles: true }));
       editableEl.dispatchEvent(new FocusEvent('blur', { bubbles: false }));
 
@@ -704,7 +861,8 @@ export class AutoSubmitDetector {
     'a[class*="verify" i]',
   ];
 
-  private static readonly TEXT_PATTERN = /verify|confirm|submit|continue|next|send|done|log\s*in|sign\s*in/i;
+  private static readonly TEXT_PATTERN =
+    /verify|confirm|submit|continue|next|send|done|log\s*in|sign\s*in/i;
 
   static async checkAndHighlight(group: OTPFieldGroup): Promise<void> {
     const delayMs = Math.min(500 + group.fields.length * 100, 1500);
@@ -719,7 +877,9 @@ export class AutoSubmitDetector {
 
   private static findButton(group: OTPFieldGroup): HTMLElement | null {
     const field = group.fields[0];
-    if (!field) {return null;}
+    if (!field) {
+      return null;
+    }
 
     const container =
       field.closest('form') ??
@@ -727,7 +887,9 @@ export class AutoSubmitDetector {
       field.closest('[class*="verify"]') ??
       field.parentElement?.parentElement?.parentElement;
 
-    if (!container) {return null;}
+    if (!container) {
+      return null;
+    }
 
     for (const selector of this.SELECTORS) {
       const button = safeQuerySelector<HTMLElement>(container, selector);
@@ -761,7 +923,10 @@ export interface StrategyFillResult {
 export abstract class FillStrategy {
   abstract name: string;
   abstract supports(element: HTMLInputElement | HTMLTextAreaElement): boolean;
-  abstract execute(element: HTMLInputElement | HTMLTextAreaElement, value: string): Promise<boolean>;
+  abstract execute(
+    element: HTMLInputElement | HTMLTextAreaElement,
+    value: string
+  ): Promise<boolean>;
 }
 
 export class ReactFiberStrategy extends FillStrategy {
@@ -771,7 +936,14 @@ export class ReactFiberStrategy extends FillStrategy {
     let current: Element | null = element;
     while (current) {
       const keys = Object.keys(current);
-      if (keys.some((k) => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$') || k.startsWith('__reactProps$'))) {
+      if (
+        keys.some(
+          (k) =>
+            k.startsWith('__reactFiber$') ||
+            k.startsWith('__reactInternalInstance$') ||
+            k.startsWith('__reactProps$')
+        )
+      ) {
         return true;
       }
       current = current.parentElement;
@@ -783,7 +955,10 @@ export class ReactFiberStrategy extends FillStrategy {
     try {
       let reactElement: Element | null = element;
       let fiberKey = Object.keys(reactElement).find(
-        (key) => key.startsWith('__reactFiber$') || key.startsWith('__reactInternalInstance$') || key.startsWith('__reactProps$')
+        (key) =>
+          key.startsWith('__reactFiber$') ||
+          key.startsWith('__reactInternalInstance$') ||
+          key.startsWith('__reactProps$')
       );
 
       if (!fiberKey) {
@@ -801,14 +976,19 @@ export class ReactFiberStrategy extends FillStrategy {
         }
       }
 
-      if (!reactElement || !fiberKey) {return false;}
+      if (!reactElement || !fiberKey) {
+        return false;
+      }
 
       const fiber = (reactElement as any)[fiberKey];
-      if (!fiber || !fiber.memoizedProps) {return false;}
+      if (!fiber || !fiber.memoizedProps) {
+        return false;
+      }
 
       const onChange = fiber.memoizedProps.onChange;
       if (typeof onChange === 'function') {
-        const nativeSetter = element instanceof HTMLInputElement ? nativeInputSetter : nativeTextAreaSetter;
+        const nativeSetter =
+          element instanceof HTMLInputElement ? nativeInputSetter : nativeTextAreaSetter;
         if (nativeSetter) {
           (nativeSetter as any).call(element, value);
         } else {
@@ -832,8 +1012,12 @@ export class ReactFiberStrategy extends FillStrategy {
       }
 
       const stateNode = fiber.stateNode;
-      if (stateNode && (stateNode instanceof HTMLInputElement || stateNode instanceof HTMLTextAreaElement)) {
-        const nativeSetter = stateNode instanceof HTMLInputElement ? nativeInputSetter : nativeTextAreaSetter;
+      if (
+        stateNode &&
+        (stateNode instanceof HTMLInputElement || stateNode instanceof HTMLTextAreaElement)
+      ) {
+        const nativeSetter =
+          stateNode instanceof HTMLInputElement ? nativeInputSetter : nativeTextAreaSetter;
         if (nativeSetter) {
           (nativeSetter as any).call(stateNode, value);
         } else {
@@ -856,14 +1040,26 @@ export class VueReactivityStrategy extends FillStrategy {
   name = 'vue-reactivity';
 
   supports(element: HTMLInputElement | HTMLTextAreaElement): boolean {
-    return Object.keys(element).some((k) => k.startsWith('__vue__') || k.startsWith('__vue_app__') || k.startsWith('__vueParentComponent'));
+    return Object.keys(element).some(
+      (k) =>
+        k.startsWith('__vue__') ||
+        k.startsWith('__vue_app__') ||
+        k.startsWith('__vueParentComponent')
+    );
   }
 
   async execute(element: HTMLInputElement | HTMLTextAreaElement, value: string): Promise<boolean> {
     try {
       const keys = Object.keys(element);
-      const vueKey = keys.find((k) => k.startsWith('__vue__') || k.startsWith('__vue_app__') || k.startsWith('__vueParentComponent'));
-      if (!vueKey) {return false;}
+      const vueKey = keys.find(
+        (k) =>
+          k.startsWith('__vue__') ||
+          k.startsWith('__vue_app__') ||
+          k.startsWith('__vueParentComponent')
+      );
+      if (!vueKey) {
+        return false;
+      }
 
       element.value = value;
       element.dispatchEvent(new Event('input', { bubbles: true }));
@@ -879,7 +1075,10 @@ export class AngularZoneStrategy extends FillStrategy {
   name = 'angular-zone';
 
   supports(element: HTMLInputElement | HTMLTextAreaElement): boolean {
-    return !!document.querySelector('[ng-version]') || !!element.closest('.ng-valid, .ng-invalid, .ng-dirty, .ng-pristine');
+    return (
+      !!document.querySelector('[ng-version]') ||
+      !!element.closest('.ng-valid, .ng-invalid, .ng-dirty, .ng-pristine')
+    );
   }
 
   async execute(element: HTMLInputElement | HTMLTextAreaElement, value: string): Promise<boolean> {
@@ -905,7 +1104,7 @@ export class SvelteStrategy extends FillStrategy {
   name = 'svelte';
 
   supports(element: HTMLInputElement | HTMLTextAreaElement): boolean {
-    return Object.keys(element).some(k => k.startsWith('__svelte'));
+    return Object.keys(element).some((k) => k.startsWith('__svelte'));
   }
 
   async execute(element: HTMLInputElement | HTMLTextAreaElement, value: string): Promise<boolean> {
@@ -924,7 +1123,7 @@ export class SolidJSStrategy extends FillStrategy {
   name = 'solid-js';
 
   supports(element: HTMLInputElement | HTMLTextAreaElement): boolean {
-    return Object.keys(element).some(k => k.startsWith('__$r'));
+    return Object.keys(element).some((k) => k.startsWith('__$r'));
   }
 
   async execute(element: HTMLInputElement | HTMLTextAreaElement, value: string): Promise<boolean> {
@@ -972,13 +1171,16 @@ export class NativeSetterStrategy extends FillStrategy {
 
   async execute(element: HTMLInputElement | HTMLTextAreaElement, value: string): Promise<boolean> {
     try {
-      const nativeSetter = element instanceof HTMLInputElement ? nativeInputSetter : nativeTextAreaSetter;
+      const nativeSetter =
+        element instanceof HTMLInputElement ? nativeInputSetter : nativeTextAreaSetter;
       const oldValue = element.value;
 
       if (!nativeSetter) {
         element.value = value;
         const tracker = (element as any)._valueTracker;
-        if (tracker) {tracker.setValue(oldValue);}
+        if (tracker) {
+          tracker.setValue(oldValue);
+        }
         element.dispatchEvent(new Event('input', { bubbles: true }));
         element.dispatchEvent(new Event('change', { bubbles: true }));
         return element.value === value;
@@ -987,7 +1189,9 @@ export class NativeSetterStrategy extends FillStrategy {
       element.focus();
       (nativeSetter as any).call(element, value);
       const tracker = (element as any)._valueTracker;
-      if (tracker) {tracker.setValue(oldValue);}
+      if (tracker) {
+        tracker.setValue(oldValue);
+      }
       element.dispatchEvent(new Event('input', { bubbles: true }));
       element.dispatchEvent(new Event('change', { bubbles: true }));
       return element.value === value;
@@ -1007,16 +1211,32 @@ export class InputEventSequenceStrategy extends FillStrategy {
   async execute(element: HTMLInputElement | HTMLTextAreaElement, value: string): Promise<boolean> {
     try {
       element.focus();
-      const nativeSetter = element instanceof HTMLInputElement ? nativeInputSetter : nativeTextAreaSetter;
-      const writeValue = (v: string) => nativeSetter ? (nativeSetter as any).call(element, v) : (element.value = v);
+      const nativeSetter =
+        element instanceof HTMLInputElement ? nativeInputSetter : nativeTextAreaSetter;
+      const writeValue = (v: string) =>
+        nativeSetter ? (nativeSetter as any).call(element, v) : (element.value = v);
 
       writeValue('');
       let accumulated = '';
       for (const char of value) {
-        element.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: char }));
+        element.dispatchEvent(
+          new InputEvent('beforeinput', {
+            bubbles: true,
+            cancelable: true,
+            inputType: 'insertText',
+            data: char,
+          })
+        );
         accumulated += char;
         writeValue(accumulated);
-        element.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: false, inputType: 'insertText', data: char }));
+        element.dispatchEvent(
+          new InputEvent('input', {
+            bubbles: true,
+            cancelable: false,
+            inputType: 'insertText',
+            data: char,
+          })
+        );
       }
       element.dispatchEvent(new Event('change', { bubbles: true }));
       return element.value === value;
@@ -1038,11 +1258,16 @@ export class ClipboardPasteStrategy extends FillStrategy {
       element.focus();
       const dataTransfer = new DataTransfer();
       dataTransfer.setData('text/plain', value);
-      const pasteEvent = new ClipboardEvent('paste', { clipboardData: dataTransfer, bubbles: true, cancelable: true });
+      const pasteEvent = new ClipboardEvent('paste', {
+        clipboardData: dataTransfer,
+        bubbles: true,
+        cancelable: true,
+      });
       element.dispatchEvent(pasteEvent);
 
       if (element.value !== value) {
-        const nativeSetter = element instanceof HTMLInputElement ? nativeInputSetter : nativeTextAreaSetter;
+        const nativeSetter =
+          element instanceof HTMLInputElement ? nativeInputSetter : nativeTextAreaSetter;
         if (nativeSetter) {
           (nativeSetter as any).call(element, value);
         } else {
@@ -1065,11 +1290,15 @@ export class ContentEditableStrategy extends FillStrategy {
 
   async execute(element: HTMLInputElement | HTMLTextAreaElement, value: string): Promise<boolean> {
     try {
-      const editableEl = element.isContentEditable ? element : element.closest<HTMLElement>('[contenteditable="true"]');
-      if (!editableEl) {return false;}
+      const editableEl = element.isContentEditable
+        ? element
+        : element.closest<HTMLElement>('[contenteditable="true"]');
+      if (!editableEl) {
+        return false;
+      }
 
       editableEl.focus();
-      
+
       // Select all and insert via execCommand to keep editor frameworks in sync
       try {
         document.execCommand('selectAll', false);
@@ -1079,7 +1308,9 @@ export class ContentEditableStrategy extends FillStrategy {
         editableEl.textContent = value;
       }
 
-      editableEl.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }));
+      editableEl.dispatchEvent(
+        new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value })
+      );
       editableEl.dispatchEvent(new Event('change', { bubbles: true }));
       editableEl.dispatchEvent(new FocusEvent('blur', { bubbles: false }));
 
@@ -1092,15 +1323,32 @@ export class ContentEditableStrategy extends FillStrategy {
 
 let cachedFramework: string | null = null;
 function detectFrameworkOnce(): string {
-  if (cachedFramework) {return cachedFramework;}
+  if (cachedFramework) {
+    return cachedFramework;
+  }
   try {
-    if (document.querySelector('[data-reactroot], #__NEXT_DATA__, [data-nextjs-scroll-focus-boundary]') || (document.getElementById('root') && Object.keys(document.getElementById('root')!).some(k => k.startsWith('__reactFiber')))) {cachedFramework = 'react';}
-    else if (document.querySelector('[ng-version], [_nghost-ng-c], [ng-app]')) {cachedFramework = 'angular';}
-    else if (document.querySelector('[data-v-app], [__vue_app__]') || '__vue__' in window) {cachedFramework = 'vue';}
-    else if (document.querySelector('[data-svelte-h]') || '__svelte' in window) {cachedFramework = 'svelte';}
-    else if (Object.keys(document.documentElement).some(k => k.startsWith('__$r'))) {cachedFramework = 'solid';}
-    else {cachedFramework = 'unknown';}
-  } catch { cachedFramework = 'unknown'; }
+    if (
+      document.querySelector(
+        '[data-reactroot], #__NEXT_DATA__, [data-nextjs-scroll-focus-boundary]'
+      ) ||
+      (document.getElementById('root') &&
+        Object.keys(document.getElementById('root')!).some((k) => k.startsWith('__reactFiber')))
+    ) {
+      cachedFramework = 'react';
+    } else if (document.querySelector('[ng-version], [_nghost-ng-c], [ng-app]')) {
+      cachedFramework = 'angular';
+    } else if (document.querySelector('[data-v-app], [__vue_app__]') || '__vue__' in window) {
+      cachedFramework = 'vue';
+    } else if (document.querySelector('[data-svelte-h]') || '__svelte' in window) {
+      cachedFramework = 'svelte';
+    } else if (Object.keys(document.documentElement).some((k) => k.startsWith('__$r'))) {
+      cachedFramework = 'solid';
+    } else {
+      cachedFramework = 'unknown';
+    }
+  } catch {
+    cachedFramework = 'unknown';
+  }
   return cachedFramework;
 }
 
@@ -1128,13 +1376,25 @@ export class UniversalFiller {
     const fw = detectFrameworkOnce();
     // Prioritize framework-specific strategy if detected
     const ordered = [...this.strategies].sort((a, b) => {
-      const aMatch = (a.name === 'react-fiber' && fw === 'react') || (a.name === 'vue-reactivity' && fw === 'vue') || (a.name === 'angular-zone' && fw === 'angular') ? 0 : 1;
-      const bMatch = (b.name === 'react-fiber' && fw === 'react') || (b.name === 'vue-reactivity' && fw === 'vue') || (b.name === 'angular-zone' && fw === 'angular') ? 0 : 1;
+      const aMatch =
+        (a.name === 'react-fiber' && fw === 'react') ||
+        (a.name === 'vue-reactivity' && fw === 'vue') ||
+        (a.name === 'angular-zone' && fw === 'angular')
+          ? 0
+          : 1;
+      const bMatch =
+        (b.name === 'react-fiber' && fw === 'react') ||
+        (b.name === 'vue-reactivity' && fw === 'vue') ||
+        (b.name === 'angular-zone' && fw === 'angular')
+          ? 0
+          : 1;
       return aMatch - bMatch;
     });
 
     for (const strategy of ordered) {
-      if (!strategy.supports(el)) {continue;}
+      if (!strategy.supports(el)) {
+        continue;
+      }
 
       try {
         const success = await strategy.execute(el, value);
@@ -1149,4 +1409,3 @@ export class UniversalFiller {
     return { success: false, strategy: 'none' };
   }
 }
-

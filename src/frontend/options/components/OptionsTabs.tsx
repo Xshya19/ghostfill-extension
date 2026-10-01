@@ -8,16 +8,14 @@ import {
   Lock,
   Zap,
   Keyboard,
-  MailCheck,
-  Terminal,
   AlertTriangle,
   Info,
   Database,
-  Code,
   Check,
   Inbox,
   Mail,
   X,
+  ExternalLink,
 } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
 
@@ -45,12 +43,12 @@ const SAVE_FEEDBACK_MS = 1800;
 // Exported so OptionsApp can validate membership before saving (a service the
 // backend zod enum doesn't know would otherwise fail as "backend rejected").
 export const EMAIL_SERVICE_OPTIONS = [
-  { value: 'catchmail', label: 'CatchMail.io · Recommended' },
+  { value: 'driftz', label: 'Driftz.net · Preferred' },
+  { value: 'catchmail', label: 'CatchMail.io' },
   { value: 'throwawaymail', label: 'Throwawaymail.app · Fast' },
   { value: 'mailtm', label: 'Mail.tm · High uptime' },
   { value: 'tempmailplus', label: 'Tempmail.plus · Multi-domain' },
   { value: 'maildrop', label: 'Maildrop.cc · Public inbox' },
-  { value: 'driftz', label: 'Driftz.net · Stealth domains' },
   { value: 'guerrilla', label: 'Guerrilla Mail · Stealth domains' },
   { value: 'yopmail', label: 'YOPmail · Multi-domain' },
   { value: 'mailgw', label: 'Mail.gw · Dedicated domains' },
@@ -72,8 +70,9 @@ const EMAIL_SERVICE_LABELS: Readonly<Record<string, string>> = {
   custom: 'Custom service',
 };
 
-const getEmailServiceLabel = (service: string): string =>
+export const getEmailServiceLabel = (service: string): string =>
   EMAIL_SERVICE_LABELS[service.toLowerCase()] ?? service;
+const HEALTH_PROVIDER_NAMES = new Set<string>(EMAIL_SERVICE_OPTIONS.map(({ value }) => value));
 
 // ─── Provider Health Meter Component ──────────────────────────────────────────
 interface ProviderHealthStatus {
@@ -138,7 +137,12 @@ export const ProviderHealthMeter: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="provider-health-meter" aria-busy="true">
+      <div
+        className="provider-health-meter"
+        role="status"
+        aria-label={t('loadingProviderHealth')}
+        aria-busy="true"
+      >
         <h3 className="health-title">{t('providerHealthTitle')}</h3>
         <div className="health-grid">
           {[0, 1, 2].map((i) => (
@@ -161,7 +165,7 @@ export const ProviderHealthMeter: React.FC = () => {
       <div className="provider-health-meter">
         <h3 className="health-title">{t('providerHealthTitle')}</h3>
         <p className="health-empty" role="alert">
-          Couldn&apos;t reach the service worker ({error}). Generate an email to start tracking.
+          Couldn&apos;t load provider status ({error}). GhostFill will retry automatically.
         </p>
       </div>
     );
@@ -172,19 +176,12 @@ export const ProviderHealthMeter: React.FC = () => {
       <div className="provider-health-meter">
         <h3 className="health-title">{t('providerHealthTitle')}</h3>
         <div className="health-grid">
-          {[
-            'driftz',
-            'catchmail',
-            'throwawaymail',
-            'tempmailplus',
-            'mailtm',
-            'mailgw',
-            'guerrilla',
-            'maildrop',
-            'yopmail',
-          ].map((name) => (
-            <div key={name} className="health-pill-card" title="No calls recorded yet">
-              <span className="health-provider-name">{getEmailServiceLabel(name)}</span>
+          {EMAIL_SERVICE_OPTIONS.map(({ value }) => (
+            <div key={value} className="health-pill-card" title="No calls recorded yet">
+              <div className="health-provider-info">
+                <span className="health-provider-name">{getEmailServiceLabel(value)}</span>
+                <span className="health-status-label health-status-unknown">Not checked</span>
+              </div>
               <div className="health-status-group">
                 <span className="health-percent">—</span>
                 <span className="health-dot health-status-unknown" aria-hidden="true" />
@@ -202,20 +199,7 @@ export const ProviderHealthMeter: React.FC = () => {
       <h3 className="health-title">{t('providerHealthTitle')}</h3>
       <div className="health-grid">
         {healthData
-          .filter((h) =>
-            [
-              'driftz',
-              'catchmail',
-              'throwawaymail',
-              'tempmailplus',
-              'mailtm',
-              'mailgw',
-              'guerrilla',
-              'maildrop',
-              'yopmail',
-              'custom',
-            ].includes(h.name)
-          )
+          .filter((h) => HEALTH_PROVIDER_NAMES.has(h.name))
           .map((h) => {
             const pct = Math.round(h.successRate * 100);
             const isWarning =
@@ -227,7 +211,7 @@ export const ProviderHealthMeter: React.FC = () => {
             let statusText = 'Healthy';
             if (isDead) {
               statusClass = 'health-status-dead';
-              statusText = h.circuitOpen ? 'Circuit open — cooling down' : 'Offline';
+              statusText = h.circuitOpen ? 'Cooling down' : 'Offline';
             } else if (isWarning) {
               statusClass = 'health-status-warning';
               statusText = 'Degraded';
@@ -242,14 +226,17 @@ export const ProviderHealthMeter: React.FC = () => {
 
             return (
               <div key={h.name} className="health-pill-card" title={detail}>
-                <span className="health-provider-name" title={h.name}>
-                  {getEmailServiceLabel(h.name)}
-                </span>
+                <div className="health-provider-info">
+                  <span className="health-provider-name" title={h.name}>
+                    {getEmailServiceLabel(h.name)}
+                  </span>
+                  <span className={`health-status-label ${statusClass}`}>{statusText}</span>
+                </div>
                 <div className="health-status-group">
                   <span className="health-percent" aria-label={detail}>
                     {pct}% · {ms}ms
                   </span>
-                  <span className={`health-dot ${statusClass}`} role="img" aria-label={detail} />
+                  <span className={`health-dot ${statusClass}`} aria-hidden="true" />
                 </div>
               </div>
             );
@@ -266,6 +253,38 @@ interface GeneralTabProps {
 }
 
 export const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChange }) => {
+  const [tutorialReplayStatus, setTutorialReplayStatus] = useState<'idle' | 'success' | 'error'>(
+    'idle'
+  );
+  const tutorialReplayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (tutorialReplayTimerRef.current) {
+        clearTimeout(tutorialReplayTimerRef.current);
+      }
+    },
+    []
+  );
+
+  const replayOnboarding = async (): Promise<void> => {
+    setTutorialReplayStatus('idle');
+    try {
+      if (typeof chrome === 'undefined' || !chrome.storage?.local?.set) {
+        throw new Error('Extension storage is unavailable');
+      }
+      await chrome.storage.local.set({ hasSeenOnboarding: false });
+      setTutorialReplayStatus('success');
+    } catch (error) {
+      log.error('Failed to enable onboarding replay', error);
+      setTutorialReplayStatus('error');
+    }
+    if (tutorialReplayTimerRef.current) {
+      clearTimeout(tutorialReplayTimerRef.current);
+    }
+    tutorialReplayTimerRef.current = setTimeout(() => setTutorialReplayStatus('idle'), 4000);
+  };
+
   return (
     <div>
       <SettingsSection id="appearance" title={t('appearanceSection')} icon={<Palette size={18} />}>
@@ -333,22 +352,6 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChang
             ariaLabelledBy="notifications-label"
           />
         </div>
-
-        <div className="setting-item">
-          <div className="setting-info">
-            <label id="sound-enabled-label">
-              {t('soundEffects')} <span className="coming-soon-label">(coming soon)</span>
-            </label>
-            <p>{t('soundEffectsDescription')}</p>
-          </div>
-          <ToggleSwitch
-            checked={settings.soundEnabled}
-            onChange={(checked) => onSettingChange('soundEnabled', checked)}
-            ariaLabel={t('soundEffectsAriaLabel')}
-            ariaLabelledBy="sound-enabled-label"
-            disabled
-          />
-        </div>
       </SettingsSection>
 
       <SettingsSection id="app-data" title={t('appDataSection')} icon={<Save size={18} />}>
@@ -358,33 +361,20 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({ settings, onSettingChang
             <p>{t('applicationTutorialDescription')}</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <Button
-              size="sm"
-              onClick={async () => {
-                if (typeof chrome !== 'undefined' && chrome.storage?.local?.set) {
-                  await chrome.storage.local.set({ hasSeenOnboarding: false });
-                }
-                const labelEl = document.getElementById('tutorial-reset-toast');
-                if (labelEl) {
-                  labelEl.style.display = 'inline';
-                  setTimeout(() => {
-                    labelEl.style.display = 'none';
-                  }, 3000);
-                }
-              }}
-            >
+            <Button size="sm" type="button" onClick={() => void replayOnboarding()}>
               {t('replayOnboarding')}
             </Button>
             <span
-              id="tutorial-reset-toast"
-              style={{
-                display: 'none',
-                fontSize: '12px',
-                color: 'var(--gf-mint)',
-                fontWeight: 600,
-              }}
+              className={`tutorial-replay-status${tutorialReplayStatus === 'error' ? ' is-error' : ''}`}
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
             >
-              ✓ Tutorial will replay on next popup open!
+              {tutorialReplayStatus === 'success'
+                ? t('tutorialReplayComplete')
+                : tutorialReplayStatus === 'error'
+                  ? t('tutorialReplayFailed')
+                  : ''}
             </span>
           </div>
         </div>
@@ -412,6 +402,12 @@ export const PasswordTab: React.FC<PasswordTabProps> = ({
   getFieldError,
   onFieldBlur,
 }) => {
+  const hasCharacterType =
+    settings.passwordDefaults.uppercase ||
+    settings.passwordDefaults.lowercase ||
+    settings.passwordDefaults.numbers ||
+    settings.passwordDefaults.symbols;
+
   return (
     <div>
       <SettingsSection
@@ -513,6 +509,16 @@ export const PasswordTab: React.FC<PasswordTabProps> = ({
             ariaLabelledBy="exclude-ambiguous-label"
           />
         </div>
+        {!hasCharacterType && (
+          <p
+            className="password-character-error"
+            id="password-character-error"
+            role="alert"
+            tabIndex={-1}
+          >
+            {t('passwordCharacterTypeRequired')}
+          </p>
+        )}
       </SettingsSection>
     </div>
   );
@@ -607,6 +613,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
               ariaDescribedBy={
                 fieldHasError('preferredEmailService') ? 'preferred-email-service-error' : undefined
               }
+              ariaInvalid={fieldHasError('preferredEmailService')}
               value={settings.preferredEmailService}
               onChange={(val) =>
                 onSettingChange(
@@ -630,9 +637,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
           <div className="custom-domain-container" role="group" aria-label="Custom domain settings">
             <div className="setting-item vertical-group">
               <div className="setting-info w-full">
-                <label htmlFor="custom-domain" className="fs-13">
-                  Custom email domain
-                </label>
+                <label htmlFor="custom-domain">Custom email domain</label>
               </div>
               <input
                 id="custom-domain"
@@ -640,6 +645,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
                 placeholder="e.g. mail.private.com"
                 value={settings.customDomain || ''}
                 onChange={(e) => onSettingChange('customDomain', e.target.value)}
+                onBlur={() => onFieldBlur('customDomain')}
                 aria-invalid={fieldHasError('customDomain')}
                 aria-describedby={fieldHasError('customDomain') ? 'custom-domain-error' : undefined}
               />
@@ -652,9 +658,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
 
             <div className="setting-item vertical-group">
               <div className="setting-info w-full">
-                <label htmlFor="custom-domain-url" className="fs-13">
-                  API endpoint (Cloudflare Worker)
-                </label>
+                <label htmlFor="custom-domain-url">API endpoint (Cloudflare Worker)</label>
               </div>
               <input
                 id="custom-domain-url"
@@ -662,6 +666,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
                 placeholder="https://my-worker.workers.dev/api"
                 value={settings.customDomainUrl || ''}
                 onChange={(e) => onSettingChange('customDomainUrl', e.target.value)}
+                onBlur={() => onFieldBlur('customDomainUrl')}
                 aria-invalid={fieldHasError('customDomainUrl')}
                 aria-describedby={
                   fieldHasError('customDomainUrl') ? 'custom-domain-url-error' : undefined
@@ -676,9 +681,9 @@ export const EmailTab: React.FC<EmailTabProps> = ({
 
             <div className="setting-item vertical-group">
               <div className="setting-info w-full">
-                <label htmlFor="custom-domain-key" className="fs-13">
+                <label htmlFor="custom-domain-key">
                   API key
-                  <span className="security-note security-note-tab">
+                  <span className="security-note">
                     Stored in memory only (cleared on extension reload)
                   </span>
                 </label>
@@ -805,7 +810,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
         <div className="setting-item">
           <div className="setting-info">
             <label htmlFor="check-interval">Check interval</label>
-            <p>How often to check for new emails (seconds)</p>
+            <p>Used when auto-check is on. Enter 3–60 seconds.</p>
           </div>
           <input
             id="check-interval"
@@ -847,10 +852,10 @@ interface AutomationTabProps {
 }
 
 const FALLBACK_COMMANDS: CommandInfo[] = [
-  { name: '_execute_action', shortcut: 'Ctrl+Shift+E', description: 'Open GhostFill' },
-  { name: 'generate-email', shortcut: 'Ctrl+Shift+M', description: 'Generate new email' },
-  { name: 'generate-password', shortcut: 'Ctrl+Shift+G', description: 'Generate new password' },
-  { name: 'auto-fill', shortcut: 'Ctrl+Shift+F', description: 'Auto-fill current form' },
+  { name: '_execute_action', shortcut: 'Alt+Shift+E', description: 'Open GhostFill' },
+  { name: 'generate-email', shortcut: 'Alt+Shift+M', description: 'Generate new email' },
+  { name: 'generate-password', shortcut: 'Alt+Shift+G', description: 'Generate new password' },
+  { name: 'auto-fill', shortcut: 'Alt+Shift+F', description: 'Auto-fill current form' },
 ];
 
 const COMMAND_ORDER = ['_execute_action', 'generate-email', 'generate-password', 'auto-fill'];
@@ -1063,31 +1068,6 @@ export const PrivacyTab: React.FC<PrivacyTabProps> = ({
           />
         </div>
       </SettingsSection>
-
-      {IS_GMAIL_ENABLED && (
-        <SettingsSection
-          id="gmail-privacy"
-          title={t('gmailPrivacySection')}
-          icon={<MailCheck size={18} />}
-        >
-          <div className="setting-item">
-            <div className="setting-info">
-              <label id="gmail-session-fallback-label">
-                {t('gmailSessionDetection')}{' '}
-                <span className="coming-soon-label">(coming soon)</span>
-              </label>
-              <p>{t('gmailSessionDetectionDescription')}</p>
-            </div>
-            <ToggleSwitch
-              checked={settings.allowGmailSessionFallback}
-              onChange={(checked) => onSettingChange('allowGmailSessionFallback', checked)}
-              ariaLabel={t('gmailSessionDetectionAriaLabel')}
-              ariaLabelledBy="gmail-session-fallback-label"
-              disabled
-            />
-          </div>
-        </SettingsSection>
-      )}
     </div>
   );
 };
@@ -1104,7 +1084,6 @@ interface AdvancedTabProps {
 
 export const AdvancedTab: React.FC<AdvancedTabProps> = ({
   settings,
-  onSettingChange,
   onReset,
   onClearData,
   onSettingsImport,
@@ -1178,25 +1157,6 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
 
   return (
     <div>
-      <SettingsSection id="developer" title={t('developerSection')} icon={<Terminal size={18} />}>
-        <div className="setting-item">
-          <div className="setting-info">
-            <label id="debug-mode-label" htmlFor="debug-mode">
-              Debug mode <span className="coming-soon-label">(coming soon)</span>
-            </label>
-            <p>Enable verbose console logging for troubleshooting</p>
-          </div>
-          <ToggleSwitch
-            id="debug-mode"
-            checked={settings.debugMode}
-            onChange={(checked) => onSettingChange('debugMode', checked)}
-            ariaLabel="Debug mode"
-            ariaLabelledBy="debug-mode-label"
-            disabled
-          />
-        </div>
-      </SettingsSection>
-
       <SettingsSection id="backup" title={t('backupRestoreSection')} icon={<Save size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
@@ -1210,33 +1170,29 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
 
         <div className="setting-item">
           <div className="setting-info">
-            <label htmlFor="import-settings">Import settings</label>
+            <span className="fs-15-fw-600" id="import-settings-label">
+              Import settings
+            </span>
             <p>Load settings from a previously exported JSON file</p>
           </div>
           <button
             type="button"
             className="gf-btn gf-btn--sm import-btn"
             onClick={() => fileInputRef.current?.click()}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                fileInputRef.current?.click();
-              }
-            }}
-            aria-label="Import settings from JSON file"
+            aria-labelledby="import-settings-label"
           >
             Import
-            <input
-              ref={fileInputRef}
-              id="import-settings"
-              type="file"
-              accept=".json"
-              onChange={handleImport}
-              className="sr-only"
-              aria-hidden="true"
-              tabIndex={-1}
-            />
           </button>
+          <input
+            ref={fileInputRef}
+            id="import-settings"
+            type="file"
+            accept=".json"
+            onChange={handleImport}
+            className="sr-only"
+            aria-hidden="true"
+            tabIndex={-1}
+          />
         </div>
       </SettingsSection>
 
@@ -1273,7 +1229,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
             type="button"
             aria-label="Clear all stored data"
           >
-            Clear Data
+            Clear data
           </Button>
         </div>
       </SettingsSection>
@@ -1318,12 +1274,12 @@ export const AboutTab: React.FC = () => {
       <SettingsSection id="extension-info" title="GhostFill" icon={<Info size={18} />}>
         <div className="about-hero">
           <div className="about-version">
-            <span className="version-badge">v{version}</span>
+            <span className="version-badge">Version {version}</span>
           </div>
           <p className="about-tagline">
             Disposable emails, secure passwords, and automatic OTP detection & fill.
             <br />
-            100% Free & Open Source.
+            Free and open source.
           </p>
         </div>
 
@@ -1335,6 +1291,7 @@ export const AboutTab: React.FC = () => {
             className="about-link"
           >
             Source on GitHub
+            <ExternalLink size={16} aria-hidden="true" />
           </a>
           <a
             href="https://github.com/Xshya19/ghostfill-extension/issues"
@@ -1343,6 +1300,7 @@ export const AboutTab: React.FC = () => {
             className="about-link"
           >
             Report an issue
+            <ExternalLink size={16} aria-hidden="true" />
           </a>
           <a
             href="https://github.com/Xshya19/ghostfill-extension/blob/main/LICENSE"
@@ -1351,6 +1309,7 @@ export const AboutTab: React.FC = () => {
             className="about-link"
           >
             MIT license
+            <ExternalLink size={16} aria-hidden="true" />
           </a>
         </div>
       </SettingsSection>
@@ -1361,12 +1320,13 @@ export const AboutTab: React.FC = () => {
             <div className="storage-bar-wrapper">
               <div
                 className="storage-bar-fill"
-                style={{ '--storage-progress-scale': Math.max(usagePercent, 2) / 100 }}
+                style={{ '--storage-progress-scale': usagePercent / 100 }}
                 role="progressbar"
                 aria-valuenow={Math.round(usagePercent)}
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-label="Storage usage"
+                aria-valuetext={`${formatBytes(storageUsage.used)} of ${formatBytes(storageUsage.quota)} used`}
               />
             </div>
             <div className="storage-stats">
@@ -1377,26 +1337,6 @@ export const AboutTab: React.FC = () => {
         ) : (
           <p className="text-dimmed">{t('loadingStorageInfo')}</p>
         )}
-      </SettingsSection>
-
-      <SettingsSection id="tech-stack" title="Built with" icon={<Code size={18} />}>
-        <div className="tech-pill-container" role="list" aria-label="Technologies used">
-          <span className="tech-pill tech-pill-primary" role="listitem">
-            React
-          </span>
-          <span className="tech-pill tech-pill-secondary" role="listitem">
-            TypeScript
-          </span>
-          <span className="tech-pill tech-pill-accent" role="listitem">
-            Webpack
-          </span>
-          <span className="tech-pill tech-pill-primary" role="listitem">
-            Chrome MV3
-          </span>
-          <span className="tech-pill tech-pill-secondary" role="listitem">
-            Framer Motion
-          </span>
-        </div>
       </SettingsSection>
     </div>
   );

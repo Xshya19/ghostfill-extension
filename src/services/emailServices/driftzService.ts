@@ -1,6 +1,6 @@
 import { EmailAccount, Email } from '../../types';
 import { fetchWithTimeout, contentToString } from '../../utils/core';
-import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
+import { getSenderSource } from '../../utils/emailIdentity';
 import { createLogger } from '../../utils/logger';
 import { isRetryableError, throttledWarn } from './isRetryableError';
 
@@ -33,53 +33,33 @@ export class DriftzService {
 
   async createAccount(signal?: AbortSignal, requestedDomain?: string): Promise<EmailAccount> {
     const targetDomain = requestedDomain || 'bbjbinin.mn';
-    try {
-      const response = await fetchWithTimeout(`${BASE_URL}/temp/generate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ domain: targetDomain }),
-        signal: signal ?? null,
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.result?.address) {
-          const address = data.result.address;
-          const expiresAt = data.result.expiresAt
-            ? Number(data.result.expiresAt) * 1000
-            : Date.now() + 24 * 60 * 60 * 1000;
-          const domain = address.split('@')[1] || 'bbjbinin.mn';
-
-          return {
-            id: address,
-            fullEmail: address,
-            domain,
-            service: 'driftz',
-            createdAt: Date.now(),
-            expiresAt,
-          };
-        }
-      }
-    } catch (error) {
-      log.debug('Driftz remote generate failed, falling back to local generation', error);
+    const response = await fetchWithTimeout(`${BASE_URL}/temp/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ domain: targetDomain }),
+      signal: signal ?? null,
+    });
+    if (!response.ok) {
+      throw new Error(`Driftz email generation failed: HTTP ${response.status}`);
     }
-
-    // Resilient fallback: generate locally. Use a static domain — the network
-    // just failed, so calling getDomains() here would fail too (and burn a
-    // second timeout before returning the same static list anyway).
-    const login = generateHumanLikeUsername();
-    const domain = targetDomain || 'bbjbinin.mn';
-    const address = `${login}@${domain}`;
-    const now = Date.now();
-
+    const data = await response.json();
+    const address = data.result?.address;
+    if (!data.success || typeof address !== 'string' || !address.includes('@')) {
+      throw new Error(data.error || 'Driftz did not return a valid email address');
+    }
+    const expiresAt = data.result.expiresAt
+      ? Number(data.result.expiresAt) * 1000
+      : Date.now() + 24 * 60 * 60 * 1000;
+    const domain = address.split('@')[1]!;
     return {
       id: address,
       fullEmail: address,
       domain,
       service: 'driftz',
-      createdAt: now,
-      expiresAt: now + 24 * 60 * 60 * 1000,
+      createdAt: Date.now(),
+      expiresAt,
     };
   }
 
@@ -119,6 +99,7 @@ export class DriftzService {
             }
             const fullMsg = msgData.result;
             return {
+              from: getSenderSource(fullMsg.fromName || msg.fromName, fullMsg.fromAddress || msg.fromAddress),
               body: contentToString(fullMsg.textContent || fullMsg.htmlContent),
               htmlBody: contentToString(fullMsg.htmlContent || fullMsg.textContent),
               textBody: contentToString(fullMsg.textContent || ''),
@@ -132,7 +113,7 @@ export class DriftzService {
       return messages.map((msg: any, idx: number) => {
         const email: Email = {
           id: String(msg.id),
-          from: contentToString(msg.fromAddress, 'Unknown Sender'),
+          from: getSenderSource(msg.fromName, msg.fromAddress),
           to: contentToString(msg.toAddress || address),
           subject: contentToString(msg.subject, '(No Subject)'),
           date: msg.receivedAt ? Number(msg.receivedAt) * 1000 : Date.now(),
@@ -142,6 +123,9 @@ export class DriftzService {
         };
         if (idx < 5 && fullBodyResults[idx]) {
           const body = fullBodyResults[idx]!;
+          if ('from' in body) {
+            email.from = body.from;
+          }
           email.body = body.body;
           email.htmlBody = body.htmlBody;
           email.textBody = body.textBody;
@@ -179,7 +163,7 @@ export class DriftzService {
 
       return {
         id: String(msg.id),
-        from: contentToString(msg.fromAddress, 'Unknown Sender'),
+        from: getSenderSource(msg.fromName, msg.fromAddress),
         to: contentToString(msg.toAddress || address),
         subject: contentToString(msg.subject, '(No Subject)'),
         date: msg.receivedAt ? Number(msg.receivedAt) * 1000 : Date.now(),
@@ -227,7 +211,7 @@ export class DriftzService {
 
       return (data.result?.items || []).map((msg: any) => ({
         id: String(msg.id),
-        from: contentToString(msg.fromAddress, 'Unknown Sender'),
+        from: getSenderSource(msg.fromName, msg.fromAddress),
         to: contentToString(msg.toAddress || address),
         subject: contentToString(msg.subject, '(No Subject)'),
         date: msg.receivedAt ? Number(msg.receivedAt) * 1000 : Date.now(),
@@ -274,7 +258,7 @@ export class DriftzService {
 
     return {
       id: String(msg.id),
-      from: contentToString(msg.fromAddress, 'Unknown Sender'),
+      from: getSenderSource(msg.fromName, msg.fromAddress),
       to: contentToString(msg.toAddress || ''),
       subject: contentToString(msg.subject, '(No Subject)'),
       date: msg.receivedAt ? Number(msg.receivedAt) * 1000 : Date.now(),

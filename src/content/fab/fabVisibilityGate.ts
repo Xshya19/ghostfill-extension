@@ -14,6 +14,8 @@
  *   3. Presence      — score >= active → full FAB, >= quiet → dot, else hidden.
  */
 
+import { IntelligenceCore } from '../../intelligence/IntelligenceCore';
+import { extractFieldRecord, resolveLabelText } from '../../intelligence/pageAnalyzer';
 import {
   DEFAULT_THRESHOLDS,
   type FabBlockReason,
@@ -22,6 +24,8 @@ import {
   type GateDecision,
   type GateOptions,
 } from './fabTypes';
+
+const intelligence = new IntelligenceCore();
 
 // ── Input types the FAB can never decorate ───────────────────────────
 const EXCLUDED_INPUT_TYPES = new Set([
@@ -66,8 +70,6 @@ const USERNAME_RE =
 const OTP_STRONG_RE =
   /\b(otp|one[-_ ]?time|2fa|mfa|passcode|verification[-_ ]?code|verify[-_ ]?code|security[-_ ]?code|auth[-_ ]?code|confirmation[-_ ]?code|sms[-_ ]?code|email[-_ ]?code|totp|\u0e23\u0e2b\u0e31\u0e2a|\u9a8c\u8bc1\u7801|\u0913\u091f\u0940\u092a\u0940)\b/i;
 const OTP_WEAK_RE = /\b(code|pin|token)\b/i;
-const PERSON_NAME_RE =
-  /\b(first[-_ ]?name|last[-_ ]?name|full[-_ ]?name|given[-_ ]?name|family[-_ ]?name|surname|fname|lname|display[-_ ]?name)\b/i;
 
 // ── Hard-block descriptors ──────────────────────────────────────
 const SEARCH_RE =
@@ -166,48 +168,11 @@ function safeRect(el: Element): { width: number; height: number } {
 }
 
 function labelTextFor(el: HTMLElement): string {
-  const parts: string[] = [];
-
   try {
-    if (el.id) {
-      const label = document.querySelector<HTMLLabelElement>(`label[for="${CSS.escape(el.id)}"]`);
-      if (label?.textContent) {
-        parts.push(label.textContent);
-      }
-    }
+    return normalise(resolveLabelText(el)).slice(0, 160);
   } catch {
-    /* restricted DOM */
+    return normalise(el.getAttribute('aria-label')).slice(0, 160);
   }
-
-  const labelledBy = el.getAttribute('aria-labelledby');
-  if (labelledBy) {
-    for (const ref of labelledBy.split(/\s+/)) {
-      try {
-        const node = document.getElementById(ref);
-        if (node?.textContent) {
-          parts.push(node.textContent);
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-  }
-
-  try {
-    const wrapping = el.closest('label');
-    if (wrapping?.textContent) {
-      parts.push(wrapping.textContent);
-    }
-  } catch {
-    /* ignore */
-  }
-
-  const aria = el.getAttribute('aria-label');
-  if (aria) {
-    parts.push(aria);
-  }
-
-  return normalise(parts.join(' ')).slice(0, 160);
 }
 
 function isEditableTarget(el: HTMLElement): boolean {
@@ -285,7 +250,7 @@ export function collectFieldEvidence(el: HTMLElement): FieldEvidence {
       el.getAttribute('data-testid'),
       el.getAttribute('autocomplete'),
       el.getAttribute('role'),
-      el.className && typeof el.className === 'string' ? el.className : '',
+      el.getAttribute('title'),
     ]
       .filter(Boolean)
       .join(' '),
@@ -366,10 +331,17 @@ export function evaluateFab(target: EventTarget | null, options: GateOptions = {
   }
 
   const input = target instanceof HTMLInputElement ? target : null;
+  const classification = input ? intelligence.classify(extractFieldRecord(input)) : null;
+  const fieldType = classification?.decision === 'FILL' ? classification.fieldType : 'unknown';
+  const semanticMode: FabMode | null =
+    ['first-name', 'last-name', 'full-name', 'username'].includes(fieldType) ? 'user' :
+      ['password', 'confirm-password'].includes(fieldType) ? 'password' :
+        fieldType === 'email' || fieldType === 'otp' ? fieldType : null;
   const isPasswordType = evidence.type === 'password';
   const hasCredentialAutocomplete = evidence.autocompleteTokens.some(
     (token) =>
       token === 'one-time-code' ||
+      token === 'one-time-password' ||
       token === 'current-password' ||
       token === 'new-password' ||
       token === 'email' ||
@@ -377,7 +349,7 @@ export function evaluateFab(target: EventTarget | null, options: GateOptions = {
   );
   /** A real credential contract from the site — overrides descriptor blocks. */
   const credentialContract =
-    isPasswordType || evidence.type === 'email' || hasCredentialAutocomplete;
+    isPasswordType || evidence.type === 'email' || hasCredentialAutocomplete || Boolean(semanticMode);
   const authUrl = AUTH_PATH_RE.test(href);
 
   // ── 1. Hard blocks ───────────────────────────────────────────
@@ -537,11 +509,18 @@ export function evaluateFab(target: EventTarget | null, options: GateOptions = {
       mode = 'user';
     }
   }
-  if (PERSON_NAME_RE.test(haystack)) {
-    add(16, 'descriptor:person-name');
-    if (mode === 'magic') {
-      mode = 'user';
-    }
+  if (classification?.decision === 'BLOCK') {
+    return blocked('low-score', evidence);
+  }
+  if (input && !semanticMode && !codeGroup) {
+    return blocked('low-score', evidence);
+  }
+  if (semanticMode) {
+    add(70, `field:${fieldType}`);
+    mode = semanticMode;
+  } else if (mode === 'magic') {
+    // Page wording alone cannot turn an unrelated input into an identity field.
+    return blocked('low-score', evidence);
   }
 
   // Form context: a password sibling is the single best "this is auth" signal.
@@ -600,9 +579,6 @@ export function evaluateFab(target: EventTarget | null, options: GateOptions = {
       const classified = options.classify(target);
       if (classified !== 'generic') {
         add(20, `classifier:${classified}`);
-        if (mode === 'magic') {
-          mode = classified;
-        }
       } else {
         add(-8, 'classifier:generic');
       }

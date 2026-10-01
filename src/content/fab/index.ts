@@ -15,6 +15,7 @@
  *   Escape key, and pointerdown far away from the anchored field.
  */
 
+import { getDeepActiveElement } from '../../utils/core';
 import { FabAnchor, type FabHideReason, type PlacementResult } from './fabAnchor';
 import { HostPolicyStore, createChromeStorageAdapter } from './fabHostPolicy';
 import type { GateDecision, GateOptions } from './fabTypes';
@@ -39,7 +40,7 @@ export interface SmartFabPresenterOptions {
   readonly autoWire?: boolean;
 }
 
-const DEFAULT_FOCUS_DEBOUNCE_MS = 40;
+const DEFAULT_FOCUS_DEBOUNCE_MS = 0;
 /** Long enough to let a click land on the FAB, short enough to never linger. */
 const DEFAULT_BLUR_GRACE_MS = 180;
 const DEFAULT_SIZE = 46;
@@ -55,16 +56,26 @@ export class SmartFabPresenter {
   private blurTimer: ReturnType<typeof setTimeout> | null = null;
   private pointerInside = false;
   private destroyed = false;
+  private resumeOnVisible = false;
+  private concealed = false;
 
   constructor(private readonly options: SmartFabPresenterOptions) {
     this.policy = options.policy ?? new HostPolicyStore(createChromeStorageAdapter());
-    void this.policy.load();
+    void this.policy.load().then(() => {
+      if (this.field) {
+        this.reevaluate();
+      }
+    });
 
     this.anchor = new FabAnchor({
       host: options.host,
       size: options.size ?? DEFAULT_SIZE,
       onPlace: (placement) => {
         if (this.decision) {
+          if (this.concealed && this.field) {
+            this.concealed = false;
+            this.options.onShow(this.field, this.decision);
+          }
           this.options.onPlace(placement, this.decision);
         }
       },
@@ -91,7 +102,8 @@ export class SmartFabPresenter {
 
   /** Wire the DOM listeners this presenter owns. Idempotent per instance. */
   wire(): void {
-    const onFocusIn = (event: FocusEvent): void => this.handleFocusIn(event.target);
+    const onFocusIn = (event: FocusEvent): void =>
+      this.handleFocusIn(event.composedPath()[0] ?? event.target);
     const onFocusOut = (event: FocusEvent): void => this.handleFocusOut(event);
     document.addEventListener('focusin', onFocusIn, true);
     document.addEventListener('focusout', onFocusOut, true);
@@ -101,7 +113,7 @@ export class SmartFabPresenter {
     });
 
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape' && this.field) {
+      if (event.key === 'Escape' && (this.field || this.focusTimer !== null)) {
         this.dismiss();
       }
     };
@@ -109,7 +121,7 @@ export class SmartFabPresenter {
     this.cleanupFns.push(() => document.removeEventListener('keydown', onKeyDown, true));
 
     const onPointerDown = (event: PointerEvent): void => {
-      const target = event.target;
+      const target = event.composedPath()[0] ?? event.target;
       if (!(target instanceof Node)) {
         return;
       }
@@ -124,12 +136,31 @@ export class SmartFabPresenter {
     document.addEventListener('pointerdown', onPointerDown, true);
     this.cleanupFns.push(() => document.removeEventListener('pointerdown', onPointerDown, true));
 
-    const unhookRoutes = onRouteChange(() => this.hide('route-change'));
+    const unhookRoutes = onRouteChange(() => {
+      this.hide('route-change');
+      this.handleFocusIn(getDeepActiveElement());
+    });
     this.cleanupFns.push(unhookRoutes);
 
     const onPageHide = (): void => this.hide('page-hidden');
     window.addEventListener('pagehide', onPageHide);
     this.cleanupFns.push(() => window.removeEventListener('pagehide', onPageHide));
+
+    const restore = (): void => {
+      if (document.visibilityState === 'hidden') {
+        this.hide('page-hidden');
+      } else if (this.resumeOnVisible) {
+        this.resumeOnVisible = false;
+        this.reevaluate();
+      }
+    };
+    document.addEventListener('visibilitychange', restore);
+    window.addEventListener('pageshow', restore);
+    this.cleanupFns.push(() => {
+      document.removeEventListener('visibilitychange', restore);
+      window.removeEventListener('pageshow', restore);
+    });
+    this.reevaluate();
   }
 
   handleFocusIn(target: EventTarget | null): void {
@@ -145,11 +176,17 @@ export class SmartFabPresenter {
 
     if (this.focusTimer !== null) {
       clearTimeout(this.focusTimer);
+      this.focusTimer = null;
+    }
+    const debounceMs = this.options.focusDebounceMs ?? DEFAULT_FOCUS_DEBOUNCE_MS;
+    if (debounceMs <= 0) {
+      this.evaluate(target);
+      return;
     }
     this.focusTimer = setTimeout(() => {
       this.focusTimer = null;
       this.evaluate(target);
-    }, this.options.focusDebounceMs ?? DEFAULT_FOCUS_DEBOUNCE_MS);
+    }, debounceMs);
   }
 
   handleFocusOut(event: FocusEvent): void {
@@ -170,7 +207,7 @@ export class SmartFabPresenter {
       if (this.pointerInside) {
         return;
       }
-      const active = document.activeElement;
+      const active = getDeepActiveElement();
       if (active && this.field && (active === this.field || this.options.host.contains(active))) {
         return;
       }
@@ -196,7 +233,9 @@ export class SmartFabPresenter {
 
   /** Re-run the gate for the currently focused element (e.g. after settings change). */
   reevaluate(): void {
-    this.evaluate(document.activeElement);
+    if (!this.destroyed) {
+      this.evaluate(getDeepActiveElement());
+    }
   }
 
   destroy(): void {
@@ -246,15 +285,33 @@ export class SmartFabPresenter {
 
     this.field = field;
     this.decision = effective;
+    this.concealed = false;
     this.options.onShow(field, effective);
     this.anchor.attach(field, effective.anchorElement ?? field);
   }
 
   private hide(cause: FabHideCause, decision?: GateDecision): void {
+    this.resumeOnVisible =
+      cause === 'page-hidden'
+        ? this.resumeOnVisible || Boolean(this.field || this.focusTimer !== null)
+        : false;
+    if (this.focusTimer !== null) {
+      clearTimeout(this.focusTimer);
+      this.focusTimer = null;
+    }
     this.clearBlurTimer();
     if (!this.field && cause !== 'route-change') {
       return;
     }
+    if (this.field && (cause === 'field-clipped' || cause === 'no-safe-placement')) {
+      // Retain anchor observers so scrolling back into view can restore the UI.
+      if (!this.concealed) {
+        this.concealed = true;
+        this.options.onHide(cause, this.decision ?? undefined);
+      }
+      return;
+    }
+    this.concealed = false;
     this.field = null;
     const last = this.decision ?? decision;
     this.decision = null;

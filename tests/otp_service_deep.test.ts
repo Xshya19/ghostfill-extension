@@ -9,8 +9,12 @@ vi.mock('../src/services/storageService', () => {
   return {
     storageService: {
       get: vi.fn(async (key: string) => store.get(key) ?? null),
-      set: vi.fn(async (key: string, value: any) => { store.set(key, value); }),
-      remove: vi.fn(async (key: string) => { store.delete(key); }),
+      set: vi.fn(async (key: string, value: any) => {
+        store.set(key, value);
+      }),
+      remove: vi.fn(async (key: string) => {
+        store.delete(key);
+      }),
       _store: store,
     },
   };
@@ -21,7 +25,13 @@ vi.mock('../src/services/intelligentExtractor', () => ({
     intent: 'verification',
     otp: null,
     link: null,
-    debugInfo: { provider: undefined, providerConfidence: 0, intentScores: {}, urlsFound: 0, securityRisk: 'low' },
+    debugInfo: {
+      provider: undefined,
+      providerConfidence: 0,
+      intentScores: {},
+      urlsFound: 0,
+      securityRisk: 'low',
+    },
   })),
 }));
 
@@ -44,9 +54,47 @@ describe('OTPService deep tests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (storageService as any)._store.clear();
+    vi.mocked(storageService.set).mockImplementation(async (key, value) => {
+      (storageService as any)._store.set(key, value);
+    });
     // Reset internal rate limit state
     (otpService as any).rateLimitTimestamps = [];
     (otpService as any).rateLimitMutex = Promise.resolve();
+  });
+
+  it('does not replace a newer message with an older code from the popup', async () => {
+    await otpService.saveLastOTP('582914', 'email', 'verify@example.com', 'Your code', 0.95, {
+      emailId: 'new',
+      emailDate: 2000,
+    });
+    const result = await otpService.saveLastOTP(
+      '391827',
+      'email',
+      'verify@example.com',
+      'Your code',
+      0.95,
+      { emailId: 'old', emailDate: 1000 }
+    );
+    expect(result.saved).toBe(false);
+    expect((await otpService.getLastOTP())?.code).toBe('582914');
+  });
+
+  it('does not mark a previously used message fresh when it is extracted again', async () => {
+    await otpService.saveLastOTP('582914', 'email', 'verify@example.com', 'Your code', 0.95, {
+      emailId: 'same',
+      emailDate: 2000,
+    });
+    await otpService.markAsUsed();
+    const result = await otpService.saveLastOTP(
+      '582914',
+      'email',
+      'verify@example.com',
+      'Your code',
+      0.95,
+      { emailId: 'same', emailDate: 2000 }
+    );
+    expect(result.saved).toBe(false);
+    expect(await otpService.getLastOTP()).toBeNull();
   });
 
   // ═══════════════════════════════════════════════════════════════
@@ -57,31 +105,43 @@ describe('OTPService deep tests', () => {
     it('saves OTP to storage', async () => {
       const result = await otpService.saveLastOTP('123456', 'email');
       expect(result.saved).toBe(true);
-      expect(storageService.set).toHaveBeenCalledWith('lastOTP', expect.objectContaining({
-        code: '123456',
-        source: 'email',
-      }));
+      expect(storageService.set).toHaveBeenCalledWith(
+        'lastOTP',
+        expect.objectContaining({
+          code: '123456',
+          source: 'email',
+        })
+      );
     });
 
     it('includes emailFrom when provided', async () => {
       await otpService.saveLastOTP('123456', 'email', 'noreply@example.com');
-      expect(storageService.set).toHaveBeenCalledWith('lastOTP', expect.objectContaining({
-        emailFrom: 'noreply@example.com',
-      }));
+      expect(storageService.set).toHaveBeenCalledWith(
+        'lastOTP',
+        expect.objectContaining({
+          emailFrom: 'noreply@example.com',
+        })
+      );
     });
 
     it('includes emailSubject when provided', async () => {
       await otpService.saveLastOTP('123456', 'email', undefined, 'Your verification code');
-      expect(storageService.set).toHaveBeenCalledWith('lastOTP', expect.objectContaining({
-        emailSubject: 'Your verification code',
-      }));
+      expect(storageService.set).toHaveBeenCalledWith(
+        'lastOTP',
+        expect.objectContaining({
+          emailSubject: 'Your verification code',
+        })
+      );
     });
 
     it('includes custom confidence', async () => {
       await otpService.saveLastOTP('123456', 'email', undefined, undefined, 0.95);
-      expect(storageService.set).toHaveBeenCalledWith('lastOTP', expect.objectContaining({
-        confidence: 0.95,
-      }));
+      expect(storageService.set).toHaveBeenCalledWith(
+        'lastOTP',
+        expect.objectContaining({
+          confidence: 0.95,
+        })
+      );
     });
 
     it('includes metadata emailId and emailDate', async () => {
@@ -89,10 +149,13 @@ describe('OTPService deep tests', () => {
         emailId: 'msg-42',
         emailDate: 1700000000000,
       });
-      expect(storageService.set).toHaveBeenCalledWith('lastOTP', expect.objectContaining({
-        emailId: 'msg-42',
-        emailDate: 1700000000000,
-      }));
+      expect(storageService.set).toHaveBeenCalledWith(
+        'lastOTP',
+        expect.objectContaining({
+          emailId: 'msg-42',
+          emailDate: 1700000000000,
+        })
+      );
     });
 
     it('sets extractedAt timestamp', async () => {
@@ -152,7 +215,7 @@ describe('OTPService deep tests', () => {
         otpService.saveLastOTP(`code-${i}`, 'email')
       );
       const results = await Promise.all(promises);
-      const savedCount = results.filter(r => r.saved).length;
+      const savedCount = results.filter((r) => r.saved).length;
       expect(savedCount).toBe(5);
     });
 
@@ -311,6 +374,14 @@ describe('OTPService deep tests', () => {
   // ═══════════════════════════════════════════════════════════════
 
   describe('markAsUsed()', () => {
+    it('does not consume a newer code when an older fill finishes', async () => {
+      await otpService.saveLastOTP('582914', 'email');
+      await otpService.saveLastOTP('391827', 'email');
+      await otpService.markAsUsed('582914');
+      expect((await otpService.getLastOTP())?.code).toBe('391827');
+      await otpService.markAsUsed('391827');
+      expect(await otpService.getLastOTP()).toBeNull();
+    });
     it('sets usedAt timestamp', async () => {
       const otp = {
         code: '123456',
@@ -321,9 +392,12 @@ describe('OTPService deep tests', () => {
       (storageService as any)._store.set('lastOTP', otp);
 
       await otpService.markAsUsed();
-      expect(storageService.set).toHaveBeenCalledWith('lastOTP', expect.objectContaining({
-        usedAt: expect.any(Number),
-      }));
+      expect(storageService.set).toHaveBeenCalledWith(
+        'lastOTP',
+        expect.objectContaining({
+          usedAt: expect.any(Number),
+        })
+      );
     });
 
     it('does nothing when no OTP exists', async () => {

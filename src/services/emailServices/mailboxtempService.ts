@@ -8,6 +8,7 @@ import {
   extractHtmlFromBody,
   extractTextFromBody,
 } from '../../utils/core';
+import { getSenderSource } from '../../utils/emailIdentity';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 import { isRetryableError, throttledWarn } from './isRetryableError';
@@ -87,7 +88,7 @@ export class MailboxtempService {
       return messages.map((msg: any, idx: number) => {
         const email: Email = {
           id: String(msg.id || msg.messageId),
-          from: contentToString(msg.from || msg.sender, 'Unknown Sender'),
+          from: getSenderSource(undefined, msg.from || msg.sender),
           to: contentToString(msg.to || fullEmail),
           subject: contentToString(msg.subject, '(No Subject)'),
           date: safeParseDate(msg.date || msg.createdAt),
@@ -133,7 +134,7 @@ export class MailboxtempService {
 
       return {
         id: String(item.id || emailId),
-        from: contentToString(item.from || item.sender, 'Unknown Sender'),
+        from: getSenderSource(undefined, item.from || item.sender),
         to: contentToString(item.to || fullEmail),
         subject: contentToString(item.subject, '(No Subject)'),
         date: safeParseDate(item.date || item.createdAt),

@@ -10,6 +10,9 @@
   "emailLabel": {
     "message": "Correo"
   },
+  "noEmailAddressYet": {
+    "message": "Aún no hay dirección de correo"
+  },
   "syncingIdentity": {
     "message": "Sincronizando identidad..."
   },
@@ -19,8 +22,29 @@
   "generatingPassword": {
     "message": "Generando..."
   },
+  "passwordNotGenerated": {
+    "message": "Genera una cuando la necesites"
+  },
+  "passwordHidden": { "message": "Contraseña oculta" },
+  "passwordShow": { "message": "Mostrar contraseña" },
+  "passwordHide": { "message": "Ocultar contraseña" },
+  "passwordGenerate": { "message": "Generar contraseña" },
+  "passwordGenerateAgain": { "message": "Generar otra" },
+  "passwordGenerateFailed": { "message": "No se pudo generar una contraseña. Inténtalo de nuevo." },
+  "passwordOptions": { "message": "Opciones de contraseña" },
+  "passwordLength": { "message": "Longitud de contraseña" },
+  "uppercaseShort": { "message": "Mayúsculas" },
+  "lowercaseShort": { "message": "Minúsculas" },
+  "copyShort": { "message": "Copiar" },
+  "copiedShort": { "message": "Copiado" },
   "emailCopied": {
     "message": "Correo copiado"
+  },
+  "expiredAddressCopied": {
+    "message": "Copiado, pero esta dirección ha caducado. Genera otra antes de usarla."
+  },
+  "generateNewAddress": {
+    "message": "Generar una nueva dirección"
   },
   "passwordCopied": {
     "message": "Contrasena copiada"
@@ -80,11 +104,21 @@
     "message": "Entendido"
   },
   "vaultSettings": {
-    "message": "Boveda de contrasenas"
+    "message": "Generador de contraseñas"
   },
   "passcodeSync": {
-    "message": "Sincronizacion de codigos"
+    "message": "Código de verificación"
   },
+  "gmailAliasesTitle": { "message": "Alias de Gmail" },
+  "gmailAliasesOnly": { "message": "Solo alias" },
+  "gmailInboxConnected": { "message": "Bandeja conectada" },
+  "emailTypeSelector": { "message": "Tipo de correo" },
+  "tempMailTab": { "message": "Correo temporal" },
+  "gmailTab": { "message": "Gmail" },
+  "aliasTabListLabel": { "message": "Vistas de alias de Gmail" },
+  "aliasTabGenerator": { "message": "Alias" },
+  "aliasTabInbox": { "message": "Bandeja" },
+  "aliasTabHistory": { "message": "Historial" },
   "onboardingTitle": {
     "message": "Bienvenido a GhostFill"
   },
@@ -110,10 +144,19 @@
     "message": "Detecta y rellena codigos de verificacion automaticamente"
   },
   "onboardingButton": {
-    "message": "Comenzar"
+    "message": "Generar un correo temporal"
   },
   "onboardingFooter": {
     "message": "Deteccion local - APIs de proveedores - codigo abierto"
+  },
+  "autoOpenVerificationLinks": {
+    "message": "Abrir automáticamente enlaces de verificación"
+  },
+  "autoOpenVerificationLinksDescription": {
+    "message": "Abre los enlaces de acción detectados en un correo en una pestaña nueva. Desactívalo para abrirlos manualmente."
+  },
+  "autoOpenVerificationLinksAriaLabel": {
+    "message": "Activar la apertura automática de enlaces de verificación"
   },
   "appName": {
     "message": "GhostFill"
@@ -123,5 +166,34 @@
   },
   "confirmNewIdentity": {
     "message": "Estas seguro de que quieres generar una nueva identidad? Tu correo y datos actuales se reemplazaran."
+  },
+  "cancel": { "message": "Cancelar" },
+  "passwordCharacterTypeRequired": {
+    "message": "Elige al menos un tipo de carácter para generar una contraseña."
+  },
+  "customDomainRequired": { "message": "Introduce tu dominio de correo personalizado." },
+  "customDomainHostInvalid": { "message": "Introduce un dominio como mail.example.com." },
+  "customDomainUrlRequired": { "message": "Introduce la URL de tu Worker." },
+  "resetSettingsAction": { "message": "Restablecer ajustes" },
+  "clearAllDataAction": { "message": "Borrar todos los datos" },
+  "acknowledge": { "message": "Aceptar" },
+  "clearAliasHistoryTitle": { "message": "¿Borrar el historial de alias?" },
+  "clearAliasHistoryMessage": {
+    "message": "Se eliminarán todos los alias guardados en este dispositivo. No se puede deshacer."
+  },
+  "clearAliasHistoryAction": { "message": "Borrar historial" },
+  "tutorialReplayComplete": {
+    "message": "El tutorial se repetirá la próxima vez que abras la ventana emergente."
+  },
+  "tutorialReplayFailed": {
+    "message": "No se pudo guardar el cambio. Comprueba la extensión e inténtalo de nuevo."
+  },
+  "inboxNewBadge": { "message": "Nuevo" },
+  "inboxViewAll": { "message": "Ver todos" },
+  "inboxCaughtUpTitle": { "message": "Todo al día" },
+  "inboxWaitingTitle": { "message": "Esperando un correo" },
+  "inboxRecentDescription": { "message": "Los correos recientes aparecerán aquí." },
+  "inboxWaitingDescription": {
+    "message": "Usa tu dirección de arriba. Los mensajes y códigos aparecerán aquí."
   }
 }

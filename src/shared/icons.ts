@@ -10,62 +10,47 @@ const TOKENS = {
   coral: 'var(--gf-coral, #ff6b6b)',
 } as const;
 
-const STROKE = '1.7';
+const STROKE = '1.8';
 
 export const SHARED_SVG_DEFS = '';
 
-const fabIcon = (
-  body: string
-): string => `<svg class="gf-fab-symbol" viewBox="0 0 24 24" fill="none" role="presentation" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-  <path class="gf-fab-symbol__halo" d="M12 2.7a9.3 9.3 0 1 1 0 18.6 9.3 9.3 0 0 1 0-18.6Z" fill="currentColor" opacity=".1"/>
-  ${body}
-</svg>`;
+const fabIcon = (body: string): string =>
+  `<svg class="gf-fab-symbol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" role="presentation" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">${body}</svg>`;
 
 const ICONS: Readonly<Record<ButtonMode, string>> = {
   magic: fabIcon(`
-    <circle cx="12" cy="12" r="5.15" fill="currentColor" opacity=".16"/>
-    <path d="M12 5.1v2.05M12 16.85v2.05M5.1 12h2.05M16.85 12h2.05" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" opacity=".72"/>
-    <path d="m12 7.25 1.45 3.3 3.3 1.45-3.3 1.45-1.45 3.3-1.45-3.3-3.3-1.45 3.3-1.45L12 7.25Z" fill="currentColor" opacity=".22"/>
-    <path d="m12 7.25 1.45 3.3 3.3 1.45-3.3 1.45-1.45 3.3-1.45-3.3-3.3-1.45 3.3-1.45L12 7.25Z" stroke="currentColor" stroke-width="${STROKE}" stroke-linejoin="round"/>
-    <circle cx="12" cy="12" r="1.25" fill="currentColor"/>
-    <path d="m18.3 4.1.45 1.25 1.25.45-1.25.45-.45 1.25-.45-1.25-1.25-.45 1.25-.45.45-1.25Z" fill="currentColor"/>
+    <path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/>
+    <path d="m14 7 3 3M5 6v4M19 14v4M10 2v2M7 8H3M18 17h4"/>
   `),
 
   email: fabIcon(`
-    <rect x="4.7" y="6.6" width="14.6" height="11" rx="2.4" fill="currentColor" opacity=".18"/>
-    <rect x="4.7" y="6.6" width="14.6" height="11" rx="2.4" stroke="currentColor" stroke-width="${STROKE}"/>
-    <path d="m5.7 8 6.3 4.65L18.3 8" stroke="currentColor" stroke-width="${STROKE}" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="18.5" cy="5.5" r="2" fill="currentColor" stroke="var(--fab-core, #fff)" stroke-width="1.15"/>
+    <path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7"/>
+    <rect x="2" y="4" width="20" height="16" rx="2"/>
   `),
 
   password: fabIcon(`
-    <rect x="5.1" y="10.2" width="13.8" height="8.7" rx="2.4" fill="currentColor" opacity=".18"/>
-    <rect x="5.1" y="10.2" width="13.8" height="8.7" rx="2.4" stroke="currentColor" stroke-width="${STROKE}"/>
-    <path d="M8.2 10.1V8.4a3.8 3.8 0 0 1 7.6 0v1.7" stroke="currentColor" stroke-width="${STROKE}" stroke-linecap="round"/>
-    <circle cx="12" cy="14.3" r="1.25" fill="currentColor"/><path d="M12 15.4v1.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    <circle cx="12" cy="16" r="1"/>
+    <rect x="3" y="10" width="18" height="12" rx="2"/>
+    <path d="M7 10V7a5 5 0 0 1 10 0v3"/>
   `),
 
   otp: fabIcon(`
-    <rect x="4.25" y="5.1" width="15.5" height="13.8" rx="3" fill="currentColor" opacity=".18"/>
-    <rect x="4.25" y="5.1" width="15.5" height="13.8" rx="3" stroke="currentColor" stroke-width="${STROKE}"/>
-    <path d="M7.2 8.4h9.6" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" opacity=".72"/>
-    <circle cx="8.2" cy="12.5" r="1.05" fill="currentColor"/><circle cx="12" cy="12.5" r="1.05" fill="currentColor"/><circle cx="15.8" cy="12.5" r="1.05" fill="currentColor"/>
-    <path d="M8.2 15.6h7.6" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" opacity=".82"/>
+    <line x1="4" x2="20" y1="9" y2="9"/>
+    <line x1="4" x2="20" y1="15" y2="15"/>
+    <line x1="10" x2="8" y1="3" y2="21"/>
+    <line x1="16" x2="14" y1="3" y2="21"/>
   `),
 
   user: fabIcon(`
-    <circle cx="12" cy="8.4" r="3.15" fill="currentColor" opacity=".22"/>
-    <circle cx="12" cy="8.4" r="3.15" stroke="currentColor" stroke-width="${STROKE}"/>
-    <path d="M5.7 19c.55-3.45 2.65-5.35 6.3-5.35s5.75 1.9 6.3 5.35" fill="currentColor" opacity=".18"/>
-    <path d="M5.7 19c.55-3.45 2.65-5.35 6.3-5.35s5.75 1.9 6.3 5.35" stroke="currentColor" stroke-width="${STROKE}" stroke-linecap="round"/>
-    <path d="M18.3 6.4h3M19.8 4.9v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    <circle cx="12" cy="8" r="5"/>
+    <path d="M20 21a8 8 0 0 0-16 0"/>
   `),
 
   form: fabIcon(`
-    <rect x="5.7" y="4.2" width="12.6" height="15.6" rx="2.3" fill="currentColor" opacity=".16"/>
-    <rect x="5.7" y="4.2" width="12.6" height="15.6" rx="2.3" stroke="currentColor" stroke-width="${STROKE}"/>
-    <path d="M9 8h5.8M9 11.5h6M9 15h3.2" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/>
-    <path d="m13.8 15.3 1.35 1.25 2.55-2.7" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect width="8" height="4" x="8" y="2" rx="1" ry="1"/>
+    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+    <path d="M12 11h4M12 16h4"/>
+    <path d="M8 11h.01M8 16h.01"/>
   `),
 };
 
@@ -79,25 +64,23 @@ export class IconSystem {
   }
 
   static getSpinner(): string {
-    return `<svg viewBox="0 0 24 24" fill="none" role="presentation" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    return `<svg class="gf-loading-spinner" viewBox="0 0 24 24" fill="none" role="presentation" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
       <circle cx="12" cy="12" r="9" stroke="${TOKENS.iris}" stroke-width="2" opacity="0.18"/>
-      <path d="M12 3 a 9 9 0 0 1 9 9" stroke="${TOKENS.iris}" stroke-width="2.2" stroke-linecap="round" fill="none">
-        <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.8s" repeatCount="indefinite"/>
-      </path>
+      <path d="M12 3 a 9 9 0 0 1 9 9" stroke="${TOKENS.iris}" stroke-width="2.2" stroke-linecap="round" fill="none"/>
     </svg>`;
   }
 
   static getSuccess(): string {
     return `<svg viewBox="0 0 24 24" fill="none" role="presentation" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="12" cy="12" r="9.5" stroke="${TOKENS.mint}" stroke-width="1.8" opacity="0.8"/>
-      <path d="M7.5 12.5 l 3 3 6 -6.5" stroke="${TOKENS.mint}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <circle cx="12" cy="12" r="10" stroke="${TOKENS.mint}" stroke-width="1.8"/>
+      <path d="m9 12 2 2 4-4" stroke="${TOKENS.mint}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>`;
   }
 
   static getError(): string {
     return `<svg viewBox="0 0 24 24" fill="none" role="presentation" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="12" cy="12" r="9.5" stroke="${TOKENS.coral}" stroke-width="1.8" opacity="0.8"/>
-      <path d="M8.5 8.5 l 7 7 M 15.5 8.5 l -7 7" stroke="${TOKENS.coral}" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+      <circle cx="12" cy="12" r="10" stroke="${TOKENS.coral}" stroke-width="1.8"/>
+      <path d="m15 9-6 6M9 9l6 6" stroke="${TOKENS.coral}" stroke-width="1.8" stroke-linecap="round"/>
     </svg>`;
   }
 }
@@ -113,6 +96,7 @@ export type MenuIconName =
   | 'mask'
   | 'clear'
   | 'chart'
+  | 'eye-off'
   | 'settings';
 
 const menuShell = (body: string, accent = 'var(--gf-primary, #8b8fff)'): string => `
@@ -177,6 +161,10 @@ const MENU_ICONS: Readonly<Record<MenuIconName, string>> = {
     `<path d="M6.5 17.8V14M10.4 17.8V10.7M14.3 17.8V7.4M18.1 17.8V12.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
      <path d="M5.9 18.3h12.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>`,
     'var(--gf-primary, #82a8ff)'
+  ),
+  'eye-off': menuShell(
+    `<path d="M3.8 12s2.9-5 8.2-5c1.25 0 2.38.29 3.38.73M20.2 12s-2.9 5-8.2 5c-1.25 0-2.38-.29-3.38-.73M9.9 9.9a3 3 0 0 0 4.2 4.2M4.5 4.5l15 15" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/>`,
+    'var(--gf-ink-soft, #6d7488)'
   ),
   settings: menuShell(
     `<circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.45"/>

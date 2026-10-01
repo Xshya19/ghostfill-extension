@@ -1,5 +1,6 @@
 import { EmailAccount, Email } from '../../types';
 import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
+import { getSenderSource } from '../../utils/emailIdentity';
 import { getRandomInt } from '../../utils/encryption';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
@@ -110,7 +111,7 @@ export class MailnesiaService {
         const safeBody = contentToString(msg.description);
         return {
           id: String(msg.id),
-          from: contentToString(msg.from, 'Unknown Sender'),
+          from: getSenderSource(undefined, msg.from),
           to: fullEmail,
           subject: contentToString(msg.title, '(No Subject)'),
           date: msgDate,

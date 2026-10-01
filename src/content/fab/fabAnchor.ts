@@ -263,10 +263,12 @@ export class FabAnchor {
       this.options.onHide('field-hidden');
       return;
     }
+    this.lastRect = fieldRect;
 
     const viewport = this.paddedViewport();
     const clip = this.clipRect(target);
-    const visible = intersect(intersect(fieldRect, clip) ?? fieldRect, viewport);
+    const clipped = intersect(fieldRect, clip);
+    const visible = clipped ? intersect(clipped, viewport) : null;
     const minRatio = this.options.minVisibleRatio ?? 0.35;
 
     if (!visible) {
@@ -285,7 +287,6 @@ export class FabAnchor {
       return;
     }
 
-    this.lastRect = fieldRect;
     this.options.onPlace(placement);
   }
 
@@ -532,6 +533,7 @@ export class FabAnchor {
   // ── drift loop ────────────────────────────────────────────
   private wake(): void {
     this.idleFrames = 0;
+    this.lastRect = null;
     if (this.rafId !== null || !this.field) {
       return;
     }

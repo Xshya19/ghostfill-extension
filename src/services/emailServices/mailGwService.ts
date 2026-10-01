@@ -2,6 +2,7 @@
 
 import { EmailAccount, Email, MailTmDomain, MailTmAccount, MailTmMessage } from '../../types';
 import { API, fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
+import { getSenderSource } from '../../utils/emailIdentity';
 import { getRandomInt, getRandomString } from '../../utils/encryption';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
@@ -515,7 +516,7 @@ class MailGwService {
       id: String(msg.id),
       // Sender-less system messages would otherwise throw inside
       // messages.map and fail the ENTIRE inbox fetch.
-      from: contentToString(msg.from?.address, 'Unknown Sender'),
+      from: getSenderSource(undefined, msg.from),
       subject: contentToString(msg.subject, '(No Subject)'),
       date: safeParseDate(msg.createdAt),
       body: bodyStr,

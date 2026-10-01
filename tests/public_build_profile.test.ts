@@ -55,8 +55,8 @@ describe('build profiles', () => {
   });
 
   it('gates real-mail UI and message routing behind the build profile', () => {
-    expect(readProjectFile('src/frontend/popup/components/Hub.tsx')).toContain(
-      'IS_GMAIL_ENABLED && <div className="hub-email-selector"'
+    expect(readProjectFile('src/frontend/popup/components/Hub.tsx')).toMatch(
+      /IS_GMAIL_ENABLED\s*&&\s*\(?\s*<div\s+className="hub-email-selector"/
     );
     expect(readProjectFile('src/frontend/options/components/OptionsTabs.tsx')).toMatch(
       /IS_GMAIL_ENABLED\s*&&\s*\(?\s*<SettingsSection\s+id="gmail-oauth"/
@@ -66,10 +66,23 @@ describe('build profiles', () => {
     );
   });
 
-  it('enables automatic verification-link opening by default', () => {
+  it('restores automatic verification links with the user setting', () => {
     expect(readProjectFile('src/types/storage.types.ts')).toContain('autoConfirmLinks: true');
     expect(readProjectFile('src/utils/validation.ts')).toContain(
       'autoConfirmLinks: safeBoolean.default(true)'
     );
+    expect(readProjectFile('src/services/linkService.ts')).toContain(
+      'canAutoOpenVerificationLink(account, email.from, linkUrl)'
+    );
+  });
+
+  it('uses browser-safe default shortcuts', () => {
+    const manifest = JSON.parse(readProjectFile('manifest.json')) as {
+      commands: Record<string, { suggested_key?: { default?: string; mac?: string } }>;
+    };
+    for (const command of Object.values(manifest.commands)) {
+      expect(command.suggested_key?.default).toMatch(/^Alt\+Shift\+/);
+      expect(command.suggested_key?.mac).toMatch(/^Alt\+Shift\+/);
+    }
   });
 });

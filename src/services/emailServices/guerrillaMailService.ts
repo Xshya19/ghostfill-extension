@@ -2,6 +2,7 @@
 
 import { EmailAccount, Email } from '../../types';
 import { API, contentToString } from '../../utils/core';
+import { getSenderSource } from '../../utils/emailIdentity';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 
@@ -354,7 +355,7 @@ class GuerrillaMailService {
 
     const email: Email = {
       id: String(msg.mail_id),
-      from: contentToString(msg.mail_from, 'Unknown Sender'),
+      from: getSenderSource(undefined, msg.mail_from),
       subject: contentToString(msg.mail_subject, '(No Subject)'),
       date: parseInt(msg.mail_timestamp, 10) * 1000 || Date.now(),
       body: bodyStr,

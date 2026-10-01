@@ -49,6 +49,7 @@
 // ─────────────────────────────────────────────────────────────────────
 
 import { storageService } from '../services/storageService';
+import { contentFingerprint } from '../utils/contentFingerprint';
 import { sleep } from '../utils/core';
 import { getSenderEmail, getSenderLabel } from '../utils/emailIdentity';
 import { getRandomString } from '../utils/encryption';
@@ -143,9 +144,6 @@ interface NotificationMetrics {
 // ━━━ Configuration ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const DEFAULT_ICON_PATH = 'assets/icons/icon128.png';
-const OTP_NOTIFICATION_ICON_URL = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect x="6" y="6" width="116" height="116" rx="28" fill="#172033"/><rect x="25" y="23" width="78" height="82" rx="16" fill="#36d6a8"/><path d="M42 43h44" stroke="#172033" stroke-width="8" stroke-linecap="round" opacity=".55"/><circle cx="43" cy="68" r="7" fill="#172033"/><circle cx="64" cy="68" r="7" fill="#172033"/><circle cx="85" cy="68" r="7" fill="#172033"/><path d="M43 87h42" stroke="#172033" stroke-width="7" stroke-linecap="round" opacity=".7"/></svg>'
-)}`;
 
 const DEFAULT_CATEGORY_SETTINGS: Record<NotificationCategory, CategorySettings> = {
   otp: { enabled: true, dedupTtlMs: 10_000, autoClearMs: null, maxPerMinute: 10 },
@@ -508,9 +506,10 @@ export async function notifyNewEmail(
   from: string,
   subject: string,
   otp?: string,
-  link?: string
+  link?: string,
+  content = ''
 ): Promise<string> {
-  const senderLabel = getSenderLabel(from, subject);
+  const senderLabel = getSenderLabel(from, subject, link, content);
   const senderEmail = getSenderEmail(from);
   const senderContext = senderEmail && senderEmail !== from ? senderEmail : undefined;
   const formatMessage = (limit: number): string => `${senderLabel}\n${truncate(subject, limit)}`;
@@ -528,7 +527,6 @@ export async function notifyNewEmail(
       buttons: [
         { title: 'Copy code', action: 'copy-otp' },
         { title: 'Open link', action: 'open-link' },
-        { title: 'Dismiss', action: 'dismiss' },
       ],
       data: { otp, link, from, subject },
     });
@@ -764,11 +762,7 @@ async function processQueueItem(item: QueueItem): Promise<void> {
 
 function sendNotification(id: string, spec: NotificationSpec): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    const iconUrl = spec.iconPath
-      ? chrome.runtime.getURL(spec.iconPath)
-      : spec.category === 'otp'
-        ? OTP_NOTIFICATION_ICON_URL
-        : chrome.runtime.getURL(DEFAULT_ICON_PATH);
+    const iconUrl = chrome.runtime.getURL(spec.iconPath ?? DEFAULT_ICON_PATH);
 
     const options: chrome.notifications.NotificationOptions<true> = {
       type: 'basic',
@@ -950,7 +944,12 @@ export async function requestNotificationPermission(): Promise<boolean> {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function buildDedupKey(spec: NotificationSpec): string {
-  return `${spec.category}:${spec.title}:${spec.message}`;
+  return `${spec.category}:${contentFingerprint([
+    spec.title,
+    spec.message,
+    String(spec.data?.otp ?? ''),
+    String(spec.data?.link ?? ''),
+  ])}`;
 }
 
 function isDuplicate(key: string, ttlMs: number): boolean {
@@ -1125,7 +1124,7 @@ async function copyToClipboard(text: string): Promise<void> {
     if (success) {
       await chrome.notifications.create(`gf-success-${Date.now()}`, {
         type: 'basic',
-        iconUrl: DEFAULT_ICON_PATH,
+        iconUrl: chrome.runtime.getURL(DEFAULT_ICON_PATH),
         title: 'GhostFill',
         message: `OTP copied to clipboard`,
         priority: 1,
@@ -1143,7 +1142,7 @@ async function copyToClipboard(text: string): Promise<void> {
     // NOTE: assets/icons/icon128.png is the only shipped 128px icon
     // (see web_accessible_resources). The old 'assets/icon-128.png'
     // 404'd and notifications rendered without an icon.
-    iconUrl: OTP_NOTIFICATION_ICON_URL,
+    iconUrl: chrome.runtime.getURL(DEFAULT_ICON_PATH),
     title: 'GhostFill — OTP Code',
     message: `Your code: ${masked}\n\n(Could not auto-copy — clipboard not available. Retrieve full code from extension popup.)`,
     priority: 2,

@@ -42,6 +42,17 @@ describe('Message Validation Pipeline', () => {
       expect(result.valid).toBe(true);
     });
 
+    it('accepts the signup origin for generated addresses', () => {
+      const result = validateMessage({
+        action: 'GENERATE_EMAIL',
+        payload: { originUrl: 'https://signup.example.com' },
+      });
+      expect(result.valid).toBe(true);
+      expect(result.valid && result.data.payload).toEqual({
+        originUrl: 'https://signup.example.com',
+      });
+    });
+
     it('accepts GET_SETTINGS with no payload', () => {
       const result = validateMessage({ action: 'GET_SETTINGS' });
       expect(result.valid).toBe(true);

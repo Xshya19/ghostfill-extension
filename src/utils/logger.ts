@@ -27,10 +27,6 @@ type LoggerGlobal = typeof globalThis & {
   dumpGhostFillLogs?: () => Promise<LogEntry[]>;
 };
 
-const IS_PRODUCTION = process.env.NODE_ENV === 'production';
-const PRODUCTION_LOG_ALLOWLIST: LogLevel[] = ['debug', 'info', 'warn', 'error'];
-const LEVEL_RANK: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
-const MIN_LEVEL: number = LEVEL_RANK.debug;
 const PERSISTED_LOG_KEY = 'ghostfill_debug_logs';
 
 const SENSITIVE_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
@@ -284,38 +280,7 @@ class Logger {
   }
 
   private log(level: LogLevel, message: string, data?: unknown, source?: string): void {
-    // Level gate: drop debug/info in production before any expensive redaction
-    if (LEVEL_RANK[level] < MIN_LEVEL) {
-      // Still track in history at debug level for diagnostics, but skip console + heavy redaction debounce
-      if (level === 'debug' || level === 'info') {
-        // Minimal history without full redaction on hot paths when dropped
-        // We still redact but avoid console output + persist spam via early debounce
-      }
-    }
-    if (IS_PRODUCTION && !PRODUCTION_LOG_ALLOWLIST.includes(level)) {
-      const entry: LogEntry = {
-        level,
-        message: redactSensitiveData(message) as string,
-        timestamp: Date.now(),
-      };
-      if (data !== undefined) {
-        entry.data = redactSensitiveData(data);
-      }
-      if (source) {
-        entry.source = source;
-      }
-      this.history.push(entry);
-      if (this.history.length > this.maxHistory) {
-        this.history.shift();
-      }
-      this.syncGlobalHistory();
-      // Don't persist debug/info in production to save storage writes
-      if (PRODUCTION_LOG_ALLOWLIST.includes(level)) {
-        this.persistHistory();
-      }
-      return;
-    }
-
+    // Keep every level observable in release builds, with the same redaction.
     const redactedMessage = redactSensitiveData(message) as string;
     const redactedData = data !== undefined ? redactSensitiveData(data) : undefined;
 
@@ -704,7 +669,6 @@ export interface DiagEntry {
 
 const MAX_DIAG_ENTRIES = 3000;
 const diagBuffer: DiagEntry[] = [];
-const SHOULD_PRINT_DIAG_TO_CONSOLE = process.env.NODE_ENV !== 'production';
 
 function pushDiag(entry: DiagEntry): void {
   diagBuffer.push(entry);
@@ -787,7 +751,7 @@ export const diag = {
     const catTag = `[${category.toUpperCase()}]`;
     const msg = `${levelIcon} ${prefix} ${catTag} ${action} — ${safeDetail}`;
 
-    if (SHOULD_PRINT_DIAG_TO_CONSOLE || level === 'error') {
+    {
       switch (level) {
         case 'error':
           console.error(`[GhostFill-DIAG] ${msg}`, safeData);

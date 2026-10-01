@@ -19,148 +19,24 @@ vi.mock('../src/services/storageService', () => {
 
 import { storageService } from '../src/services/storageService';
 
-// We need a fresh DedupService instance for each test to avoid shared state
-class DedupServiceTestable {
-  private records = new Map<string, any>();
-  private pendingRecords = new Map<string, number>();
-  private persistTimer: ReturnType<typeof setTimeout> | null = null;
-  private lastPruneAt = 0;
-  private PRUNE_INTERVAL_MS = 60 * 60 * 1000;
-  private initialized = false;
-  private initPromise: Promise<void> | null = null;
-  private persistGeneration = 0;
-  private DEDUP_TTL_MS = 24 * 60 * 60 * 1000;
+import { dedupService } from '../src/services/dedupService';
 
-  async initialize(): Promise<void> {
-    if (this.initialized) return;
-    if (this.initPromise) return this.initPromise;
-
-    this.initPromise = (async () => {
-      try {
-        const saved = await storageService.get('processedEmails');
-        if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
-          const now = Date.now();
-          for (const [key, record] of Object.entries(saved as Record<string, any>)) {
-            if (record.ttlExpiresAt > now) {
-              this.records.set(key, record);
-            }
-          }
-        }
-        this.initialized = true;
-      } catch {
-        this.initialized = true;
-      } finally {
-        this.initPromise = null;
-      }
-    })();
-
-    return this.initPromise;
-  }
-
-  private async ensureReady(): Promise<void> {
-    await this.initialize();
-  }
-
-  private makeKey(emailId: string | number, accountId: string): string {
-    return `${accountId}:${emailId}`;
-  }
-
-  async markPending(emailId: string | number, accountId: string, ttlMs = 60_000): Promise<void> {
-    const key = this.makeKey(emailId, accountId);
-    this.pendingRecords.set(key, Date.now() + ttlMs);
-  }
-
-  async clearPending(emailId: string | number, accountId: string): Promise<void> {
-    const key = this.makeKey(emailId, accountId);
-    this.pendingRecords.delete(key);
-  }
-
-  async isPending(emailId: string | number, accountId: string): Promise<boolean> {
-    const key = this.makeKey(emailId, accountId);
-    const expiresAt = this.pendingRecords.get(key);
-    if (!expiresAt) return false;
-    if (Date.now() >= expiresAt) {
-      this.pendingRecords.delete(key);
-      return false;
-    }
-    return true;
-  }
-
-  async isProcessed(emailId: string | number, accountId: string): Promise<boolean> {
-    if (await this.isPending(emailId, accountId)) return true;
-    return (await this.getRecord(emailId, accountId)) !== null;
-  }
-
-  async getRecord(emailId: string | number, accountId: string): Promise<any> {
-    await this.ensureReady();
-    const key = this.makeKey(emailId, accountId);
-    const record = this.records.get(key);
-    if (!record) return null;
-    if (Date.now() >= record.ttlExpiresAt) {
-      this.records.delete(key);
-      return null;
-    }
-    return record;
-  }
-
-  async markProcessed(emailId: string | number, accountId: string, hadOTP: boolean, hadLink: boolean): Promise<void> {
-    await this.ensureReady();
-    await this.clearPending(emailId, accountId);
-    const key = this.makeKey(emailId, accountId);
-    const now = Date.now();
-    this.records.set(key, {
-      id: String(emailId),
-      accountId,
-      processedAt: now,
-      hadOTP: Boolean(hadOTP),
-      hadLink: Boolean(hadLink),
-      ttlExpiresAt: now + this.DEDUP_TTL_MS,
-    });
-  }
-
-  async prune(): Promise<number> {
-    await this.ensureReady();
-    const now = Date.now();
-    let pruned = 0;
-    for (const [key, record] of this.records) {
-      if (now >= record.ttlExpiresAt) {
-        this.records.delete(key);
-        pruned++;
-      }
-    }
-    return pruned;
-  }
-
-  async clear(): Promise<void> {
-    this.records.clear();
-    this.pendingRecords.clear();
-    this.persistGeneration++;
-  }
-
-  get size(): number {
-    return this.records.size;
-  }
-
-  destroy(): void {
-    if (this.persistTimer) {
-      clearTimeout(this.persistTimer);
-      this.persistTimer = null;
-    }
-  }
-}
+// Exercise production code with a fresh instance for each case.
+const DedupServiceConstructor = dedupService.constructor as new () => typeof dedupService;
 
 describe('DedupService deep tests', () => {
-  let dedup: DedupServiceTestable;
+  let dedup: typeof dedupService;
 
   beforeEach(async () => {
     vi.clearAllMocks();
     (storageService as any)._store.clear();
-    dedup = new DedupServiceTestable();
+    dedup = new DedupServiceConstructor();
     await dedup.initialize();
   });
 
   afterEach(() => {
     dedup.destroy();
+    vi.restoreAllMocks();
   });
 
   // ── Basic Operations ──
@@ -198,12 +74,11 @@ describe('DedupService deep tests', () => {
 
   it('returns null for expired records', async () => {
     await dedup.markProcessed('e1', 'a1', true, false);
-    // Fast-forward past TTL
     const record = await dedup.getRecord('e1', 'a1');
     expect(record).not.toBeNull();
-    // We can't easily test TTL expiry without time mocking on the service itself
-    // but we verify the ttlExpiresAt field is set
-    expect(record.ttlExpiresAt).toBeGreaterThan(Date.now());
+    vi.spyOn(Date, 'now').mockReturnValue(record!.ttlExpiresAt);
+    expect(await dedup.getRecord('e1', 'a1')).toBeNull();
+    expect(await dedup.isProcessed('e1', 'a1')).toBe(false);
   });
 
   // ── Pending Records ──

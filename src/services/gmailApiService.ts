@@ -16,6 +16,7 @@ import {
   OAUTH_USERINFO,
   fetchWithTimeout,
 } from '../utils/core';
+import { parseEmailIdentity } from '../utils/emailIdentity';
 import { createLogger } from '../utils/logger';
 import { storageService } from './storageService';
 
@@ -843,11 +844,8 @@ async function fetchHistoryDelta(startHistoryId: string): Promise<{
 
 // ─── Parsing & Base64 Helpers ─────────────────────────────
 function parseFrom(from: string): { fromName: string; fromEmail: string } {
-  const match = from.match(/^(.+?)\s*<([^>]+)>$/);
-  if (match?.[1] && match?.[2]) {
-    return { fromName: match[1].replace(/"/g, '').trim(), fromEmail: match[2].trim() };
-  }
-  return { fromName: from, fromEmail: from };
+  const sender = parseEmailIdentity(from);
+  return { fromName: sender.displayName, fromEmail: sender.email };
 }
 
 function buildHeaderMap(headers: GmailHeader[]): Map<string, string> {

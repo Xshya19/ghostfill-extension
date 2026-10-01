@@ -1,13 +1,29 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mail, Copy, RefreshCw, Inbox, Clock, ChevronRight, ChevronLeft, Zap, Hash } from 'lucide-react';
+import {
+  Mail,
+  Copy,
+  RefreshCw,
+  Inbox,
+  Clock,
+  ChevronRight,
+  ChevronLeft,
+  Zap,
+  Hash,
+} from 'lucide-react';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { EmailAccount, Email } from '../../../types';
-import { formatRelativeTime, copyToClipboard, openSafeUrl, contentToString } from '../../../utils/core';
+import {
+  formatRelativeTime,
+  copyToClipboard,
+  openSafeUrl,
+  contentToString,
+} from '../../../utils/core';
+import { getSenderLabel } from '../../../utils/emailIdentity';
 import { safeSendMessage } from '../../../utils/messaging';
 import { t } from '../../i18n';
-import { Button, interactiveSurface, springSoft } from '../../ui';
+import { Button, tweenSurface } from '../../ui';
 import { useOTPExtractor, useStorageSubscription } from '../hooks';
-import { ConfirmModal, EmailAvatar, EmailViewerModal } from './SharedComponents';
+import { ConfirmModal, EmailAvatar, EmailViewerModal, getEmailPreview } from './SharedComponents';
 
 /**
  * Detects text direction (e.g. RTL for Arabic/Hebrew) and returns appropriate attributes.
@@ -25,10 +41,10 @@ const getLangAttr = (text: string): { dir?: 'rtl' | 'ltr'; lang?: string } | und
   return undefined;
 };
 
-function getEmailTimestamp(email: Email): number {
-  return typeof email.date === 'number' && Number.isFinite(email.date) && email.date > 0
-    ? email.date
-    : Date.now();
+function getEmailTimestamp(email: Email): number | null {
+  const timestamp =
+    typeof email.date === 'number' ? email.date : Date.parse(String(email.date ?? ''));
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : null;
 }
 
 interface Props {
@@ -102,6 +118,7 @@ const EmailGenerator: React.FC<Props> = ({
               text: contentToString(full.body ?? item.body),
               textBody: contentToString(full.body ?? item.body),
               htmlBody: contentToString((full as Email).htmlBody ?? (item as Email).htmlBody),
+              source: 'popup-viewer',
               emailId: currentId,
               emailFrom: contentToString(full.from ?? item.from),
             },
@@ -110,12 +127,8 @@ const EmailGenerator: React.FC<Props> = ({
             return;
           }
           if (extract?.success) {
-            if (typeof extract.otp === 'string' && extract.otp) {
-              setViewerOtp(extract.otp);
-            }
-            if (typeof extract.link === 'string' && extract.link) {
-              setViewerLink(extract.link);
-            }
+            setViewerOtp(typeof extract.otp === 'string' && extract.otp ? extract.otp : null);
+            setViewerLink(typeof extract.link === 'string' && extract.link ? extract.link : null);
           }
         } else if (res?.error) {
           setViewerError(typeof res.error === 'string' ? res.error : 'Could not load message');
@@ -286,10 +299,7 @@ const EmailGenerator: React.FC<Props> = ({
         <>
           {/* Active Identity Card - HIDE IN INBOX VARIANT */}
           {variant === 'default' && (
-            <motion.div className="memphis-card email-generator-card" transition={springSoft}>
-              {/* Decorative glow */}
-              <div className="email-glow" />
-
+            <motion.div className="memphis-card email-generator-card" transition={tweenSurface}>
               <div className="identity-header">
                 <div className="widget-label widget-label-no-margin">
                   <div className="identity-label-icon">
@@ -304,6 +314,7 @@ const EmailGenerator: React.FC<Props> = ({
                       initial={{ opacity: 0, y: 5 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -5 }}
+                      transition={tweenSurface}
                       className="identity-sync-text"
                     >
                       <RefreshCw size={12} className={checking || syncing ? 'spin' : ''} />
@@ -320,7 +331,7 @@ const EmailGenerator: React.FC<Props> = ({
               <div className="identity-content-wrapper">
                 <div className="identity-email-info">
                   {/* Email Display - Terminal Style */}
-                  <div className={`terminal-prefix ${!emailAccount ? 'shimmer' : ''}`}>
+                  <div className="terminal-prefix">
                     {emailAccount.fullEmail.split('@')[0] ?? ''}
                   </div>
                   <div className="terminal-domain">
@@ -345,9 +356,9 @@ const EmailGenerator: React.FC<Props> = ({
                 </div>
 
                 <motion.button
+                  type="button"
                   className={`copy-button ${copySuccess ? 'copy-success' : ''}`}
                   onClick={() => void copyEmail()}
-                  {...interactiveSurface}
                   aria-label="Copy email to clipboard"
                 >
                   <Copy size={22} strokeWidth={2} />
@@ -361,7 +372,7 @@ const EmailGenerator: React.FC<Props> = ({
                   disabled={syncing}
                 >
                   <RefreshCw size={18} className={syncing ? 'spin' : ''} />
-                  New Email
+                  New email
                 </Button>
                 <Button
                   variant="primary"
@@ -376,7 +387,7 @@ const EmailGenerator: React.FC<Props> = ({
                   ) : (
                     <>
                       <Inbox size={18} />
-                      {checking ? 'Syncing…' : 'Sync Inbox'}
+                      {checking ? 'Refreshing…' : 'Refresh inbox'}
                     </>
                   )}
                 </Button>
@@ -386,10 +397,10 @@ const EmailGenerator: React.FC<Props> = ({
 
           {/* Inbox Section */}
           <div
-            className={`inbox-section-wrapper${variant === 'inbox' ? ' inbox-section-wrapper--inbox' : ''}`}
+            className={`inbox-section-wrapper${variant === 'inbox' ? ' inbox-section-wrapper--inbox hub-email-panel' : ''}`}
           >
             {syncError && (
-              <div className="inbox-error-banner">
+              <div className="inbox-error-banner" role="alert">
                 <Zap size={14} /> {syncError}
               </div>
             )}
@@ -398,15 +409,16 @@ const EmailGenerator: React.FC<Props> = ({
                 className="inbox-section email-inbox-flex"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
+                transition={tweenSurface}
               >
                 {/* Header Row - Matching Dashboard inbox-header-row */}
                 <div className="inbox-header-row email-inbox-header">
                   <div className="inbox-title-group">
                     {/* Back Button - Circular for Navigation */}
                     <motion.button
+                      type="button"
                       className="action-icon email-back-btn"
                       onClick={onBack}
-                      {...interactiveSurface}
                       title="Go back"
                       aria-label="Go back to dashboard"
                     >
@@ -418,10 +430,11 @@ const EmailGenerator: React.FC<Props> = ({
                   </div>
                   {/* Refresh: Just icon with tooltip, shows Syncing… when active */}
                   <motion.button
+                    type="button"
                     className="action-icon"
                     onClick={() => void checkInbox()}
                     disabled={checking}
-                    {...interactiveSurface}
+                    aria-busy={checking}
                     title={checking ? 'Syncing…' : 'Refresh inbox'}
                     aria-label="Refresh inbox"
                   >
@@ -443,53 +456,70 @@ const EmailGenerator: React.FC<Props> = ({
                       const verificationCode =
                         emailOTPs[item.id] !== undefined ? emailOTPs[item.id] : undefined;
                       const activationLink = emailLinks[item.id] || null;
+                      const emailTimestamp = getEmailTimestamp(item);
+                      const preview = getEmailPreview(item.snippet || item.textBody || item.body);
+                      const senderLabel = getSenderLabel(item.from, item.subject, activationLink,
+                        item.htmlBody || item.textBody || item.body || item.snippet);
 
                       return (
-                        <div
-                          key={item.id}
-                          className="inbox-item"
-                        >
-                          <EmailAvatar from={item.from} className="inbox-item-avatar">
-                            {!item.read && <div className="unread-dot" title="Unread" />}
-                          </EmailAvatar>
+                        <div key={item.id} className="inbox-item" data-unread={!item.read}>
+                          <EmailAvatar
+                            from={item.from}
+                            subject={item.subject}
+                            website={activationLink}
+                            content={item.htmlBody || item.textBody || item.body || item.snippet}
+                            className="inbox-item-avatar"
+                          />
                           <div className="inbox-item-content">
                             <div className="inbox-item-header">
                               <span className="inbox-item-from" {...getLangAttr(item.from)}>
-                                {item.from}
+                                {!item.read && (
+                                  <span className="inbox-unread-dot" aria-hidden="true" />
+                                )}
+                                <span className="inbox-sender-name">
+                                  {senderLabel}
+                                </span>
                               </span>
                               <span className="inbox-item-date">
-                                {formatRelativeTime(getEmailTimestamp(item))}
+                                {emailTimestamp === null
+                                  ? 'Date unavailable'
+                                  : formatRelativeTime(emailTimestamp)}
                               </span>
                             </div>
                             <div className="inbox-item-subject" {...getLangAttr(item.subject)}>
                               {item.subject}
                             </div>
+                            {preview && !verificationCode && !activationLink && (
+                              <div className="inbox-item-preview">{preview}</div>
+                            )}
 
                             {/* Capsule Badges for OTP and Links */}
                             <div className="inbox-badges-row">
                               {verificationCode && (
                                 <motion.button
+                                  type="button"
                                   className="otp-badge"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     void copyCode(verificationCode);
                                   }}
                                   aria-label={`Copy verification code ${verificationCode}`}
-                                  {...interactiveSurface}
                                 >
-                                  <Hash size={12} aria-hidden="true" />
+                                  <span className="inbox-action-label" aria-hidden="true">
+                                    Code
+                                  </span>
                                   <span className="otp-badge-code">{verificationCode}</span>
                                   <Copy size={12} aria-hidden="true" />
                                 </motion.button>
                               )}
                               {activationLink && (
                                 <motion.button
+                                  type="button"
                                   className="link-badge"
                                   onClick={(e) => void openActivationLink(e, activationLink)}
                                   aria-label="Open verification link"
-                                  {...interactiveSurface}
                                 >
-                                  <span className="otp-badge-code">Verify link</span>
+                                  <span className="otp-badge-code">Open link</span>
                                   <ChevronRight size={12} />
                                 </motion.button>
                               )}
@@ -498,22 +528,26 @@ const EmailGenerator: React.FC<Props> = ({
                           <button
                             type="button"
                             className="inbox-item-open-button"
-                            aria-label={`Open email from ${item.from}: ${item.subject}`}
+                            aria-label={`${item.read ? 'Open email' : 'Open unread email'} from ${senderLabel}: ${item.subject}`}
                             onClick={() => void openEmailInViewer(item)}
                           >
-                            <ChevronRight size={14} className="inbox-item-open-chevron" aria-hidden="true" />
+                            <ChevronRight
+                              size={14}
+                              className="inbox-item-open-chevron"
+                              aria-hidden="true"
+                            />
                           </button>
                         </div>
                       );
                     })
                   ) : (
-                    <div className="inbox-empty inbox-empty-large">
-                      <div className="inbox-empty-icon-wrapper">
-                        <Mail size={30} color="var(--gf-primary)" strokeWidth={1.5} />
-                      </div>
-                      <span className="inbox-empty-text-main">Listening for messages</span>
-                      <span className="inbox-empty-text-sub">
-                        Emails sent to your ghost address appear here in real-time
+                    <div className="hub-empty-state hub-empty-state--ready">
+                      <span className="inbox-empty-art" aria-hidden="true">
+                        <Inbox size={26} strokeWidth={1.4} />
+                      </span>
+                      <span className="hub-empty-copy">
+                        <strong>{t('inboxWaitingTitle')}</strong>
+                        <span>{t('inboxWaitingDescription')}</span>
                       </span>
                     </div>
                   )}
@@ -531,15 +565,23 @@ const EmailGenerator: React.FC<Props> = ({
                       // Use intelligently extracted payload maps
                       const verificationCode = emailOTPs[item.id] || null;
                       const activationLink = emailLinks[item.id] || null;
+                      const emailTimestamp = getEmailTimestamp(item);
+                      const senderLabel = getSenderLabel(item.from, item.subject, activationLink,
+                        item.htmlBody || item.textBody || item.body || item.snippet);
 
                       return (
-                        <div
-                          key={item.id}
-                          className="inbox-item-default"
-                        >
+                        <div key={item.id} className="inbox-item-default">
                           {/* Avatar */}
-                          <EmailAvatar from={item.from} className="inbox-item-avatar">
-                            {!item.read && <div className="unread-dot" title="Unread" />}
+                          <EmailAvatar
+                            from={item.from}
+                            subject={item.subject}
+                            website={activationLink}
+                            content={item.htmlBody || item.textBody || item.body || item.snippet}
+                            className="inbox-item-avatar"
+                          >
+                            {!item.read && (
+                              <div className="unread-dot" title="Unread" aria-hidden="true" />
+                            )}
                           </EmailAvatar>
 
                           {/* Content */}
@@ -549,10 +591,12 @@ const EmailGenerator: React.FC<Props> = ({
                                 className="inbox-from-default truncate"
                                 {...getLangAttr(item.from)}
                               >
-                                {item.from}
+                                {senderLabel}
                               </div>
                               <div className="inbox-date-default">
-                                {formatRelativeTime(getEmailTimestamp(item))}
+                                {emailTimestamp === null
+                                  ? 'Date unavailable'
+                                  : formatRelativeTime(emailTimestamp)}
                               </div>
                             </div>
                             <div
@@ -566,13 +610,13 @@ const EmailGenerator: React.FC<Props> = ({
                             <div className="inbox-badges-default">
                               {verificationCode && (
                                 <motion.button
+                                  type="button"
                                   className="otp-badge"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     void copyCode(verificationCode);
                                   }}
                                   aria-label={`Copy verification code ${verificationCode}`}
-                                  {...interactiveSurface}
                                 >
                                   <Hash size={12} aria-hidden="true" />
                                   <span className="otp-badge-code">{verificationCode}</span>
@@ -581,10 +625,10 @@ const EmailGenerator: React.FC<Props> = ({
                               )}
                               {activationLink && (
                                 <motion.button
+                                  type="button"
                                   className="link-badge"
                                   onClick={(e) => void openActivationLink(e, activationLink)}
                                   aria-label="Open verification link"
-                                  {...interactiveSurface}
                                 >
                                   Verify Link
                                   <ChevronRight size={12} />
@@ -596,21 +640,21 @@ const EmailGenerator: React.FC<Props> = ({
                           <button
                             type="button"
                             className="inbox-item-open-button"
-                            aria-label={`Open email from ${item.from}: ${item.subject}`}
+                            aria-label={`${item.read ? 'Open email' : 'Open unread email'} from ${senderLabel}: ${item.subject}`}
                             onClick={() => void openEmailInViewer(item)}
                           >
-                            <ChevronRight size={14} className="inbox-item-open-chevron" aria-hidden="true" />
+                            <ChevronRight
+                              size={14}
+                              className="inbox-item-open-chevron"
+                              aria-hidden="true"
+                            />
                           </button>
                         </div>
                       );
                     })
                   ) : (
                     <div className="inbox-empty-card">
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="inbox-empty-container"
-                      >
+                      <div className="inbox-empty-container">
                         <div className="inbox-empty-icon">
                           <Inbox size={32} strokeWidth={1.5} className="email-empty-icon" />
                         </div>
@@ -618,7 +662,7 @@ const EmailGenerator: React.FC<Props> = ({
                         <div className="inbox-empty-desc">
                           Messages will appear here when received.
                         </div>
-                      </motion.div>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -628,7 +672,7 @@ const EmailGenerator: React.FC<Props> = ({
         </>
       ) : (
         <div className="memphis-card missing-identity-card">
-          <div className="shimmer-icon-container missing-identity-icon-box">
+          <div className="missing-identity-icon-box">
             <Mail size={52} color="var(--gf-primary)" className="icon-faded" />
           </div>
           <h3 className="missing-identity-title">{t('identityRequired')}</h3>
@@ -637,9 +681,9 @@ const EmailGenerator: React.FC<Props> = ({
             variant="primary"
             className="generate-identity-btn"
             onClick={onGenerate}
-            disabled={syncing}
+            loading={syncing}
+            leftIcon={<Zap size={18} fill="white" />}
           >
-            {syncing ? <span className="spinner-small" /> : <Zap size={18} fill="white" />}
             {syncing ? t('syncingIdentity') : t('generateIdentity')}
           </Button>
         </div>
@@ -649,7 +693,7 @@ const EmailGenerator: React.FC<Props> = ({
         isOpen={showConfirm}
         title="Generate a new email?"
         message="Your current temporary email and its inbox will be permanently lost. This action cannot be undone."
-        confirmText="Generate"
+        confirmText="Generate email"
         cancelText="Cancel"
         onConfirm={() => {
           setShowConfirm(false);
@@ -660,6 +704,7 @@ const EmailGenerator: React.FC<Props> = ({
       />
 
       <EmailViewerModal
+        messageKey={viewerEmail ? String(viewerEmail.id) : null}
         message={
           viewerEmail
             ? {

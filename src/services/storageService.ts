@@ -211,12 +211,8 @@ export class StorageService {
   }
 
   private checkStorageAvailability(): boolean {
-    if (typeof chrome === 'undefined' || !chrome.storage?.local) {
-      return false;
-    }
     try {
-      chrome.storage.local.get(null, () => {});
-      return true;
+      return typeof chrome !== 'undefined' && Boolean(chrome.runtime?.id && chrome.storage?.local);
     } catch {
       return false;
     }
@@ -581,7 +577,12 @@ export class StorageService {
    */
   async init(): Promise<void> {
     if (this.initialized) {
-      return;
+      if (!this.storageAvailable || getMasterKey()) {
+        return;
+      }
+      // A live context can outlast its in-memory keys (logout or key rotation).
+      this.initialized = false;
+      this.initPromise = null;
     }
 
     if (!this.initPromise) {
@@ -603,7 +604,14 @@ export class StorageService {
                 .catch(() => {});
             }
 
-            const allSession = await chrome.storage.session.get(null);
+            const allSession = await chrome.storage.session.get(null).catch((error: unknown) => {
+              if (!(error instanceof Error) || !error.message.includes('Access to storage is not allowed')) {
+                throw error;
+              }
+              // Content scripts can read local storage, but session secrets stay trusted-only.
+              log.debug('Session secrets are unavailable in this content-script context');
+              return {} as Record<string, unknown>;
+            });
             const secrets: Record<string, unknown> = {};
             for (const k of Object.keys(allSession)) {
               if (k.startsWith('ghostfill_secret_')) {
@@ -634,6 +642,7 @@ export class StorageService {
           }
 
           await initializeSecureEncryption();
+          this.getEncryptionKey();
 
           const data = await this.getAllInternal(); // Use internal method to avoid recursive waiting
 
@@ -665,8 +674,9 @@ export class StorageService {
           log.debug('Storage initialized with secure encryption');
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
-          if (errorMsg.includes('Access to storage is not allowed') || errorMsg.includes('context')) {
+          if (errorMsg.includes('Access to storage is not allowed') || /extension context invalidated/i.test(errorMsg)) {
             log.debug('GhostFill running in sandboxed environment, falling back to in-memory cache.');
+            this.storageAvailable = false;
             this.initialized = true;
             return;
           }
@@ -684,10 +694,7 @@ export class StorageService {
    * Internal generic ensure initialized before operations
    */
   private async ensureInitialized(): Promise<void> {
-    if (this.initialized) {
-      return;
-    }
-    return this.initPromise || this.init();
+    return this.init();
   }
 
   /**
@@ -892,6 +899,12 @@ export class StorageService {
       this.pendingWrites.clear();
       return;
     }
+    if (!this.checkStorageAvailability()) {
+      this.storageAvailable = false;
+      this.pendingWrites.clear();
+      this.cache.clear();
+      return;
+    }
 
     // GRANDMASTER FIX: Removed `this.writeQueue` chain. 
     // The Mutex alone guarantees sequential, non-dropping writes.
@@ -961,7 +974,14 @@ export class StorageService {
       this.cachedUsage = null;
       log.debug(`Batch saved ${writes.size} keys`);
     } catch (error) {
-      log.error('Failed to flush pending writes', error);
+      const contextEnded = !this.checkStorageAvailability() ||
+        (error instanceof Error && /extension context invalidated/i.test(error.message));
+      if (contextEnded) {
+        this.storageAvailable = false;
+        log.debug('Storage write cancelled because the extension context ended');
+      } else {
+        log.error('Failed to flush pending writes', error);
+      }
 
       for (const key of writesAttempted) {
         this.pendingWrites.delete(key);
@@ -969,7 +989,9 @@ export class StorageService {
         this.cache.delete(key as keyof StorageSchema);
       }
 
-      throw error;
+      if (!contextEnded) {
+        throw error;
+      }
     } finally {
       this.releaseWriteMutex();
     }
@@ -1137,7 +1159,7 @@ export class StorageService {
 
   private async getAllInternal(): Promise<Partial<StorageSchema>> {
     try {
-      if (typeof chrome === 'undefined' || !chrome.storage?.local) {
+      if (!this.storageAvailable || typeof chrome === 'undefined' || !chrome.storage?.local) {
         log.warn('Storage API unavailable (getAll)');
         return {};
       }
@@ -1154,15 +1176,10 @@ export class StorageService {
           typeof value === 'string' &&
           value.startsWith('v1:')
         ) {
+          // A missing key is an initialization problem, never evidence of corrupt data.
+          const masterKey = this.getEncryptionKey();
           try {
-            const masterKey = this.getEncryptionKey();
-            if (masterKey) {
-              // we might be inside initialization, so check
-              finalValue = await decrypt(value as string, masterKey);
-            } else {
-              // SECURITY FIX: dropping value if master key is missing
-              finalValue = undefined;
-            }
+            finalValue = await decrypt(value as string, masterKey);
           } catch (error) {
             // Expected when data was encrypted with different key or corrupted
             // Clear the corrupted data to prevent repeated failures
@@ -1181,7 +1198,8 @@ export class StorageService {
       return decryptedResult as Partial<StorageSchema>;
     } catch (error) {
       log.error('Failed to get all storage data', error);
-      return {};
+      // Initialization must not mistake a failed read for an empty installation.
+      throw error;
     }
   }
 
@@ -1499,6 +1517,7 @@ export class StorageService {
     ) => {
       if (areaName === 'local') {
         void (async () => {
+          await this.ensureInitialized();
           // Keep cache in sync with decrypted values for sensitive keys.
           for (const key in changes) {
             const typedKey = key as keyof StorageSchema;
@@ -1527,7 +1546,7 @@ export class StorageService {
             }
           }
           callback(changes);
-        })();
+        })().catch((error) => log.debug('Storage change cache sync unavailable', error));
       }
     };
 
@@ -1542,6 +1561,7 @@ export class StorageService {
    * PERFORMANCE: Preload frequently accessed keys into cache
    */
   async preload(keys: (keyof StorageSchema)[]): Promise<void> {
+    await this.ensureInitialized();
     if (!this.storageAvailable || typeof chrome === 'undefined' || !chrome.storage?.local) {
       return;
     }
@@ -1617,6 +1637,18 @@ export class StorageService {
    */
   onExtensionUnload(): void {
     log.info('Extension unload detected - clearing all sensitive data');
+    this.storageAvailable = false;
+    if (this.writeDebounceTimer) {
+      clearTimeout(this.writeDebounceTimer);
+      this.writeDebounceTimer = null;
+    }
+    for (const timer of this.optimisticTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.optimisticTimers.clear();
+    this.optimisticUpdates.clear();
+    this.pendingWrites.clear();
+    this.pendingResolvers.splice(0).forEach(({ resolve }) => resolve());
 
     // Clear encryption keys
     clearEncryptionKeys();

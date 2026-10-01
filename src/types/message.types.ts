@@ -134,6 +134,7 @@ export interface GenerateEmailMessage extends BaseMessage {
     prefix?: string;
     domain?: string;
     service?: EmailService;
+    originUrl?: string;
   };
 }
 
@@ -317,6 +318,7 @@ export interface AutoFillOTPMessage extends BaseMessage {
 
 export interface MarkOTPUsedMessage extends BaseMessage {
   action: 'MARK_OTP_USED';
+  payload?: { code: string };
 }
 
 export interface CheckOTPNowMessage extends BaseMessage {
@@ -580,7 +582,6 @@ export interface DiagnosticReportResponse {
 // Gmail API types
 // ─────────────────────────────────────────────────────────────────────────────
 
-
 // Gmail sign-in message
 export interface GmailSignInMessage extends BaseMessage {
   action: 'GMAIL_SIGN_IN';
@@ -680,9 +681,15 @@ export interface GmailListLabelsResponse {
 
 // ── Zoho Mail messages ────────────────────────────────────────────────────────
 
-export interface ZohoGetStatusMessage extends BaseMessage { action: 'ZOHO_GET_STATUS'; }
-export interface ZohoConnectMessage extends BaseMessage { action: 'ZOHO_CONNECT'; }
-export interface ZohoDisconnectMessage extends BaseMessage { action: 'ZOHO_DISCONNECT'; }
+export interface ZohoGetStatusMessage extends BaseMessage {
+  action: 'ZOHO_GET_STATUS';
+}
+export interface ZohoConnectMessage extends BaseMessage {
+  action: 'ZOHO_CONNECT';
+}
+export interface ZohoDisconnectMessage extends BaseMessage {
+  action: 'ZOHO_DISCONNECT';
+}
 export interface ZohoGenerateAliasMessage extends BaseMessage {
   action: 'ZOHO_GENERATE_ALIAS';
   payload: { website?: string; baseEmail?: string };
@@ -720,9 +727,15 @@ export interface ZohoSearchInboxResponse {
 
 // ── Microsoft Outlook messages ────────────────────────────────────────────────
 
-export interface MicrosoftGetStatusMessage extends BaseMessage { action: 'MICROSOFT_GET_STATUS'; }
-export interface MicrosoftConnectMessage extends BaseMessage { action: 'MICROSOFT_CONNECT'; }
-export interface MicrosoftDisconnectMessage extends BaseMessage { action: 'MICROSOFT_DISCONNECT'; }
+export interface MicrosoftGetStatusMessage extends BaseMessage {
+  action: 'MICROSOFT_GET_STATUS';
+}
+export interface MicrosoftConnectMessage extends BaseMessage {
+  action: 'MICROSOFT_CONNECT';
+}
+export interface MicrosoftDisconnectMessage extends BaseMessage {
+  action: 'MICROSOFT_DISCONNECT';
+}
 export interface MicrosoftGenerateAliasMessage extends BaseMessage {
   action: 'MICROSOFT_GENERATE_ALIAS';
   payload: { website?: string; baseEmail?: string };

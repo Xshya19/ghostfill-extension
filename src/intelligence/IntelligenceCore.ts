@@ -1,6 +1,6 @@
 import { storageService } from '../services/storageService';
 import { FieldType } from '../types/form.types';
-import { LRUCache } from '../utils/core';
+import { isValidEmail, LRUCache } from '../utils/core';
 import { createLogger } from '../utils/logger';
 
 
@@ -45,11 +45,21 @@ export type HardNegative =
   | 'Amount'
   | 'DateOfBirth';
 
+const CREDENTIAL_AUTOCOMPLETE_TOKENS = new Set([
+  'email',
+  'username',
+  'current-password',
+  'new-password',
+  'one-time-code',
+  'one-time-password',
+]);
+
 export interface RawFieldRecord {
   url?: string | undefined;
   selector?: string | undefined;
   tag: string;
   type: string;
+  role?: string;
   autocomplete: string;
   name: string;
   id: string;
@@ -408,7 +418,7 @@ export const KW = {
     'cardholder-name',
     'nombre_completo'
   ],
-  cvv: ['cvv', 'cvc', 'csc', 'security code', 'card verification', 'cvv2'],
+  cvv: ['cvv', 'cvc', 'csc', 'card verification', 'cvv2'],
   card: ['card number', 'cardnumber', 'credit card', 'debit card', 'cc number', 'pan'],
   expiry: ['expiry', 'expiration', 'exp date', 'mm/yy', 'mm / yy', 'valid thru', 'valid till'],
   zip: ['zip', 'zipcode', 'postal code', 'postcode', 'pin code', 'codigo postal'],
@@ -430,7 +440,10 @@ export function normalizeText(input: string): string {
   if (cached !== undefined) {
     return cached;
   }
-  let s = input.replace(/[\u200B-\u200D\u200E\u200F\uFEFF]/g, '').toLowerCase();
+  let s = input.replace(/[\u200B-\u200D\u200E\u200F\uFEFF]/g, '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z])([A-Z][a-z])/g, '$1 $2')
+    .toLowerCase();
   s = s.normalize('NFD');
   let out = '';
   for (const ch of s) {
@@ -613,6 +626,12 @@ export function checkSafety(
     return { allow: false, reason: 'honeypot trap field' };
   }
 
+  const autocompleteTokens = r.autocomplete.toLowerCase().split(/\s+/);
+  const hasCredentialContract =
+    r.type.toLowerCase() === 'email' ||
+    r.type.toLowerCase() === 'password' ||
+    autocompleteTokens.some((token) => CREDENTIAL_AUTOCOMPLETE_TOKENS.has(token));
+
   const dangerousNegatives = new Set([
     'CVV',
     'CardNumber',
@@ -624,15 +643,16 @@ export function checkSafety(
     'ZIP',
     'DateOfBirth',
   ]);
-  if (result.hardNegative && dangerousNegatives.has(result.hardNegative) && chosen !== 'Unknown') {
+  if (
+    result.hardNegative &&
+    dangerousNegatives.has(result.hardNegative) &&
+    chosen !== 'Unknown' &&
+    !(result.hardNegative === 'Search' && hasCredentialContract)
+  ) {
     return {
       allow: false,
       reason: 'target looks like ' + result.hardNegative + ', refusing identity/OTP fill',
     };
-  }
-
-  if (r.isAnimating) {
-    return { allow: true, reason: 'element is transitioning/animating' };
   }
 
   if (!r.visible && r.type !== 'hidden') {
@@ -699,11 +719,8 @@ function combinedText(r: RawFieldRecord): string {
     r.labelText,
     r.placeholder,
     r.ariaLabel,
-    r.surroundingText,
     r.name,
     r.id,
-    r.autocomplete,
-    r.className || '',
     dataVals,
     r.title || '',
   ].join(' ');
@@ -711,12 +728,16 @@ function combinedText(r: RawFieldRecord): string {
 
 export function looksLikeOtpField(r: RawFieldRecord): boolean {
   const text = combinedText(r);
-  if (/phone|mobile|tel|contact/i.test(text)) {
+  const autocomplete = r.autocomplete.split(/\s+/);
+  if (autocomplete.includes('one-time-code') || autocomplete.includes('one-time-password')) {
+    return true;
+  }
+  if (r.type === 'email' || /\b(phone|mobile|tel|contact)\b/i.test(text)) {
     return false;
   }
   const textOtp =
     matchesAny(text, 'otp') ||
-    (matchesAny(text, 'code') && matchesAny(text, 'verify')) ||
+    (matchesAny(text, 'code') && matchesAny(`${text} ${r.surroundingText}`, 'verify')) ||
     (matchesAny(text, 'code') && matchesAny(text, 'confirm')) ||
     (matchesAny(text, 'code') && /sent|send|auth|resend/i.test(text)) ||
     (matchesAny(text, 'code') && r.url && /signup|register|create|reset|forgot/i.test(r.url));
@@ -724,13 +745,12 @@ export function looksLikeOtpField(r: RawFieldRecord): boolean {
     r.maxLength === 1 &&
     (r.inputMode === 'numeric' || r.type === 'tel' || r.type === 'number' || r.type === 'text');
   const shortNumeric =
-    (r.maxLength > 0 && r.maxLength <= 8 && (r.inputMode === 'numeric' || r.autocomplete.includes('one-time-code'))) ||
-    ((r.maxLength === -1 || r.maxLength > 500) && (r.inputMode === 'numeric' || r.autocomplete.includes('one-time-code')));
+    (r.maxLength > 0 && r.maxLength <= 8 && r.inputMode === 'numeric') ||
+    ((r.maxLength === -1 || r.maxLength > 500) && r.inputMode === 'numeric');
 
   const hasSiblingSameShapeCount = Boolean(r.structural && r.structural[27] === 1);
 
   return (
-    r.autocomplete.includes('one-time-code') ||
     (textOtp && (splitShape || shortNumeric || r.maxLength === 6 || r.maxLength === -1 || r.maxLength > 500)) ||
     (splitShape && hasSiblingSameShapeCount)
   );
@@ -738,6 +758,15 @@ export function looksLikeOtpField(r: RawFieldRecord): boolean {
 
 export function detectHardNegative(r: RawFieldRecord): HardNegative | undefined {
   const text = combinedText(r);
+  const autocomplete = r.autocomplete.split(/\s+/);
+  if (r.role === 'searchbox' || (r.role === 'combobox' && r.type !== 'email' && r.type !== 'password' &&
+    !autocomplete.some((token) => ['email', 'username', 'name', 'given-name', 'family-name',
+      'current-password', 'new-password', 'one-time-code'].includes(token)))) {return 'Search';}
+  if (autocomplete.includes('cc-csc')) {return 'CVV';}
+  if (autocomplete.some((token) => token.startsWith('cc-'))) {return 'CardNumber';}
+  if (/\bcardholder\b/i.test(text)) {return 'CardNumber';}
+  if (/\bsecurity[-_ ]+code\b/i.test(text) &&
+    (matchesAny(r.surroundingText, 'card') || matchesAny(r.surroundingText, 'expiry'))) {return 'CVV';}
   
   if (r.dataAttributes) {
     const dataText = Object.values(r.dataAttributes).join(' ').toLowerCase();
@@ -817,42 +846,47 @@ export function classifyHeuristic(
     signals.push(why + ' -> ' + c + ' (+' + w + ')');
   };
   const text = combinedText(r);
-  const ac = r.autocomplete;
+  const ac = new Set(r.autocomplete.split(/\s+/));
 
   s.Unknown += 0.6;
 
-  if (ac.includes('one-time-code')) {
+  if (ac.has('one-time-code') || ac.has('one-time-password')) {
     add('OTP', 6, 'autocomplete=one-time-code');
   }
-  if (ac.includes('email')) {
+  if (ac.has('email')) {
     add('Email', 5, 'autocomplete=email');
   }
-  if (ac.includes('username')) {
+  if (ac.has('username') && r.type !== 'email') {
     add('Username', 5, 'autocomplete=username');
   }
-  if (ac.includes('current-password')) {
+  if (ac.has('current-password')) {
     add('Password', 5.5, 'autocomplete=current-password');
   }
-  if (ac.includes('new-password')) {
+  if (ac.has('new-password')) {
     add('Password', 3, 'autocomplete=new-password');
     add('Target_Password_Confirm', 1.5, 'new-password may be confirm');
   }
-  if (ac.includes('tel')) {
+  if (Array.from(ac).some((token) => token === 'tel' || token.startsWith('tel-'))) {
     add('Phone', 5, 'autocomplete=tel');
   }
-  if (ac.includes('given-name')) {
+  if (ac.has('given-name')) {
     add('First_Name', 5, 'autocomplete=given-name');
   }
-  if (ac.includes('family-name')) {
+  if (ac.has('family-name')) {
     add('Last_Name', 5, 'autocomplete=family-name');
   }
-  if (ac === 'name' || ac.includes('cc-name')) {
+  if (ac.has('name')) {
     add('Full_Name', 4.5, 'autocomplete=name');
   }
 
   if (r.type === 'email') {
-    add('Email', 3.5, 'type=email');
+    add('Email', 6, 'type=email');
   }
+  const emailExample = isValidEmail(r.placeholder.trim()) &&
+    !matchesAny(`${r.labelText} ${r.ariaLabel}`, 'fullname') &&
+    !matchesAny(`${r.labelText} ${r.ariaLabel}`, 'first') &&
+    !matchesAny(`${r.labelText} ${r.ariaLabel}`, 'last');
+  if (emailExample) {add('Email', 6, 'placeholder:email-example');}
   if (r.type === 'tel') {
     add('Phone', 3, 'type=tel');
   }
@@ -901,14 +935,21 @@ export function classifyHeuristic(
     add('Last_Name', 3.5, 'kw:last-name');
   }
 
-  const localTxt = [r.labelText, r.placeholder, r.ariaLabel, r.name, r.id, r.autocomplete].join(
+  const localTxt = [r.labelText, r.placeholder, r.ariaLabel, r.name, r.id].join(
     ' '
   );
   const hasLocalFirst = matchesAny(localTxt, 'first');
   const hasLocalLast = matchesAny(localTxt, 'last');
   const normLocalText = normalizeText(localTxt);
+  const nonPersonName = /\b(company|organi[sz]ation|workspace|team|project|business|file|folder|host|domain|brand|product|account|street|school)[-_ ]*(?:full[-_ ]+)?name\b/i.test(normLocalText);
+  const unsupportedName = ac.has('additional-name') || /\bmiddle[-_ ]*(name|initial)\b/i.test(normLocalText) ||
+    /\b(mother|father|parent|spouse|partner|child|guardian|emergency[-_ ]+contact|maiden)\b[^.]*\bname\b/i.test(normLocalText);
   const hasExplicitFullName =
     matchesAny(text, 'fullname') &&
+    !emailExample &&
+    !nonPersonName &&
+    !unsupportedName &&
+    !matchesAny(localTxt, 'user') &&
     !hasLocalFirst &&
     !hasLocalLast &&
     !normLocalText.includes('first name') &&
@@ -918,6 +959,35 @@ export function classifyHeuristic(
 
   if (hasExplicitFullName) {
     add('Full_Name', 4, 'kw:fullname');
+  }
+  const visibleNameText = normalizeText(`${r.labelText} ${r.ariaLabel} ${r.placeholder}`);
+  const visibleFirst = matchesAny(visibleNameText, 'first');
+  const visibleLast = matchesAny(visibleNameText, 'last');
+  const combinedName = /\b(?:(?:first|given)(?:[-_ ]+name)?\s*(?:and|&|\+|\/)\s*(?:last|family)(?:[-_ ]+name)?|name\s*(?:and|&)\s*surname)\b/i.test(visibleNameText);
+  // A single control asking for both parts takes the full name. Explicit
+  // component labels refine generic autocomplete=name and generic DOM IDs.
+  if (combinedName) {
+    s.First_Name = s.Last_Name = 0;
+    add('Full_Name', 6, 'combined-name-label');
+  } else if (visibleFirst !== visibleLast) {
+    if ((visibleFirst && ac.has('family-name')) || (visibleLast && ac.has('given-name'))) {
+      s.First_Name = s.Last_Name = s.Full_Name = 0;
+      add('Unknown', 8, 'conflicting-name-contracts');
+    } else {
+      s.Full_Name = 0;
+      s[visibleFirst ? 'Last_Name' : 'First_Name'] = 0;
+    }
+  }
+  // An email contract outranks generic name attributes and framework test IDs.
+  if (r.type === 'email' || ac.has('email') || matchesAny(`${r.labelText} ${r.ariaLabel}`, 'email')) {
+    s.First_Name = s.Last_Name = s.Full_Name = 0;
+    signals.push('email-contract: excluded person-name candidates');
+  }
+  if (r.type !== 'email' && r.type !== 'password' &&
+    (nonPersonName || unsupportedName || /\b(message|comment|chat|bio|description|subject|title|prompt)\b/i.test(localTxt) ||
+      /\b(street|postal|shipping|billing|home|delivery|mailing)[-_ ]+(address|code|zip)\b/i.test(`${r.labelText} ${r.ariaLabel}`))) {
+    s.First_Name = s.Last_Name = s.Full_Name = 0;
+    add('Unknown', 8, 'non-identity field');
   }
 
   const hard = detectHardNegative(r);
@@ -1021,18 +1091,8 @@ export class IntelligenceCore {
   }
 
   classify(record: RawFieldRecord): CalibratedResult {
-    const fingerprint = [
-      record.tag,
-      record.type,
-      record.name,
-      record.id,
-      record.placeholder,
-      record.autocomplete,
-      record.className || '',
-      record.labelText,
-      record.formAction || '',
-      record.surroundingText?.slice(0, 80) || '',
-    ].join('|');
+    // A SPA can reuse the same input while changing its label or visibility.
+    const fingerprint = JSON.stringify(record);
 
     const cached = this.classificationCache.get(fingerprint);
     if (cached) {

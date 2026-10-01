@@ -1,4 +1,4 @@
-import { motion, AnimatePresence, Transition } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Copy,
   Check,
@@ -11,8 +11,6 @@ import {
   RefreshCw,
   Inbox,
   AlertCircle,
-  User,
-  ChevronLeft,
   Settings,
 } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
@@ -34,12 +32,13 @@ import {
   type GmailProfile,
   type AliasHistoryItem,
 } from '../../../types/email.types';
-import { copyToClipboard, openSafeUrl } from '../../../utils/core';
+import { copyToClipboard, openSafeUrl, isWebUrl } from '../../../utils/core';
 import { getSenderLabel } from '../../../utils/emailIdentity';
 import { safeSendMessage } from '../../../utils/messaging';
+import { t } from '../../i18n';
 import { useAppStore } from '../store';
 import { GmailLogo } from './ProviderLogos';
-import { EmailAvatar, EmailViewerModal, getSenderSource } from './SharedComponents';
+import { ConfirmModal, EmailAvatar, EmailViewerModal, getSenderSource } from './SharedComponents';
 
 // ─── Types ───────────────────────────────────────────────
 type AliasPanelTab = 'generator' | 'inbox' | 'history';
@@ -70,12 +69,10 @@ interface ExtractResponse {
 interface Props {
   initialTab?: AliasPanelTab;
   onToast: (message: string) => void;
-  onBack: () => void;
 }
 
 // ─── Constants ───────────────────────────────────────────
-const SPRING: Transition = { type: 'spring', stiffness: 260, damping: 25, mass: 0.8 };
-const TAB_TRANSITION = { duration: 0.2, ease: [0.16, 1, 0.3, 1] as const };
+const TAB_TRANSITION = { duration: 0.18, ease: [0.16, 1, 0.3, 1] as const };
 const TABS: readonly AliasPanelTab[] = ['generator', 'inbox', 'history'] as const;
 const COPY_RESET_MS = 2000;
 
@@ -87,9 +84,7 @@ function openOptionsPage(): void {
     return;
   }
   const optionsUrl =
-    hasChrome && chrome.runtime?.getURL
-      ? chrome.runtime.getURL('options.html')
-      : 'options.html';
+    hasChrome && chrome.runtime?.getURL ? chrome.runtime.getURL('options.html') : 'options.html';
   openSafeUrl(optionsUrl);
 }
 
@@ -168,10 +163,10 @@ const GeneratorTab: React.FC<GeneratorTabProps> = ({
         {cleanDomain && (
           <motion.div
             className="alias-pipeline-connector"
-            initial={{ scaleY: 0, opacity: 0 }}
-            animate={{ scaleY: 1, opacity: 1 }}
-            exit={{ scaleY: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={TAB_TRANSITION}
           >
             <div className="alias-pipeline-flow" />
           </motion.div>
@@ -183,13 +178,14 @@ const GeneratorTab: React.FC<GeneratorTabProps> = ({
           className={`alias-result-card ${copyCelebrating && isCopied ? 'alias-result-card--celebrate' : ''}`}
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+          transition={TAB_TRANSITION}
         >
           <div className="alias-result-top">
             <span className="alias-result-alias truncate" title={activeAlias}>
               {activeAlias}
             </span>
             <button
+              type="button"
               onClick={onCopy}
               disabled={!activeAlias}
               className={`alias-copy-btn ${isCopied ? 'alias-copy-btn--copied' : ''}`}
@@ -234,7 +230,7 @@ const GeneratorTab: React.FC<GeneratorTabProps> = ({
           className="alias-gen-tip"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
+          transition={TAB_TRANSITION}
         >
           <Sparkles size={11} />{' '}
           <span>
@@ -275,23 +271,27 @@ const InboxTab: React.FC<InboxTabProps> = ({
   const showList = !isManual && inbox.length > 0;
 
   return (
-    <div className="alias-inbox-card">
+    <div className="alias-inbox-card" role="region" aria-label="Recent inbox">
       <div className="alias-inbox-header">
         <div className="alias-inbox-title-row">
           <Inbox size={15} className="alias-inbox-title-icon" />
-          <span className="alias-inbox-title">Recent inbox</span>
+          <span className="alias-inbox-title" role="heading" aria-level={2}>
+            Recent inbox
+          </span>
           {!isManual && inbox.length > 0 && (
             <span className="alias-inbox-count">{inbox.length}</span>
           )}
         </div>
         {!isManual && (
           <button
+            type="button"
             className={`alias-inbox-refresh ${loading ? 'alias-inbox-refresh--loading' : ''}`}
             onClick={onRefresh}
             disabled={loading}
+            aria-busy={loading}
             aria-label="Refresh inbox"
           >
-            <RefreshCw size={14} className={loading ? 'spin-icon' : ''} />
+            <RefreshCw size={14} className={loading ? 'gf-spin' : ''} aria-hidden="true" />
           </button>
         )}
       </div>
@@ -303,7 +303,12 @@ const InboxTab: React.FC<InboxTabProps> = ({
           </div>
           <span className="alias-inbox-manual-title">Inbox needs Google sign-in</span>
           <span className="alias-inbox-manual-desc">Manual connection generates aliases only.</span>
-          <button onClick={onSignIn} disabled={signingIn} className="alias-oauth-connect-btn">
+          <button
+            type="button"
+            onClick={onSignIn}
+            disabled={signingIn}
+            className="alias-oauth-connect-btn"
+          >
             {signingIn ? <RefreshCw size={13} className="spin" /> : <LogIn size={13} />}
             <span>{signingIn ? 'Connecting…' : 'Use Google sign-in'}</span>
           </button>
@@ -318,11 +323,11 @@ const InboxTab: React.FC<InboxTabProps> = ({
       )}
 
       {showLoading && (
-        <div className="alias-inbox-loading">
-          <div className="alias-inbox-spinner">
-            <RefreshCw size={20} className="spin-icon" />
+        <div className="alias-inbox-loading" role="status">
+          <div className="alias-inbox-spinner" aria-hidden="true">
+            <RefreshCw size={20} className="spin" />
           </div>
-          <span>Loading inbox\u2026</span>
+          <span>Loading inbox…</span>
         </div>
       )}
 
@@ -346,12 +351,15 @@ const InboxTab: React.FC<InboxTabProps> = ({
               <div className="alias-inbox-item-left">
                 <EmailAvatar
                   from={getSenderSource(msg.fromName, msg.fromEmail || msg.from)}
+                  subject={msg.subject}
+                  content={msg.htmlBody || msg.body || msg.snippet}
                   className="alias-inbox-avatar"
                 />
                 <div className="alias-inbox-item-body">
                   <div className="alias-inbox-item-top">
                     <span className="alias-inbox-from truncate">
-                      {getSenderLabel(msg.fromName || msg.fromEmail || msg.from, msg.subject)}
+                      {getSenderLabel(getSenderSource(msg.fromName, msg.fromEmail || msg.from), msg.subject, null,
+                        msg.htmlBody || msg.body || msg.snippet)}
                     </span>
                     <span className="alias-inbox-date">{msg.dateFormatted}</span>
                   </div>
@@ -361,9 +369,10 @@ const InboxTab: React.FC<InboxTabProps> = ({
                 </div>
               </div>
               <button
+                type="button"
                 className="alias-inbox-open-btn"
                 onClick={() => onOpenMessage(msg)}
-                aria-label="Open message"
+                aria-label={`${msg.isUnread ? 'Open unread message' : 'Open message'} from ${getSenderLabel(getSenderSource(msg.fromName, msg.fromEmail || msg.from), msg.subject, null, msg.htmlBody || msg.body || msg.snippet)}: ${msg.subject}`}
                 disabled={openingMessageId === msg.id}
               >
                 {openingMessageId === msg.id ? (
@@ -387,15 +396,17 @@ interface HistoryTabProps {
 }
 
 const HistoryTab: React.FC<HistoryTabProps> = ({ history, onClear, onToast }) => (
-  <div className="alias-history-card">
+  <div className="alias-history-card" role="region" aria-label="Alias tracker">
     <div className="alias-history-header">
       <div className="alias-history-title-group">
         <Shield size={15} />
-        <span>Alias tracker</span>
+        <span role="heading" aria-level={2}>
+          Alias tracker
+        </span>
         {history.length > 0 && <span className="alias-history-count">{history.length}</span>}
       </div>
       {history.length > 0 && (
-        <button className="alias-clear-history-btn" onClick={onClear}>
+        <button type="button" className="alias-clear-history-btn" onClick={onClear}>
           Clear All
         </button>
       )}
@@ -425,6 +436,7 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ history, onClear, onToast }) =>
             </div>
             <span className="alias-history-date">{formatHistoryDate(item.createdAt)}</span>
             <button
+              type="button"
               className="alias-history-copy-btn"
               aria-label={`Copy ${item.alias}`}
               onClick={() =>
@@ -449,9 +461,11 @@ const TabPanel = React.forwardRef<
     key={tab}
     id={`tabpanel-${tab}`}
     role="tabpanel"
-    initial={{ opacity: 0, x: -8 }}
-    animate={{ opacity: 1, x: 0 }}
-    exit={{ opacity: 0, x: 8 }}
+    aria-labelledby={`alias-tab-${tab}`}
+    tabIndex={0}
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    exit={{ opacity: 0 }}
     transition={TAB_TRANSITION}
     className="alias-tab-content-area"
   >
@@ -463,7 +477,7 @@ TabPanel.displayName = 'TabPanel';
 // ═════════════════════════════════════════════════════════
 // Main component
 // ═════════════════════════════════════════════════════════
-const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack }) => {
+const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast }) => {
   // One selector instead of ~30. useShallow prevents re-renders unless a used slice changes.
   const {
     gmailBase,
@@ -522,10 +536,12 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
   const [messageLoading, setMessageLoading] = useState(false);
   const [messageError, setMessageError] = useState<string | null>(null);
   const [messageAction, setMessageAction] = useState<{ otp?: string; link?: string } | null>(null);
+  const [showClearHistoryConfirm, setShowClearHistoryConfirm] = useState(false);
 
   const domainInputRef = useRef<HTMLInputElement>(null);
   const aliasTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inboxRequestSeqRef = useRef(0);
+  const messageRequestSeqRef = useRef(0);
 
   const cleanDomain = useMemo(() => sanitizeDomain(domainInput), [domainInput]);
   const activeAlias = useMemo(
@@ -565,12 +581,12 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
     }
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const url = tabs[0]?.url;
-      if (!url) {
+      if (!url || !isWebUrl(url)) {
         return;
       }
       try {
         const hostname = new URL(url).hostname.replace(/^www\./, '');
-        if (hostname && !hostname.includes('newtab') && !hostname.includes('extensions')) {
+        if (hostname) {
           setDomainInput(hostname);
         }
       } catch {
@@ -697,6 +713,7 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
       if (!message?.id) {
         return;
       }
+      const requestSeq = ++messageRequestSeqRef.current;
       setOpeningMessageId(String(message.id));
       setMessageLoading(true);
       setMessageError(null);
@@ -707,17 +724,33 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
           payload: { messageId: message.id },
         })) as MessageResponse;
 
+        if (requestSeq !== messageRequestSeqRef.current) {
+          return;
+        }
+
         if (res?.success && res.message) {
           setSelectedMessage(res.message);
           const toSafeStr = (v: unknown): string => {
-            if (typeof v === 'string') {return v;}
-            if (!v) {return '';}
+            if (typeof v === 'string') {
+              return v;
+            }
+            if (!v) {
+              return '';
+            }
             if (typeof v === 'object') {
               const obj = v as Record<string, unknown>;
-              if (typeof obj.text === 'string') {return obj.text;}
-              if (typeof obj.html === 'string') {return obj.html;}
-              if (typeof obj.body === 'string') {return obj.body;}
-              if (typeof obj.content === 'string') {return obj.content;}
+              if (typeof obj.text === 'string') {
+                return obj.text;
+              }
+              if (typeof obj.html === 'string') {
+                return obj.html;
+              }
+              if (typeof obj.body === 'string') {
+                return obj.body;
+              }
+              if (typeof obj.content === 'string') {
+                return obj.content;
+              }
               try {
                 return JSON.stringify(v);
               } catch {
@@ -736,13 +769,17 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
               textBody: textBodyStr,
               htmlBody: htmlBodyStr,
               subject: toSafeStr(res.message.subject),
-              source: 'popup-inbox',
+              source: 'popup-viewer',
               emailId: res.message.id,
               emailFrom: toSafeStr(res.message.fromEmail || res.message.from),
               emailDate: res.message.date,
               saveToLastOTP: true,
             },
           })) as ExtractResponse;
+
+          if (requestSeq !== messageRequestSeqRef.current) {
+            return;
+          }
 
           if (extraction?.success) {
             setMessageAction({
@@ -755,12 +792,17 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
           onToast(res?.error || 'Failed to load message');
         }
       } catch (e) {
+        if (requestSeq !== messageRequestSeqRef.current) {
+          return;
+        }
         const msg = errorMessage(e, 'Failed to load message');
         setMessageError(msg);
         onToast(msg);
       } finally {
-        setOpeningMessageId(null);
-        setMessageLoading(false);
+        if (requestSeq === messageRequestSeqRef.current) {
+          setOpeningMessageId(null);
+          setMessageLoading(false);
+        }
       }
     },
     [onToast]
@@ -888,9 +930,9 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
       <div className="alias-panel">
         <motion.div
           className="alias-setup-card"
-          initial={{ opacity: 0, y: 15 }}
+          initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={SPRING}
+          transition={TAB_TRANSITION}
         >
           {signInError ? (
             <>
@@ -904,15 +946,17 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
                 <div className="alias-signin-error-text">{signInError}</div>
               </div>
               <button
+                type="button"
                 onClick={() => void connectWithGoogle()}
                 disabled={signingIn}
                 className="alias-connect-btn"
               >
                 {signingIn ? <RefreshCw size={14} className="spin" /> : <LogIn size={14} />}
-                <span>{signingIn ? 'Connecting…' : 'Try Again'}</span>
+                <span>{signingIn ? 'Connecting…' : 'Try again'}</span>
               </button>
               {gmailSetupRequired && (
                 <button
+                  type="button"
                   onClick={openOptionsPage}
                   disabled={signingIn}
                   className="alias-connect-btn secondary-btn"
@@ -936,6 +980,7 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
                     </p>
                   </div>
                   <button
+                    type="button"
                     onClick={() => void connectWithGoogle()}
                     disabled={signingIn}
                     className="alias-connect-btn"
@@ -966,32 +1011,25 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
         className="alias-profile-bar"
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
+        transition={TAB_TRANSITION}
       >
-        <button
-          className="back-button alias-back-btn"
-          onClick={onBack}
-          aria-label="Go back to hub"
-          title="Back"
-        >
-          <ChevronLeft size={18} />
-        </button>
         <div className="alias-profile-bar-left">
-          {gmailProfile.picture ? (
-            <img src={gmailProfile.picture} width={26} height={26} alt="" className="alias-profile-avatar" />
-          ) : (
-            <div className="alias-profile-avatar-placeholder">
-              <User size={16} />
-            </div>
-          )}
+          <span className="alias-profile-avatar-placeholder" aria-hidden="true">
+            <GmailLogo size={18} />
+          </span>
           <div className="alias-profile-info">
             <span className="alias-profile-email truncate">{gmailProfile.email}</span>
+            <span className="alias-connection-status">
+              <span
+                className={`alias-status-dot ${gmailIsManual ? 'alias-status-dot--manual' : 'alias-status-dot--oauth'}`}
+                aria-hidden="true"
+              />
+              {gmailIsManual ? t('gmailAliasesOnly') : t('gmailInboxConnected')}
+            </span>
           </div>
-          <div
-            className={`alias-status-dot ${gmailIsManual ? 'alias-status-dot--manual' : 'alias-status-dot--oauth'}`}
-            title={gmailIsManual ? 'Manual' : 'OAuth'}
-          />
         </div>
         <button
+          type="button"
           className="alias-signout-btn"
           onClick={() => void handleSignOut()}
           aria-label="Disconnect"
@@ -1001,14 +1039,15 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
         </button>
       </motion.div>
 
-      <div className="alias-tabs" role="tablist">
+      <div className="alias-tabs" role="tablist" aria-label={t('aliasTabListLabel')}>
         <motion.div
           className="alias-tab-bg"
+          aria-hidden="true"
           initial={false}
           animate={{
             x: activeTab === 'generator' ? '0%' : activeTab === 'inbox' ? '100%' : '200%',
           }}
-          transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+          transition={TAB_TRANSITION}
           style={{
             position: 'absolute',
             top: 3,
@@ -1023,18 +1062,49 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
           const count =
             tab === 'inbox' ? gmailInbox.length : tab === 'history' ? aliasHistory.length : 0;
           const Icon = tab === 'generator' ? Sparkles : tab === 'inbox' ? Inbox : Shield;
-          const label = tab === 'generator' ? 'Aliases' : tab === 'inbox' ? 'Inbox' : 'History';
+          const label =
+            tab === 'generator'
+              ? t('aliasTabGenerator')
+              : tab === 'inbox'
+                ? t('aliasTabInbox')
+                : t('aliasTabHistory');
           return (
             <button
               key={tab}
+              type="button"
               role="tab"
+              id={`alias-tab-${tab}`}
               aria-selected={isActive}
               aria-controls={`tabpanel-${tab}`}
+              tabIndex={isActive ? 0 : -1}
               className={`alias-tab-btn ${isActive ? 'alias-tab-btn--active' : ''}`}
               onClick={() => setActiveTab(tab)}
+              onKeyDown={(event) => {
+                const currentIndex = TABS.indexOf(tab);
+                let targetIndex = currentIndex;
+                if (event.key === 'ArrowRight') {
+                  targetIndex = (currentIndex + 1) % TABS.length;
+                } else if (event.key === 'ArrowLeft') {
+                  targetIndex = (currentIndex - 1 + TABS.length) % TABS.length;
+                } else if (event.key === 'Home') {
+                  targetIndex = 0;
+                } else if (event.key === 'End') {
+                  targetIndex = TABS.length - 1;
+                } else {
+                  return;
+                }
+
+                event.preventDefault();
+                const target = TABS[targetIndex];
+                if (!target) {
+                  return;
+                }
+                setActiveTab(target);
+                document.getElementById(`alias-tab-${target}`)?.focus();
+              }}
             >
               <span className="alias-tab-label">
-                <Icon size={13} /> {label}
+                <Icon size={13} aria-hidden="true" /> {label}
                 {tab !== 'generator' && count > 0 && (
                   <span className="alias-tab-badge">{count}</span>
                 )}
@@ -1044,7 +1114,7 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
         })}
       </div>
 
-      <AnimatePresence mode="popLayout">
+      <AnimatePresence mode="popLayout" initial={false}>
         {activeTab === 'generator' && (
           <TabPanel tab="generator">
             <GeneratorTab
@@ -1080,12 +1150,17 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
 
         {activeTab === 'history' && (
           <TabPanel tab="history">
-            <HistoryTab history={aliasHistory} onClear={clearAliasHistory} onToast={onToast} />
+            <HistoryTab
+              history={aliasHistory}
+              onClear={() => setShowClearHistoryConfirm(true)}
+              onToast={onToast}
+            />
           </TabPanel>
         )}
       </AnimatePresence>
 
       <EmailViewerModal
+        messageKey={selectedMessage ? String(selectedMessage.id) : null}
         message={
           selectedMessage
             ? {
@@ -1104,8 +1179,28 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast, onBack
         }
         loading={messageLoading}
         error={messageError}
-        onClose={() => setSelectedMessage(null)}
+        onClose={() => {
+          messageRequestSeqRef.current += 1;
+          setSelectedMessage(null);
+          setMessageAction(null);
+          setMessageError(null);
+          setOpeningMessageId(null);
+          setMessageLoading(false);
+        }}
         onToast={onToast}
+      />
+      <ConfirmModal
+        isOpen={showClearHistoryConfirm}
+        title={t('clearAliasHistoryTitle')}
+        message={t('clearAliasHistoryMessage')}
+        confirmText={t('clearAliasHistoryAction')}
+        cancelText={t('cancel')}
+        onConfirm={() => {
+          clearAliasHistory();
+          setShowClearHistoryConfirm(false);
+        }}
+        onCancel={() => setShowClearHistoryConfirm(false)}
+        isDestructive
       />
     </div>
   );

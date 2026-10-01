@@ -1,8 +1,9 @@
-import { verifyFill } from '../../intelligence/IntelligenceCore';
-import { OTP_PATTERNS, OTP_CONSTANTS } from '../../intelligence/pageAnalyzer';
+import { detectHardNegative, looksLikeOtpField, verifyFill } from '../../intelligence/IntelligenceCore';
+import { extractFieldRecord, OTP_PATTERNS, OTP_CONSTANTS, PageAnalyzer } from '../../intelligence/pageAnalyzer';
 import { FrameworkType, PageContext } from '../../types/form.types';
+import { deepQuerySelectorAll, getDeepActiveElement } from '../../utils/core';
 import { createLogger } from '../../utils/logger';
-import { OTPFieldGroup, OTPFillOutcome , FieldSetter, PhantomTyper, delay, VisibilityEngine } from './formFiller';
+import { OTPFieldGroup, OTPFillOutcome , FieldSetter, PhantomTyper, delay, VisibilityEngine, EventFactory } from './formFiller';
 
 
 const log = createLogger('AutofillOTPEngine');
@@ -50,18 +51,13 @@ export class NegativePatternMatcher {
   ];
 
   static isLikelyNotOTP(input: HTMLInputElement): boolean {
-    const nameId = `${input.name} ${input.id}`.toLowerCase();
-    
-    let dataVals = '';
-    for (let i = 0; i < input.attributes.length; i++) {
-      const attr = input.attributes[i];
-      if (attr && attr.name.startsWith('data-')) {
-        dataVals += ' ' + attr.value;
-      }
-    }
-    
-    const combined = `${nameId} ${input.placeholder} ${input.autocomplete} ${dataVals}`.toLowerCase();
-    const type = input.type.toLowerCase();
+    const record = extractFieldRecord(input);
+    if (detectHardNegative(record)) {return true;}
+    const nameId = `${record.name} ${record.id}`.toLowerCase();
+    const combined = [nameId, record.placeholder, record.autocomplete, record.ariaLabel,
+      record.labelText, ...Object.values(record.dataAttributes ?? {})].join(' ').toLowerCase();
+    const type = record.type;
+    const hasOTPSignal = looksLikeOtpField(record);
 
     if (['email', 'search', 'url', 'date', 'month'].includes(type)) {
       return true;
@@ -69,7 +65,7 @@ export class NegativePatternMatcher {
 
     if (
       (/phone|tel|mobile/i.test(nameId) || type === 'tel') &&
-      (input.maxLength > 4 || input.maxLength === -1)
+      (record.maxLength > 4 || record.maxLength === -1) && !hasOTPSignal
     ) {
       return true;
     }
@@ -82,7 +78,7 @@ export class NegativePatternMatcher {
 
     for (const pattern of this.NON_OTP_PATTERNS) {
       if (pattern.test(combined)) {
-        if (/otp|code/i.test(nameId) && !/card|cvv|promo/i.test(nameId)) {
+        if (hasOTPSignal || (/otp|code/i.test(nameId) && !/card|cvv|promo/i.test(nameId))) {
           continue;
         }
         return true;
@@ -118,19 +114,8 @@ export class PageIntelligence {
 
     const combinedText = `${url} ${title} ${bodyText} ${metaContent}`;
     const signals: string[] = [];
-
-    const pageTypes: Record<string, boolean> = {};
-    for (const type of OTP_PATTERNS.PAGE_TYPES as any[]) {
-      let matched = false;
-      for (const pattern of type.patterns) {
-        if (pattern.test(combinedText)) {
-          matched = true;
-          signals.push(type.signal);
-          break;
-        }
-      }
-      pageTypes[type.key] = matched;
-    }
+    const pageAnalysis = PageAnalyzer.analyze();
+    signals.push(...pageAnalysis.signals.filter((signal) => signal.startsWith('page:')));
 
     let hasOTPLanguage = false;
     for (const pattern of this.OTP_LANGUAGE_PATTERNS) {
@@ -159,11 +144,11 @@ export class PageIntelligence {
     }
 
     return Object.freeze({
-      isVerificationPage: !!pageTypes['isVerificationPage'],
-      isLoginPage: !!pageTypes['isLoginPage'],
-      isSignupPage: !!pageTypes['isSignupPage'],
-      isPasswordResetPage: !!pageTypes['isPasswordResetPage'],
-      is2FAPage: !!pageTypes['is2FAPage'],
+      isVerificationPage: pageAnalysis.pageType === 'verification',
+      isLoginPage: pageAnalysis.pageType === 'login',
+      isSignupPage: pageAnalysis.pageType === 'signup',
+      isPasswordResetPage: pageAnalysis.pageType === 'password-reset',
+      is2FAPage: pageAnalysis.pageType === '2fa',
       framework,
       hasOTPLanguage,
       expectedOTPLength,
@@ -241,7 +226,7 @@ export class PageIntelligence {
   }
 
   private static detectProvider(url: string, text: string): string | null {
-    for (const [pattern, name] of OTP_PATTERNS.PROVIDERS as any[]) {
+    for (const [pattern, name] of (OTP_PATTERNS as any).PROVIDERS ?? []) {
       if (pattern.test(url) || pattern.test(text)) {
         return name;
       }
@@ -267,10 +252,15 @@ export class OTPFieldDiscovery {
     /otp|one[-_\s]?time|verification[-_\s]?code|verify[-_\s]?code|security[-_\s]?code|auth(?:entication)?[-_\s]?code|confirmation[-_\s]?code|passcode|2fa|mfa|totp/i;
 
   static discover(context: PageContext): OTPFieldGroup | null {
+    const active = getDeepActiveElement();
+    if (active instanceof HTMLInputElement && active.maxLength === 1) {
+      const split = this.findSplitDigitFields();
+      if (split?.fields.includes(active)) {return split;}
+    }
     const strategies = [
       {
         name: 'S1:autocomplete-one-time-code',
-        sel: 'input[autocomplete="one-time-code"]',
+        sel: 'input[autocomplete~="one-time-code" i]',
         score: 100,
       },
       {
@@ -317,6 +307,7 @@ export class OTPFieldDiscovery {
         score: 75,
       },
     ];
+    strategies.sort((a, b) => Number(active?.matches(b.sel) ?? false) - Number(active?.matches(a.sel) ?? false));
 
     for (const strategy of strategies) {
       const fields = this.queryVisible(strategy.sel);
@@ -341,20 +332,23 @@ export class OTPFieldDiscovery {
           return false;
         });
         if (filtered.length > 0 && filtered.length <= this.MAX_SPLIT_FIELDS) {
-          return this.wrap(filtered, strategy.score, strategy.name);
+          const group = this.wrap(filtered, strategy.score, strategy.name);
+          if (group) {return group;}
         }
         continue;
       }
 
       if (strategy.name === 'S6:contenteditable-otp') {
-        if (fields.length > 0) {
-          return this.wrapEditable(fields, strategy.score, strategy.name);
+        const otpFields = fields.filter((field) => looksLikeOtpField(extractFieldRecord(field)));
+        if (otpFields.length > 0) {
+          return this.wrapEditable(otpFields, strategy.score, strategy.name);
         }
         continue;
       }
 
       if (fields.length > 0) {
-        return this.wrap(fields, strategy.score, strategy.name);
+        const group = this.wrap(fields, strategy.score, strategy.name);
+        if (group) {return group;}
       }
     }
 
@@ -364,71 +358,11 @@ export class OTPFieldDiscovery {
     const singleInputSplit = this.findSingleInputSplitOTP();
     if (singleInputSplit) {return singleInputSplit;}
 
-    const shadowResult = this.discoverInShadowRoots(context);
-    if (shadowResult) {return shadowResult;}
-
     return null;
   }
 
-  private static discoverInShadowRoots(_context: PageContext): OTPFieldGroup | null {
-    const shadowStrategies = [
-      {
-        name: 'SD:autocomplete-one-time-code',
-        sel: 'input[autocomplete="one-time-code"]',
-        score: 100,
-      },
-      {
-        name: 'SD:keyworded-identity',
-        sel: [
-          'input[name="otp"]', 'input[id="otp"]', 'input[name="otc"]', 'input[name*="otp" i]',
-          'input[id*="otp" i]', 'input[name*="verification" i]', 'input[id*="verification" i]',
-          'input[name*="passcode" i]', 'input[id*="passcode" i]', 'input[name*="token" i]',
-          'input[id*="token" i]',
-        ].join(', '),
-        score: 95,
-      },
-      {
-        name: 'SD:pattern-digit-otp',
-        sel: [
-          'input[pattern="\\d{4}"]', 'input[pattern="\\d{5}"]', 'input[pattern="\\d{6}"]',
-          'input[pattern="[0-9]{4}"]', 'input[pattern="[0-9]{5}"]', 'input[pattern="[0-9]{6}"]',
-        ].join(', '),
-        score: 92,
-      },
-      {
-        name: 'SD:labels-and-placeholders',
-        sel: [
-          'input[aria-label*="otp" i]', 'input[aria-label*="code" i]', 'input[placeholder*="otp" i]',
-          'input[placeholder*="verification" i]', 'input[placeholder*="passcode" i]',
-        ].join(', '),
-        score: 80,
-      },
-      { name: 'SD:maxlength-1', sel: 'input[maxlength="1"]', score: 88 },
-    ];
-
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, null);
-    let node = walker.nextNode();
-    while (node) {
-      const shadowRoot = (node as Element).shadowRoot;
-      if (shadowRoot) {
-        for (const strategy of shadowStrategies) {
-          const fields = this.queryVisible(strategy.sel, shadowRoot);
-          if (strategy.name === 'SD:maxlength-1') {
-            if (fields.length >= this.MIN_SPLIT_FIELDS && fields.length <= this.MAX_SPLIT_FIELDS) {
-              return this.wrap(fields.slice(0, this.MAX_SPLIT_FIELDS), strategy.score, strategy.name);
-            }
-          } else if (fields.length > 0) {
-            return this.wrap(fields, strategy.score, strategy.name);
-          }
-        }
-      }
-      node = walker.nextNode();
-    }
-    return null;
-  }
-
-  static queryVisible(selector: string, root: ParentNode = document): HTMLInputElement[] {
-    return safeQuerySelectorAll<HTMLInputElement>(root, selector)
+  static queryVisible(selector: string, root: Document | Element | ShadowRoot = document): HTMLInputElement[] {
+    return deepQuerySelectorAll<HTMLInputElement>(selector, root)
       .filter((f) => VisibilityEngine.isFillable(f))
       .filter((f) => !NegativePatternMatcher.isLikelyNotOTP(f));
   }
@@ -441,9 +375,27 @@ export class OTPFieldDiscovery {
     });
   }
 
-  private static wrap(fields: HTMLInputElement[], score: number, strategy: string): OTPFieldGroup {
-    const sorted = this.sortByPosition(fields);
-    const isSplit = sorted.length >= this.MIN_SPLIT_FIELDS && sorted.every((f) => f.maxLength === 1);
+  private static wrap(fields: HTMLInputElement[], score: number, strategy: string): OTPFieldGroup | null {
+    const active = getDeepActiveElement();
+    const seed = fields.find((field) => field === active) ?? fields[0]!;
+    let selected = [seed];
+    const isSplit = seed.maxLength === 1;
+    if (isSplit) {
+      const candidates = fields.filter((field) => field.maxLength === 1 &&
+        field.form === seed.form && field.getRootNode() === seed.getRootNode());
+      let container: Node | null = seed.parentNode;
+      while (container) {
+        const scoped = candidates.filter((field) => container!.contains(field));
+        if (scoped.length >= this.MIN_SPLIT_FIELDS) {
+          if (scoped.length > this.MAX_SPLIT_FIELDS) {return null;}
+          selected = scoped;
+          break;
+        }
+        container = container.parentNode;
+      }
+      if (selected.length < this.MIN_SPLIT_FIELDS) {return null;}
+    }
+    const sorted = this.sortByPosition(selected);
     return {
       fields: sorted,
       score,
@@ -471,7 +423,8 @@ export class OTPFieldDiscovery {
         const rectLead = lead.rect;
         const yDiff = Math.abs(rectEl.top - rectLead.top);
         const xDiff = Math.abs(rectEl.left - group[group.length - 1]!.rect.right);
-        if (yDiff <= 50 && xDiff <= 300) {
+        if (item.el.form === lead.el.form && item.el.getRootNode() === lead.el.getRootNode() &&
+          yDiff <= 50 && xDiff <= 300) {
           group.push(item);
           added = true;
           break;
@@ -482,7 +435,9 @@ export class OTPFieldDiscovery {
       }
     }
 
-    const validGroup = groups.find(g => g.length >= this.MIN_SPLIT_FIELDS && g.length <= this.MAX_SPLIT_FIELDS);
+    const active = getDeepActiveElement();
+    const validGroups = groups.filter(g => g.length >= this.MIN_SPLIT_FIELDS && g.length <= this.MAX_SPLIT_FIELDS);
+    const validGroup = validGroups.find(g => g.some(item => item.el === active)) ?? validGroups[0];
     if (validGroup) {
       return this.wrap(validGroup.map(g => g.el), 90, 'S3:split-digit');
     }
@@ -528,7 +483,7 @@ export class OTPFieldDiscovery {
     const name = input.name.toLowerCase();
     const id = input.id.toLowerCase();
 
-    if (input.autocomplete.toLowerCase() === 'one-time-code') {return true;}
+    if (input.matches('[autocomplete~="one-time-code" i]')) {return true;}
     if (this.OTP_EXACT_FIELD_NAMES.has(name) || this.OTP_EXACT_FIELD_NAMES.has(id)) {return true;}
     if (this.STRONG_OTP_DESCRIPTOR_PATTERN.test(descriptor)) {return true;}
 
@@ -569,9 +524,6 @@ export class OTPFieldDiscovery {
 //  OTPFiller
 // ─────────────────────────────────────────────────────────────
 
-const SPLIT_FIELD_SETTLE_MS = 25;
-const AUTO_ADVANCE_DETECT_DELAY = 8;
-
 export class OTPFiller {
   static async fill(
     otp: string,
@@ -603,6 +555,10 @@ export class OTPFiller {
     if (!field) {return { success: false, filledCount: 0, strategy: 'single-field' };}
 
     const cleanOTP = otp.replace(/[-\s]/g, '');
+    if (field.maxLength > 0 && field.maxLength < cleanOTP.length) {
+      log.debug('Code exceeds the single field length', { codeLength: cleanOTP.length, maxLength: field.maxLength });
+      return { success: false, filledCount: 0, strategy: 'single-length-mismatch' };
+    }
     const valueToSet = field.type === 'number' ? cleanOTP : otp;
 
     const success = await FieldSetter.setValue(field, valueToSet, framework, isBackgroundTab);
@@ -613,7 +569,7 @@ export class OTPFiller {
       return { success: true, filledCount: 1, strategy: 'single-field' };
     }
 
-    if (!verification.ok) {
+    if (!verification.ok && !isBackgroundTab) {
       field.focus({ preventScroll: true });
       await PhantomTyper.typeSimulatedString(field, valueToSet);
       verification = verifyCurrentValue();
@@ -631,41 +587,23 @@ export class OTPFiller {
     framework: FrameworkType,
     isBackgroundTab: boolean = false
   ): Promise<OTPFillOutcome> {
-    const total = Math.min(digits.length, fields.length);
-    let filledCount = 0;
-
-    if (!isBackgroundTab) {
-      const pasted = await this.tryPasteDistributedCode(digits.slice(0, total), fields);
-      if (pasted) {
-        return { success: true, filledCount: total, strategy: 'split-field-paste' };
-      }
+    if (digits.length !== fields.length) {
+      log.debug('Code length does not match the split widget', { codeLength: digits.length, fieldCount: fields.length });
+      return { success: false, filledCount: 0, strategy: 'split-length-mismatch' };
     }
-
-    const autoAdvances = await this.detectAutoAdvance(fields[0]);
+    const total = digits.length;
+    let filledCount = 0;
 
     for (let i = 0; i < fields.length; i++) {
       const field = fields[i];
       if (!field) {continue;}
-
-      if (i < total) {
-        const success = isBackgroundTab
-          ? await FieldSetter.setCharDirect(field, digits[i]!, true)
-          : await this.typeIntoSplitField(field, digits[i]!);
-        if (success) {filledCount++;}
-      }
-
-      if (i < fields.length - 1) {
-        await delay(autoAdvances ? 4 : 12);
-        if (!isBackgroundTab && !autoAdvances && document.activeElement === field) {
-          field.blur();
-          const nextField = fields[i + 1];
-          if (nextField) {nextField.focus({ preventScroll: true });}
-        }
-      }
+      if (await FieldSetter.setValue(field, digits[i]!, framework, isBackgroundTab)) {filledCount++;}
     }
 
-    const finalValue = this.readSplitValue(fields).slice(0, total);
-    const success = finalValue === digits.slice(0, total);
+    const success = this.readSplitValue(fields) === digits;
+    if (!success && !isBackgroundTab && await this.tryPasteDistributedCode(digits, fields)) {
+      return { success: true, filledCount: total, strategy: 'split-field-paste' };
+    }
     return {
       success,
       filledCount: success ? total : filledCount,
@@ -678,7 +616,11 @@ export class OTPFiller {
     fields: HTMLElement[],
     _framework: FrameworkType
   ): Promise<OTPFillOutcome> {
-    const total = Math.min(digits.length, fields.length);
+    const isSplit = fields.length > 1;
+    if (isSplit && digits.length !== fields.length) {
+      return { success: false, filledCount: 0, strategy: 'split-length-mismatch' };
+    }
+    const total = fields.length;
     let filledCount = 0;
 
     for (let i = 0; i < fields.length; i++) {
@@ -686,13 +628,15 @@ export class OTPFiller {
       if (!field) {continue;}
 
       if (i < total) {
-        const char = digits[i]!;
+        const char = isSplit ? digits[i]! : digits;
         field.focus({ preventScroll: true });
         
-        field.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: char }));
+        if (!field.dispatchEvent(EventFactory.beforeInput(char))) {
+          return { success: false, filledCount, strategy: 'contenteditable-cancelled' };
+        }
         field.textContent = char;
 
-        field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: char }));
+        field.dispatchEvent(EventFactory.input(char));
         field.dispatchEvent(new Event('change', { bubbles: true }));
 
         if (field.textContent === char) {filledCount++;}
@@ -708,48 +652,13 @@ export class OTPFiller {
       }
     }
 
-    const finalValue = fields.map((f) => f.textContent ?? '').join('').slice(0, total);
-    const success = finalValue === digits.slice(0, total);
+    const finalValue = fields.map((f) => f.textContent ?? '').join('');
+    const success = finalValue === digits;
     return {
       success,
       filledCount: success ? total : filledCount,
       strategy: 'contenteditable-split',
     };
-  }
-
-  private static async detectAutoAdvance(field: HTMLInputElement | undefined): Promise<boolean> {
-    if (!field) {return false;}
-    try {
-      const originalValue = field.value;
-      const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-      const write = (v: string) => nativeSetter ? nativeSetter.call(field, v) : (field.value = v);
-
-      field.focus({ preventScroll: true });
-      write('1');
-      field.dispatchEvent(new InputEvent('input', { bubbles: true, data: '1' }));
-
-      await delay(AUTO_ADVANCE_DETECT_DELAY);
-      const autoAdvances = document.activeElement !== field;
-
-      write(originalValue);
-      field.dispatchEvent(new InputEvent('input', { bubbles: true }));
-      field.focus({ preventScroll: true });
-
-      return autoAdvances;
-    } catch {
-      return false;
-    }
-  }
-
-  private static async typeIntoSplitField(field: HTMLInputElement, char: string): Promise<boolean> {
-    field.focus({ preventScroll: true });
-    field.click();
-    await delay(10);
-
-    await PhantomTyper.typeSimulatedString(field, char);
-    await delay(SPLIT_FIELD_SETTLE_MS);
-
-    return field.value === char || (field.value.length > 0 && field.type === 'password');
   }
 
   private static async tryPasteDistributedCode(digits: string, fields: HTMLInputElement[]): Promise<boolean> {

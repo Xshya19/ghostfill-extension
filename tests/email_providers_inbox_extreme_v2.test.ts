@@ -82,6 +82,43 @@ describe('CatchmailService — extreme', () => {
   });
 });
 
+describe('DriftzService generation fallback', () => {
+  it('surfaces API failures so the aggregator can try another provider', async () => {
+    mockFetchOnce(async () => new Response('', { status: 503 }));
+    await expect(driftzService.createAccount()).rejects.toThrow('HTTP 503');
+  });
+
+  it('generates with the best alternate after the preferred Driftz service fails', async () => {
+    const health = new ProviderHealthManager();
+    const aggregator = new EmailServiceAggregator(health as any);
+    (aggregator as any).healthCheckTimestamp = Date.now();
+    vi.spyOn(health, 'getBestProvider').mockReturnValue('catchmail');
+    vi.spyOn(health, 'getRetryDelay').mockReturnValue(1);
+    vi.spyOn(health, 'recordFailure').mockImplementation(() => {});
+    vi.spyOn(health, 'recordSuccess').mockImplementation(() => {});
+    vi.spyOn(driftzService, 'createAccount').mockRejectedValue(new Error('Driftz unavailable'));
+    vi.spyOn(catchmailService, 'createAccount').mockResolvedValue({
+      id: 'fallback-1',
+      fullEmail: 'fallback@catchmail.io',
+      domain: 'catchmail.io',
+      service: 'catchmail',
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 60_000,
+    } as any);
+    vi.spyOn(storageService, 'getSettings').mockResolvedValue({
+      preferredEmailService: 'driftz',
+    } as any);
+    vi.spyOn(storageService, 'get').mockResolvedValue('disposable' as any);
+    vi.spyOn(storageService, 'set').mockResolvedValue(undefined as any);
+    vi.spyOn(storageService, 'pushToArray').mockResolvedValue(undefined as any);
+
+    const account = await aggregator.generateEmail();
+
+    expect(account.service).toBe('catchmail');
+    expect(account.fullEmail).toBe('fallback@catchmail.io');
+  });
+});
+
 describe('MaildropService — GraphQL retries', () => {
   it('createAccount tolerates ping failure and still creates', async () => {
     mockFetchOnce(async (url, init) => {
@@ -324,6 +361,9 @@ describe('One-file providers', () => {
   });
   it('mailCx/driftz/getnada/tempmailplus/tempMailLol smoke', async () => {
     mockFetchOnce(async (url: RequestInfo) => {
+      if (String(url).includes('/temp/generate')) {
+        return jsonResponse({ success: true, result: { address: 'testprefix@bbjbinin.mn' } });
+      }
       // tempMail.lol creation is server-backed (no local fallback by design,
       // so failures route to another provider) — answer its create call.
       if (String(url).includes('/inbox/create')) {

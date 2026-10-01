@@ -14,16 +14,15 @@ import {
 import { storageService } from '../../../services/storageService';
 import {
   EmailAccount,
-  Email,
   type ExtractOTPResponse,
   type ReadEmailResponse,
   type PasswordOptions,
   DEFAULT_PASSWORD_OPTIONS,
 } from '../../../types';
-import { TIMING, copyToClipboard, openSafeUrl } from '../../../utils/core';
+import { TIMING, copyToClipboard, openSafeUrl, isWebUrl } from '../../../utils/core';
 import { safeSendMessage } from '../../../utils/messaging';
 import { t } from '../../i18n';
-import { useOTPExtractor, useStorageSubscription } from '../hooks';
+import { useStorageSubscription } from '../hooks';
 import { useAppStore } from '../store';
 import { GmailLogo } from './ProviderLogos';
 import {
@@ -58,16 +57,11 @@ const toSafeStr = (v: unknown): string => {
 };
 
 // Rate limit constants
-const RATE_LIMIT_MS = {
-  GENERATE_EMAIL: 3000, // 3 seconds between email generations
-  CHECK_INBOX: 5000, // 5 seconds between inbox checks
-  GENERATE_PASSWORD: 1000, // 1 second between password generations
-};
+const RATE_LIMIT_MS = { GENERATE_EMAIL: 3000 };
 
-const HUB_INBOX_PREVIEW_LIMIT = 2;
-// The Hub renders only two rows. Asking Gmail for twenty message details on
-// every popup open made the first paint wait on needless API work; the full
-// history remains available from the Alias inbox view.
+const HUB_INBOX_PREVIEW_LIMIT = 1;
+// The fixed-height Hub shows one complete recent message. Fetch only a few
+// Gmail messages on popup open; the full history remains in the inbox view.
 const HUB_GMAIL_FETCH_LIMIT = 5;
 
 interface Props {
@@ -86,6 +80,7 @@ const formatGmailSignInFailure = (res: GmailSignInResult | undefined): string =>
 
 const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast }) => {
   const preferredEmailType = useAppStore((s) => s.preferredEmailType);
+  const isGeneratingEmail = useAppStore((s) => s.loading);
   const setPreferredEmailType = useAppStore((s) => s.setPreferredEmailType);
   const gmailConnected = useAppStore((s) => s.gmailConnected);
   const setGmailConnected = useAppStore((s) => s.setGmailConnected);
@@ -106,36 +101,38 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
   // Direct Provider sign-in states
   const [gmailSigningIn, setGmailSigningIn] = useState(false);
   const gmailInboxRequestSeqRef = useRef(0);
-  const lastOpenedEmailIdRef = useRef<string | null>(null);
+  const viewerRequestSeqRef = useRef(0);
 
   // State
   const [emailCopied, setEmailCopied] = useState(false);
   const [passwordCopied, setPasswordCopied] = useState(false);
   const [password, setPassword] = useState<string>('');
-  // Password recipe from Options > Passwords. Loaded once per popup open;
-  // falls back to service defaults when settings are unreachable.
+  // Reuse the identity's cached password across popup remounts. New passwords
+  // generated below are synced to this same value by the background handler.
   const [passwordDefaults, setPasswordDefaults] = useState<PasswordOptions | null>(null);
   useEffect(() => {
     let cancelled = false;
-    storageService
-      .getSettings()
-      .then((s) => {
-        if (!cancelled && s?.passwordDefaults) {
-          setPasswordDefaults({ ...s.passwordDefaults });
-        }
-      })
-      .catch(() => {
-        // defaults stay null → service-side defaults apply
-      });
+    void Promise.all([
+      storageService.getSettings().catch(() => null),
+      storageService.get('currentIdentity').catch(() => null),
+    ]).then(([settings, identity]) => {
+      if (cancelled) {
+        return;
+      }
+      if (settings?.passwordDefaults) {
+        setPasswordDefaults({ ...settings.passwordDefaults });
+      }
+      if (identity?.cachedPassword) {
+        setPassword(identity.cachedPassword);
+      }
+    });
     return () => {
       cancelled = true;
     };
   }, []);
   const [showPassword, setShowPassword] = useState(false);
   const [isGeneratingPassword, setIsGeneratingPassword] = useState(false);
-  const [isGeneratingEmail, setIsGeneratingEmail] = useState(false);
   const [emailCooldown, setEmailCooldown] = useState(false);
-  const [passwordCooldown, setPasswordCooldown] = useState(false);
   const [showConfirmEmail, setShowConfirmEmail] = useState(false);
 
   // PERMANENT FIX 2026-06-21: email viewer state. Previously the Hub inbox
@@ -156,13 +153,14 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         const tab = tabs[0];
-        if (tab?.url) {
+        const url = tab?.url;
+        if (url && isWebUrl(url)) {
           try {
-            let hostname = new URL(tab.url).hostname;
+            let hostname = new URL(url).hostname;
             if (hostname.startsWith('www.')) {
               hostname = hostname.slice(4);
             }
-            if (hostname && !hostname.includes('newtab') && !hostname.includes('extensions')) {
+            if (hostname) {
               setCurrentTabDomain(hostname);
               setCurrentTabHostname(hostname);
             }
@@ -203,6 +201,15 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       return;
     }
     void (async () => {
+      const existingEmail = await storageService.get('currentEmail').catch(() => null);
+      if (
+        existingEmail?.service === 'gmail' &&
+        existingEmail.fullEmail === activeGmailAlias &&
+        existingEmail.gmailBaseEmail === (gmailBase || '')
+      ) {
+        return;
+      }
+
       const session = await rememberGmailAliasSession(
         activeGmailAlias,
         gmailBase || '',
@@ -227,18 +234,6 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     gmailIsManual,
     preferredEmailType,
   ]);
-
-  useEffect(() => {
-    if (preferredEmailType !== 'disposable') {
-      return;
-    }
-    void (async () => {
-      const disposableEmail = emailAccount || (await storageService.get('disposableEmail'));
-      if (isTemporaryMailAccount(disposableEmail)) {
-        await storageService.set('currentEmail', disposableEmail);
-      }
-    })();
-  }, [emailAccount, preferredEmailType]);
 
   const activeEmailAddress =
     preferredEmailType === 'gmail'
@@ -320,39 +315,12 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     setGmailInboxLoading,
   ]);
 
-  useEffect(() => {
-    if (preferredEmailType === 'gmail' && gmailConnected && !gmailIsManual) {
-      void fetchProviderInbox();
-    }
-  }, [fetchProviderInbox, activeGmailAlias, gmailConnected, gmailIsManual, preferredEmailType]);
-
   // Generate password with the Options > Passwords recipe when loaded,
   // otherwise the service defaults (length 20).
   const generatePassword = useCallback(async () => {
     setIsGeneratingPassword(true);
     const recipe: PasswordOptions = passwordDefaults ?? DEFAULT_PASSWORD_OPTIONS;
     try {
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-        const { lastGeneratePasswordTime } = await chrome.storage.local.get(
-          'lastGeneratePasswordTime'
-        );
-        const lastTime = parseInt(lastGeneratePasswordTime || '0', 10);
-        const now = Date.now();
-        if (now - lastTime < RATE_LIMIT_MS.GENERATE_PASSWORD) {
-          setPasswordCooldown(true);
-          if (passwordCooldownTimeoutRef.current) {
-            clearTimeout(passwordCooldownTimeoutRef.current);
-          }
-          passwordCooldownTimeoutRef.current = setTimeout(
-            () => setPasswordCooldown(false),
-            RATE_LIMIT_MS.GENERATE_PASSWORD - (now - lastTime)
-          );
-          onToast('Rate limit hit. Please wait a moment.');
-          return; // Rate limited
-        }
-        await chrome.storage.local.set({ lastGeneratePasswordTime: now.toString() });
-      }
-
       const response = await safeSendMessage({
         action: 'GENERATE_PASSWORD',
         payload: {
@@ -374,53 +342,10 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     }
   }, [onToast, passwordDefaults]);
 
-  // Check inbox with rate limiting
-  const checkInbox = useCallback(async () => {
-    try {
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-        const { lastCheckInboxTime } = await chrome.storage.local.get('lastCheckInboxTime');
-        const lastTime = parseInt(lastCheckInboxTime || '0', 10);
-        const now = Date.now();
-        if (now - lastTime < RATE_LIMIT_MS.CHECK_INBOX) {
-          const waitS = Math.max(
-            1,
-            Math.ceil((RATE_LIMIT_MS.CHECK_INBOX - (now - lastTime)) / 1000)
-          );
-          onToast(`Sync cooling down — retry in ${waitS}s`);
-          return; // Rate limited
-        }
-        await chrome.storage.local.set({ lastCheckInboxTime: now.toString() });
-      }
-
-      await safeSendMessage({ action: 'CHECK_INBOX' });
-    } catch {
-      onToast('Failed to sync inbox');
-    }
-  }, [onToast]);
-
-  const hasGeneratedPassword = useRef(false);
-  useEffect(() => {
-    if (!password && !hasGeneratedPassword.current) {
-      hasGeneratedPassword.current = true;
-      void generatePassword();
-    }
-  }, [password, generatePassword]);
-
-  const prevEmailAccountId = useRef<string | null | undefined>(undefined);
-  useEffect(() => {
-    const currentId = emailAccount?.fullEmail;
-    if (currentId && currentId !== prevEmailAccountId.current) {
-      prevEmailAccountId.current = currentId;
-      void checkInbox();
-    }
-  }, [emailAccount?.fullEmail, checkInbox]);
-
   // Refs for timeout clearing
   const emailTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const passwordTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const generatingEmailTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const emailCooldownTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const passwordCooldownTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
@@ -430,14 +355,8 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       if (passwordTimeoutRef.current) {
         clearTimeout(passwordTimeoutRef.current);
       }
-      if (generatingEmailTimeoutRef.current) {
-        clearTimeout(generatingEmailTimeoutRef.current);
-      }
       if (emailCooldownTimeoutRef.current) {
         clearTimeout(emailCooldownTimeoutRef.current);
-      }
-      if (passwordCooldownTimeoutRef.current) {
-        clearTimeout(passwordCooldownTimeoutRef.current);
       }
     };
   }, []);
@@ -456,7 +375,11 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
         return;
       }
       setEmailCopied(true);
-      onToast(t('emailCopied'));
+      const isExpired =
+        preferredEmailType === 'disposable' &&
+        typeof emailAccount?.expiresAt === 'number' &&
+        Date.now() >= emailAccount.expiresAt;
+      onToast(isExpired ? t('expiredAddressCopied') : t('emailCopied'));
     } catch {
       onToast(t('copyFailed'));
       return;
@@ -466,11 +389,11 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       clearTimeout(emailTimeoutRef.current);
     }
     emailTimeoutRef.current = setTimeout(() => setEmailCopied(false), TIMING.COPY_CONFIRMATION_MS);
-  }, [activeEmailAddress, onToast]);
+  }, [activeEmailAddress, emailAccount?.expiresAt, onToast, preferredEmailType]);
 
   const copyPassword = useCallback(async () => {
     if (!password) {
-      onToast('No password yet — generating one…');
+      onToast(t('generatingPassword'));
       void generatePassword();
       return;
     }
@@ -513,10 +436,6 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     [onToast]
   );
 
-  const handleGenerateEmail = useCallback(() => {
-    setShowConfirmEmail(true);
-  }, []);
-
   const executeGenerateEmail = useCallback(() => {
     setShowConfirmEmail(false);
     void (async () => {
@@ -540,18 +459,20 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
           await chrome.storage.local.set({ lastGenerateEmailTime: now.toString() });
         }
 
-        setIsGeneratingEmail(true);
         onGenerate();
-
-        if (generatingEmailTimeoutRef.current) {
-          clearTimeout(generatingEmailTimeoutRef.current);
-        }
-        generatingEmailTimeoutRef.current = setTimeout(() => setIsGeneratingEmail(false), 5000);
       } catch {
         onToast('Failed to generate email. Please try again.');
       }
     })();
   }, [onGenerate, onToast]);
+
+  const handleGenerateEmail = useCallback(() => {
+    if (emailAccount?.fullEmail) {
+      setShowConfirmEmail(true);
+      return;
+    }
+    executeGenerateEmail();
+  }, [emailAccount?.fullEmail, executeGenerateEmail]);
 
   const handleGeneratePassword = useCallback(() => {
     void generatePassword();
@@ -567,6 +488,10 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
   const handleOpenLink = useCallback(
     (event: React.MouseEvent, url: string) => {
       event.stopPropagation();
+      if (!isWebUrl(url)) {
+        onToast('This message has no web link to open.');
+        return;
+      }
       onToast('Opening activation link…');
       openSafeUrl(url);
     },
@@ -580,7 +505,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
   const handleOpenEmail = useCallback(
     async (emailItem: DisplayedEmail) => {
       const currentId = String(emailItem.id);
-      lastOpenedEmailIdRef.current = currentId;
+      const requestSeq = ++viewerRequestSeqRef.current;
 
       setViewerEmail(emailItem);
       setViewerError(null);
@@ -606,7 +531,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
             error?: string;
           } | null;
 
-          if (lastOpenedEmailIdRef.current !== currentId) {
+          if (viewerRequestSeqRef.current !== requestSeq) {
             return;
           }
 
@@ -630,7 +555,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
             });
 
             setViewerMeta((prev) => {
-              if (lastOpenedEmailIdRef.current !== currentId) {
+              if (viewerRequestSeqRef.current !== requestSeq) {
                 return prev;
               }
               return {
@@ -650,22 +575,19 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
                 text: bodyStr,
                 textBody: bodyStr,
                 htmlBody: htmlStr,
+                source: 'popup-viewer',
                 emailId: emailItem.id,
                 emailFrom: toSafeStr(fullMsg.from ?? emailItem.from),
               },
             })) as ExtractOTPResponse | null;
 
-            if (lastOpenedEmailIdRef.current !== currentId) {
+            if (viewerRequestSeqRef.current !== requestSeq) {
               return;
             }
 
             if (extract?.success) {
-              if (typeof extract.otp === 'string' && extract.otp) {
-                setViewerOtp(extract.otp);
-              }
-              if (typeof extract.link === 'string' && extract.link) {
-                setViewerLink(extract.link);
-              }
+              setViewerOtp(typeof extract.otp === 'string' && extract.otp ? extract.otp : null);
+              setViewerLink(typeof extract.link === 'string' && extract.link ? extract.link : null);
             }
           } else if (res?.error) {
             setViewerError(typeof res.error === 'string' ? res.error : 'Could not load message');
@@ -685,7 +607,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
             payload: { emailId: String(emailItem.id), login, domain, service: account.service },
           })) as ReadEmailResponse | null;
 
-          if (lastOpenedEmailIdRef.current !== currentId) {
+          if (viewerRequestSeqRef.current !== requestSeq) {
             return;
           }
 
@@ -720,41 +642,39 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
                 text: bodyStr2,
                 textBody: bodyStr2,
                 htmlBody: htmlStr2,
+                source: 'popup-viewer',
                 emailId: emailItem.id,
                 emailFrom: toSafeStr(fullMsg.from ?? emailItem.from),
               },
             })) as ExtractOTPResponse | null;
 
-            if (lastOpenedEmailIdRef.current !== currentId) {
+            if (viewerRequestSeqRef.current !== requestSeq) {
               return;
             }
 
             if (extract?.success) {
-              if (typeof extract.otp === 'string' && extract.otp) {
-                setViewerOtp(extract.otp);
-              }
-              if (typeof extract.link === 'string' && extract.link) {
-                setViewerLink(extract.link);
-              }
+              setViewerOtp(typeof extract.otp === 'string' && extract.otp ? extract.otp : null);
+              setViewerLink(typeof extract.link === 'string' && extract.link ? extract.link : null);
             }
           } else if (res?.error) {
             setViewerError(typeof res.error === 'string' ? res.error : 'Could not load message');
           }
         }
       } catch (err) {
-        if (lastOpenedEmailIdRef.current === currentId) {
+        if (viewerRequestSeqRef.current === requestSeq) {
           setViewerError(err instanceof Error ? err.message : 'Failed to load message');
         }
       } finally {
-        if (lastOpenedEmailIdRef.current === currentId) {
+        if (viewerRequestSeqRef.current === requestSeq) {
           setViewerLoading(false);
         }
       }
     },
-    [preferredEmailType]
+    [emailAccount, preferredEmailType]
   );
 
   const handleCloseViewer = useCallback(() => {
+    viewerRequestSeqRef.current += 1;
     setViewerEmail(null);
     setViewerError(null);
     setViewerOtp(null);
@@ -769,15 +689,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     () => inboxEmails.slice(0, HUB_INBOX_PREVIEW_LIMIT),
     [inboxEmails]
   );
-  const { otps: emailOTPs, links: emailLinks } = useOTPExtractor(previewEmails);
-
-  const displayedEmails: DisplayedEmail[] = React.useMemo(() => {
-    return previewEmails.map((email: Email) => ({
-      ...email,
-      otpCode: emailOTPs[email.id] !== undefined ? emailOTPs[email.id] : undefined,
-      activationLink: emailLinks[email.id] !== undefined ? emailLinks[email.id] : undefined,
-    }));
-  }, [previewEmails, emailOTPs, emailLinks]);
+  const displayedEmails: DisplayedEmail[] = previewEmails;
 
   const handleGmailSignIn = useCallback(async () => {
     setGmailSigningIn(true);
@@ -854,7 +766,13 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       {/* ───────────────────────────────────────────────────────────
                  📊 EMAIL TYPE SELECTOR (Temp Mail vs Mail Provider)
                ─────────────────────────────────────────────────────────── */}
-      {IS_GMAIL_ENABLED && <div className="hub-email-selector" role="tablist">
+      {IS_GMAIL_ENABLED && (
+        <div
+          className="hub-email-selector"
+          role="tablist"
+          aria-label={t('emailTypeSelector')}
+          aria-orientation="horizontal"
+        >
           {/* PERF: CSS transform slide (180ms expo-out, compositor-only).
             Old framer-motion spring overshot + ran on JS thread. */}
           <div
@@ -872,97 +790,135 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
             }}
           />
           <button
+            type="button"
+            id="hub-tab-disposable"
             role="tab"
             aria-selected={preferredEmailType === 'disposable'}
+            aria-controls="hub-email-panel"
+            tabIndex={preferredEmailType === 'disposable' ? 0 : -1}
             className={`hub-email-selector-btn ${preferredEmailType === 'disposable' ? 'hub-email-selector-btn--active' : ''}`}
             onClick={handleSwitchToDisposable}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+                event.preventDefault();
+                const next = document.getElementById('hub-tab-gmail');
+                next?.focus();
+                next?.click();
+              }
+            }}
           >
             <span className="hub-email-selector-label">
-              <Mail size={13} strokeWidth={2.5} />
-              <span>Temp mail</span>
+              <Mail size={13} strokeWidth={2.5} aria-hidden="true" />
+              <span>{t('tempMailTab')}</span>
             </span>
           </button>
           <button
+            type="button"
+            id="hub-tab-gmail"
             role="tab"
             aria-selected={preferredEmailType !== 'disposable'}
+            aria-controls="hub-email-panel"
+            tabIndex={preferredEmailType !== 'disposable' ? 0 : -1}
             className={`hub-email-selector-btn ${preferredEmailType !== 'disposable' ? 'hub-email-selector-btn--active' : ''}`}
             onClick={handleSwitchToRealProvider}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+                event.preventDefault();
+                const next = document.getElementById('hub-tab-disposable');
+                next?.focus();
+                next?.click();
+              }
+            }}
           >
             <span className="hub-email-selector-label">
               <span aria-hidden="true">
                 <GmailLogo size={14} />
               </span>
-              <span>Gmail</span>
+              <span>{t('gmailTab')}</span>
             </span>
           </button>
-      </div>}
+        </div>
+      )}
 
-      {/* ═══════════════════════════════════════════════════════════
+      <div
+        className="hub-email-panel"
+        id="hub-email-panel"
+        role={IS_GMAIL_ENABLED ? 'tabpanel' : undefined}
+        aria-labelledby={
+          IS_GMAIL_ENABLED
+            ? preferredEmailType === 'disposable'
+              ? 'hub-tab-disposable'
+              : 'hub-tab-gmail'
+            : undefined
+        }
+        tabIndex={IS_GMAIL_ENABLED ? 0 : undefined}
+      >
+        {/* ═══════════════════════════════════════════════════════════
                  🎴 IDENTITY CARD - Combined Email & Password
                ═══════════════════════════════════════════════════════════ */}
-      <div className="memphis-card identity-card">
-        <AccountCard
-          preferredEmailType={preferredEmailType}
-          gmailConnected={gmailConnected}
-          gmailSigningIn={gmailSigningIn}
-          gmailBase={gmailBase}
-          activeEmailAddress={activeEmailAddress}
-          emailAccount={emailAccount}
-          emailCopied={emailCopied}
-          isGeneratingEmail={isGeneratingEmail}
-          emailCooldown={emailCooldown}
-          onCopyEmail={copyEmail}
-          onGenerateEmail={handleGenerateEmail}
-          onGmailSignIn={handleGmailSignIn}
-          onSignOut={async () => {
-            try {
-              if (typeof chrome !== 'undefined' && chrome.identity) {
-                chrome.identity.clearAllCachedAuthTokens(() => {});
+        <div className="memphis-card identity-card">
+          <AccountCard
+            preferredEmailType={preferredEmailType}
+            gmailConnected={gmailConnected}
+            gmailSigningIn={gmailSigningIn}
+            gmailBase={gmailBase}
+            activeEmailAddress={activeEmailAddress}
+            emailAccount={emailAccount}
+            emailCopied={emailCopied}
+            isGeneratingEmail={isGeneratingEmail}
+            emailCooldown={emailCooldown}
+            onCopyEmail={copyEmail}
+            onGenerateEmail={handleGenerateEmail}
+            onGmailSignIn={handleGmailSignIn}
+            onSignOut={async () => {
+              try {
+                if (typeof chrome !== 'undefined' && chrome.identity) {
+                  chrome.identity.clearAllCachedAuthTokens(() => {});
+                }
+                await clearGmailConnection(gmailIsManual);
+                setGmailConnected(false);
+                setGmailProfile(null);
+                setGmailBase(null);
+                setGmailIsManual(false);
+                onToast('Gmail disconnected');
+              } catch {
+                onToast('Failed to disconnect Gmail');
               }
-              await clearGmailConnection(gmailIsManual);
-              setGmailConnected(false);
-              setGmailProfile(null);
-              setGmailBase(null);
-              setGmailIsManual(false);
-              onToast('Gmail disconnected');
-            } catch {
-              onToast('Failed to disconnect Gmail');
-            }
-          }}
-          gmailProfile={gmailProfile}
-        />
-        {!isRealNotConnected && (
-          <QuickActions
-            password={password}
-            passwordCopied={passwordCopied}
-            isGeneratingPassword={isGeneratingPassword}
-            passwordCooldown={passwordCooldown}
-            showPassword={showPassword}
-            onCopyPassword={copyPassword}
-            onToggleShowPassword={() => setShowPassword((s) => !s)}
-            onGeneratePassword={handleGeneratePassword}
+            }}
+            gmailProfile={gmailProfile}
+          />
+          {!isRealNotConnected && (
+            <QuickActions
+              password={password}
+              passwordCopied={passwordCopied}
+              isGeneratingPassword={isGeneratingPassword}
+              showPassword={showPassword}
+              onCopyPassword={copyPassword}
+              onToggleShowPassword={() => setShowPassword((s) => !s)}
+              onGeneratePassword={handleGeneratePassword}
+            />
+          )}
+        </div>
+
+        {(preferredEmailType === 'disposable' ||
+          (preferredEmailType === 'gmail' && gmailConnected)) && (
+          <InboxList
+            preferredEmailType={preferredEmailType}
+            gmailConnected={gmailConnected}
+            gmailIsManual={gmailIsManual}
+            gmailInboxLoading={gmailInboxLoading}
+            gmailInboxError={gmailInboxError}
+            inboxCount={inboxEmails.length}
+            displayedEmails={displayedEmails}
+            openingEmailId={openingEmailId}
+            onNavigate={onNavigate}
+            onCopyOTP={handleCopyOTP}
+            onOpenLink={handleOpenLink}
+            onFetchGmailInbox={fetchProviderInbox}
+            onOpenEmail={handleOpenEmail}
           />
         )}
       </div>
-
-      {(preferredEmailType === 'disposable' ||
-        (preferredEmailType === 'gmail' && gmailConnected)) && (
-        <InboxList
-          preferredEmailType={preferredEmailType}
-          gmailConnected={gmailConnected}
-          gmailIsManual={gmailIsManual}
-          gmailInboxLoading={gmailInboxLoading}
-          gmailInboxError={gmailInboxError}
-          inboxCount={inboxEmails.length}
-          displayedEmails={displayedEmails}
-          openingEmailId={openingEmailId}
-          onNavigate={onNavigate}
-          onCopyOTP={handleCopyOTP}
-          onOpenLink={handleOpenLink}
-          onFetchGmailInbox={fetchProviderInbox}
-          onOpenEmail={handleOpenEmail}
-        />
-      )}
 
       <ConfirmModal
         isOpen={showConfirmEmail}
@@ -978,6 +934,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       {/* PERMANENT FIX 2026-06-21: email viewer so users can actually
           READ the email — previously the Hub inbox jumped to a tab. */}
       <EmailViewerModal
+        messageKey={viewerEmail ? String(viewerEmail.id) : null}
         message={
           viewerEmail
             ? {

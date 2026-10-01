@@ -1,10 +1,11 @@
+import type { ProviderKnowledge } from '../../types/extraction.types';
 import { ANTI_PATTERN_DATABASE } from './anti';
 import { CONTEXT_KEYWORD_DATABASE, INTENT_PATTERNS } from './intents';
 import { LINK_PATTERN_DATABASE } from './links';
 import { OTP_PATTERN_DATABASE } from './otp';
-import { PROVIDER_DATABASE } from './providers';
 
-export * from './providers';
+export const PROVIDER_DATABASE: ProviderKnowledge[] = [];
+
 export * from './otp';
 export * from './anti';
 export * from './intents';

@@ -8,8 +8,9 @@ import {
   isTemporaryMailAccount,
 } from '../../config/buildProfile';
 import { EmailAccount, Email, EmailService } from '../../types';
+import { getSenderSource } from '../../utils/emailIdentity';
 import { createLogger } from '../../utils/logger';
-import { sanitizeEmailFrom, sanitizeEmailSubject } from '../../utils/sanitization.core';
+import { sanitizeEmailSubject } from '../../utils/sanitization.core';
 import * as gmailApiService from '../gmailApiService';
 import {
   buildGmailAliasSearchQuery,
@@ -248,7 +249,7 @@ class EmailServiceAggregator {
 
   /**
    * Generate a new email using the specified or default service
-   * CatchMail is now the primary service.
+   * Driftz is the default service; health-aware fallback handles outages.
    */
   private lastGenerationTime: number = 0;
   private readonly GENERATION_COOLDOWN_MS = 150; // snappy UI without hammering providers
@@ -287,7 +288,7 @@ class EmailServiceAggregator {
 
       const settings = await storageService.getSettings();
       // Use preferred if valid/healthy, otherwise pick best healthy
-      let service = options.service || settings.preferredEmailService || 'catchmail';
+      let service = options.service || settings.preferredEmailService || 'driftz';
 
       // Custom precedence
       if (settings.preferredEmailService === 'custom' && !options.service) {
@@ -787,7 +788,7 @@ class EmailServiceAggregator {
           // Map GmailMessage[] to Email[]
           emails = gmailMessages.map((msg) => ({
             id: msg.id,
-            from: msg.fromEmail || msg.from,
+            from: getSenderSource(msg.fromName, msg.fromEmail || msg.from),
             to: msg.to,
             subject: msg.subject,
             date: msg.date,
@@ -803,7 +804,7 @@ class EmailServiceAggregator {
             const zohoMsgs = await searchZohoInbox(account.fullEmail);
             emails = zohoMsgs.map((msg) => ({
               id: msg.id,
-              from: msg.fromEmail || msg.from,
+              from: getSenderSource(msg.fromName, msg.fromEmail || msg.from),
               to: msg.to || account.fullEmail,
               subject: msg.subject,
               date: msg.date,
@@ -823,7 +824,7 @@ class EmailServiceAggregator {
             const msMsgs = await searchMicrosoftInbox(account.fullEmail);
             emails = msMsgs.map((msg) => ({
               id: msg.id,
-              from: msg.fromEmail || msg.from,
+              from: getSenderSource(msg.fromName, msg.fromEmail || msg.from),
               to: msg.to || account.fullEmail,
               subject: msg.subject,
               date: msg.date,
@@ -945,13 +946,13 @@ class EmailServiceAggregator {
       const safeEmails = emails.map((email) => ({
         ...email,
         subject: sanitizeEmailSubject(email.subject || '(No Subject)'),
-        from: sanitizeEmailFrom(email.from || 'Unknown Sender'),
+        from: getSenderSource(undefined, email.from),
       }));
 
       // PERFORMANCE FIX: Efficient comparison using ID concatenation
       const slicedSafeEmails = safeEmails.slice(0, 50);
       const cachedInbox = (await storageService.get('inbox')) || [];
-      const inboxHash = (list: Email[]) => list.map((e) => `${e.id}:${e.read}`).join('|');
+      const inboxHash = (list: Email[]) => JSON.stringify(list.map((e) => [e.id, e.read, e.from, e.subject]));
 
       if (
         inboxSessionGeneration === this.inboxSessionGeneration &&
@@ -1048,7 +1049,7 @@ class EmailServiceAggregator {
           }
           email = {
             id: emailDetail.id,
-            from: emailDetail.fromEmail || emailDetail.from,
+            from: getSenderSource(emailDetail.fromName, emailDetail.fromEmail || emailDetail.from),
             subject: emailDetail.subject,
             date: emailDetail.date,
             body: emailDetail.body || emailDetail.snippet || '',
@@ -1075,7 +1076,7 @@ class EmailServiceAggregator {
           }
           email = {
             id: found.id,
-            from: found.fromEmail || found.from,
+            from: getSenderSource(found.fromName, found.fromEmail || found.from),
             to: found.to || account.fullEmail,
             subject: found.subject,
             date: found.date,
@@ -1094,7 +1095,7 @@ class EmailServiceAggregator {
           }
           email = {
             id: found.id,
-            from: found.fromEmail || found.from,
+            from: getSenderSource(found.fromName, found.fromEmail || found.from),
             to: found.to || account.fullEmail,
             subject: found.subject,
             date: found.date,
@@ -1206,7 +1207,7 @@ class EmailServiceAggregator {
       const safeEmail: Email = {
         ...email,
         subject: sanitizeEmailSubject(email.subject || '(No Subject)'),
-        from: sanitizeEmailFrom(email.from || 'Unknown Sender'),
+        from: getSenderSource(undefined, email.from),
       };
 
       const inbox = await storageService.get('inbox');

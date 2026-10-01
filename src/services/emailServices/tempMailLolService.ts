@@ -2,6 +2,7 @@
 
 import { EmailAccount, Email } from '../../types';
 import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
+import { getSenderSource } from '../../utils/emailIdentity';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 import { isRetryableError, throttledWarn, throwIfRetryableStatus } from './isRetryableError';
@@ -77,7 +78,7 @@ export class TempMailLolService {
         const htmlStr = contentToString(msg.html || msg.body);
         return {
           id: String(msg.id || idx),
-          from: contentToString(msg.from, 'Unknown Sender'),
+          from: getSenderSource(undefined, msg.from),
           to: contentToString(msg.to),
           subject: contentToString(msg.subject, '(No Subject)'),
           date: safeParseDate(msg.date),

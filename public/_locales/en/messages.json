@@ -13,14 +13,38 @@
   "syncingIdentity": {
     "message": "Syncing identity..."
   },
+  "noEmailAddressYet": {
+    "message": "No email address yet"
+  },
   "passwordLabel": {
     "message": "Password"
   },
   "generatingPassword": {
     "message": "Generating..."
   },
+  "passwordNotGenerated": {
+    "message": "Generate one when you need it"
+  },
+  "passwordHidden": { "message": "Password hidden" },
+  "passwordShow": { "message": "Show password" },
+  "passwordHide": { "message": "Hide password" },
+  "passwordGenerate": { "message": "Generate password" },
+  "passwordGenerateAgain": { "message": "Generate again" },
+  "passwordGenerateFailed": { "message": "Couldn't generate a password. Try again." },
+  "passwordOptions": { "message": "Password options" },
+  "passwordLength": { "message": "Password length" },
+  "uppercaseShort": { "message": "Uppercase" },
+  "lowercaseShort": { "message": "Lowercase" },
+  "copyShort": { "message": "Copy" },
+  "copiedShort": { "message": "Copied" },
   "emailCopied": {
     "message": "Email copied to clipboard"
+  },
+  "expiredAddressCopied": {
+    "message": "Copied, but this address has expired. Generate a new one before using it."
+  },
+  "generateNewAddress": {
+    "message": "Generate a new address"
   },
   "passwordCopied": {
     "message": "Password copied to clipboard"
@@ -80,11 +104,21 @@
     "message": "Got it!"
   },
   "vaultSettings": {
-    "message": "Password Vault"
+    "message": "Password generator"
   },
   "passcodeSync": {
-    "message": "Passcode Sync"
+    "message": "Verification code"
   },
+  "gmailAliasesTitle": { "message": "Gmail aliases" },
+  "gmailAliasesOnly": { "message": "Aliases only" },
+  "gmailInboxConnected": { "message": "Inbox connected" },
+  "emailTypeSelector": { "message": "Email type" },
+  "tempMailTab": { "message": "Temp mail" },
+  "gmailTab": { "message": "Gmail" },
+  "aliasTabListLabel": { "message": "Gmail alias views" },
+  "aliasTabGenerator": { "message": "Aliases" },
+  "aliasTabInbox": { "message": "Inbox" },
+  "aliasTabHistory": { "message": "History" },
   "onboardingTitle": {
     "message": "Welcome to GhostFill"
   },
@@ -110,7 +144,7 @@
     "message": "Automatically detect and fill verification codes"
   },
   "onboardingButton": {
-    "message": "Get Started"
+    "message": "Generate a temporary email"
   },
   "onboardingFooter": {
     "message": "Local detection - provider APIs - open source"
@@ -135,17 +169,39 @@
   "errorTitle": { "message": "Something went wrong" },
   "passwordLengthMin": { "message": "Password length must be at least 8" },
   "passwordLengthMax": { "message": "Password length must be 128 or less" },
+  "passwordCharacterTypeRequired": {
+    "message": "Choose at least one character type to generate a password."
+  },
   "checkIntervalRange": { "message": "Inbox check interval must be 3–60 seconds" },
   "historyRetentionRange": { "message": "History retention must be 1–365 days" },
   "customDomainInvalid": { "message": "Custom domain URL is not valid" },
+  "customDomainRequired": { "message": "Enter your custom email domain." },
+  "customDomainHostInvalid": { "message": "Enter a domain such as mail.example.com." },
+  "customDomainUrlRequired": { "message": "Enter your worker URL." },
   "customDomainHttps": { "message": "Custom domain URL must use https://" },
   "resetSettingsTitle": { "message": "Reset settings?" },
-  "resetSettingsMessage": { "message": "This restores all settings to their defaults. This can't be undone." },
+  "resetSettingsMessage": {
+    "message": "This restores all settings to their defaults. This can't be undone."
+  },
   "clearAllDataTitle": { "message": "Clear all data?" },
-  "clearAllDataMessage": { "message": "This permanently deletes all emails, passwords, and history. This can't be undone." },
+  "clearAllDataMessage": {
+    "message": "This permanently deletes all emails, passwords, and history. This can't be undone."
+  },
+  "resetSettingsAction": { "message": "Reset settings" },
+  "clearAllDataAction": { "message": "Clear all data" },
+  "acknowledge": { "message": "OK" },
+  "clearAliasHistoryTitle": { "message": "Clear alias history?" },
+  "clearAliasHistoryMessage": {
+    "message": "This removes all saved aliases from this device. This can't be undone."
+  },
+  "clearAliasHistoryAction": { "message": "Clear history" },
+  "tutorialReplayComplete": { "message": "The tutorial will replay next time you open the popup." },
+  "tutorialReplayFailed": {
+    "message": "Could not save this change. Check the extension and try again."
+  },
 
   "appearanceSection": { "message": "Appearance" },
-  "darkMode": { "message": "Dark mode" },
+  "darkMode": { "message": "Color theme" },
   "darkModeDescription": { "message": "Choose light, dark, or follow your system" },
   "darkModeAriaDescription": { "message": "Select the color theme" },
   "themeSystem": { "message": "System" },
@@ -170,7 +226,9 @@
   "applicationTutorial": { "message": "Application tutorial" },
   "applicationTutorialDescription": { "message": "Replay the welcome walkthrough" },
   "replayOnboarding": { "message": "Replay onboarding" },
-  "onboardingResetWarning": { "message": "Onboarding will replay the next time you open GhostFill." },
+  "onboardingResetWarning": {
+    "message": "Onboarding will replay the next time you open GhostFill."
+  },
 
   "emailServiceSection": { "message": "Email service" },
   "gmailOauthSection": { "message": "Gmail (OAuth)" },
@@ -202,7 +260,9 @@
   "autofillOTPDescription": { "message": "Automatically fill detected verification codes" },
   "autofillOTPAriaLabel": { "message": "Toggle OTP auto-fill" },
   "autoOpenVerificationLinks": { "message": "Auto-open verification links" },
-  "autoOpenVerificationLinksDescription": { "message": "Open safe verification links automatically" },
+  "autoOpenVerificationLinksDescription": {
+    "message": "Open detected email action links in a new tab automatically. Turn off to open them yourself."
+  },
   "autoOpenVerificationLinksAriaLabel": { "message": "Toggle auto-opening verification links" },
   "shortcutsSection": { "message": "Keyboard shortcuts" },
   "enableShortcuts": { "message": "Enable shortcuts" },
@@ -214,7 +274,9 @@
   "shortcutGenerateEmail": { "message": "Generate new email" },
   "shortcutGeneratePassword": { "message": "Generate new password" },
   "shortcutAutofillForm": { "message": "Auto-fill current form" },
-  "customizeShortcutsNote": { "message": "Customize these in your browser's extension shortcuts settings." },
+  "customizeShortcutsNote": {
+    "message": "Customize these in your browser's extension shortcuts settings."
+  },
 
   "historyDataSection": { "message": "History & data" },
   "saveHistory": { "message": "Save history" },
@@ -232,12 +294,22 @@
   "gmailSessionDetectionAriaLabel": { "message": "Toggle Gmail session detection" },
   "telemetrySection": { "message": "Telemetry" },
   "anonymousAnalytics": { "message": "Anonymous analytics" },
-  "anonymousAnalyticsDescription": { "message": "Share anonymous usage data to help improve GhostFill" },
+  "anonymousAnalyticsDescription": {
+    "message": "Share anonymous usage data to help improve GhostFill"
+  },
   "anonymousAnalyticsAriaLabel": { "message": "Toggle anonymous analytics" },
 
   "developerSection": { "message": "Developer" },
   "backupRestoreSection": { "message": "Backup & restore" },
   "providerHealthTitle": { "message": "Provider health" },
   "loadingProviderHealth": { "message": "Checking provider health…" },
-  "loadingStorageInfo": { "message": "Loading storage info…" }
+  "loadingStorageInfo": { "message": "Loading storage info…" },
+  "inboxNewBadge": { "message": "New" },
+  "inboxViewAll": { "message": "View all" },
+  "inboxCaughtUpTitle": { "message": "You’re all caught up" },
+  "inboxWaitingTitle": { "message": "Waiting for email" },
+  "inboxRecentDescription": { "message": "Recent emails will appear here." },
+  "inboxWaitingDescription": {
+    "message": "Use your address above. Messages and codes appear here."
+  }
 }

@@ -23,14 +23,15 @@ import {
   FieldType as ClassifierFieldType,
 } from '../shared/fieldClassifier';
 import { IconSystem, menuIcon, type MenuIconName as _MenuIconName } from '../shared/icons';
-import { generateHostTokens } from '../shared/theme';
+import { generateHostThemeStyles, resolveTheme, type ThemeMode } from '../shared/theme';
 import {
   FieldType,
   GenerateEmailResponse,
   GeneratePasswordResponse,
   GetLastOTPResponse,
 } from '../types';
-import { TIMING } from '../utils/core';
+import { DEFAULT_SETTINGS, STORAGE_KEYS } from '../types/storage.types';
+import { getDeepActiveElement, TIMING } from '../utils/core';
 import { createLogger } from '../utils/logger';
 import { safeSendMessage } from '../utils/messaging';
 import { setHTML, clearHTML } from '../utils/sanitization.core';
@@ -38,7 +39,8 @@ import { AutoFiller } from './autoFiller';
 import { SmartFabPresenter } from './fab';
 import type { FabMode, FabPresence, PlacementResult, PageSignals } from './fab';
 import fabStyles from './floatingButton.shadow.css';
-import { FieldAnalyzer, collectFieldDiagnostics } from './formDetector';
+import { FieldAnalyzer } from './formDetector';
+import { glassIconMap } from './glassLensMap';
 import { pageStatus } from './ui/pageStatus';
 
 const log = createLogger('FloatingButton');
@@ -51,7 +53,7 @@ const log = createLogger('FloatingButton');
 const TIMING_MS = {
   TOOLTIP_SHOW_DELAY: 350,
   SUCCESS_DISPLAY: 1600,
-  ERROR_DISPLAY: 2200,
+  ERROR_DISPLAY: 5000,
   LONG_PRESS: 450,
   // Only used after focus leaves the field — never while the input is active
   AUTO_HIDE: (TIMING?.FLOATING_BUTTON_HIDE_MS as number | undefined) ?? 6000,
@@ -65,7 +67,7 @@ const TIMING_MS = {
 /** Size presets — must match `.gf-fab` in floatingButton.shadow.css (44px normal) */
 const BUTTON_SIZE_PX: Readonly<Record<ButtonSize, number>> = {
   mini: 32,
-  normal: 46,
+  normal: 44,
   expanded: 52,
 };
 
@@ -125,6 +127,7 @@ interface FloatingButtonRuntimeMessage {
   otp?: string;
   settings?: {
     showFloatingButton?: boolean;
+    darkMode?: ThemeMode;
   };
 }
 
@@ -157,16 +160,6 @@ function _escapeCSS(value: string): string {
   } catch {
     return value.replace(/([^\w-])/g, '\\$1');
   }
-}
-
-function isFormInputElement(el: unknown): el is HTMLElement {
-  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-    return true;
-  }
-  if (el instanceof HTMLElement) {
-    return el.isContentEditable || el.getAttribute('role') === 'textbox';
-  }
-  return false;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -224,6 +217,42 @@ class SmartPositioner {
 
       // Off left edge → below the field
       if (left < m) {
+        left = rect.left;
+        top = rect.bottom + m;
+        placement = 'below';
+      }
+    }
+
+    // A trailing reveal button or password-manager control can be painted on
+    // top of the input without contributing to its computed padding. Probe
+    // the FAB footprint and dock outside the field when it overlaps a control.
+    const probePoints = [
+      [left + 4, top + buttonSize / 2],
+      [left + buttonSize / 2, top + buttonSize / 2],
+      [left + buttonSize - 4, top + buttonSize / 2],
+    ];
+    const overlapsControl = probePoints.some(([x, y]) => {
+      const hit = document.elementFromPoint(x!, y!);
+      if (!hit || hit === field || hit.closest('#ghostfill-fab')) {
+        return false;
+      }
+      return Boolean(
+        hit.closest(
+          'button, a, [role="button"], [role="link"], input[type="button"], input[type="submit"]'
+        )
+      );
+    });
+    if (overlapsControl) {
+      const rightCandidate = rect.right + m;
+      const leftCandidate = rect.left - buttonSize - m;
+      top = rect.top + (rect.height - buttonSize) / 2;
+      if (rightCandidate + buttonSize <= vw - m) {
+        left = rightCandidate;
+        placement = 'outside-right';
+      } else if (leftCandidate >= m) {
+        left = leftCandidate;
+        placement = 'outside-left';
+      } else {
         left = rect.left;
         top = rect.bottom + m;
         placement = 'below';
@@ -355,21 +384,13 @@ class SmartPositioner {
 // ═══════════════════════════════════════════════════════════════
 
 class ContextualMenu {
-  static buildActions(
-    analysis: PageAnalysis,
-    currentMode: ButtonMode,
-    hasOTPReady: boolean
-  ): MenuAction[] {
+  static buildActions(analysis: PageAnalysis, currentMode: ButtonMode): MenuAction[] {
     const noop = async (): Promise<void> => {};
 
     const isIdentityCtx =
       currentMode === 'user' || analysis.hasNameFields || analysis.pageType === 'signup';
 
-    const showOTP =
-      analysis.pageType === 'verification' ||
-      analysis.pageType === '2fa' ||
-      analysis.hasOTPField ||
-      hasOTPReady;
+    const showOTP = currentMode === 'otp' || analysis.hasOTPField;
 
     const showEmail =
       analysis.hasEmailField || analysis.pageType === 'signup' || analysis.pageType === 'login';
@@ -379,87 +400,73 @@ class ContextualMenu {
       analysis.pageType === 'signup' ||
       analysis.pageType === 'password-reset';
 
-    // Extract and sanitize context name from page title
-    const siteTitleMatch = document.title.match(/^([^-|]+)/);
-    const rawName = siteTitleMatch ? siteTitleMatch[1]!.trim() : 'Account';
-    const contextName = escapeHTML(rawName);
-
     const actions: MenuAction[] = [
       {
         id: 'smart-fill',
         icon: menuIcon('spark'),
-        label: `⚡ Ultra Auto-fill ${contextName}`,
-        shortcut: 'Ctrl+Shift+G',
+        label: 'Fill this form',
         visible: true,
         handler: noop,
       },
       {
         id: 'paste-otp',
         icon: menuIcon('key'),
-        label: hasOTPReady ? '✓ Paste Found Code' : 'Paste Code',
+        label: 'Fill verification code',
         visible: showOTP,
         handler: noop,
       },
       {
         id: 'generate-email',
         icon: menuIcon('mail'),
-        label: 'Use Hidden Email',
+        label: 'Fill email address',
         visible: showEmail,
         handler: noop,
       },
       {
         id: 'generate-password',
         icon: menuIcon('lock'),
-        label: 'Generate Secure Password',
+        label: 'Generate and fill password',
         visible: showPassword,
         handler: noop,
       },
       {
         id: 'fill-firstname',
         icon: menuIcon('user'),
-        label: 'Inject First Name',
+        label: 'Fill first name',
         visible: isIdentityCtx,
         handler: noop,
       },
       {
         id: 'fill-lastname',
         icon: menuIcon('users'),
-        label: 'Inject Last Name',
+        label: 'Fill last name',
         visible: isIdentityCtx,
         handler: noop,
       },
       {
         id: 'fill-fullname',
         icon: menuIcon('edit'),
-        label: 'Inject Full Name',
+        label: 'Fill full name',
         visible: isIdentityCtx,
         handler: noop,
       },
       {
         id: 'fill-username',
         icon: menuIcon('mask'),
-        label: 'Inject Username',
+        label: 'Fill username',
         visible: isIdentityCtx,
         handler: noop,
       },
       {
         id: 'clear-fields',
         icon: menuIcon('clear'),
-        label: 'Clear All Fields',
-        visible: true,
-        handler: noop,
-      },
-      {
-        id: 'copy-field-diagnostics',
-        icon: menuIcon('chart'),
-        label: 'Copy Field Diagnostics',
-        shortcut: 'Alt+Shift+H',
+        label: 'Clear form fields…',
         visible: true,
         handler: noop,
       },
       {
         id: 'hide-here',
-        icon: menuIcon('clear'),
+        icon: menuIcon('eye-off'),
         label: 'Hide on this site',
         visible: true,
         handler: noop,
@@ -468,7 +475,7 @@ class ContextualMenu {
       {
         id: 'settings',
         icon: menuIcon('settings'),
-        label: 'GhostFill Settings',
+        label: 'GhostFill settings',
         visible: true,
         handler: noop,
       },
@@ -509,10 +516,14 @@ export class FloatingButton {
   private currentFieldRef: WeakRef<HTMLElement> | null = null;
   private currentFieldRect: DOMRect | null = null;
   private isEnabled = true;
+  private themeMode: ThemeMode = DEFAULT_SETTINGS.darkMode;
+  private settingsReadGeneration = 0;
   private hasOTPReady = false;
   private isWaitingForOTP = false;
   private pageAnalysis: PageAnalysis | null = null;
+  private pageAnalysisHref = '';
   private destroyed = false;
+  private primaryActionInFlight = false;
   private presenter: SmartFabPresenter | null = null;
 
   // ── Cache ────────────────────────────────────────────────
@@ -550,9 +561,6 @@ export class FloatingButton {
   // ── Ghost Scanning ───────────────────────────────────────
   private readonly ghostObservers = new Map<HTMLElement, IntersectionObserver>();
 
-  // ── Keyboard ─────────────────────────────────────────────
-  private static readonly SHORTCUT_KEY = 'g';
-
   constructor(autoFiller: AutoFiller) {
     this.autoFiller = autoFiller;
   }
@@ -567,6 +575,7 @@ export class FloatingButton {
     }
 
     this.createContainer();
+    this.subscribeThemeChanges();
 
     this.presenter = new SmartFabPresenter({
       host: this.container!,
@@ -580,10 +589,9 @@ export class FloatingButton {
         },
       }),
       onShow: (field, decision) => {
-        this.currentField = field as HTMLInputElement;
-        this.setMode(decision.mode);
         this.setPresence(decision.presence); // 'quiet' → dot, 'active' → full FAB
         this.showNearField(field);
+        this.setMode(decision.mode);
       },
       onPlace: (placement) => this.applyPlacement(placement),
       onHide: () => this.setState('hidden'),
@@ -598,22 +606,9 @@ export class FloatingButton {
     });
 
     this.setupEventListeners();
-    this.setupKeyboardShortcut();
     log.debug('FloatingButton initialised');
     void this.loadSettingsAsync();
     void this.checkOTPAvailability();
-
-    // If a field is already focused when we init (lazy activation after focusin),
-    // the original focusin event fired before we existed — show immediately
-    const active = document.activeElement as HTMLElement | null;
-    if (active && isFormInputElement(active)) {
-      // Defer one tick so container is in DOM and classifier sees correct layout
-      setTimeout(() => {
-        if (!this.destroyed && this.isEnabled && document.activeElement === active) {
-          this.handleFocusChange(active);
-        }
-      }, 30);
-    }
   }
 
   destroy(): void {
@@ -627,6 +622,7 @@ export class FloatingButton {
 
     this.cancelAllTimers();
     this.cancelAllAnimationFrames();
+    this.hideOTPWaitingIndicator();
 
     if (this.fieldResizeObserver) {
       this.fieldResizeObserver.disconnect();
@@ -663,6 +659,7 @@ export class FloatingButton {
     }
 
     this.container?.remove();
+    this.currentField?.removeAttribute('data-ghostfill-fab-active');
     this.container = null;
     this.shadowRoot = null;
     this.button = null;
@@ -687,12 +684,17 @@ export class FloatingButton {
   // ═══════════════════════════════════════════════════════════
 
   private async loadSettingsAsync(): Promise<void> {
+    const generation = ++this.settingsReadGeneration;
     try {
       const resp = (await safeSendMessage({ action: 'GET_SETTINGS' })) as {
-        settings?: { showFloatingButton: boolean };
+        settings?: { showFloatingButton: boolean; darkMode?: ThemeMode };
       } | null;
+      if (this.destroyed || generation !== this.settingsReadGeneration) {
+        return;
+      }
       if (resp?.settings) {
         this.isEnabled = resp.settings.showFloatingButton;
+        this.applyThemeMode(resp.settings.darkMode ?? DEFAULT_SETTINGS.darkMode);
         if (!this.isEnabled) {
           this.setState('hidden');
         }
@@ -703,6 +705,35 @@ export class FloatingButton {
     }
 
     this.registerRuntimeListener();
+  }
+
+  private applyThemeMode(mode: ThemeMode): void {
+    this.themeMode = mode;
+    this.container?.setAttribute('data-theme', resolveTheme(mode));
+  }
+
+  private subscribeThemeChanges(): void {
+    const systemTheme = window.matchMedia?.('(prefers-color-scheme: dark)');
+    const onSystemThemeChange = () => {
+      if (this.themeMode === 'system') {
+        this.applyThemeMode('system');
+      }
+    };
+    systemTheme?.addEventListener?.('change', onSystemThemeChange);
+    this.cleanupFns.push(() => systemTheme?.removeEventListener?.('change', onSystemThemeChange));
+
+    if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+      const onSettingsChange = (
+        changes: { [key: string]: chrome.storage.StorageChange },
+        areaName: string
+      ) => {
+        if (areaName === 'local' && STORAGE_KEYS.SETTINGS in changes) {
+          void this.loadSettingsAsync();
+        }
+      };
+      chrome.storage.onChanged.addListener(onSettingsChange);
+      this.cleanupFns.push(() => chrome.storage.onChanged.removeListener(onSettingsChange));
+    }
   }
 
   private registerRuntimeListener(): void {
@@ -720,6 +751,9 @@ export class FloatingButton {
 
       if (msg.action === 'SETTINGS_CHANGED' && msg.settings) {
         this.isEnabled = msg.settings.showFloatingButton ?? this.isEnabled;
+        if (msg.settings.darkMode !== undefined) {
+          this.applyThemeMode(msg.settings.darkMode);
+        }
         if (!this.isEnabled) {
           this.setState('hidden');
         }
@@ -729,7 +763,7 @@ export class FloatingButton {
         this.hasOTPReady = true;
         this.isWaitingForOTP = false;
         this.hideOTPWaitingIndicator();
-        this.updateBadge();
+        this.applyModeChrome();
         if (this.isEnabled) {
           log.info('🚀 OTP received, triggering Auto-Fill Sentinel');
           void this.startAutoFillOTPSequence(msg.otp);
@@ -738,22 +772,19 @@ export class FloatingButton {
 
       if (msg.action === 'OTP_PAGE_DETECTED') {
         this.isWaitingForOTP = true;
-        this.showOTPWaitingIndicator();
+        this.applyModeChrome();
       }
 
       if (msg.action === 'OTP_PAGE_LEFT') {
         this.isWaitingForOTP = false;
-        this.hideOTPWaitingIndicator();
-        if (!this.hasOTPReady) {
-          this.updateBadge();
-        }
+        this.applyModeChrome();
       }
 
       // Reset all session state when the user generates a new email address.
-      // Clears OTP badge, closes menu, and returns button to clean idle state.
+      // Clears OTP readiness, closes menu, and returns button to clean idle state.
       if (msg.action === 'RESET_STATE') {
         this.hasOTPReady = false;
-        this.updateBadge();
+        this.applyModeChrome();
         if (this.state === 'menu-open') {
           this.closeMenuSilent();
         }
@@ -778,8 +809,8 @@ export class FloatingButton {
     }
     try {
       const resp = (await safeSendMessage({ action: 'GET_LAST_OTP' })) as GetLastOTPResponse | null;
-      this.hasOTPReady = Boolean(resp?.lastOTP?.code);
-      this.updateBadge();
+      this.hasOTPReady = Boolean(resp?.success && resp.lastOTP?.code);
+      this.applyModeChrome();
     } catch {
       /* ignore */
     }
@@ -799,6 +830,7 @@ export class FloatingButton {
 
     const old = this.state;
     this.state = newState;
+    this.button?.setAttribute('aria-busy', String(newState === 'loading'));
     log.debug(`State: ${old} → ${newState}`);
 
     switch (newState) {
@@ -830,6 +862,10 @@ export class FloatingButton {
   }
 
   private applyHidden(): void {
+    this.cancelAllTimers();
+    this.clearStatusTooltip();
+    this.hideOTPWaitingIndicator();
+    this.currentField?.removeAttribute('data-ghostfill-fab-active');
     if (this.container) {
       this.container.style.setProperty('display', 'none', 'important');
     }
@@ -849,6 +885,8 @@ export class FloatingButton {
     if (!this.container || !this.button) {
       return;
     }
+    this.hideTooltip();
+    this.clearStatusTooltip();
     this.closeMenuSilent();
     if (!this.isCurrentFieldFocused()) {
       return;
@@ -857,23 +895,15 @@ export class FloatingButton {
     this.container.style.setProperty('display', 'block', 'important');
     this.container.style.setProperty('visibility', 'visible', 'important');
     this.container.style.setProperty('pointer-events', 'auto', 'important');
+    this.currentField?.setAttribute('data-ghostfill-fab-active', '');
     this.refreshZIndex();
     setHTML(this.button, IconSystem.get(this.mode));
     this.button.classList.remove('gf-loading', 'gf-success', 'gf-error');
     this.applyModeChrome();
-    const tooltipMode = this.mode === 'magic' ? 'generic' : (this.mode as ClassifierFieldType);
-    const baseLabel = getFieldTooltip(tooltipMode);
-    const armed = this.hasOTPReady
-      ? ' · OTP ready'
-      : this.isWaitingForOTP
-        ? ' · waiting for code'
-        : '';
-    this.button.setAttribute('aria-label', `${baseLabel}${armed}`);
-    this.updateBadge();
     this.cancelHideTimer();
   }
 
-  /** Visual intelligence: mode-colored ring + OTP armed pulse */
+  /** Match the glyph, label, and code readiness to the focused field. */
   private applyModeChrome(): void {
     if (!this.button) {
       return;
@@ -885,13 +915,35 @@ export class FloatingButton {
       'gf-mode-user',
       'gf-otp-armed'
     );
-    if (this.mode === 'otp') {this.button.classList.add('gf-mode-otp');}
-    else if (this.mode === 'email') {this.button.classList.add('gf-mode-email');}
-    else if (this.mode === 'password') {this.button.classList.add('gf-mode-password');}
-    else if (this.mode === 'user') {this.button.classList.add('gf-mode-user');}
+    if (this.mode === 'otp') {
+      this.button.classList.add('gf-mode-otp');
+    } else if (this.mode === 'email') {
+      this.button.classList.add('gf-mode-email');
+    } else if (this.mode === 'password') {
+      this.button.classList.add('gf-mode-password');
+    } else if (this.mode === 'user') {
+      this.button.classList.add('gf-mode-user');
+    }
 
-    if (this.hasOTPReady || this.isWaitingForOTP) {
+    const isOTPField = this.mode === 'otp';
+    if (isOTPField && (this.hasOTPReady || this.isWaitingForOTP)) {
       this.button.classList.add('gf-otp-armed');
+    }
+    const readiness = !isOTPField
+      ? ''
+      : this.hasOTPReady
+        ? ' · OTP ready'
+        : this.isWaitingForOTP
+          ? ' · waiting for code'
+          : '';
+    this.button.setAttribute(
+      'aria-label',
+      `${this.getActionLabel()}${readiness} · Press Arrow Down for actions`
+    );
+    if (isOTPField && this.isWaitingForOTP && this.state !== 'hidden') {
+      this.showOTPWaitingIndicator();
+    } else {
+      this.hideOTPWaitingIndicator();
     }
   }
 
@@ -923,7 +975,9 @@ export class FloatingButton {
     this.button.classList.add('gf-success');
     setHTML(this.button, IconSystem.getSuccess());
 
-    if (message && this.tooltip) {
+    if (pageStatus.getIsVisible()) {
+      this.hideTooltip();
+    } else if (message && this.tooltip) {
       this.showStatusTooltip(message, 'var(--success)');
     } else {
       this.hideTooltip();
@@ -953,8 +1007,10 @@ export class FloatingButton {
     this.button.classList.add('gf-error');
     setHTML(this.button, IconSystem.getError());
 
-    if (this.tooltip) {
-      this.showStatusTooltip(message ?? 'Action failed', 'var(--error)');
+    if (this.tooltip && !pageStatus.getIsVisible()) {
+      this.showStatusTooltip(message ?? 'Action failed', 'var(--error)', 'alert');
+    } else {
+      this.hideTooltip();
     }
 
     this.stateResetTimeout = setTimeout(() => {
@@ -997,7 +1053,7 @@ export class FloatingButton {
     if (!field || !field.isConnected) {
       return false;
     }
-    const active = document.activeElement;
+    const active = getDeepActiveElement();
     if (!active) {
       return false;
     }
@@ -1034,6 +1090,7 @@ export class FloatingButton {
 
     this.container = document.createElement('div');
     this.container.id = 'ghostfill-fab';
+    this.container.setAttribute('data-theme', resolveTheme(this.themeMode));
     const zIndex = SmartPositioner.getMaxZIndex();
     this.container.style.cssText = `position:fixed;z-index:${zIndex};display:none;pointer-events:auto;`;
 
@@ -1043,14 +1100,52 @@ export class FloatingButton {
     styles.textContent = this.getStyles();
     this.shadowRoot.appendChild(styles);
 
+    // Keep the SDF lens definition inside this closed shadow root. A data URI
+    // avoids extra extension resource exposure and lets strict host CSPs fall
+    // back to the ordinary frosted material below when images are blocked.
+    const svgNs = 'http://www.w3.org/2000/svg';
+    const optics = document.createElementNS(svgNs, 'svg');
+    optics.setAttribute('aria-hidden', 'true');
+    optics.setAttribute('width', '0');
+    optics.setAttribute('height', '0');
+    optics.style.cssText = 'position:absolute;pointer-events:none;overflow:hidden';
+    const filter = document.createElementNS(svgNs, 'filter');
+    filter.setAttribute('id', 'gf-fab-optic');
+    filter.setAttribute('color-interpolation-filters', 'sRGB');
+    const map = document.createElementNS(svgNs, 'feImage');
+    map.setAttribute('href', glassIconMap);
+    map.setAttribute('preserveAspectRatio', 'none');
+    map.setAttribute('width', '100%');
+    map.setAttribute('height', '100%');
+    map.setAttribute('result', 'shape');
+    const displacement = document.createElementNS(svgNs, 'feDisplacementMap');
+    displacement.setAttribute('in', 'SourceGraphic');
+    displacement.setAttribute('in2', 'shape');
+    displacement.setAttribute('scale', '-14');
+    displacement.setAttribute('xChannelSelector', 'R');
+    displacement.setAttribute('yChannelSelector', 'G');
+    filter.append(map, displacement);
+    optics.appendChild(filter);
+    this.shadowRoot.appendChild(optics);
+
     // ── Button ────────────────────────────────────────────
     this.button = document.createElement('button');
     this.button.className = 'gf-fab';
     setHTML(this.button, IconSystem.get('magic'));
-    this.button.setAttribute('aria-label', 'GhostFill — Auto-fill this form');
+    this.button.setAttribute(
+      'aria-label',
+      'GhostFill — Auto-fill this form. Press Arrow Down for actions.'
+    );
     this.button.setAttribute('aria-haspopup', 'menu');
     this.button.setAttribute('aria-expanded', 'false');
     this.shadowRoot.appendChild(this.button);
+
+    const lensImage = new Image();
+    const opticalButton = this.button;
+    lensImage.addEventListener('load', () => opticalButton.classList.add('gf-refractive'), {
+      once: true,
+    });
+    lensImage.src = glassIconMap;
 
     // ── Tooltip ───────────────────────────────────────────
     this.tooltip = document.createElement('div');
@@ -1069,6 +1164,7 @@ export class FloatingButton {
 
     // Link button to tooltip for screen readers
     this.button.setAttribute('aria-describedby', 'gf-tooltip');
+    this.button.setAttribute('aria-keyshortcuts', 'ArrowDown');
     this.button.setAttribute('aria-controls', this.menu.id);
 
     // Attach to <html> to bypass aggressive site body rules
@@ -1122,6 +1218,9 @@ export class FloatingButton {
 
     // ── Touch Long-Press ──────────────────────────────────
     let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let longPressFired = false;
 
     const clearLongPress = (): void => {
       if (longPressTimer !== null) {
@@ -1134,17 +1233,47 @@ export class FloatingButton {
       'touchstart',
       (e) => {
         clearLongPress();
+        const touch = e.touches[0];
+        if (!touch || e.touches.length !== 1) {
+          return;
+        }
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+        longPressFired = false;
         longPressTimer = setTimeout(() => {
-          e.preventDefault();
+          if (this.destroyed) {
+            return;
+          }
+          longPressFired = true;
           this.setState('menu-open');
           longPressTimer = null;
         }, TIMING_MS.LONG_PRESS);
       },
       { passive: false }
     );
-    this.button.addEventListener('touchend', clearLongPress);
-    this.button.addEventListener('touchmove', clearLongPress);
+    this.button.addEventListener(
+      'touchend',
+      (e) => {
+        if (longPressFired) {
+          e.preventDefault();
+        }
+        longPressFired = false;
+        clearLongPress();
+      },
+      { passive: false }
+    );
+    this.button.addEventListener(
+      'touchmove',
+      (e) => {
+        const touch = e.touches[0];
+        if (!touch || Math.hypot(touch.clientX - touchStartX, touch.clientY - touchStartY) > 8) {
+          clearLongPress();
+        }
+      },
+      { passive: true }
+    );
     this.button.addEventListener('touchcancel', clearLongPress);
+    this.cleanupFns.push(clearLongPress);
 
     // ── Hover ─────────────────────────────────────────────
     this.button.addEventListener('mouseenter', () => {
@@ -1159,25 +1288,13 @@ export class FloatingButton {
       if (this.state === 'hovering') {
         this.setState('idle');
       }
-      // Reset magnetic transform
-      this.button!.style.transform = '';
     });
-
-    // Magnetic hover effect
-    this.button.addEventListener('mousemove', (e: MouseEvent) => {
-      if (!this.button) {
-        return;
+    this.button.addEventListener('focus', () => {
+      if (this.button?.matches(':focus-visible')) {
+        this.showTooltip(true);
       }
-      const rect = this.button.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      const deltaX = (e.clientX - centerX) / rect.width;
-      const deltaY = (e.clientY - centerY) / rect.height;
-      const magnetStrength = 4;
-      const moveX = deltaX * magnetStrength;
-      const moveY = deltaY * magnetStrength;
-      this.button.style.transform = `translate(${-2 + moveX}px, ${-2 + moveY}px) scale(1.02)`;
     });
+    this.button.addEventListener('blur', () => this.hideTooltip());
 
     // ── Keyboard Navigation ───────────────────────────────
     this.button.addEventListener('keydown', (e) => {
@@ -1206,28 +1323,13 @@ export class FloatingButton {
   // ═══════════════════════════════════════════════════════════
 
   private async handlePrimaryAction(): Promise<void> {
-    if (this.destroyed) {
+    if (this.destroyed || this.primaryActionInFlight) {
       return;
     }
-
+    this.primaryActionInFlight = true;
     this.setState('loading');
 
     try {
-      // Ultra-advanced context routing: pick the strongest action for this field/page
-      if (this.mode === 'otp' || this.hasOTPReady) {
-        const analysis = this.getPageAnalysis();
-        if (
-          this.mode === 'otp' ||
-          analysis.pageType === 'verification' ||
-          analysis.pageType === '2fa' ||
-          analysis.hasOTPField
-        ) {
-          pageStatus.show('Filling verification code…', 'loading');
-          await this.actionPasteOTP();
-          return;
-        }
-      }
-
       if (this.mode === 'email' && this.currentField instanceof HTMLInputElement) {
         // Fill ACTIVE popup tab email. Disposable is only generated if Temp Mail tab is active.
         pageStatus.show('Injecting email…', 'loading');
@@ -1241,7 +1343,31 @@ export class FloatingButton {
         return;
       }
 
-          pageStatus.show('Analyzing form…', 'loading');
+      // The FAB acts on its focused field. A saved code or page-level wording
+      // must not turn an email/password button into an OTP button.
+      if (this.mode === 'otp') {
+        pageStatus.show('Filling verification code…', 'loading');
+        await this.actionPasteOTP();
+        return;
+      }
+
+      if (this.mode === 'user' && this.currentField instanceof HTMLInputElement) {
+        const { fieldType, confidence } = this.fieldAnalyzer.analyzeField(this.currentField);
+        const action =
+          fieldType === 'first-name'
+            ? 'fill-firstname'
+            : fieldType === 'last-name'
+              ? 'fill-lastname'
+              : fieldType === 'full-name'
+                ? 'fill-fullname'
+                : null;
+        if (action && confidence >= 0.45) {
+          await this.actionFillIdentity(action);
+          return;
+        }
+      }
+
+      pageStatus.show('Analyzing form…', 'loading');
       const result = await this.autoFiller.smartFill();
 
       if (this.destroyed) {
@@ -1292,6 +1418,8 @@ export class FloatingButton {
       const msg = errorMsg || 'Failed to fill';
       pageStatus.error(msg, TIMING_MS.ERROR_DISPLAY);
       this.setState('error', msg);
+    } finally {
+      this.primaryActionInFlight = false;
     }
   }
 
@@ -1301,110 +1429,33 @@ export class FloatingButton {
     if (this.destroyed || !this.isEnabled) {
       return;
     }
-
-    const analysis = this.getPageAnalysis();
-    const useFullScreen =
-      analysis.pageType === 'verification' || analysis.pageType === '2fa' || analysis.hasOTPField;
-
-    // 1. Show Premium Sentinel Overlay
-    this.showAutoFillSentinel(useFullScreen);
-
-    // 2. Perform the fill with the full recovery pipeline.
+    pageStatus.show('Filling verification code…');
     try {
-      const result = await this.autoFiller.fillOTP(otp); // Use full OTP for discover, it handles cleaning
-
+      const filled = await this.autoFiller.fillOTP(otp);
       if (this.destroyed) {
         return;
       }
-
-      if (result) {
+      if (filled) {
         this.presenter?.noteAccept();
-        this.setSentinelMessage('Code secured successfully!');
         this.setState('success');
-        setTimeout(() => this.hideAutoFillSentinel(), 2000);
+        pageStatus.success('Verification code filled');
       } else {
-        this.setSentinelMessage('Something went wrong. Tap to try manually.');
         this.setState('idle');
-        setTimeout(() => this.hideAutoFillSentinel(), 3000);
+        pageStatus.error('No verification code field found. Select the field and try again.');
       }
     } catch (err) {
-      log.error('Sentinel fill failed', err);
-      this.hideAutoFillSentinel();
+      log.error('OTP fill failed', err);
+      this.setState('idle');
+      pageStatus.error('Could not fill the code. Select the verification field and try again.');
     }
   }
-
-  private sentinelOverlay: HTMLDivElement | null = null;
-
-  private showAutoFillSentinel(_fullScreen: boolean): void {
-    if (!this.shadowRoot || this.destroyed) {
-      return;
-    }
-
-    if (!this.sentinelOverlay) {
-      this.sentinelOverlay = document.createElement('div');
-      this.sentinelOverlay.className = 'gf-sentinel-toast';
-      this.shadowRoot.appendChild(this.sentinelOverlay);
-    }
-
-    setHTML(
-      this.sentinelOverlay,
-      `
-      <div class="gf-sentinel-toast-inner">
-        <div class="gf-sentinel-toast-icon">
-          ${IconSystem.get('otp')}
-        </div>
-        <div class="gf-sentinel-toast-text">
-          <div class="gf-sentinel-toast-title">Filling code…</div>
-          <div class="gf-sentinel-toast-subtitle">GhostFill is securing your session</div>
-        </div>
-      </div>
-    `
-    );
-
-    if (this.button) {
-      const btnRect = this.button.getBoundingClientRect();
-      this.sentinelOverlay.style.left = `${btnRect.left - 180}px`;
-      this.sentinelOverlay.style.top = `${btnRect.top - 10}px`;
-    }
-
-    requestAnimationFrame(() => {
-      this.sentinelOverlay?.classList.add('gf-sentinel-toast-visible');
-    });
-  }
-
-  private setSentinelMessage(msg: string): void {
-    const title = this.sentinelOverlay?.querySelector('.gf-sentinel-toast-title');
-    if (title) {
-      title.textContent = msg;
-    }
-    const subtitle = this.sentinelOverlay?.querySelector('.gf-sentinel-toast-subtitle');
-    if (subtitle) {
-      (subtitle as HTMLElement).style.opacity = '0';
-    }
-  }
-
-  private hideAutoFillSentinel(): void {
-    if (!this.sentinelOverlay) {
-      return;
-    }
-    this.sentinelOverlay.classList.remove('gf-sentinel-toast-visible');
-    setTimeout(() => {
-      this.sentinelOverlay?.remove();
-      this.sentinelOverlay = null;
-    }, 500);
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  //  §7.6  M E N U
-  // ═══════════════════════════════════════════════════════════
-
   private openMenuInternal(): void {
     if (!this.menu || !this.shadowRoot || this.destroyed) {
       return;
     }
 
     const analysis = this.getPageAnalysis();
-    const actions = ContextualMenu.buildActions(analysis, this.mode, this.hasOTPReady);
+    const actions = ContextualMenu.buildActions(analysis, this.mode);
 
     setHTML(
       this.menu,
@@ -1493,7 +1544,19 @@ export class FloatingButton {
           break;
         case 'Tab':
           e.preventDefault();
-          this.setState('idle');
+          if (this.menu.getAttribute('role') === 'dialog') {
+            const nextIndex = e.shiftKey
+              ? idx <= 0
+                ? items.length - 1
+                : idx - 1
+              : idx >= items.length - 1
+                ? 0
+                : idx + 1;
+            items[nextIndex]?.focus();
+          } else {
+            this.setState('idle');
+            this.button?.focus();
+          }
           break;
       }
     };
@@ -1509,15 +1572,70 @@ export class FloatingButton {
         this.menuKeyboardHandler = null;
       }
       this.menu.classList.remove('gf-menu-open');
+      this.menu.setAttribute('role', 'menu');
+      this.menu.setAttribute('aria-label', 'GhostFill actions');
+      this.menu.removeAttribute('aria-labelledby');
+      this.menu.removeAttribute('aria-describedby');
       this.button?.setAttribute('aria-expanded', 'false');
       clearHTML(this.menu);
     }
+  }
+
+  private openClearFieldsConfirmation(): void {
+    if (!this.menu) {
+      return;
+    }
+
+    if (this.menuKeyboardHandler) {
+      this.menu.removeEventListener('keydown', this.menuKeyboardHandler);
+      this.menuKeyboardHandler = null;
+    }
+
+    this.menu.setAttribute('role', 'dialog');
+    this.menu.removeAttribute('aria-label');
+    this.menu.setAttribute('aria-labelledby', 'gf-clear-title');
+    this.menu.setAttribute('aria-describedby', 'gf-clear-description');
+    setHTML(
+      this.menu,
+      `<div class="gf-menu-confirmation">
+        <strong id="gf-clear-title">Clear form fields?</strong>
+        <p id="gf-clear-description">This removes values entered in this form.</p>
+        <div class="gf-menu-confirmation-actions">
+          <button class="gf-menu-item" data-action="cancel-clear-fields" type="button">Cancel</button>
+          <button class="gf-menu-item gf-menu-item-danger" data-action="confirm-clear-fields" type="button">Clear fields</button>
+        </div>
+      </div>`
+    );
+
+    this.menu.querySelectorAll<HTMLButtonElement>('.gf-menu-item').forEach((item) => {
+      item.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void this.handleMenuAction(item.dataset.action ?? '');
+      });
+    });
+
+    this.setupMenuKeyboardNavigation();
+    this.menu.querySelector<HTMLButtonElement>('[data-action="cancel-clear-fields"]')?.focus();
   }
 
   private async handleMenuAction(actionId: string): Promise<void> {
     if (this.destroyed) {
       return;
     }
+
+    if (actionId === 'clear-fields') {
+      this.openClearFieldsConfirmation();
+      return;
+    }
+
+    if (actionId === 'cancel-clear-fields') {
+      this.setState('idle');
+      this.button?.focus();
+      return;
+    }
+
+    this.closeMenuSilent();
     this.setState('loading');
 
     try {
@@ -1546,14 +1664,9 @@ export class FloatingButton {
           await this.actionFillIdentity(actionId);
           break;
 
-        case 'clear-fields':
+        case 'confirm-clear-fields':
           await this.autoFiller.clearForm();
-          pageStatus.success('Fields cleared', 1000);
-          this.setState('idle');
-          break;
-
-        case 'copy-field-diagnostics':
-          await collectFieldDiagnostics();
+          pageStatus.success('Form fields cleared', 1000);
           this.setState('idle');
           break;
 
@@ -1587,15 +1700,34 @@ export class FloatingButton {
   // ── Individual Action Handlers ──────────────────────────
 
   private async actionPasteOTP(): Promise<void> {
+    // Do not consume a saved code while the user is still on the email/CAPTCHA
+    // step. Require a current OTP field before reading the code or showing a
+    // misleading "Filling" status.
+    if (!PageAnalyzer.analyze().hasOTPField) {
+      pageStatus.error(
+        'Open the verification-code step before filling a code',
+        TIMING_MS.ERROR_DISPLAY
+      );
+      this.setState('idle');
+      return;
+    }
+
     const resp = (await safeSendMessage({ action: 'GET_LAST_OTP' })) as GetLastOTPResponse | null;
 
-    if (resp?.lastOTP?.code) {
+    if (this.destroyed) {
+      return;
+    }
+
+    if (resp?.success && resp.lastOTP?.code) {
       const code = resp.lastOTP.code;
       const isSuspicious = /^(\d)\1{3,}$/.test(code.replace(/[-\s]/g, ''));
 
       if (isSuspicious) {
-        pageStatus.error('OTP looks invalid (repeated digits)', TIMING_MS.ERROR_DISPLAY);
-        this.setState('error', 'OTP looks invalid');
+        pageStatus.error(
+          'Verification code looks invalid (repeated digits)',
+          TIMING_MS.ERROR_DISPLAY
+        );
+        this.setState('error', 'Verification code looks invalid');
         log.warn('FAB blocked suspicious OTP fill', { code: code.substring(0, 2) + '••••' });
         return;
       }
@@ -1610,21 +1742,27 @@ export class FloatingButton {
 
       if (filled) {
         this.presenter?.noteAccept();
-        pageStatus.success('Code filled!', TIMING_MS.SUCCESS_DISPLAY);
-        this.setState('success', 'Code filled!');
-        safeSendMessage({ action: 'MARK_OTP_USED' }).catch((err) => {
+        pageStatus.success('Verification code filled', TIMING_MS.SUCCESS_DISPLAY);
+        this.setState('success', 'Verification code filled');
+        safeSendMessage({ action: 'MARK_OTP_USED', payload: { code } }).catch((err) => {
           log.warn('Failed to mark OTP as used', err);
         });
       } else {
-        pageStatus.error('No OTP field found', TIMING_MS.ERROR_DISPLAY);
-        this.setState('error', 'No OTP field found');
+        pageStatus.error('No verification code field found', TIMING_MS.ERROR_DISPLAY);
+        this.setState('error', 'No verification code field found');
       }
     } else {
-      const message = resp?.error === 'Still waiting for new email...'
-        ? 'Waiting for a new code'
-        : 'No code yet — check your inbox';
-      pageStatus.error(message, TIMING_MS.ERROR_DISPLAY);
-      this.setState('error', message);
+      const message =
+        resp?.error === 'Still waiting for new email...'
+          ? 'Waiting for a new code'
+          : resp?.error === 'Saved code belongs to a different site'
+            ? 'Code found — review the email in GhostFill before using it here'
+            : !resp || !resp.success
+              ? 'Could not check your code — try again'
+              : 'No code yet — check your inbox';
+      log.info('Code fill unavailable', { reason: resp?.error || message });
+      pageStatus.info(message, TIMING_MS.ERROR_DISPLAY);
+      this.setState('idle');
     }
   }
 
@@ -1650,6 +1788,16 @@ export class FloatingButton {
   ): Promise<void> {
     const { allowGenerateDisposable = false } = opts;
 
+    const target = await this.autoFiller.resolveField('email', this.currentField);
+    if (this.destroyed) {
+      return;
+    }
+    if (!target) {
+      pageStatus.info('Select an email field to fill', TIMING_MS.ERROR_DISPLAY);
+      this.setState('idle');
+      return;
+    }
+
     // 1) Resolve identity for the active popup tab (GET_IDENTITY is tab-aware)
     const idResp = (await this.fetchIdentityCached()) as {
       success?: boolean;
@@ -1658,7 +1806,9 @@ export class FloatingButton {
       error?: string;
     } | null;
 
-    if (this.destroyed) {return;}
+    if (this.destroyed) {
+      return;
+    }
 
     const preferred =
       idResp?.preferredEmailType || idResp?.identity?.preferredEmailType || 'disposable';
@@ -1668,8 +1818,11 @@ export class FloatingButton {
     if (!email && preferred === 'disposable' && allowGenerateDisposable) {
       const gen = (await safeSendMessage({
         action: 'GENERATE_EMAIL',
+        payload: { originUrl: window.location.origin },
       })) as GenerateEmailResponse | null;
-      if (this.destroyed) {return;}
+      if (this.destroyed) {
+        return;
+      }
       if (gen?.success && gen.email?.fullEmail) {
         email = gen.email.fullEmail;
       } else {
@@ -1709,9 +1862,11 @@ export class FloatingButton {
       return;
     }
 
-    const filled = await this.autoFiller.fillFieldIntoTarget('email', email, this.currentField);
+    const filled = await this.autoFiller.fillFieldIntoTarget('email', email, target.element);
 
-    if (this.destroyed) {return;}
+    if (this.destroyed) {
+      return;
+    }
 
     if (filled) {
       this.presenter?.noteAccept();
@@ -1720,8 +1875,9 @@ export class FloatingButton {
       this.setState('success', `${tag} filled!`);
       log.info('FAB filled email for active tab', { preferred, email });
     } else {
-      pageStatus.error('Could not fill email field', TIMING_MS.ERROR_DISPLAY);
-      this.setState('error', 'Could not fill email field');
+      const message = 'Could not fill the email. Select the email field and try again.';
+      pageStatus.error(message, TIMING_MS.ERROR_DISPLAY);
+      this.setState('error', message);
     }
   }
 
@@ -1740,7 +1896,9 @@ export class FloatingButton {
         resp.result.password,
         this.currentField
       );
-      if (this.destroyed) {return;}
+      if (this.destroyed) {
+        return;
+      }
 
       if (filled) {
         this.presenter?.noteAccept();
@@ -1788,17 +1946,24 @@ export class FloatingButton {
 
     if (value) {
       let resolvedType: FieldType = 'unknown';
-      if (actionId === 'fill-firstname') {resolvedType = 'first-name';}
-      else if (actionId === 'fill-lastname') {resolvedType = 'last-name';}
-      else if (actionId === 'fill-fullname') {resolvedType = 'full-name';}
-      else if (actionId === 'fill-username') {resolvedType = 'username';}
+      if (actionId === 'fill-firstname') {
+        resolvedType = 'first-name';
+      } else if (actionId === 'fill-lastname') {
+        resolvedType = 'last-name';
+      } else if (actionId === 'fill-fullname') {
+        resolvedType = 'full-name';
+      } else if (actionId === 'fill-username') {
+        resolvedType = 'username';
+      }
 
       const filled = await this.autoFiller.fillFieldIntoTarget(
         resolvedType,
         value,
         this.currentField
       );
-      if (this.destroyed) {return;}
+      if (this.destroyed) {
+        return;
+      }
 
       if (filled) {
         this.presenter?.noteAccept();
@@ -1818,17 +1983,60 @@ export class FloatingButton {
   //  §7.7  T O O L T I P
   // ═══════════════════════════════════════════════════════════
 
-  private showTooltip(): void {
+  private getActionLabel(): string {
+    if (this.mode === 'user' && this.currentField instanceof HTMLInputElement) {
+      const { fieldType } = this.fieldAnalyzer.analyzeField(this.currentField);
+      const labels: Partial<Record<FieldType, string>> = {
+        'first-name': 'Fill first name',
+        'last-name': 'Fill last name',
+        'full-name': 'Fill full name',
+        username: 'Fill username',
+      };
+      if (labels[fieldType]) {
+        return labels[fieldType]!;
+      }
+    }
+    const type = this.mode === 'magic' ? 'generic' : (this.mode as ClassifierFieldType);
+    return getFieldTooltip(type);
+  }
+
+  private showTooltip(immediate = false): void {
+    this.hideTooltip();
+    if (!this.tooltip || (this.state !== 'idle' && this.state !== 'hovering')) {
+      return;
+    }
+    this.tooltip.textContent = this.getActionLabel();
+    const reveal = (): void => {
+      this.tooltipTimeout = null;
+      if (
+        !this.destroyed &&
+        (this.state === 'hovering' || this.button?.matches(':focus-visible'))
+      ) {
+        this.positionTooltip();
+        this.tooltip?.classList.add('gf-tooltip-visible');
+      }
+    };
+    if (immediate) {
+      reveal();
+    } else {
+      this.tooltipTimeout = setTimeout(reveal, TIMING_MS.TOOLTIP_SHOW_DELAY);
+    }
+  }
+
+  private positionTooltip(): void {
     if (!this.tooltip) {
       return;
     }
-    const tooltipMode = this.mode === 'magic' ? 'generic' : (this.mode as ClassifierFieldType);
-    this.tooltip.textContent = getFieldTooltip(tooltipMode);
-    this.tooltipTimeout = setTimeout(() => {
-      if (!this.destroyed) {
-        this.tooltip?.classList.add('gf-tooltip-visible');
-      }
-    }, TIMING_MS.TOOLTIP_SHOW_DELAY);
+    this.tooltip.style.setProperty('--gf-tooltip-shift', '0px');
+    this.tooltip.style.top = '';
+    this.tooltip.style.bottom = '';
+    const rect = this.tooltip.getBoundingClientRect();
+    const shift = Math.max(8 - rect.left, Math.min(0, window.innerWidth - 8 - rect.right));
+    this.tooltip.style.setProperty('--gf-tooltip-shift', `${shift}px`);
+    if (rect.top < 8) {
+      this.tooltip.style.top = 'calc(100% + 12px)';
+      this.tooltip.style.bottom = 'auto';
+    }
   }
 
   private hideTooltip(): void {
@@ -1839,13 +2047,21 @@ export class FloatingButton {
     this.tooltip?.classList.remove('gf-tooltip-visible');
   }
 
-  private showStatusTooltip(text: string, bgColor: string): void {
+  private showStatusTooltip(
+    text: string,
+    accentColor: string,
+    role: 'status' | 'alert' = 'status'
+  ): void {
+    this.hideTooltip();
     if (!this.tooltip) {
       return;
     }
     this.tooltip.textContent = text;
-    this.tooltip.style.backgroundColor = bgColor;
-    this.tooltip.style.color = 'white';
+    this.tooltip.setAttribute('role', role);
+    this.tooltip.setAttribute('aria-live', role === 'alert' ? 'assertive' : 'polite');
+    this.tooltip.setAttribute('aria-atomic', 'true');
+    this.tooltip.style.borderColor = accentColor;
+    this.positionTooltip();
     this.tooltip.classList.add('gf-tooltip-visible');
   }
 
@@ -1854,32 +2070,10 @@ export class FloatingButton {
       return;
     }
     this.tooltip.classList.remove('gf-tooltip-visible');
-    this.tooltip.style.backgroundColor = '';
-    this.tooltip.style.color = '';
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  //  §7.8  B A D G E
-  // ═══════════════════════════════════════════════════════════
-
-  private updateBadge(): void {
-    if (!this.button || !this.shadowRoot) {
-      return;
-    }
-
-    // Remove existing badge
-    const existing = this.button.querySelector('.gf-badge');
-    if (existing) {
-      existing.remove();
-    }
-
-    if (this.hasOTPReady) {
-      const badge = document.createElement('span');
-      badge.className = 'gf-badge gf-badge-otp-ready';
-      badge.textContent = '!';
-      badge.setAttribute('aria-label', 'OTP code ready');
-      this.button.appendChild(badge);
-    }
+    this.tooltip.setAttribute('role', 'tooltip');
+    this.tooltip.removeAttribute('aria-live');
+    this.tooltip.removeAttribute('aria-atomic');
+    this.tooltip.style.borderColor = '';
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -1920,11 +2114,8 @@ export class FloatingButton {
 
   private hideOTPWaitingIndicator(): void {
     if (this.otpWaitingIndicator) {
-      this.otpWaitingIndicator.classList.remove('gf-otp-waiting-visible');
-      setTimeout(() => {
-        this.otpWaitingIndicator?.remove();
-        this.otpWaitingIndicator = null;
-      }, 400);
+      this.otpWaitingIndicator.remove();
+      this.otpWaitingIndicator = null;
     }
 
     if (this.otpWaitingInterval) {
@@ -1954,10 +2145,14 @@ export class FloatingButton {
     };
     document.addEventListener('click', onDocClick, true);
     this.cleanupFns.push(() => document.removeEventListener('click', onDocClick, true));
-  }
 
-  private handleFocusChange(target: EventTarget | null): void {
-    this.presenter?.handleFocusIn(target);
+    const dismissTooltip = (): void => this.hideTooltip();
+    window.addEventListener('scroll', dismissTooltip, { passive: true, capture: true });
+    window.addEventListener('resize', dismissTooltip);
+    this.cleanupFns.push(() => {
+      window.removeEventListener('scroll', dismissTooltip, true);
+      window.removeEventListener('resize', dismissTooltip);
+    });
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -1965,38 +2160,8 @@ export class FloatingButton {
   // ═══════════════════════════════════════════════════════════
 
   private getStyles(): string {
-    return `:host {
-  /* Spectre palette mapped to FAB */
-  ${generateHostTokens()}
-}
+    return `${generateHostThemeStyles()}
 ${fabStyles}`;
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  //  §7.10  K E Y B O A R D   S H O R T C U T
-  // ═══════════════════════════════════════════════════════════
-
-  private setupKeyboardShortcut(): void {
-    const onKeydown = (e: KeyboardEvent): void => {
-      if (this.destroyed) {
-        return;
-      }
-      if (
-        (e.ctrlKey || e.metaKey) &&
-        e.shiftKey &&
-        e.key.toLowerCase() === FloatingButton.SHORTCUT_KEY
-      ) {
-        e.preventDefault();
-        e.stopPropagation();
-        log.info('⌨️ Keyboard shortcut triggered');
-        void this.handlePrimaryAction().catch((e) => {
-          /* handled internally by handlePrimaryAction */
-          log.error('Unexpected error in primary action', e);
-        });
-      }
-    };
-    document.addEventListener('keydown', onKeydown, true);
-    this.cleanupFns.push(() => document.removeEventListener('keydown', onKeydown, true));
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -2017,10 +2182,15 @@ ${fabStyles}`;
 
   private setMode(mode: ButtonMode): void {
     this.mode = mode;
-    this.applyModeChrome();
-    if (this.button && this.state !== 'loading' && this.state !== 'success' && this.state !== 'error') {
+    if (
+      this.button &&
+      this.state !== 'loading' &&
+      this.state !== 'success' &&
+      this.state !== 'error'
+    ) {
       setHTML(this.button, IconSystem.get(this.mode));
     }
+    this.applyModeChrome();
   }
 
   private applyPlacement(placement: PlacementResult): void {
@@ -2041,6 +2211,9 @@ ${fabStyles}`;
     this.ensureContainerAttached();
     this.cancelHideTimer();
 
+    if (this.currentField !== field) {
+      this.currentField?.removeAttribute('data-ghostfill-fab-active');
+    }
     this.currentField = field;
     this.currentFieldRef = new WeakRef(field);
     this.currentFieldRect = null;
@@ -2093,7 +2266,8 @@ ${fabStyles}`;
   // ═══════════════════════════════════════════════════════════
 
   private getPageAnalysis(): PageAnalysis {
-    if (!this.pageAnalysis) {
+    if (!this.pageAnalysis || this.pageAnalysisHref !== location.href) {
+      this.pageAnalysisHref = location.href;
       this.pageAnalysis = PageAnalyzer.analyze();
       log.debug('Page analysed:', {
         type: this.pageAnalysis.pageType,

@@ -1,0 +1,843 @@
+/* Popup action system. Imported last to give every button one consistent
+   shape and state after the shared primitives and optical material rules. */
+
+/* Labeled actions share a 44px target, a compact type scale, and a restrained
+   silhouette. These overrides keep the many existing flows visually related. */
+.app
+  :is(
+    .gf-btn,
+    .identity-action-btn,
+    .alias-connect-btn,
+    .alias-copy-btn,
+    .alias-oauth-connect-btn,
+    .hub-gmail-connect-btn,
+    .alias-message-action-btn,
+    .email-hero-otp-btn,
+    .email-hero-link-btn,
+    .onboarding-btn
+  ) {
+  min-height: 44px;
+  padding-inline: 14px;
+  gap: 7px;
+  border-width: 1px;
+  border-style: solid;
+  border-radius: 12px;
+  font-family: var(--gf-font-body);
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  filter: none;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    transform 120ms ease;
+}
+
+.app
+  :is(
+    .gf-btn,
+    .identity-action-btn,
+    .alias-connect-btn,
+    .alias-copy-btn,
+    .alias-oauth-connect-btn,
+    .hub-gmail-connect-btn,
+    .alias-message-action-btn,
+    .email-hero-otp-btn,
+    .email-hero-link-btn,
+    .onboarding-btn
+  )
+  > svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  stroke-width: 2;
+}
+
+/* Clear control bodies with a lit upper rim and a shaded lower meniscus. */
+.app
+  :is(
+    .gf-btn:not(.gf-btn--primary, .gf-btn--danger, .gf-btn--ghost),
+    .identity-action-btn:not(.gf-btn--primary),
+    .alias-copy-btn,
+    .alias-message-action-btn:not(.alias-message-action-btn--primary),
+    .alias-connect-btn.secondary-btn,
+    .otp-action-secondary
+  ) {
+  color: var(--gf-ink);
+  background: var(--gf-glass-control);
+  border-color: var(--gf-glass-stroke);
+  box-shadow: var(--gf-glass-inner), var(--gf-glass-control-shadow);
+  -webkit-backdrop-filter: blur(5px) saturate(160%);
+  backdrop-filter: blur(5px) saturate(160%);
+}
+
+.app .alias-message-action-btn:not(.alias-message-action-btn--primary) {
+  -webkit-backdrop-filter: blur(5px) saturate(160%);
+  backdrop-filter: blur(5px) saturate(160%);
+  -webkit-backdrop-filter: blur(5px) url(#gf-optic-control) saturate(160%);
+  backdrop-filter: blur(5px) url(#gf-optic-control) saturate(160%);
+}
+
+/* The compact 44px footer utility uses the icon map, not the wide button map. */
+.app .alias-message-action-btn.alias-message-action-btn--icon {
+  -webkit-backdrop-filter: blur(4px) saturate(160%);
+  backdrop-filter: blur(4px) saturate(160%);
+  -webkit-backdrop-filter: blur(4px) url(#gf-optic-icon) saturate(160%);
+  backdrop-filter: blur(4px) url(#gf-optic-icon) saturate(160%);
+}
+
+.app
+  :is(
+    .gf-btn:not(.gf-btn--primary, .gf-btn--danger, .gf-btn--ghost),
+    .identity-action-btn:not(.gf-btn--primary),
+    .alias-copy-btn,
+    .alias-message-action-btn:not(.alias-message-action-btn--primary),
+    .alias-connect-btn.secondary-btn,
+    .otp-action-secondary
+  ):hover:not(:disabled) {
+  color: var(--gf-ink);
+  background: var(--gf-glass-control-hover);
+  border-color: var(--gf-glass-border);
+  box-shadow:
+    var(--gf-glass-inner),
+    0 2px 5px rgba(0, 0, 0, 0.08);
+  filter: none;
+}
+
+.app .alias-copy-btn {
+  border: 1px solid var(--gf-glass-stroke);
+}
+
+.app .alias-copy-btn--copied {
+  color: var(--gf-mint-text);
+}
+
+/* Tinted glass keeps enough density for white action labels in both themes. */
+.app
+  :is(
+    .gf-btn--primary,
+    .alias-connect-btn:not(.secondary-btn),
+    .alias-oauth-connect-btn,
+    .hub-gmail-connect-btn,
+    .alias-message-action-btn--primary,
+    .email-hero-otp-btn,
+    .email-hero-link-btn,
+    .onboarding-btn
+  ) {
+  color: #fff;
+  background: var(--gf-glass-accent);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 2px 6px rgba(0, 72, 160, 0.16);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.app
+  :is(
+    .gf-btn--primary,
+    .alias-connect-btn:not(.secondary-btn),
+    .alias-oauth-connect-btn,
+    .hub-gmail-connect-btn,
+    .alias-message-action-btn--primary,
+    .email-hero-otp-btn,
+    .email-hero-link-btn,
+    .onboarding-btn
+  ):hover:not(:disabled) {
+  color: #fff;
+  background: var(--gf-primary-fill-deep);
+  border-color: rgba(255, 255, 255, 0.24);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.23),
+    0 3px 8px rgba(0, 72, 160, 0.2);
+  filter: none;
+  opacity: 1;
+}
+
+.app .gf-btn--danger {
+  color: #fff;
+  background: var(--gf-danger-fill);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 2px 6px rgba(var(--gf-danger-rgb), 0.14);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.app .gf-btn--danger:hover:not(:disabled) {
+  color: #fff;
+  background: var(--gf-danger-fill-deep);
+  border-color: rgba(255, 255, 255, 0.23);
+  filter: none;
+}
+
+.app
+  :is(
+    .gf-btn,
+    .identity-action-btn,
+    .alias-copy-btn,
+    .alias-connect-btn,
+    .alias-oauth-connect-btn,
+    .hub-gmail-connect-btn,
+    .alias-message-action-btn,
+    .onboarding-btn
+  ):active:not(:disabled) {
+  transform: scale(0.985);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.13);
+}
+
+.app
+  :is(
+    .gf-btn,
+    .identity-action-btn,
+    .alias-copy-btn,
+    .alias-connect-btn,
+    .alias-oauth-connect-btn,
+    .hub-gmail-connect-btn,
+    .alias-message-action-btn,
+    .onboarding-btn
+  ):disabled {
+  opacity: 0.56;
+  transform: none;
+  filter: none;
+  box-shadow: none;
+}
+
+/* The 44px pointer area is larger than the 34px visible icon capsule. */
+.app
+  :is(
+    .header-actions .gf-icon-btn,
+    .header-actions .icon-button,
+    .identity-actions .action-icon,
+    .inbox-header-row .action-icon,
+    .alias-inbox-refresh,
+    .alias-message-modal-close,
+    .detail-view-header .detail-view-back-btn,
+    .eye-button,
+    .alias-inbox-open-btn,
+    .alias-history-copy-btn,
+    .alias-history-item .action-icon,
+    .copy-button,
+    .email-back-btn
+  ) {
+  position: relative;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  color: var(--gf-ink-soft);
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  filter: none;
+  transform: none;
+  isolation: isolate;
+  transition:
+    color 120ms ease,
+    transform 120ms var(--gf-ease);
+}
+
+.app
+  :is(
+    .header-actions .gf-icon-btn,
+    .header-actions .icon-button,
+    .identity-actions .action-icon,
+    .inbox-header-row .action-icon,
+    .alias-inbox-refresh,
+    .alias-message-modal-close,
+    .detail-view-header .detail-view-back-btn,
+    .eye-button,
+    .alias-inbox-open-btn,
+    .alias-history-copy-btn,
+    .alias-history-item .action-icon,
+    .copy-button,
+    .email-back-btn
+  )::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  inset: 5px;
+  border: 1px solid var(--gf-glass-stroke);
+  border-radius: 11px;
+  background: var(--gf-glass-control);
+  box-shadow: var(--gf-glass-inner), var(--gf-glass-control-shadow);
+  -webkit-backdrop-filter: blur(3px) saturate(160%);
+  backdrop-filter: blur(3px) saturate(160%);
+  -webkit-backdrop-filter: blur(3px) url(#gf-optic-icon) saturate(160%);
+  backdrop-filter: blur(3px) url(#gf-optic-icon) saturate(160%);
+  pointer-events: none;
+  transition: transform 150ms var(--gf-ease);
+}
+
+.app
+  :is(
+    .header-actions .gf-icon-btn,
+    .header-actions .icon-button,
+    .identity-actions .action-icon,
+    .inbox-header-row .action-icon,
+    .alias-inbox-refresh,
+    .alias-message-modal-close,
+    .detail-view-header .detail-view-back-btn,
+    .eye-button,
+    .alias-inbox-open-btn,
+    .alias-history-copy-btn,
+    .alias-history-item .action-icon,
+    .copy-button,
+    .email-back-btn
+  )::after,
+.app .hub-email-selector-bg::after {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  padding: 1px;
+  border-radius: 11px;
+  background: conic-gradient(
+    from 135deg,
+    transparent,
+    var(--gf-glass-highlight) 18%,
+    transparent 32%,
+    transparent 52%,
+    var(--gf-glass-border) 68%,
+    transparent 82%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.65;
+  transition:
+    opacity 160ms var(--gf-ease),
+    transform 150ms var(--gf-ease);
+}
+
+.app .hub-email-selector-bg::after {
+  inset: -1px;
+  border-radius: inherit;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .app
+    :is(
+      .header-actions .gf-icon-btn,
+      .header-actions .icon-button,
+      .identity-actions .action-icon,
+      .inbox-header-row .action-icon,
+      .alias-inbox-refresh,
+      .alias-message-modal-close,
+      .detail-view-header .detail-view-back-btn,
+      .eye-button,
+      .alias-inbox-open-btn,
+      .alias-history-copy-btn,
+      .alias-history-item .action-icon,
+      .copy-button,
+      .email-back-btn
+    ):hover:not(:disabled)::after {
+    opacity: 1;
+  }
+}
+
+.app
+  :is(
+    .header-actions .gf-icon-btn,
+    .header-actions .icon-button,
+    .identity-actions .action-icon,
+    .inbox-header-row .action-icon,
+    .alias-inbox-refresh,
+    .alias-message-modal-close,
+    .detail-view-header .detail-view-back-btn,
+    .eye-button,
+    .alias-inbox-open-btn,
+    .alias-history-copy-btn,
+    .alias-history-item .action-icon,
+    .copy-button,
+    .email-back-btn
+  )
+  > svg {
+  position: relative;
+  z-index: 1;
+}
+
+.app
+  :is(
+    .header-actions .gf-icon-btn,
+    .header-actions .icon-button,
+    .identity-actions .action-icon,
+    .inbox-header-row .action-icon,
+    .alias-inbox-refresh,
+    .alias-message-modal-close,
+    .detail-view-header .detail-view-back-btn,
+    .eye-button,
+    .alias-inbox-open-btn,
+    .alias-history-copy-btn,
+    .alias-history-item .action-icon,
+    .copy-button,
+    .email-back-btn
+  ):hover:not(:disabled) {
+  color: var(--gf-ink);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.app
+  :is(
+    .header-actions .gf-icon-btn,
+    .header-actions .icon-button,
+    .identity-actions .action-icon,
+    .inbox-header-row .action-icon,
+    .alias-inbox-refresh,
+    .alias-message-modal-close,
+    .detail-view-header .detail-view-back-btn,
+    .eye-button,
+    .alias-inbox-open-btn,
+    .alias-history-copy-btn,
+    .alias-history-item .action-icon,
+    .copy-button,
+    .email-back-btn
+  ):hover:not(:disabled)::before {
+  border-color: var(--gf-glass-border);
+  background: var(--gf-glass-control-hover);
+}
+
+.app
+  :is(
+    .header-actions .gf-icon-btn,
+    .header-actions .icon-button,
+    .alias-message-modal-close,
+    .detail-view-header .detail-view-back-btn,
+    .eye-button,
+    .identity-actions .action-icon,
+    .inbox-header-row .action-icon,
+    .alias-inbox-refresh,
+    .alias-inbox-open-btn,
+    .alias-history-copy-btn,
+    .alias-history-item .action-icon,
+    .copy-button,
+    .email-back-btn
+  ):active:not(:disabled) {
+  transform: none;
+}
+
+/* The lens inflates inside its fixed 44px target; its glyph stays sharp and
+   stationary. This adapts the reference kit's press growth to a compact UI. */
+.app
+  :is(
+    .gf-icon-btn,
+    .icon-button,
+    .action-icon,
+    .alias-inbox-refresh,
+    .alias-message-modal-close,
+    .detail-view-back-btn,
+    .eye-button,
+    .alias-inbox-open-btn,
+    .alias-history-copy-btn,
+    .copy-button,
+    .email-back-btn
+  ):active:not(:disabled, :focus-visible)::before,
+.app
+  :is(
+    .gf-icon-btn,
+    .icon-button,
+    .action-icon,
+    .alias-inbox-refresh,
+    .alias-message-modal-close,
+    .detail-view-back-btn,
+    .eye-button,
+    .alias-inbox-open-btn,
+    .alias-history-copy-btn,
+    .copy-button,
+    .email-back-btn
+  ):active:not(:disabled, :focus-visible)::after {
+  transform: scale(1.05);
+  opacity: 1;
+}
+
+.app :is(.action-icon.success, .copy-button.copy-success) {
+  color: var(--gf-mint-text);
+}
+
+.app :is(.header-actions .gf-icon-btn, .header-actions .icon-button) > svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.9;
+}
+
+.app
+  :is(
+    .identity-actions .action-icon,
+    .inbox-header-row .action-icon,
+    .alias-inbox-refresh,
+    .alias-inbox-open-btn,
+    .alias-history-copy-btn,
+    .alias-history-item .action-icon,
+    .copy-button,
+    .email-back-btn
+  )
+  > svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2;
+}
+
+/* A single curved lens moves over fixed labels. The track never refracts
+   underneath it, avoiding the nested glass defect in both reference kits. */
+.app :is(.hub-email-selector, .alias-tabs, .alias-message-modal-view-toggle) {
+  background: var(--gf-glass-clear);
+  border-color: var(--gf-glass-stroke);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.app :is(.hub-email-selector-bg, .alias-tab-bg) {
+  background: var(--gf-glass-control);
+  border-color: var(--gf-glass-border);
+  box-shadow: var(--gf-glass-inner), var(--gf-glass-control-shadow);
+  -webkit-backdrop-filter: blur(5px) saturate(145%);
+  backdrop-filter: blur(5px) saturate(145%);
+}
+
+.app .hub-email-selector-bg {
+  -webkit-backdrop-filter: blur(4px) saturate(160%);
+  backdrop-filter: blur(4px) saturate(160%);
+  -webkit-backdrop-filter: blur(4px) url(#gf-optic-pill) saturate(160%);
+  backdrop-filter: blur(4px) url(#gf-optic-pill) saturate(160%);
+}
+
+/* The message format control keeps one glass lens that travels between its
+   two choices. The text stays fixed, so switching formats never moves labels. */
+.app .alias-message-modal-actions .alias-message-modal-view-toggle {
+  position: relative;
+  isolation: isolate;
+  flex: 0 0 148px;
+  width: 148px;
+  max-width: 100%;
+  height: 44px;
+  gap: 0;
+  padding: 0;
+  border: 0;
+  background: var(--gf-glass-clear);
+  box-shadow: none;
+}
+
+.app .alias-message-modal-view-toggle::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  top: 4px;
+  bottom: 4px;
+  left: 3px;
+  width: calc(50% - 4px);
+  border: 1px solid var(--gf-glass-border);
+  border-radius: 999px;
+  background: var(--gf-glass-control);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  pointer-events: none;
+  transform: translateX(0);
+  transition: transform 180ms var(--gf-ease);
+}
+
+.app .alias-message-modal-view-toggle[data-view-mode='text']::before {
+  transform: translateX(calc(100% + 2px));
+}
+
+.app .alias-message-modal-view-toggle .alias-view-toggle-btn {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  padding-inline: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.app :is(.hub-email-selector-btn, .alias-tab-btn, .alias-view-toggle-btn) {
+  color: var(--gf-ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.app
+  :is(
+    .hub-email-selector-btn--active,
+    .alias-tab-btn[aria-selected='true'],
+    .alias-tab-btn.active,
+    .alias-view-toggle-btn--active
+  ) {
+  color: var(--gf-ink);
+  font-weight: 680;
+}
+
+/* One completion action and compact format/utility controls protect reading space. */
+.app .alias-message-modal-actions {
+  gap: 7px;
+  padding: 8px 10px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.app .alias-message-action-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-inline: 9px;
+  font-size: 12px;
+}
+
+.app .alias-message-action-btn--icon {
+  flex: 0 0 44px;
+  padding: 0;
+}
+
+.app .alias-message-action-btn--copy-code {
+  min-width: max-content;
+}
+
+.app .alias-message-action-btn > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Inbox shortcut actions retain their meaning without looking like two more
+   primary CTAs inside a message row. */
+.app :is(.otp-badge, .link-badge) {
+  position: relative;
+  isolation: isolate;
+  min-height: 44px;
+  padding-inline: 10px;
+  gap: 5px;
+  color: var(--gf-primary-text);
+  font-family: var(--gf-font-body);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.app :is(.otp-badge, .link-badge)::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  inset: 5px 0;
+  border: 1px solid var(--gf-glass-stroke);
+  border-radius: 10px;
+  background: var(--gf-glass-control);
+  box-shadow:
+    var(--gf-glass-inner),
+    0 2px 5px rgba(var(--gf-ink-rgb), 0.06);
+  -webkit-backdrop-filter: blur(5px) saturate(140%);
+  backdrop-filter: blur(5px) saturate(140%);
+  pointer-events: none;
+}
+
+.app .otp-badge .otp-badge-code {
+  color: var(--gf-ink);
+  font-family: var(--gf-font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.app .link-badge .otp-badge-code {
+  color: var(--gf-primary-text);
+  font-family: var(--gf-font-body);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.app .inbox-action-label {
+  font-size: 10.5px;
+  color: var(--gf-ink-soft);
+}
+
+.app :is(.otp-badge, .link-badge) > * {
+  position: relative;
+  z-index: 1;
+}
+
+.app :is(.otp-badge, .link-badge):hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+}
+
+.app :is(.otp-badge, .link-badge):hover:not(:disabled)::before {
+  background: var(--gf-glass-control-hover);
+  border-color: var(--gf-glass-border);
+}
+
+/* Inline navigation is a label with a generous hit target, not another card. */
+.app :is(.view-all-btn, .email-viewer-expand-btn) {
+  min-height: 44px;
+  padding-inline: 11px;
+  color: var(--gf-primary-text);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.app :is(.view-all-btn, .email-viewer-expand-btn):hover {
+  color: var(--gf-primary-text);
+  background: rgba(var(--gf-primary-rgb), 0.08);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* Destructive account utilities read as text until the pointer approaches. */
+.app :is(.alias-clear-history-btn, .inbox-clear-btn, .alias-signout-btn) {
+  min-height: 44px;
+  padding-inline: 10px;
+  border-color: transparent;
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--gf-ink-soft);
+  font-family: var(--gf-font-body);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.app :is(.alias-clear-history-btn, .inbox-clear-btn, .alias-signout-btn):hover:not(:disabled) {
+  color: var(--gf-danger);
+  border-color: transparent;
+  background: rgba(var(--gf-danger-rgb), 0.08);
+}
+
+.app button:focus-visible {
+  outline: 2px solid var(--gf-primary);
+  outline-offset: 2px;
+}
+
+.app .inbox-item-open-button:focus-visible {
+  outline-offset: -3px;
+}
+
+.app button:focus-visible:active {
+  transform: none !important;
+}
+
+.app .hub-email-selector:has(.hub-email-selector-btn:focus-visible) .hub-email-selector-bg,
+.app .alias-tabs:has(.alias-tab-btn:focus-visible) .alias-tab-bg,
+.app .alias-message-modal-view-toggle:has(.alias-view-toggle-btn:focus-visible)::before {
+  transition: none;
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .app
+    :is(
+      .header-actions .gf-icon-btn,
+      .header-actions .icon-button,
+      .identity-actions .action-icon,
+      .inbox-header-row .action-icon,
+      .alias-inbox-refresh,
+      .alias-message-modal-close,
+      .detail-view-header .detail-view-back-btn,
+      .eye-button,
+      .alias-inbox-open-btn,
+      .alias-history-copy-btn,
+      .alias-history-item .action-icon,
+      .copy-button,
+      .email-back-btn
+    )::after,
+  .app .hub-email-selector-bg::after {
+    display: none;
+  }
+
+  .app .inbox-empty-art {
+    background: var(--gf-surface);
+    border-color: var(--gf-line-2);
+    box-shadow: none;
+  }
+  .app
+    :is(
+      .gf-btn:not(.gf-btn--primary, .gf-btn--danger, .gf-btn--ghost),
+      .identity-action-btn:not(.gf-btn--primary),
+      .alias-copy-btn,
+      .alias-message-action-btn:not(.alias-message-action-btn--primary),
+      .alias-connect-btn.secondary-btn,
+      .otp-action-secondary,
+      .hub-email-selector,
+      .alias-tabs,
+      .alias-message-modal-view-toggle,
+      .hub-email-selector-bg,
+      .alias-tab-bg,
+      .alias-view-toggle-btn--active
+    ),
+  .app
+    :is(
+      .header-actions .gf-icon-btn,
+      .header-actions .icon-button,
+      .identity-actions .action-icon,
+      .inbox-header-row .action-icon,
+      .alias-inbox-refresh,
+      .alias-message-modal-close,
+      .detail-view-header .detail-view-back-btn,
+      .eye-button,
+      .alias-inbox-open-btn,
+      .alias-history-copy-btn,
+      .alias-history-item .action-icon,
+      .copy-button,
+      .email-back-btn
+    )::before,
+  .app :is(.otp-badge, .link-badge)::before,
+  .app .alias-message-modal-view-toggle::before {
+    background: var(--gf-surface);
+    border-color: var(--gf-line-2);
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app button::after {
+    transition: none;
+  }
+  .app button {
+    transition-duration: 0.01ms;
+  }
+
+  .app button:active:not(:disabled) {
+    transform: none !important;
+  }
+
+  .app button:active::before,
+  .app button:active::after {
+    transform: none !important;
+    transition: none !important;
+  }
+
+  .app :is(.hub-email-selector-bg, .alias-tab-bg),
+  .app .alias-message-modal-view-toggle::before {
+    transition: none;
+  }
+}

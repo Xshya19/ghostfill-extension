@@ -104,6 +104,9 @@ crxmake-*
 *.zip
 *.sha256
 ghostfill-*.zip
+.ghostfill-update-*/
+.ghostfill-backup-*/
+.ghostfill-*-update.lock
 
 # ───────────────────────────────────────────────────────────────────
 # Debug/Orphaned Files (Windows specific)
@@ -220,6 +223,20 @@ test-qwen-classifier.js
 test-qwen-classifier.log
 frame_*.png
 test_*.gif
+
+# ───────────────────────────────────────────────────────────────────
+# Lint & Test Output
+# ───────────────────────────────────────────────────────────────────
+lint-err.txt
+lint-out.txt
+vitest-err.txt
+vitest-out.txt
+
+# ───────────────────────────────────────────────────────────────────
+# Local Scripts & IDE Tools
+# ───────────────────────────────────────────────────────────────────
+Update GhostFill.cmd
+.serena/
 
 # Preserve agent workflow docs
 !.agents/**

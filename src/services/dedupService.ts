@@ -120,6 +120,10 @@ class DedupService {
     this.pendingRecords.delete(key);
   }
 
+  resetPending(): void {
+    this.pendingRecords.clear();
+  }
+
   async isPending(emailId: string | number, accountId: string): Promise<boolean> {
     const key = this.makeKey(emailId, accountId);
     const expiresAt = this.pendingRecords.get(key);

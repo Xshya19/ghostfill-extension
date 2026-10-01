@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "__MSG_extensionName__",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "__MSG_extensionDescription__",
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; worker-src 'none'; child-src 'none'; frame-src 'self'; connect-src 'self' https://throwawaymail.app https://api.1secmail.com https://api.1secmail.net https://api.1secmail.org https://www.1secmail.com https://api.mail.tm https://api.mail.gw https://api.maildrop.cc https://api.dropmail.me https://dropmail.me https://api.guerrillamail.com https://api.tempmail.lol https://mercure.mail.tm https://api.driftz.net/ https://api.catchmail.io/ https://openinbox.io/ https://evilmail.pro/ https://evilmail.dev/ https://mailboxtemp.com/ https://tempmail.plus/ https://api.mail.cx/ https://getnada.com/ https://www.mailinator.com/ https://mailnesia.com/ https://yopmail.com/ https://*.yopmail.com/;"
+    "extension_pages": "script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: https:; worker-src 'none'; child-src 'none'; frame-src 'self'; connect-src 'self' https://throwawaymail.app https://api.1secmail.com https://api.1secmail.net https://api.1secmail.org https://www.1secmail.com https://api.mail.tm https://api.mail.gw https://api.maildrop.cc https://api.dropmail.me https://dropmail.me https://api.guerrillamail.com https://api.tempmail.lol https://mercure.mail.tm https://api.driftz.net/ https://api.catchmail.io/ https://openinbox.io/ https://evilmail.pro/ https://evilmail.dev/ https://mailboxtemp.com/ https://tempmail.plus/ https://api.mail.cx/ https://getnada.com/ https://www.mailinator.com/ https://mailnesia.com/ https://yopmail.com/ https://*.yopmail.com/;"
   },
   "permissions": [
     "activeTab",
@@ -124,29 +124,29 @@
   "commands": {
     "_execute_action": {
       "suggested_key": {
-        "default": "Ctrl+Shift+E",
-        "mac": "Command+Shift+E"
+        "default": "Alt+Shift+E",
+        "mac": "Alt+Shift+E"
       },
       "description": "Open GhostFill"
     },
     "generate-email": {
       "suggested_key": {
-        "default": "Ctrl+Shift+M",
-        "mac": "Command+Shift+M"
+        "default": "Alt+Shift+M",
+        "mac": "Alt+Shift+M"
       },
       "description": "Generate new temp email"
     },
     "generate-password": {
       "suggested_key": {
-        "default": "Ctrl+Shift+G",
-        "mac": "Command+Shift+G"
+        "default": "Alt+Shift+G",
+        "mac": "Alt+Shift+G"
       },
       "description": "Generate new password"
     },
     "auto-fill": {
       "suggested_key": {
-        "default": "Ctrl+Shift+F",
-        "mac": "Command+Shift+F"
+        "default": "Alt+Shift+F",
+        "mac": "Alt+Shift+F"
       },
       "description": "Auto-fill current form"
     }

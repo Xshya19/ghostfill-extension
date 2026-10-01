@@ -360,7 +360,7 @@ function getReadableAnchorText(anchorInnerHtml: string, anchorHtml: string): str
 }
 
 /**
- * Extracts anchor text and HTML for a given URL
+ * Extracts an HTML anchor or the adjacent plain-text action label for a URL.
  * @param html - The HTML content
  * @param url - The URL to find anchor for
  * @returns Anchor text, HTML, and CTA status
@@ -400,6 +400,14 @@ export function getAnchorInfo(
         isCTA: isCTAButton(m[0]),
       };
     }
+  }
+
+  const position = html.indexOf(url);
+  const line = position < 0 ? '' : (html.slice(0, position).split(/\r?\n/).at(-1) ?? '');
+  const anchorText = line.replace(/^\s*\[|[\s[\](:]+$/g, '').trim();
+  // ponytail: only accept a short label on the URL's line; unlabelled links need URL proof.
+  if (anchorText && anchorText.length <= 120 && !/[<>]/.test(anchorText)) {
+    return { anchorText, anchorHtml: '', isCTA: ACTIVATION_ANCHOR_KEYWORD.test(anchorText) };
   }
 
   return { anchorText: '', anchorHtml: '', isCTA: false };

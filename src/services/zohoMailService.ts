@@ -16,6 +16,7 @@ import {
   getZohoApiBase,
   type ZohoRegionDomain,
 } from '../utils/core';
+import { getSenderSource, parseEmailIdentity } from '../utils/emailIdentity';
 import { createLogger } from '../utils/logger';
 import { getAliasPlusSuffix } from './gmailConnectionService';
 import { storageService } from './storageService';
@@ -302,6 +303,7 @@ export async function searchZohoInbox(alias: string, sinceMs?: number): Promise<
     data?: Array<{
       messageId: string;
       fromAddress: string;
+      sender?: string;
       toAddress?: string;
       subject: string;
       receivedTime: string;
@@ -332,12 +334,13 @@ export async function searchZohoInbox(alias: string, sinceMs?: number): Promise<
     .map((m): GmailMessage => {
       const at = parseZohoTime(m.receivedTime);
       const toAddr = m.toAddress ?? alias;
+      const from = getSenderSource(m.sender, m.fromAddress);
       const msg: GmailMessage = {
         id: m.messageId,
         threadId: m.messageId,
-        from: m.fromAddress,
+        from,
         fromEmail: m.fromAddress,
-        fromName: m.fromAddress,
+        fromName: parseEmailIdentity(from).displayName,
         to: toAddr,
         subject: m.subject,
         date: at,

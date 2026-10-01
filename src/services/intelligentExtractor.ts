@@ -4,17 +4,25 @@ import {
   sanitizeEmailSubject,
   sanitizeEmailFrom,
   sanitizeOTP,
-  sanitizeActivationLink,
 } from '../utils/sanitization.core';
-import { pickBestActivationLink, isSelectableActivationLink } from './extraction/activationLinkGuard';
+import {
+  pickBestActivationLink,
+  scoreActivationLink,
+  SELECT_MIN_QUALITY,
+} from './extraction/activationLinkGuard';
 import { extractLinkCognitive } from './extraction/cognitiveLinkExtractor';
 import { extractOTPCognitive } from './extraction/cognitiveOtpExtractor';
 import { normalizeForExtraction } from './extraction/domEngine';
+import { extractExplicitVerificationCode, isSubjectDomainToken } from './extraction/explicitCode';
 import intentModel from './extraction/knowledge/intent_model.json';
-import { extractLink } from './extraction/linkExtractor';
-import { extractOTP, isCodeEmbeddedInEmail, hasIsolatedOtpContext } from './extraction/otpExtractor';
+import { extractLink, getAnchorInfo } from './extraction/linkExtractor';
+import {
+  extractOTP,
+  isCodeEmbeddedInEmail,
+  hasIsolatedOtpContext,
+} from './extraction/otpExtractor';
 import { detectProvider } from './extraction/providerDetector';
-import { extractUrls } from './extraction/urlExtractor';
+import { extractUrls, unwrapEspTrackingUrl } from './extraction/urlExtractor';
 import { analyzeEmailZones, stripHtmlPreserveStructure } from './extraction/zoneAnalyzer';
 import type {
   ExtractionResult,
@@ -28,7 +36,6 @@ import type {
   IntentSignal,
 } from './types/extraction.types';
 
-
 interface ModelData {
   priors: Record<string, number>;
   likelihoods: Record<string, Record<string, number>>;
@@ -39,18 +46,20 @@ const model = intentModel as unknown as ModelData;
 
 export class IntentClassifier {
   private static tokenize(text: string): string[] {
-    return text
-      .toLowerCase()
-      // Preserve hyphens and equals for OTP codes like 123-456 and token=abc
-      .replace(/[^\w\s\-=]/g, ' ')
-      .split(/\s+/)
-      .filter((w) => w.length > 2);
+    return (
+      text
+        .toLowerCase()
+        // Preserve hyphens and equals for OTP codes like 123-456 and token=abc
+        .replace(/[^\w\s\-=]/g, ' ')
+        .split(/\s+/)
+        .filter((w) => w.length > 2)
+    );
   }
 
   static classify(subject: string, body: string): { intent: string; confidence: number } {
     const rawTokens = this.tokenize(`${subject} ${body}`);
-    
-    // GRANDMASTER FIX: Pre-compute token frequencies. 
+
+    // GRANDMASTER FIX: Pre-compute token frequencies.
     // Eliminates duplicate dictionary lookups and redundant Math.log() calls.
     const tokenCounts = new Map<string, number>();
     for (const t of rawTokens) {
@@ -81,15 +90,17 @@ export class IntentClassifier {
     );
 
     // GRANDMASTER FIX: Guard against division by zero in edge cases
-    const sumExpProbs = Object.values(expProbs).reduce((a, b) => a + b, 0) || 1; 
-    
+    const sumExpProbs = Object.values(expProbs).reduce((a, b) => a + b, 0) || 1;
+
     const finalProbs = Object.fromEntries(
       Object.entries(expProbs).map(([label, prob]) => [label, prob / sumExpProbs])
     );
 
     const sorted = Object.entries(finalProbs).sort((a, b) => b[1] - a[1]);
-    if (sorted.length === 0) {return { intent: 'unknown', confidence: 0 };}
-    
+    if (sorted.length === 0) {
+      return { intent: 'unknown', confidence: 0 };
+    }
+
     const [bestIntent, confidence] = sorted[0]!;
     return { intent: bestIntent, confidence };
   }
@@ -199,7 +210,8 @@ function crossValidate(
   otp: ExtractedOTP | null,
   link: ExtractedLink | null,
   intent: IntentResult,
-  provider: ProviderKnowledge | null
+  provider: ProviderKnowledge | null,
+  hasIndependentOTP: boolean
 ): CrossValidationResult {
   const result: CrossValidationResult = {
     otpAndLinkCoexist: otp !== null && link !== null,
@@ -222,20 +234,20 @@ function crossValidate(
     return result;
   }
 
-  // When both coexist, keep BOTH to allow simultaneous OTP autofill
-  // and magic link activation.
+  // Extraction retains both alternatives; page routing chooses one action.
   result.preferOTP = true;
   result.preferLink = true;
 
   if (link && otp && link.url.toLowerCase().includes(otp.code.toLowerCase())) {
     result.otpInLinkUrl = true;
     result.linkContainsOTP = true;
-    result.reason = 'otp-is-url-token';
-    // If the OTP is inside the link URL, it's almost certainly a URL token/UUID segment,
-    // not a standalone manual copy-paste OTP. The link is the primary action.
-    result.preferOTP = false;
-    result.preferLink = true;
-    log.info('OTP appears inside link URL — it is a token, discarding OTP');
+    result.reason = hasIndependentOTP ? 'independent-otp-also-in-link' : 'otp-is-url-token';
+    result.preferOTP = hasIndependentOTP;
+    log.info(
+      hasIndependentOTP
+        ? 'Code appears in the visible message and link; keeping both alternatives'
+        : 'Code appears only in the link URL; keeping the link'
+    );
     return result;
   }
 
@@ -316,7 +328,7 @@ function calculateSecurityScore(
   _allUrls: string[],
   _body: string
 ): { score: number; risk: 'low' | 'medium' | 'high' } {
-  // USER DIRECTIVE: Bypass all security checks. 
+  // USER DIRECTIVE: Bypass all security checks.
   // Always return maximum trust.
   return { score: 100, risk: 'low' };
 }
@@ -419,19 +431,29 @@ function refineIntent(subject: string, body: string, currentIntent: EmailIntent)
  * jesse.duncan.2952@catchmail.io).
  */
 function appearsAsStandaloneCode(code: string, plainText: string, sanitizedBody: string): boolean {
-  const escaped = code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-  // GRANDMASTER FIX: Removed dead `standalonePattern`. 
-  // Compiled ONCE per extraction, used for both text sources.
-  const regex = new RegExp(`(?:^|[\\s>])(${escaped})(?=$|[\\s<,;!?.])`, 'gm');
+  const escaped = code
+    .replace(/[-\s]/g, '')
+    .split('')
+    .map((char) => char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('[-\\s]?');
+  const regex = new RegExp(`(?:^|[\\s>])(${escaped})(?=$|[\\s<,;!?.])`, 'gim');
 
   const checkText = (text: string): boolean => {
-    if (!text) {return false;}
-    regex.lastIndex = 0; // CRITICAL: Reset index for global regex reuse on new string
+    if (!text) {
+      return false;
+    }
+    // URL parameters and HTML attributes are not independent code evidence.
+    const visibleText = text
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/(?:https?:\/\/|www\.)[^\s<>"']+/gi, ' ');
+    regex.lastIndex = 0;
     let match: RegExpExecArray | null;
-    while ((match = regex.exec(text)) !== null) {
-      const afterMatch = text[match.index + match[0].length] || '';
-      if (afterMatch !== '@' && !text.substring(match.index, match.index + match[0].length + 1).includes('@')) {
+    while ((match = regex.exec(visibleText)) !== null) {
+      const afterMatch = visibleText[match.index + match[0].length] || '';
+      if (
+        afterMatch !== '@' &&
+        !visibleText.substring(match.index, match.index + match[0].length + 1).includes('@')
+      ) {
         return true;
       }
     }
@@ -465,24 +487,27 @@ export function extractAll(
 
   // GRANDMASTER FIX: Unified Sanitization. Eliminate redundant CPU cycles.
   const sanitizedSubject = sanitizeEmailSubject(normSubject);
-  
+
   let sanitizedHtmlBody = '';
   let sanitizedBody = '';
-  
+
   if (normHtmlBody) {
     // Sanitize HTML ONCE.
     sanitizedHtmlBody = sanitizeEmailBody(normHtmlBody, normHtmlBody);
     // If your sanitizer requires the raw plain text as a fallback reference, pass it.
     // But do NOT re-run the HTML parser.
-    sanitizedBody = sanitizeEmailBody(normHtmlBody, normBody); 
+    sanitizedBody = sanitizeEmailBody('', normBody);
   } else {
     sanitizedBody = sanitizeEmailBody('', normBody);
   }
-  
+
   const sanitizedSenderEmail = sanitizeEmailFrom(senderEmail);
 
   const sourceHtml = normHtmlBody || normBody; // Use normalized html to extract URLs
-  const plainText = `${sanitizedSubject}\n\n${stripHtmlPreserveStructure(sanitizedHtmlBody || sanitizedBody)}`;
+  const htmlText = sanitizedHtmlBody ? stripHtmlPreserveStructure(sanitizedHtmlBody) : '';
+  const plainText = `${sanitizedSubject}\n\n${sanitizedBody || htmlText}${sanitizedBody && htmlText ? `\n\n${htmlText}` : ''}`;
+  const explicitBodyCode =
+    extractExplicitVerificationCode(sanitizedBody) || extractExplicitVerificationCode(htmlText);
 
   log.info('═══ GhostFill Intelligent Extractor ═══');
 
@@ -491,7 +516,7 @@ export function extractAll(
   timings.zones = performance.now() - t;
 
   t = performance.now();
-  const allUrls = extractUrls(sourceHtml);
+  const allUrls = extractUrls(`${sourceHtml}\n${normBody}`);
   timings.urls = performance.now() - t;
 
   t = performance.now();
@@ -512,28 +537,28 @@ export function extractAll(
     provider?.emailIntent || 'other'
   );
 
-  // GRANDMASTER GATE: Don't burn CPU extracting OTPs from newsletters
-  if (intentResult.intent === 'other' && intentResult.confidence > 0.85) {
-    log.info('🛡️ Newsletter/Marketing detected (>85%). Aborting extraction pipeline.');
-    return {
-      intent: intentResult.intent,
-      otp: null,
-      link: null,
-      debugInfo: { timings, securityRisk: security.risk, provider: provider?.name || null, intentSignals: [], contextValidated: false }
-    };
-  }
-
   // Link intent result into result object
   intentResult.secondaryIntent = null;
   timings.security = performance.now() - t;
 
   t = performance.now();
   // Dual engines for accuracy (cognitive + traditional). Prefer consensus.
-  const cogOtp = extractOTPCognitive(plainText, sanitizedHtmlBody, provider, zones, intentResult, sanitizedSubject);
+  const cogOtp = extractOTPCognitive(
+    plainText,
+    sanitizedHtmlBody,
+    provider,
+    zones,
+    intentResult,
+    sanitizedSubject
+  );
   const tradOtp = extractOTP(plainText, sanitizedHtmlBody, provider, zones, intentResult);
 
-  if (cogOtp) {cogOtp.code = sanitizeOTP(cogOtp.code);}
-  if (tradOtp) {tradOtp.code = sanitizeOTP(tradOtp.code);}
+  if (cogOtp) {
+    cogOtp.code = sanitizeOTP(cogOtp.code);
+  }
+  if (tradOtp) {
+    tradOtp.code = sanitizeOTP(tradOtp.code);
+  }
 
   let otp: typeof cogOtp = null;
 
@@ -545,7 +570,8 @@ export function extractAll(
       otp.confidence = otp.score / 100;
       otp.reasoning.steps.push({
         layer: 'consensus',
-        observation: 'Dual engines (Cognitive & Traditional Heuristics) reached agreement consensus on the code.',
+        observation:
+          'Dual engines (Cognitive & Traditional Heuristics) reached agreement consensus on the code.',
         conclusion: 'Confidence boosted to maximum agreement consensus.',
         impact: 'positive',
       });
@@ -598,8 +624,7 @@ export function extractAll(
   // jesse.duncan.2952@catchmail.io with OTP 2952).
   if (otp && /^\d{2,12}$/.test(otp.code)) {
     const embedded =
-      isCodeEmbeddedInEmail(otp.code, plainText) ||
-      isCodeEmbeddedInEmail(otp.code, sanitizedBody);
+      isCodeEmbeddedInEmail(otp.code, plainText) || isCodeEmbeddedInEmail(otp.code, sanitizedBody);
     const hasIsolatedContext = hasIsolatedOtpContext(otp.code, plainText);
     const appearsStandalone = appearsAsStandaloneCode(otp.code, plainText, sanitizedBody);
     if (embedded && !hasIsolatedContext && !appearsStandalone) {
@@ -610,15 +635,56 @@ export function extractAll(
     }
   }
 
-  if (otp && sanitizedSubject.includes(otp.code) && !otp.matchedSignals?.some(s => s.name === 'subject-body-agreement')) {
+  if (
+    otp &&
+    sanitizedSubject.includes(otp.code) &&
+    !otp.matchedSignals?.some((s) => s.name === 'subject-body-agreement')
+  ) {
     otp.score = Math.min(100, otp.score + 35);
     otp.confidence = otp.score / 100;
+  }
+  if (otp && isSubjectDomainToken(otp.code, sanitizedSubject)) {
+    otp = null;
+  }
+  // An explicitly labeled code in the message body outranks a brand token
+  // from the subject (for example LLM7.io versus "Your verification code is: 382804").
+  if (explicitBodyCode && otp?.code !== explicitBodyCode) {
+    otp = {
+      code: explicitBodyCode,
+      rawCode: explicitBodyCode,
+      score: 94,
+      confidence: 0.94,
+      type: 'otp',
+      format: 'numeric',
+      strategy: 'explicit-label',
+      length: explicitBodyCode.length,
+      context: 'Explicit verification code label in the email body',
+      label: 'Verification code',
+      fromUrl: false,
+      urlParam: null,
+      sourceUrl: null,
+      visualProminence: 0,
+      providerMatch: null,
+      matchedSignals: [],
+      antiSignals: [],
+      reasoning: {
+        steps: [
+          {
+            layer: 'explicit-label',
+            observation: 'The email body labels this number as a verification code.',
+            conclusion: 'Prefer the labeled body code over an unrelated subject token.',
+            impact: 'strong-positive',
+          },
+        ],
+        summary: 'explicit-body-code',
+        confidenceExplanation: 'The message directly identifies this numeric code.',
+      },
+    };
   }
   timings.otp = performance.now() - t;
 
   t = performance.now();
-  // Dual-engine link extraction + activation-guard consensus
-  // Never pick marketing / tracking / dashboard when a real verify link exists.
+  // Both engines must pass the shared activation gate before a link is surfaced.
   const cogLink = extractLinkCognitive(
     sanitizedHtmlBody,
     plainText,
@@ -640,21 +706,30 @@ export function extractAll(
   );
 
   let link = pickBestActivationLink(cogLink, tradLink);
+  const credible = [...new Set(allUrls.map((url) => unwrapEspTrackingUrl(url) || url))]
+    .map((url) => ({
+      url,
+      gate: scoreActivationLink(url, getAnchorInfo(sourceHtml, url).anchorText),
+    }))
+    .filter(
+      ({ gate }) => !gate.hardReject && gate.cls !== 'unknown' && gate.quality >= SELECT_MIN_QUALITY
+    )
+    .sort((a, b) => b.gate.quality - a.gate.quality);
+  // Two equally credible, distinct actions are ambiguous: ask for review.
+  if (
+    credible.length > 1 &&
+    credible[0]!.gate.quality >= 80 &&
+    credible[1]!.gate.quality >= credible[0]!.gate.quality - 8
+  ) {
+    link = null;
+  }
   if (link && link.url) {
-    link.url = sanitizeActivationLink(link.url);
-    // Final hard gate — if sanitize left something non-selectable, drop it
-    if (
-      !isSelectableActivationLink(
-        link.url,
-        link.anchorText || '',
-        link.context || ''
-      )
-    ) {
-      log.info(
-        `Link dropped after final activation guard: ${link.url.substring(0, 70)}`
-      );
-      link = null;
-    } else if (cogLink?.url && tradLink?.url && cogLink.url !== tradLink.url) {
+    link.url = new URL(link.url).href;
+    // Both link engines report percentage confidence; the shared result uses 0–1.
+    if (link.confidence > 1) {link.confidence /= 100;}
+    const gate = scoreActivationLink(link.url, link.anchorText || '', link.context || '');
+    if (gate.cls === 'magic-login') {link.type = 'magic-link-login';}
+    if (cogLink?.url && tradLink?.url && cogLink.url !== tradLink.url) {
       log.info(
         `Link dual-engine: cog=${cogLink.url.substring(0, 50)} trad=${tradLink.url.substring(0, 50)} → ${link.url.substring(0, 50)}`
       );
@@ -663,17 +738,21 @@ export function extractAll(
   timings.link = performance.now() - t;
 
   t = performance.now();
-  const crossResult = crossValidate(otp, link, intentResult, provider);
+  // A strong link must not turn a weak footer number into a second sign-in action.
+  if (otp && link && otp.confidence < 0.7 && !explicitBodyCode) {
+    log.info('Discarding weak code candidate from a verification-link email');
+    otp = null;
+  }
+  const hasIndependentOTP = Boolean(
+    otp && appearsAsStandaloneCode(otp.code, sanitizedBody, htmlText)
+  );
+  const crossResult = crossValidate(otp, link, intentResult, provider, hasIndependentOTP);
   timings.crossValidation = performance.now() - t;
-
-  // Save originals before cross-validation discards either
-  const otpBeforeCross = otp;
 
   if (crossResult.otpAndLinkCoexist) {
     if (crossResult.preferOTP && !crossResult.preferLink) {
-      log.info('Cross-validation: discarding link, keeping OTP');
-      link = null;
-    } else if (crossResult.preferLink && !crossResult.preferOTP) {
+      log.info('Cross-validation prefers OTP; retaining the detected link for activation');
+    } else if (crossResult.preferLink && !crossResult.preferOTP && !explicitBodyCode) {
       log.info('Cross-validation: discarding OTP, keeping link');
       otp = null;
     }
@@ -690,17 +769,6 @@ export function extractAll(
     otp = null;
   }
 
-  if (link && link.confidence * 100 < thresholds.link) {
-    log.info(`Link rejected: ${(link.confidence * 100).toFixed(0)}% < ${thresholds.link}%`);
-    link = null;
-    // If link was preferred in cross-validation (OTP was discarded for it) but link is now
-    // also rejected, restore the original OTP so we don't lose both.
-    if (crossResult.preferLink && !crossResult.preferOTP && otpBeforeCross && !otp) {
-      otp = otpBeforeCross;
-      log.info(`Link rejected after OTP was discarded for it — restoring OTP: ${otp.code}`);
-    }
-  }
-
   // H6: Emergency fallback — if both OTP and link are null, try emergency regex patterns
   if (!otp && !link) {
     // GRANDMASTER FIX: Moved EMERGENCY_PATTERNS to module scope. Zero allocation overhead here.
@@ -708,7 +776,7 @@ export function extractAll(
     const textToSearch = `${subject} ${body}`
       .replace(/[\u200B-\u200D\uFEFF\u200E\u200F]/g, '')
       .substring(0, 5000);
-      
+
     const currentYear = new Date().getFullYear();
 
     for (const pattern of EMERGENCY_PATTERNS) {

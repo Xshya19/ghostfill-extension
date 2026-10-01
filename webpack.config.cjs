@@ -301,6 +301,18 @@ module.exports = (env = {}, argv = {}) => {
           { from: 'manifest.json', to: 'manifest.json', transform: buildManifest },
           { from: 'public/assets', to: 'assets' },
           { from: 'public/_locales', to: '_locales' },
+          { from: 'Update GhostFill.cmd', to: 'Update GhostFill.cmd' },
+          { from: 'scripts/update-extension.ps1', to: 'scripts/update-extension.ps1' },
+          {
+            from: 'docs/third-party/liquid-glass-react-LICENSE',
+            to: 'THIRD_PARTY_NOTICES/liquid-glass-react-LICENSE.txt',
+            toType: 'file',
+          },
+          {
+            from: 'docs/third-party/liquid-glass-widgets-LICENSE',
+            to: 'THIRD_PARTY_NOTICES/liquid-glass-widgets-LICENSE.txt',
+            toType: 'file',
+          },
         ],
       }),
     ],

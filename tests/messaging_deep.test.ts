@@ -102,7 +102,7 @@ describe('safeSendMessage() deep tests', () => {
     expect((chrome.runtime.sendMessage as any).mock.calls.length).toBeLessThanOrEqual(3);
   });
 
-  it('handles timeout', async () => {
+  it('does not retry a timed out message because the operation outcome is unknown', async () => {
     // Create a promise that never resolves
     (chrome.runtime.sendMessage as any).mockImplementation(
       () => new Promise(() => {}) // never resolves
@@ -110,9 +110,10 @@ describe('safeSendMessage() deep tests', () => {
 
     const result = await safeSendMessage(
       { action: 'GET_LAST_OTP' } as any,
-      { timeout: 100, retries: 0 }
+      { timeout: 25, retries: 2 }
     );
     expect(result).toBeNull();
+    expect((chrome.runtime.sendMessage as any).mock.calls).toHaveLength(1);
   }, 10000);
 });
 
@@ -152,5 +153,18 @@ describe('safeSendTabMessage() deep tests', () => {
 
     const result = await safeSendTabMessage(99999, { action: 'FILL_OTP', payload: { otp: '123456' } } as any);
     expect(result).toBeNull();
+  });
+
+  it('does not resend a timed out tab action', async () => {
+    (chrome.tabs.sendMessage as any).mockImplementation(() => new Promise(() => {}));
+
+    const result = await safeSendTabMessage(
+      1,
+      { action: 'FILL_OTP', payload: { otp: '123456' } } as any,
+      { timeout: 25, retries: 2 }
+    );
+
+    expect(result).toBeNull();
+    expect((chrome.tabs.sendMessage as any).mock.calls).toHaveLength(1);
   });
 });

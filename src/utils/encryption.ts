@@ -192,9 +192,13 @@ export function secureClearKeys(): void {
   derivedKeyCache.clear();
 
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.session) {
-    chrome.storage.session
-      .remove(['sessionKeySeed', 'encryptionSalt', 'keyExpiration'])
-      .catch((e) => log.debug('Failed to clear keys from session storage', e));
+    try {
+      void chrome.storage.session
+        .remove(['sessionKeySeed', 'encryptionSalt', 'keyExpiration'])
+        .catch((e) => log.debug('Failed to clear keys from session storage', e));
+    } catch {
+      // An invalidated context cannot access storage during its cleanup.
+    }
   }
 
   log.debug('Encryption keys securely cleared from memory');
@@ -437,7 +441,6 @@ export function onRotationAlarm(alarm: chrome.alarms.Alarm) {
  * @security Key has expiration time for automatic rotation
  */
 export async function initializeSecureEncryption(): Promise<void> {
-  let storageAccessFailed = false;
   try {
     const currentVersion =
       typeof chrome !== 'undefined' ? chrome.runtime.getManifest().version : 'unknown';
@@ -455,20 +458,15 @@ export async function initializeSecureEncryption(): Promise<void> {
         }
       } catch (err) {
         log.debug('Master key seed read failed (sandboxed or restricted context)', err);
-        // Fall through to generation if persisted key material is unavailable.
-        storageAccessFailed = true;
+        // A failed read must never replace the seed that decrypts existing records.
+        throw err;
       }
 
       if (!masterSeed) {
         masterSeed = crypto.getRandomValues(new Uint8Array(32));
-        try {
-          await chrome.storage.local.set({
-            masterKeySeed: btoa(String.fromCharCode(...masterSeed)),
-          });
-        } catch {
-          storageAccessFailed = true;
-          log.debug('Failed to persist master encryption seed (sandboxed context).');
-        }
+        await chrome.storage.local.set({
+          masterKeySeed: btoa(String.fromCharCode(...masterSeed)),
+        });
       }
 
       masterKey = await crypto.subtle.importKey(
@@ -542,13 +540,17 @@ export async function initializeSecureEncryption(): Promise<void> {
           log.debug('Generated new Session Key');
         }
       } catch (e) {
-        log.warn('Session key initialization failed, using non-persistent key', e);
+        if (e instanceof Error && e.message.includes('Access to storage is not allowed')) {
+          log.debug('Session key is unavailable in this content-script context');
+        } else {
+          log.warn('Session key initialization failed, using non-persistent key', e);
+        }
       }
     }
 
-    // Fallback only if in a non-extension context or if storage access failed (sandboxed iframe)
+    // Memory-only fallback for contexts without extension storage.
     if (!masterKey) {
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local && !storageAccessFailed) {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
         throw new Error('Critical: Failed to generate or load persistent master key from storage');
       }
       const seed = crypto.getRandomValues(new Uint8Array(32));
@@ -582,7 +584,11 @@ export async function initializeSecureEncryption(): Promise<void> {
 
     // Intentionally clear password from memory scope since it is cached in Derive algorithm and session storage
   } catch (error) {
-    log.error('Secure encryption initialization failed', error);
+    if (error instanceof Error && /extension context invalidated/i.test(error.message)) {
+      log.debug('Encryption initialization cancelled because the extension context ended');
+    } else {
+      log.error('Secure encryption initialization failed', error);
+    }
     throw error;
   }
 }

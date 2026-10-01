@@ -1,4 +1,4 @@
-import { motion, AnimatePresence, useReducedMotion, type HTMLMotionProps } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Mail,
   RefreshCw,
@@ -22,7 +22,7 @@ import {
   Lock,
   Eye,
   EyeOff,
-  Globe,
+  Globe2,
 } from 'lucide-react';
 import React, {
   useEffect,
@@ -37,7 +37,14 @@ import React, {
 } from 'react';
 
 import ghostLogoImg from '../../../assets/icons/icon128.png';
+import notionLogoImg from '../../../assets/icons/notion.png';
+import qwenLogoImg from '../../../assets/icons/qwen.png';
 
+import {
+  extractExplicitVerificationCode,
+  isSubjectDomainToken,
+} from '../../../services/extraction/explicitCode';
+import { extractUrls } from '../../../services/extraction/urlExtractor';
 import { storageService } from '../../../services/storageService';
 import {
   EmailAccount,
@@ -49,8 +56,20 @@ import {
 import { type GmailMessage, type AliasHistoryItem } from '../../../types/email.types';
 import { type GeneratePasswordResponse } from '../../../types/message.types';
 import { LastOTP, LAST_OTP_MAX_AGE_MS } from '../../../types/storage.types';
-import { TIMING, formatRelativeTime, copyToClipboard, contentToString } from '../../../utils/core';
-import { getSenderEmail, getSenderLabel } from '../../../utils/emailIdentity';
+import {
+  TIMING,
+  formatRelativeTime,
+  copyToClipboard,
+  contentToString,
+  isWebUrl,
+} from '../../../utils/core';
+import {
+  getSenderEmail,
+  getSenderLabel,
+  getSenderLogoDomains,
+  getSenderSource,
+  parseEmailIdentity,
+} from '../../../utils/emailIdentity';
 import { createLogger } from '../../../utils/logger';
 import { safeSendMessage, safeSendTabMessage } from '../../../utils/messaging';
 import { containsRemoteEmailAssets, sanitizeEmailBody } from '../../../utils/sanitization.core';
@@ -59,17 +78,48 @@ import { tweenIn, tweenOut, Button, IconButton } from '../../ui';
 import { useStorageSubscription } from '../hooks';
 import { GmailLogo } from './ProviderLogos';
 
-export const getSenderSource = (displayName?: unknown, address?: unknown): string => {
-  const name = contentToString(displayName).trim();
-  const email = contentToString(address).trim();
-  if (email.includes('<') && email.includes('@')) {
-    return email;
-  }
-  if (name && email && email.includes('@') && !name.includes(email)) {
-    return `${name} <${email}>`;
-  }
-  return email || name || '?';
-};
+export { getSenderSource } from '../../../utils/emailIdentity';
+
+/** Keep background content out of the accessibility tree while a dialog is open. */
+function useDialogIsolation(
+  isOpen: boolean,
+  overlayRef: React.RefObject<HTMLElement | null>
+): void {
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    const overlay = overlayRef.current;
+    const parent = overlay?.parentElement;
+    if (!overlay || !parent) {
+      return;
+    }
+
+    const siblings = Array.from(parent.children).filter(
+      (child): child is HTMLElement => child !== overlay
+    );
+    const previous = siblings.map((sibling) => ({
+      sibling,
+      inert: sibling.inert,
+      ariaHidden: sibling.getAttribute('aria-hidden'),
+    }));
+    siblings.forEach((sibling) => {
+      sibling.inert = true;
+      sibling.setAttribute('aria-hidden', 'true');
+    });
+
+    return () => {
+      previous.forEach(({ sibling, inert, ariaHidden }) => {
+        sibling.inert = inert;
+        if (ariaHidden === null) {
+          sibling.removeAttribute('aria-hidden');
+        } else {
+          sibling.setAttribute('aria-hidden', ariaHidden);
+        }
+      });
+    };
+  }, [isOpen, overlayRef]);
+}
 
 // --- AccountCard.tsx ---
 // NOTE: Gmail is the only real-mail provider. Zoho/Outlook were removed
@@ -112,29 +162,28 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
   // 1. Gmail not connected
   if (isReal && !gmailConnected) {
     return (
-      <div>
-        <div className="hub-gmail-not-connected">
-          <GmailLogo size={44} className="hub-gmail-logo-img" />
-          <span className="hub-gmail-title">Connect Gmail</span>
-          <span className="hub-gmail-desc">
-            Create site-specific aliases and sync OTP emails from your Gmail account.
-          </span>
-          <button
-            onClick={() => {
-              void onGmailSignIn();
-            }}
-            className="hub-gmail-connect-btn"
-            disabled={gmailSigningIn}
-          >
-            {gmailSigningIn ? (
-              <span>
-                <RefreshCw size={14} className="spin" /> Connecting…
-              </span>
-            ) : (
-              <span>Connect Gmail</span>
-            )}
-          </button>
-        </div>
+      <div className="hub-gmail-not-connected">
+        <GmailLogo size={44} className="hub-gmail-logo-img" />
+        <span className="hub-gmail-title">Connect Gmail</span>
+        <span className="hub-gmail-desc">
+          Create site-specific aliases and sync OTP emails from your Gmail account.
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            void onGmailSignIn();
+          }}
+          className="hub-gmail-connect-btn"
+          disabled={gmailSigningIn}
+        >
+          {gmailSigningIn ? (
+            <span>
+              <RefreshCw size={14} className="spin" /> Connecting…
+            </span>
+          ) : (
+            <span>Connect Gmail</span>
+          )}
+        </button>
       </div>
     );
   }
@@ -144,90 +193,120 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
   const currentDisconnectHandler = onSignOut;
 
   const providerLabel = !isReal ? t('emailLabel') : 'Gmail Alias';
+  const isDisposableExpired =
+    !isReal && typeof emailAccount?.expiresAt === 'number' && Date.now() >= emailAccount.expiresAt;
 
   return (
-    <div>
-      <div className="identity-row">
-        <div className="identity-icon">
-          {isReal ? <GmailLogo size={18} /> : <Mail size={18} className="icon-premium" />}
-        </div>
-        <div className="identity-content">
-          <div className="identity-label-group">
-            <span className="identity-label">{providerLabel}</span>
-            {!isReal && (
-              <CountdownTimer
-                expiresAt={emailAccount?.expiresAt}
-                expiredLabel={t('expiredLabel') || 'Expired'}
-              />
-            )}
-          </div>
-          {(() => {
-            const rawEmail = isReal
-              ? activeEmailAddress || 'Connected'
-              : emailAccount?.fullEmail || t('syncingIdentity');
-            const atIndex = rawEmail.indexOf('@');
-            const hasAt = atIndex !== -1;
-            const prefix = hasAt ? rawEmail.slice(0, atIndex) : rawEmail;
-            const domain = hasAt ? rawEmail.slice(atIndex) : '';
-
-            return (
-              <button
-                type="button"
-                className={`identity-value hub-val hub-val-email ${
-                  !isReal && !emailAccount ? 'shimmer' : ''
-                }`}
-                title={`Click to copy: ${rawEmail}`}
-                onClick={onCopyEmail}
-                aria-label={`Copy email address ${rawEmail}`}
-              >
-                {hasAt ? (
-                  <>
-                    <span className="hub-email-prefix">{prefix}</span>
-                    <span className="hub-email-domain">{domain}</span>
-                  </>
-                ) : (
-                  rawEmail
-                )}
-              </button>
-            );
-          })()}
-          {isReal &&
-            currentOriginalBase &&
-            activeEmailAddress &&
-            activeEmailAddress !== currentOriginalBase && (
-              <div className="identity-original-email">Original: {currentOriginalBase}</div>
-            )}
-        </div>
-        <div className="identity-actions">
-          <button
-            className={`action-icon ${emailCopied ? 'success' : ''}`}
-            onClick={onCopyEmail}
-            title="Copy email"
-            aria-label="Copy email address to clipboard"
-          >
-            {emailCopied ? <Check size={14} /> : <Copy size={14} />}
-          </button>
+    <div className="identity-row">
+      <div className="identity-icon">
+        {isReal ? <GmailLogo size={18} /> : <Mail size={18} className="icon-premium" />}
+      </div>
+      <div className="identity-content">
+        <div className="identity-label-group">
+          <span className="identity-label">{providerLabel}</span>
           {!isReal && (
-            <button
-              className={`action-icon ${isGeneratingEmail ? 'action-loading' : ''} ${emailCooldown ? 'opacity-50' : ''}`}
-              onClick={onGenerateEmail}
-              title={'New identity'}
-              aria-label={'Generate new disposable email'}
-            >
-              <RefreshCw size={14} className={isGeneratingEmail ? 'spin' : ''} />
-            </button>
-          )}
-          {isReal && currentDisconnectHandler && (
-            <button
-              className="action-icon"
-              onClick={currentDisconnectHandler}
-              title="Disconnect account"
-              aria-label="Disconnect email account"
-            >
-              <LogOut size={14} />
-            </button>
+            <CountdownTimer
+              expiresAt={emailAccount?.expiresAt}
+              expiredLabel={t('expiredLabel') || 'Expired'}
+            />
           )}
         </div>
+        {(() => {
+          const hasAddress = isReal
+            ? Boolean(activeEmailAddress)
+            : Boolean(emailAccount?.fullEmail);
+          const rawEmail = isReal
+            ? activeEmailAddress || 'Connected'
+            : emailAccount?.fullEmail ||
+              (isGeneratingEmail ? t('syncingIdentity') : t('noEmailAddressYet'));
+          const atIndex = rawEmail.indexOf('@');
+          const hasAt = atIndex !== -1;
+          const prefix = hasAt ? rawEmail.slice(0, atIndex) : rawEmail;
+          const domain = hasAt ? rawEmail.slice(atIndex) : '';
+
+          if (!hasAddress) {
+            return (
+              <span
+                className="identity-value hub-val hub-val-email"
+                role="status"
+                aria-live="polite"
+              >
+                {isReal ? 'Gmail connected; no active address is available.' : rawEmail}
+              </span>
+            );
+          }
+
+          return (
+            <button
+              type="button"
+              className="identity-value hub-val hub-val-email"
+              title={`Click to copy: ${rawEmail}`}
+              onClick={onCopyEmail}
+              aria-label={`Copy email address ${rawEmail}`}
+            >
+              {hasAt ? (
+                <>
+                  <span className="hub-email-prefix">{prefix}</span>
+                  <span className="hub-email-domain">{domain}</span>
+                </>
+              ) : (
+                rawEmail
+              )}
+            </button>
+          );
+        })()}
+        {isReal &&
+          currentOriginalBase &&
+          activeEmailAddress &&
+          activeEmailAddress !== currentOriginalBase && (
+            <div className="identity-original-email">Original: {currentOriginalBase}</div>
+          )}
+      </div>
+      <div className="identity-actions">
+        <button
+          type="button"
+          className={`action-icon ${emailCopied ? 'success' : ''}`}
+          onClick={onCopyEmail}
+          disabled={isReal ? !activeEmailAddress : !emailAccount?.fullEmail}
+          title="Copy email"
+          aria-label="Copy email address to clipboard"
+        >
+          {emailCopied ? <Check size={14} /> : <Copy size={14} />}
+        </button>
+        {!isReal && (
+          <button
+            className={`action-icon ${isGeneratingEmail ? 'action-loading' : ''} ${emailCooldown ? 'opacity-50' : ''}`}
+            onClick={onGenerateEmail}
+            type="button"
+            disabled={isGeneratingEmail}
+            aria-busy={isGeneratingEmail}
+            title={
+              isGeneratingEmail
+                ? 'Generating new identity…'
+                : isDisposableExpired
+                  ? t('generateNewAddress')
+                  : 'New identity'
+            }
+            aria-label={
+              emailAccount?.fullEmail
+                ? 'Generate new disposable email'
+                : 'Generate disposable email'
+            }
+          >
+            <RefreshCw size={14} className={isGeneratingEmail ? 'spin' : ''} />
+          </button>
+        )}
+        {isReal && currentDisconnectHandler && (
+          <button
+            type="button"
+            className="action-icon"
+            onClick={currentDisconnectHandler}
+            title="Disconnect account"
+            aria-label="Disconnect email account"
+          >
+            <LogOut size={14} />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -252,15 +331,17 @@ interface HistoryTabProps {
 }
 
 const HistoryTab: React.FC<HistoryTabProps> = ({ history, onClear, onToast }) => (
-  <div className="inbox-section">
+  <div className="inbox-section" role="region" aria-label="Alias tracker">
     <div className="inbox-header-row">
       <div className="inbox-title-group">
         <Shield size={14} />
-        <span>Alias tracker</span>
+        <span role="heading" aria-level={2}>
+          Alias tracker
+        </span>
         {history.length > 0 && <span className="inbox-count">{history.length}</span>}
       </div>
       {history.length > 0 && (
-        <button className="alias-clear-history-btn" onClick={onClear}>
+        <button type="button" className="alias-clear-history-btn" onClick={onClear}>
           Clear All
         </button>
       )}
@@ -292,6 +373,7 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ history, onClear, onToast }) =>
               </div>
             </div>
             <button
+              type="button"
               className="action-icon"
               aria-label={`Copy ${item.alias}`}
               onClick={() =>
@@ -339,18 +421,22 @@ const InboxTab: React.FC<InboxTabProps> = ({
   const showList = !isManual && inbox.length > 0;
 
   return (
-    <div className="inbox-section">
+    <div className="inbox-section" role="region" aria-label="Recent inbox">
       <div className="inbox-header-row">
         <div className="inbox-title-group">
           <Inbox size={14} />
-          <span>Recent inbox</span>
+          <span role="heading" aria-level={2}>
+            Recent inbox
+          </span>
           {!isManual && inbox.length > 0 && <span className="inbox-count">{inbox.length}</span>}
         </div>
         {!isManual && (
           <button
+            type="button"
             className={`alias-inbox-refresh ${loading ? 'alias-inbox-refresh--loading' : ''}`}
             onClick={onRefresh}
             disabled={loading}
+            aria-busy={loading}
             aria-label="Refresh inbox"
           >
             <RefreshCw size={14} className={loading ? 'spin' : ''} />
@@ -371,8 +457,10 @@ const InboxTab: React.FC<InboxTabProps> = ({
             <span style={{ fontSize: '10px' }}>Manual connection generates aliases only.</span>
           </div>
           <button
+            type="button"
             onClick={onSignIn}
             disabled={signingIn}
+            aria-busy={signingIn}
             className="gf-btn gf-btn--primary"
             style={{
               padding: '8px 16px',
@@ -402,7 +490,7 @@ const InboxTab: React.FC<InboxTabProps> = ({
       )}
 
       {showLoading && (
-        <div className="shimmer hub-empty-state" style={{ marginTop: 8 }}>
+        <div className="hub-empty-state" style={{ marginTop: 8 }}>
           <RefreshCw size={16} strokeWidth={1.5} className="spin" color="var(--gf-primary)" />
           <span>Syncing Gmail…</span>
         </div>
@@ -417,25 +505,32 @@ const InboxTab: React.FC<InboxTabProps> = ({
 
       {showList && (
         <div className="hub-inbox-scroll">
-          {inbox.map((msg) => (
+          {inbox.map((msg) => {
+            const senderSource = getSenderSource(msg.fromName, msg.fromEmail || msg.from);
+            const content = msg.htmlBody || msg.body || msg.snippet;
+            const senderLabel = getSenderLabel(senderSource, msg.subject, null, content);
+            return (
             <button
               type="button"
               key={msg.id}
               className={`inbox-item ${msg.isUnread ? 'alias-inbox-item--unread' : ''}`}
               onClick={() => onOpenMessage(msg)}
-              aria-label={`Open email from ${msg.fromName || msg.fromEmail}: ${msg.subject}`}
+              disabled={openingMessageId === msg.id}
+              aria-label={`${msg.isUnread ? 'Open unread email' : 'Open email'} from ${senderLabel}: ${msg.subject}`}
               aria-busy={openingMessageId === msg.id}
             >
               <EmailAvatar
-                from={getSenderSource(msg.fromName, msg.fromEmail)}
+                from={senderSource}
+                subject={msg.subject}
+                content={content}
                 className="inbox-item-avatar"
               />
               <span className="inbox-item-content">
                 <span className="inbox-item-header">
-                  <span className="inbox-item-from truncate">{msg.fromName || msg.fromEmail}</span>
+                  <span className="inbox-item-from truncate">{senderLabel}</span>
                   <span className="inbox-item-date">
                     <Clock size={10} />
-                    {msg.dateFormatted || formatRelativeTime(new Date(msg.date).getTime())}
+                    {msg.dateFormatted || formatInboxRelativeDate(new Date(msg.date).getTime())}
                   </span>
                 </span>
                 <span className="inbox-item-subject truncate">{msg.subject || '(No subject)'}</span>
@@ -446,7 +541,8 @@ const InboxTab: React.FC<InboxTabProps> = ({
                 <ChevronRight size={14} className="inbox-item-open-chevron" aria-hidden="true" />
               )}
             </button>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -456,16 +552,14 @@ const InboxTab: React.FC<InboxTabProps> = ({
 export { InboxTab as AliasInbox };
 
 // --- AppSkeleton.tsx ---
-const AppSkeleton = React.forwardRef<HTMLDivElement, HTMLMotionProps<'div'>>(
+const AppSkeleton = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => {
     return (
-      <motion.div
+      <div
         ref={ref}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
         className={`app-skeleton app-view-container ${className || ''}`}
-        aria-hidden="true"
+        role="status"
+        aria-label="Loading GhostFill"
         {...props}
       >
         <div className="header skeleton-header-gap">
@@ -516,14 +610,14 @@ const AppSkeleton = React.forwardRef<HTMLDivElement, HTMLMotionProps<'div'>>(
               <div className="skeleton-pulse app-skeleton-pill skeleton-w-60" />
             </div>
             <div className="inbox-list skeleton-mt-10">
-              <div className="shimmer hub-empty-state">
+              <div className="hub-empty-state">
                 <div className="skeleton-pulse app-skeleton-circle skeleton-icon-md" />
                 <div className="skeleton-pulse app-skeleton-pill skeleton-w-80" />
               </div>
             </div>
           </div>
         </div>
-      </motion.div>
+      </div>
     );
   }
 );
@@ -556,10 +650,12 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 }) => {
   const cancelBtnRef = useRef<HTMLButtonElement | null>(null);
   const modalRef = useRef<HTMLDivElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
   const wasOpenRef = useRef<boolean>(false);
   const titleId = useId();
   const descId = useId();
+  useDialogIsolation(isOpen, overlayRef);
 
   // Track open/close transitions to restore focus ONLY when the modal closes
   // (not on every render where isOpen is false, which would steal focus from
@@ -596,6 +692,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
+        e.stopPropagation();
         onCancelRef.current();
         return;
       }
@@ -605,7 +702,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
           return;
         }
         const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), iframe[tabindex="0"], [tabindex]:not([tabindex="-1"])'
         );
         if (focusableElements.length === 0) {
           return;
@@ -613,6 +710,12 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 
         const first = focusableElements[0];
         const last = focusableElements[focusableElements.length - 1];
+
+        if (!modalRef.current.contains(document.activeElement)) {
+          e.preventDefault();
+          (e.shiftKey ? last : first)?.focus();
+          return;
+        }
 
         if (e.shiftKey) {
           if (document.activeElement === first && last) {
@@ -638,6 +741,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
     <AnimatePresence>
       {isOpen && (
         <motion.div
+          ref={overlayRef}
           className="modal-overlay"
           onClick={onCancel}
           initial={{ opacity: 0 }}
@@ -695,7 +799,6 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
       return;
     }
 
-    let rafId: number | null = null;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const updateTimer = () => {
@@ -715,10 +818,8 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
         setTimeLeft(`${totalMins}:${secs < 10 ? '0' : ''}${secs}`);
       }
 
-      // Schedule next update in 250ms to preserve battery while maintaining high precision
-      timeoutId = setTimeout(() => {
-        rafId = requestAnimationFrame(updateTimer);
-      }, 250);
+      // The display only changes once per second; avoid a 4 Hz timer + rAF.
+      timeoutId = setTimeout(updateTimer, Math.min(1000, remaining));
     };
 
     updateTimer();
@@ -726,9 +827,6 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
     return () => {
       if (timeoutId !== null) {
         clearTimeout(timeoutId);
-      }
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId);
       }
     };
   }, [expiresAt, expiredLabel]);
@@ -743,7 +841,7 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
     <span
       className={`expiry-badge ${isExpired ? 'expired' : ''}`}
       role="timer"
-      aria-label={`Expires in ${timeLeft}`}
+      aria-label={isExpired ? 'Expired' : `Expires in ${timeLeft}`}
     >
       {timeLeft}
     </span>
@@ -753,42 +851,90 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
 // --- EmailAvatar.tsx ---
 interface EmailAvatarProps {
   from: string;
+  subject?: string | undefined;
+  website?: string | null | undefined;
+  content?: string | undefined;
   className?: string;
   style?: React.CSSProperties;
   children?: React.ReactNode;
 }
 
 export const EmailAvatar: React.FC<EmailAvatarProps> = React.memo(
-  ({ from, className = '', style, children }) => {
+  ({ from, subject, website, content, className = '', style, children }) => {
     const safeFrom = contentToString(from);
-    const senderLabel = useMemo(() => getSenderLabel(safeFrom), [safeFrom]);
-    const senderEmail = useMemo(() => getSenderEmail(safeFrom), [safeFrom]);
-    const domain = senderEmail.split('@')[1]?.toLowerCase() ?? '';
+    const senderLabel = useMemo(
+      () => getSenderLabel(safeFrom, subject, website, content),
+      [safeFrom, subject, website, content]
+    );
+    const sender = useMemo(() => parseEmailIdentity(safeFrom), [safeFrom]);
+    const domain = sender.domain;
+    const faviconSources = useMemo(() => {
+      const domains = getSenderLogoDomains(safeFrom, website, content);
+      const bundledLogo = domains.includes('chat.qwen.ai')
+        ? qwenLogoImg
+        : domains.includes('www.notion.com')
+          ? notionLogoImg
+          : null;
+      return [
+        ...(bundledLogo ? [bundledLogo] : []),
+        ...domains.flatMap((host) => [
+          `https://${host}/favicon.ico`,
+          `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(`https://${host}`)}&sz=64`,
+          `https://${host}/apple-touch-icon.png`,
+        ]),
+      ];
+    }, [safeFrom, website, content]);
+    const [faviconIndex, setFaviconIndex] = useState(0);
+    const [loadedSource, setLoadedSource] = useState<string | null>(null);
+    useEffect(() => {
+      setFaviconIndex(0);
+      setLoadedSource(null);
+    }, [faviconSources]);
+    const faviconSource = faviconSources[faviconIndex];
 
-    const firstLetter = useMemo(() => {
-      const source = senderLabel || domain || safeFrom.trim();
-      const firstChar = source.charAt(0);
-      return /[a-z0-9]/i.test(firstChar) ? firstChar.toUpperCase() : '?';
-    }, [domain, safeFrom, senderLabel]);
-
-    const tone = useMemo(() => {
-      const identity = domain || senderLabel || safeFrom;
-      let hash = 0;
-      for (let index = 0; index < identity.length; index += 1) {
-        hash = (hash * 31 + identity.charCodeAt(index)) >>> 0;
+    useEffect(() => {
+      if (!faviconSource || loadedSource === faviconSource) {
+        return;
       }
-      return hash % 4;
-    }, [domain, safeFrom, senderLabel]);
+
+      // A host can leave an image request pending without firing onError.
+      // Move on so one slow logo endpoint cannot hold up the remaining sources.
+      const timeout = window.setTimeout(() => {
+        setFaviconIndex((index) => index + 1);
+      }, 900);
+      return () => window.clearTimeout(timeout);
+    }, [faviconSource, loadedSource]);
 
     return (
       <div
-        className={`email-avatar email-avatar--tone-${tone} ${className}`.trim()}
+        className={`email-avatar ${className}`.trim()}
         style={style}
         title={senderLabel || domain || safeFrom || undefined}
       >
         <span className="email-avatar-fallback" aria-hidden="true">
-          {firstLetter}
+          {domain ? <Globe2 size={16} strokeWidth={1.8} /> : <Mail size={16} strokeWidth={1.8} />}
         </span>
+        {faviconSource && (
+          <img
+            className="email-avatar-logo"
+            src={faviconSource}
+            width={32}
+            height={32}
+            alt=""
+            aria-hidden="true"
+            decoding="async"
+            referrerPolicy="no-referrer"
+            style={{ visibility: loadedSource === faviconSource ? 'visible' : 'hidden' }}
+            onLoad={(event) => {
+              if (event.currentTarget.naturalWidth <= 1 || event.currentTarget.naturalHeight <= 1) {
+                setFaviconIndex((index) => index + 1);
+              } else {
+                setLoadedSource(faviconSource);
+              }
+            }}
+            onError={() => setFaviconIndex((index) => index + 1)}
+          />
+        )}
         {children}
       </div>
     );
@@ -798,20 +944,22 @@ export const EmailAvatar: React.FC<EmailAvatarProps> = React.memo(
 EmailAvatar.displayName = 'EmailAvatar';
 
 // --- EmailViewerModal.tsx ---
-const openUrlInTab = (url: string): void => {
+const openUrlInTab = (url: string): boolean => {
   try {
     const safe = new URL(url);
     if (safe.protocol !== 'http:' && safe.protocol !== 'https:') {
-      return;
+      return false;
     }
     if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
       chrome.tabs.create({ url: safe.href, active: true });
+      return true;
     } else if (typeof window !== 'undefined') {
-      window.open(safe.href, '_blank', 'noopener,noreferrer');
+      return Boolean(window.open(safe.href, '_blank', 'noopener,noreferrer'));
     }
   } catch {
     // Invalid URL — ignore.
   }
+  return false;
 };
 
 /**
@@ -847,6 +995,7 @@ export interface EmailViewerMessage {
 export interface EmailViewerModalProps {
   /** Pass null to close. */
   message: EmailViewerMessage | null;
+  messageKey?: string | number | null;
   loading?: boolean;
   error?: string | null;
   /** Disable the "Copy OTP" / "Open link" buttons (e.g. while loading). */
@@ -856,6 +1005,17 @@ export interface EmailViewerModalProps {
 
 const MAX_BODY_CHARS = 18_000;
 const MAX_RENDERABLE_HTML_CHARS = 300_000;
+// MIME bodies often contain whitespace-only spacer lines from email tables.
+// Keep paragraph breaks and meaningful indentation without reproducing those gaps.
+const normalizePlainText = (text: string): string =>
+  text
+    .replace(/\r\n?/g, '\n')
+    .replace(/\u00a0/g, ' ')
+    .replace(/^[\t ]+$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+const EMAIL_MARKUP_RE =
+  /<\/?(?:html|body|head|meta|title|table|thead|tbody|tfoot|tr|td|th|div|p|br|a|img|picture|source|h[1-6]|ul|ol|li|center|section|article|header|footer|span|strong|em|b|i|u|blockquote|pre|code|hr|font|small|mark|figure|figcaption|style)\b[^>]*>/i;
 
 const stripHtml = (htmlInput: unknown): string => {
   const html = contentToString(htmlInput);
@@ -863,7 +1023,10 @@ const stripHtml = (htmlInput: unknown): string => {
     return '';
   }
   try {
-    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const doc = new DOMParser().parseFromString(
+      html.replace(/<\/(?:p|div|li|h[1-6]|tr|blockquote)>/gi, '$&\n'),
+      'text/html'
+    );
 
     // Security: Nuke dangerous elements completely
     doc
@@ -904,10 +1067,7 @@ const stripHtml = (htmlInput: unknown): string => {
       }
     }
 
-    return text
-      .replace(/&nbsp;/gi, ' ')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+    return normalizePlainText(text);
   } catch {
     // Fallback to regex stripping if DOMParser fails or isn't available
     return html
@@ -922,6 +1082,15 @@ const stripHtml = (htmlInput: unknown): string => {
       .replace(/\s+/g, ' ')
       .trim();
   }
+};
+
+/** A one-line excerpt for inbox rows; never render sender markup as UI. */
+export const getEmailPreview = (value: unknown): string => {
+  const raw = contentToString(value).slice(0, 3_000);
+  return (/<[a-z][^>]*>/i.test(raw) ? stripHtml(raw) : raw)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 180);
 };
 
 const formatDate = (msg: EmailViewerMessage): string => {
@@ -941,24 +1110,46 @@ const formatDate = (msg: EmailViewerMessage): string => {
   return '';
 };
 
+const formatCompactDate = (msg: EmailViewerMessage): string => {
+  const raw = msg.date ?? msg.dateFormatted;
+  const parsed = typeof raw === 'number' ? new Date(raw) : new Date(String(raw ?? ''));
+  if (Number.isNaN(parsed.getTime())) {
+    return formatDate(msg);
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(parsed.getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' as const }),
+  }).format(parsed);
+};
+
 export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
   message,
+  messageKey,
   loading = false,
   error = null,
   onClose,
   onToast,
 }) => {
+  const isOpen = Boolean(message);
+  const subjectId = useId();
   const [bodyExpanded, setBodyExpanded] = useState(false);
   const [copiedOtp, setCopiedOtp] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
   const modalRef = useRef<HTMLDivElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
   const modalBodyRef = useRef<HTMLDivElement | null>(null);
   const htmlContainerRef = useRef<HTMLDivElement | null>(null);
   const openerRef = useRef<HTMLElement | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const iframeKeyDocumentRef = useRef<Document | null>(null);
+  const iframeKeyHandlerRef = useRef<((event: KeyboardEvent) => void) | null>(null);
   const iframeFitTimers = useRef<Array<ReturnType<typeof setTimeout>>>([]);
+  const copiedOtpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copiedTextTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  useDialogIsolation(isOpen, overlayRef);
 
   // Best-fit: grow the iframe to its content height so the modal body owns
   // the ONLY scrollbar.
@@ -1001,23 +1192,11 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
       if (!Number.isFinite(contentH) || contentH <= 0) {
         return;
       }
-      // Use the actual remaining modal space before allowing the email to
-      // grow. Short verification emails therefore fit without scrolling;
-      // genuinely long messages still use the modal's single scrollbar.
-      const modalBody = modalBodyRef.current;
-      const htmlContainer = htmlContainerRef.current;
-      let availableHeight = 560;
-      if (modalBody && htmlContainer) {
-        const fixedChildrenHeight = Array.from(modalBody.children)
-          .filter((child) => child !== htmlContainer)
-          .reduce(
-            (total, child) => total + (child as HTMLElement).getBoundingClientRect().height,
-            0
-          );
-        const gapBudget = Math.max(0, (modalBody.children.length - 1) * 10);
-        availableHeight = Math.max(160, modalBody.clientHeight - fixedChildrenHeight - gapBudget);
-      }
-      const fitted = Math.min(Math.max(contentH + 8, 160), Math.min(560, availableHeight));
+      // The frame has no own scrollbar. Size it to its full content so the
+      // dialog body can scroll through the entire message without clipping.
+      // Root measurements include the current viewport; padding them grows
+      // the frame on every delayed fit even when the content has not changed.
+      const fitted = Math.min(Math.max(contentH, 160), 12_000);
       const current = parseFloat(iframe.style.height) || iframe.clientHeight || 0;
       if (Math.abs(fitted - current) <= 1) {
         return;
@@ -1026,6 +1205,14 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
     } catch {
       // Cross-origin or not-yet-ready — leave the default height.
     }
+  }, []);
+
+  const clearIframeKeyHandler = useCallback(() => {
+    if (iframeKeyDocumentRef.current && iframeKeyHandlerRef.current) {
+      iframeKeyDocumentRef.current.removeEventListener('keydown', iframeKeyHandlerRef.current);
+    }
+    iframeKeyDocumentRef.current = null;
+    iframeKeyHandlerRef.current = null;
   }, []);
 
   const handleIframeLoad = useCallback(() => {
@@ -1041,6 +1228,54 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
     }
     try {
       const doc = iframeRef.current?.contentDocument;
+      clearIframeKeyHandler();
+      if (doc) {
+        const handleFrameKeyDown = (event: KeyboardEvent) => {
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            onCloseRef.current();
+            return;
+          }
+          if (event.key !== 'Tab') {
+            return;
+          }
+
+          const frameFocusables = Array.from(
+            doc.querySelectorAll<HTMLElement>(
+              'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            )
+          );
+          const first = frameFocusables[0];
+          const last = frameFocusables[frameFocusables.length - 1];
+          const atFrameBoundary =
+            frameFocusables.length === 0 ||
+            (event.shiftKey ? doc.activeElement === first : doc.activeElement === last);
+          if (!atFrameBoundary) {
+            return;
+          }
+
+          const modal = modalRef.current;
+          const outerFocusables = modal
+            ? Array.from(
+                modal.querySelectorAll<HTMLElement>(
+                  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), iframe[tabindex="0"], [tabindex]:not([tabindex="-1"])'
+                )
+              )
+            : [];
+          const iframeIndex = outerFocusables.indexOf(iframeRef.current as HTMLElement);
+          if (iframeIndex < 0 || outerFocusables.length === 0) {
+            return;
+          }
+          const targetIndex = event.shiftKey
+            ? (iframeIndex - 1 + outerFocusables.length) % outerFocusables.length
+            : (iframeIndex + 1) % outerFocusables.length;
+          event.preventDefault();
+          outerFocusables[targetIndex]?.focus();
+        };
+        doc.addEventListener('keydown', handleFrameKeyDown);
+        iframeKeyDocumentRef.current = doc;
+        iframeKeyHandlerRef.current = handleFrameKeyDown;
+      }
       const imgs = doc ? Array.from(doc.images ?? []) : [];
       const handleBrokenImage = (img: HTMLImageElement) => {
         try {
@@ -1048,7 +1283,7 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
             return false;
           }
           const alt = img.alt.trim();
-          if (alt && img.parentElement && doc) {
+          if (img.hasAttribute('src') && alt && img.parentElement && doc) {
             const fallback = doc.createElement('span');
             fallback.textContent = alt;
             fallback.setAttribute('role', 'img');
@@ -1065,8 +1300,8 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
         return false;
       };
       for (const img of imgs) {
-        // Remote sender assets can still fail independently; preserve useful
-        // alt text as a small inline fallback instead of silently losing it.
+        // The sanitizer removes remote sender assets. Only local images can
+        // reach this fallback, so blocked filenames never clutter the reader.
         if (!img.complete) {
           img.addEventListener(
             'load',
@@ -1096,10 +1331,18 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
     for (const delay of [120, 350, 900, 2000]) {
       iframeFitTimers.current.push(setTimeout(() => fitIframeToContent(), delay));
     }
-  }, [clearIframeFitTimers, fitIframeToContent]);
+  }, [clearIframeFitTimers, clearIframeKeyHandler, fitIframeToContent]);
 
   useEffect(() => {
-    return () => clearIframeFitTimers();
+    return () => {
+      clearIframeFitTimers();
+      if (copiedOtpTimerRef.current) {
+        clearTimeout(copiedOtpTimerRef.current);
+      }
+      if (copiedTextTimerRef.current) {
+        clearTimeout(copiedTextTimerRef.current);
+      }
+    };
   }, [clearIframeFitTimers]);
 
   useEffect(() => {
@@ -1120,51 +1363,50 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
   // Some providers always include an `htmlBody` key, even when its value is
   // plain text. Select the first body that actually contains email markup;
   // otherwise the plain-text reader is the reliable fallback.
-  const htmlBodyPattern =
-    /<\/?(?:html|body|head|meta|title|table|thead|tbody|tfoot|tr|td|th|div|p|br|a|img|picture|source|h[1-6]|ul|ol|li|center|section|article|header|footer|span|strong|em|b|i|u|blockquote|pre|code|hr|font|small|mark|figure|figcaption|style)\b[^>]*>/i;
   const rawHtml =
-    [message?.htmlBody, message?.body]
+    [message?.htmlBody, message?.body, message?.textBody]
       .map((candidate) => contentToString(candidate ?? ''))
-      .find((candidate) => htmlBodyPattern.test(candidate)) || '';
+      .find((candidate) => EMAIL_MARKUP_RE.test(candidate)) || '';
   const hasHtml = Boolean(rawHtml);
   const remoteAssetsBlocked = useMemo(
     () => containsRemoteEmailAssets(rawHtml.slice(0, MAX_RENDERABLE_HTML_CHARS)),
     [rawHtml]
   );
 
-  const [viewMode, setViewMode] = useState<'html' | 'text'>(hasHtml ? 'html' : 'text');
+  const [viewMode, setViewMode] = useState<'html' | 'text'>('text');
 
   useEffect(() => {
-    if (message) {
-      setViewMode(hasHtml ? 'html' : 'text');
+    if (isOpen) {
+      setViewMode('text');
       setBodyExpanded(false);
       setCopiedOtp(false);
       setCopiedText(false);
     }
-  }, [message, hasHtml]);
+  }, [isOpen, messageKey, hasHtml]);
 
   // ESC closes; Tab is trapped inside the dialog; focus enters on open and
   // returns to the opener on close (WCAG 2.4.3 / 2.1.2).
   useEffect(() => {
-    if (!message) {
+    if (!isOpen) {
       return;
     }
     openerRef.current = document.activeElement as HTMLElement;
     const root = modalRef.current;
     root
       ?.querySelectorAll<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), iframe[tabindex="0"], [tabindex]:not([tabindex="-1"])'
       )[0]
       ?.focus();
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        e.preventDefault();
         onCloseRef.current();
         return;
       }
       if (e.key === 'Tab' && root) {
         const items = root.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), iframe[tabindex="0"], [tabindex]:not([tabindex="-1"])'
         );
         if (items.length === 0) {
           return;
@@ -1174,7 +1416,10 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
         if (!first || !last) {
           return;
         }
-        if (e.shiftKey && document.activeElement === first) {
+        if (!root.contains(document.activeElement)) {
+          e.preventDefault();
+          (e.shiftKey ? last : first).focus();
+        } else if (e.shiftKey && document.activeElement === first) {
           e.preventDefault();
           last.focus();
         } else if (!e.shiftKey && document.activeElement === last) {
@@ -1186,14 +1431,19 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
-      openerRef.current?.focus?.();
+      clearIframeKeyHandler();
+      if (openerRef.current?.isConnected) {
+        openerRef.current.focus();
+      }
     };
-  }, [message]);
+  }, [isOpen, clearIframeKeyHandler]);
 
   const rawSender = getSenderSource(message?.fromName, message?.from || '');
-  const sender = message ? getSenderLabel(rawSender, message.subject) : '';
+  const sender = message ? getSenderLabel(rawSender, message.subject, message.link,
+    rawHtml || contentToString(message.textBody || message.body || message.snippet)) : '';
   const avatarSource = getSenderSource(message?.fromName, message?.from || sender);
   const dateText = message ? formatDate(message) : '';
+  const compactDateText = message ? formatCompactDate(message) : '';
 
   const sanitizedHtml = useMemo(() => {
     if (!hasHtml || !rawHtml) {
@@ -1378,10 +1628,26 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
   const plainTextBody = useMemo(() => {
     const preferredText = contentToString(message?.textBody ?? '');
     if (preferredText) {
-      return preferredText.slice(0, MAX_BODY_CHARS);
+      const text = normalizePlainText(
+        EMAIL_MARKUP_RE.test(preferredText) ? stripHtml(preferredText) : preferredText
+      ).slice(0, MAX_BODY_CHARS);
+      // Some providers supply only the code in textBody. Recover the readable
+      // message from HTML only when its visible verification code agrees.
+      if (rawHtml && /^\d{4,8}$/.test(text)) {
+        const htmlText = stripHtml(rawHtml.slice(0, MAX_RENDERABLE_HTML_CHARS)).slice(
+          0,
+          MAX_BODY_CHARS
+        );
+        const htmlCode =
+          extractExplicitVerificationCode(htmlText) || /^\s*(\d{4,8})\s*$/m.exec(htmlText)?.[1];
+        if (htmlCode === text) {
+          return htmlText;
+        }
+      }
+      return text;
     }
     if (message?.body && !/<[a-z][\s\S]*>/i.test(message.body)) {
-      return contentToString(message.body).slice(0, MAX_BODY_CHARS);
+      return normalizePlainText(contentToString(message.body)).slice(0, MAX_BODY_CHARS);
     }
     return rawHtml ? stripHtml(rawHtml.slice(0, MAX_BODY_CHARS)) : '';
   }, [message, rawHtml]);
@@ -1397,85 +1663,87 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
   const fallbackDetection = useMemo(() => {
     const text = `${plainTextBody}\n${snippet}`;
     let otp: string | null = null;
-    // Standalone 6–8 digit code (authenticator style). Deliberately NOT
-    // 4–5 digits here: years, ports and fragments false-positive too often
-    // at this layer; the backend engine owns those cases.
-    const codeMatch = /(?:^|[^\d])(\d{6,8})(?:[^\d]|$)/.exec(text);
+    // A UI fallback needs local instruction or a standalone code line. An
+    // arbitrary six-digit URL path or message identifier is not an OTP.
+    const textWithoutUrls = text.replace(/https?:\/\/\S+/gi, ' ').replace(/\b\S+@\S+\b/g, ' ');
+    const codeMatch =
+      /\b(?:enter|use|type|copy)\s+(\d{6,8})\s+to\s+(?:verify|confirm|sign\s*in|log\s*in|authenticate)\b/i.exec(
+        textWithoutUrls
+      ) || /^\s*(\d{6,8})\s*$/m.exec(textWithoutUrls);
     if (codeMatch?.[1]) {
       otp = codeMatch[1];
     }
-    let link: string | null = null;
-    const urlRe = /https?:\/\/[^\s"'<>)]+/gi;
-    const candidates: string[] = [];
-    const pushUrls = (s: string) => {
-      if (!s) {
+    const candidates = extractUrls(`${rawHtml}\n${text}\n${message?.link || ''}`);
+    const backendLink = message?.link && isWebUrl(message.link) ? new URL(message.link).href : null;
+    const link =
+      candidates.find((url) => new URL(url).href === backendLink) || candidates[0] || null;
+    return { otp, link };
+  }, [plainTextBody, snippet, rawHtml, message?.link]);
+
+  const explicitCode = extractExplicitVerificationCode(plainTextBody || snippet);
+  const backendCode =
+    message?.otp && !isSubjectDomainToken(message.otp, message.subject || '') ? message.otp : null;
+  const effectiveOtp = explicitCode || backendCode || fallbackDetection.otp || null;
+  const effectiveLink = fallbackDetection.link;
+
+  const handleCopyBody = async () => {
+    const textToCopy = plainTextBody || snippet || rawHtml;
+    try {
+      const ok = await copyToClipboard(textToCopy);
+      if (!ok) {
+        onToast?.('Failed to copy');
         return;
       }
-      urlRe.lastIndex = 0;
-      let m: RegExpExecArray | null;
-      while ((m = urlRe.exec(s)) !== null) {
-        candidates.push(m[0].replace(/[.,;!?]+$/, ''));
+      setCopiedText(true);
+      if (copiedTextTimerRef.current) {
+        clearTimeout(copiedTextTimerRef.current);
       }
-    };
-    pushUrls(rawHtml);
-    pushUrls(text);
-    const scored = candidates
-      .map((url) => {
-        const lower = url.toLowerCase();
-        let score = 0;
-        if (
-          /activat|verify|confirm|magic|auth|signin|sign-in|login|validate|callback/.test(lower)
-        ) {
-          score += 3;
-        }
-        if (/[?&](token|id|code|key|hash|signature|t|u|email)=[^&]{4,}/.test(lower)) {
-          score += 3;
-        }
-        if (
-          /unsubscribe|preferences|privacy|terms|help|support|twitter|facebook|linkedin|instagram/.test(
-            lower
-          )
-        ) {
-          score -= 4;
-        }
-        return { url, score };
-      })
-      .filter((c) => c.score > 0)
-      .sort((a, b) => b.score - a.score);
-    if (scored[0]) {
-      link = scored[0].url;
+      copiedTextTimerRef.current = setTimeout(() => setCopiedText(false), 2000);
+      onToast?.('Email content copied');
+    } catch {
+      onToast?.('Failed to copy');
     }
-    return { otp, link };
-  }, [plainTextBody, snippet, rawHtml]);
+  };
 
-  const effectiveOtp = message?.otp || fallbackDetection.otp || null;
-  const effectiveLink = message?.link || fallbackDetection.link || null;
-
-  const handleCopyBody = () => {
-    const textToCopy = plainTextBody || snippet || rawHtml;
-    void copyToClipboard(textToCopy).then((ok) => {
-      if (ok) {
-        setCopiedText(true);
-        setTimeout(() => setCopiedText(false), 2000);
-        onToast?.('Email content copied');
-      } else {
+  const handleCopyOtp = async () => {
+    if (!effectiveOtp) {
+      return;
+    }
+    try {
+      const ok = await copyToClipboard(effectiveOtp);
+      if (!ok) {
         onToast?.('Failed to copy');
+        return;
       }
-    });
+      setCopiedOtp(true);
+      if (copiedOtpTimerRef.current) {
+        clearTimeout(copiedOtpTimerRef.current);
+      }
+      copiedOtpTimerRef.current = setTimeout(() => setCopiedOtp(false), 2000);
+      onToast?.('Verification code copied');
+    } catch {
+      onToast?.('Failed to copy');
+    }
+  };
+
+  const handleOpenEffectiveLink = () => {
+    if (effectiveLink && openUrlInTab(effectiveLink)) {
+      onToast?.('Opening activation link…');
+    } else {
+      onToast?.('Could not open the activation link.');
+    }
   };
 
   return (
     <AnimatePresence>
       {message && (
         <motion.div
+          ref={overlayRef}
           className="alias-message-modal-backdrop"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1, transition: tweenIn }}
           exit={{ opacity: 0, transition: tweenOut }}
           onClick={onClose}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="email-viewer-subject"
         >
           <motion.div
             ref={modalRef}
@@ -1484,64 +1752,53 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
             animate={{ y: 0, opacity: 1, scale: 1, transition: tweenIn }}
             exit={{ y: 12, opacity: 0, scale: 0.98, transition: tweenOut }}
             onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={subjectId}
           >
             <div className="alias-message-modal-header">
-              <div className="alias-message-modal-title-group">
-                <EmailAvatar from={avatarSource} className="email-viewer-avatar" />
-                <div className="alias-message-modal-titles">
-                  <div
-                    id="email-viewer-subject"
-                    className="alias-message-modal-title truncate"
-                    title={message.subject || '(No subject)'}
-                  >
-                    {message.subject || '(No subject)'}
-                  </div>
-                  <div className="alias-message-modal-meta truncate">
-                    {sender && (
-                      <>
+              <div className="email-viewer-header-top">
+                <div className="alias-message-modal-title-group">
+                  <EmailAvatar
+                    from={avatarSource}
+                    subject={message.subject}
+                    website={effectiveLink}
+                    content={rawHtml || plainTextBody}
+                    className="email-viewer-avatar"
+                  />
+                  <div className="alias-message-modal-titles">
+                    <div
+                      id={subjectId}
+                      className="alias-message-modal-title"
+                      title={message.subject || '(No subject)'}
+                    >
+                      {message.subject || '(No subject)'}
+                    </div>
+                    <div className="alias-message-modal-meta">
+                      {sender && (
                         <span
                           className="email-viewer-sender"
                           title={getSenderEmail(rawSender) || rawSender || undefined}
                         >
                           {sender}
                         </span>
-                        {dateText && <span className="email-viewer-sep"> · </span>}
-                      </>
-                    )}
-                    {dateText}
+                      )}
+                      {dateText && (
+                        <span className="email-viewer-date" title={dateText}>
+                          {compactDateText}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-
-              <div className="alias-message-modal-header-actions">
-                {hasHtml && (
-                  <div className="alias-message-modal-view-toggle">
-                    <button
-                      type="button"
-                      className={`alias-view-toggle-btn ${viewMode === 'html' ? 'alias-view-toggle-btn--active' : ''}`}
-                      onClick={() => setViewMode('html')}
-                      title="View rich HTML email"
-                      aria-pressed={viewMode === 'html'}
-                    >
-                      <span>HTML</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={`alias-view-toggle-btn ${viewMode === 'text' ? 'alias-view-toggle-btn--active' : ''}`}
-                      onClick={() => setViewMode('text')}
-                      title="View plain text"
-                      aria-pressed={viewMode === 'text'}
-                    >
-                      <span>Text</span>
-                    </button>
-                  </div>
-                )}
                 <button
+                  type="button"
                   className="alias-message-modal-close"
                   onClick={onClose}
                   aria-label="Close message"
+                  title="Close message"
                 >
-                  <X size={16} />
+                  <X size={17} />
                 </button>
               </div>
             </div>
@@ -1555,73 +1812,43 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
             <div ref={modalBodyRef} className="alias-message-modal-body">
               {loading ? (
                 <div className="alias-inbox-loading">
-                  <RefreshCw size={20} className="spin-icon" />
+                  <RefreshCw size={20} className="spin" />
                   <span>Loading message…</span>
                 </div>
               ) : (
                 <>
-                  {/* Hero OTP Card (backend value or local fallback) */}
+                  {/* The code and link stay readable; actions live in the footer. */}
                   {effectiveOtp && (
                     <div className="email-hero-otp-banner">
                       <div className="email-hero-otp-info">
                         <div className="email-hero-otp-label">
                           <Zap size={12} />
-                          <span>Verification Code</span>
+                          <span>Verification code</span>
                         </div>
                         <div className="email-hero-otp-code">{effectiveOtp}</div>
                       </div>
-                      <button
-                        type="button"
-                        className="email-hero-otp-btn"
-                        onClick={() => {
-                          void copyToClipboard(effectiveOtp ?? '').then((ok) => {
-                            if (ok) {
-                              setCopiedOtp(true);
-                              setTimeout(() => setCopiedOtp(false), 2000);
-                              onToast?.('Verification code copied!');
-                            }
-                          });
-                        }}
-                      >
-                        {copiedOtp ? <Check size={13} /> : <Copy size={13} />}
-                        <span>{copiedOtp ? 'Copied' : 'Copy'}</span>
-                      </button>
                     </div>
                   )}
 
-                  {/* Hero Link Card — always visible when a link exists so the
-                      primary action is never hidden behind the OTP state. */}
                   {effectiveLink && (
-                    <div className="email-hero-link-banner">
+                    <button
+                      type="button"
+                      className="email-hero-link-banner"
+                      onClick={handleOpenEffectiveLink}
+                      aria-label={`Open verification link on ${new URL(effectiveLink).hostname}`}
+                      title={effectiveLink}
+                    >
                       <div className="email-hero-link-info">
                         <div className="email-hero-link-label">
                           <Link2 size={12} />
-                          <span>Activation Link</span>
+                          <span>Open verification link</span>
                         </div>
                         <div className="email-hero-link-url truncate" title={effectiveLink}>
-                          {effectiveLink}
+                          {new URL(effectiveLink).hostname}
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        className="email-hero-link-btn"
-                        onClick={() => openUrlInTab(effectiveLink ?? '')}
-                      >
-                        <Globe size={13} />
-                        <span>Open Link</span>
-                      </button>
-                    </div>
-                  )}
-
-                  {snippet && snippet !== plainTextBody.slice(0, 200) && !hasHtml && (
-                    <div className="alias-message-modal-snippet">{snippet}</div>
-                  )}
-
-                  {viewMode === 'html' && remoteAssetsBlocked && (
-                    <div className="email-privacy-notice" role="status">
-                      <ShieldCheck size={14} aria-hidden="true" />
-                      <span>Remote images blocked to prevent tracking.</span>
-                    </div>
+                      <ChevronRight size={16} aria-hidden="true" />
+                    </button>
                   )}
 
                   {viewMode === 'html' && hasHtml && sanitizedHtml ? (
@@ -1661,23 +1888,79 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
                       )}
                     </>
                   )}
+                  {viewMode === 'html' && remoteAssetsBlocked && (
+                    <div className="email-privacy-notice">
+                      <ShieldCheck size={13} aria-hidden="true" />
+                      <span>Remote images blocked for privacy</span>
+                    </div>
+                  )}
                 </>
               )}
             </div>
 
             <div className="alias-message-modal-actions">
-              <button type="button" className="alias-message-action-btn" onClick={handleCopyBody}>
-                {copiedText ? <Check size={14} /> : <Copy size={14} />}
-                <span>{copiedText ? 'Copied' : 'Copy text'}</span>
+              {hasHtml && (
+                <div
+                  className="alias-message-modal-view-toggle"
+                  role="group"
+                  aria-label="Email format"
+                  data-view-mode={viewMode}
+                >
+                  <button
+                    type="button"
+                    className={`alias-view-toggle-btn ${viewMode === 'html' ? 'alias-view-toggle-btn--active' : ''}`}
+                    onClick={() => setViewMode('html')}
+                    title="View formatted email"
+                    aria-pressed={viewMode === 'html'}
+                  >
+                    <span>Formatted</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`alias-view-toggle-btn ${viewMode === 'text' ? 'alias-view-toggle-btn--active' : ''}`}
+                    onClick={() => setViewMode('text')}
+                    title="View plain text"
+                    aria-pressed={viewMode === 'text'}
+                  >
+                    <span>Text</span>
+                  </button>
+                </div>
+              )}
+              <button
+                type="button"
+                className={`alias-message-action-btn alias-message-action-btn--copy-message ${effectiveOtp || effectiveLink ? 'alias-message-action-btn--icon' : 'alias-message-action-btn--primary'}`}
+                onClick={() => void handleCopyBody()}
+                disabled={loading || !(plainTextBody || snippet || rawHtml)}
+                aria-label={copiedText ? 'Message copied' : 'Copy message text'}
+                title={copiedText ? 'Message copied' : 'Copy message text'}
+              >
+                {copiedText ? <Check size={15} /> : <Copy size={15} />}
+                {!effectiveOtp && !effectiveLink && (
+                  <span>{copiedText ? 'Copied' : 'Copy message'}</span>
+                )}
               </button>
-              {effectiveLink && (
+              {effectiveLink && !effectiveOtp && (
                 <button
                   type="button"
-                  className="alias-message-action-btn alias-message-action-btn--primary"
-                  onClick={() => openUrlInTab(effectiveLink ?? '')}
+                  className={`alias-message-action-btn alias-message-action-btn--open-link ${effectiveOtp ? '' : 'alias-message-action-btn--primary'}`}
+                  onClick={handleOpenEffectiveLink}
+                  disabled={loading}
                 >
-                  <Link2 size={14} />
+                  <Link2 size={15} />
                   <span>Open link</span>
+                </button>
+              )}
+              {effectiveOtp && (
+                <button
+                  type="button"
+                  className="alias-message-action-btn alias-message-action-btn--copy-code alias-message-action-btn--primary"
+                  onClick={() => void handleCopyOtp()}
+                  disabled={loading}
+                  aria-label={copiedOtp ? 'Code copied' : `Copy verification code ${effectiveOtp}`}
+                  title={`Copy verification code ${effectiveOtp}`}
+                >
+                  {copiedOtp ? <Check size={15} /> : <Copy size={15} />}
+                  <span>{copiedOtp ? 'Code copied' : `Copy ${effectiveOtp}`}</span>
                 </button>
               )}
             </div>
@@ -1765,6 +2048,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
               The popup interface failed to render. Reset the interface to reload GhostFill.
             </p>
             <button
+              type="button"
               onClick={() => {
                 this.setState({ hasError: false, error: undefined });
                 window.location.reload();
@@ -1794,9 +2078,9 @@ interface GhostLogoProps {
 // header path (every hover re-render ran a 700ms JS tween).
 
 /**
- * GhostFill brand mark — Private Workspace.
+ * GhostFill brand mark — system UI.
  *
- * Refined, minimal ghost glyph for the Private Workspace system:
+ * Refined, minimal ghost glyph for the Apple-inspired system:
  *  - Iris→deep linear gradient body
  *  - Hairline ink outline (token-driven so it adapts in light/dark)
  *  - Single bright catchlight per eye for life
@@ -1882,8 +2166,10 @@ interface HelpModalProps {
  */
 const HelpModal: React.FC<HelpModalProps> = ({ open, onClose }) => {
   const cardRef = useRef<HTMLDivElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  useDialogIsolation(open, overlayRef);
 
   useEffect(() => {
     if (!open) {
@@ -1903,6 +2189,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ open, onClose }) => {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        e.preventDefault();
         onCloseRef.current();
         return;
       }
@@ -1910,7 +2197,10 @@ const HelpModal: React.FC<HelpModalProps> = ({ open, onClose }) => {
         const focusable = getFocusable();
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
-        if (e.shiftKey) {
+        if (!modal.contains(document.activeElement)) {
+          e.preventDefault();
+          (e.shiftKey ? last : first)?.focus();
+        } else if (e.shiftKey) {
           if (document.activeElement === first) {
             e.preventDefault();
             last?.focus();
@@ -1930,11 +2220,12 @@ const HelpModal: React.FC<HelpModalProps> = ({ open, onClose }) => {
     <AnimatePresence>
       {open && (
         <motion.div
+          ref={overlayRef}
           className="modal-overlay help-modal-overlay"
           onClick={onClose}
           initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
+          animate={{ opacity: 1, transition: tweenIn }}
+          exit={{ opacity: 0, transition: tweenOut }}
         >
           <motion.div
             ref={cardRef}
@@ -1990,6 +2281,9 @@ export interface InboxListProps {
   readonly onOpenEmail?: (email: DisplayedEmail) => void;
 }
 
+const formatInboxRelativeDate = (timestamp: number): string =>
+  Number.isFinite(timestamp) ? formatRelativeTime(timestamp) : 'Date unavailable';
+
 const InboxListComponent: React.FC<InboxListProps> = ({
   preferredEmailType,
   gmailConnected,
@@ -2023,27 +2317,47 @@ const InboxListComponent: React.FC<InboxListProps> = ({
   // aliases view. Without this button that view is unreachable from the Hub
   // (row taps open the viewer directly).
   const canOpenAliases = preferredEmailType !== 'disposable';
+  const canRefreshGmail = preferredEmailType === 'gmail' && gmailConnected && !gmailIsManual;
 
   return (
-    <div className="inbox-section">
+    <div className="inbox-section" role="region" aria-label="Inbox" data-empty={inboxCount === 0}>
       <div className="inbox-header-row">
         <div className="inbox-title-group">
-          <Inbox size={15} className="inbox-title-icon" />
-          <span className="inbox-title-text">Inbox</span>
-          {inboxCount > 0 && <span className="inbox-count">{inboxCount}</span>}
+          <Inbox size={16} className="inbox-title-icon" aria-hidden="true" />
+          <span className="inbox-title-text" role="heading" aria-level={2}>
+            Inbox
+          </span>
+          {inboxCount > 0 && (
+            <span className="inbox-count" aria-label={`${inboxCount} messages`}>
+              {inboxCount}
+            </span>
+          )}
         </div>
+        {canRefreshGmail && (
+          <button
+            type="button"
+            className="view-all-btn"
+            onClick={() => void onFetchGmailInbox()}
+            disabled={gmailInboxLoading}
+            aria-label={gmailInboxLoading ? 'Refreshing Gmail inbox' : 'Refresh Gmail inbox'}
+          >
+            {gmailInboxLoading ? 'Refreshing…' : 'Refresh'}
+          </button>
+        )}
         {canOpenInbox && (
           <button
+            type="button"
             className="view-all-btn"
             onClick={() => onNavigate('email')}
             aria-label="View full inbox"
           >
-            Open
+            {t('inboxViewAll')}
             <ChevronRight size={15} />
           </button>
         )}
         {canOpenAliases && (
           <button
+            type="button"
             className="view-all-btn"
             onClick={() => onNavigate('aliases')}
             aria-label="Open alias manager"
@@ -2054,37 +2368,55 @@ const InboxListComponent: React.FC<InboxListProps> = ({
         )}
       </div>
 
+      {preferredEmailType === 'gmail' && gmailInboxError && (
+        <div className="hub-empty-state hub-empty-state--action" role="alert">
+          <AlertCircle size={18} strokeWidth={1.7} color="var(--gf-coral)" />
+          <span className="hub-empty-text">{gmailInboxError}</span>
+          <button
+            type="button"
+            className="view-all-btn"
+            onClick={() => void onFetchGmailInbox()}
+            disabled={gmailInboxLoading}
+          >
+            {gmailInboxLoading ? 'Retrying…' : 'Retry'}
+          </button>
+        </div>
+      )}
+
       <div className="inbox-list">
         {preferredEmailType === 'gmail' && !gmailConnected ? (
-          <div className="hub-empty-state hub-empty-state--action">
+          <div className="hub-empty-state">
             <AlertCircle size={18} strokeWidth={1.7} color="var(--gf-coral)" />
             <span className="hub-empty-text">Connect Gmail above to sync OTP emails.</span>
           </div>
         ) : preferredEmailType === 'gmail' && gmailIsManual ? (
-          <div className="hub-empty-state hub-empty-state--action">
+          <div className="hub-empty-state">
             <AlertCircle size={18} strokeWidth={1.7} color="var(--gf-amber)" />
             <span className="hub-empty-text">
               Use Google sign-in to sync messages automatically.
             </span>
           </div>
         ) : preferredEmailType === 'gmail' && gmailInboxLoading && inboxCount === 0 ? (
-          <div className="shimmer hub-empty-state">
+          <div className="hub-empty-state">
             <RefreshCw size={18} strokeWidth={1.5} className="spin" color="var(--gf-primary)" />
             <span>Syncing Gmail</span>
           </div>
-        ) : preferredEmailType === 'gmail' && gmailInboxError ? (
-          <button
-            className="hub-empty-state hub-empty-state--action"
-            onClick={() => void onFetchGmailInbox()}
-          >
-            <AlertCircle size={18} strokeWidth={1.7} color="var(--gf-coral)" />
-            <span className="hub-empty-text">{gmailInboxError}</span>
-          </button>
-        ) : inboxCount === 0 ? (
-          <div className="hub-empty-state">
-            <Mail size={18} strokeWidth={1.5} color="var(--gf-primary)" />
-            <span>
-              {preferredEmailType === 'gmail' ? 'No Gmail messages yet.' : t('listening')}
+        ) : preferredEmailType === 'gmail' &&
+          gmailInboxError &&
+          inboxCount === 0 ? null : inboxCount === 0 ? (
+          <div className="hub-empty-state hub-empty-state--ready" role="status">
+            <span className="inbox-empty-art" aria-hidden="true">
+              <Inbox size={26} strokeWidth={1.4} />
+            </span>
+            <span className="hub-empty-copy">
+              <strong>
+                {preferredEmailType === 'gmail' ? t('inboxCaughtUpTitle') : t('inboxWaitingTitle')}
+              </strong>
+              <span>
+                {preferredEmailType === 'gmail'
+                  ? t('inboxRecentDescription')
+                  : t('inboxWaitingDescription')}
+              </span>
             </span>
           </div>
         ) : (
@@ -2092,27 +2424,52 @@ const InboxListComponent: React.FC<InboxListProps> = ({
             {displayedEmails.map((emailItem) => {
               // PERF: rows mount instantly — no stagger delay, no JS spring.
               // Hover is pure CSS (:hover border + chevron).
+              const preview = getEmailPreview(emailItem.snippet || emailItem.body);
+              const canOpenLink = Boolean(
+                emailItem.activationLink && isWebUrl(emailItem.activationLink)
+              );
+              const senderSource = getSenderSource(emailItem.from, emailItem.senderEmail);
+              const senderLabel = getSenderLabel(senderSource, emailItem.subject, emailItem.activationLink,
+                emailItem.htmlBody || emailItem.textBody || emailItem.body || emailItem.snippet);
               return (
-                <div key={emailItem.id} className="inbox-item">
+                <div key={emailItem.id} className="inbox-item" data-unread={!emailItem.read}>
                   <EmailAvatar
-                    from={getSenderSource(emailItem.from, emailItem.senderEmail)}
+                    from={senderSource}
+                    subject={emailItem.subject}
+                    website={emailItem.activationLink}
+                    content={
+                      emailItem.htmlBody ||
+                      emailItem.textBody ||
+                      emailItem.body ||
+                      emailItem.snippet
+                    }
                     className="inbox-item-avatar"
                   />
                   <div className="inbox-item-content">
                     <div className="inbox-item-header">
                       <span className="inbox-item-from" title={emailItem.from || undefined}>
-                        {getSenderLabel(emailItem.from, emailItem.subject)}
+                        {!emailItem.read && (
+                          <span className="inbox-unread-dot" aria-hidden="true" />
+                        )}
+                        <span className="inbox-sender-name">
+                          {senderLabel}
+                        </span>
                       </span>
                       <span className="inbox-item-date">
-                        <Clock size={12} />
-                        {formatRelativeTime(new Date(emailItem.date).getTime())}
+                        {formatInboxRelativeDate(new Date(emailItem.date).getTime())}
                       </span>
                     </div>
-                    <div className="inbox-item-subject">{emailItem.subject}</div>
-                    {(emailItem.otpCode || emailItem.activationLink) && (
+                    <div className="inbox-item-subject" title={emailItem.subject}>
+                      {emailItem.subject}
+                    </div>
+                    {preview && !emailItem.otpCode && !canOpenLink && (
+                      <div className="inbox-item-preview">{preview}</div>
+                    )}
+                    {(emailItem.otpCode || canOpenLink) && (
                       <div className="inbox-item-actions">
                         {emailItem.otpCode && (
                           <button
+                            type="button"
                             className="otp-badge"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -2122,14 +2479,18 @@ const InboxListComponent: React.FC<InboxListProps> = ({
                             }}
                             aria-label={`Copy verification code ${emailItem.otpCode}`}
                           >
+                            <span className="inbox-action-label" aria-hidden="true">
+                              {t('copyShort')}
+                            </span>
                             <span className="otp-badge-code" aria-hidden="true">
                               {emailItem.otpCode}
                             </span>
                             <Copy size={12} />
                           </button>
                         )}
-                        {emailItem.activationLink && (
+                        {canOpenLink && emailItem.activationLink && (
                           <button
+                            type="button"
                             className="link-badge"
                             onClick={(e) => {
                               if (emailItem.activationLink) {
@@ -2139,7 +2500,7 @@ const InboxListComponent: React.FC<InboxListProps> = ({
                             aria-label="Open verification link"
                           >
                             <span className="otp-badge-code" aria-hidden="true">
-                              Verify
+                              Open link
                             </span>
                             <ChevronRight size={12} />
                           </button>
@@ -2150,15 +2511,24 @@ const InboxListComponent: React.FC<InboxListProps> = ({
                   <button
                     type="button"
                     className="inbox-item-open-button"
-                    aria-label={`Open email from ${getSenderLabel(emailItem.from, emailItem.subject)}: ${emailItem.subject}`}
+                    aria-label={`${emailItem.read ? 'Open email' : 'Open unread email'} from ${senderLabel}: ${emailItem.subject}`}
                     aria-busy={openingEmailId === emailItem.id}
+                    disabled={openingEmailId === emailItem.id}
                     onClick={() => openDisplayedEmail(emailItem)}
                   >
-                    <ChevronRight
-                      size={14}
-                      className="inbox-item-open-chevron"
-                      aria-hidden="true"
-                    />
+                    {openingEmailId === emailItem.id ? (
+                      <RefreshCw
+                        size={14}
+                        className="inbox-item-open-chevron spin"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <ChevronRight
+                        size={14}
+                        className="inbox-item-open-chevron"
+                        aria-hidden="true"
+                      />
+                    )}
                   </button>
                 </div>
               );
@@ -2176,11 +2546,11 @@ InboxList.displayName = 'InboxList';
 // --- Onboarding.tsx ---
 interface OnboardingProps {
   onDismiss: () => void;
-  version: string;
 }
 
 /** First-run welcome overlay. Extracted from App for clarity. */
-const Onboarding: React.FC<OnboardingProps> = ({ onDismiss, version }) => {
+const Onboarding: React.FC<OnboardingProps> = ({ onDismiss }) => {
+  const titleRef = useRef<HTMLHeadingElement | null>(null);
   const features = [
     {
       icon: <Mail size={24} color="var(--gf-primary)" />,
@@ -2198,6 +2568,10 @@ const Onboarding: React.FC<OnboardingProps> = ({ onDismiss, version }) => {
       sub: t('onboardingFeature3Sub'),
     },
   ];
+
+  useEffect(() => {
+    titleRef.current?.focus();
+  }, []);
 
   return (
     <motion.div
@@ -2222,6 +2596,8 @@ const Onboarding: React.FC<OnboardingProps> = ({ onDismiss, version }) => {
       </motion.div>
 
       <motion.h1
+        ref={titleRef}
+        tabIndex={-1}
         initial={{ y: 8, opacity: 0 }}
         animate={{ y: 0, opacity: 1, transition: { duration: 0.16, delay: 0.03 } }}
         className="onboarding-title"
@@ -2260,13 +2636,6 @@ const Onboarding: React.FC<OnboardingProps> = ({ onDismiss, version }) => {
       <Button variant="primary" block className="onboarding-btn" onClick={onDismiss}>
         {t('onboardingButton')}
       </Button>
-      <motion.p
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1, transition: { duration: 0.16, delay: 0.1 } }}
-        className="onboarding-footer"
-      >
-        {t('onboardingFooter')} • v{version}
-      </motion.p>
     </motion.div>
   );
 };
@@ -2304,8 +2673,9 @@ const OTPTimerBar: React.FC<{ lastOTP: LastOTP | null }> = ({ lastOTP }) => {
         setTimeText(hasExplicitExpiry ? 'Expired' : 'Likely expired');
       } else {
         setTimePercentage((remaining / total) * 100);
-        const minutes = Math.floor(remaining / 60000);
-        const seconds = Math.floor((remaining % 60000) / 1000);
+        const remainingSeconds = Math.ceil(remaining / 1000);
+        const minutes = Math.floor(remainingSeconds / 60);
+        const seconds = remainingSeconds % 60;
         setTimeText(minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`);
       }
     };
@@ -2323,7 +2693,8 @@ const OTPTimerBar: React.FC<{ lastOTP: LastOTP | null }> = ({ lastOTP }) => {
         aria-valuenow={timePercentage}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-label={`OTP timer urgency: ${timePercentage < 20 ? 'Critical' : 'Safe'}`}
+        aria-label="Verification code time remaining"
+        aria-valuetext={timeText || 'Checking expiry'}
       >
         <div
           className="otp-timer-fill"
@@ -2353,13 +2724,34 @@ const OTPTimerBar: React.FC<{ lastOTP: LastOTP | null }> = ({ lastOTP }) => {
 };
 
 const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
-  // MotionConfig in App.tsx wires reducedMotion="user" globally, but we read the
-  // local preference here to gate the looping empty-state pulse.
-  const prefersReducedMotion = useReducedMotion();
   const lastOTP = useStorageSubscription('lastOTP', null);
   const [, setExpiryTick] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [filling, setFilling] = useState(false);
+  const [autoFillShortcut, setAutoFillShortcut] = useState<string | null>('Alt+Shift+F');
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (typeof chrome === 'undefined' || typeof chrome.commands?.getAll !== 'function') {
+      return;
+    }
+    let cancelled = false;
+    void chrome.commands
+      .getAll()
+      .then((commands) => {
+        if (!cancelled) {
+          setAutoFillShortcut(
+            commands.find((command) => command.name === 'auto-fill')?.shortcut || null
+          );
+        }
+      })
+      .catch(() => {
+        // The manifest shortcut remains a useful fallback if Chrome cannot enumerate commands.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!lastOTP) {
@@ -2406,7 +2798,7 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
         return;
       }
       setCopied(true);
-      onToast('OTP copied');
+      onToast('Verification code copied');
 
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
@@ -2418,27 +2810,36 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
   }, [activeOTP, onToast]);
 
   const fillOTP = useCallback(async () => {
-    if (!activeOTP) {
+    if (!activeOTP || filling) {
       return;
     }
+    setFilling(true);
     try {
+      if (typeof chrome === 'undefined' || typeof chrome.tabs?.query !== 'function') {
+        onToast('Couldn’t access the active page. Copy the code instead.');
+        return;
+      }
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.id) {
-        const res = await safeSendTabMessage(tab.id, {
-          action: 'FILL_OTP',
-          payload: { otp: activeOTP.code },
-        });
-        if (res?.success) {
-          onToast('OTP filled successfully!');
-          // Don't close popup - let user verify
-        } else {
-          onToast('GhostFill not found on page');
-        }
+      if (!tab?.id) {
+        onToast('Open a page with a verification form, then try again.');
+        return;
+      }
+      const res = await safeSendTabMessage(tab.id, {
+        action: 'FILL_OTP',
+        payload: { otp: activeOTP.code },
+      });
+      if (res?.success) {
+        onToast('Verification code filled');
+        // Don't close popup - let user verify
+      } else {
+        onToast('Couldn’t fill a code on this page. Copy it instead.');
       }
     } catch {
-      onToast('Failed to fill');
+      onToast('Couldn’t fill a code on this page. Copy it instead.');
+    } finally {
+      setFilling(false);
     }
-  }, [activeOTP, onToast]);
+  }, [activeOTP, filling, onToast]);
 
   const handleCopyOTP = () => {
     void copyOTP();
@@ -2502,9 +2903,14 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
             )}
 
             <div className="otp-actions">
-              <Button variant="primary" className="otp-action-primary" onClick={handleFillOTP}>
-                <Zap size={18} fill="white" />
-                Auto-Fill
+              <Button
+                variant="primary"
+                className="otp-action-primary"
+                onClick={handleFillOTP}
+                loading={filling}
+                leftIcon={<Zap size={18} fill="white" />}
+              >
+                {filling ? 'Filling…' : 'Fill code'}
               </Button>
               <Button className="otp-action-secondary" onClick={handleCopyOTP}>
                 {copied ? <Check size={18} color="var(--gf-success)" /> : <Copy size={18} />}
@@ -2513,32 +2919,10 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
             </div>
           </div>
         ) : (
-          <div className="shimmer otp-empty-state">
-            {/* Animated Loading Container */}
-            <motion.div
-              className="otp-loading-container"
-              animate={
-                prefersReducedMotion
-                  ? { scale: 1, opacity: 0.85 }
-                  : { scale: [1, 1.05, 1], opacity: [0.75, 1, 0.75] }
-              }
-              transition={
-                prefersReducedMotion
-                  ? { duration: 0 }
-                  : { duration: 2, repeat: Infinity, ease: 'easeInOut' }
-              }
-            >
-              <motion.div
-                animate={prefersReducedMotion ? { rotate: 0 } : { rotate: 360 }}
-                transition={
-                  prefersReducedMotion
-                    ? { duration: 0 }
-                    : { duration: 2, repeat: Infinity, ease: 'linear' }
-                }
-              >
-                <Inbox size={40} color="var(--gf-primary)" strokeWidth={1.5} />
-              </motion.div>
-            </motion.div>
+          <div className="otp-empty-state">
+            <div className="otp-loading-container" aria-hidden="true">
+              <Inbox size={30} color="var(--gf-primary)" strokeWidth={1.5} />
+            </div>
 
             <h3 className="otp-empty-title">{lastOTP ? 'Code expired' : 'Listening for codes'}</h3>
             <p className="otp-empty-desc">
@@ -2553,12 +2937,17 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
       <div className="memphis-card efficiency-tip-card">
         <div className="widget-label widget-label-no-margin">
           <Info size={16} className="sf-icon" />
-          Efficiency Tip
+          Shortcut
         </div>
         <div className="efficiency-tip-text">
-          Press <span className="kbd-key">Ctrl</span>
-          <span className="kbd-key">Shift</span>
-          <span className="kbd-key">F</span> on any page to fill the latest code instantly.
+          {autoFillShortcut ? (
+            <>
+              Press <kbd className="kbd-key">{autoFillShortcut}</kbd> on a page to fill the current
+              form.
+            </>
+          ) : (
+            <>Assign an Auto-fill shortcut in Chrome, or use Copy above.</>
+          )}
         </div>
       </div>
     </div>
@@ -2681,7 +3070,7 @@ const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({ onToast, currentP
       }
     } catch (error) {
       log.error('Failed to generate password', error);
-      onToast('Failed to generate password');
+      onToast(t('passwordGenerateFailed'));
     } finally {
       setLoading(false);
     }
@@ -2730,18 +3119,18 @@ const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({ onToast, currentP
     try {
       const ok = await copyToClipboard(password.password);
       if (!ok) {
-        onToast('Copy failed');
+        onToast(t('copyFailed'));
         return;
       }
       setCopied(true);
-      onToast('Password copied');
+      onToast(t('passwordCopied'));
 
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
       timeoutRef.current = setTimeout(() => setCopied(false), TIMING.COPY_CONFIRMATION_MS); // Longer confirmation
     } catch {
-      onToast('Copy failed');
+      onToast(t('copyFailed'));
     }
   };
 
@@ -2759,29 +3148,31 @@ const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({ onToast, currentP
 
   return (
     <div className="generator-flow">
-      {/* Main Display Card */}
       <div className="memphis-card memphis-card-default">
         <div className="generator-card-header generator-card-header-center">
           <div className="widget-label widget-label-no-margin">
-            <Lock size={16} className="sf-icon" />
-            {currentPassword ? 'Current Secret' : 'Secured Generator'}
+            <Lock size={16} className="sf-icon" aria-hidden="true" />
+            {t('passwordLabel')}
           </div>
           <button
+            type="button"
             className="back-button eye-button"
-            onClick={() => setShowPassword(!showPassword)}
-            aria-label={showPassword ? 'Hide password' : 'Show password'}
+            onClick={() => setShowPassword((value) => !value)}
+            aria-label={showPassword ? t('passwordHide') : t('passwordShow')}
+            title={showPassword ? t('passwordHide') : t('passwordShow')}
+            disabled={!password || loading}
           >
-            {showPassword ? <Eye size={18} /> : <EyeOff size={18} />}
+            {showPassword ? (
+              <EyeOff size={18} aria-hidden="true" />
+            ) : (
+              <Eye size={18} aria-hidden="true" />
+            )}
           </button>
         </div>
-        {/* Terminal-style Password Display (plain div — CSS :active press) */}
-        <button
-          type="button"
-          className={`password-terminal ${loading ? 'shimmer' : ''}`}
-          onClick={handleCopyPassword}
-        >
+        <div className="password-terminal">
           <div
             className={`password-display-text ${showPassword ? 'password-display-visible' : 'password-display-hidden'}`}
+            aria-hidden={!showPassword}
           >
             {password
               ? showPassword
@@ -2789,7 +3180,8 @@ const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({ onToast, currentP
                 : '•'.repeat(Math.min(password.password.length, 16))
               : '•'.repeat(Math.min(options.length, 16))}
           </div>
-        </button>
+          {password && !showPassword && <span className="sr-only">{t('passwordHidden')}</span>}
+        </div>
 
         {password && (
           <div className="strength-meter-container" aria-live="polite">
@@ -2807,13 +3199,12 @@ const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({ onToast, currentP
                 {strengthPercent(password.strength.score)}%
               </span>
             </div>
-            {/* Gradient Strength Bar */}
-            <div className="strength-bar-bg">
+            <div className="strength-bar-bg" aria-hidden="true">
               <div
                 className="strength-bar-fill"
                 data-level={strengthLevel(password.strength.score)}
                 style={{
-                  width: `${strengthPercent(password.strength.score)}%`,
+                  transform: `scaleX(${strengthPercent(password.strength.score) / 100})`,
                 }}
               />
             </div>
@@ -2823,31 +3214,37 @@ const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({ onToast, currentP
         <div className="generator-actions">
           <Button
             variant="primary"
-            className={loading ? 'shimmer' : ''}
             onClick={handleGeneratePassword}
-            disabled={loading}
+            loading={loading}
+            leftIcon={<RefreshCw size={18} aria-hidden="true" />}
           >
-            {loading ? <span className="spinner-small" /> : <Zap size={18} fill="white" />}
-            {loading ? 'Securing…' : 'Regenerate'}
+            {loading
+              ? t('generatingPassword')
+              : password
+                ? t('passwordGenerateAgain')
+                : t('passwordGenerate')}
           </Button>
-          <Button onClick={handleCopyPassword}>
-            {copied ? <Check size={18} color="var(--gf-success)" /> : <Copy size={18} />}
-            {copied ? 'Copied' : 'Copy'}
+          <Button onClick={handleCopyPassword} disabled={!password || loading}>
+            {copied ? (
+              <Check size={18} color="var(--gf-success)" aria-hidden="true" />
+            ) : (
+              <Copy size={18} aria-hidden="true" />
+            )}
+            {copied ? t('copiedShort') : t('copyShort')}
           </Button>
         </div>
       </div>
 
-      {/* Configuration Card */}
       <div className="memphis-card memphis-card-default memphis-card-mt16">
         <div className="widget-label config-label config-label-spaced">
-          <Shield size={16} className="sf-icon" />
-          Complexity Settings
+          <Shield size={16} className="sf-icon" aria-hidden="true" />
+          {t('passwordOptions')}
         </div>
 
         {/* Length Slider */}
         <div className="slider-container">
           <div className="slider-header">
-            <span>Length</span>
+            <span>{t('passwordLength')}</span>
             <span className="slider-value">{options.length}</span>
           </div>
           <input
@@ -2857,17 +3254,27 @@ const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({ onToast, currentP
             max="64"
             value={localLength}
             onChange={(e) => setLocalLength(Number(e.target.value))}
-            aria-label="Password length"
+            aria-label={t('passwordLength')}
           />
         </div>
 
         {/* Toggle Pills Grid */}
         <div className="toggle-pills-grid">
           {[
-            { id: 'uppercase', label: 'Upper', icon: 'ABC' },
-            { id: 'lowercase', label: 'Lower', icon: 'abc' },
-            { id: 'numbers', label: 'Numbers', icon: '123' },
-            { id: 'symbols', label: 'Symbols', icon: '#@!' },
+            {
+              id: 'uppercase',
+              label: t('uppercaseShort'),
+              accessibleLabel: t('uppercaseLetters'),
+              icon: 'ABC',
+            },
+            {
+              id: 'lowercase',
+              label: t('lowercaseShort'),
+              accessibleLabel: t('lowercaseLetters'),
+              icon: 'abc',
+            },
+            { id: 'numbers', label: t('numbers'), accessibleLabel: t('numbers'), icon: '123' },
+            { id: 'symbols', label: t('symbols'), accessibleLabel: t('symbols'), icon: '#@!' },
           ].map((opt) => {
             const isActive = Boolean(options[opt.id as keyof PasswordOptions]);
             return (
@@ -2877,7 +3284,7 @@ const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({ onToast, currentP
                 className={`toggle-pill ${isActive ? 'active' : ''}`}
                 onClick={() => handleOptionChange(opt.id as keyof PasswordOptions, !isActive)}
                 aria-pressed={isActive}
-                aria-label={`${opt.label}: ${isActive ? 'enabled' : 'disabled'}`}
+                aria-label={opt.accessibleLabel}
               >
                 <span className="pill-icon">{opt.icon}</span>
                 <span className="pill-label">{opt.label}</span>
@@ -2900,7 +3307,6 @@ export interface QuickActionsProps {
   readonly password: string;
   readonly passwordCopied: boolean;
   readonly isGeneratingPassword: boolean;
-  readonly passwordCooldown: boolean;
   readonly showPassword: boolean;
   readonly onCopyPassword: () => void;
   readonly onToggleShowPassword: () => void;
@@ -2911,7 +3317,6 @@ const QuickActionsComponent: React.FC<QuickActionsProps> = ({
   password,
   passwordCopied,
   isGeneratingPassword,
-  passwordCooldown,
   showPassword,
   onCopyPassword,
   onToggleShowPassword,
@@ -2925,36 +3330,45 @@ const QuickActionsComponent: React.FC<QuickActionsProps> = ({
       <div className="identity-content">
         <span className="identity-label">{t('passwordLabel')}</span>
         <span
-          className={`identity-value mono hub-val ${!password ? 'shimmer' : ''} ${
-            !showPassword && password ? 'password-bullets' : ''
-          }`}
+          className={`identity-value mono hub-val ${!showPassword && password ? 'password-bullets' : ''}`}
         >
-          {!password ? t('generatingPassword') : showPassword ? password : '********'}
+          {!password
+            ? isGeneratingPassword
+              ? t('generatingPassword')
+              : t('passwordNotGenerated')
+            : showPassword
+              ? password
+              : '********'}
         </span>
       </div>
       <div className="identity-actions">
         <button
+          type="button"
           className={`action-icon ${passwordCopied ? 'success' : ''}`}
           onClick={onCopyPassword}
           title="Copy password"
           aria-label="Copy password to clipboard"
+          disabled={!password || isGeneratingPassword}
         >
           {passwordCopied ? <Check size={14} /> : <Copy size={14} />}
         </button>
         <button
+          type="button"
           className="action-icon"
           onClick={onToggleShowPassword}
           title={showPassword ? 'Hide' : 'Show'}
           aria-label={showPassword ? 'Hide password' : 'Show password'}
+          disabled={!password || isGeneratingPassword}
         >
           {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
         </button>
         <button
-          className={`action-icon action-danger ${passwordCooldown ? 'opacity-50' : ''}`}
+          type="button"
+          className="action-icon"
           onClick={onGeneratePassword}
-          title="Reset secure password"
+          title="Generate new password"
           aria-label="Generate new secure password"
-          disabled={isGeneratingPassword || passwordCooldown}
+          disabled={isGeneratingPassword}
         >
           <RefreshCw size={14} className={isGeneratingPassword ? 'spin' : ''} />
         </button>

@@ -10,6 +10,7 @@ import {
   extractHtmlFromBody,
   extractTextFromBody,
 } from '../../utils/core';
+import { getSenderSource } from '../../utils/emailIdentity';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 import { isRetryableError, throttledWarn } from './isRetryableError';
@@ -87,7 +88,7 @@ export class CatchmailService {
       return messages.map((msg: any, idx: number) => {
         const email: Email = {
           id: String(msg.id),
-          from: contentToString(msg.from, 'Unknown Sender'),
+          from: getSenderSource(undefined, msg.from),
           to: contentToString(msg.mailbox || fullEmail),
           subject: contentToString(msg.subject, '(No Subject)'),
           date: safeParseDate(msg.date),
@@ -132,7 +133,7 @@ export class CatchmailService {
 
       return {
         id: String(msg.id || emailId),
-        from: contentToString(msg.from, 'Unknown Sender'),
+        from: getSenderSource(undefined, msg.from),
         to: contentToString(msg.mailbox || fullEmail),
         subject: contentToString(msg.subject, '(No Subject)'),
         date: safeParseDate(msg.date),

@@ -4,7 +4,9 @@ import {
   isRealMailServiceAvailable,
   isTemporaryMailAccount,
 } from '../config/buildProfile';
+import { assessEmailDecision, selectVerificationAction } from '../services/emailDecisionEngine';
 import { emailService } from '../services/emailServices';
+import { senderMatchesSite } from '../services/emailServices/privacy';
 import * as gmailApiService from '../services/gmailApiService';
 import {
   getRandomizedGmailAlias,
@@ -32,6 +34,7 @@ import {
 import { otpService } from '../services/otpService';
 import { passwordService } from '../services/passwordService';
 import { storageService } from '../services/storageService';
+import type { EmailDecision } from '../services/types/extraction.types';
 import {
   connectZoho,
   disconnectZoho,
@@ -48,7 +51,8 @@ import {
   GmailMessage,
   EmailAccount,
 } from '../types';
-import { DEFAULT_SETTINGS } from '../types/storage.types';
+import { contentFingerprint } from '../utils/contentFingerprint';
+import { getSenderDomain } from '../utils/emailIdentity';
 import { createLogger, diag } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
 import { validateMessage } from '../utils/validation';
@@ -68,6 +72,7 @@ import {
   startGmailAliasFastPolling,
   extractEmailOnce,
   deliverOTP,
+  hasMatchingOTPWaiter,
   type EmailContext,
 } from './pollingManager';
 import { getBootState } from './serviceWorker';
@@ -241,7 +246,8 @@ function messagePredatesGmailSession(
 async function saveExtractedOTPFromMessage(
   code: string,
   confidence: number,
-  payload: ExtractOTPPayloadWithMetadata
+  payload: ExtractOTPPayloadWithMetadata,
+  autoFillEligible = false
 ): Promise<void> {
   const emailDate = getPayloadTimestamp(payload.emailDate);
   const existing = (await storageService.get('lastOTP')) as LastOTP | undefined;
@@ -264,7 +270,7 @@ async function saveExtractedOTPFromMessage(
     return;
   }
 
-  const metadata: { emailId?: string | number; emailDate?: number } = {};
+  const metadata: { emailId?: string | number; emailDate?: number; autoFillEligible: boolean } = { autoFillEligible };
   if (payload.emailId !== undefined) {
     metadata.emailId = payload.emailId;
   }
@@ -293,14 +299,14 @@ async function saveExtractedOTPFromMessage(
 // activateDetectedLink
 //
 // Permanent, typed activation path shared by:
-//   - EXTRACT_OTP handler (popup opens email containing a link)
-//   - ACTIVATE_LINK handler (popup explicit "Open Link" button)
+//   - EXTRACT_OTP handler for a message opened in the popup viewer
+//   - ACTIVATE_LINK handler for an explicit "Open Link" action
 //
 // Mirrors the polling engine flow exactly:
 //   1. Read autoConfirmLinks from settings
 //   2. Fetch current account for dedup keying
 //   3. Build a properly-typed Email object
-//   4. Delegate to linkService.handleDetectedLink() with full security gate
+//   4. Delegate to linkService.handleDetectedLink() for new-tab navigation
 // ─────────────────────────────────────────────────────────────────────────────
 async function activateDetectedLink(params: {
   emailId: string | number;
@@ -309,9 +315,11 @@ async function activateDetectedLink(params: {
   subject?: string;
   emailDate?: number;
   bodySnippet?: string;
+  otpCode?: string | null;
+  linkAnchorText?: string;
 }): Promise<void> {
-  const rawSettings = await storageService.get('settings');
-  const autoConfirm = rawSettings?.autoConfirmLinks ?? DEFAULT_SETTINGS.autoConfirmLinks;
+  const settings = await storageService.getSettings();
+  const autoConfirm = settings.autoConfirmLinks;
   if (!autoConfirm) {
     log.info('⏭️ autoConfirmLinks disabled — skipping link activation', {
       emailId: params.emailId,
@@ -319,11 +327,11 @@ async function activateDetectedLink(params: {
     return;
   }
 
-  const currentAccount = await emailService.getCurrentEmail().catch(() => null);
+  const currentAccount = await emailService.getCurrentEmail(true).catch(() => null);
   const accountId = currentAccount?.fullEmail;
 
   // Construct a properly-typed Email so linkService can deduplicate,
-  // validate, and record the activation cleanly.
+  // record the activation cleanly.
   const email: import('../types').Email = {
     id: params.emailId,
     subject: params.subject || '',
@@ -341,7 +349,7 @@ async function activateDetectedLink(params: {
     url: params.linkUrl.substring(0, 60),
   });
 
-  await linkService.handleDetectedLink(email, params.linkUrl, accountId);
+  await linkService.handleDetectedLink(email, params.linkUrl, accountId, params.otpCode, params.linkAnchorText);
 }
 
 /**
@@ -595,7 +603,7 @@ async function handleMessage(
       // 1. Clear stale OTP so old codes can't fire on the new email session
       await otpService.clearLastOTP();
 
-      // 2. Clear processed-email dedup cache so new inbox is scanned fresh
+      // 2. Reset pending work; processed history is already scoped to each account
       //    Also clears otpWaitingTabs + circuit breaker (see resetEmailSession)
       await resetEmailSession();
 
@@ -682,7 +690,7 @@ async function handleMessage(
       // 1. Clear stale OTP so old codes can't fire on the new email session
       await otpService.clearLastOTP();
 
-      // 2. Clear processed-email dedup cache so new inbox is scanned fresh
+      // 2. Reset pending work; processed history is already scoped to each account
       //    Also clears otpWaitingTabs + circuit breaker (see resetEmailSession)
       await resetEmailSession();
 
@@ -833,7 +841,16 @@ async function handleMessage(
 
       if (senderTabId && lastOTP) {
         const reg = getOTPWaitingTabs().get(senderTabId);
-        if (reg && reg.registeredAt > lastOTP.extractedAt && !isActivationTab(senderTabId)) {
+        const siteUrl = sender.url || reg?.url || sender.tab?.url || '';
+        if (lastOTP.emailFrom && !senderMatchesSite(lastOTP.emailFrom, siteUrl)) {
+          log.info('Saved code withheld because its sender does not match the requesting page', {
+            senderTabId,
+            senderDomain: getSenderDomain(lastOTP.emailFrom),
+            page: siteUrl,
+          });
+          return { success: false, error: 'Saved code belongs to a different site' };
+        }
+        if (reg && reg.registeredAt > lastOTP.extractedAt && !isActivationTab(senderTabId) && !(await otpService.isOTPFresh())) {
           log.warn('Refusing to provide stale OTP during active polling session', { senderTabId });
           return { success: false, error: 'Still waiting for new email...' };
         }
@@ -843,7 +860,7 @@ async function handleMessage(
     }
 
     case 'MARK_OTP_USED': {
-      await otpService.markAsUsed();
+      await otpService.markAsUsed(message.payload?.code);
       return { success: true };
     }
 
@@ -903,6 +920,17 @@ async function handleMessage(
             onContentScriptReady(sender.tab.id);
           }
           startFastOTPPolling(sender.tab.id, url, selectors, sender.frameId, confidence, verdict);
+          // The email may arrive before SPA hydration exposes the code input.
+          const saved = await otpService.getLastOTP();
+          if (selectors.length > 0 && saved?.autoFillEligible === true && saved.confidence >= 0.7 &&
+            saved.emailFrom && senderMatchesSite(saved.emailFrom, url) && await otpService.isOTPFresh()) {
+            await deliverOTP(saved.code, saved.confidence, {
+              from: saved.emailFrom,
+              subject: saved.emailSubject || '',
+              ...(saved.emailId !== undefined ? { emailId: saved.emailId } : {}),
+              ...(saved.emailDate !== undefined ? { emailDate: saved.emailDate } : {}),
+            });
+          }
         }
       }
       return { success: true };
@@ -970,10 +998,13 @@ async function handleMessage(
       const source = toSafeStr(payload?.source);
 
       log.info(`🧠 Requesting off-main-thread OTP/Link extraction for source: ${source}`);
+      const initialAccount = await emailService.getCurrentEmail(true).catch(() => null);
 
       const extractFn = async () => {
         let textBody = toSafeStr(payload?.textBody) || toSafeStr(payload?.text);
         let htmlBody = toSafeStr(payload?.htmlBody);
+        let senderEmail = toSafeStr(payload?.emailFrom);
+        let emailDate = payload?.emailDate;
 
         // If the email lacks htmlBody or only contains snippet preview text (typical for list view snippets),
         // fetch the full email body first to allow high-accuracy extraction.
@@ -981,7 +1012,7 @@ async function handleMessage(
           !htmlBody || htmlBody === textBody || (htmlBody.length < 300 && !htmlBody.includes('<'));
         if (isSnippetOnly && payload?.emailId) {
           try {
-            const currentAccount = await emailService.getCurrentEmail();
+            const currentAccount = initialAccount;
             if (currentAccount) {
               log.info(`Fetching full email body for inline extraction (ID: ${payload.emailId})`);
               const fullEmail = await emailService.readEmail(
@@ -996,62 +1027,151 @@ async function handleMessage(
               if (fetchedBody) {
                 textBody = fetchedBody;
               }
+              senderEmail = toSafeStr(fullEmail.from) || senderEmail;
+              emailDate = fullEmail.date ?? emailDate;
             }
           } catch (e) {
             log.warn(`Failed to fetch full email body for inline extraction: ${e}`);
           }
         }
 
-        const senderEmail = toSafeStr(payload?.emailFrom) || 'noreply@ghostfill.ai';
-        const result = extractAll(subject, textBody, htmlBody, senderEmail);
+        const expectedDomains = [...getOTPWaitingTabs().values()].map((reg) => reg.hostname);
+        const result = extractAll(subject, textBody, htmlBody, senderEmail, expectedDomains);
+        const decision = assessEmailDecision({
+          extraction: result,
+          sender: senderEmail,
+          expectedDomains,
+        });
         return {
           code: result.otp?.code ?? null,
           link: result.link?.url ?? null,
+          linkAnchorText: result.link?.anchorText ?? '',
           otpConfidence: result.otp?.confidence ?? 0.8,
+          decision,
+          emailFrom: senderEmail,
+          ...(emailDate !== undefined ? { emailDate } : {}),
         };
       };
 
       let extractionResult: {
         code?: string | null | undefined;
         link?: string | null | undefined;
+        linkAnchorText?: string;
         otpConfidence?: number;
+        decision?: EmailDecision;
+        emailFrom?: string;
+        emailDate?: number;
       };
       if (payload?.emailId) {
-        extractionResult = await extractEmailOnce(String(payload.emailId), extractFn);
+        // A list snippet and the later full message must not share a cached
+        // extraction. The snippet may contain only a sender/domain token.
+        const inputText = toSafeStr(payload?.textBody) || toSafeStr(payload?.text);
+        const inputHtml = toSafeStr(payload?.htmlBody);
+        const extractionScope = contentFingerprint([
+          source || 'message',
+          initialAccount?.fullEmail || '',
+          initialAccount?.service || '',
+          subject,
+          toSafeStr(payload?.emailFrom),
+          inputText,
+          inputHtml,
+          [...getOTPWaitingTabs().values()]
+            .map((reg) => reg.hostname)
+            .sort()
+            .join(','),
+        ]);
+        extractionResult = await extractEmailOnce(
+          String(payload.emailId),
+          extractFn,
+          extractionScope
+        );
       } else {
         extractionResult = await extractFn();
       }
 
       const otpCode = normalizeEmailOTP(extractionResult.code);
       const otpConfidence = extractionResult.otpConfidence ?? 0.8;
+      const canAutoFillCode = extractionResult.decision?.canAutoAct === true && otpConfidence >= 0.7;
       const linkUrl = extractionResult.link;
+      const senderEmail = extractionResult.emailFrom || toSafeStr(payload?.emailFrom);
+      const emailDate = extractionResult.emailDate ?? payload?.emailDate;
+      const accountNow = await emailService.getCurrentEmail(true).catch(() => null);
+      const sameInbox =
+        initialAccount?.fullEmail === accountNow?.fullEmail &&
+        initialAccount?.service === accountNow?.service;
+      const previousOTP = otpCode ? await otpService.getLastOTP({ includeUsed: true }) : null;
+      const obsoleteCode = Boolean(
+        previousOTP &&
+        ((emailDate !== undefined &&
+          previousOTP.emailDate !== undefined &&
+          emailDate < previousOTP.emailDate) ||
+          (previousOTP.usedAt &&
+            previousOTP.code === otpCode &&
+            String(previousOTP.emailId) === String(payload?.emailId)))
+      );
 
-      if (otpCode && payload && payload.saveToLastOTP === true) {
+      if (sameInbox && !obsoleteCode && otpCode && payload && payload.saveToLastOTP === true) {
         await saveExtractedOTPFromMessage(otpCode, otpConfidence, {
           ...payload,
           subject,
           source,
-        });
+          emailFrom: senderEmail,
+          ...(emailDate !== undefined ? { emailDate } : {}),
+        }, canAutoFillCode);
       }
 
-      // ── OTP delivery to waiting tabs (popup path) ──────────────────
-      // The polling engine calls deliverOTP() when it finds an OTP.
-      // Mirror that here so popup-triggered extraction also fills any
-      // OTP field that is currently waiting.
-      // deliverOTP() returns false immediately when no tabs are waiting,
-      // so there is zero cost when the user is just browsing the inbox.
-      if (otpCode) {
-        const emailCtx: EmailContext = {
-          from: toSafeStr(payload?.emailFrom) || '',
-          subject: subject || '',
-          bodySnippet: (toSafeStr(payload?.textBody) || toSafeStr(payload?.text) || '').substring(
-            0,
-            500
-          ),
-        };
-        void deliverOTP(otpCode, otpConfidence, emailCtx).catch((e) =>
-          log.warn('OTP delivery error (EXTRACT_OTP path)', e)
-        );
+      const emailCtx: EmailContext = {
+        from: senderEmail,
+        subject: subject || '',
+        ...(payload?.emailId !== undefined ? { emailId: payload.emailId } : {}),
+        ...(emailDate !== undefined ? { emailDate } : {}),
+        ...(linkUrl ? { linkUrl } : {}),
+        bodySnippet: (toSafeStr(payload?.textBody) || toSafeStr(payload?.text) || '').substring(
+          0,
+          500
+        ),
+      };
+      const hasMatchingOTPPage = Boolean(otpCode && hasMatchingOTPWaiter(emailCtx));
+      let otpDelivered = false;
+      let otpDeliveryComplete = false;
+      if (sameInbox && !obsoleteCode && otpCode && canAutoFillCode) {
+        const delivery = deliverOTP(otpCode, otpConfidence, emailCtx).catch((e) => {
+          log.warn('OTP delivery error (EXTRACT_OTP path)', e);
+          return false;
+        });
+        if (source === 'popup-viewer' && linkUrl) {
+          otpDelivered = await delivery;
+          otpDeliveryComplete = true;
+        } else {
+          void delivery;
+        }
+      }
+
+      const action = extractionResult.decision
+        ? selectVerificationAction(extractionResult.decision, {
+            otpDelivered,
+            hasMatchingOTPPage,
+            otpDeliveryComplete,
+          })
+        : 'show-review';
+      if (
+        sameInbox &&
+        !obsoleteCode &&
+        source === 'popup-viewer' &&
+        payload?.emailId &&
+        linkUrl &&
+        extractionResult.decision?.canAutoAct &&
+        action === 'open-link'
+      ) {
+        await activateDetectedLink({
+          emailId: payload.emailId,
+          linkUrl,
+          emailFrom: senderEmail,
+          subject,
+          ...(emailDate !== undefined ? { emailDate } : {}),
+          otpCode: canAutoFillCode ? otpCode : null,
+          linkAnchorText: extractionResult.linkAnchorText ?? '',
+        }).catch((e) => log.warn('Link activation error (EXTRACT_OTP path)', e));
       }
 
       return {
@@ -1064,7 +1184,7 @@ async function handleMessage(
     // ── ACTIVATE LINK (permanent, typed handler) ─────────────────────
     // Called internally by EXTRACT_OTP and also directly by the popup
     // when the user clicks an "Open Link" button.
-    // Routes through linkService with its full security gate + dedup.
+    // Routes through linkService with web URL validation and deduplication.
     case 'ACTIVATE_LINK': {
       if (message.action === 'ACTIVATE_LINK' && message.payload) {
         const p = message.payload;
