@@ -4,12 +4,12 @@ This repository has controls in source for CI, release packaging, dependency rev
 
 ## Recover from the current Actions failure
 
-The September 2026 CI and release runs did not execute any project commands. GitHub marked their jobs as failed before startup because the account was locked for a billing issue. Resolve that account condition in GitHub's billing settings first. Do not change application code or delete the `v1.1.0` tag to address that failure.
+The September and October 2026 CI and release runs did not execute any project commands. GitHub marked their jobs as failed before startup because the account was locked for a billing issue. Resolve that account condition in GitHub's billing settings first. Do not change application code or replace version tags to address that failure.
 
 After GitHub Actions is available again:
 
 1. Open **Actions → CI** and rerun the failed checks, or open a new pull request to trigger CI.
-2. For the existing release tag, open **Actions → Release → Run workflow**, enter `v1.1.0`, and run it from the default branch. The workflow packages the immutable tag, verifies its checksum, and creates or updates the matching release without retagging.
+2. For the current release tag, open **Actions → Release → Run workflow**, enter `v1.1.2`, and run it from the default branch. The workflow packages the immutable tag, verifies its checksum, and creates or updates the matching release without retagging.
 
 ## Protect `main`
 

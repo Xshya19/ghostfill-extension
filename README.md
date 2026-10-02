@@ -8,8 +8,6 @@ It is an early build. The default package includes temporary email plus the opti
 
 Watch the [19-second MP4 showcase](docs/demo/ghostfill-showcase.mp4) or view the [still poster](docs/demo/ghostfill-showcase-poster.png). This is an illustrated workflow, not a screen recording. Regenerate it with the [render script](docs/demo/build-showcase.py). A clean local demo surface and recording procedure are in [docs/demo/RECORDING.md](docs/demo/RECORDING.md).
 
-The Gmail alias scene shows the optional full integration profile. The default public package is temporary-email-only and does not request Gmail access.
-
 **Start here:** [Install GhostFill](#install) → [Try your first signup](#first-use) → [Update GhostFill](#update-an-existing-install) → [Fix a setup problem](#setup-help).
 
 **Just want to use GhostFill?** [Download the latest built package](https://github.com/Xshya19/ghostfill-extension/releases/latest). Choose `ghostfill-extension-v<version>.zip` under **Assets**, extract it, and follow [Load it in Chrome](#2-load-it-in-chrome). You do not need Node.js or Git for this package.
