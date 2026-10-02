@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { ESLint } from 'eslint';
 import { describe, expect, it } from 'vitest';
 import { IconSystem, menuIcon, type ButtonMode, type MenuIconName } from '../src/shared/icons';
 import { generateHostTokens } from '../src/shared/theme';
@@ -183,10 +184,13 @@ describe('GhostFill visual contract', () => {
     expect(popupHooks).not.toContain('saveToLastOTP: false');
   });
 
-  it('keeps the command palette and quiet FAB keyboard-safe', () => {
+  // Resolving the active flat config loads the full lint plugin graph on a cold worker.
+  it('keeps the command palette and quiet FAB keyboard-safe', async () => {
     const optionsApp = readSource('src/frontend/options/OptionsApp.tsx');
     const fabCss = readSource('src/content/floatingButton.shadow.css');
-    const eslint = readSource('.eslintrc.cjs');
+    const lintConfig = await new ESLint().calculateConfigForFile(
+      'src/frontend/options/OptionsApp.tsx'
+    );
 
     expect(optionsApp).toContain('role="combobox"');
     expect(optionsApp).toContain('aria-activedescendant');
@@ -195,6 +199,7 @@ describe('GhostFill visual contract', () => {
     expect(fabCss).toMatch(/\.gf-fab\s*{[^}]*width:\s*44px;\s*height:\s*44px/);
     expect(fabCss.match(/\.gf-fab\.gf-quiet\s*{([^}]*)}/)?.[1]).not.toMatch(/(?:width|height):/);
     expect(fabCss).toContain('.gf-fab.gf-quiet:focus-visible');
-    expect(eslint).toContain("'plugin:jsx-a11y/recommended'");
-  });
+    expect(lintConfig.rules['jsx-a11y/alt-text'][0]).toBe(2);
+    expect(lintConfig.rules['security/detect-eval-with-expression'][0]).toBe(2);
+  }, 30000);
 });

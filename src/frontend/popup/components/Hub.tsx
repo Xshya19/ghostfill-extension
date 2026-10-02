@@ -443,7 +443,12 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
         const now = Date.now();
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
           const { lastGenerateEmailTime } = await chrome.storage.local.get('lastGenerateEmailTime');
-          const lastTime = parseInt(lastGenerateEmailTime || '0', 10);
+          const lastTime =
+            typeof lastGenerateEmailTime === 'string'
+              ? Number.parseInt(lastGenerateEmailTime, 10)
+              : typeof lastGenerateEmailTime === 'number'
+                ? lastGenerateEmailTime
+                : 0;
           if (now - lastTime < RATE_LIMIT_MS.GENERATE_EMAIL) {
             setEmailCooldown(true);
             if (emailCooldownTimeoutRef.current) {

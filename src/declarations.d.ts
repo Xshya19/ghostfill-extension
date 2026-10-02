@@ -4,6 +4,7 @@ declare module '*.jpeg';
 declare module '*.svg';
 declare module '*.gif';
 declare module '*.mp3';
+declare module '*.css';
 declare module '*.shadow.css' {
   const content: string;
   export default content;

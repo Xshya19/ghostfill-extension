@@ -335,7 +335,7 @@ const ScreenReaderAnnouncer: React.FC<{ state: keyof typeof SAVE_LABELS }> = ({ 
 const ConfirmModal: React.FC<{
   modal: ConfirmModalState;
   onClose: () => void;
-  modalRef: React.RefObject<HTMLDivElement>;
+  modalRef: React.RefObject<HTMLDivElement | null>;
 }> = ({ modal, onClose, modalRef }) => {
   const overlayRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -350,7 +350,7 @@ const ConfirmModal: React.FC<{
   return (
     /* Backdrop clicks are a pointer convenience; Escape and the focus trap
        provide the keyboard path. */
-    /* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions, jsx-a11y/no-noninteractive-element-interactions */
+    /* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */
     <div
       ref={overlayRef}
       className="modal-overlay"
@@ -360,7 +360,6 @@ const ConfirmModal: React.FC<{
         }
       }}
     >
-      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
       <div
         ref={modalRef}
         className="modal-content liquid-glass"
@@ -643,7 +642,7 @@ const OptionsApp: React.FC = () => {
       if (autoSaveTimerRef.current) {
         clearTimeout(autoSaveTimerRef.current);
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
+
       const timers = secretSaveTimersRef.current;
       for (const k in timers) {
         if (timers[k]) {
@@ -745,7 +744,6 @@ const OptionsApp: React.FC = () => {
   // ═══════════════════════════════════════════════════════════
 
   const handleChange = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (key: keyof UserSettings, value: any) => {
       if (key === 'darkMode' && (value === true || value === false || value === 'system')) {
         const nextSettings = { ...settingsRef.current, darkMode: value };
@@ -785,7 +783,6 @@ const OptionsApp: React.FC = () => {
   }, []);
 
   const handlePasswordDefaultChange = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (key: keyof UserSettings['passwordDefaults'], value: any) => {
       setSettings((prev) => ({
         ...prev,
@@ -1194,9 +1191,9 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
   }
 
   return (
-    /* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions, jsx-a11y/no-noninteractive-element-interactions */
+    /* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */
     <div ref={overlayRef} className="command-palette-overlay" onClick={onClose}>
-      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions, jsx-a11y/no-noninteractive-element-interactions */}
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions */}
       <div
         ref={paletteRef}
         className="command-palette liquid-glass"

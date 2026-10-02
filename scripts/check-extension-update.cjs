@@ -4,7 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
-const archiver = require('archiver');
+const { ZipArchive } = require('archiver');
 
 const updater = path.join(__dirname, 'update-extension.ps1');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ghostfill-update-check-'));
@@ -69,7 +69,7 @@ function checksum() {
 async function zip(overrides = {}, omit = null) {
   await new Promise((resolve, reject) => {
     const output = fs.createWriteStream(packagePath);
-    const archive = archiver('zip');
+    const archive = new ZipArchive();
     output.on('close', resolve);
     output.on('error', reject);
     archive.on('error', reject);

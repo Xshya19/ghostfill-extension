@@ -86,7 +86,7 @@ class ProviderHealthManager implements IProviderHealthManager {
     if (typeof chrome !== 'undefined' && chrome.storage?.session) {
       try {
         const data = await chrome.storage.session.get('phm_health');
-        if (data.phm_health) {
+        if (typeof data.phm_health === 'string' && data.phm_health) {
           const parsed = JSON.parse(data.phm_health);
           if (!Array.isArray(parsed)) {
             return;

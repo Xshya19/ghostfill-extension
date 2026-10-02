@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS } from '../src/types/storage.types';
 import {
   clearEncryptionKeys,
   encrypt,
+  decrypt,
   getMasterKey,
   initializeSecureEncryption,
 } from '../src/utils/encryption';
@@ -38,11 +39,166 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   clearEncryptionKeys();
   vi.restoreAllMocks();
 });
 
 describe('storage lifecycle', () => {
+  it('serializes clearing with an active write so its retry cannot resurrect cleared data', async () => {
+    const service = new StorageService();
+    await service.init();
+    vi.useFakeTimers();
+    vi.mocked(chrome.storage.local.set).mockImplementationOnce(() => new Promise<void>(() => {}));
+    const write = service.setImmediate('preferredEmailType', 'gmail').catch((error) => error);
+    await vi.advanceTimersByTimeAsync(0);
+    let cleared = false;
+    const clearing = service.clear().then(() => {
+      cleared = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cleared).toBe(false);
+    await vi.advanceTimersByTimeAsync(4_100);
+    await Promise.all([write, clearing]);
+    const writeCount = vi.mocked(chrome.storage.local.set).mock.calls.length;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(chrome.storage.local.set).toHaveBeenCalledTimes(writeCount);
+    expect(service.getCacheStats().pendingWrites).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('bounds retries while retaining the unsaved value when storage stays unresponsive', async () => {
+    const service = new StorageService();
+    await service.init();
+    vi.useFakeTimers();
+    vi.mocked(chrome.storage.local.set)
+      .mockClear()
+      .mockImplementation(() => new Promise<void>(() => {}));
+    const write = service.setImmediate('preferredEmailType', 'gmail').catch((error) => error);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(await write).toBeInstanceOf(Error);
+    expect(chrome.storage.local.set).toHaveBeenCalledTimes(3);
+    expect(await service.get('preferredEmailType')).toBe('gmail');
+    expect(service.getCacheStats().pendingWrites).toBe(1);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(log.error).not.toHaveBeenCalled();
+    service.onExtensionUnload();
+  });
+
+  it('does not let a stalled quota measurement block a write forever', async () => {
+    const service = new StorageService();
+    await service.init();
+    vi.useFakeTimers();
+    vi.mocked(chrome.storage.local.getBytesInUse).mockImplementationOnce(
+      () => new Promise<number>(() => {})
+    );
+    const write = service.setImmediate('preferredEmailType', 'gmail');
+    await vi.advanceTimersByTimeAsync(4_100);
+    await write;
+    expect(disk.preferredEmailType).toBe('gmail');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('cancels delayed retries when the user clears storage', async () => {
+    const service = new StorageService();
+    await service.init();
+    vi.useFakeTimers();
+    vi.mocked(chrome.storage.local.set).mockImplementationOnce(() => new Promise<void>(() => {}));
+    const write = service.setImmediate('preferredEmailType', 'gmail').catch((error) => error);
+    await vi.advanceTimersByTimeAsync(4_100);
+    await write;
+    await service.clear();
+    const writeCount = vi.mocked(chrome.storage.local.set).mock.calls.length;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(chrome.storage.local.set).toHaveBeenCalledTimes(writeCount);
+    expect(service.getCacheStats().pendingWrites).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('keeps pruned sensitive values encrypted during quota recovery', async () => {
+    const service = new StorageService();
+    await service.init();
+    const inbox = Array.from({ length: 51 }, (_, i) => ({
+      id: String(i),
+      from: 'sender@example.com',
+      subject: 'Verify',
+      body: 'Private message',
+      date: Date.now(),
+      read: false,
+      attachments: [],
+    }));
+    vi.mocked(chrome.storage.local.set).mockRejectedValueOnce(
+      new Error('QUOTA_BYTES quota exceeded')
+    );
+    await service.setImmediate('inbox', inbox);
+    expect(disk.inbox).toEqual(expect.stringMatching(/^v1:/));
+    expect(await decrypt(disk.inbox as string, getMasterKey()!)).toHaveLength(10);
+  });
+
+  it('clears storage deadlines when a write succeeds', async () => {
+    const service = new StorageService();
+    await service.init();
+    vi.useFakeTimers();
+    await service.setImmediate('preferredEmailType', 'gmail');
+    expect(disk.preferredEmailType).toBe('gmail');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('recovers a committed write when Chrome never acknowledges its promise', async () => {
+    const service = new StorageService();
+    await service.init();
+    vi.useFakeTimers();
+    vi.mocked(chrome.storage.local.set).mockImplementationOnce((values) => {
+      Object.assign(disk, values);
+      return new Promise<void>(() => {});
+    });
+    let failure: unknown;
+    const write = service.setImmediate('preferredEmailType', 'gmail').catch((error) => {
+      failure = error;
+    });
+    await vi.advanceTimersByTimeAsync(4_100);
+    await write;
+    expect(failure).toBeUndefined();
+    expect(disk.preferredEmailType).toBe('gmail');
+    expect(log.error).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('preserves a newer queued value when an older write fails', async () => {
+    const service = new StorageService();
+    await service.init();
+    let rejectFirst!: (reason: Error) => void;
+    vi.mocked(chrome.storage.local.set).mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectFirst = reject;
+        })
+    );
+    const first = service.setImmediate('preferredEmailType', 'disposable').catch(() => {});
+    await vi.waitFor(() => expect(rejectFirst).toBeTypeOf('function'));
+    const newer = service.setImmediate('preferredEmailType', 'gmail');
+    rejectFirst(new Error('Storage temporarily unavailable'));
+    await Promise.all([first, newer]);
+    expect(disk.preferredEmailType).toBe('gmail');
+    expect(await service.get('preferredEmailType')).toBe('gmail');
+  });
+
+  it('retains a timed-out write and retries it automatically without error spam', async () => {
+    const service = new StorageService();
+    await service.init();
+    vi.useFakeTimers();
+    vi.mocked(chrome.storage.local.set).mockImplementationOnce(() => new Promise<void>(() => {}));
+    const write = service.setImmediate('preferredEmailType', 'gmail').catch((error) => error);
+    await vi.advanceTimersByTimeAsync(4_100);
+    expect(await write).toBeInstanceOf(Error);
+    expect(await service.get('preferredEmailType')).toBe('gmail');
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(disk.preferredEmailType).toBe('gmail');
+    expect(service.getCacheStats().pendingWrites).toBe(0);
+    expect(log.error).not.toHaveBeenCalled();
+    service.onExtensionUnload();
+  });
+
   it('reads encrypted preferences when trusted session storage is denied to a content script', async () => {
     vi.mocked(chrome.storage.session.get).mockRejectedValue(
       new Error('Access to storage is not allowed from this context.')

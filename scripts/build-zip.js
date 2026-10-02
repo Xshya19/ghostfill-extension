@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const archiver = require('archiver');
+const { ZipArchive } = require('archiver');
 
 const ROOT_DIR = path.join(__dirname, '..');
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
@@ -163,7 +163,7 @@ if (fs.existsSync(checksumFilePath)) {
 }
 
 const output = fs.createWriteStream(zipFilePath);
-const archive = archiver('zip', { zlib: { level: 9 } });
+const archive = new ZipArchive({ zlib: { level: 9 } });
 
 output.on('close', () => {
   const hash = crypto.createHash('sha256').update(fs.readFileSync(zipFilePath)).digest('hex');

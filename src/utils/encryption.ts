@@ -287,7 +287,7 @@ async function getInternalSalt(): Promise<Uint8Array> {
   }
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
     const data = await chrome.storage.local.get(['internalEncryptionSalt']);
-    if (data.internalEncryptionSalt) {
+    if (typeof data.internalEncryptionSalt === 'string' && data.internalEncryptionSalt) {
       cachedInternalSalt = Uint8Array.from(atob(data.internalEncryptionSalt), (c) =>
         c.charCodeAt(0)
       );
@@ -499,8 +499,12 @@ export async function initializeSecureEncryption(): Promise<void> {
         ]);
 
         if (
+          typeof sessionData.sessionKeySeed === 'string' &&
           sessionData.sessionKeySeed &&
+          typeof sessionData.encryptionSalt === 'string' &&
           sessionData.encryptionSalt &&
+          typeof sessionData.keyExpiration === 'number' &&
+          Number.isFinite(sessionData.keyExpiration) &&
           sessionData.keyExpiration > Date.now() &&
           sessionData.appVersion === currentVersion
         ) {
@@ -769,7 +773,6 @@ export function getRandomInt(min: number, max: number): number {
   const maxMultiple = Math.floor(4294967296 / range) * range;
   const randomArray = new Uint32Array(1);
 
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     crypto.getRandomValues(randomArray);
     const value = randomArray[0]!;

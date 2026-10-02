@@ -270,7 +270,9 @@ async function saveExtractedOTPFromMessage(
     return;
   }
 
-  const metadata: { emailId?: string | number; emailDate?: number; autoFillEligible: boolean } = { autoFillEligible };
+  const metadata: { emailId?: string | number; emailDate?: number; autoFillEligible: boolean } = {
+    autoFillEligible,
+  };
   if (payload.emailId !== undefined) {
     metadata.emailId = payload.emailId;
   }
@@ -349,7 +351,13 @@ async function activateDetectedLink(params: {
     url: params.linkUrl.substring(0, 60),
   });
 
-  await linkService.handleDetectedLink(email, params.linkUrl, accountId, params.otpCode, params.linkAnchorText);
+  await linkService.handleDetectedLink(
+    email,
+    params.linkUrl,
+    accountId,
+    params.otpCode,
+    params.linkAnchorText
+  );
 }
 
 /**
@@ -819,13 +827,13 @@ async function handleMessage(
 
     case 'GET_EMAIL_HISTORY': {
       const history = await emailService.getHistory();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       return { success: true, history: history as any };
     }
 
     case 'GET_PROVIDER_HEALTH': {
       const health = emailService.getProviderHealth();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       return { success: true, health: health as any[] };
     }
 
@@ -850,7 +858,12 @@ async function handleMessage(
           });
           return { success: false, error: 'Saved code belongs to a different site' };
         }
-        if (reg && reg.registeredAt > lastOTP.extractedAt && !isActivationTab(senderTabId) && !(await otpService.isOTPFresh())) {
+        if (
+          reg &&
+          reg.registeredAt > lastOTP.extractedAt &&
+          !isActivationTab(senderTabId) &&
+          !(await otpService.isOTPFresh())
+        ) {
           log.warn('Refusing to provide stale OTP during active polling session', { senderTabId });
           return { success: false, error: 'Still waiting for new email...' };
         }
@@ -922,8 +935,14 @@ async function handleMessage(
           startFastOTPPolling(sender.tab.id, url, selectors, sender.frameId, confidence, verdict);
           // The email may arrive before SPA hydration exposes the code input.
           const saved = await otpService.getLastOTP();
-          if (selectors.length > 0 && saved?.autoFillEligible === true && saved.confidence >= 0.7 &&
-            saved.emailFrom && senderMatchesSite(saved.emailFrom, url) && await otpService.isOTPFresh()) {
+          if (
+            selectors.length > 0 &&
+            saved?.autoFillEligible === true &&
+            saved.confidence >= 0.7 &&
+            saved.emailFrom &&
+            senderMatchesSite(saved.emailFrom, url) &&
+            (await otpService.isOTPFresh())
+          ) {
             await deliverOTP(saved.code, saved.confidence, {
               from: saved.emailFrom,
               subject: saved.emailSubject || '',
@@ -1091,7 +1110,8 @@ async function handleMessage(
 
       const otpCode = normalizeEmailOTP(extractionResult.code);
       const otpConfidence = extractionResult.otpConfidence ?? 0.8;
-      const canAutoFillCode = extractionResult.decision?.canAutoAct === true && otpConfidence >= 0.7;
+      const canAutoFillCode =
+        extractionResult.decision?.canAutoAct === true && otpConfidence >= 0.7;
       const linkUrl = extractionResult.link;
       const senderEmail = extractionResult.emailFrom || toSafeStr(payload?.emailFrom);
       const emailDate = extractionResult.emailDate ?? payload?.emailDate;
@@ -1111,13 +1131,18 @@ async function handleMessage(
       );
 
       if (sameInbox && !obsoleteCode && otpCode && payload && payload.saveToLastOTP === true) {
-        await saveExtractedOTPFromMessage(otpCode, otpConfidence, {
-          ...payload,
-          subject,
-          source,
-          emailFrom: senderEmail,
-          ...(emailDate !== undefined ? { emailDate } : {}),
-        }, canAutoFillCode);
+        await saveExtractedOTPFromMessage(
+          otpCode,
+          otpConfidence,
+          {
+            ...payload,
+            subject,
+            source,
+            emailFrom: senderEmail,
+            ...(emailDate !== undefined ? { emailDate } : {}),
+          },
+          canAutoFillCode
+        );
       }
 
       const emailCtx: EmailContext = {

@@ -111,7 +111,7 @@ export { GmailLogo, ZohoLogo, OutlookLogo } from './ProviderLogos';
 interface GeneratorTabProps {
   domainInput: string;
   setDomainInput: (v: string) => void;
-  inputRef: React.RefObject<HTMLInputElement>;
+  inputRef: React.RefObject<HTMLInputElement | null>;
   cleanDomain: string;
   activeAlias: string;
   copiedAlias: string | null;
@@ -358,8 +358,12 @@ const InboxTab: React.FC<InboxTabProps> = ({
                 <div className="alias-inbox-item-body">
                   <div className="alias-inbox-item-top">
                     <span className="alias-inbox-from truncate">
-                      {getSenderLabel(getSenderSource(msg.fromName, msg.fromEmail || msg.from), msg.subject, null,
-                        msg.htmlBody || msg.body || msg.snippet)}
+                      {getSenderLabel(
+                        getSenderSource(msg.fromName, msg.fromEmail || msg.from),
+                        msg.subject,
+                        null,
+                        msg.htmlBody || msg.body || msg.snippet
+                      )}
                     </span>
                     <span className="alias-inbox-date">{msg.dateFormatted}</span>
                   </div>

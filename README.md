@@ -24,7 +24,7 @@ Use **Google Chrome on a desktop computer** (Windows, macOS, or Linux). Temporar
 
 **Installing from this repository?** Build the source once using these steps; no coding or Git is required:
 
-1. Install [Node.js](https://nodejs.org/en/download) **22 LTS**, including npm. Close and reopen your terminal after installation.
+1. Install [Node.js](https://nodejs.org/en/download) **24 LTS**, including npm. Close and reopen your terminal after installation.
 2. [Download the source ZIP](https://github.com/Xshya19/ghostfill-extension/archive/refs/heads/main.zip). Extract it to a permanent folder, then open the inner `ghostfill-extension-main` folder containing `package.json`.
 3. Open a terminal **in that folder**. On Windows, right-click an empty area of the folder and choose **Open in Terminal**. On macOS or Linux, open Terminal, type `cd `, drag the folder into the terminal, and press Enter.
 4. Run the two commands for your computer, one at a time. Wait for each to finish:
@@ -191,7 +191,7 @@ The default `npm run build` creates the full profile. `npm run build:public` cre
 
 ## Release process
 
-GitHub Actions runs type checks, lint, tests, the full production build, and the bundle-size gate on Node.js 20 and 22. A verified `v<package-version>` tag runs the release workflow, creates the full-profile ZIP and SHA-256 file, then uses GitHub-generated release notes.
+GitHub Actions is configured to run dependency audits, type checks, lint, tests, the full production build, and bundle-size checks on Node.js 22, 24, and 26, plus a Windows installer/updater check. A verified `v<package-version>` tag runs the release workflow, creates the full-profile ZIP and SHA-256 file, then uses GitHub-generated release notes. The account's current billing lock prevents these remote jobs from starting; see [GitHub operations and recovery](docs/GITHUB_OPERATIONS.md) for recovery steps and dependency compatibility limits.
 
 Available packages are listed on [GitHub Releases](https://github.com/Xshya19/ghostfill-extension/releases). The exact maintainer process is in [docs/RELEASING.md](docs/RELEASING.md).
 Maintainers should also follow the [GitHub operations and recovery guide](docs/GITHUB_OPERATIONS.md) for branch protection, Actions recovery, and dependency-update handling.

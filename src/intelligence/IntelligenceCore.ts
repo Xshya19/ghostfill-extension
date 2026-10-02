@@ -3,7 +3,6 @@ import { FieldType } from '../types/form.types';
 import { isValidEmail, LRUCache } from '../utils/core';
 import { createLogger } from '../utils/logger';
 
-
 const log = createLogger('IntelligenceCore');
 
 // ─── 1. SHARED TYPES ──────────────────────────────────────────────────
@@ -215,7 +214,7 @@ export const KW = {
     '이메일',
     'البريد',
     'correio',
-    'e-posta'
+    'e-posta',
   ],
   user: [
     'username',
@@ -237,7 +236,7 @@ export const KW = {
     'mobile_or_email',
     'identificador',
     'user_id',
-    'nom d\'utilisateur',
+    "nom d'utilisateur",
     'usuario o correo',
     'उपयोगकर्ता',
     '用户名',
@@ -245,7 +244,7 @@ export const KW = {
     '사용자명',
     'اسم المستخدم',
     'nome de usuário',
-    'kullanıcı adı'
+    'kullanıcı adı',
   ],
   password: [
     'password',
@@ -268,7 +267,7 @@ export const KW = {
     '비밀번호',
     'كلمة المرور',
     'senha',
-    'şifre'
+    'şifre',
   ],
   confirm: [
     'confirm',
@@ -291,7 +290,7 @@ export const KW = {
     're-enter password',
     'verify password',
     'repetir contraseña',
-    'confirmer le mot de passe'
+    'confirmer le mot de passe',
   ],
   newpw: [
     'new password',
@@ -307,9 +306,15 @@ export const KW = {
     'create-password',
     'choose_password',
     'set_password',
-    'nouveau-mot-de-passe'
+    'nouveau-mot-de-passe',
   ],
-  currentpw: ['current password', 'old password', 'existing password', 'current_password', 'current-password'],
+  currentpw: [
+    'current password',
+    'old password',
+    'existing password',
+    'current_password',
+    'current-password',
+  ],
   otp: [
     'otp',
     'one-time',
@@ -344,10 +349,22 @@ export const KW = {
     '인증번호',
     'رمز التحقق',
     'código de verificação',
-    'doğrulama kodu'
+    'doğrulama kodu',
   ],
   code: ['code', 'pin', 'token'],
-  verify: ['verify', 'verification', 'confirm your', 'enter the code', 'we sent', 'sent to your', 'send code', 'send_code', 'send', 'resend', 're-send'],
+  verify: [
+    'verify',
+    'verification',
+    'confirm your',
+    'enter the code',
+    'we sent',
+    'sent to your',
+    'send code',
+    'send_code',
+    'send',
+    'resend',
+    're-send',
+  ],
   phone: [
     'phone',
     'mobile',
@@ -369,7 +386,7 @@ export const KW = {
     '전화번호',
     'رقم الهاتف',
     'telefone',
-    'telefon'
+    'telefon',
   ],
   first: [
     'first name',
@@ -384,7 +401,7 @@ export const KW = {
     'first_name',
     'first-name',
     'given_name',
-    'given-name'
+    'given-name',
   ],
   last: [
     'last name',
@@ -399,7 +416,7 @@ export const KW = {
     'last_name',
     'last-name',
     'family_name',
-    'family-name'
+    'family-name',
   ],
   fullname: [
     'full name',
@@ -416,7 +433,7 @@ export const KW = {
     'name_and_surname',
     'cardholder_name',
     'cardholder-name',
-    'nombre_completo'
+    'nombre_completo',
   ],
   cvv: ['cvv', 'cvc', 'csc', 'card verification', 'cvv2'],
   card: ['card number', 'cardnumber', 'credit card', 'debit card', 'cc number', 'pan'],
@@ -440,7 +457,8 @@ export function normalizeText(input: string): string {
   if (cached !== undefined) {
     return cached;
   }
-  let s = input.replace(/[\u200B-\u200D\u200E\u200F\uFEFF]/g, '')
+  let s = input
+    .replace(/[\u200B-\u200D\u200E\u200F\uFEFF]/g, '')
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .replace(/([A-Z])([A-Z][a-z])/g, '$1 $2')
     .toLowerCase();
@@ -463,9 +481,11 @@ const precompiledKwRegexes = new Map<KeywordGroup, RegExp[]>();
 
 function getOrCompileRegexes(group: KeywordGroup): RegExp[] {
   let regexes = precompiledKwRegexes.get(group);
-  if (regexes) {return regexes;}
+  if (regexes) {
+    return regexes;
+  }
   const keywords = (KW as Record<string, string[]>)[group] || [];
-  regexes = keywords.map(kw => {
+  regexes = keywords.map((kw) => {
     const normalized = normalizeText(kw);
     const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}(?=$|[^\\p{L}\\p{N}])`, 'iu');
@@ -715,15 +735,7 @@ function zeroScores(): Scores {
 
 function combinedText(r: RawFieldRecord): string {
   const dataVals = r.dataAttributes ? Object.values(r.dataAttributes).join(' ') : '';
-  return [
-    r.labelText,
-    r.placeholder,
-    r.ariaLabel,
-    r.name,
-    r.id,
-    dataVals,
-    r.title || '',
-  ].join(' ');
+  return [r.labelText, r.placeholder, r.ariaLabel, r.name, r.id, dataVals, r.title || ''].join(' ');
 }
 
 export function looksLikeOtpField(r: RawFieldRecord): boolean {
@@ -751,7 +763,12 @@ export function looksLikeOtpField(r: RawFieldRecord): boolean {
   const hasSiblingSameShapeCount = Boolean(r.structural && r.structural[27] === 1);
 
   return (
-    (textOtp && (splitShape || shortNumeric || r.maxLength === 6 || r.maxLength === -1 || r.maxLength > 500)) ||
+    (textOtp &&
+      (splitShape ||
+        shortNumeric ||
+        r.maxLength === 6 ||
+        r.maxLength === -1 ||
+        r.maxLength > 500)) ||
     (splitShape && hasSiblingSameShapeCount)
   );
 }
@@ -759,20 +776,53 @@ export function looksLikeOtpField(r: RawFieldRecord): boolean {
 export function detectHardNegative(r: RawFieldRecord): HardNegative | undefined {
   const text = combinedText(r);
   const autocomplete = r.autocomplete.split(/\s+/);
-  if (r.role === 'searchbox' || (r.role === 'combobox' && r.type !== 'email' && r.type !== 'password' &&
-    !autocomplete.some((token) => ['email', 'username', 'name', 'given-name', 'family-name',
-      'current-password', 'new-password', 'one-time-code'].includes(token)))) {return 'Search';}
-  if (autocomplete.includes('cc-csc')) {return 'CVV';}
-  if (autocomplete.some((token) => token.startsWith('cc-'))) {return 'CardNumber';}
-  if (/\bcardholder\b/i.test(text)) {return 'CardNumber';}
-  if (/\bsecurity[-_ ]+code\b/i.test(text) &&
-    (matchesAny(r.surroundingText, 'card') || matchesAny(r.surroundingText, 'expiry'))) {return 'CVV';}
-  
+  if (
+    r.role === 'searchbox' ||
+    (r.role === 'combobox' &&
+      r.type !== 'email' &&
+      r.type !== 'password' &&
+      !autocomplete.some((token) =>
+        [
+          'email',
+          'username',
+          'name',
+          'given-name',
+          'family-name',
+          'current-password',
+          'new-password',
+          'one-time-code',
+        ].includes(token)
+      ))
+  ) {
+    return 'Search';
+  }
+  if (autocomplete.includes('cc-csc')) {
+    return 'CVV';
+  }
+  if (autocomplete.some((token) => token.startsWith('cc-'))) {
+    return 'CardNumber';
+  }
+  if (/\bcardholder\b/i.test(text)) {
+    return 'CardNumber';
+  }
+  if (
+    /\bsecurity[-_ ]+code\b/i.test(text) &&
+    (matchesAny(r.surroundingText, 'card') || matchesAny(r.surroundingText, 'expiry'))
+  ) {
+    return 'CVV';
+  }
+
   if (r.dataAttributes) {
     const dataText = Object.values(r.dataAttributes).join(' ').toLowerCase();
-    if (matchesAny(dataText, 'search')) {return 'Search';}
-    if (matchesAny(dataText, 'captcha')) {return 'Captcha';}
-    if (matchesAny(dataText, 'coupon')) {return 'Coupon';}
+    if (matchesAny(dataText, 'search')) {
+      return 'Search';
+    }
+    if (matchesAny(dataText, 'captcha')) {
+      return 'Captcha';
+    }
+    if (matchesAny(dataText, 'coupon')) {
+      return 'Coupon';
+    }
   }
 
   if (
@@ -781,7 +831,10 @@ export function detectHardNegative(r: RawFieldRecord): HardNegative | undefined 
     r.opacityZero &&
     (r.offscreen || r.tiny) &&
     !r.focused &&
-    (matchesAny(text, 'email') || matchesAny(text, 'user') || matchesAny(text, 'fullname') || matchesAny(text, 'password'))
+    (matchesAny(text, 'email') ||
+      matchesAny(text, 'user') ||
+      matchesAny(text, 'fullname') ||
+      matchesAny(text, 'password'))
   ) {
     return 'Honeypot';
   }
@@ -882,11 +935,14 @@ export function classifyHeuristic(
   if (r.type === 'email') {
     add('Email', 6, 'type=email');
   }
-  const emailExample = isValidEmail(r.placeholder.trim()) &&
+  const emailExample =
+    isValidEmail(r.placeholder.trim()) &&
     !matchesAny(`${r.labelText} ${r.ariaLabel}`, 'fullname') &&
     !matchesAny(`${r.labelText} ${r.ariaLabel}`, 'first') &&
     !matchesAny(`${r.labelText} ${r.ariaLabel}`, 'last');
-  if (emailExample) {add('Email', 6, 'placeholder:email-example');}
+  if (emailExample) {
+    add('Email', 6, 'placeholder:email-example');
+  }
   if (r.type === 'tel') {
     add('Phone', 3, 'type=tel');
   }
@@ -935,15 +991,20 @@ export function classifyHeuristic(
     add('Last_Name', 3.5, 'kw:last-name');
   }
 
-  const localTxt = [r.labelText, r.placeholder, r.ariaLabel, r.name, r.id].join(
-    ' '
-  );
+  const localTxt = [r.labelText, r.placeholder, r.ariaLabel, r.name, r.id].join(' ');
   const hasLocalFirst = matchesAny(localTxt, 'first');
   const hasLocalLast = matchesAny(localTxt, 'last');
   const normLocalText = normalizeText(localTxt);
-  const nonPersonName = /\b(company|organi[sz]ation|workspace|team|project|business|file|folder|host|domain|brand|product|account|street|school)[-_ ]*(?:full[-_ ]+)?name\b/i.test(normLocalText);
-  const unsupportedName = ac.has('additional-name') || /\bmiddle[-_ ]*(name|initial)\b/i.test(normLocalText) ||
-    /\b(mother|father|parent|spouse|partner|child|guardian|emergency[-_ ]+contact|maiden)\b[^.]*\bname\b/i.test(normLocalText);
+  const nonPersonName =
+    /\b(company|organi[sz]ation|workspace|team|project|business|file|folder|host|domain|brand|product|account|street|school)[-_ ]*(?:full[-_ ]+)?name\b/i.test(
+      normLocalText
+    );
+  const unsupportedName =
+    ac.has('additional-name') ||
+    /\bmiddle[-_ ]*(name|initial)\b/i.test(normLocalText) ||
+    /\b(mother|father|parent|spouse|partner|child|guardian|emergency[-_ ]+contact|maiden)\b[^.]*\bname\b/i.test(
+      normLocalText
+    );
   const hasExplicitFullName =
     matchesAny(text, 'fullname') &&
     !emailExample &&
@@ -963,7 +1024,10 @@ export function classifyHeuristic(
   const visibleNameText = normalizeText(`${r.labelText} ${r.ariaLabel} ${r.placeholder}`);
   const visibleFirst = matchesAny(visibleNameText, 'first');
   const visibleLast = matchesAny(visibleNameText, 'last');
-  const combinedName = /\b(?:(?:first|given)(?:[-_ ]+name)?\s*(?:and|&|\+|\/)\s*(?:last|family)(?:[-_ ]+name)?|name\s*(?:and|&)\s*surname)\b/i.test(visibleNameText);
+  const combinedName =
+    /\b(?:(?:first|given)(?:[-_ ]+name)?\s*(?:and|&|\+|\/)\s*(?:last|family)(?:[-_ ]+name)?|name\s*(?:and|&)\s*surname)\b/i.test(
+      visibleNameText
+    );
   // A single control asking for both parts takes the full name. Explicit
   // component labels refine generic autocomplete=name and generic DOM IDs.
   if (combinedName) {
@@ -979,13 +1043,24 @@ export function classifyHeuristic(
     }
   }
   // An email contract outranks generic name attributes and framework test IDs.
-  if (r.type === 'email' || ac.has('email') || matchesAny(`${r.labelText} ${r.ariaLabel}`, 'email')) {
+  if (
+    r.type === 'email' ||
+    ac.has('email') ||
+    matchesAny(`${r.labelText} ${r.ariaLabel}`, 'email')
+  ) {
     s.First_Name = s.Last_Name = s.Full_Name = 0;
     signals.push('email-contract: excluded person-name candidates');
   }
-  if (r.type !== 'email' && r.type !== 'password' &&
-    (nonPersonName || unsupportedName || /\b(message|comment|chat|bio|description|subject|title|prompt)\b/i.test(localTxt) ||
-      /\b(street|postal|shipping|billing|home|delivery|mailing)[-_ ]+(address|code|zip)\b/i.test(`${r.labelText} ${r.ariaLabel}`))) {
+  if (
+    r.type !== 'email' &&
+    r.type !== 'password' &&
+    (nonPersonName ||
+      unsupportedName ||
+      /\b(message|comment|chat|bio|description|subject|title|prompt)\b/i.test(localTxt) ||
+      /\b(street|postal|shipping|billing|home|delivery|mailing)[-_ ]+(address|code|zip)\b/i.test(
+        `${r.labelText} ${r.ariaLabel}`
+      ))
+  ) {
     s.First_Name = s.Last_Name = s.Full_Name = 0;
     add('Unknown', 8, 'non-identity field');
   }
@@ -1055,10 +1130,7 @@ export function decideFromResult(
   };
 }
 
-export function classifyField(
-  record: RawFieldRecord,
-  opts: ClassifyOptions = {}
-): FillDecision {
+export function classifyField(record: RawFieldRecord, opts: ClassifyOptions = {}): FillDecision {
   const result = classifyHeuristic(record, opts);
   return decideFromResult(record, result, opts.temperature);
 }
@@ -1084,7 +1156,10 @@ export class IntelligenceCore {
     this.temperature = temperature;
   }
 
-  private classifyOnce(record: RawFieldRecord): { result: ClassificationResult; decision: FillDecision } {
+  private classifyOnce(record: RawFieldRecord): {
+    result: ClassificationResult;
+    decision: FillDecision;
+  } {
     const result = classifyHeuristic(record, { temperature: this.temperature });
     const decision = decideFromResult(record, result, this.temperature);
     return { result, decision };
@@ -1132,18 +1207,24 @@ export class IntelligenceCore {
   }
 
   classifyBatch(records: RawFieldRecord[]): CalibratedResult[] {
-    const results = records.map(r => {
+    const results = records.map((r) => {
       const res = this.classify(r);
       return { ...res, signals: [...res.signals] };
     });
 
     for (let i = 0; i < results.length; i++) {
       const current = results[i];
-      if (!current) {continue;}
+      if (!current) {
+        continue;
+      }
 
       if (i > 0) {
         const prev = results[i - 1];
-        if (prev && (prev.fieldType === 'email' || prev.fieldType === 'username') && prev.decision === 'ABSTAIN') {
+        if (
+          prev &&
+          (prev.fieldType === 'email' || prev.fieldType === 'username') &&
+          prev.decision === 'ABSTAIN'
+        ) {
           if (current.fieldType === 'password' && current.decision === 'FILL') {
             prev.decision = 'FILL';
             prev.confidence = Math.max(prev.confidence, 0.65);
@@ -1169,7 +1250,9 @@ export class IntelligenceCore {
           if (current.fieldType === 'confirm-password' && current.decision === 'ABSTAIN') {
             current.decision = 'FILL';
             current.confidence = Math.max(current.confidence, 0.65);
-            current.signals.push('batch: promoted confirm-password due to confident password sibling');
+            current.signals.push(
+              'batch: promoted confirm-password due to confident password sibling'
+            );
           }
         }
       }
@@ -1249,24 +1332,33 @@ export class HistoryManager {
   }
 
   /** All remembered selectors for a field type, best first. */
-  static async getRankedSelectors(domain: string, type: FieldType): Promise<TrustedSelectorEntry[]> {
+  static async getRankedSelectors(
+    domain: string,
+    type: FieldType
+  ): Promise<TrustedSelectorEntry[]> {
     try {
       const data = await chrome.storage.local.get(`${this.KEY_PREFIX}${domain}`);
-      const raw = data[`${this.KEY_PREFIX}${domain}`]?.[type];
+      const stored = data[`${this.KEY_PREFIX}${domain}`];
+      const raw =
+        typeof stored === 'object' && stored !== null && !Array.isArray(stored)
+          ? (stored as Record<string, unknown>)[type]
+          : undefined;
       if (!raw) {
         return [];
       }
       // Legacy: plain string
       if (typeof raw === 'string') {
-        return [{ selector: raw, hits: 1, misses: 0, lastSuccess: Date.now(), lastAttempt: Date.now() }];
+        return [
+          { selector: raw, hits: 1, misses: 0, lastSuccess: Date.now(), lastAttempt: Date.now() },
+        ];
       }
       if (Array.isArray(raw)) {
         const now = Date.now();
         const decorated = [...raw]
           .filter((e): e is TrustedSelectorEntry => Boolean(e?.selector))
-          .map(e => ({ e, s: this.score(e, now) }));
+          .map((e) => ({ e, s: this.score(e, now) }));
         decorated.sort((a, b) => b.s - a.s);
-        return decorated.map(d => d.e);
+        return decorated.map((d) => d.e);
       }
       return [];
     } catch {
@@ -1281,17 +1373,27 @@ export class HistoryManager {
     return rate * 70 + e.hits * 3 + recency * 20;
   }
 
-  static async saveTrustedSelector(domain: string, type: FieldType, selector: string): Promise<void> {
+  static async saveTrustedSelector(
+    domain: string,
+    type: FieldType,
+    selector: string
+  ): Promise<void> {
     if (!selector || selector === 'input') {
       return;
     }
     try {
       const key = `${this.KEY_PREFIX}${domain}`;
-      const bag = (await chrome.storage.local.get(key))[key] || {};
+      const stored = (await chrome.storage.local.get(key))[key];
+      const bag =
+        typeof stored === 'object' && stored !== null && !Array.isArray(stored)
+          ? (stored as Record<string, unknown>)
+          : {};
       let list: TrustedSelectorEntry[] = [];
       const prev = bag[type];
       if (typeof prev === 'string') {
-        list = [{ selector: prev, hits: 1, misses: 0, lastSuccess: Date.now(), lastAttempt: Date.now() }];
+        list = [
+          { selector: prev, hits: 1, misses: 0, lastSuccess: Date.now(), lastAttempt: Date.now() },
+        ];
       } else if (Array.isArray(prev)) {
         list = prev.filter((e: TrustedSelectorEntry) => e?.selector);
       }
@@ -1316,10 +1418,18 @@ export class HistoryManager {
   }
 
   /** Record that a remembered selector failed to resolve or fill. */
-  static async recordSelectorMiss(domain: string, type: FieldType, selector: string): Promise<void> {
+  static async recordSelectorMiss(
+    domain: string,
+    type: FieldType,
+    selector: string
+  ): Promise<void> {
     try {
       const key = `${this.KEY_PREFIX}${domain}`;
-      const bag = (await chrome.storage.local.get(key))[key] || {};
+      const stored = (await chrome.storage.local.get(key))[key];
+      const bag =
+        typeof stored === 'object' && stored !== null && !Array.isArray(stored)
+          ? (stored as Record<string, unknown>)
+          : {};
       const prev = bag[type];
       if (!Array.isArray(prev)) {
         if (typeof prev === 'string' && prev === selector) {
@@ -1387,13 +1497,21 @@ export class TelemetryCollector {
   }
 
   private async flush(): Promise<void> {
-    if (this.flushTimer) { clearTimeout(this.flushTimer); this.flushTimer = null; }
-    if (this.pending.length === 0) {return;}
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+    if (this.pending.length === 0) {
+      return;
+    }
     const batch = this.pending.splice(0, this.pending.length);
     try {
-      const stored = (await storageService.get(this.STORAGE_KEY as any)) as TelemetryEvent[] || [];
+      const stored =
+        ((await storageService.get(this.STORAGE_KEY as any)) as TelemetryEvent[]) || [];
       stored.push(...batch);
-      while (stored.length > 1000) {stored.shift();}
+      while (stored.length > 1000) {
+        stored.shift();
+      }
       await storageService.set(this.STORAGE_KEY as any, stored);
     } catch {
       // safe fallback — re-queue batch head on failure?
@@ -1403,7 +1521,7 @@ export class TelemetryCollector {
 
   async getEvents(): Promise<TelemetryEvent[]> {
     try {
-      return (await storageService.get(this.STORAGE_KEY as any)) as TelemetryEvent[] || [];
+      return ((await storageService.get(this.STORAGE_KEY as any)) as TelemetryEvent[]) || [];
     } catch {
       return this.events;
     }
@@ -1446,13 +1564,17 @@ export class SelfDiagnostics {
         avgLatencyMs: 0,
         mostSuccessfulStrategy: 'none',
         status: 'healthy',
-        recommendations: ['No fill outcomes recorded yet. Interact with forms to populate statistics.'],
+        recommendations: [
+          'No fill outcomes recorded yet. Interact with forms to populate statistics.',
+        ],
       };
     }
 
     const successes = fillEvents.filter((e) => e.outcome === 'success').length;
     const successRate = Math.round((successes / fillEvents.length) * 100);
-    const avgLatencyMs = Math.round(fillEvents.reduce((sum, e) => sum + e.latencyMs, 0) / fillEvents.length);
+    const avgLatencyMs = Math.round(
+      fillEvents.reduce((sum, e) => sum + e.latencyMs, 0) / fillEvents.length
+    );
 
     const strategyCounts = new Map<string, number>();
     for (const e of fillEvents) {
@@ -1515,7 +1637,9 @@ export class AdaptiveStrategyEngine {
   }
 
   async init(): Promise<void> {
-    if (this.initialized) {return;}
+    if (this.initialized) {
+      return;
+    }
     try {
       const stored = await storageService.get(this.STORAGE_KEY as any);
       if (stored && typeof stored === 'object') {
@@ -1563,13 +1687,16 @@ export class AdaptiveStrategyEngine {
     }
 
     stats.attempts++;
-    if (success) {stats.successes++;}
+    if (success) {
+      stats.successes++;
+    }
     stats.lastUsed = Date.now();
 
-    stats.avgLatency = stats.avgLatency === 0 ? latencyMs : stats.avgLatency * 0.9 + latencyMs * 0.1;
+    stats.avgLatency =
+      stats.avgLatency === 0 ? latencyMs : stats.avgLatency * 0.9 + latencyMs * 0.1;
 
     siteMap.set(strategy, stats);
-    
+
     this.pendingWriteCount++;
     const timeSinceLastWrite = Date.now() - this.lastPersistTime;
     if (this.pendingWriteCount >= 5 || timeSinceLastWrite >= 30000) {
@@ -1647,20 +1774,21 @@ export class VerificationLoop {
     this.baseDelayMs = baseDelayMs;
   }
 
-  async verifyAndCorrect(
-    filler: any,
-    candidate: any,
-    value: string
-  ): Promise<VerificationResult> {
+  async verifyAndCorrect(filler: any, candidate: any, value: string): Promise<VerificationResult> {
     let attempt = 0;
     let strategyUsed = 'none';
 
     while (attempt < this.maxRetries) {
       attempt++;
-      
+
       if (attempt > 1) {
         candidate.element.dispatchEvent(
-          new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: '' })
+          new InputEvent('beforeinput', {
+            bubbles: true,
+            cancelable: true,
+            inputType: 'insertText',
+            data: '',
+          })
         );
       }
 
@@ -1670,14 +1798,16 @@ export class VerificationLoop {
         strategyUsed = result.strategy;
 
         const baseDelay = this.getFrameworkDelay(candidate.element);
-        const currentDelay = baseDelay * (2 ** (attempt - 1));
+        const currentDelay = baseDelay * 2 ** (attempt - 1);
         await new Promise((resolve) => setTimeout(resolve, currentDelay));
 
         const verified = this.deepVerify(candidate, value);
         if (verified) {
           return { success: true, attempts: attempt, strategy: strategyUsed };
         } else {
-          log.warn(`Verification failed for field. Expected: ${value}, Got: ${candidate.element.value}. Attempting correction...`);
+          log.warn(
+            `Verification failed for field. Expected: ${value}, Got: ${candidate.element.value}. Attempting correction...`
+          );
         }
       }
     }
@@ -1687,7 +1817,9 @@ export class VerificationLoop {
 
   private deepVerify(candidate: any, expected: string): boolean {
     const el = candidate.element;
-    if (!el.isConnected) {return false;}
+    if (!el.isConnected) {
+      return false;
+    }
 
     if (el.isContentEditable) {
       const actualText = el.textContent || '';
@@ -1717,7 +1849,7 @@ export class VerificationLoop {
       if (classStr.includes('vue') || (current as any).__vnode) {
         return 80;
       }
-      if (classStr.includes('react') || Object.keys(current).some(k => k.startsWith('__react'))) {
+      if (classStr.includes('react') || Object.keys(current).some((k) => k.startsWith('__react'))) {
         return 100;
       }
       current = current.parentElement;
