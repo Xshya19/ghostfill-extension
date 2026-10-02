@@ -1414,7 +1414,7 @@ export function extractActivationLink(text: string): string | null {
 
 export const APP_NAME = 'GhostFill';
 export const APP_VERSION = (() => {
-  try { return chrome.runtime.getManifest().version; } catch { return '1.1.1'; }
+  try { return chrome.runtime.getManifest().version; } catch { return '1.1.2'; }
 })();
 
 export const API = {

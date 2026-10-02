@@ -66,7 +66,7 @@ const TAB_ORDER: Array<{ id: TabId; label: string; hint: string }> = [
   { id: 'automation', label: 'Automation', hint: 'Verification codes, links, and shortcuts' },
   { id: 'privacy', label: 'Privacy', hint: 'History and data retention' },
   { id: 'advanced', label: 'Advanced', hint: 'Debug logging, console help, import, and reset' },
-  { id: 'about', label: 'About', hint: 'Version, storage, and support' },
+  { id: 'about', label: 'About', hint: 'Updates, version, storage, and support' },
 ];
 
 // ═══════════════════════════════════════════════════════════════
