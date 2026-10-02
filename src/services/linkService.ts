@@ -334,9 +334,10 @@ class LinkService {
       const account = await storageService.get('currentEmail');
       const canAutomaticallyActivate =
         detection.decision?.canAutoAct === true &&
-        (detection.decision.action === 'open-link' || detection.decision.action === 'fill-otp-and-open-link') &&
+        (detection.decision.action === 'open-link' ||
+          detection.decision.action === 'fill-otp-and-open-link') &&
         canAutoOpenVerificationLink(account, email.from, detection.link) &&
-        await this.canAutomaticallyActivate(detection.link, email);
+        (await this.canAutomaticallyActivate(detection.link, email));
 
       log.info('🔘 autoConfirmLinks resolved', {
         effective: canAutomaticallyActivate,
@@ -514,7 +515,11 @@ class LinkService {
           record.from,
           record.subject,
           1,
-          { emailId: record.emailId, emailDate: record.emailDate, autoFillEligible: record.codeSource === 'email' }
+          {
+            emailId: record.emailId,
+            emailDate: record.emailDate,
+            autoFillEligible: record.codeSource === 'email',
+          }
         );
       }
 
@@ -665,7 +670,7 @@ class LinkService {
         settle(false);
       }, CONFIG.TAB_LOAD_TIMEOUT_MS);
 
-      const onUpdated = (id: number, info: chrome.tabs.TabChangeInfo) => {
+      const onUpdated = (id: number, info: chrome.tabs.OnUpdatedInfo) => {
         if (id === tabId && info.status === 'complete') {
           settle(true);
         }
@@ -767,8 +772,13 @@ class LinkService {
   //  ACTIVATION URL VALIDATION
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  private async canAutomaticallyActivate(linkUrl: string, email: Email, extractedAnchorText = ''): Promise<boolean> {
-    const anchorText = getAnchorInfo(email.htmlBody || email.body, linkUrl).anchorText || extractedAnchorText;
+  private async canAutomaticallyActivate(
+    linkUrl: string,
+    email: Email,
+    extractedAnchorText = ''
+  ): Promise<boolean> {
+    const anchorText =
+      getAnchorInfo(email.htmlBody || email.body, linkUrl).anchorText || extractedAnchorText;
     if (!isAutoOpenableActivationLink(linkUrl, anchorText)) {
       log.info('Skipping link without independent activation proof', { url: maskUrl(linkUrl) });
       return false;
@@ -790,10 +800,17 @@ class LinkService {
         return { safe: false, reason: 'Activation links require HTTPS' };
       }
       const host = parsed.hostname.toLowerCase();
-      if (parsed.username || parsed.password || host === 'localhost' ||
-          host.endsWith('.localhost') || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host) ||
-          host.startsWith('[') || host.split('.').some((label) => label.startsWith('xn--')) ||
-          /\.(?:tk|ml|ga|cf|gq|buzz|top|xyz)$/.test(host) || host.split('.').length > 10) {
+      if (
+        parsed.username ||
+        parsed.password ||
+        host === 'localhost' ||
+        host.endsWith('.localhost') ||
+        /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host) ||
+        host.startsWith('[') ||
+        host.split('.').some((label) => label.startsWith('xn--')) ||
+        /\.(?:tk|ml|ga|cf|gq|buzz|top|xyz)$/.test(host) ||
+        host.split('.').length > 10
+      ) {
         return { safe: false, reason: 'Untrusted activation destination' };
       }
       return { safe: true };

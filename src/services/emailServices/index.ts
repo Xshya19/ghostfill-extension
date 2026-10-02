@@ -952,7 +952,8 @@ class EmailServiceAggregator {
       // PERFORMANCE FIX: Efficient comparison using ID concatenation
       const slicedSafeEmails = safeEmails.slice(0, 50);
       const cachedInbox = (await storageService.get('inbox')) || [];
-      const inboxHash = (list: Email[]) => JSON.stringify(list.map((e) => [e.id, e.read, e.from, e.subject]));
+      const inboxHash = (list: Email[]) =>
+        JSON.stringify(list.map((e) => [e.id, e.read, e.from, e.subject]));
 
       if (
         inboxSessionGeneration === this.inboxSessionGeneration &&
@@ -1008,7 +1009,7 @@ class EmailServiceAggregator {
 
       // Wrap error with context before throwing
       const wrappedError = new Error(`Inbox check failed for ${account.service}: ${errorMsg}`);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       (wrappedError as any).originalError = error;
       throw wrappedError;
     }

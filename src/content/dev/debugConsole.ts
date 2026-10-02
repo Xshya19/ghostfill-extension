@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 /**
  * GhostFill Debug Console Utility
  *
@@ -80,8 +79,7 @@ interface GhostFillDebugGlobal {
     });
 
     const stackData = errorData.find((d) => typeof d === 'object' && d !== null && 'stack' in d) as
-      | { stack?: string }
-      | undefined;
+      { stack?: string } | undefined;
 
     const error: CapturedError = {
       timestamp: new Date(),

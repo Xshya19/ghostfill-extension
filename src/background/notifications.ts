@@ -764,7 +764,7 @@ function sendNotification(id: string, spec: NotificationSpec): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const iconUrl = chrome.runtime.getURL(spec.iconPath ?? DEFAULT_ICON_PATH);
 
-    const options: chrome.notifications.NotificationOptions<true> = {
+    const options: chrome.notifications.NotificationCreateOptions = {
       type: 'basic',
       iconUrl,
       title: spec.title,

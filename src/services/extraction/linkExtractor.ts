@@ -13,10 +13,7 @@ import type {
   IntentResult,
   ExtractedLink,
 } from '../types/extraction.types';
-import {
-  scoreActivationLink,
-  SELECT_MIN_QUALITY,
-} from './activationLinkGuard';
+import { scoreActivationLink, SELECT_MIN_QUALITY } from './activationLinkGuard';
 import { KnowledgeBase } from './knowledge';
 
 import {
@@ -32,7 +29,7 @@ import {
   stripHtmlPreserveStructure,
   getZoneForPosition,
   getContextAround,
-} from './zoneAnalyzer'; // eslint-disable-line @typescript-eslint/no-unused-vars
+} from './zoneAnalyzer';
 
 const log = createLogger('LinkExtractor');
 
@@ -61,7 +58,8 @@ const CONFIG = {
 const ACTIVATION_URL_KEYWORD =
   /verify|verification|activate|activation|confirm|confirmation|validat(?:e|ion)|registration|signup|sign[-_]?up|email[-_]?verify|verify[-_]?email|confirm[-_]?email|email\/action|auth\/action|magic(?:[-_]?link)?|passwordless|signin[-_]?link|sign[-_]?in|login[-_]?link|accept[-_]?invite|invitation|invite|join|onboard|welcome|complete|finish|authorize|authorise|approve|authenticate|device|claim|enable|unlock|oobCode|mode=verifyEmail/i;
 
-const PASSWORD_RESET_URL_KEYWORD = /reset|recover|password|forgot|change[-_]?password|mode=resetPassword/i;
+const PASSWORD_RESET_URL_KEYWORD =
+  /reset|recover|password|forgot|change[-_]?password|mode=resetPassword/i;
 
 const ACTIVATION_ANCHOR_KEYWORD =
   /\b(?:verify|confirm|activate|active|validate|validation|complete|finish|get started|click here|tap here|continue|proceed|open|access|launch|start using|sign in|log in|login|magic link|secure link|passwordless|accept invite|accept invitation|join workspace|join team|join organization|join organisation|join|authorize|authorise|approve|authenticate|trust this device|confirm account|confirm email|verify email|verify account|activate account|active mail|active email|active account|this was me|it was me|claim (?:your |my )?account|enable (?:your |my )?account|unlock (?:your |my )?account|secure (?:your |my )?account|click (?:here )?to (?:verify|confirm|activate|validate)|verificar|confirmar|activar|validar)\b/i;
@@ -290,7 +288,9 @@ export function isCTAButton(anchorHtml: string): boolean {
 }
 
 function extractAnchorHref(anchorHtml: string): string {
-  if (typeof anchorHtml !== 'string') {return '';}
+  if (typeof anchorHtml !== 'string') {
+    return '';
+  }
   const quoted = anchorHtml.match(/\bhref\s*=\s*["']([^"']+)["']/i);
   if (quoted?.[1]) {
     return decodeHtmlEntities(quoted[1].trim());
@@ -343,8 +343,12 @@ function urlsReferToSameTarget(anchorHref: string, targetUrl: string): boolean {
 }
 
 function getReadableAnchorText(anchorInnerHtml: string, anchorHtml: string): string {
-  if (typeof anchorInnerHtml !== 'string') {anchorInnerHtml = '';}
-  if (typeof anchorHtml !== 'string') {anchorHtml = '';}
+  if (typeof anchorInnerHtml !== 'string') {
+    anchorInnerHtml = '';
+  }
+  if (typeof anchorHtml !== 'string') {
+    anchorHtml = '';
+  }
   const text = stripHtml(anchorInnerHtml).trim();
   if (text) {
     return text;
@@ -373,7 +377,9 @@ export function getAnchorInfo(
   anchorHtml: string;
   isCTA: boolean;
 } {
-  if (typeof html !== 'string') {return { anchorText: '', anchorHtml: '', isCTA: false };}
+  if (typeof html !== 'string') {
+    return { anchorText: '', anchorHtml: '', isCTA: false };
+  }
   const escaped = url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
   // Try strict match first
@@ -501,14 +507,18 @@ export function extractLink(
     let effectiveUrl = url;
     const espUnwrapped = unwrapEspTrackingUrl(url);
     if (espUnwrapped && espUnwrapped !== url) {
-      log.debug(`ESP tracking URL unwrapped: ${url.substring(0, 60)}... → ${espUnwrapped.substring(0, 60)}...`);
+      log.debug(
+        `ESP tracking URL unwrapped: ${url.substring(0, 60)}... → ${espUnwrapped.substring(0, 60)}...`
+      );
       effectiveUrl = espUnwrapped;
     }
 
     // ─── Hash-Fragment Token Detection ──────────────────────────────────────────
     // Some activation links embed tokens in the URL hash: /verify#token=abc123
     // Standard URL parsing strips fragments, so we handle them explicitly.
-    const hashTokenMatch = effectiveUrl.match(/#(?:token|code|access_token|id_token|invite_token|confirmation_token|magic_token)=([A-Za-z0-9._%-]{8,})/i);
+    const hashTokenMatch = effectiveUrl.match(
+      /#(?:token|code|access_token|id_token|invite_token|confirmation_token|magic_token)=([A-Za-z0-9._%-]{8,})/i
+    );
     const hasHashToken = hashTokenMatch !== null;
 
     // Filter out non-target URLs (after unwrapping)
@@ -560,7 +570,9 @@ export function extractLink(
           );
         const longPathToken = /\/[A-Za-z0-9_-]{20,}(?:\/|$|\?)/.test(workingUrl);
         const uuidInPath =
-          /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\/|$)/i.test(workingUrl);
+          /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\/|$)/i.test(
+            workingUrl
+          );
 
         if (oauthFlow || authParam || authPath) {
           confidence = 68;
@@ -684,7 +696,14 @@ export function extractLink(
     const contextNeedle = plainText.toLowerCase().includes(workingUrl.toLowerCase())
       ? workingUrl
       : anchorText || workingUrl;
-    const ctxResult = validateContext(workingUrl, plainText, 'activation', zones, decoded, contextNeedle);
+    const ctxResult = validateContext(
+      workingUrl,
+      plainText,
+      'activation',
+      zones,
+      decoded,
+      contextNeedle
+    );
     if (ctxResult.isValid) {
       confidence += Math.min(ctxResult.score / 4, CONFIG.scoring.linkContextBonusMax);
     }
@@ -717,7 +736,8 @@ export function extractLink(
     const genericTokenOnly =
       (paramAn.hasToken || paramAn.hasCode || isGenericTokenPattern(patternName)) &&
       !hasSpecificActionEvidence;
-    const genericDestination = anchorHasGenericDestination || GENERIC_DESTINATION_URL.test(workingUrl);
+    const genericDestination =
+      anchorHasGenericDestination || GENERIC_DESTINATION_URL.test(workingUrl);
 
     let actionProofScore = 0;
     if (anchorHasActionIntent) {
@@ -762,9 +782,10 @@ export function extractLink(
 
     // Zone scoring — use higher floor (0.80) so zone weight can't crush good signals
     // Changed from 0.65+zw*0.35 to 0.80+zw*0.20: unknown zones assumed mid-body.
-    const urlPos = decoded.indexOf(workingUrl) !== -1
-      ? decoded.indexOf(workingUrl)
-      : decoded.indexOf(originalUrl);
+    const urlPos =
+      decoded.indexOf(workingUrl) !== -1
+        ? decoded.indexOf(workingUrl)
+        : decoded.indexOf(originalUrl);
     const zone = urlPos !== -1 ? getZoneForPosition(zones, urlPos) : null;
     if (zone?.zone === 'cta') {
       confidence += 18;
@@ -773,7 +794,7 @@ export function extractLink(
       confidence -= 15;
     }
     const zw = zone?.weight ?? 0.7;
-    confidence *= 0.80 + zw * 0.20;
+    confidence *= 0.8 + zw * 0.2;
 
     const surroundingText = plainText.toLowerCase().includes(workingUrl.toLowerCase())
       ? getContextAround(plainText, workingUrl, 100)
@@ -816,7 +837,9 @@ export function extractLink(
       const gate = scoreActivationLink(c.url, c.anchorText || '', c.surroundingText || '');
       return { c, gate };
     })
-    .filter(({ gate }) => !gate.hardReject && gate.cls !== 'unknown' && gate.quality >= SELECT_MIN_QUALITY)
+    .filter(
+      ({ gate }) => !gate.hardReject && gate.cls !== 'unknown' && gate.quality >= SELECT_MIN_QUALITY
+    )
     .map(({ c, gate }) => {
       // Blend traditional confidence with activation quality
       const blended = Math.min(100, c.confidence * 0.55 + gate.quality * 0.55);

@@ -444,22 +444,46 @@ export function stripHtml(html: string): string {
 }
 
 export function formatPasswordStrength(score: number): string {
-  if (score < 20) {return 'Very Weak';}
-  if (score < 40) {return 'Weak';}
-  if (score < 60) {return 'Fair';}
-  if (score < 80) {return 'Strong';}
+  if (score < 20) {
+    return 'Very Weak';
+  }
+  if (score < 40) {
+    return 'Weak';
+  }
+  if (score < 60) {
+    return 'Fair';
+  }
+  if (score < 80) {
+    return 'Strong';
+  }
   return 'Very Strong';
 }
 
 export function formatCrackTime(seconds: number): string {
-  if (seconds < 1) {return 'instant';}
-  if (seconds < 60) {return `${Math.floor(seconds)} seconds`;}
-  if (seconds < 3600) {return `${Math.floor(seconds / 60)} minutes`;}
-  if (seconds < 86400) {return `${Math.floor(seconds / 3600)} hours`;}
-  if (seconds < 2592000) {return `${Math.floor(seconds / 86400)} days`;}
-  if (seconds < 31536000) {return `${Math.floor(seconds / 2592000)} months`;}
-  if (seconds < 3153600000) {return `${Math.floor(seconds / 31536000)} years`;}
-  if (seconds < 3153600000000) {return `${Math.floor(seconds / 3153600000)} centuries`;}
+  if (seconds < 1) {
+    return 'instant';
+  }
+  if (seconds < 60) {
+    return `${Math.floor(seconds)} seconds`;
+  }
+  if (seconds < 3600) {
+    return `${Math.floor(seconds / 60)} minutes`;
+  }
+  if (seconds < 86400) {
+    return `${Math.floor(seconds / 3600)} hours`;
+  }
+  if (seconds < 2592000) {
+    return `${Math.floor(seconds / 86400)} days`;
+  }
+  if (seconds < 31536000) {
+    return `${Math.floor(seconds / 2592000)} months`;
+  }
+  if (seconds < 3153600000) {
+    return `${Math.floor(seconds / 31536000)} years`;
+  }
+  if (seconds < 3153600000000) {
+    return `${Math.floor(seconds / 3153600000)} centuries`;
+  }
   return 'forever';
 }
 
@@ -492,7 +516,11 @@ export function formatDomain(domain: string): string {
   return domain.replace(/^www\./i, '');
 }
 
-export function maskPassword(password: string, showFirst: number = 2, showLast: number = 2): string {
+export function maskPassword(
+  password: string,
+  showFirst: number = 2,
+  showLast: number = 2
+): string {
   if (password.length <= showFirst + showLast + 2) {
     return '•'.repeat(password.length);
   }
@@ -509,9 +537,24 @@ export function formatEntropy(entropy: number): string {
 // ─── Domain & URL Utilities ──────────────────────────────────────────
 
 const COMMON_SECOND_LEVEL_TLDS = new Set<string>([
-  'co.uk', 'co.jp', 'co.kr', 'co.nz', 'co.za', 'co.in',
-  'com.au', 'com.br', 'com.cn', 'com.mx', 'com.tr', 'com.tw', 'com.sg',
-  'org.uk', 'ac.uk', 'gov.uk', 'ne.jp', 'or.jp',
+  'co.uk',
+  'co.jp',
+  'co.kr',
+  'co.nz',
+  'co.za',
+  'co.in',
+  'com.au',
+  'com.br',
+  'com.cn',
+  'com.mx',
+  'com.tr',
+  'com.tw',
+  'com.sg',
+  'org.uk',
+  'ac.uk',
+  'gov.uk',
+  'ne.jp',
+  'or.jp',
 ]);
 
 export function isIpLiteral(s: string): boolean {
@@ -624,7 +667,8 @@ export async function fetchWithTimeout(
   const id = setTimeout(() => controller.abort(), timeout);
 
   const onExternalAbort = () => controller.abort();
-  const hasValidSignal = options.signal && typeof (options.signal as AbortSignal).addEventListener === 'function';
+  const hasValidSignal =
+    options.signal && typeof (options.signal as AbortSignal).addEventListener === 'function';
   if (hasValidSignal) {
     if ((options.signal as AbortSignal).aborted) {
       clearTimeout(id);
@@ -659,7 +703,9 @@ export async function fetchWithTimeout(
 
 export function getDeepActiveElement(): Element | null {
   let active = document.activeElement;
-  while (active?.shadowRoot?.activeElement) {active = active.shadowRoot.activeElement;}
+  while (active?.shadowRoot?.activeElement) {
+    active = active.shadowRoot.activeElement;
+  }
   return active;
 }
 
@@ -889,7 +935,9 @@ export function deepQuerySelectorAll<T extends Element>(
 }
 
 export function openSafeUrl(url: string): void {
-  if (!url) {return;}
+  if (!url) {
+    return;
+  }
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
@@ -978,7 +1026,9 @@ export function isEmailAccount(value: unknown): value is {
   );
 }
 
-export function isSuccessResponse(value: unknown): value is { success: true; [key: string]: unknown } {
+export function isSuccessResponse(
+  value: unknown
+): value is { success: true; [key: string]: unknown } {
   return isObject(value) && value.success === true;
 }
 
@@ -986,7 +1036,9 @@ export function isErrorResponse(value: unknown): value is { success: false; erro
   return isObject(value) && value.success === false;
 }
 
-export function isStorageChange(value: unknown): value is { newValue?: unknown; oldValue?: unknown } {
+export function isStorageChange(
+  value: unknown
+): value is { newValue?: unknown; oldValue?: unknown } {
   return isObject(value) && ('newValue' in value || 'oldValue' in value);
 }
 
@@ -1087,7 +1139,10 @@ export function assert(
   }
 }
 
-export function assertDefined<T>(value: T | null | undefined, message = 'Value is null or undefined'): asserts value is T {
+export function assertDefined<T>(
+  value: T | null | undefined,
+  message = 'Value is null or undefined'
+): asserts value is T {
   if (value === null || value === undefined) {
     throw new AppError(message, 'ASSERTION_ERROR');
   }
@@ -1160,7 +1215,9 @@ export class LRUCache<K extends string, V> {
 
   get(key: K): V | undefined {
     const entry = this.cache.get(key);
-    if (!entry) {return undefined;}
+    if (!entry) {
+      return undefined;
+    }
     if (Date.now() - entry.timestamp > this.ttlMs) {
       this.cache.delete(key);
       return undefined;
@@ -1188,7 +1245,9 @@ export class LRUCache<K extends string, V> {
 
   has(key: K): boolean {
     const entry = this.cache.get(key);
-    if (!entry) {return false;}
+    if (!entry) {
+      return false;
+    }
     if (Date.now() - entry.timestamp > this.ttlMs) {
       this.cache.delete(key);
       return false;
@@ -1233,15 +1292,38 @@ export class LRUCache<K extends string, V> {
 
 /** @deprecated — use services/extraction/otpExtractor.ts; kept for backwards compat */
 export function extractOTP(text: string): string | null {
-  if (!text) {return null;}
+  if (!text) {
+    return null;
+  }
   const lowerText = text.toLowerCase();
   const otpKeywords = [
-    'verification code', 'verify code', 'security code', 'confirmation code',
-    'authentication code', 'one time', 'one-time', 'otp', 'passcode',
-    'code is', 'code:', 'pin is', 'pin:', 'your code', 'the code',
-    'enter code', 'use code', 'type code', 'input code', 'login code',
-    'sign in code', 'access code', '2fa code', 'password reset',
-    'recovery code', 'code to verify', 'code for',
+    'verification code',
+    'verify code',
+    'security code',
+    'confirmation code',
+    'authentication code',
+    'one time',
+    'one-time',
+    'otp',
+    'passcode',
+    'code is',
+    'code:',
+    'pin is',
+    'pin:',
+    'your code',
+    'the code',
+    'enter code',
+    'use code',
+    'type code',
+    'input code',
+    'login code',
+    'sign in code',
+    'access code',
+    '2fa code',
+    'password reset',
+    'recovery code',
+    'code to verify',
+    'code for',
   ];
   const antiPatterns = [
     { name: 'year', regex: /^(?:19|20)\d{2}$/ },
@@ -1273,18 +1355,40 @@ export function extractOTP(text: string): string | null {
     candidates.push({ value: value!, index: index!, context });
   }
 
-  if (candidates.length === 0) {return null;}
+  if (candidates.length === 0) {
+    return null;
+  }
 
   const scoredCandidates = candidates
     .filter(({ value, context }) => {
       for (const anti of antiPatterns) {
-        if (anti.regex.test(value)) {return false;}
+        if (anti.regex.test(value)) {
+          return false;
+        }
       }
-      if (/[$€£¥₹]|price|cost|total|amount|fee|usd|eur/i.test(context)) {return false;}
-      if (/(?:order|tracking|shipment|package|delivery|fedex|ups|usps|dhl)\s*(?:#|number|no)/i.test(context)) {return false;}
-      if (/(?:reference|ref|ticket|case|invoice|receipt|transaction)\s*(?:#|number|no|id)/i.test(context)) {return false;}
-      if (/(?:account|acct|member|customer|user|client)\s*(?:#|number|no|id)/i.test(context)) {return false;}
-      if (/(?:zip|postal|area)\s*(?:code)?/i.test(context)) {return false;}
+      if (/[$€£¥₹]|price|cost|total|amount|fee|usd|eur/i.test(context)) {
+        return false;
+      }
+      if (
+        /(?:order|tracking|shipment|package|delivery|fedex|ups|usps|dhl)\s*(?:#|number|no)/i.test(
+          context
+        )
+      ) {
+        return false;
+      }
+      if (
+        /(?:reference|ref|ticket|case|invoice|receipt|transaction)\s*(?:#|number|no|id)/i.test(
+          context
+        )
+      ) {
+        return false;
+      }
+      if (/(?:account|acct|member|customer|user|client)\s*(?:#|number|no|id)/i.test(context)) {
+        return false;
+      }
+      if (/(?:zip|postal|area)\s*(?:code)?/i.test(context)) {
+        return false;
+      }
       return true;
     })
     .map(({ value, index, context }) => {
@@ -1295,45 +1399,116 @@ export function extractOTP(text: string): string | null {
           break;
         }
       }
-      if (/(?:enter|use|type|input|provide|submit|copy|paste)/i.test(context)) {score += 10;}
-      if (/(?:valid for|expires? in|good for|active for|\d+\s*(?:min|hour))/i.test(context)) {score += 8;}
-      if (/(?:do not share|don't share|never share|confidential)/i.test(context)) {score += 8;}
-      if (value.length === 6) {score += 5;}
-      if (/(?:unsubscribe|privacy policy|terms|copyright|footer)/i.test(context)) {score -= 20;}
+      if (/(?:enter|use|type|input|provide|submit|copy|paste)/i.test(context)) {
+        score += 10;
+      }
+      if (/(?:valid for|expires? in|good for|active for|\d+\s*(?:min|hour))/i.test(context)) {
+        score += 8;
+      }
+      if (/(?:do not share|don't share|never share|confidential)/i.test(context)) {
+        score += 8;
+      }
+      if (value.length === 6) {
+        score += 5;
+      }
+      if (/(?:unsubscribe|privacy policy|terms|copyright|footer)/i.test(context)) {
+        score -= 20;
+      }
       return { value, score, index };
     })
     .filter((c) => c.score >= 60)
     .sort((a, b) => b.score - a.score);
 
-  if (scoredCandidates.length === 0) {return null;}
+  if (scoredCandidates.length === 0) {
+    return null;
+  }
   return scoredCandidates[0]!.value;
 }
 
 /** @deprecated — use services/extraction/linkExtractor.ts */
 export function extractActivationLink(text: string): string | null {
-  if (!text) {return null;}
+  if (!text) {
+    return null;
+  }
   const lowerText = text.toLowerCase();
   const knownProviderDomains = [
-    'google.com', 'gmail.com', 'accounts.google.com', 'microsoft.com',
-    'live.com', 'outlook.com', 'account.microsoft.com', 'apple.com',
-    'icloud.com', 'appleid.apple.com', 'amazon.com', 'amazonaws.com',
-    'github.com', 'gitlab.com', 'facebook.com', 'facebookmail.com',
-    'meta.com', 'twitter.com', 'x.com', 'linkedin.com', 'slack.com',
-    'discord.com', 'notion.so', 'vercel.com', 'netlify.com',
-    'stripe.com', 'shopify.com', 'auth0.com', 'okta.com', 'onelogin.com',
+    'google.com',
+    'gmail.com',
+    'accounts.google.com',
+    'microsoft.com',
+    'live.com',
+    'outlook.com',
+    'account.microsoft.com',
+    'apple.com',
+    'icloud.com',
+    'appleid.apple.com',
+    'amazon.com',
+    'amazonaws.com',
+    'github.com',
+    'gitlab.com',
+    'facebook.com',
+    'facebookmail.com',
+    'meta.com',
+    'twitter.com',
+    'x.com',
+    'linkedin.com',
+    'slack.com',
+    'discord.com',
+    'notion.so',
+    'vercel.com',
+    'netlify.com',
+    'stripe.com',
+    'shopify.com',
+    'auth0.com',
+    'okta.com',
+    'onelogin.com',
   ];
   const tokenParamPatterns = [
-    '[?&]t=', '[?&]token=', '[?&]key=', '[?&]code=', '[?&]auth=',
-    '[?&]access_token=', '[?&]id_token=', '[?&]verification=',
-    '[?&]verify=', '[?&]confirm=', '[?&]activation=', '[?&]activate=',
-    '[?&]v=', '[?&]hash=', '[?&]sig=', '[?&]signature=', '[?&]uuid=',
-    '[?&]uid=', '[?&]user=', '[?&]flow=', '[?&]oobcode=', '[?&]continue=',
+    '[?&]t=',
+    '[?&]token=',
+    '[?&]key=',
+    '[?&]code=',
+    '[?&]auth=',
+    '[?&]access_token=',
+    '[?&]id_token=',
+    '[?&]verification=',
+    '[?&]verify=',
+    '[?&]confirm=',
+    '[?&]activation=',
+    '[?&]activate=',
+    '[?&]v=',
+    '[?&]hash=',
+    '[?&]sig=',
+    '[?&]signature=',
+    '[?&]uuid=',
+    '[?&]uid=',
+    '[?&]user=',
+    '[?&]flow=',
+    '[?&]oobcode=',
+    '[?&]continue=',
   ];
   const verificationKeywords = [
-    'verify', 'confirm', 'activate', 'token', 'auth', 'click',
-    'register', 'validate', 'approve', 'accept', 'complete',
-    'signup', 'signup', 'sign-in', 'login', 'log-in',
-    'password-reset', 'email-verify', 'account-verify', 'two-factor', '2fa',
+    'verify',
+    'confirm',
+    'activate',
+    'token',
+    'auth',
+    'click',
+    'register',
+    'validate',
+    'approve',
+    'accept',
+    'complete',
+    'signup',
+    'signup',
+    'sign-in',
+    'login',
+    'log-in',
+    'password-reset',
+    'email-verify',
+    'account-verify',
+    'two-factor',
+    '2fa',
   ];
 
   const urlRegex = /https?:\/\/[^\s<>"')\]]+/gi;
@@ -1370,8 +1545,10 @@ export function extractActivationLink(text: string): string | null {
       }
     }
     if (
-      lowerText.includes('verify') || lowerText.includes('confirm') ||
-      lowerText.includes('activate') || lowerText.includes('welcome')
+      lowerText.includes('verify') ||
+      lowerText.includes('confirm') ||
+      lowerText.includes('activate') ||
+      lowerText.includes('welcome')
     ) {
       score += 10;
     }
@@ -1387,13 +1564,17 @@ export function extractActivationLink(text: string): string | null {
     allUrls.push({ url, score });
   }
 
-  if (allUrls.length === 0) {return null;}
+  if (allUrls.length === 0) {
+    return null;
+  }
 
   const candidates = allUrls.filter((u) => u.score >= 60);
   if (candidates.length === 0) {
     if (
-      lowerText.includes('verify') || lowerText.includes('confirm') ||
-      lowerText.includes('click') || lowerText.includes('activate')
+      lowerText.includes('verify') ||
+      lowerText.includes('confirm') ||
+      lowerText.includes('click') ||
+      lowerText.includes('activate')
     ) {
       for (const { url } of allUrls) {
         const hasTokenParam = tokenParamPatterns.some((p) => url.toLowerCase().includes(p));
@@ -1414,7 +1595,11 @@ export function extractActivationLink(text: string): string | null {
 
 export const APP_NAME = 'GhostFill';
 export const APP_VERSION = (() => {
-  try { return chrome.runtime.getManifest().version; } catch { return '1.1.2'; }
+  try {
+    return chrome.runtime.getManifest().version;
+  } catch {
+    return '1.1.3';
+  }
 })();
 
 export const API = {
@@ -1576,11 +1761,11 @@ export const OAUTH_USERINFO = 'https://www.googleapis.com/oauth2/v2/userinfo';
 
 /** Ordered list of Zoho regional account domains to try during auto-detection. */
 export const ZOHO_REGION_DOMAINS = [
-  'zoho.com',    // US (default)
-  'zoho.eu',     // Europe
-  'zoho.in',     // India
+  'zoho.com', // US (default)
+  'zoho.eu', // Europe
+  'zoho.in', // India
   'zoho.com.au', // Australia
-  'zoho.jp',     // Japan
+  'zoho.jp', // Japan
   'zoho.com.cn', // China
 ] as const;
 
@@ -1599,8 +1784,7 @@ export const ZOHO_SCOPES = ['ZohoMail.messages.READ', 'ZohoMail.accounts.READ'];
 
 // ─── Microsoft Outlook (Graph API) OAuth & API Configurations ────────────────
 
-export const MICROSOFT_OAUTH_BASE =
-  'https://login.microsoftonline.com/common/oauth2/v2.0';
+export const MICROSOFT_OAUTH_BASE = 'https://login.microsoftonline.com/common/oauth2/v2.0';
 
 export const MICROSOFT_GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 

@@ -30,7 +30,6 @@ import {
 {
   interface GlobalWithTrustedTypes {
     trustedTypes?: {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       createPolicy: (name: string, rules: any) => void;
     };
     setImmediate?: (callback: (...args: unknown[]) => void, ...args: unknown[]) => void;
@@ -60,7 +59,6 @@ import {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const g2 = globalThis as any;
   g2.setImmediate = (callback: (...args: unknown[]) => void, ...args: unknown[]) => {
     return setTimeout(callback, 0, ...args);
@@ -177,7 +175,7 @@ log.info(
 
 // ━━━ Types ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-type InstallReason = chrome.runtime.OnInstalledReason;
+type InstallReason = `${chrome.runtime.OnInstalledReason}`;
 type InitTrigger = InstallReason | 'startup' | 'manual';
 
 interface CommandDef {
@@ -601,7 +599,9 @@ function installListeners(): void {
   // Suspend cleanup (SECURITY FIX C12)
   chrome.runtime.onSuspend.addListener(() => {
     log.info('Extension suspending, cleaning up resources');
-    import('./offscreenManager').then(({ closeOffscreenDocument }) => closeOffscreenDocument()).catch(() => {});
+    import('./offscreenManager')
+      .then(({ closeOffscreenDocument }) => closeOffscreenDocument())
+      .catch(() => {});
     import('./serviceWorker')
       .then(({ clearDeferredTimers }) => {
         clearDeferredTimers();

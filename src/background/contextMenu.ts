@@ -55,7 +55,7 @@ interface MenuItemSpec {
   id: string;
   title: string;
   parentId?: string;
-  contexts: chrome.contextMenus.ContextType[];
+  contexts: NonNullable<chrome.contextMenus.CreateProperties['contexts']>;
   type?: 'normal' | 'separator';
   enabled?: boolean;
   visible?: boolean;
@@ -447,7 +447,7 @@ async function reconcile(items: MenuItemSpec[]): Promise<void> {
       chrome.contextMenus.create({
         id: item.id,
         title: item.title,
-        parentId: item.parentId,
+        ...(item.parentId === undefined ? {} : { parentId: item.parentId }),
         contexts: item.contexts,
         type: item.type ?? 'normal',
         enabled: item.enabled ?? true,
@@ -466,7 +466,7 @@ async function reconcile(items: MenuItemSpec[]): Promise<void> {
  * Update a single menu item without full rebuild.
  * Falls back to full rebuild if the update fails.
  */
-function safeUpdate(id: string, updates: chrome.contextMenus.UpdateProperties): void {
+function safeUpdate(id: string, updates: Parameters<typeof chrome.contextMenus.update>[1]): void {
   try {
     chrome.contextMenus.update(id, updates, () => {
       if (chrome.runtime.lastError) {
@@ -609,10 +609,14 @@ async function processResult(result: ActionResult, ctx: ActionContext): Promise<
     if (ctx.info.frameId !== undefined) {
       options.frameId = ctx.info.frameId;
     }
-    await safeSendTabMessage(ctx.tabId, {
-      action: 'FILL_FIELD',
-      payload: fillPayload,
-    }, options).catch((err) => log.debug('Fill message failed', extractMsg(err)));
+    await safeSendTabMessage(
+      ctx.tabId,
+      {
+        action: 'FILL_FIELD',
+        payload: fillPayload,
+      },
+      options
+    ).catch((err) => log.debug('Fill message failed', extractMsg(err)));
   }
 
   // ── Notification ──

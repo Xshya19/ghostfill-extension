@@ -24,16 +24,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [20.x, 22.x]
+        node: [22.x, 24.x, 26.x]
     steps:
-      # v7
+      # v7.0.1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      # v7
+      # v7.0.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
+      - run: npm audit --audit-level=high
       - run: npm run workflow:check
       - run: npm run type-check
       - run: npm run lint
@@ -43,3 +44,19 @@ jobs:
       - run: npm run zip
       - name: Verify package checksum
         run: sha256sum --check ghostfill-extension-v*.zip.sha256
+
+  windows-updater:
+    name: Windows installer and updater
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      # v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: node scripts/check-extension-update.cjs

@@ -37,7 +37,6 @@ export function debounce<F extends (...args: unknown[]) => unknown>(
   let lastInvokeTime = 0;
   let leadingCalled = false;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let lastThis: any = null;
 
   function shouldInvoke(time: number): boolean {
@@ -58,7 +57,7 @@ export function debounce<F extends (...args: unknown[]) => unknown>(
 
   function invokeFunc(time: number): ReturnType<F> | undefined {
     const args = lastArgs;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const thisArg: any = lastThis;
 
     lastArgs = lastThis = null;
@@ -110,11 +109,7 @@ export function debounce<F extends (...args: unknown[]) => unknown>(
     return invokeFunc(time);
   }
 
-  function debounced(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-this-alias
-    this: any,
-    ...args: Parameters<F>
-  ): ReturnType<F> | undefined {
+  function debounced(this: any, ...args: Parameters<F>): ReturnType<F> | undefined {
     const time = Date.now();
     const isInvoking = shouldInvoke(time);
 
@@ -158,11 +153,7 @@ export function debounce<F extends (...args: unknown[]) => unknown>(
     leadingCalled = false;
   };
 
-  debounced.flush = function (
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-this-alias
-    this: any,
-    ...args: Parameters<F>
-  ): ReturnType<F> | undefined {
+  debounced.flush = function (this: any, ...args: Parameters<F>): ReturnType<F> | undefined {
     if (timeoutId !== null) {
       clearTimeout(timeoutId);
       timeoutId = null;
@@ -194,15 +185,11 @@ export function throttle<F extends (...args: unknown[]) => unknown>(
   let inThrottle = false;
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let lastArgs: Parameters<F> | null = null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   let lastThis: any = null;
   let result: ReturnType<F> | undefined;
 
-  function throttled(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-this-alias
-    this: any,
-    ...args: Parameters<F>
-  ): ReturnType<F> | undefined {
+  function throttled(this: any, ...args: Parameters<F>): ReturnType<F> | undefined {
     lastArgs = args;
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     lastThis = this;
@@ -216,7 +203,6 @@ export function throttle<F extends (...args: unknown[]) => unknown>(
           timeoutId = setTimeout(() => {
             inThrottle = false;
             if (lastArgs && trailing) {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               result = func.apply(lastThis as any, lastArgs) as ReturnType<F>;
             }
             lastArgs = lastThis = null;
@@ -246,11 +232,7 @@ export function throttle<F extends (...args: unknown[]) => unknown>(
     lastArgs = lastThis = null;
   };
 
-  throttled.flush = function (
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-this-alias
-    this: any,
-    ...args: Parameters<F>
-  ): ReturnType<F> | undefined {
+  throttled.flush = function (this: any, ...args: Parameters<F>): ReturnType<F> | undefined {
     if (timeoutId !== null) {
       clearTimeout(timeoutId);
       timeoutId = null;
@@ -274,14 +256,10 @@ export function rafDebounce<F extends (...args: unknown[]) => unknown>(
 ): DebouncedFunction<F> {
   let rafId: number | null = null;
   let lastArgs: Parameters<F> | null = null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   let lastThis: any = null;
 
-  function debounced(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-this-alias
-    this: any,
-    ...args: Parameters<F>
-  ): void {
+  function debounced(this: any, ...args: Parameters<F>): void {
     lastArgs = args;
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     lastThis = this;
@@ -306,11 +284,7 @@ export function rafDebounce<F extends (...args: unknown[]) => unknown>(
     lastArgs = lastThis = null;
   };
 
-  debounced.flush = function (
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-this-alias
-    this: any,
-    ...args: Parameters<F>
-  ): ReturnType<F> | undefined {
+  debounced.flush = function (this: any, ...args: Parameters<F>): ReturnType<F> | undefined {
     if (rafId !== null) {
       cancelAnimationFrame(rafId);
       rafId = null;

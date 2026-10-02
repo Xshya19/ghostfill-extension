@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 /**
  * Consolidated Logger Utility - GhostFill
  *
@@ -292,13 +291,23 @@ class Logger {
       chrome.storage.onChanged.addListener((changes, area) => {
         if (area === 'local' && STORAGE_KEYS.SETTINGS in changes) {
           settingsChanged = true;
-          consoleDebugMode = changes[STORAGE_KEYS.SETTINGS]?.newValue?.debugMode === true;
+          const settings = changes[STORAGE_KEYS.SETTINGS]?.newValue;
+          consoleDebugMode =
+            typeof settings === 'object' &&
+            settings !== null &&
+            'debugMode' in settings &&
+            settings.debugMode === true;
         }
       });
       void Promise.resolve(chrome.storage.local.get(STORAGE_KEYS.SETTINGS))
         .then((stored) => {
           if (!settingsChanged) {
-            consoleDebugMode = stored?.[STORAGE_KEYS.SETTINGS]?.debugMode === true;
+            const settings = stored?.[STORAGE_KEYS.SETTINGS];
+            consoleDebugMode =
+              typeof settings === 'object' &&
+              settings !== null &&
+              'debugMode' in settings &&
+              settings.debugMode === true;
           }
         })
         .catch(() => {});
@@ -989,7 +998,6 @@ export const diag = {
 
 // Register on window for console access
 declare global {
-  // eslint-disable-next-line no-var
   var __GHOSTFILL_DIAG__: typeof diag | undefined;
 }
 

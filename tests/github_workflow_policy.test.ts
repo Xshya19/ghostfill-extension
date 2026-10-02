@@ -54,4 +54,15 @@ describe('GitHub workflow policy', () => {
     expect(releaseWorkflow).toContain('ghostfill-extension-${RELEASE_TAG}.zip.sha256');
     expect(releaseWorkflow).toContain('GH_REPO: ${{ github.repository }}');
   });
+
+  it('checks maintained Node releases, dependency vulnerabilities, and the Windows updater', () => {
+    const ci = readWorkflow('ci.yml');
+    const release = readWorkflow('release.yml');
+
+    expect(ci).not.toMatch(/node:\s*\[[^\]]*20\.x/);
+    expect(release).not.toMatch(/node-version:\s*20\.x/);
+    expect(ci).toContain('npm audit --audit-level=high');
+    expect(ci).toContain('runs-on: windows-latest');
+    expect(ci).toContain('node scripts/check-extension-update.cjs');
+  });
 });
