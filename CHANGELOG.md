@@ -10,8 +10,6 @@ All notable changes are documented here.
 - Include the Windows update shortcut in source checkouts and built packages.
 - Normalize workflow-test line endings so Windows checkouts pass the same policy checks.
 
-## Unreleased
-
 - Fixed popup inbox OTP extraction so the content-side fill action receives the same cached code.
 - Made the full Gmail/Google alias profile the default build; retained an explicit temporary-email-only public build command.
 - Enabled automatic verification-link opening by default for new settings; users can disable it in Options.
