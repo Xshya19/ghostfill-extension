@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "__MSG_extensionName__",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "description": "__MSG_extensionDescription__",
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: https:; worker-src 'none'; child-src 'none'; frame-src 'self'; connect-src 'self' https://api.github.com https://throwawaymail.app https://api.1secmail.com https://api.1secmail.net https://api.1secmail.org https://www.1secmail.com https://api.mail.tm https://api.mail.gw https://api.maildrop.cc https://api.dropmail.me https://dropmail.me https://api.guerrillamail.com https://api.tempmail.lol https://mercure.mail.tm https://api.driftz.net/ https://api.catchmail.io/ https://openinbox.io/ https://evilmail.pro/ https://evilmail.dev/ https://mailboxtemp.com/ https://tempmail.plus/ https://api.mail.cx/ https://getnada.com/ https://www.mailinator.com/ https://mailnesia.com/ https://yopmail.com/ https://*.yopmail.com/;"

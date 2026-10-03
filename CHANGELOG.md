@@ -2,6 +2,15 @@
 
 All notable changes are documented here.
 
+## 1.1.4 — 2026-10-03
+
+- Require visible verification instructions before treating numbers as OTPs; extractor agreement cannot promote postal codes, customer numbers, or newsletter artifacts.
+- Decode numeric HTML entities before scanning text so invisible formatting such as `&#8203;` cannot become a verification code.
+- Apply the shared activation-link gate in the email reader; ordinary newsletter and unsubscribe links no longer appear as verification actions.
+- Withhold OTP desktop alerts for uncertain codes and skip automatic actions and alerts for messages older than ten minutes, including stale full messages behind recent inbox summaries.
+- Preserve processed inbox history across session changes and cover replay prevention with regression tests.
+- Remove the unnecessary passthrough Trusted Types policy that restricted sites block; keep DOMPurify sanitization.
+
 ## 1.1.3 — 2026-10-02
 
 - Verify timed-out storage writes against disk, retain unsaved values for bounded automatic retries, and preserve newer queued updates when an older write fails.

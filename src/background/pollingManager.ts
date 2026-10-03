@@ -18,12 +18,14 @@ import { dedupService } from '../services/dedupService';
 import { selectVerificationAction } from '../services/emailDecisionEngine';
 import { emailService } from '../services/emailServices';
 import { senderMatchesSite } from '../services/emailServices/privacy';
+import { hasVerificationCodeEvidence } from '../services/extraction/verificationEvidence';
 import { linkService } from '../services/linkService';
 import { otpService, smartDetectionService } from '../services/otpService';
 
 import { storageService } from '../services/storageService';
 import type { DetectionResult } from '../services/types/extraction.types';
 import { Email, EmailAccount } from '../types';
+import { LAST_OTP_MAX_AGE_MS } from '../types/storage.types';
 import { getSenderDomain } from '../utils/emailIdentity';
 import { createLogger, diag } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
@@ -993,13 +995,15 @@ export class OTPCodeExtractor {
           : '';
     const htmlText = typeof fullEmail.htmlBody === 'string' ? fullEmail.htmlBody : '';
     const subjectText = typeof fullEmail.subject === 'string' ? fullEmail.subject : '';
+    const supportedCode = (code: string): boolean =>
+      this.isPlausibleOtp(code) && hasVerificationCodeEvidence(code.replace(/[\s-]/g, ''), subjectText, plainText, htmlText);
     const emailText = plainText || subjectText || '';
     const textOutsideLinks = emailText.replace(/https?:\/\/[^\s"'<>]+/gi, ' ');
 
     // Source 2: Emergency regex (labeled human copy)
     for (const rx of this.EMERGENCY_PATTERNS) {
       const match = textOutsideLinks.match(rx);
-      if (match?.[1] && this.isPlausibleOtp(match[1])) {
+      if (match?.[1] && supportedCode(match[1])) {
         log.info('🚨 OTP via emergency regex', { code: match[1] });
         return match[1];
       }
@@ -1017,7 +1021,7 @@ export class OTPCodeExtractor {
       const standaloneMatch = textOutsideLinks.match(
         /\b(?!(?:20[0-9]{2})\b)(?!\d{9,})(\d{6,8})(?!\d)\b/
       );
-      if (standaloneMatch?.[1] && this.isPlausibleOtp(standaloneMatch[1])) {
+      if (standaloneMatch?.[1] && supportedCode(standaloneMatch[1])) {
         log.info('🚨 OTP from short email', { code: standaloneMatch[1] });
         return standaloneMatch[1];
       }
@@ -1026,7 +1030,7 @@ export class OTPCodeExtractor {
     // Source 4: Link URL extraction
     if (detection.link && typeof detection.link === 'string') {
       const code = linkService.extractCodeFromUrl(detection.link);
-      if (code && this.isPlausibleOtp(code)) {
+      if (code && supportedCode(code)) {
         log.info('🔑 OTP from link URL');
         return code;
       }
@@ -1048,7 +1052,7 @@ export class OTPCodeExtractor {
       for (const candidateUrl of urlMatches) {
         if (typeof candidateUrl === 'string') {
           const code = linkService.extractCodeFromUrl(candidateUrl);
-          if (code && this.isPlausibleOtp(code)) {
+          if (code && supportedCode(code)) {
             log.info('🔎 OTP from email body URL');
             return code;
           }
@@ -1516,6 +1520,16 @@ async function processEmail(
     const detection = extractionResult.detection as DetectionResult;
     const extractedOTPCode = extractionResult.code as string | null;
 
+    // A provider can return recent inbox summaries with an older full message.
+    // Keep it in the inbox, but never replay an expired verification as an alert
+    // or open its link after a worker restart or session change.
+    const messageTime = typeof fullEmail.date === 'number' ? fullEmail.date : Date.parse(String(fullEmail.date));
+    if (Number.isFinite(messageTime) && messageTime > 0 && Date.now() - messageTime >= LAST_OTP_MAX_AGE_MS) {
+      await dedupCache.markProcessed(emailId, currentEmail.fullEmail, false, false);
+      diag.endFlow(flowId, 'email', 'process-email', true, 'Old verification message ignored');
+      return;
+    }
+
     diag.step(flowId, 'email', 'read', 'Email content loaded (cached or fetched)', {
       from: fullEmail.from,
       subject: fullEmail.subject,
@@ -1624,11 +1638,12 @@ async function processEmail(
     // Delegated links used to skip this mark, so every fast-watch tick could
     // rediscover and notify the same message.
     await dedupCache.markProcessed(emailId, currentEmail.fullEmail, hasOTP, hasLink);
-    if (hasOTP || hasLink) {
+    const notificationOTP = canAutoFillCode ? otpCodeStr : null;
+    if (notificationOTP || hasLink) {
       void notifyNewEmail(
         toSafeString(fullEmail.from),
         safeSubject,
-        otpCodeStr || undefined,
+        notificationOTP || undefined,
         hasLink ? toSafeString(detection.link) : undefined,
         toSafeString(fullEmail.htmlBody || fullEmail.textBody || fullEmail.body)
       ).catch((error) =>

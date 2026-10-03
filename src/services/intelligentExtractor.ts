@@ -23,6 +23,7 @@ import {
 } from './extraction/otpExtractor';
 import { detectProvider } from './extraction/providerDetector';
 import { extractUrls, unwrapEspTrackingUrl } from './extraction/urlExtractor';
+import { hasVerificationCodeEvidence } from './extraction/verificationEvidence';
 import { analyzeEmailZones, stripHtmlPreserveStructure } from './extraction/zoneAnalyzer';
 import type {
   ExtractionResult,
@@ -543,7 +544,7 @@ export function extractAll(
 
   t = performance.now();
   // Dual engines for accuracy (cognitive + traditional). Prefer consensus.
-  const cogOtp = extractOTPCognitive(
+  let cogOtp = extractOTPCognitive(
     plainText,
     sanitizedHtmlBody,
     provider,
@@ -551,7 +552,14 @@ export function extractAll(
     intentResult,
     sanitizedSubject
   );
-  const tradOtp = extractOTP(plainText, sanitizedHtmlBody, provider, zones, intentResult);
+  let tradOtp = extractOTP(plainText, sanitizedHtmlBody, provider, zones, intentResult);
+
+  const hasCodeEvidence = (code: string): boolean =>
+    hasVerificationCodeEvidence(code, normSubject, normBody, normHtmlBody);
+  // Both engines can agree on the same postal code or template artifact.
+  // Reject unsupported candidates before agreement can boost confidence.
+  if (cogOtp && !hasCodeEvidence(cogOtp.code)) { cogOtp = null; }
+  if (tradOtp && !hasCodeEvidence(tradOtp.code)) { tradOtp = null; }
 
   if (cogOtp) {
     cogOtp.code = sanitizeOTP(cogOtp.code);
@@ -790,6 +798,7 @@ export function extractAll(
         }
 
         const sanitizedCode = sanitizeOTP(code);
+        if (!hasCodeEvidence(sanitizedCode)) { continue; }
         otp = {
           code: sanitizedCode,
           rawCode: match[1],
@@ -826,6 +835,8 @@ export function extractAll(
       }
     }
   }
+
+  if (otp && !hasCodeEvidence(otp.code)) { otp = null; }
 
   const extractionTimeMs = performance.now() - startTime;
   timings.total = extractionTimeMs;

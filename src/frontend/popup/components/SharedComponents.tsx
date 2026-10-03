@@ -40,11 +40,14 @@ import ghostLogoImg from '../../../assets/icons/icon128.png';
 import notionLogoImg from '../../../assets/icons/notion.png';
 import qwenLogoImg from '../../../assets/icons/qwen.png';
 
+import { scoreActivationLink, SELECT_MIN_QUALITY } from '../../../services/extraction/activationLinkGuard';
 import {
   extractExplicitVerificationCode,
   isSubjectDomainToken,
 } from '../../../services/extraction/explicitCode';
+import { getAnchorInfo } from '../../../services/extraction/linkExtractor';
 import { extractUrls } from '../../../services/extraction/urlExtractor';
+import { hasVerificationCodeEvidence } from '../../../services/extraction/verificationEvidence';
 import { storageService } from '../../../services/storageService';
 import {
   EmailAccount,
@@ -1670,19 +1673,24 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
       /\b(?:enter|use|type|copy)\s+(\d{6,8})\s+to\s+(?:verify|confirm|sign\s*in|log\s*in|authenticate)\b/i.exec(
         textWithoutUrls
       ) || /^\s*(\d{6,8})\s*$/m.exec(textWithoutUrls);
-    if (codeMatch?.[1]) {
+    if (codeMatch?.[1] && hasVerificationCodeEvidence(codeMatch[1], message?.subject || '', text, rawHtml)) {
       otp = codeMatch[1];
     }
-    const candidates = extractUrls(`${rawHtml}\n${text}\n${message?.link || ''}`);
+    const candidates = extractUrls(`${rawHtml}\n${text}\n${message?.link || ''}`).filter(url => {
+      const gate = scoreActivationLink(url, getAnchorInfo(rawHtml, url).anchorText);
+      return !gate.hardReject && gate.cls !== 'unknown' && gate.quality >= SELECT_MIN_QUALITY;
+    });
     const backendLink = message?.link && isWebUrl(message.link) ? new URL(message.link).href : null;
     const link =
       candidates.find((url) => new URL(url).href === backendLink) || candidates[0] || null;
     return { otp, link };
-  }, [plainTextBody, snippet, rawHtml, message?.link]);
+  }, [plainTextBody, snippet, rawHtml, message?.link, message?.subject]);
 
   const explicitCode = extractExplicitVerificationCode(plainTextBody || snippet);
   const backendCode =
-    message?.otp && !isSubjectDomainToken(message.otp, message.subject || '') ? message.otp : null;
+    message?.otp && !isSubjectDomainToken(message.otp, message.subject || '') &&
+    hasVerificationCodeEvidence(message.otp, message.subject || '', plainTextBody || snippet, rawHtml)
+      ? message.otp : null;
   const effectiveOtp = explicitCode || backendCode || fallbackDetection.otp || null;
   const effectiveLink = fallbackDetection.link;
 
