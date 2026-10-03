@@ -1,33 +1,231 @@
 # GhostFill
 
-GhostFill is a Chrome extension that generates disposable email addresses, creates passwords, and helps fill verification codes during a signup flow.
+GhostFill helps with signup forms: generate a temporary email address and password, fill identity fields, and receive verification codes or activation links in the extension.
 
-It is an early build. The default package includes temporary email plus the optional Gmail/Google alias and inbox integration. It does not require a paid API, hosting account, database, domain, or Chrome Web Store listing.
+**[Download the latest built ZIP](https://github.com/Xshya19/ghostfill-extension/releases/latest)** · [Install](#install) · [First use](#first-use) · [Updates](#update-an-existing-install) · [Troubleshooting](#setup-help) · [Console logs](#see-console-logs) · [Development](#development)
 
-![Illustrated GhostFill showcase: provider failover, signup form fill, verification, and an optional Gmail alias.](docs/demo/ghostfill-showcase.gif)
+Free and open source. The built package runs in desktop Google Chrome on Windows, macOS, and Linux. Temporary email works without an API key, Gmail connection, Node.js, or Git.
 
-Watch the [19-second MP4 showcase](docs/demo/ghostfill-showcase.mp4) or view the [still poster](docs/demo/ghostfill-showcase-poster.png). This is an illustrated workflow, not a screen recording. Regenerate it with the [render script](docs/demo/build-showcase.py). A clean local demo surface and recording procedure are in [docs/demo/RECORDING.md](docs/demo/RECORDING.md).
+## What it does
 
-**Start here:** [Install GhostFill](#install) → [Try your first signup](#first-use) → [Update GhostFill](#update-an-existing-install) → [Fix a setup problem](#setup-help).
+| Feature            | How it works                                                                                                |
+| ------------------ | ----------------------------------------------------------------------------------------------------------- |
+| Temporary email    | Generate an address and check its inbox. GhostFill can try another provider when address generation fails.  |
+| Form filling       | Fill generated names, email addresses, usernames, and passwords through the floating button or Smart Fill.  |
+| Verification codes | Detect likely one-time codes, preserve leading zeros, and attempt to fill the matching signup form.         |
+| Activation links   | Evaluate verification links and open an approved destination in a new tab when appropriate.                 |
+| Optional Gmail     | In the full build, connect an authorized Gmail account for inbox access and site-specific dot/plus aliases. |
 
-**Just want to use GhostFill?** [Download the latest built package](https://github.com/Xshya19/ghostfill-extension/releases/latest). Choose `ghostfill-extension-v<version>.zip` under **Assets**, extract it, and follow [Load it in Chrome](#2-load-it-in-chrome). You do not need Node.js or Git for this package.
+Code extraction uses local text, layout, and pattern analysis. It does not require a paid AI service. Detection and automatic actions can fail on unfamiliar forms or messages; codes and links remain available for manual use.
+
+Temporary inboxes depend on third-party providers and can expire. Websites can reject disposable addresses, including work-email fields. Use a durable inbox for accounts you need to keep or recover.
 
 ## Install
 
-Use **Google Chrome on a desktop computer** (Windows, macOS, or Linux). Temporary email works without connecting Gmail or entering an API key.
-
 ### 1. Get the extension folder
 
-**Already have a built GhostFill ZIP?** Extract it to a permanent folder, such as `Documents/GhostFill`. Open that folder: you should see `manifest.json`, `popup.html`, and `background.js` together. Continue to step 2. You do not need Node.js to install a built ZIP.
+1. Open the [latest release](https://github.com/Xshya19/ghostfill-extension/releases/latest) and expand **Assets** if it is collapsed.
+2. Download **`ghostfill-extension-v<version>.zip`** and its matching **`.zip.sha256`** file. The version number is part of the filename.
+3. Extract the ZIP into a permanent folder, for example **Documents → GhostFill**.
+4. Open the extracted folder. It must contain **`manifest.json`**, **`popup.html`**, and **`background.js`** together. If extraction created another folder inside it, open that inner folder.
+5. Follow **Load it in Chrome** below.
 
-**Need a built ZIP?** Check the [Releases page](https://github.com/Xshya19/ghostfill-extension/releases). Published packages may be older than this checkout and may use a different build profile; check the release notes before choosing one.
+**Choose the built ZIP from Assets.** GitHub's **Source code (zip)** and **Code → Download ZIP** contain source files that must be built first; see [Development](#development).
 
-**Installing from this repository?** Build the source once using these steps; no coding or Git is required:
+<details>
+<summary>Check the downloaded ZIP's checksum</summary>
 
-1. Install [Node.js](https://nodejs.org/en/download) **24 LTS**, including npm. Close and reopen your terminal after installation.
-2. [Download the source ZIP](https://github.com/Xshya19/ghostfill-extension/archive/refs/heads/main.zip). Extract it to a permanent folder, then open the inner `ghostfill-extension-main` folder containing `package.json`.
-3. Open a terminal **in that folder**. On Windows, right-click an empty area of the folder and choose **Open in Terminal**. On macOS or Linux, open Terminal, type `cd `, drag the folder into the terminal, and press Enter.
-4. Run the two commands for your computer, one at a time. Wait for each to finish:
+Run the command for your computer in the folder containing the downloaded ZIP and checksum. Keep the matching files together.
+
+**Windows (PowerShell):**
+
+```powershell
+Get-FileHash -Path .\ghostfill-extension-v*.zip -Algorithm SHA256
+```
+
+**macOS:**
+
+```bash
+shasum -a 256 ghostfill-extension-v*.zip
+```
+
+**Linux:**
+
+```bash
+sha256sum --check ghostfill-extension-v*.zip.sha256
+```
+
+On Windows and macOS, compare the displayed hash with the 64-character hash in the matching `.zip.sha256` file. On Linux, expect the ZIP filename followed by **OK**. If they differ, download both files again before installing.
+
+</details>
+
+### 2. Load it in Chrome
+
+1. Type **`chrome://extensions`** into Chrome's address bar and press Enter.
+2. Turn on **Developer mode** in the top-right corner.
+3. Click **Load unpacked**.
+4. Select the extracted folder containing `manifest.json`. If you built from source, select the project's **`dist`** folder.
+5. Confirm the **GhostFill** card appears and its switch is on.
+6. Click Chrome's **Extensions** puzzle icon and pin GhostFill to the toolbar.
+7. Refresh any signup page that was already open, then click the GhostFill toolbar icon.
+
+Keep the installed folder in the same location. Chrome loads the unpacked extension from that folder. These steps follow [Chrome's unpacked-extension installation guide](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked).
+
+## First use
+
+1. Open the site's signup page, then open GhostFill from the toolbar.
+2. Select **Temp mail** and generate an address. Use the floating button to fill the email field, or copy and paste the address.
+3. Fill the other required fields and ask the site to send its verification email. Keep the signup tab open.
+4. GhostFill checks the active inbox. When a matching fresh code arrives, it attempts to fill the verification field.
+5. Open the inbox message to review it. The blue **Copy** button shows the detected code and preserves leading zeros; **Open verification link** opens the detected destination in a new tab.
+
+Open **Options** using the gear button in the popup. Settings save automatically; wait for **Saved** before closing the page.
+
+### Codes and activation links
+
+**Options → Automation** contains **Auto-fill OTP codes** and **Auto-open verification links**. Both are enabled by default.
+
+- **A message contains a code and a link:** GhostFill first attempts to fill a matching code field. A successful fill leaves the alternative link available in the message reader.
+- **A matching code form is unavailable or filling fails:** an approved verification link can open in a new tab.
+- **A verification field appears later:** GhostFill can resume filling a fresh approved code.
+- **The message or destination is uncertain:** review it and use the copy or open-link controls yourself.
+
+Automatic actions use the active signup context, message freshness, sender/site evidence, and code or link checks. Enabling automation does not mean every detected number or URL will be used.
+
+### Names, email fields, and senders
+
+GhostFill distinguishes first name, last name, and full name using field attributes, labels, and nearby context. Work, personal, school, and confirmation email fields use the address in the selected identity. Filling a work-email field does not make a disposable address acceptable to that site. Ambiguous fields and fields asking for another person's name stay unfilled.
+
+Sender labels use provider metadata or decoded email headers. For a bounce address, GhostFill can infer a product from matching subject and website evidence. When evidence is missing or ambiguous, it shows a domain label or **Unknown sender**. A display name alone does not establish trust.
+
+### Driftz domain preference
+
+The default provider is **Driftz**. GhostFill requests **`bbjbinin.mn`** by default and checks the domain of the returned address.
+
+It makes **up to three attempts total** if the returned domain differs, for example `manornewtech.org`. If it still cannot obtain the requested domain, provider fallback can take over. An explicitly selected domain is respected.
+
+Domain availability and website acceptance can change. This preference does not guarantee that a signup site will accept the address.
+
+## Update an existing install
+
+Open **GhostFill → Options → About → Updates** and click **Check for updates**. In the Gmail-enabled build, a newer stable release shows links to its built ZIP and matching checksum. A local build newer than the published version is not offered a downgrade.
+
+The built ZIP on GitHub Releases uses the **full profile**, which includes optional Gmail integration. If you installed the temporary-email-only profile, use a package built with that same profile; see [Package options](#package-options).
+
+### Windows: use the included updater
+
+Finish your current signup before updating. The updater needs PowerShell and a writable installation folder; it does not need Node.js or Git.
+
+1. Open your installed GhostFill folder and double-click **`Update GhostFill.cmd`**. For a source installation, this shortcut is also available in the project folder and updates its `dist` folder.
+2. Wait for it to check the latest stable release, download a newer built ZIP, verify the checksum, and apply the files.
+3. Open **Options → About → Updates** and click **Reload after updating**, or click the circular **Reload** arrow on GhostFill's card at `chrome://extensions`.
+4. Refresh your signup tabs and confirm the new version on GhostFill's extension card.
+
+The updater keeps the installation path and extension identity, retains a backup beside the installed folder, and attempts to restore it if replacement fails. **No newer published version** means your installed version is already current or newer.
+
+To install a package you already downloaded, save the ZIP and its matching `.zip.sha256` file together, then drag the **ZIP** onto `Update GhostFill.cmd`. The updater rejects older versions, incomplete packages, checksum mismatches, and changes between build profiles.
+
+The shortcut uses a process-only PowerShell execution-policy setting. If your computer's policy blocks it, follow the manual steps below.
+
+### macOS, Linux, or an older installation without the updater
+
+1. Download the newer built ZIP and matching checksum for your existing build profile.
+2. Expand **Check the downloaded ZIP's checksum** in the [installation section](#1-get-the-extension-folder) and run the command for your computer.
+3. Extract the new ZIP into a separate folder.
+4. Back up your current installed folder, then copy the new extension files **into that same installed folder**, replacing matching files.
+5. Click **Reload** on GhostFill at `chrome://extensions` and refresh your signup tabs.
+
+Keep GhostFill installed in Chrome during the update so its extension settings remain associated with the same installation.
+
+**Check for updates** checks release information. **Reload after updating** loads files already on your computer. Apply the new files using the updater or manual steps before reloading. Chrome's [standard extension update lifecycle](https://developer.chrome.com/docs/extensions/develop/concepts/extensions-update-lifecycle) does not replace these unpacked-folder update steps.
+
+The Windows updater changes built installation files. Developers must update their source checkout separately before rebuilding.
+
+## Setup help
+
+| What you see                                           | What to do                                                                                                                                                                               |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Chrome cannot load the manifest or a script is missing | Select the folder containing the built `manifest.json`, `popup.html`, and `background.js`. Build a source ZIP first.                                                                     |
+| GhostFill opens, but no floating button appears        | Refresh the signup page after installation or reload. Internal Chrome pages, the Chrome Web Store, and excluded sites do not allow the form tools.                                       |
+| A field is missed or detected incorrectly              | Use manual copy/paste for that field. Report the site and field label through the [issue tracker](https://github.com/Xshya19/ghostfill-extension/issues) with redacted logs.             |
+| The site rejects a temporary email address             | Try another provider or use a durable address. A work-email requirement may reject disposable domains.                                                                                   |
+| No verification email arrives                          | Open the active inbox, wait briefly, and request a fresh email on the site. Provider availability and site delivery can vary.                                                            |
+| A code is visible but the site is not filled           | Keep the matching signup tab open, check **Options → Automation**, then use the message's blue **Copy** button and paste the code.                                                       |
+| An activation link does not open automatically         | Check **Auto-open verification links** under **Options → Automation**. Review the destination and use **Open verification link** manually when appropriate.                              |
+| Updating appears to change nothing                     | Apply the package first, reload GhostFill, and refresh the signup tabs. Reload alone does not download files.                                                                            |
+| The updater reports a checksum or profile mismatch     | Download the ZIP and checksum from the same release and use the same build profile as your current installation.                                                                         |
+| Gmail sign-in is unavailable or fails                  | The full build needs a configured OAuth client and an account permitted by that client's consent setup. Temporary email remains available. See [Gmail setup](#gmail-and-google-aliases). |
+| `npm` is not recognized / command not found            | For a source build, install Node.js 24 LTS and reopen the terminal. On Windows use `npm.cmd`.                                                                                            |
+| PowerShell blocks `npm.ps1`                            | Use `npm.cmd` for the build commands; changing the system execution policy is unnecessary.                                                                                               |
+| npm reports `ENOENT` or missing `package.json`         | Open the terminal in the extracted source folder containing `package.json`.                                                                                                              |
+
+## See console logs
+
+1. Open **Options → Advanced**, enable **Debug logging**, and wait for **Saved**.
+2. Open the console for the part you are investigating:
+
+   | Part                                     | Where to open its console                                                                               |
+   | ---------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+   | Inbox, providers, verification decisions | Open `chrome://extensions`, find GhostFill, and click its **service worker** link.                      |
+   | Floating button and form filling         | Open Developer Tools on the signup page: **F12** on Windows/Linux or **Option + Command + I** on macOS. |
+   | Popup                                    | Open GhostFill, right-click inside the popup, and choose **Inspect**.                                   |
+   | Options page                             | Right-click the Options page and choose **Inspect**.                                                    |
+
+3. In **Console**, enable **Preserve log**, filter for **`GhostFill`**, and repeat the action.
+
+Debug mode prints detailed messages at the normal console level; enabling **Verbose** is unnecessary. The setting stays enabled after a browser restart. Turn it off when finished; routine information, warnings, and errors remain visible.
+
+Passwords, tokens, codes, and URL query/fragment values are masked by the logger. Review and redact private information before sharing logs, screenshots, or inbox messages.
+
+## Gmail and Google aliases
+
+Gmail is optional and available in the full build. You can use temporary email without setting it up.
+
+1. Open **Options → Email → Gmail (OAuth)**.
+2. Enter and save a valid OAuth client ID supplied by the maintainer or configured for your own Google project.
+3. Select **Gmail** in the popup and connect an account allowed by that OAuth client's setup.
+4. Use **Aliases** to manage site-specific Gmail dot/plus aliases.
+
+Google handles OAuth sign-in. Gmail inbox access uses the restricted [`gmail.readonly` scope](https://developers.google.com/workspace/gmail/api/auth/scopes). Public Gmail-enabled distribution requires the appropriate OAuth consent configuration and any applicable Google verification or security assessment. Publishing a ZIP on GitHub does not complete that setup.
+
+See [Build profiles](docs/BUILD_PROFILES.md) for the integration requirements.
+
+## Package options
+
+| Profile                            | Build command              | Included features                                                 |
+| ---------------------------------- | -------------------------- | ----------------------------------------------------------------- |
+| Full (default; GitHub release ZIP) | `npm run build:zip`        | Temporary email and optional Gmail OAuth/inbox/alias integration. |
+| Temporary-email-only               | `npm run build:public:zip` | Temporary email without Gmail OAuth permissions or controls.      |
+
+Both commands create `dist`, a versioned ZIP, and its `.zip.sha256` checksum. Choose the profile before installing, and keep the same profile when updating.
+
+## Privacy and permissions
+
+GhostFill processes generated identities, passwords, mailbox state, verification messages, and settings in browser storage. Address generation and inbox checks send requests to the selected email provider. Update checks contact GitHub; optional Gmail sign-in and inbox access contact Google.
+
+The content script matches many HTTP/HTTPS pages to detect forms. The manifest excludes a curated list of banking, brokerage, password-manager, and Chrome Web Store domains. Do not use GhostFill for financial services, password managers, or sensitive accounts. Use a durable inbox for accounts you need to keep or recover.
+
+Read the [privacy policy](PRIVACY.md), [permission rationale](docs/PERMISSIONS.md), and [security policy](SECURITY.md).
+
+## Preview
+
+<details>
+<summary>See the illustrated GhostFill workflow</summary>
+
+![Illustrated GhostFill workflow: temporary email, form filling, verification, and optional Gmail aliases.](docs/demo/ghostfill-showcase.gif)
+
+Watch the [19-second MP4](docs/demo/ghostfill-showcase.mp4) or view the [still poster](docs/demo/ghostfill-showcase-poster.png). This is an illustrated workflow. Recording instructions and the render script are in [docs/demo](docs/demo/RECORDING.md).
+
+</details>
+
+## Development
+
+The project uses TypeScript, React, native CSS, Webpack, and Vitest. Use **[Node.js 24 LTS](https://nodejs.org/en/download), version 24.15.0 or newer within the 24.x line**, with npm. The repository's `.nvmrc` selects Node 24.
+
+1. [Download the source ZIP](https://github.com/Xshya19/ghostfill-extension/archive/refs/heads/main.zip), or clone the repository if you use Git.
+2. Extract it to a permanent folder and open the inner folder containing `package.json`.
+3. Open a terminal there. On Windows, right-click an empty area of the folder and choose **Open in Terminal**. On macOS or Linux, open Terminal, type `cd `, drag the source folder into the terminal, and press Enter.
+4. Run the following commands one at a time:
 
    **Windows (PowerShell or Command Prompt):**
 
@@ -43,164 +241,36 @@ Use **Google Chrome on a desktop computer** (Windows, macOS, or Linux). Temporar
    npm run build:zip
    ```
 
-5. When the build succeeds, open the newly created **`dist` folder**. This is the extension folder to select in Chrome. Keep the project folder in its permanent location.
+5. Load the generated **`dist`** folder using the [Chrome installation steps](#2-load-it-in-chrome).
 
-The build also creates `ghostfill-extension-v<version>.zip` and its `.sha256` checksum beside `package.json`. The ZIP contains the built extension and can be shared for installation without Node.js. **GitHub's source ZIP still needs the build steps above.**
+The built ZIP beside `package.json` can be installed without Node.js. For local development, update your source checkout before rebuilding; the installation updater does not update source files.
 
-### 2. Load it in Chrome
+| Check                               | Command                                   |
+| ----------------------------------- | ----------------------------------------- |
+| Workflow policy                     | `npm run workflow:check`                  |
+| Types                               | `npm run type-check`                      |
+| Lint                                | `npm run lint`                            |
+| Tests                               | `npm test`                                |
+| Production build                    | `npm run build`                           |
+| Bundle size limits (after building) | `npm run bundle:check`                    |
+| Package the current build           | `npm run zip`                             |
+| Windows installer/updater checks    | `node scripts/check-extension-update.cjs` |
 
-1. Type `chrome://extensions` into Chrome's address bar and press Enter.
-2. Turn on **Developer mode** in the top-right corner.
-3. Click **Load unpacked**.
-4. Select the **`dist` folder** if you built from source, or the extracted **built ZIP folder** if someone gave you a package. Select the folder, not the ZIP file. Do not select the source project folder.
-5. Confirm that a **GhostFill** card appears and its switch is on.
-6. Click Chrome's **Extensions** puzzle icon, then click the pin next to **GhostFill**. Click the GhostFill toolbar icon to open its popup.
-
-These are Chrome's standard [local extension installation steps](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked).
-
-### First use
-
-1. Open the signup page you want to use, then open the GhostFill popup.
-2. Choose temporary email and generate an address. Copy it into the site's email field, or use the floating fill button next to the field.
-3. Request the verification email on the site and keep the signup tab open. GhostFill checks the active inbox and attempts to fill a matching verification code.
-4. Open the inbox message to review its code and any verification link. The blue **Copy [code]** button preserves leading zeros; **Open verification link** opens the detected link in a new tab.
-
-**Setup worked** when the popup opens, an address is generated, and its inbox can be opened. Email arrival and acceptance depend on the mail provider and the signup site.
-
-Driftz requests **`bbjbinin.mn` by default**. GhostFill checks the returned address and retries up to three times if Driftz returns another domain, such as `manornewtech.org`. If the requested domain remains unavailable, it uses the existing provider fallback instead of retrying forever. An explicitly selected domain is still respected. A domain's acceptance depends on the signup site.
-
-Automatic code filling and verification-link opening are enabled by default. Change them under **Options → Automation**. A message containing both a code and a link uses the code when it can fill the waiting form. If there is no matching code form, or filling fails, an approved verification link can open in a new tab. A successful code fill keeps the alternative link available in the reader without opening another tab.
-
-Automatic actions require a matching sender and signup site, a fresh unused code, or a verified activation destination. Uncertain codes and links stay available for review. If a verification field appears after its email arrives, GhostFill can resume filling a fresh approved code.
-
-Sender names come from the provider's sender metadata or decoded email header. When a message has only a bounce address, GhostFill can resolve a product mentioned in both the subject and its website links. This works without a brand-name list; missing or ambiguous evidence uses a domain label or **Unknown sender**. The visible label does not establish trust for automatic actions.
-
-Form detection distinguishes first name, last name, and full name, including common labels and framework identifiers. Work, personal, school, and confirmation email fields use the email in your currently selected identity; GhostFill does not invent separate addresses for them. Ambiguous fields and fields asking for another person's name stay unfilled.
-
-Gmail is optional. Start with temporary email, then follow [Gmail and Google aliases](#gmail-and-google-aliases) if you need that integration.
-
-### Setup help
-
-| What you see                                          | What to do                                                                                                                                                                |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm` is not recognized / command not found           | Install Node.js, reopen the terminal, and try again. On Windows use `npm.cmd` as shown above.                                                                             |
-| PowerShell says scripts are disabled                  | Use `npm.cmd`; you do not need to change your execution policy.                                                                                                           |
-| `package.json` is missing / npm reports `ENOENT`      | Open the terminal in the extracted project folder containing `package.json`, then rerun the commands.                                                                     |
-| Chrome cannot load the manifest / a script is missing | Select `dist` after a successful build, or the extracted built ZIP folder. Loading the source folder will not work.                                                       |
-| GhostFill is installed but no floating button appears | Refresh the signup page after installation. Chrome's internal pages, the Web Store, and excluded sites do not allow GhostFill's form tools.                               |
-| No verification email arrives                         | Check the GhostFill inbox, wait briefly, then request a new code on the site. If the site rejects the temporary address, try another provider or an optional Gmail alias. |
-| A code is visible but the site is not filled          | Click the blue **Copy [code]** button in the message reader and paste it into the site. Check **Options → Automation** and refresh the signup page.                       |
-
-### Update an existing install
-
-Open **GhostFill → Options → About → Updates**. Click **Check for updates** to compare your installed version with the latest stable release. A newer release shows links to its built ZIP and matching checksum. A local build newer than the published release will not be offered a downgrade. The temporary-email-only build needs a package with the same build profile from your maintainer.
-
-For an unpacked installation, Chrome cannot replace the files in your installation folder from inside the extension. Apply the package using the steps below, then click **Reload after updating** in GhostFill and refresh your signup tabs. Reloading alone does not download or install a package. [Chrome's automatic extension updates](https://developer.chrome.com/docs/extensions/develop/concepts/extensions-update-lifecycle) use store or managed distribution.
-
-**Windows: double-click to update — no Node.js, Git, or administrator account needed.**
-
-1. Open your permanent GhostFill folder and double-click **`Update GhostFill.cmd`**. For a source install, this shortcut is in the project folder; it updates the built `dist` installation.
-2. Wait for the shortcut to check the latest stable [GitHub release](https://github.com/Xshya19/ghostfill-extension/releases), download a newer built ZIP, verify its SHA-256 checksum, and apply it. If it says **No newer published version**, your installed version stays as it is.
-3. In GhostFill, open **Options → About → Updates** and click **Reload after updating**, then **refresh your signup tabs**. You can also reload from GhostFill's card at `chrome://extensions`.
-
-The shortcut keeps the installation at the same path and checks its extension identity, so you can update without removing GhostFill or resetting its browser settings. It keeps a backup named `.ghostfill-backup-<version>-<id>` beside the installed folder and restores the old folder if replacement fails. Keep the installed folder in its permanent location. Updates run when you launch the shortcut; they do not run in the background.
-
-**Have a newer ZIP from the maintainer instead?** Save the built ZIP and its matching `.zip.sha256` file together. Drag the **ZIP** onto `Update GhostFill.cmd`, then reload GhostFill in Chrome. This also works for a rebuilt package with the same version number. The updater rejects older versions, incomplete packages, and changes between the Gmail-enabled and temporary-email-only profiles.
-
-The Windows shortcut runs the included PowerShell updater with a process-only execution-policy setting; it does not change your system's execution policy. If a managed computer blocks the shortcut, use the manual steps below.
-
-**macOS / Linux, or an older installation without the shortcut:**
-
-1. Download the newer **built** ZIP and its checksum from the release page or your maintainer. Use the same build profile as your current installation.
-2. Verify the checksum: on macOS run `shasum -a 256 <ZIP filename>`; on Linux run `sha256sum -c <ZIP filename>.sha256`. On Windows use `Get-FileHash -Algorithm SHA256 <ZIP filename>` and compare it with the checksum file. Quote filenames containing spaces.
-3. Extract the ZIP into a separate folder. Copy your current installed folder to a backup, then copy the new extension files **into the existing installed folder**, replacing matching files. Do not remove GhostFill from Chrome or load it from a new location.
-4. Click **Reload** on GhostFill in `chrome://extensions` and refresh your signup tabs. Confirm the displayed version matches the downloaded package.
-
-The shortcut updates the built installation. If you also develop GhostFill, update your source checkout separately before rebuilding it. A local build can be newer than the latest published release; the shortcut will not replace it with an older release.
-
-### See console logs
-
-Open **GhostFill → Options → Advanced**, turn on **Debug logging**, and wait for **Saved**. Changes save automatically. The saved setting applies to open extension pages and signup tabs, and stays enabled after a browser restart. Turn it off when finished; routine information, warnings, and errors remain visible.
-
-- **Inbox and verification decisions:** open `chrome://extensions`, find GhostFill, and click its **service worker** link.
-- **Floating button and form filling:** open Developer Tools on the signup page (**F12** on Windows/Linux, **Option + Command + I** on macOS).
-- **Popup:** open GhostFill, right-click inside the popup, and choose **Inspect**.
-
-In each **Console**, turn on **Preserve log** and filter for `GhostFill`. Debug mode prints detailed logs at the ordinary console level, so enabling **Verbose** is unnecessary. Repeat the action that failed. Logs stay in your browser; sensitive values and URL query/fragment values are masked. Review logs before sharing them.
-
-See the [October 1 reliability audit](docs/RELIABILITY_AUDIT_2026-10-01.md) for the reported failures, fixes, verification results, and remaining compatibility limits.
-
-### Package options
-
-The default build includes temporary email and optional Gmail OAuth integration. If you want a temporary-email-only package without Google OAuth permissions, replace `build:zip` with `build:public:zip` in the build command. See [build profiles](docs/BUILD_PROFILES.md).
-
-![Illustrated GhostFill showcase: provider fallback, signup form fill, verification assistance, and Gmail alias fallback.](docs/demo/ghostfill-showcase.gif)
-
-Watch the [19-second MP4 showcase](docs/demo/ghostfill-showcase.mp4) or view the [still poster](docs/demo/ghostfill-showcase-poster.png). This is an illustrated workflow, not a screen recording. Regenerate it with the [render script](docs/demo/build-showcase.py). A clean local demo surface and recording procedure are in [docs/demo/RECORDING.md](docs/demo/RECORDING.md).
-
-## Problems it solves
-
-- **Disposable email providers fail:** GhostFill supports multiple temporary-email providers and tries another when address generation fails.
-- **Signup forms take repetitive typing:** Smart Fill detects and fills username, email, and password fields. It can generate a temporary address and password when needed.
-- **Email verification interrupts signup:** GhostFill checks for verification emails, extracts likely one-time codes, and can fill the matching form. It can also open detected activation links in a new tab.
-- **Some sites reject disposable domains:** In the full build, use a site-specific Gmail dot/plus alias instead. Messages sent to that alias arrive in your Gmail inbox.
-
-## What it does
-
-- **Disposable email:** requests an address from one of the supported public temporary-email providers and polls its inbox.
-- **Password generation:** creates a configurable password with browser cryptography and can fill it into a detected field.
-- **OTP assistance:** extracts likely verification codes using deterministic text, layout, and pattern heuristics. It associates an active email session with the originating signup tab and can automatically fill matching fields (enabled by default).
-
-GhostFill can also identify activation links. **Auto-open verification links** is enabled by default and opens detected links in a new tab. Turn it off under **Options → Automation** if you prefer to open links yourself; use automatic opening only with inboxes you trust.
-
-The extension does not guarantee that every website, provider, code format, or React form will work. Temporary-email providers are third parties and may block, rate-limit, change, or lose messages. Do not use GhostFill for banking, brokerages, password managers, sensitive accounts, or anything that needs a durable inbox.
-
-## Privacy and permissions
-
-The extension processes generated identities, temporary-email account state, inbox content needed for the active flow, detected verification codes, and settings in browser storage. It sends provider-specific requests to the selected temporary-email service. It does not make a disposable address a secure account boundary.
-
-Read the project-specific details before installing:
-
-- [Privacy policy](PRIVACY.md)
-- [Permission rationale](docs/PERMISSIONS.md)
-- [Security policy](SECURITY.md)
-
-The extension manifest retains broad `http` and `https` content-script matching so it can detect signup and OTP forms. It excludes a curated list of major banking, brokerage, password-manager, and Chrome Web Store domains. Those exclusions reduce exposure but are not a substitute for user judgement.
-
-## Gmail and Google aliases
-
-The default build includes the Gmail integration. Open **Options → Gmail (OAuth)** to confirm the OAuth client ID, then select **Gmail** in the popup and connect your Google account. The **Aliases** button opens the site-specific Gmail alias manager; entering a domain produces the deterministic dot/plus alias used for that site.
-
-The Gmail API uses the restricted `gmail.readonly` scope, so an unrestricted public release requires a separately reviewed OAuth client, consent-screen configuration, privacy policy, and any Google review or verification that applies at that time. See [docs/BUILD_PROFILES.md](docs/BUILD_PROFILES.md).
-
-The restricted temporary-email-only package remains available explicitly with `npm run build:public` or `npm run build:public:zip`.
-
-## Development
-
-```bash
-npm ci
-npm run type-check
-npm run lint
-npm test
-npm run build
-npm run bundle:check
-npm run zip
-```
-
-The default `npm run build` creates the full profile. `npm run build:public` creates the restricted temporary-email-only profile, and `npm run build:full` is retained as a compatibility alias.
+Use `npm.cmd` in place of `npm` in PowerShell if script execution is blocked. Dependency compatibility limits are documented in [GitHub operations](docs/GITHUB_OPERATIONS.md).
 
 ## Release process
 
-GitHub Actions is configured to run dependency audits, type checks, lint, tests, the full production build, and bundle-size checks on Node.js 22, 24, and 26, plus a Windows installer/updater check. A verified `v<package-version>` tag runs the release workflow, creates the full-profile ZIP and SHA-256 file, then uses GitHub-generated release notes. The account's current billing lock prevents these remote jobs from starting; see [GitHub operations and recovery](docs/GITHUB_OPERATIONS.md) for recovery steps and dependency compatibility limits.
+CI is configured for Node.js **22, 24, and 26**, dependency audits, workflow validation, types, lint, tests, production builds, bundle-size checks, and a Windows updater job. A reviewed `v<package-version>` tag triggers the release workflow to validate and publish the full-profile ZIP and checksum.
 
-Available packages are listed on [GitHub Releases](https://github.com/Xshya19/ghostfill-extension/releases). The exact maintainer process is in [docs/RELEASING.md](docs/RELEASING.md).
-Maintainers should also follow the [GitHub operations and recovery guide](docs/GITHUB_OPERATIONS.md) for branch protection, Actions recovery, and dependency-update handling.
+GitHub Actions is currently blocked by an account billing issue. Local checks do not count as a successful remote CI run. Recovery and branch-protection steps are in [GitHub operations](docs/GITHUB_OPERATIONS.md); the maintainer checklist is in [Releasing GhostFill](docs/RELEASING.md).
 
 ## Contributing and support
 
 - [Contributing guide](CONTRIBUTING.md)
 - [Changelog](CHANGELOG.md)
-- [Security reporting](SECURITY.md)
-- [Issue tracker](https://github.com/Xshya19/ghostfill-extension/issues)
+- [Report a bug](https://github.com/Xshya19/ghostfill-extension/issues)
+- [Report a security issue privately](SECURITY.md)
+
+When reporting a bug, include the extension version, browser version, site, expected behavior, and what happened. Attach redacted logs if possible. Keep passwords, verification codes, private messages, and activation URLs out of public reports.
 
 GhostFill is released under the [MIT License](LICENSE).
