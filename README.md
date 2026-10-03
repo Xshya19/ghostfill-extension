@@ -260,9 +260,9 @@ Use `npm.cmd` in place of `npm` in PowerShell if script execution is blocked. De
 
 ## Release process
 
-CI is configured for Node.js **22, 24, and 26**, dependency audits, workflow validation, types, lint, tests, production builds, bundle-size checks, and a Windows updater job. A reviewed `v<package-version>` tag triggers the release workflow to validate and publish the full-profile ZIP and checksum.
+GitHub Actions is disabled for this repository. Code can be pushed and reviewed without remote CI/CD. Maintainers run the local checks listed above, build the extension, and publish the ZIP and matching checksum through GitHub Releases.
 
-GitHub Actions is currently blocked by an account billing issue. Local checks do not count as a successful remote CI run. Recovery and branch-protection steps are in [GitHub operations](docs/GITHUB_OPERATIONS.md); the maintainer checklist is in [Releasing GhostFill](docs/RELEASING.md).
+Pushing a version tag does not publish a release automatically in this mode. Follow [Releasing GhostFill](docs/RELEASING.md) to upload the built package and keep the Windows updater working. The CI, security, and release workflow files remain available for optional future use; [GitHub operations](docs/GITHUB_OPERATIONS.md) explains the repository settings and how to re-enable them.
 
 ## Contributing and support
 
