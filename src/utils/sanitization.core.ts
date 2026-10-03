@@ -12,63 +12,7 @@ import { createLogger } from './logger';
 
 const log = createLogger('Sanitization');
 
-// ═══════════════════════════════════════════════════════════════════
-// TypeScript declarations for Trusted Types API
-// ═══════════════════════════════════════════════════════════════════
-
-declare global {
-  interface TrustedTypePolicy {
-    createHTML(input: string): string;
-    createScript(input: string): string | null;
-    createScriptURL(input: string): string;
-  }
-
-  interface TrustedTypePolicyFactory {
-    createPolicy(
-      name: string,
-      policy: {
-        createHTML?: (input: string) => string;
-        createScript?: (input: string) => string | null;
-        createScriptURL?: (input: string) => string;
-      }
-    ): TrustedTypePolicy;
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// SECURITY: Trusted Types Policy (initialization)
-// ═══════════════════════════════════════════════════════════════════
-
-let trustedTypesPolicy: TrustedTypePolicy | null = null;
 export type SanitizerConfig = Record<string, unknown>;
-
-function initTrustedTypes(): void {
-  if (typeof window !== 'undefined' && 'trustedTypes' in window) {
-    try {
-      const tt = (window as unknown as { trustedTypes: TrustedTypePolicyFactory }).trustedTypes;
-      trustedTypesPolicy = tt.createPolicy('ghostfill', {
-        createHTML: (input: string): string => {
-          return input;
-        },
-        createScriptURL: (_input: string): string => {
-          log.warn('TrustedTypes blocked script URL (redacted)');
-          return 'about:blank';
-        },
-        createScript: (): null => {
-          log.warn('TrustedTypes blocked inline script');
-          return null;
-        },
-      });
-    } catch (error) {
-      log.warn('TrustedTypes: Failed to create policy', error);
-    }
-  }
-}
-
-// Initialize Trusted Types on module load (if in browser window)
-if (typeof window !== 'undefined') {
-  initTrustedTypes();
-}
 
 // ═══════════════════════════════════════════════════════════════════
 // Plain-text / regex sanitizers (zero DOM dependency)
@@ -248,9 +192,6 @@ export function sanitizeHtml(dirty: string, options?: SanitizerConfig): string {
     try {
       let basicClean = sanitizeHtmlInternal(dirty, options);
       basicClean = basicClean.replace(/href\s*=\s*(['"])javascript:(?:(?!\1).)*?\1/gi, `href=$1#$1`);
-      if (trustedTypesPolicy) {
-        return String(trustedTypesPolicy.createHTML(basicClean));
-      }
       return basicClean;
     } catch (error) {
       log.error('DOMPurify failed, falling back to regex sanitizer', error);

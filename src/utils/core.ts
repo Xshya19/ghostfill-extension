@@ -1598,7 +1598,7 @@ export const APP_VERSION = (() => {
   try {
     return chrome.runtime.getManifest().version;
   } catch {
-    return '1.1.3';
+    return '1.1.4';
   }
 })();
 

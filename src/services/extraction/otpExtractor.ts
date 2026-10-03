@@ -735,7 +735,7 @@ export function extractOTP(
   zones: EmailZone[] = [],
   intent?: IntentResult
 ): ExtractedOTP | null {
-  const fullText = (rawFullText || '').replace(/[\u200B-\u200D\uFEFF\u200E\u200F\u2060]/g, '');
+  const fullText = decodeHtmlEntities(rawFullText || '').replace(/[\u200B-\u200D\uFEFF\u200E\u200F\u2060]/g, '');
   const htmlBody = (rawHtmlBody || '').replace(/[\u200B-\u200D\uFEFF\u200E\u200F\u2060]/g, '');
   const candidates: ExtractedOTPCandidate[] = [];
   const rejected: Array<{ code: string; reason: string }> = [];

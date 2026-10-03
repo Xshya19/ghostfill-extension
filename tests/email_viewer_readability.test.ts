@@ -88,4 +88,18 @@ describe('email reader readability', () => {
     vi.advanceTimersByTime(2200);
     expect(frame.style.height).toBe('280px');
   });
+
+  it('does not promote a newsletter number, unsubscribe link, or stale backend finding into a verification action', () => {
+    flushSync(() => root.render(React.createElement(EmailViewerModal, {
+      message: {
+        id: 'newsletter', subject: 'Welcome. Let’s get you set up.', from: 'team@example.com',
+        textBody: 'Customize your work. San Francisco, CA 94104. &#8203;',
+        htmlBody: '<h1>Your setup checklist</h1><p>San Francisco, CA 94104</p><a href="https://links.example.com/s/u/fixture">Unsubscribe</a>',
+        otp: '8203', link: 'https://links.example.com/s/u/fixture',
+      }, onClose: vi.fn(),
+    })));
+    expect(container.querySelector('.email-hero-otp-code')).toBeNull();
+    expect(container.querySelector('.email-hero-link-banner')).toBeNull();
+    expect(container.querySelector('.alias-message-action-btn--copy-code')).toBeNull();
+  });
 });
