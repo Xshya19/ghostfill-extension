@@ -1,46 +1,47 @@
-# GitHub operations and recovery
+# GitHub operations
 
-This repository has controls in source for CI, release packaging, dependency review, CodeQL, and Dependabot. Dependabot alerts, automatic security fixes, private vulnerability reporting, and automatic deletion of merged branches were enabled in GitHub on October 2, 2026. Secret scanning and push protection are also enabled. The remaining account and branch controls below must be configured in GitHub itself.
+## Current mode: local checks and manual releases
 
-## Recover from the current Actions failure
+GitHub Actions was disabled for this repository on October 3, 2026 at the maintainer's request. Pushes, pull requests, and version tags do not run remote CI/CD while this setting is disabled.
 
-The September and October 2026 CI and release runs did not execute any project commands. GitHub marked their jobs as failed before startup because the account was locked for a billing issue. Resolve that account condition in GitHub's billing settings first. Do not change application code or replace version tags to address that failure.
+The workflow files remain in `.github/workflows` for optional future use. Local type checks, lint, tests, dependency audits, build checks, and the Windows updater checks remain available. Record the relevant local validation in each pull request before merging.
 
-After GitHub Actions is available again:
+The previous CI, security, and release failures were blocked before any project command ran because of an account billing issue. Removing those failed run records cleans up GitHub's check history; it does not constitute passing CI or resolve account billing.
 
-1. Open **Actions → CI** and rerun the failed checks, or open a new pull request to trigger CI.
-2. For the current release tag, open **Actions → Release → Run workflow**, enter `v1.1.3`, and run it from the default branch. The workflow packages the immutable tag, verifies its checksum, and creates or updates the matching release without retagging.
+## Publish without CI/CD
 
-While the account is locked, release validation is performed locally on Windows with Node 24. The CI configuration additionally covers Node 22 and 26 on Linux, a Windows installer/updater job, dependency review, and CodeQL; these remote checks cannot execute until GitHub unlocks the account. Local validation does not constitute a successful GitHub Actions run.
+1. Review the changes and run the relevant local validation with Node 24 LTS.
+2. Commit and push the verified source. A pull request can be merged without disabled Actions checks.
+3. For an extension release, follow [Releasing GhostFill](RELEASING.md): build locally, verify the ZIP, tag the tested commit, and upload the built ZIP plus its matching checksum through GitHub Releases.
+4. Verify the published downloads. The Windows updater needs a stable release with both correctly named assets.
 
-## Protect `main`
+Do not replace an existing release tag with a different commit or publish an unverified package just because remote checks are unavailable.
 
-After the checks above are running successfully, create a ruleset for the `main` branch under **Settings → Rules → Rulesets** with these controls:
+## Repository controls
 
-- Require a pull request before merging and require the branch to be up to date.
-- Require the successful CI matrix checks, **Dependency review**, and **CodeQL**. Do not make checks required until Actions is unblocked, or the branch will be unable to merge.
-- Block force pushes and branch deletion.
-- Require conversation resolution before merging.
-- Prefer squash merges; automatic deletion of merged branches is already enabled.
+Dependabot alerts, automatic security fixes, private vulnerability reporting, and automatic deletion of merged branches were enabled on October 2, 2026. Keep those services, secret scanning, and push protection enabled. They are separate from this repository's CI/CD workflow setting.
 
-This project is currently maintained by one account, so do not require a separate code-owner approval unless a second trusted maintainer is added. A requirement that no available maintainer can satisfy is not protection; it is a release outage.
+While Actions is disabled, do not require CI, dependency-review, or CodeQL status checks in a branch ruleset: those jobs cannot run. Useful independent protections include requiring pull requests, resolving review conversations, and blocking force pushes and branch deletion.
 
-## Harden GitHub settings
+The project is maintained by one account. Require another person's approval only when a second trusted maintainer is available.
 
-Under **Settings → Actions → General**, use the restrictive default token permission and require workflows to use full-length commit SHA pins once all workflow references are pinned. This repository's workflows already meet that source-level rule. Limit allowed actions to GitHub-owned actions unless a reviewed exception is added.
+## Re-enable GitHub Actions later
 
-Under **Security → Advanced Security**, keep the dependency graph, Dependabot alerts, secret scanning, push protection, and private vulnerability reporting enabled. These are complementary controls: they do not replace the local redaction and validation defenses in the extension.
+1. Resolve any remaining account billing block in GitHub's account settings.
+2. Open **Settings → Actions → General** and allow GitHub Actions for this repository.
+3. Keep workflow tokens read-only by default and keep the reviewed actions pinned to full commit SHAs.
+4. Trigger CI with a reviewed pull request or push, and confirm CI and CodeQL execute successfully.
+5. If switching back to automatic releases, push a new verified version tag or run **Actions → Release → Run workflow** for an existing immutable tag.
+6. Require the appropriate successful status checks in branch protection only after those workflows run reliably.
 
-## Dependabot backlog
+The stored CI configuration covers Node 22, 24, and 26 on Linux plus a Windows installer/updater job. Running the local checks on Windows does not establish that those remote matrix checks passed.
 
-The dependency updates proposed in [#12](https://github.com/Xshya19/ghostfill-extension/pull/12), [#13](https://github.com/Xshya19/ghostfill-extension/pull/13), [#14](https://github.com/Xshya19/ghostfill-extension/pull/14), and [#15](https://github.com/Xshya19/ghostfill-extension/pull/15) are superseded by the verified action pins and dependency migration in v1.1.3. Their older branches should not be merged over the maintained source.
+## Dependency maintenance
 
-The media files and build script from [#11](https://github.com/Xshya19/ghostfill-extension/pull/11) already match `main`, and its showcase links are retained in the newer installation documentation. That pull request is also superseded.
+The dependency changes from [#12](https://github.com/Xshya19/ghostfill-extension/pull/12), [#13](https://github.com/Xshya19/ghostfill-extension/pull/13), [#14](https://github.com/Xshya19/ghostfill-extension/pull/14), and [#15](https://github.com/Xshya19/ghostfill-extension/pull/15) were superseded by the action pins and dependency migration in v1.1.3. The media and render script from [#11](https://github.com/Xshya19/ghostfill-extension/pull/11) already match the maintained source.
 
-Dependabot is now weekly and groups low-risk updates, preventing another large unreviewed queue. Never merge dependency pull requests solely because a bot opened them; require the normal CI and dependency-review results.
+Dependabot is configured weekly and groups low-risk updates. Review each proposed update and run the relevant local checks before merging. If remote CI is re-enabled, require its results too.
 
-## Dependency compatibility limits
+Application dependencies and GitHub Actions pins were checked against stable releases on October 2, 2026. Two development tools use compatible versions: ESLint 9.39.5 and TypeScript 6.0.3. The React, accessibility, and import lint plugins do not declare support for ESLint 10, and `@typescript-eslint/parser` declares TypeScript support below 6.1. Do not force incompatible peer dependencies or disable security and accessibility rules to install these majors.
 
-Application dependencies and GitHub Actions pins were checked against their latest stable releases on October 2, 2026. Two development tools use the newest compatible versions: ESLint 9.39.5 and TypeScript 6.0.3. The current React, accessibility, and import lint plugins do not declare support for ESLint 10, and `@typescript-eslint/parser` declares TypeScript support below 6.1. Do not force incompatible peer dependencies or disable the security and accessibility rules to install these majors.
-
-ESLint 9 is marked deprecated upstream, so moving to ESLint 10 remains a tooling maintenance task once the plugins support it or a tested replacement is selected. Dependabot continues to surface newer releases; the current lockfile audit reports no known vulnerabilities. Use Node 24 LTS for local development (`.nvmrc`), and use `npm ci` to reproduce the validated dependency tree.
+ESLint 9 is deprecated upstream, so migrating to ESLint 10 remains a maintenance task once the plugins support it or a tested replacement is selected. Use `npm ci` to reproduce the dependency tree and `npm audit --audit-level=high` to check for current advisories.
