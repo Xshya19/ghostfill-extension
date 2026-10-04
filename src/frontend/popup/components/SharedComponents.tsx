@@ -439,13 +439,16 @@ const InboxTab: React.FC<InboxTabProps> = ({
         {!isManual && (
           <button
             type="button"
-            className={`alias-inbox-refresh ${loading ? 'alias-inbox-refresh--loading' : ''}`}
+            className={`alias-inbox-refresh inbox-refresh-button ${loading ? 'alias-inbox-refresh--loading' : ''}`}
             onClick={onRefresh}
             disabled={loading}
             aria-busy={loading}
             aria-label="Refresh inbox"
           >
-            <RefreshCw size={14} className={loading ? 'spin' : ''} />
+            <RefreshCw
+              size={14}
+              className={`inbox-refresh-icon${loading ? ' inbox-refresh-icon--spinning' : ''}`}
+            />
           </button>
         )}
       </div>
