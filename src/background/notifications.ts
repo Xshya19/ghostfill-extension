@@ -242,8 +242,12 @@ export function initNotifications(): void {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async function restoreDedupCache(): Promise<void> {
+  const generation = notificationSessionGeneration;
   try {
     const data = await chrome.storage.session.get('notif_dedup');
+    if (generation !== notificationSessionGeneration) {
+      return;
+    }
     if (data.notif_dedup && typeof data.notif_dedup === 'object') {
       const entries = data.notif_dedup as Record<string, DedupEntry>;
       const now = Date.now();
@@ -279,6 +283,7 @@ export function destroyNotifications(): void {
     return;
   }
   initialized = false;
+  notificationSessionGeneration++;
 
   // Clear all active notification timers
   for (const [, active] of activeNotifications) {
@@ -623,10 +628,16 @@ export async function notifySystem(title: string, message: string): Promise<stri
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async function notify(spec: NotificationSpec): Promise<string> {
+  // Capture the inbox session before any asynchronous gate. Capturing it only
+  // at enqueue time lets a request from the old inbox enter the new session.
+  const sessionGeneration = notificationSessionGeneration;
   log.debug(`Notification requested: ${spec.category} - ${spec.title}`);
 
   // ── Gate 1: Global notifications enabled? ──
   const globalEnabled = await areNotificationsEnabled();
+  if (sessionGeneration !== notificationSessionGeneration) {
+    return '';
+  }
   log.debug('Global enabled', globalEnabled);
   if (!globalEnabled) {
     metrics.suppressed++;
@@ -635,6 +646,9 @@ async function notify(spec: NotificationSpec): Promise<string> {
 
   // ── Gate 2: Category enabled? ──
   const catSettings = await getCategorySettings(spec.category);
+  if (sessionGeneration !== notificationSessionGeneration) {
+    return '';
+  }
   log.debug('Category settings', catSettings);
   if (!catSettings.enabled) {
     metrics.suppressed++;
@@ -659,6 +673,9 @@ async function notify(spec: NotificationSpec): Promise<string> {
 
   // ── Gate 5: Permission ──
   const permitted = await checkPermission();
+  if (sessionGeneration !== notificationSessionGeneration) {
+    return '';
+  }
   log.debug('Permission', permitted);
   if (!permitted) {
     metrics.suppressed++;
@@ -680,7 +697,7 @@ async function notify(spec: NotificationSpec): Promise<string> {
     sendQueue.push({
       id,
       spec,
-      sessionGeneration: notificationSessionGeneration,
+      sessionGeneration,
       resolve,
       reject,
       attempt: 0,
@@ -710,6 +727,10 @@ async function drain(): Promise<void> {
 }
 
 async function processQueueItem(item: QueueItem): Promise<void> {
+  if (item.sessionGeneration !== notificationSessionGeneration) {
+    item.resolve('');
+    return;
+  }
   const { id, spec } = item;
   const t0 = performance.now();
 
@@ -731,6 +752,10 @@ async function processQueueItem(item: QueueItem): Promise<void> {
     recordHistory(id, spec);
     item.resolve(id);
   } catch (error) {
+    if (item.sessionGeneration !== notificationSessionGeneration) {
+      item.resolve('');
+      return;
+    }
     item.attempt++;
 
     if (item.attempt <= CONFIG.MAX_RETRIES) {

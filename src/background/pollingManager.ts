@@ -237,7 +237,9 @@ interface SessionState {
 }
 
 function isTemporaryInboxFailure(message: string): boolean {
-  return /\b(failed to fetch|fetch failed|networkerror|network (?:error|request failed)|aborted|aborterror|timeout|timed out|cors|load failed|429|rate limit|too many requests)\b|\bHTTP\b[^\n]*\b5\d{2}\b/i.test(message);
+  return /\b(failed to fetch|fetch failed|networkerror|network (?:error|request failed)|aborted|aborterror|timeout|timed out|cors|load failed|429|rate limit|too many requests)\b|\bHTTP\b[^\n]*\b5\d{2}\b/i.test(
+    message
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -996,7 +998,8 @@ export class OTPCodeExtractor {
     const htmlText = typeof fullEmail.htmlBody === 'string' ? fullEmail.htmlBody : '';
     const subjectText = typeof fullEmail.subject === 'string' ? fullEmail.subject : '';
     const supportedCode = (code: string): boolean =>
-      this.isPlausibleOtp(code) && hasVerificationCodeEvidence(code.replace(/[\s-]/g, ''), subjectText, plainText, htmlText);
+      this.isPlausibleOtp(code) &&
+      hasVerificationCodeEvidence(code.replace(/[\s-]/g, ''), subjectText, plainText, htmlText);
     const emailText = plainText || subjectText || '';
     const textOutsideLinks = emailText.replace(/https?:\/\/[^\s"'<>]+/gi, ' ');
 
@@ -1093,6 +1096,7 @@ const metrics: PollingMetrics = {
 
 let pollingActive = false;
 let generalTimer: ReturnType<typeof setTimeout> | null = null;
+let generalScheduleGeneration = 0;
 let lastGlobalCheckTime = 0;
 let initialized = false;
 let priorityCounter = 0;
@@ -1523,8 +1527,24 @@ async function processEmail(
     // A provider can return recent inbox summaries with an older full message.
     // Keep it in the inbox, but never replay an expired verification as an alert
     // or open its link after a worker restart or session change.
-    const messageTime = typeof fullEmail.date === 'number' ? fullEmail.date : Date.parse(String(fullEmail.date));
-    if (Number.isFinite(messageTime) && messageTime > 0 && Date.now() - messageTime >= LAST_OTP_MAX_AGE_MS) {
+    const messageTime =
+      typeof fullEmail.date === 'number' ? fullEmail.date : Date.parse(String(fullEmail.date));
+    if (messageTime === 0) {
+      await dedupCache.markProcessed(emailId, currentEmail.fullEmail, false, false);
+      diag.endFlow(
+        flowId,
+        'email',
+        'process-email',
+        true,
+        'Verification timestamp unavailable; review in inbox'
+      );
+      return;
+    }
+    if (
+      Number.isFinite(messageTime) &&
+      messageTime > 0 &&
+      Date.now() - messageTime >= LAST_OTP_MAX_AGE_MS
+    ) {
       await dedupCache.markProcessed(emailId, currentEmail.fullEmail, false, false);
       diag.endFlow(flowId, 'email', 'process-email', true, 'Old verification message ignored');
       return;
@@ -1625,7 +1645,12 @@ async function processEmail(
       }
 
       await linkService
-        .handleDetectedLink(fullEmail, detection.link, currentEmail.fullEmail, canAutoFillCode ? otpCodeStr : null)
+        .handleDetectedLink(
+          fullEmail,
+          detection.link,
+          currentEmail.fullEmail,
+          canAutoFillCode ? otpCodeStr : null
+        )
         .catch((e) => log.warn('linkService error', e));
       diag.step(flowId, 'email', 'link', 'Link handling delegated', {
         link: detection.link,
@@ -2090,23 +2115,28 @@ export function startEmailPolling(): void {
 }
 
 export function stopEmailPolling(): void {
-  if (!pollingActive) {
-    return;
-  }
+  const wasActive = pollingActive;
   pollingActive = false;
+  generalScheduleGeneration++;
 
   if (generalTimer !== undefined && generalTimer !== null) {
     clearTimeout(generalTimer);
     generalTimer = null;
   }
 
-  log.info('📧 General polling STOPPED');
+  if (wasActive) {
+    log.info('📧 General polling STOPPED');
+  }
 }
 
 async function scheduleGeneralPoll(): Promise<void> {
   if (!pollingActive) {
     return;
   }
+  // A restart, OTP registration, or alarm can reschedule while Chrome I/O is
+  // pending. Only the latest scheduling request may install or re-arm a timer.
+  const generation = ++generalScheduleGeneration;
+  const isCurrent = () => pollingActive && generation === generalScheduleGeneration;
 
   if (generalTimer !== undefined && generalTimer !== null) {
     clearTimeout(generalTimer);
@@ -2115,6 +2145,9 @@ async function scheduleGeneralPoll(): Promise<void> {
 
   // Ensure persistent background alarm exists for OS-level wake-ups if service worker goes idle
   const alarm = await chrome.alarms.get(ALARM_NAMES.EMAIL_SYNC);
+  if (!isCurrent()) {
+    return;
+  }
   if (!alarm) {
     chrome.alarms.create(ALARM_NAMES.EMAIL_SYNC, { periodInMinutes: 1 });
   }
@@ -2127,9 +2160,12 @@ async function scheduleGeneralPoll(): Promise<void> {
 
   try {
     const settings = await storageService.getSettings();
+    if (!isCurrent()) {
+      return;
+    }
     if (!settings.autoCheckInbox) {
       log.info('📧 General polling disabled by autoCheckInbox setting');
-      pollingActive = false;
+      stopEmailPolling();
       return;
     }
     // The Check-interval setting owns the GENERAL cadence: the adaptive
@@ -2150,15 +2186,26 @@ async function scheduleGeneralPoll(): Promise<void> {
     log.warn('Failed to fetch user settings for polling interval', e);
   }
 
+  if (!isCurrent()) {
+    return;
+  }
+
   generalTimer = setTimeout(() => {
-    if (!pollingActive) {
+    if (!isCurrent()) {
       return;
     }
+    generalTimer = null;
     void performCheck(mode)
-      .then(() => scheduleGeneralPoll())
+      .then(() => {
+        if (isCurrent()) {
+          return scheduleGeneralPoll();
+        }
+      })
       .catch((error) => {
         log.warn(`${mode} poll failed`, error);
-        void scheduleGeneralPoll();
+        if (isCurrent()) {
+          void scheduleGeneralPoll();
+        }
       });
   }, interval);
 }
@@ -2301,6 +2348,17 @@ if (typeof chrome !== 'undefined' && chrome.tabs?.onRemoved) {
 
 export function getOTPWaitingTabs(): ReadonlyMap<number, TabRegistration> {
   return otpWaitingTabs;
+}
+
+/** Defer an extension reload while a verification session or poll is active. */
+export function isVerificationWorkActive(): boolean {
+  return (
+    otpWaitingTabs.size > 0 ||
+    activeCheckPromise !== null ||
+    pendingCheckMode !== null ||
+    pendingCheckTimer !== null ||
+    emailTypeTransitionPromise !== null
+  );
 }
 
 export function updateKeepAliveAlarm(): void {

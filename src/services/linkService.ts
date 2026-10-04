@@ -148,6 +148,9 @@ class LinkService {
   private draining = false;
   private lastActivationTime = 0;
   private readonly scanningEmails = new Set<string>();
+  hasPendingActivation(): boolean {
+    return this.scanningEmails.size > 0 || this.activationQueue.length > 0 || this.draining;
+  }
   private readonly activatedUrls = new Set<string>();
 
   private readonly metrics: LinkMetrics = {

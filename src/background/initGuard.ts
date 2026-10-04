@@ -44,6 +44,11 @@ export function getActiveInitPromise(): Promise<void> | null {
   return _activeInitPromise;
 }
 
+export function isBackgroundInitialized(): boolean {
+  const state = _getBootStateFn?.();
+  return _initialized && (state === 'ready' || state === 'degraded');
+}
+
 /**
  * Ensures the extension is fully initialized.
  * Safe to call from message handlers during cold boots.

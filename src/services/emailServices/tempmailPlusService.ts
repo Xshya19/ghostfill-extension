@@ -5,19 +5,56 @@ import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/co
 import { getSenderSource } from '../../utils/emailIdentity';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
-import { isRetryableError, throttledWarn, throwIfRetryableStatus } from './isRetryableError';
+import { throttledWarn, throwIfRetryableStatus } from './isRetryableError';
+import { runBoundedProviderOperation } from './providerOperations';
 
 const log = createLogger('TempmailPlusService');
 const BASE_URL = 'https://tempmail.plus/api/mails';
+// Published mailbox selector: https://tempmail.plus/. The website hostname
+// tempmail.plus has a different MX and is not a supported receiving domain.
+const MAILBOX_DOMAINS = [
+  'mailto.plus',
+  'fexpost.com',
+  'fexbox.org',
+  'mailbox.in.ua',
+  'rover.info',
+  'chitthi.in',
+  'fextemp.com',
+  'any.pink',
+  'merepost.com',
+];
+
+class TempmailResponseError extends Error {}
+
+async function readPayload(url: string, signal?: AbortSignal) {
+  return runBoundedProviderOperation(
+    async (boundedSignal) => {
+      const response = await fetchWithTimeout(url, { signal: boundedSignal });
+      throwIfRetryableStatus(response, 'Tempmail.plus');
+      if (response.status === 404) {
+        return null;
+      }
+      const payload = await response.json();
+      if (!payload || typeof payload !== 'object' || payload.result === false || payload.err) {
+        throw new TempmailResponseError(
+          'Tempmail.plus returned an unavailable or protected inbox response'
+        );
+      }
+      return payload;
+    },
+    signal,
+    15_000
+  );
+}
 
 export class TempmailPlusService {
   async getDomains(_signal?: AbortSignal): Promise<string[]> {
-    return ['tempmail.plus', 'mailto.plus', 'frapmail.com'];
+    return [...MAILBOX_DOMAINS];
   }
 
   async createAccount(prefix?: string, _signal?: AbortSignal): Promise<EmailAccount> {
     const login = prefix || generateHumanLikeUsername();
-    const domain = 'tempmail.plus';
+    const domain = MAILBOX_DOMAINS[0]!;
     const fullEmail = `${login}@${domain}`;
     const now = Date.now();
 
@@ -34,20 +71,18 @@ export class TempmailPlusService {
   }
 
   async getMessages(fullEmail: string, signal?: AbortSignal): Promise<Email[]> {
-    const login = fullEmail.split('@')[0] || fullEmail;
     try {
-      const response = await fetchWithTimeout(
-        `${BASE_URL}?email=${encodeURIComponent(login)}&limit=50`,
-        { signal: signal ?? null }
+      const data = await readPayload(
+        `${BASE_URL}?email=${encodeURIComponent(fullEmail)}&limit=50`,
+        signal
       );
-
-      if (response.status === 404) {
+      if (!data) {
         return [];
       }
-      throwIfRetryableStatus(response, 'Tempmail.plus getMessages');
-
-      const data = await response.json();
-      const mailList: any[] = data.mail_list || data.mails || data.result || [];
+      const mailList = data.mail_list ?? data.mails ?? data.result;
+      if (!Array.isArray(mailList)) {
+        throw new TempmailResponseError('Tempmail.plus returned an invalid inbox list');
+      }
 
       // Fetch detail bodies for up to 5 most recent messages in parallel
       const recentMails = mailList.slice(0, 5);
@@ -58,12 +93,11 @@ export class TempmailPlusService {
             return msg;
           }
           try {
-            const detailRes = await fetchWithTimeout(
-              `${BASE_URL}/${encodeURIComponent(mailId)}?email=${encodeURIComponent(login)}`,
-              { signal: signal ?? null }
+            const detailData = await readPayload(
+              `${BASE_URL}/${encodeURIComponent(mailId)}?email=${encodeURIComponent(fullEmail)}`,
+              signal
             );
-            if (detailRes.ok) {
-              const detailData = await detailRes.json();
+            if (detailData) {
               return { ...msg, ...detailData };
             }
           } catch {
@@ -81,50 +115,47 @@ export class TempmailPlusService {
 
         return {
           id: String(msg.mail_id || msg.id),
-          from: getSenderSource(undefined, msg.from_mail || msg.from),
+          from: getSenderSource(msg.from_name, msg.from_mail || msg.from),
           to: fullEmail,
           subject: contentToString(msg.subject, '(No Subject)'),
-          date: safeParseDate(msg.date),
+          date: safeParseDate(msg.date || msg.time, 0),
           body: bodyStr,
           htmlBody: htmlStr,
           textBody: textStr,
-          read: Boolean(msg.is_read),
+          read: msg.is_read !== undefined ? Boolean(msg.is_read) : msg.is_new === false,
           attachments: [],
         };
       });
     } catch (error) {
-      if (isRetryableError(error)) {
-        throttledWarn(log, 'tempmailplus-getMessages', 'Failed to fetch Tempmail.plus messages', error);
-        throw error;
-      }
-      log.debug('Tempmail.plus getMessages non-retryable error, returning []', error);
-      return [];
+      throttledWarn(
+        log,
+        'tempmailplus-getMessages',
+        'Failed to fetch Tempmail.plus messages',
+        error
+      );
+      throw error;
     }
   }
 
   async getMessage(fullEmail: string, emailId: string, signal?: AbortSignal): Promise<Email> {
-    const login = fullEmail.split('@')[0] || fullEmail;
     try {
-      const response = await fetchWithTimeout(
-        `${BASE_URL}/${encodeURIComponent(emailId)}?email=${encodeURIComponent(login)}`,
-        { signal: signal ?? null }
+      const msg = await readPayload(
+        `${BASE_URL}/${encodeURIComponent(emailId)}?email=${encodeURIComponent(fullEmail)}`,
+        signal
       );
-
-      if (!response.ok) {
-        throw new Error(`HTTP error: ${response.status}`);
+      if (!msg) {
+        throw new TempmailResponseError('Tempmail.plus message not found');
       }
-
-      const msg = await response.json();
       const bodyStr = contentToString(msg.text || msg.body || msg.html);
       const htmlStr = contentToString(msg.html || msg.body);
       const textStr = contentToString(msg.text || msg.body);
 
       return {
         id: String(msg.mail_id || msg.id || emailId),
-        from: getSenderSource(undefined, msg.from_mail || msg.from),
+        from: getSenderSource(msg.from_name, msg.from_mail || msg.from),
         to: fullEmail,
         subject: contentToString(msg.subject, '(No Subject)'),
-        date: safeParseDate(msg.date),
+        date: safeParseDate(msg.date || msg.time, 0),
         body: bodyStr,
         htmlBody: htmlStr,
         textBody: textStr,

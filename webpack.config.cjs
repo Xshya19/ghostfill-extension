@@ -303,6 +303,24 @@ module.exports = (env = {}, argv = {}) => {
           { from: 'public/_locales', to: '_locales' },
           { from: 'Update GhostFill.cmd', to: 'Update GhostFill.cmd' },
           { from: 'scripts/update-extension.ps1', to: 'scripts/update-extension.ps1' },
+          { from: 'Enable Automatic Updates.cmd', to: 'Enable Automatic Updates.cmd' },
+          { from: 'Disable Automatic Updates.cmd', to: 'Disable Automatic Updates.cmd' },
+          { from: 'scripts/auto-update-common.ps1', to: 'scripts/auto-update-common.ps1' },
+          { from: 'scripts/setup-auto-updates.ps1', to: 'scripts/setup-auto-updates.ps1' },
+          { from: 'scripts/auto-update-extension.ps1', to: 'scripts/auto-update-extension.ps1' },
+          {
+            from: 'public/ghostfill-update-state.json',
+            to: 'ghostfill-update-state.json',
+            transform: (content) =>
+              JSON.stringify(
+                {
+                  ...JSON.parse(content.toString()),
+                  installedVersion: require('./package.json').version,
+                },
+                null,
+                2
+              ),
+          },
           {
             from: 'docs/third-party/liquid-glass-react-LICENSE',
             to: 'THIRD_PARTY_NOTICES/liquid-glass-react-LICENSE.txt',

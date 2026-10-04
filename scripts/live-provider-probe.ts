@@ -1,164 +1,186 @@
 /**
- * Live provider probe — GhostFill
- *
- * Exercises EVERY disposable provider over the real network through the
- * production aggregator path (getDomains → generateEmail → checkInbox),
- * exactly as the extension uses them. Read-only except for creating one
- * disposable test account per provider (normal free-tier usage).
- *
- * Run: npx tsx scripts/live-provider-probe.ts
- * Exit 0 = all probed providers operational (legacy tier allowed to fail
- * with a warning); exit 1 = a HEALTHY-tier provider failed.
+ * Read-only by default: npx tsx scripts/live-provider-probe.ts
+ * Optional isolated account/inbox check: add --create-inboxes.
+ * Limit a check with --provider driftz; --provider yopmail diagnoses the retired adapter.
+ * Never sends mail or triggers a signup. Empty inboxes do not prove delivery.
  */
-import { EmailServiceAggregator } from '../src/services/emailServices';
-import type { EmailService } from '../src/types';
+import { randomBytes } from 'node:crypto';
+import type { Email, EmailAccount, EmailService } from '../src/types';
+import { checkProviderAvailability } from '../src/services/emailServices/providerAvailability';
+import { runBoundedProviderOperation } from '../src/services/emailServices/providerOperations';
+import { TEMP_EMAIL_PROVIDER_OPTIONS } from '../src/services/emailServices/providerRegistry';
 
-const HEALTHY_TIER: EmailService[] = [
-  'driftz',
-  'catchmail',
-  'throwawaymail',
-  'tempmailplus',
-  'mailtm',
-  'mailgw',
-  'guerrilla',
-  'maildrop',
-  'yopmail',
-];
-
-const LEGACY_TIER: EmailService[] = [
-  'mailcx',
-  'dropmail',
-  'mailboxtemp',
-  'openinbox',
-  'evilmail',
-  'getnada',
-  'tempmaillol',
-  'tempmail',
-  '1secmail',
-  'mailinator',
-  'mailnesia',
-];
-
-const OP_TIMEOUT_MS = 25_000;
-
-function withTimeout<T>(p: Promise<T>, label: string): Promise<T> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), OP_TIMEOUT_MS);
-  // Race the work against a timeout; abort signal is best-effort.
-  return Promise.race([
-    p.finally(() => clearTimeout(timer)),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} timed out after ${OP_TIMEOUT_MS}ms`)), OP_TIMEOUT_MS + 500)
-    ),
-  ]);
-}
-
-interface ProbeResult {
-  service: string;
-  tier: string;
-  domains: string;
-  generated: string;
-  inbox: string;
-  latencyMs: number;
-  ok: boolean;
-  error?: string;
-}
-
-async function probeService(
-  emailService: EmailServiceAggregator,
-  service: EmailService,
-  tier: string
-): Promise<ProbeResult> {
-  const started = Date.now();
-  const result: ProbeResult = {
-    service,
-    tier,
-    domains: '—',
-    generated: '—',
-    inbox: '—',
-    latencyMs: 0,
-    ok: false,
+// Isolated in-memory Chrome storage: never reads the user's installed inbox.
+const memoryArea = () => {
+  const values: Record<string, unknown> = {};
+  return {
+    get: async (keys: string | string[] | null) =>
+      keys === null
+        ? { ...values }
+        : Object.fromEntries(
+            (Array.isArray(keys) ? keys : [keys]).map((key) => [key, values[key]])
+          ),
+    set: async (items: Record<string, unknown>) => {
+      Object.assign(values, items);
+    },
+    remove: async (keys: string | string[]) => {
+      for (const key of Array.isArray(keys) ? keys : [keys]) delete values[key];
+    },
+    setAccessLevel: async () => {},
   };
-  try {
-    const domains = await withTimeout(emailService.getDomains(service), `${service} getDomains`);
-    result.domains = `${domains.length} (${domains.slice(0, 2).join(', ')}${domains.length > 2 ? '…' : ''})`;
+};
+Object.assign(globalThis, {
+  chrome: {
+    storage: {
+      local: memoryArea(),
+      session: memoryArea(),
+      onChanged: { addListener() {}, removeListener() {} },
+    },
+    runtime: { getManifest: () => ({ version: '1.1.5' }) },
+  },
+});
 
-    const prefix = `probe${Date.now().toString(36)}`;
-    const account = await withTimeout(
-      emailService.generateEmail({ service, prefix }),
-      `${service} generateEmail`
-    );
-    result.generated = account.fullEmail;
+type Adapter = {
+  create: (prefix: string, signal: AbortSignal) => Promise<EmailAccount>;
+  inbox: (account: EmailAccount, signal: AbortSignal) => Promise<Email[]>;
+};
 
-    const messages = await withTimeout(
-      emailService.checkInbox(account),
-      `${service} checkInbox`
-    );
-    result.inbox = `${messages.length} msg(s)`;
-
-    // If mail arrived (unlikely on fresh inbox), verify full-body read path.
-    if (messages.length > 0 && messages[0]) {
-      const full = await withTimeout(
-        emailService.readEmail(messages[0].id, account),
-        `${service} readEmail`
-      );
-      result.inbox += `, read ok (${(full.body || '').length} chars)`;
+async function getAdapter(service: EmailService): Promise<Adapter> {
+  switch (service) {
+    case 'driftz': {
+      const { driftzService: adapter } =
+        await import('../src/services/emailServices/driftzService');
+      return {
+        create: (_prefix, signal) => adapter.createAccount(signal),
+        inbox: (account, signal) => adapter.getMessages(account.fullEmail, signal),
+      };
     }
-
-    result.ok = true;
-  } catch (error) {
-    result.error = error instanceof Error ? error.message.slice(0, 160) : String(error);
+    case 'catchmail': {
+      const { catchmailService: adapter } =
+        await import('../src/services/emailServices/catchmailService');
+      return {
+        create: (prefix, signal) => adapter.createAccount(prefix, signal),
+        inbox: (account, signal) => adapter.getMessages(account.fullEmail, signal),
+      };
+    }
+    case 'throwawaymail': {
+      const { throwawaymailService: adapter } =
+        await import('../src/services/emailServices/throwawaymailService');
+      return {
+        create: (prefix, signal) => adapter.createAccount(prefix, signal),
+        inbox: (account, signal) => adapter.getMessages(account, signal),
+      };
+    }
+    case 'mailtm': {
+      const { mailTmService: adapter } =
+        await import('../src/services/emailServices/mailTmService');
+      return {
+        create: (_prefix, signal) => adapter.createAccount(undefined, undefined, signal),
+        inbox: (_account, signal) => adapter.getMessages(signal),
+      };
+    }
+    case 'mailgw': {
+      const { mailGwService: adapter } =
+        await import('../src/services/emailServices/mailGwService');
+      return {
+        create: (_prefix, signal) => adapter.createAccount(undefined, undefined, signal),
+        inbox: (_account, signal) => adapter.getMessages(signal),
+      };
+    }
+    case 'tempmailplus': {
+      const { tempmailPlusService: adapter } =
+        await import('../src/services/emailServices/tempmailPlusService');
+      return {
+        create: (prefix, signal) => adapter.createAccount(prefix, signal),
+        inbox: (account, signal) => adapter.getMessages(account.fullEmail, signal),
+      };
+    }
+    case 'maildrop': {
+      const { maildropService: adapter } =
+        await import('../src/services/emailServices/maildropService');
+      return {
+        create: (prefix, signal) => adapter.createAccount(prefix, signal),
+        inbox: (account, signal) => adapter.getMessages(account, signal),
+      };
+    }
+    case 'guerrilla': {
+      const { guerrillaMailService: adapter } =
+        await import('../src/services/emailServices/guerrillaMailService');
+      return {
+        create: (_prefix, signal) => adapter.createAccount(signal),
+        inbox: (account, signal) => adapter.getMessages(account.token, signal),
+      };
+    }
+    case 'yopmail': {
+      const { yopmailService: adapter } =
+        await import('../src/services/emailServices/yopmailService');
+      return {
+        create: (prefix, signal) => adapter.createAccount(prefix, signal),
+        inbox: (account, signal) => adapter.getMessages(account.fullEmail, signal),
+      };
+    }
+    default:
+      throw new Error('This provider needs a configured integration and is not probed.');
   }
-  result.latencyMs = Date.now() - started;
-  return result;
 }
 
 async function main(): Promise<void> {
-  const emailService = new EmailServiceAggregator();
-  const results: ProbeResult[] = [];
-
-  for (const service of [...HEALTHY_TIER, ...LEGACY_TIER]) {
-    process.stdout.write(`probing ${service}… `);
-    const result = await probeService(emailService, service, HEALTHY_TIER.includes(service) ? 'healthy' : 'legacy');
+  const args = process.argv.slice(2);
+  const index = args.indexOf('--provider');
+  const requested = index >= 0 ? args[index + 1] : null;
+  const providers: ReadonlyArray<{ value: EmailService }> =
+    requested === 'yopmail'
+      ? [{ value: 'yopmail' }]
+      : TEMP_EMAIL_PROVIDER_OPTIONS.filter(
+          ({ value }) => value !== 'custom' && (!requested || value === requested)
+        );
+  if (providers.length === 0 || (index >= 0 && !requested))
+    throw new Error('Choose a supported provider from the extension settings.');
+  const results: Record<string, unknown>[] = [];
+  for (const { value: service } of providers) {
+    const start = Date.now();
+    const result: Record<string, unknown> = {
+      provider: service,
+      availability: 'failed',
+      generation: 'not run',
+      inbox: 'not run',
+      delivery: 'unverified',
+    };
+    try {
+      result.availability = await checkProviderAvailability(service);
+      if (args.includes('--create-inboxes')) {
+        const adapter = await getAdapter(service);
+        const account = await runBoundedProviderOperation(
+          (signal) => adapter.create('gf-probe-' + randomBytes(10).toString('hex'), signal),
+          undefined,
+          25_000
+        );
+        if (account.service !== service || !account.fullEmail.includes('@'))
+          throw new Error('Adapter returned the wrong provider or an invalid address.');
+        result.generation = 'requested provider';
+        result.domain = account.domain;
+        const messages = await runBoundedProviderOperation(
+          (signal) => adapter.inbox(account, signal),
+          undefined,
+          25_000
+        );
+        if (!Array.isArray(messages)) throw new Error('Adapter returned an invalid inbox.');
+        result.inbox = `${messages.length} message(s); delivery still unverified`;
+      }
+    } catch (error) {
+      result.error = error instanceof Error ? error.message.slice(0, 180) : 'Provider check failed';
+      process.exitCode = 1;
+    }
+    result.elapsedMs = Date.now() - start;
     results.push(result);
-    console.log(result.ok ? `OK (${result.latencyMs}ms)` : `FAIL: ${result.error}`);
-    // Be polite to free APIs.
-    await new Promise((r) => setTimeout(r, 1000));
   }
-
-  console.log('\n ─── Live provider report ───');
+  console.table(results);
   console.log(
-    'service'.padEnd(15) +
-      'tier'.padEnd(9) +
-      'domains'.padEnd(34) +
-      'generated'.padEnd(42) +
-      'inbox'.padEnd(24) +
-      'latency'
+    'These checks measure API/adapter reachability only. Receipt needs a separately authorized sent-message test.'
   );
-  for (const r of results) {
-    console.log(
-      `${r.ok ? '✅' : '❌'} ${r.service.padEnd(12)}${r.tier.padEnd(9)}${r.domains.padEnd(34)}${r.generated.padEnd(42)}${r.inbox.padEnd(24)}${r.latencyMs}ms` +
-        (r.error ? `  ← ${r.error}` : '')
-    );
-  }
-
-  const healthyFailed = results.filter((r) => r.tier === 'healthy' && !r.ok);
-  const legacyFailed = results.filter((r) => r.tier === 'legacy' && !r.ok);
-  console.log(
-    `\nHealthy tier: ${HEALTHY_TIER.length - healthyFailed.length}/${HEALTHY_TIER.length} operational` +
-      (healthyFailed.length > 0 ? ` (FAILED: ${healthyFailed.map((r) => r.service).join(', ')})` : '')
-  );
-  console.log(
-    `Legacy tier: ${LEGACY_TIER.length - legacyFailed.length}/${LEGACY_TIER.length} operational` +
-      (legacyFailed.length > 0 ? ` (failed as expected-tolerant: ${legacyFailed.map((r) => r.service).join(', ')})` : '')
-  );
-
-  if (healthyFailed.length > 0) {
-    process.exit(1);
-  }
 }
 
-main().catch((e) => {
-  console.error('Probe crashed:', e);
-  process.exit(2);
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : 'Provider probe failed');
+  process.exitCode = 2;
 });

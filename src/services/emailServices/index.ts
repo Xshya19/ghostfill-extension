@@ -39,7 +39,13 @@ import { mailinatorService } from './mailinatorService';
 import { mailnesiaService } from './mailnesiaService';
 import { mailTmService } from './mailTmService';
 import { openinboxService } from './openinboxService';
+import { checkProviderAvailability } from './providerAvailability';
 import { providerHealth } from './providerHealthManager';
+import {
+  GENERATION_PROVIDER_PRIORITY,
+  filterSelectableEmailProviders,
+  isSelectableEmailProvider,
+} from './providerRegistry';
 import { tempMailLolService } from './tempMailLolService';
 import { tempmailPlusService } from './tempmailPlusService';
 import { tempMailService } from './tempMailService';
@@ -56,7 +62,7 @@ class EmailServiceAggregator {
    * backend the aggregator can still serve.
    *
    * Deprecated backends (tempmail/1secmail, mailcx, dropmail, mailboxtemp,
-   * openinbox, evilmail, getnada, tempmaillol, mailinator, mailnesia) keep
+   * openinbox, evilmail, getnada, tempmaillol, mailinator, mailnesia, yopmail) keep
    * their create/check/read/getDomains passthroughs below so previously
    * stored accounts keep working, but they are NEVER health-checked, NEVER
    * defaults, and NEVER in the preferred-service picker. In particular do
@@ -66,18 +72,7 @@ class EmailServiceAggregator {
    * Health checks always iterate this full list (never reassign-then-
    * iterate) so a provider that recovers is re-admitted on the next check.
    */
-  private static readonly ALL_SERVICES: EmailService[] = [
-    'catchmail',
-    'throwawaymail',
-    'tempmailplus',
-    'mailtm',
-    'mailgw',
-    'guerrilla',
-    'maildrop',
-    'driftz',
-    'yopmail',
-    'custom',
-  ];
+  private static readonly ALL_SERVICES: readonly EmailService[] = GENERATION_PROVIDER_PRIORITY;
 
   private availableServices: EmailService[] = [...EmailServiceAggregator.ALL_SERVICES];
   private healthCheckTimestamp: number = 0;
@@ -85,8 +80,9 @@ class EmailServiceAggregator {
 
   // Mutexes to prevent race conditions during concurrent operations
   private generateEmailPromise: Promise<EmailAccount> | null = null;
-  private getCurrentEmailPromise: Promise<EmailAccount | null> | null = null;
+  private readonly getCurrentEmailPromises = new Map<boolean, Promise<EmailAccount | null>>();
   private readonly inboxCheckPromises = new Map<string, Promise<Email[]>>();
+  private readonly emailReadPromises = new Map<string, Promise<Email>>();
   private inboxSessionGeneration = 0;
   private healthCheckPromise: Promise<void> | null = null;
 
@@ -119,11 +115,23 @@ class EmailServiceAggregator {
         'timestamp' in healthState &&
         'availableServices' in healthState
       ) {
-        const state = healthState as { timestamp: number; availableServices: EmailService[] };
+        const state = healthState as {
+          checkVersion?: unknown;
+          timestamp: unknown;
+          availableServices: unknown;
+        };
         // Only use persisted state if less than 1 hour old
-        if (Date.now() - state.timestamp < 60 * 60 * 1000) {
+        if (
+          state.checkVersion === 1 &&
+          typeof state.timestamp === 'number' &&
+          Number.isFinite(state.timestamp) &&
+          state.timestamp > 0 &&
+          state.timestamp <= Date.now() &&
+          Date.now() - state.timestamp < 60 * 60 * 1000 &&
+          Array.isArray(state.availableServices)
+        ) {
           this.healthCheckTimestamp = state.timestamp;
-          this.availableServices = state.availableServices;
+          this.availableServices = filterSelectableEmailProviders(state.availableServices);
           log.debug('Loaded persisted health state', {
             available: this.availableServices,
             age: Math.round((Date.now() - state.timestamp) / 60000) + 'm',
@@ -143,6 +151,7 @@ class EmailServiceAggregator {
   private async persistHealthState(): Promise<void> {
     try {
       await storageService.set('emailServiceHealth', {
+        checkVersion: 1,
         timestamp: this.healthCheckTimestamp,
         availableServices: this.availableServices as EmailService[],
       });
@@ -156,8 +165,19 @@ class EmailServiceAggregator {
    * Get the best available provider using health scoring
    * Uses ProviderHealthManager for intelligent selection
    */
-  private getBestProvider(exclude?: EmailService): EmailService | null {
-    return this.healthManager.getBestProvider(exclude ? [exclude] : []);
+  private getBestProvider(exclude: readonly EmailService[] = []): EmailService | null {
+    const candidates = this.availableServices.filter(
+      (service) =>
+        isSelectableEmailProvider(service) &&
+        !exclude.includes(service) &&
+        this.healthManager.isAvailable(service)
+    );
+    const excluded = EmailServiceAggregator.ALL_SERVICES.filter(
+      (service) => !candidates.includes(service)
+    );
+    const best = this.healthManager.getBestProvider([...new Set([...exclude, ...excluded])]);
+    // Also guard injected/older scorers that ignore exclusions.
+    return best && candidates.includes(best) ? best : (candidates[0] ?? null);
   }
 
   /**
@@ -193,29 +213,39 @@ class EmailServiceAggregator {
     }
 
     log.info('Performing email service health check...');
+    const settings = await storageService.getSettings();
+    const unchecked: EmailService[] = [];
 
     // Parallel checks — always against the FULL registry so a provider that
     // failed once can be re-tested (and re-admitted) on the next check.
     const checks = EmailServiceAggregator.ALL_SERVICES.map(async (service) => {
       if (service === 'custom') {
-        return 'custom';
-      } // Always assume custom is "healthy" if configured (checked later)
+        if (!settings.customDomain || !settings.customDomainUrl) {
+          return null;
+        }
+        unchecked.push(service);
+        return service;
+      }
       if (!this.healthManager.isAvailable(service)) {
         return null;
       } // Skip unavailable providers
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 7000);
+      const started = performance.now();
       try {
-        // Try to get domains as a lightweight "ping" with a 7-second timeout
-        const domains = await this.getDomains(service, controller.signal);
-        clearTimeout(timeoutId);
-        if (domains && domains.length > 0) {
-          return service;
+        const availability = await checkProviderAvailability(service, controller.signal);
+        if (availability === 'unchecked') {
+          unchecked.push(service);
+        } else {
+          this.healthManager.recordSuccess(service, performance.now() - started);
         }
+        return service;
       } catch (e) {
-        clearTimeout(timeoutId);
+        this.healthManager.recordFailure(service, e instanceof Error ? e : new Error(String(e)));
         log.debug(`Health check failed or timed out for ${service}`, e);
+      } finally {
+        clearTimeout(timeoutId);
       }
       return null;
     });
@@ -223,28 +253,18 @@ class EmailServiceAggregator {
     const results = await Promise.all(checks);
     this.availableServices = results.filter((s): s is EmailService => s !== null);
 
-    // Always ensure we have at least one fallback
-    if (this.availableServices.length === 0) {
-      this.availableServices = [
-        'catchmail',
-        'throwawaymail',
-        'mailtm',
-        'tempmailplus',
-        'maildrop',
-        'guerrilla',
-        'driftz',
-        'yopmail',
-        'mailgw',
-      ];
-      log.warn('All health checks failed, resetting to defaults');
-    }
+    // A failed check is not repaired by putting the failed provider back in
+    // the fallback set. Explicit user requests can still retry a supported provider.
 
     this.healthCheckTimestamp = Date.now();
 
     // PERFORMANCE FIX: Persist health check results non-blocking
     this.persistHealthState().catch((e) => log.warn('Failed to persist health state', e));
 
-    log.info('Health check complete', { available: this.availableServices });
+    log.info('Provider availability check complete', {
+      eligible: this.availableServices,
+      unchecked,
+    });
   }
 
   /**
@@ -263,30 +283,36 @@ class EmailServiceAggregator {
       signal?: AbortSignal;
     } = {}
   ): Promise<EmailAccount> {
+    this.throwIfGenerationCancelled(options.signal);
     if (this.generateEmailPromise) {
       return this.generateEmailPromise;
     }
 
-    const now = Date.now();
-    const diff = this.GENERATION_COOLDOWN_MS - (now - this.lastGenerationTime);
-    if (diff > 0) {
-      // Coalesce rather than reject. A double-click on "generate" should simply
-      // wait out the remaining cooldown — throwing here surfaced a bogus
-      // "Rate limit: wait 0.1s before retry" error to the user for nothing.
-      await new Promise((resolve) =>
-        setTimeout(resolve, Math.min(diff, this.GENERATION_COOLDOWN_MS))
-      );
-    }
-    this.lastGenerationTime = Date.now();
+    const promise = (async () => {
+      const diff = this.GENERATION_COOLDOWN_MS - (Date.now() - this.lastGenerationTime);
+      if (diff > 0) {
+        // Reserve the shared generation before waiting, so rapid requests
+        // cannot all wake up and create separate accounts after the cooldown.
+        await this.waitForGenerationDelay(
+          Math.min(diff, this.GENERATION_COOLDOWN_MS),
+          options.signal
+        );
+      }
+      this.throwIfGenerationCancelled(options.signal);
+      this.lastGenerationTime = Date.now();
 
-    this.generateEmailPromise = (async () => {
-      // Ensure we have a list of healthy services
+      // Load admission before selection; a cached legacy list must not bypass
+      // the current supported registry on the first generation after a restart.
+      await this.loadHealthState();
+      this.throwIfGenerationCancelled(options.signal);
+      // Refresh availability in the background to keep first generation responsive.
       if (this.healthCheckTimestamp === 0) {
         // Run in background, don't block first call
         this.performHealthCheck().catch((err) => log.error('Background health check failed', err));
       }
 
       const settings = await storageService.getSettings();
+      this.throwIfGenerationCancelled(options.signal);
       // Use preferred if valid/healthy, otherwise pick best healthy
       let service = options.service || settings.preferredEmailService || 'driftz';
 
@@ -295,14 +321,33 @@ class EmailServiceAggregator {
         service = 'custom';
       }
 
+      if (!isSelectableEmailProvider(service)) {
+        const replacement = this.getBestProvider();
+        if (!replacement) {
+          throw new Error(
+            'No supported email provider is available. Choose another service or try again later.'
+          );
+        }
+        log.info('Requested provider is no longer offered for new inboxes', {
+          requested: service,
+          replacement,
+        });
+        service = replacement;
+      }
+
       // If preferred service is not in healthy list (and not explicitly requested by user via options), pick first healthy
       if (
         !options.service &&
         service !== 'custom' &&
-        !this.availableServices.includes(service) &&
-        this.availableServices.length > 0
+        (!this.availableServices.includes(service) || !this.healthManager.isAvailable(service))
       ) {
-        service = this.availableServices[0]!;
+        const replacement = this.getBestProvider();
+        if (!replacement) {
+          throw new Error(
+            'Email providers are temporarily unreachable. Check your connection or choose a service to retry.'
+          );
+        }
+        service = replacement;
         log.info(`Preferred service unavailable, switching to ${service}`);
       }
 
@@ -311,10 +356,13 @@ class EmailServiceAggregator {
 
       try {
         account = await this.createAccountWithService(service, options);
+        this.throwIfGenerationCancelled(options.signal);
         if (options.originUrl) {
           account.originUrl = options.originUrl;
         }
       } catch (error) {
+        // Cancellation belongs to the caller, not to provider health or fallback.
+        this.throwIfGenerationCancelled(options.signal);
         // Record failure for health tracking
         this.healthManager.recordFailure(service, error as Error);
         log.warn(`Failed to generate email with ${service}, executing fallback logic...`, error);
@@ -326,11 +374,14 @@ class EmailServiceAggregator {
       // Success path - store and return (use account.service, not the requested service)
       return this.finalizeEmailGeneration(account, account.service as EmailService, startTime);
     })();
+    this.generateEmailPromise = promise;
 
     try {
-      return await this.generateEmailPromise;
+      return await promise;
     } finally {
-      this.generateEmailPromise = null;
+      if (this.generateEmailPromise === promise) {
+        this.generateEmailPromise = null;
+      }
     }
   }
 
@@ -342,14 +393,16 @@ class EmailServiceAggregator {
     service: EmailService,
     options: { prefix?: string; domain?: string; signal?: AbortSignal }
   ): Promise<EmailAccount> {
+    this.throwIfGenerationCancelled(options.signal);
     // Fail fast so fallback providers engage quickly
     const TIMEOUT_MS = 12_000;
     const internalAbortController = new AbortController();
+    const onExternalAbort = () => internalAbortController.abort();
     if (options.signal) {
       if (options.signal.aborted) {
         internalAbortController.abort();
       } else {
-        options.signal.addEventListener('abort', () => internalAbortController.abort(), {
+        options.signal.addEventListener('abort', onExternalAbort, {
           once: true,
         });
       }
@@ -365,6 +418,7 @@ class EmailServiceAggregator {
         case 'throwawaymail':
           return await throwawaymailService.createAccount(options.prefix, signal);
         case 'maildrop':
+          await checkProviderAvailability(service, signal);
           return await maildropService.createAccount(options.prefix, signal);
         case 'mailgw':
           return await mailGwService.createAccount(options.prefix, undefined, signal);
@@ -382,6 +436,7 @@ class EmailServiceAggregator {
         case 'driftz':
           return await driftzService.createAccount(signal, options.domain);
         case 'catchmail':
+          await checkProviderAvailability(service, signal);
           return await catchmailService.createAccount(options.prefix, signal);
         case 'openinbox':
           return await openinboxService.createAccount(options.prefix, signal);
@@ -394,6 +449,7 @@ class EmailServiceAggregator {
         case 'tempmaillol':
           return await tempMailLolService.createAccount(options.prefix, signal);
         case 'tempmailplus':
+          await checkProviderAvailability(service, signal);
           return await tempmailPlusService.createAccount(options.prefix, signal);
         case 'mailcx':
           return await mailCxService.createAccount(options.prefix, signal);
@@ -415,7 +471,30 @@ class EmailServiceAggregator {
       }
     } finally {
       clearTimeout(timeoutId);
+      options.signal?.removeEventListener('abort', onExternalAbort);
     }
+  }
+
+  private throwIfGenerationCancelled(signal?: AbortSignal): void {
+    if (signal?.aborted) {
+      throw new DOMException('Email generation cancelled', 'AbortError');
+    }
+  }
+
+  private waitForGenerationDelay(delay: number, signal?: AbortSignal): Promise<void> {
+    this.throwIfGenerationCancelled(signal);
+    return new Promise((resolve, reject) => {
+      const onAbort = () => {
+        clearTimeout(timeout);
+        signal?.removeEventListener('abort', onAbort);
+        reject(new DOMException('Email generation cancelled', 'AbortError'));
+      };
+      const timeout = setTimeout(() => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve();
+      }, delay);
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
   }
 
   /**
@@ -430,17 +509,8 @@ class EmailServiceAggregator {
     const maxRetries = 5;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
-      let nextProvider: EmailService | null = this.healthManager.getBestProvider(triedProviders);
-
-      // Registry split-brain guard: the health manager scores the FULL
-      // priority list (including demoted legacy backends), but fallback
-      // generation must stay inside ALL_SERVICES — otherwise a failure
-      // cascade resurrects demoted providers (1secmail et al) as "best".
-      if (nextProvider && !EmailServiceAggregator.ALL_SERVICES.includes(nextProvider)) {
-        triedProviders.push(nextProvider);
-        nextProvider =
-          EmailServiceAggregator.ALL_SERVICES.find((s) => !triedProviders.includes(s)) ?? null;
-      }
+      this.throwIfGenerationCancelled(options.signal);
+      const nextProvider = this.getBestProvider(triedProviders);
 
       if (!nextProvider) {
         const errorMsg = `All email services unavailable after ${maxRetries} attempts`;
@@ -455,17 +525,17 @@ class EmailServiceAggregator {
       log.info(
         `Retry ${attempt + 1}/${maxRetries}: Trying ${nextProvider} in ${Math.round(delay)}ms`
       );
-      await new Promise((resolve) => {
-        setTimeout(resolve, delay);
-      });
+      await this.waitForGenerationDelay(delay, options.signal);
 
       try {
         const account = await this.createAccountWithService(nextProvider, options);
+        this.throwIfGenerationCancelled(options.signal);
         if (options.originUrl) {
           account.originUrl = options.originUrl;
         }
         return this.finalizeEmailGeneration(account, account.service as EmailService, startTime);
       } catch (error) {
+        this.throwIfGenerationCancelled(options.signal);
         if ((error as Error).name !== 'AbortError') {
           this.healthManager.recordFailure(nextProvider, error as Error);
         }
@@ -547,11 +617,12 @@ class EmailServiceAggregator {
    * Get current active email
    */
   async getCurrentEmail(preventRegeneration = false): Promise<EmailAccount | null> {
-    if (this.getCurrentEmailPromise) {
-      return this.getCurrentEmailPromise;
+    const existing = this.getCurrentEmailPromises.get(preventRegeneration);
+    if (existing) {
+      return existing;
     }
 
-    this.getCurrentEmailPromise = (async () => {
+    const promise: Promise<EmailAccount | null> = (async () => {
       // Resolve the preference first, then only read the hot keys for the
       // active provider concurrently. Sequential storage reads used to add
       // one extension IPC round-trip per key on a cold service worker.
@@ -629,11 +700,14 @@ class EmailServiceAggregator {
 
       return email || null;
     })();
+    this.getCurrentEmailPromises.set(preventRegeneration, promise);
 
     try {
-      return await this.getCurrentEmailPromise;
+      return await promise;
     } finally {
-      this.getCurrentEmailPromise = null;
+      if (this.getCurrentEmailPromises.get(preventRegeneration) === promise) {
+        this.getCurrentEmailPromises.delete(preventRegeneration);
+      }
     }
   }
 
@@ -684,6 +758,10 @@ class EmailServiceAggregator {
   invalidateInboxSession(): void {
     this.inboxSessionGeneration++;
     this.inboxCheckPromises.clear();
+    this.getCurrentEmailPromises.clear();
+    this.emailReadPromises.clear();
+    driftzService.clearMessageCache();
+    catchmailService.clearMessageCache();
   }
 
   private async checkInboxInternal(account: EmailAccount, signal?: AbortSignal): Promise<Email[]> {
@@ -949,15 +1027,18 @@ class EmailServiceAggregator {
         from: getSenderSource(undefined, email.from),
       }));
 
-      // PERFORMANCE FIX: Efficient comparison using ID concatenation
+      // Compare fields directly instead of serializing bodies. Header-only
+      // comparisons miss a body recovered after a failed hydration request.
       const slicedSafeEmails = safeEmails.slice(0, 50);
       const cachedInbox = (await storageService.get('inbox')) || [];
-      const inboxHash = (list: Email[]) =>
-        JSON.stringify(list.map((e) => [e.id, e.read, e.from, e.subject]));
 
       if (
         inboxSessionGeneration === this.inboxSessionGeneration &&
-        inboxHash(slicedSafeEmails) !== inboxHash(cachedInbox)
+        !this.inboxesEqual(
+          slicedSafeEmails,
+          cachedInbox,
+          account.service === 'driftz' || account.service === 'catchmail'
+        )
       ) {
         await storageService.set('inbox', slicedSafeEmails);
       } else if (inboxSessionGeneration !== this.inboxSessionGeneration) {
@@ -1019,6 +1100,70 @@ class EmailServiceAggregator {
    * Read a specific email
    */
   async readEmail(
+    emailId: string | number,
+    account: EmailAccount,
+    signal?: AbortSignal
+  ): Promise<Email> {
+    if (signal || !account?.fullEmail) {
+      return this.readEmailInternal(emailId, account, signal);
+    }
+    const key = JSON.stringify([this.getInboxCheckKey(account), String(emailId)]);
+    const existing = this.emailReadPromises.get(key);
+    if (existing) {
+      return existing;
+    }
+    const promise = this.readEmailInternal(emailId, account);
+    this.emailReadPromises.set(key, promise);
+    try {
+      return await promise;
+    } finally {
+      if (this.emailReadPromises.get(key) === promise) {
+        this.emailReadPromises.delete(key);
+      }
+    }
+  }
+
+  private inboxesEqual(next: Email[], previous: unknown, compareDates: boolean): boolean {
+    if (!Array.isArray(previous) || next.length !== previous.length) {
+      return false;
+    }
+    const fields = [
+      'id',
+      'from',
+      'to',
+      'subject',
+      'body',
+      'snippet',
+      'htmlBody',
+      'textBody',
+      'read',
+      'otpExtracted',
+    ] as const;
+    return next.every((email, index) => {
+      const cached = previous[index] as Email | undefined;
+      return (
+        !!cached &&
+        // Other adapters retain their previous date-only behavior: some assign
+        // the current time when metadata is missing, so that is not a change.
+        (!compareDates || email.date === cached.date) &&
+        fields.every((field) => email[field] === cached[field]) &&
+        Array.isArray(cached.attachments) &&
+        email.attachments.length === cached.attachments.length &&
+        email.attachments.every((attachment, attachmentIndex) => {
+          const old = cached.attachments[attachmentIndex]!;
+          return (
+            old &&
+            attachment.filename === old.filename &&
+            attachment.contentType === old.contentType &&
+            attachment.size === old.size &&
+            attachment.url === old.url
+          );
+        })
+      );
+    });
+  }
+
+  private async readEmailInternal(
     emailId: string | number,
     account: EmailAccount,
     signal?: AbortSignal

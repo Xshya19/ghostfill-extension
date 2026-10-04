@@ -6,10 +6,11 @@ import { getSenderSource } from '../../utils/emailIdentity';
 import { getRandomInt, getRandomString } from '../../utils/encryption';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
+import { runBoundedProviderOperation } from './providerOperations';
 
 const log = createLogger('MailGwService');
 
-class MailGwService {
+export class MailGwService {
   private baseUrl = API.MAIL_GW.BASE_URL;
   private token: string | null = null;
   private tokenExpiry: number = 0;
@@ -117,31 +118,32 @@ class MailGwService {
    * Get available domains
    */
   async getDomains(signal?: AbortSignal): Promise<string[]> {
-    const fallbackDomains = ['exdonuts.com'];
     try {
-      const options: RequestInit & { timeout?: number } = {
-        timeout: 4000,
-      };
-      if (signal) {
-        options.signal = signal;
-      }
-      const response = await this.fetchWithRetry(
-        `${this.baseUrl}${API.MAIL_GW.ENDPOINTS.DOMAINS}`,
-        options,
-        1 // Only 1 attempt for domains fetch
+      const data = await runBoundedProviderOperation(
+        async (boundedSignal) => {
+          const response = await this.fetchWithRetry(
+            `${this.baseUrl}${API.MAIL_GW.ENDPOINTS.DOMAINS}`,
+            { signal: boundedSignal, timeout: 4000, headers: { Accept: 'application/ld+json' } },
+            1
+          );
+          if (!response.ok) {
+            throw new Error(`Mail.gw domains: HTTP error ${response.status}`);
+          }
+          return response.json();
+        },
+        signal,
+        4000
       );
-
-      if (!response.ok) {
-        log.warn(`Failed to fetch domains (HTTP ${response.status}), using fallback`);
-        return fallbackDomains;
-      }
-
-      const data = await response.json();
-      const domains: MailTmDomain[] = data['hydra:member'] || [];
-
-      const activeDomains = domains.filter((d) => d.isActive && !d.isPrivate).map((d) => d.domain);
-
-      return activeDomains.length > 0 ? activeDomains : fallbackDomains;
+      const domains: MailTmDomain[] = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.['hydra:member'])
+          ? data['hydra:member']
+          : [];
+      return domains
+        .filter(
+          (d) => d && d.isActive === true && d.isPrivate !== true && typeof d.domain === 'string'
+        )
+        .map((d) => d.domain);
     } catch (error) {
       if (
         error instanceof Error &&
@@ -149,11 +151,14 @@ class MailGwService {
           error.message.includes('Aborted') ||
           error.message.includes('timed out'))
       ) {
-        log.debug('Failed to fetch Mail.gw domains due to abort/timeout, using fallback');
+        log.debug('Mail.gw domain check was aborted or timed out');
       } else {
-        log.warn('Failed to fetch Mail.gw domains, using fallback', error);
+        log.warn('Failed to fetch current Mail.gw domains', error);
       }
-      return fallbackDomains;
+      if (signal?.aborted) {
+        throw error;
+      }
+      return [];
     }
   }
 
@@ -390,7 +395,7 @@ class MailGwService {
         }
 
         const data = await response.json();
-        const messages: MailTmMessage[] = data['hydra:member'] || [];
+        const messages: MailTmMessage[] = Array.isArray(data) ? data : data['hydra:member'] || [];
 
         // Fetch full body for first 5 messages
         const recentMessages = messages.slice(0, 5);
@@ -508,9 +513,10 @@ class MailGwService {
     const rawBody = includeBody ? msg.text || msg.intro || '' : msg.intro || '';
     const bodyStr = contentToString(rawBody);
     const textStr = contentToString(msg.text || rawBody);
-    const htmlStr = includeBody && msg.html
-      ? contentToString(Array.isArray(msg.html) ? msg.html.join('') : msg.html)
-      : '';
+    const htmlStr =
+      includeBody && msg.html
+        ? contentToString(Array.isArray(msg.html) ? msg.html.join('') : msg.html)
+        : '';
 
     const email: Email = {
       id: String(msg.id),

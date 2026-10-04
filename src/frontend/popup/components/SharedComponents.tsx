@@ -40,7 +40,10 @@ import ghostLogoImg from '../../../assets/icons/icon128.png';
 import notionLogoImg from '../../../assets/icons/notion.png';
 import qwenLogoImg from '../../../assets/icons/qwen.png';
 
-import { scoreActivationLink, SELECT_MIN_QUALITY } from '../../../services/extraction/activationLinkGuard';
+import {
+  scoreActivationLink,
+  SELECT_MIN_QUALITY,
+} from '../../../services/extraction/activationLinkGuard';
 import {
   extractExplicitVerificationCode,
   isSubjectDomainToken,
@@ -513,37 +516,43 @@ const InboxTab: React.FC<InboxTabProps> = ({
             const content = msg.htmlBody || msg.body || msg.snippet;
             const senderLabel = getSenderLabel(senderSource, msg.subject, null, content);
             return (
-            <button
-              type="button"
-              key={msg.id}
-              className={`inbox-item ${msg.isUnread ? 'alias-inbox-item--unread' : ''}`}
-              onClick={() => onOpenMessage(msg)}
-              disabled={openingMessageId === msg.id}
-              aria-label={`${msg.isUnread ? 'Open unread email' : 'Open email'} from ${senderLabel}: ${msg.subject}`}
-              aria-busy={openingMessageId === msg.id}
-            >
-              <EmailAvatar
-                from={senderSource}
-                subject={msg.subject}
-                content={content}
-                className="inbox-item-avatar"
-              />
-              <span className="inbox-item-content">
-                <span className="inbox-item-header">
-                  <span className="inbox-item-from truncate">{senderLabel}</span>
-                  <span className="inbox-item-date">
-                    <Clock size={10} />
-                    {msg.dateFormatted || formatInboxRelativeDate(new Date(msg.date).getTime())}
+              <button
+                type="button"
+                key={msg.id}
+                className={`inbox-item ${msg.isUnread ? 'alias-inbox-item--unread' : ''}`}
+                onClick={() => onOpenMessage(msg)}
+                disabled={openingMessageId === msg.id}
+                aria-label={`${msg.isUnread ? 'Open unread email' : 'Open email'} from ${senderLabel}: ${msg.subject}`}
+                aria-busy={openingMessageId === msg.id}
+              >
+                <EmailAvatar
+                  from={senderSource}
+                  subject={msg.subject}
+                  content={content}
+                  className="inbox-item-avatar"
+                />
+                <span className="inbox-item-content">
+                  <span className="inbox-item-header">
+                    <span className="inbox-item-from truncate">{senderLabel}</span>
+                    <span className="inbox-item-date">
+                      <Clock size={10} />
+                      {msg.dateFormatted || formatInboxRelativeDate(new Date(msg.date).getTime())}
+                    </span>
+                  </span>
+                  <span className="inbox-item-subject truncate">
+                    {msg.subject || '(No subject)'}
                   </span>
                 </span>
-                <span className="inbox-item-subject truncate">{msg.subject || '(No subject)'}</span>
-              </span>
-              {openingMessageId === msg.id ? (
-                <RefreshCw size={14} className="inbox-item-open-chevron spin" aria-hidden="true" />
-              ) : (
-                <ChevronRight size={14} className="inbox-item-open-chevron" aria-hidden="true" />
-              )}
-            </button>
+                {openingMessageId === msg.id ? (
+                  <RefreshCw
+                    size={14}
+                    className="inbox-item-open-chevron spin"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <ChevronRight size={14} className="inbox-item-open-chevron" aria-hidden="true" />
+                )}
+              </button>
             );
           })}
         </div>
@@ -1104,6 +1113,9 @@ const formatDate = (msg: EmailViewerMessage): string => {
     return msg.date;
   }
   if (typeof msg.date === 'number') {
+    if (!Number.isFinite(msg.date) || msg.date <= 0) {
+      return 'Date unavailable';
+    }
     try {
       return new Date(msg.date).toLocaleString();
     } catch {
@@ -1114,6 +1126,9 @@ const formatDate = (msg: EmailViewerMessage): string => {
 };
 
 const formatCompactDate = (msg: EmailViewerMessage): string => {
+  if (typeof msg.date === 'number' && (!Number.isFinite(msg.date) || msg.date <= 0)) {
+    return formatDate(msg);
+  }
   const raw = msg.date ?? msg.dateFormatted;
   const parsed = typeof raw === 'number' ? new Date(raw) : new Date(String(raw ?? ''));
   if (Number.isNaN(parsed.getTime())) {
@@ -1442,8 +1457,14 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
   }, [isOpen, clearIframeKeyHandler]);
 
   const rawSender = getSenderSource(message?.fromName, message?.from || '');
-  const sender = message ? getSenderLabel(rawSender, message.subject, message.link,
-    rawHtml || contentToString(message.textBody || message.body || message.snippet)) : '';
+  const sender = message
+    ? getSenderLabel(
+        rawSender,
+        message.subject,
+        message.link,
+        rawHtml || contentToString(message.textBody || message.body || message.snippet)
+      )
+    : '';
   const avatarSource = getSenderSource(message?.fromName, message?.from || sender);
   const dateText = message ? formatDate(message) : '';
   const compactDateText = message ? formatCompactDate(message) : '';
@@ -1673,10 +1694,13 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
       /\b(?:enter|use|type|copy)\s+(\d{6,8})\s+to\s+(?:verify|confirm|sign\s*in|log\s*in|authenticate)\b/i.exec(
         textWithoutUrls
       ) || /^\s*(\d{6,8})\s*$/m.exec(textWithoutUrls);
-    if (codeMatch?.[1] && hasVerificationCodeEvidence(codeMatch[1], message?.subject || '', text, rawHtml)) {
+    if (
+      codeMatch?.[1] &&
+      hasVerificationCodeEvidence(codeMatch[1], message?.subject || '', text, rawHtml)
+    ) {
       otp = codeMatch[1];
     }
-    const candidates = extractUrls(`${rawHtml}\n${text}\n${message?.link || ''}`).filter(url => {
+    const candidates = extractUrls(`${rawHtml}\n${text}\n${message?.link || ''}`).filter((url) => {
       const gate = scoreActivationLink(url, getAnchorInfo(rawHtml, url).anchorText);
       return !gate.hardReject && gate.cls !== 'unknown' && gate.quality >= SELECT_MIN_QUALITY;
     });
@@ -1688,9 +1712,16 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
 
   const explicitCode = extractExplicitVerificationCode(plainTextBody || snippet);
   const backendCode =
-    message?.otp && !isSubjectDomainToken(message.otp, message.subject || '') &&
-    hasVerificationCodeEvidence(message.otp, message.subject || '', plainTextBody || snippet, rawHtml)
-      ? message.otp : null;
+    message?.otp &&
+    !isSubjectDomainToken(message.otp, message.subject || '') &&
+    hasVerificationCodeEvidence(
+      message.otp,
+      message.subject || '',
+      plainTextBody || snippet,
+      rawHtml
+    )
+      ? message.otp
+      : null;
   const effectiveOtp = explicitCode || backendCode || fallbackDetection.otp || null;
   const effectiveLink = fallbackDetection.link;
 
@@ -2290,7 +2321,7 @@ export interface InboxListProps {
 }
 
 const formatInboxRelativeDate = (timestamp: number): string =>
-  Number.isFinite(timestamp) ? formatRelativeTime(timestamp) : 'Date unavailable';
+  Number.isFinite(timestamp) && timestamp > 0 ? formatRelativeTime(timestamp) : 'Date unavailable';
 
 const InboxListComponent: React.FC<InboxListProps> = ({
   preferredEmailType,
@@ -2437,8 +2468,12 @@ const InboxListComponent: React.FC<InboxListProps> = ({
                 emailItem.activationLink && isWebUrl(emailItem.activationLink)
               );
               const senderSource = getSenderSource(emailItem.from, emailItem.senderEmail);
-              const senderLabel = getSenderLabel(senderSource, emailItem.subject, emailItem.activationLink,
-                emailItem.htmlBody || emailItem.textBody || emailItem.body || emailItem.snippet);
+              const senderLabel = getSenderLabel(
+                senderSource,
+                emailItem.subject,
+                emailItem.activationLink,
+                emailItem.htmlBody || emailItem.textBody || emailItem.body || emailItem.snippet
+              );
               return (
                 <div key={emailItem.id} className="inbox-item" data-unread={!emailItem.read}>
                   <EmailAvatar
@@ -2459,9 +2494,7 @@ const InboxListComponent: React.FC<InboxListProps> = ({
                         {!emailItem.read && (
                           <span className="inbox-unread-dot" aria-hidden="true" />
                         )}
-                        <span className="inbox-sender-name">
-                          {senderLabel}
-                        </span>
+                        <span className="inbox-sender-name">{senderLabel}</span>
                       </span>
                       <span className="inbox-item-date">
                         {formatInboxRelativeDate(new Date(emailItem.date).getTime())}

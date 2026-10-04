@@ -3,7 +3,15 @@
 // SECURITY HARDENED: Session-based storage for sensitive data
 // ═══════════════════════════════════════════════════════════════════
 
-import { EmailAccount, EmailHistoryItem, Email, EmailService, AliasHistoryItem, GmailProfile, GmailMessage } from './email.types';
+import {
+  EmailAccount,
+  EmailHistoryItem,
+  Email,
+  EmailService,
+  AliasHistoryItem,
+  GmailProfile,
+  GmailMessage,
+} from './email.types';
 import { IdentityProfile } from './form.types';
 import { PasswordOptions, PasswordHistoryItem } from './password.types';
 
@@ -212,6 +220,7 @@ export interface StorageSchema {
 
   // Email service health state (persisted health check results)
   emailServiceHealth?: {
+    checkVersion?: 1;
     timestamp: number;
     availableServices: EmailService[];
   };

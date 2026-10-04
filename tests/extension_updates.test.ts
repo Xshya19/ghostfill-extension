@@ -3,6 +3,20 @@ import { flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('../src/utils/automaticUpdateState', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/utils/automaticUpdateState')>()),
+  readAutomaticUpdateState: vi.fn(async () => ({
+    schemaVersion: 1,
+    autoUpdateEnabled: false,
+    taskName: null,
+    installedVersion: '1.0.0',
+    updatedAt: null,
+    lastCheckedAt: null,
+    updateId: null,
+    source: 'windows-helper',
+  })),
+}));
+
 import { AboutTab } from '../src/frontend/options/components/OptionsTabs';
 import { checkExtensionUpdate, EXTENSION_RELEASES_URL } from '../src/utils/extensionUpdate';
 

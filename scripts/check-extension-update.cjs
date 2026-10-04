@@ -61,6 +61,7 @@ function reset() {
   fs.writeFileSync(path.join(install, 'manifest.json'), JSON.stringify(manifest));
   for (const name of files) fs.writeFileSync(path.join(install, name), 'old');
   fs.writeFileSync(path.join(install, 'local-marker.txt'), 'keep in backup');
+  fs.rmSync(path.join(install, 'ghostfill-update-state.json'), { force: true });
 }
 function checksum() {
   const digest = crypto.createHash('sha256').update(fs.readFileSync(packagePath)).digest('hex');
@@ -81,7 +82,14 @@ async function zip(overrides = {}, omit = null) {
     archive.file(path.join(__dirname, '..', 'Update GhostFill.cmd'), {
       name: 'Update GhostFill.cmd',
     });
-    archive.file(updater, { name: 'scripts/update-extension.ps1' });
+    for (const helper of [
+      'update-extension.ps1',
+      'auto-update-common.ps1',
+      'auto-update-extension.ps1',
+      'setup-auto-updates.ps1',
+    ]) {
+      archive.file(path.join(__dirname, helper), { name: `scripts/${helper}` });
+    }
     archive.finalize();
   });
   checksum();
@@ -99,6 +107,14 @@ async function main() {
   assert.equal(applied.status, 0, applied.stdout + applied.stderr);
   assert.equal(JSON.parse(fs.readFileSync(path.join(install, 'manifest.json'))).version, '2.0.1');
   assert.equal(fs.readFileSync(path.join(install, 'background.js'), 'utf8'), 'new');
+  const updateState = JSON.parse(
+    fs.readFileSync(path.join(install, 'ghostfill-update-state.json'), 'utf8')
+  );
+  assert.equal(updateState.schemaVersion, 1);
+  assert.equal(updateState.installedVersion, '2.0.1');
+  assert.equal(updateState.autoUpdateEnabled, false);
+  assert.match(updateState.updateId, /^[a-f0-9]{32}$/);
+  assert.ok(Number.isFinite(Date.parse(updateState.updatedAt)));
   const backup = fs.readdirSync(root).find((name) => name.startsWith('.ghostfill-backup-'));
   assert.ok(backup);
   assert.equal(

@@ -126,6 +126,13 @@ class SSEManager {
     if (!message || typeof message.type !== 'string') {
       return;
     }
+    if (message.accountId && message.accountId !== this.state.accountId) {
+      log.debug('Ignoring SSE relay update for a stale account session', {
+        eventAccountId: message.accountId,
+        activeAccountId: this.state.accountId,
+      });
+      return;
+    }
 
     switch (message.type) {
       case 'SSE_EMAIL_EVENT': {
@@ -181,7 +188,8 @@ class SSEManager {
   private async connectViaOffscreen(
     url: string,
     token: string,
-    accountId: string
+    accountId: string,
+    generation: number
   ): Promise<boolean> {
     if (this.offscreenUnavailable) {
       return false;
@@ -194,6 +202,9 @@ class SSEManager {
       }
 
       await ensureOffscreenDocument();
+      if (generation !== this.connectionGeneration) {
+        return false;
+      }
 
       const response = (await chrome.runtime.sendMessage({
         target: 'offscreen-doc',
@@ -203,7 +214,7 @@ class SSEManager {
         accountId,
       })) as { success?: boolean } | undefined;
 
-      if (!response?.success) {
+      if (generation !== this.connectionGeneration || !response?.success) {
         return false;
       }
 
@@ -215,6 +226,9 @@ class SSEManager {
       log.info('✅ SSE stream hosted in offscreen document');
       return true;
     } catch (e) {
+      if (generation !== this.connectionGeneration) {
+        return false;
+      }
       log.debug('Offscreen SSE unavailable — falling back to in-worker stream', e);
       this.offscreenUnavailable = true;
       return false;
@@ -226,6 +240,7 @@ class SSEManager {
    * Returns true if a healthy stream is already running there.
    */
   async syncWithOffscreen(): Promise<boolean> {
+    const generation = this.connectionGeneration;
     if (this.offscreenUnavailable || typeof chrome === 'undefined' || !chrome.offscreen) {
       return false;
     }
@@ -236,6 +251,10 @@ class SSEManager {
         type: 'SSE_STATUS',
       })) as { success?: boolean; connected?: boolean; accountId?: string } | undefined;
 
+      if (generation !== this.connectionGeneration) {
+        return false;
+      }
+
       if (status?.success && status.connected) {
         this.state.transport = 'offscreen';
         this.state.connected = true;
@@ -245,6 +264,10 @@ class SSEManager {
       }
     } catch {
       // No offscreen document listening — caller falls back.
+    }
+
+    if (generation !== this.connectionGeneration) {
+      return false;
     }
 
     if (this.state.transport === 'offscreen') {
@@ -311,8 +334,13 @@ class SSEManager {
 
     // Disconnect existing connection
     diag.step(flowId, 'sse', 'Disconnecting existing', '');
+    const reconnectAttempts =
+      this.state.accountId === account.id ? this.state.reconnectAttempts : 0;
     const generation = ++this.connectionGeneration;
     this.disconnect(false);
+    // A reconnect replaces its transport without resetting its retry budget.
+    // New accounts and explicit disconnects still begin a fresh retry cycle.
+    this.state.reconnectAttempts = reconnectAttempts;
 
     this.state.accountId = account.id;
 
@@ -320,6 +348,10 @@ class SSEManager {
       // Ensure we have a valid token
       diag.step(flowId, 'sse', 'Ensuring authenticated', '');
       await mailTmService.ensureAuthenticated?.();
+      if (generation !== this.connectionGeneration) {
+        diag.endFlow(flowId, 'sse', 'SSE Connect', false, 'Connection superseded');
+        return false;
+      }
 
       const token = mailTmService.getToken();
       if (!token) {
@@ -337,7 +369,7 @@ class SSEManager {
 
       // Prefer the offscreen relay — it is the only transport that survives
       // service-worker suspension, which is what caused missed OTP pushes.
-      const relayUp = await this.connectViaOffscreen(sseUrl, token, account.id);
+      const relayUp = await this.connectViaOffscreen(sseUrl, token, account.id, generation);
 
       if (generation !== this.connectionGeneration) {
         diag.endFlow(flowId, 'sse', 'SSE Connect', false, 'Connection superseded');
@@ -361,6 +393,10 @@ class SSEManager {
       diag.endFlow(flowId, 'sse', 'SSE Connect', true, 'Connected successfully');
       return true;
     } catch (error) {
+      if (generation !== this.connectionGeneration) {
+        diag.endFlow(flowId, 'sse', 'SSE Connect', false, 'Connection superseded');
+        return false;
+      }
       const errMsg = error instanceof Error ? error.message : String(error);
       diag.log('error', 'sse', 'SSE connection failed', errMsg, { error }, flowId, 4);
       log.error('Failed to connect to SSE', error);
@@ -375,6 +411,9 @@ class SSEManager {
    * (EventSource doesn't support custom headers)
    */
   private async connectWithAuth(url: string, token: string, generation: number): Promise<void> {
+    if (generation !== this.connectionGeneration) {
+      return;
+    }
     // Cancel any existing stream
     if (this.currentAbortController) {
       this.currentAbortController.abort();
@@ -391,6 +430,9 @@ class SSEManager {
         },
         signal: abortController.signal,
       });
+      if (generation !== this.connectionGeneration) {
+        return;
+      }
 
       if (!response.ok) {
         const status = response.status;
@@ -472,6 +514,9 @@ class SSEManager {
 
       while (!abortController.signal.aborted && generation === this.connectionGeneration) {
         const { done, value } = await reader.read();
+        if (generation !== this.connectionGeneration) {
+          return;
+        }
         if (done) {
           log.info('SSE stream ended');
           break;
@@ -496,6 +541,9 @@ class SSEManager {
       log.warn('SSE stream closed, reconnecting...');
 
       const currentEmail = await emailService.getCurrentEmail();
+      if (generation !== this.connectionGeneration) {
+        return;
+      }
       if (currentEmail && currentEmail.service === 'mailtm' && currentEmail.id) {
         this.scheduleReconnect(currentEmail);
       } else {
@@ -505,6 +553,10 @@ class SSEManager {
         });
       }
     } catch (error) {
+      if (generation !== this.connectionGeneration) {
+        log.debug('Ignoring stale SSE connection error after newer connection started');
+        return;
+      }
       this.state.connected = false;
       this.state.streamReader = null;
 
@@ -514,11 +566,6 @@ class SSEManager {
             ? 'SSE connection aborted (intentional)'
             : 'SSE connection superseded'
         );
-        return;
-      }
-
-      if (generation !== this.connectionGeneration) {
-        log.debug('Ignoring stale SSE connection error after newer connection started');
         return;
       }
 
@@ -548,6 +595,9 @@ class SSEManager {
       }
 
       const currentEmail = await emailService.getCurrentEmail();
+      if (generation !== this.connectionGeneration) {
+        return;
+      }
       if (currentEmail && currentEmail.service === 'mailtm' && currentEmail.id) {
         this.scheduleReconnect(currentEmail);
       } else {

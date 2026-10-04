@@ -68,6 +68,14 @@ function validateDist() {
     'options.css',
     'offscreen.html',
     'offscreen.js',
+    'ghostfill-update-state.json',
+    'Update GhostFill.cmd',
+    'Enable Automatic Updates.cmd',
+    'Disable Automatic Updates.cmd',
+    'scripts/update-extension.ps1',
+    'scripts/auto-update-common.ps1',
+    'scripts/setup-auto-updates.ps1',
+    'scripts/auto-update-extension.ps1',
   ]);
 
   const manifestPath = path.join(DIST_DIR, 'manifest.json');
