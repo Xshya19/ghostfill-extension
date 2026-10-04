@@ -1,11 +1,13 @@
 param(
     [string]$PackagePath = '',
-    [string]$InstallDirectory = (Split-Path -Parent $PSScriptRoot)
+    [string]$InstallDirectory = (Split-Path -Parent $PSScriptRoot),
+    [switch]$Automatic
 )
 
 $ErrorActionPreference = 'Stop'
 $workRoot = $null
 $updateLock = $null
+. (Join-Path $PSScriptRoot 'auto-update-common.ps1')
 
 function Read-GhostFillManifest([string]$Directory) {
     $manifest = Get-Content -LiteralPath (Join-Path $Directory 'manifest.json') -Raw | ConvertFrom-Json
@@ -23,19 +25,33 @@ function Read-GhostFillManifest([string]$Directory) {
 }
 
 try {
-    $InstallDirectory = (Resolve-Path -LiteralPath $InstallDirectory).Path
-    if (Test-Path -LiteralPath (Join-Path $InstallDirectory 'dist/manifest.json')) {
-        $InstallDirectory = Join-Path $InstallDirectory 'dist'
-    }
-    if ((Get-Item -LiteralPath $InstallDirectory).Attributes -band [IO.FileAttributes]::ReparsePoint) {
-        throw 'Use the actual installed folder, rather than a folder link.'
-    }
+    $InstallDirectory = Resolve-GhostFillInstallDirectory $InstallDirectory
     $current = Read-GhostFillManifest $InstallDirectory
     $parent = Split-Path -Parent $InstallDirectory
-    $lockPath = Join-Path $parent ('.ghostfill-' + (Split-Path -Leaf $InstallDirectory) + '-update.lock')
-    try {
-        $updateLock = [IO.File]::Open($lockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
-    } catch { throw 'Another update is running, or this folder is not writable. Close the other updater and try again.' }
+    $updateLock = Open-GhostFillUpdateLock $InstallDirectory
+    # Re-read after acquiring the shared lock in case another updater completed
+    # between folder validation and lock acquisition.
+    $current = Read-GhostFillManifest $InstallDirectory
+    $state = Read-GhostFillUpdateState $InstallDirectory $current.version
+    if ($Automatic) {
+        if ($PackagePath) { throw 'Automatic checks use only the fixed stable GitHub release source.' }
+        if (-not $current.oauth2.client_id) { throw 'Automatic Windows updates support the Gmail-enabled build profile.' }
+        if (-not $state.autoUpdateEnabled -or $state.taskName -cne (Get-GhostFillAutomaticTaskName $InstallDirectory)) {
+            Write-Host 'Automatic updates are not enabled for this installation and Windows user.'
+            exit 0
+        }
+        $now = [DateTimeOffset]::UtcNow
+        if ($state.lastCheckedAt) {
+            $lastChecked = [DateTimeOffset]::Parse($state.lastCheckedAt)
+            if ($lastChecked -gt $now.AddMinutes(5)) { throw 'The previous automatic-check timestamp is invalid.' }
+            if (($now - $lastChecked).TotalHours -lt 6) {
+                Write-Host 'The automatic check interval has not elapsed.'
+                exit 0
+            }
+        }
+        $state.lastCheckedAt = $now.ToString('o')
+        Write-GhostFillUpdateState $InstallDirectory $state
+    }
 
     if (-not $PackagePath) {
         Write-Host "Installed version: $($current.version). Checking published releases..."
@@ -107,21 +123,43 @@ try {
         throw 'The package version is invalid or older than the installed version.'
     }
     if ($incoming.key -ne $current.key) { throw 'This package changes the extension identity. The installed version was left unchanged.' }
-    if ([bool]$incoming.oauth2 -ne [bool]$current.oauth2) { throw 'Use the same build profile: Gmail-enabled and temporary-email-only packages cannot be swapped by this updater.' }
+    if ([bool]$incoming.oauth2.client_id -ne [bool]$current.oauth2.client_id) { throw 'Use the same build profile: Gmail-enabled and temporary-email-only packages cannot be swapped by this updater.' }
+    if ($state.autoUpdateEnabled) {
+        foreach ($helper in @('auto-update-common.ps1', 'auto-update-extension.ps1', 'setup-auto-updates.ps1', 'update-extension.ps1')) {
+            $file = Get-Item -LiteralPath (Join-Path $payload ('scripts/' + $helper))
+            if ($file.PSIsContainer -or $file.Length -eq 0) { throw 'The new release is missing its automatic update helpers.' }
+        }
+    }
+    # Replace any package-default status with this installation's opt-in state.
+    # It retains the previous success version/ID until promotion completes.
+    Write-GhostFillUpdateState $payload $state
 
     $backup = [IO.Path]::GetFullPath((Join-Path $parent ('.ghostfill-backup-' + $current.version + '-' + [guid]::NewGuid().ToString('N'))))
     if (-not $backup.StartsWith($parentPrefix, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe backup directory.' }
+    # The published build has self-contained background/content/offscreen
+    # entries and an initial vendor.js bundle, with no lazy chunk files.
+    # Loaded runtimes retain their code until the extension reloads when idle.
     Move-Item -LiteralPath $InstallDirectory -Destination $backup
     try {
         if (Test-Path -LiteralPath $InstallDirectory) { throw 'The installed folder changed during the update.' }
         Move-Item -LiteralPath $payload -Destination $InstallDirectory
+        $state.installedVersion = [string]$incoming.version
+        $state.updatedAt = [DateTimeOffset]::UtcNow.ToString('o')
+        $state.updateId = [guid]::NewGuid().ToString('N')
+        Write-GhostFillUpdateState $InstallDirectory $state
     } catch {
+        # A status-write failure is part of promotion failure. Move only this
+        # verified incoming folder back into staging before restoring backup.
+        if ((Test-Path -LiteralPath $InstallDirectory) -and -not (Test-Path -LiteralPath $payload)) {
+            Move-Item -LiteralPath $InstallDirectory -Destination $payload
+        }
         if (-not (Test-Path -LiteralPath $InstallDirectory)) { Move-Item -LiteralPath $backup -Destination $InstallDirectory }
         throw "Update could not be applied. Previous files are restored or retained at: $backup. $($_.Exception.Message)"
     }
     Write-Host "Updated GhostFill to $($incoming.version)." -ForegroundColor Green
     Write-Host "Previous files: $backup"
     Write-Host 'Open chrome://extensions, click Reload on GhostFill, then refresh signup tabs.'
+    exit 0
 } catch {
     Write-Host "Update failed: $($_.Exception.Message)" -ForegroundColor Red
     Write-Host 'You can also use the manual update steps in README.md.'

@@ -684,12 +684,6 @@ describe('YopmailService', () => {
       expect(domains).toContain('yopmail.com');
     });
 
-    it('generates email account when yopmail is specified', async () => {
-      const account = await emailService.generateEmail({ service: 'yopmail', prefix: 'testagg' });
-      expect(account.service).toBe('yopmail');
-      expect(account.login).toBe('testagg');
-      expect(account.domain).not.toBe('yopmail.com');
-      expect(account.fullEmail).toBe(`testagg@${account.domain}`);
-    });
+
   });
 });

@@ -21,7 +21,7 @@ GitHub Actions is disabled in this repository. Releases are built and checked lo
    In PowerShell, use `npm.cmd` in place of `npm` if script execution is blocked.
 
 3. Inspect `dist/manifest.json` and the ZIP contents. The normal build is the full profile with optional Gmail integration. Confirm its version, extension identity, permissions, and updater files.
-4. On Windows, run `node scripts/check-extension-update.cjs`. Confirm the package includes `Update GhostFill.cmd` and `scripts/update-extension.ps1`.
+4. On Windows, run `node scripts/check-extension-update.cjs` and `node scripts/check-auto-updates.cjs`. These use isolated folders and mocked task APIs; do not enable a real scheduled task during validation. Confirm the package includes the manual updater, Enable/Disable Automatic Updates shortcuts, their three helper scripts, and an initially disabled `ghostfill-update-state.json` whose version matches the manifest.
 5. Load the extracted ZIP in a clean Chrome profile. Test address generation, form filling, inbox access, OTP filling, and verification-link opening. Test Gmail setup, sign-in, aliases, and inbox access as far as the configured OAuth client permits.
 6. Verify that the ZIP hash matches the generated `.zip.sha256` file. The [README checksum instructions](../README.md#1-get-the-extension-folder) cover Windows, macOS, and Linux.
 

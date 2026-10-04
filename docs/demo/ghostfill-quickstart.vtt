@@ -1,0 +1,19 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:10.000
+Download the built ZIP, extract it, load the folder in Chrome, and pin GhostFill.
+
+00:00:10.000 --> 00:00:17.215
+Open GhostFill and generate an address from an available provider.
+
+00:00:17.215 --> 00:00:22.285
+Fill the matching signup fields, then request verification on the site.
+
+00:00:22.285 --> 00:00:28.200
+Fresh matching codes fill first; approved verification links can open in a new tab. Review uncertain messages manually.
+
+00:00:28.200 --> 00:00:34.960
+Optional Gmail aliases require connecting an inbox you own.
+
+00:00:34.960 --> 00:00:46.960
+On Windows, run Enable Automatic Updates.cmd once in the installed folder. Checks run every six hours; GhostFill reloads when idle. Refresh signup tabs afterward.

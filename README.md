@@ -6,6 +6,12 @@ GhostFill helps with signup forms: generate a temporary email address and passwo
 
 Free and open source. The built package runs in desktop Google Chrome on Windows, macOS, and Linux. Temporary email works without an API key, Gmail connection, Node.js, or Git.
 
+**[Watch the 47-second quick-start video](https://github.com/Xshya19/ghostfill-extension/blob/main/docs/demo/ghostfill-quickstart.mp4)**: install GhostFill, generate an address, fill a signup form, handle verification, and enable automatic Windows updates.
+
+[![Play the GhostFill quick-start video](docs/demo/ghostfill-quickstart-poster.png)](https://github.com/Xshya19/ghostfill-extension/blob/main/docs/demo/ghostfill-quickstart.mp4)
+
+The video is a captioned illustration using demo data. Jump to **0:00** for installation, **0:10** for the signup workflow, **0:22** for verification, or **0:35** for automatic updates. [Text instructions](#install) and [captions](docs/demo/ghostfill-quickstart.vtt) are also available.
+
 ## What it does
 
 | Feature            | How it works                                                                                                |
@@ -19,6 +25,8 @@ Free and open source. The built package runs in desktop Google Chrome on Windows
 Code extraction uses local text, layout, and pattern analysis. It does not require a paid AI service. Detection and automatic actions can fail on unfamiliar forms or messages; codes and links remain available for manual use.
 
 Temporary inboxes depend on third-party providers and can expire. Websites can reject disposable addresses, including work-email fields. Use a durable inbox for accounts you need to keep or recover.
+
+Providers that fail a current API check are excluded from automatic fallback until a later check recovers. Unsupported legacy integrations, including the current Mailinator and YOPmail adapters, are no longer offered for new inboxes. Tempmail.plus now uses its published receiving domains, starting with `mailto.plus`. API availability does not prove delivery from a particular signup site. See the [provider findings and diagnostic commands](docs/PROVIDER_AUDIT.md).
 
 ## Install
 
@@ -113,6 +121,16 @@ Open **GhostFill → Options → About → Updates** and click **Check for updat
 The built ZIP on GitHub Releases uses the **full profile**, which includes optional Gmail integration. If you installed the temporary-email-only profile, use a package built with that same profile; see [Package options](#package-options).
 
 ### Windows: use the included updater
+
+For **automatic updates**, open your installed GhostFill folder and double-click **`Enable Automatic Updates.cmd`** once. For a source install, use the shortcut in the project folder; it targets `dist`. Keep that folder in the same location. The helper runs as your Windows user, needs no administrator access, and checks the latest stable GitHub release every six hours while you are signed in. It verifies the built ZIP and checksum before replacing files, rejects downgrades and mismatched build profiles, and retains a backup for rollback.
+
+GhostFill checks the installed update status every five minutes. It waits for verification work and storage writes to finish and for its popup and Options page to close before loading a newer version. Refresh signup tabs afterward so they receive the new content script. Chrome 109–113 can receive the files but need a manual reload or browser restart; automatic reload requires Chrome 114 or later. Reloading an unpacked extension uses [Chrome's runtime reload API](https://developer.chrome.com/docs/extensions/reference/api/runtime#method-reload).
+
+**Options → About → Updates** shows whether the helper is enabled, its last check, and any newer installed version waiting to load. Run **`Disable Automatic Updates.cmd`** in the same folder to remove this installation's scheduled task. Automatic updates currently support Windows and the full build published on GitHub Releases. A temporary-email-only installation needs a matching package from its maintainer.
+
+The setup creates one task named `GhostFill-AutoUpdate-…` for your user and installed folder. The helper's bounded activity log is `.ghostfill-auto-GhostFill-AutoUpdate-….log` beside that folder; it contains update status, not inbox data. If checks stop, run the Enable shortcut again and refresh the status. Disabling stops future checks; it does not undo an update already installed.
+
+To update manually:
 
 Finish your current signup before updating. The updater needs PowerShell and a writable installation folder; it does not need Node.js or Git.
 
@@ -251,12 +269,16 @@ The built ZIP beside `package.json` can be installed without Node.js. For local 
 | Types                               | `npm run type-check`                      |
 | Lint                                | `npm run lint`                            |
 | Tests                               | `npm test`                                |
+| Local extraction benchmark          | `npm run benchmark:extraction`            |
 | Production build                    | `npm run build`                           |
 | Bundle size limits (after building) | `npm run bundle:check`                    |
 | Package the current build           | `npm run zip`                             |
 | Windows installer/updater checks    | `node scripts/check-extension-update.cjs` |
+| Windows automatic-update checks     | `node scripts/check-auto-updates.cjs`     |
 
 Use `npm.cmd` in place of `npm` in PowerShell if script execution is blocked. Dependency compatibility limits are documented in [GitHub operations](docs/GITHUB_OPERATIONS.md).
+
+See the [backend audit and performance measurements](docs/BACKEND_PERFORMANCE.md) for request-count comparisons, cache limits, session recovery changes, and regression commands. The benchmark uses local fixtures and makes no requests to email providers.
 
 ## Release process
 

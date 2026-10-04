@@ -26,9 +26,12 @@ it('loads the saved debug setting and prints every level without the Verbose fil
   const log = createLogger('VisibilityTest');
   for (const level of ['debug', 'info', 'warn', 'error'] as const) {
     log[level]('Console visibility', { password: 'private-value' });
-    expect(spies[level === 'debug' ? 'log' : level]).toHaveBeenCalledWith(expect.stringContaining('Console visibility'), {
-      password: '[REDACTED]',
-    });
+    expect(spies[level === 'debug' ? 'log' : level]).toHaveBeenCalledWith(
+      expect.stringContaining('Console visibility'),
+      {
+        password: '[REDACTED]',
+      }
+    );
   }
   for (const level of ['step', 'state', 'info', 'perf', 'warn', 'error'] as const) {
     const spy =
@@ -70,7 +73,11 @@ it('keeps routine logs and diagnostic warnings visible with debug mode off', asy
 
 it('applies settings changes live and ignores a stale startup read and other storage areas', async () => {
   let finishRead!: (value: Record<string, unknown>) => void;
-  vi.mocked(chrome.storage.local.get).mockReturnValueOnce(new Promise((resolve) => { finishRead = resolve; }));
+  vi.mocked(chrome.storage.local.get).mockReturnValueOnce(
+    new Promise((resolve) => {
+      finishRead = resolve;
+    })
+  );
   const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   const { logger } = await import('../src/utils/logger');
   const onChange = vi.mocked(chrome.storage.onChanged.addListener).mock.calls[0]![0];
@@ -93,12 +100,50 @@ it('masks standalone codes, URL secrets and diagnostic action text before printi
   const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   const { logger, diag } = await import('../src/utils/logger');
   logger.debug('Code result', '009165');
-  diag.log('step', 'link', 'person@example.com', 'Open https://claude.ai/magic-link#sensitive-link-token', {
-    link: 'https://app.notion.com/loginwithemail?password=009165&state=sensitive-state',
-  });
+  diag.log(
+    'step',
+    'link',
+    'person@example.com',
+    'Open https://claude.ai/magic-link#sensitive-link-token',
+    {
+      link: 'https://app.notion.com/loginwithemail?password=009165&state=sensitive-state',
+    }
+  );
   const output = JSON.stringify({ calls: logSpy.mock.calls, report: diag.exportReport() });
-  for (const secret of ['009165', 'person@example.com', 'sensitive-link-token', 'sensitive-state']) {
+  for (const secret of [
+    '009165',
+    'person@example.com',
+    'sensitive-link-token',
+    'sensitive-state',
+  ]) {
     expect(output).not.toContain(secret);
   }
   expect(output).toContain('[REDACTED]');
+});
+
+it('never repeats an OTP capture in its redaction replacement', async () => {
+  const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+  const { logger } = await import('../src/utils/logger');
+  logger.info('OTP detected: 94105 with confidence 82%');
+  logger.info('Verification code: 009165');
+  const output = JSON.stringify({ console: infoSpy.mock.calls, history: logger.getHistory() });
+  expect(output).not.toContain('94105');
+  expect(output).not.toContain('009165');
+  expect(output).toContain('[REDACTED]');
+});
+
+it('copies log history only when the debug surface is read and returns independent snapshots', async () => {
+  const { logger } = await import('../src/utils/logger');
+  logger.clearHistory();
+  const historySpy = vi.spyOn(logger, 'getHistory');
+  for (let i = 0; i < 600; i++) logger.debug('Mailbox step', { count: i });
+  expect(historySpy).not.toHaveBeenCalled();
+  const surface = globalThis as typeof globalThis & { __GHOSTFILL_LOG_HISTORY__: unknown[] };
+  const snapshot = surface.__GHOSTFILL_LOG_HISTORY__;
+  expect(snapshot).toHaveLength(100);
+  expect(historySpy).toHaveBeenCalledTimes(1);
+  snapshot.length = 0;
+  expect(surface.__GHOSTFILL_LOG_HISTORY__).toHaveLength(100);
+  logger.clearHistory();
+  expect(surface.__GHOSTFILL_LOG_HISTORY__).toEqual([]);
 });

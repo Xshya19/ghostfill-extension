@@ -61,7 +61,7 @@ const SENSITIVE_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
   {
     pattern:
       /\b(otp|code|verification|confirm|auth|security|pin|token|passcode).{0,50}\b([0-9]{4,10})\b/gi,
-    replacement: '$2=[REDACTED]',
+    replacement: '$1=[REDACTED]',
   },
   {
     pattern:
@@ -270,8 +270,6 @@ class Logger {
   private isPersisting = false;
   private hasPendingPersist = false;
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
-  /** True once a debug surface is actually reading the global log history. */
-  private debugHooked = false;
 
   /** Trailing debounce for persisting the ring buffer to session storage. */
   private static readonly PERSIST_DEBOUNCE_MS = 500;
@@ -345,7 +343,6 @@ class Logger {
     if (this.history.length > this.maxHistory) {
       this.history.shift();
     }
-    this.syncGlobalHistory();
     this.persistHistory();
 
     if ((!this.enabled && level !== 'error') || (level === 'debug' && !consoleDebugMode)) {
@@ -429,7 +426,6 @@ class Logger {
 
   clearHistory(): void {
     this.history = [];
-    this.syncGlobalHistory();
     if (typeof chrome !== 'undefined') {
       try {
         if (chrome.storage?.session) {
@@ -439,22 +435,6 @@ class Logger {
         // ignore
       }
     }
-  }
-
-  private syncGlobalHistory(): void {
-    // PERF: getHistory() copies the whole ring buffer. On hot paths (a mailbox
-    // fetch can emit 600+ lines) that was an O(n) allocation and a global write
-    // on every single log call. Only maintain the debug surface when something
-    // is actually attached to it.
-    if (!this.debugHooked) {
-      const globalScope = globalThis as LoggerGlobal;
-      // If an external devtool already created it, keep feeding it.
-      if (globalScope.__GHOSTFILL_LOG_HISTORY__ === undefined) {
-        return;
-      }
-    }
-    const scope = globalThis as LoggerGlobal;
-    scope.__GHOSTFILL_LOG_HISTORY__ = this.getHistory();
   }
 
   /**
@@ -517,10 +497,18 @@ class Logger {
   }
 
   private installGlobalDebugHelpers(): void {
-    // From here on, the debug surface is live — keep the global history in sync.
-    this.debugHooked = true;
     const globalScope = globalThis as LoggerGlobal;
-    this.syncGlobalHistory();
+    // Console tools receive a current, independent snapshot when requested.
+    // Producing it on every log line copied the entire history during polling.
+    try {
+      Object.defineProperty(globalScope, '__GHOSTFILL_LOG_HISTORY__', {
+        configurable: true,
+        enumerable: true,
+        get: () => this.getHistory(),
+      });
+    } catch {
+      // A host-owned property may be locked; dumpGhostFillLogs still works.
+    }
 
     const isExtensionContext = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
     if (!isExtensionContext) {

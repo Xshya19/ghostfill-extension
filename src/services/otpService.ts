@@ -14,6 +14,111 @@ import type { DetectionResult, EncryptedCacheEntry } from './types/extraction.ty
 
 const log = createLogger('OTPService');
 
+const DETECTION_FIELDS = new Set([
+  'type',
+  'code',
+  'link',
+  'confidence',
+  'otpConfidence',
+  'engine',
+  'debug',
+  'provider',
+  'providerConfidence',
+  'domain',
+  'decision',
+]);
+const DECISION_FIELDS = new Set([
+  'purpose',
+  'action',
+  'risk',
+  'confidence',
+  'canAutoAct',
+  'reasons',
+  'warnings',
+]);
+const DECISION_PURPOSES = new Set([
+  'verification',
+  'activation',
+  'password-reset',
+  'magic-login',
+  'two-factor',
+  'invitation',
+  'transactional',
+  'marketing',
+  'newsletter',
+  'social-notification',
+  'unknown',
+]);
+
+function isCachedDetection(value: unknown): value is DetectionResult {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const result = value as DetectionResult;
+  const probability = (n: unknown): boolean =>
+    typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1;
+  if (
+    !Object.keys(result).every((field) => DETECTION_FIELDS.has(field)) ||
+    !['otp', 'link', 'both', 'none'].includes(result.type) ||
+    !['intelligent', 'ensemble-consensus'].includes(result.engine) ||
+    !probability(result.confidence)
+  ) {
+    return false;
+  }
+  for (const field of ['debug', 'provider', 'domain'] as const) {
+    if (result[field] !== undefined && typeof result[field] !== 'string') {
+      return false;
+    }
+  }
+  for (const field of ['otpConfidence', 'providerConfidence'] as const) {
+    if (result[field] !== undefined && !probability(result[field])) {
+      return false;
+    }
+  }
+  if (
+    result.code !== undefined &&
+    (typeof result.code !== 'string' || !/^[a-z0-9]{4,12}$/i.test(result.code))
+  ) {
+    return false;
+  }
+  if (result.link !== undefined) {
+    if (typeof result.link !== 'string') {
+      return false;
+    }
+    try {
+      if (!['http:', 'https:'].includes(new URL(result.link).protocol)) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+  }
+  if ((result.type === 'otp' || result.type === 'both') && !result.code) {
+    return false;
+  }
+  if ((result.type === 'link' || result.type === 'both') && !result.link) {
+    return false;
+  }
+  const decision = result.decision;
+  return Boolean(
+    decision &&
+    typeof decision === 'object' &&
+    !Array.isArray(decision) &&
+    Object.keys(decision).every((field) => DECISION_FIELDS.has(field)) &&
+    DECISION_PURPOSES.has(decision.purpose) &&
+    ['fill-otp', 'open-link', 'fill-otp-and-open-link', 'show-review', 'ignore'].includes(
+      decision.action
+    ) &&
+    ['low', 'medium', 'high'].includes(decision.risk) &&
+    probability(decision.confidence) &&
+    typeof decision.canAutoAct === 'boolean' &&
+    Array.isArray(decision.reasons) &&
+    decision.reasons.every((reason) => typeof reason === 'string') &&
+    Array.isArray(decision.warnings) &&
+    decision.warnings.every((warning) => typeof warning === 'string')
+  );
+}
+
 function toSafeString(v: unknown): string {
   if (typeof v === 'string') {
     return v;
@@ -63,36 +168,103 @@ const OTP_FRESHNESS = {
 class SmartDetectionService {
   private readonly CACHE_TTL = 2 * 60 * 1000;
   private readonly CACHE_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+  private readonly MAX_CACHE_ENTRIES = 100;
+  private readonly MAX_SHARED_REQUESTS = 100;
+  private readonly CACHE_OPERATION_TIMEOUT_MS = 1_000;
+  private cacheAvailable = true;
   private cacheKey: CryptoKey | null = null;
+  private readonly cacheReadyPromise: Promise<void>;
+  private readonly cacheIndex = new Set<string>();
+  private readonly pendingDetections = new Map<string, Promise<DetectionResult>>();
+  private cacheMutationQueue: Promise<void> = Promise.resolve();
   private lastCacheCleanupAt = 0;
   private cacheCleanupPromise: Promise<void> | null = null;
 
   constructor() {
     log.info(`👻 GhostFill Intelligence Engine Initializing...`);
-    void this.initializeCacheEncryption();
+    this.cacheReadyPromise = this.initializeCacheEncryption();
     this.installCleanupHook();
   }
 
   private async initializeCacheEncryption(): Promise<void> {
     try {
-      this.cacheKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, [
-        'encrypt',
-        'decrypt',
-      ]);
+      this.cacheKey = await this.cacheOperation(() =>
+        crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt'])
+      );
       log.debug('Cache encryption key initialized in memory only');
     } catch (error) {
-      log.error('Failed to initialize cache encryption', error);
+      log.debug('Detection cache encryption unavailable; extracting without the cache', error);
     }
   }
 
   private installCleanupHook(): void {
-    // Run an initial cache cleanup pass on SW boot
-    void this.cleanupExpiredCache();
+    this.lastCacheCleanupAt = Date.now();
+    // A new worker key cannot decrypt the previous worker's entries. Remove
+    // only this cache's indexed ciphertext instead of scanning all session data.
+    this.cacheCleanupPromise = this.runCacheMutation(async () => {
+      if (typeof chrome === 'undefined' || !chrome.storage?.session) {
+        return;
+      }
+      try {
+        const data = await this.cacheOperation(() => chrome.storage.session.get('det_index'));
+        const previous = Array.isArray(data?.det_index)
+          ? data.det_index.filter(
+              (key: unknown): key is string =>
+                typeof key === 'string' && /^det_v2_[a-f0-9]{16}$/.test(key)
+            )
+          : [];
+        if (previous.length) {
+          await this.cacheOperation(() =>
+            chrome.storage.session.remove([...new Set(previous), 'det_index'])
+          );
+        }
+      } catch (error) {
+        log.debug('Previous detection cache cleanup deferred', error);
+      }
+    }).finally(() => {
+      this.cacheCleanupPromise = null;
+    });
+  }
+
+  private runCacheMutation(operation: () => Promise<void>): Promise<void> {
+    const next = this.cacheMutationQueue.then(operation);
+    // The queue must remain usable after a failed optional cache operation.
+    this.cacheMutationQueue = next.catch(() => {});
+    return next;
+  }
+
+  private async cacheOperation<T>(operation: () => Promise<T>): Promise<T> {
+    if (!this.cacheAvailable) {
+      throw new Error('Optional detection cache is unavailable');
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        operation(),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('Optional detection cache operation timed out')),
+            this.CACHE_OPERATION_TIMEOUT_MS
+          );
+        }),
+      ]);
+    } catch (error) {
+      // Cache failure must not hang verification or permit late writes to race
+      // newer index updates. Disable this optional cache for the worker lifetime.
+      this.cacheAvailable = false;
+      this.cacheIndex.clear();
+      throw error;
+    } finally {
+      if (timer !== undefined) {
+        clearTimeout(timer);
+      }
+    }
   }
 
   private maybeCleanupExpiredCache(): void {
     const now = Date.now();
     if (
+      !this.cacheAvailable ||
       now - this.lastCacheCleanupAt < this.CACHE_CLEANUP_INTERVAL_MS ||
       this.cacheCleanupPromise
     ) {
@@ -100,42 +272,48 @@ class SmartDetectionService {
     }
 
     this.lastCacheCleanupAt = now;
-    this.cacheCleanupPromise = this.cleanupExpiredCache().finally(() => {
-      this.cacheCleanupPromise = null;
-    });
+    this.cacheCleanupPromise = this.runCacheMutation(() => this.cleanupExpiredCache()).finally(
+      () => {
+        this.cacheCleanupPromise = null;
+      }
+    );
   }
 
   private async cleanupExpiredCache(): Promise<void> {
     if (typeof chrome !== 'undefined' && chrome.storage?.session) {
       try {
-        const allData = (await chrome.storage.session.get(null)) as unknown as
-          | Record<string, unknown>
-          | undefined;
-        if (!allData) {
+        const keys = [...this.cacheIndex];
+        if (!keys.length) {
           return;
         }
-
+        if (!this.cacheAvailable) {
+          return;
+        }
+        const allData = await this.cacheOperation(() => chrome.storage.session.get(keys));
         const now = Date.now();
-
-        for (const [key, value] of Object.entries(allData)) {
-          if (key.startsWith('det_')) {
-            const entry = value as EncryptedCacheEntry | undefined;
-            if (entry && now - entry.timestamp > entry.ttl) {
-              await chrome.storage.session.remove(key);
-              log.debug(`Cleaned up expired cache entry: ${key}`);
-            }
+        const expired = keys.filter((key) => {
+          const entry = allData[key] as EncryptedCacheEntry | undefined;
+          return (
+            !entry ||
+            !Number.isFinite(entry.timestamp) ||
+            entry.timestamp > now ||
+            now - entry.timestamp >= this.CACHE_TTL
+          );
+        });
+        if (expired.length) {
+          await this.cacheOperation(() => chrome.storage.session.remove(expired));
+          for (const key of expired) {
+            this.cacheIndex.delete(key);
           }
+          await this.cacheOperation(() =>
+            chrome.storage.session.set({ det_index: [...this.cacheIndex] })
+          );
+          log.debug(`Cleaned up ${expired.length} expired detection entries`);
         }
       } catch (e) {
         log.warn('Cache cleanup failed', e);
       }
     }
-  }
-
-  private destroyCache(): void {
-    this.cacheCleanupPromise = null;
-    this.cacheKey = null;
-    log.debug('Cache destroyed');
   }
 
   async detect(
@@ -157,6 +335,49 @@ class SmartDetectionService {
       .sort()
       .join(',');
     const cacheKey = this.fastCacheKey(sSender, sSubject, sBody, sHtml, contextKey);
+    const pending = this.pendingDetections.get(cacheKey);
+    if (pending) {
+      return this.copyResult(await pending);
+    }
+    const work = this.detectUncached(cacheKey, sSubject, sBody, sHtml, sSender, [
+      ...(expectedDomains || []),
+    ]);
+    // Coalesce normal workloads without retaining an unbounded map during a burst.
+    const shared = this.pendingDetections.size < this.MAX_SHARED_REQUESTS;
+    if (shared) {
+      this.pendingDetections.set(cacheKey, work);
+    }
+    try {
+      return this.copyResult(await work);
+    } finally {
+      if (shared && this.pendingDetections.get(cacheKey) === work) {
+        this.pendingDetections.delete(cacheKey);
+      }
+    }
+  }
+
+  private copyResult(result: DetectionResult): DetectionResult {
+    if (!result.decision) {
+      return { ...result };
+    }
+    return {
+      ...result,
+      decision: {
+        ...result.decision,
+        reasons: [...result.decision.reasons],
+        warnings: [...result.decision.warnings],
+      },
+    };
+  }
+
+  private async detectUncached(
+    cacheKey: string,
+    sSubject: string,
+    sBody: string,
+    sHtml: string,
+    sSender: string,
+    expectedDomains: string[]
+  ): Promise<DetectionResult> {
     const cachedResult = await this.getCachedResult(cacheKey);
     if (cachedResult) {
       log.debug('[SmartDetection] Returning cached result');
@@ -295,15 +516,26 @@ class SmartDetectionService {
   private async getCachedResult(key: string): Promise<DetectionResult | null> {
     if (typeof chrome !== 'undefined' && chrome.storage?.session) {
       try {
-        const data = await chrome.storage.session.get(key);
+        await this.cacheReadyPromise;
+        await this.cacheCleanupPromise;
+        // The complete cache index is maintained by this worker. A known miss
+        // requires neither session IPC nor an attempted decryption.
+        if (!this.cacheAvailable || !this.cacheKey || !this.cacheIndex.has(key)) {
+          return null;
+        }
+        const data = await this.cacheOperation(() => chrome.storage.session.get(key));
         const encryptedEntry = data[key] as EncryptedCacheEntry | undefined;
 
         if (!encryptedEntry) {
           return null;
         }
 
-        if (Date.now() - encryptedEntry.timestamp > encryptedEntry.ttl) {
-          await chrome.storage.session.remove(key);
+        if (
+          !Number.isFinite(encryptedEntry.timestamp) ||
+          encryptedEntry.timestamp > Date.now() ||
+          Date.now() - encryptedEntry.timestamp >= this.CACHE_TTL
+        ) {
+          await this.removeCacheEntry(key);
           return null;
         }
 
@@ -312,26 +544,20 @@ class SmartDetectionService {
           return null;
         }
 
-        const decryptedResult = await decrypt<DetectionResult>(
-          encryptedEntry.encryptedData,
-          this.cacheKey
+        const decryptedResult = await this.cacheOperation(() =>
+          decrypt<DetectionResult>(encryptedEntry.encryptedData, this.cacheKey!)
         );
 
-        if (
-          decryptedResult &&
-          typeof decryptedResult === 'object' &&
-          'type' in decryptedResult &&
-          'decision' in decryptedResult
-        ) {
+        if (isCachedDetection(decryptedResult)) {
           return decryptedResult;
         } else {
           log.warn('Cached result validation failed, removing entry');
-          await chrome.storage.session.remove(key);
+          await this.removeCacheEntry(key);
         }
       } catch (e) {
         log.warn('MV3 Session Cache read/decrypt failed', e);
         try {
-          await chrome.storage.session.remove(key);
+          await this.removeCacheEntry(key);
         } catch {
           // ignore cleanup error
         }
@@ -343,26 +569,12 @@ class SmartDetectionService {
   private async cacheResult(key: string, result: DetectionResult): Promise<void> {
     if (typeof chrome !== 'undefined' && chrome.storage?.session) {
       try {
-        if (!this.cacheKey) {
-          log.warn('Cache key not initialized, skipping cache write');
+        await this.cacheReadyPromise;
+        if (!this.cacheAvailable || !this.cacheKey) {
           return;
         }
 
-        // Maintain a lightweight index array in session storage (O(1) memory footprint)
-        const sessionData = await chrome.storage.session.get('det_index');
-        const index = (sessionData?.det_index as string[]) || [];
-
-        if (index.length >= 100) {
-          const toRemove = index.splice(0, 10);
-          await chrome.storage.session.remove(toRemove);
-          log.debug(`Evicted 10 oldest cache entries via index.`);
-        }
-
-        if (!index.includes(key)) {
-          index.push(key);
-        }
-
-        const encryptedData = await encrypt(result, this.cacheKey);
+        const encryptedData = await this.cacheOperation(() => encrypt(result, this.cacheKey!));
 
         const encryptedEntry: EncryptedCacheEntry = {
           encryptedData,
@@ -371,15 +583,42 @@ class SmartDetectionService {
           ttl: this.CACHE_TTL,
         };
 
-        await chrome.storage.session.set({
-          [key]: encryptedEntry,
-          det_index: index,
+        await this.runCacheMutation(async () => {
+          if (!this.cacheAvailable) {
+            return;
+          }
+          const index = [...this.cacheIndex].filter((cachedKey) => cachedKey !== key);
+          const evicted = index.splice(0, Math.max(0, index.length + 1 - this.MAX_CACHE_ENTRIES));
+          if (evicted.length) {
+            await this.cacheOperation(() => chrome.storage.session.remove(evicted));
+          }
+          index.push(key);
+          await this.cacheOperation(() =>
+            chrome.storage.session.set({ [key]: encryptedEntry, det_index: index })
+          );
+          this.cacheIndex.clear();
+          for (const cachedKey of index) {
+            this.cacheIndex.add(cachedKey);
+          }
         });
         log.debug(`Cached detection result (encrypted): ${key}`);
       } catch (e) {
         log.warn('MV3 Session Cache write/encrypt failed', e);
       }
     }
+  }
+
+  private async removeCacheEntry(key: string): Promise<void> {
+    await this.runCacheMutation(async () => {
+      if (!this.cacheAvailable) {
+        return;
+      }
+      await this.cacheOperation(() => chrome.storage.session.remove(key));
+      this.cacheIndex.delete(key);
+      await this.cacheOperation(() =>
+        chrome.storage.session.set({ det_index: [...this.cacheIndex] })
+      );
+    });
   }
 
   extractCode(text: string): string | null {
@@ -520,7 +759,10 @@ class OTPService {
           }
           // Refreshing the popup must not reset a message's arrival time.
           if (sameMessage) {
-            if (metadata.autoFillEligible !== undefined && metadata.autoFillEligible !== existing.autoFillEligible) {
+            if (
+              metadata.autoFillEligible !== undefined &&
+              metadata.autoFillEligible !== existing.autoFillEligible
+            ) {
               existing.autoFillEligible = metadata.autoFillEligible;
               await storageService.set('lastOTP', existing);
             }

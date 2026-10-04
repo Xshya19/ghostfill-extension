@@ -23,7 +23,7 @@ import {
 } from './extraction/otpExtractor';
 import { detectProvider } from './extraction/providerDetector';
 import { extractUrls, unwrapEspTrackingUrl } from './extraction/urlExtractor';
-import { hasVerificationCodeEvidence } from './extraction/verificationEvidence';
+import { createVerificationCodeEvidence } from './extraction/verificationEvidence';
 import { analyzeEmailZones, stripHtmlPreserveStructure } from './extraction/zoneAnalyzer';
 import type {
   ExtractionResult,
@@ -554,12 +554,15 @@ export function extractAll(
   );
   let tradOtp = extractOTP(plainText, sanitizedHtmlBody, provider, zones, intentResult);
 
-  const hasCodeEvidence = (code: string): boolean =>
-    hasVerificationCodeEvidence(code, normSubject, normBody, normHtmlBody);
+  const hasCodeEvidence = createVerificationCodeEvidence(normSubject, normBody, normHtmlBody);
   // Both engines can agree on the same postal code or template artifact.
   // Reject unsupported candidates before agreement can boost confidence.
-  if (cogOtp && !hasCodeEvidence(cogOtp.code)) { cogOtp = null; }
-  if (tradOtp && !hasCodeEvidence(tradOtp.code)) { tradOtp = null; }
+  if (cogOtp && !hasCodeEvidence(cogOtp.code)) {
+    cogOtp = null;
+  }
+  if (tradOtp && !hasCodeEvidence(tradOtp.code)) {
+    tradOtp = null;
+  }
 
   if (cogOtp) {
     cogOtp.code = sanitizeOTP(cogOtp.code);
@@ -734,9 +737,13 @@ export function extractAll(
   if (link && link.url) {
     link.url = new URL(link.url).href;
     // Both link engines report percentage confidence; the shared result uses 0–1.
-    if (link.confidence > 1) {link.confidence /= 100;}
+    if (link.confidence > 1) {
+      link.confidence /= 100;
+    }
     const gate = scoreActivationLink(link.url, link.anchorText || '', link.context || '');
-    if (gate.cls === 'magic-login') {link.type = 'magic-link-login';}
+    if (gate.cls === 'magic-login') {
+      link.type = 'magic-link-login';
+    }
     if (cogLink?.url && tradLink?.url && cogLink.url !== tradLink.url) {
       log.info(
         `Link dual-engine: cog=${cogLink.url.substring(0, 50)} trad=${tradLink.url.substring(0, 50)} → ${link.url.substring(0, 50)}`
@@ -798,7 +805,9 @@ export function extractAll(
         }
 
         const sanitizedCode = sanitizeOTP(code);
-        if (!hasCodeEvidence(sanitizedCode)) { continue; }
+        if (!hasCodeEvidence(sanitizedCode)) {
+          continue;
+        }
         otp = {
           code: sanitizedCode,
           rawCode: match[1],
@@ -836,7 +845,9 @@ export function extractAll(
     }
   }
 
-  if (otp && !hasCodeEvidence(otp.code)) { otp = null; }
+  if (otp && !hasCodeEvidence(otp.code)) {
+    otp = null;
+  }
 
   const extractionTimeMs = performance.now() - startTime;
   timings.total = extractionTimeMs;

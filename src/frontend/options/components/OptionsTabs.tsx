@@ -17,11 +17,20 @@ import {
   X,
   ExternalLink,
 } from 'lucide-react';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 import { IS_GMAIL_ENABLED } from '../../../config/buildProfile';
+import {
+  TEMP_EMAIL_PROVIDER_OPTIONS,
+  isSelectableEmailProvider,
+} from '../../../services/emailServices/providerRegistry';
 import { storageService } from '../../../services/storageService';
 import { UserSettings } from '../../../types/storage.types';
+import {
+  compareExtensionVersions,
+  readAutomaticUpdateState,
+  type AutomaticUpdateState,
+} from '../../../utils/automaticUpdateState';
 import { APP_VERSION } from '../../../utils/core';
 import {
   checkExtensionUpdate,
@@ -47,19 +56,7 @@ const SAVE_FEEDBACK_MS = 1800;
 // so the selected value and the in-DOM CustomSelect panel remain readable.
 // Exported so OptionsApp can validate membership before saving (a service the
 // backend zod enum doesn't know would otherwise fail as "backend rejected").
-export const EMAIL_SERVICE_OPTIONS = [
-  { value: 'driftz', label: 'Driftz.net · Preferred' },
-  { value: 'catchmail', label: 'CatchMail.io' },
-  { value: 'throwawaymail', label: 'Throwawaymail.app · Fast' },
-  { value: 'mailtm', label: 'Mail.tm · High uptime' },
-  { value: 'tempmailplus', label: 'Tempmail.plus · Multi-domain' },
-  { value: 'maildrop', label: 'Maildrop.cc · Public inbox' },
-  { value: 'guerrilla', label: 'Guerrilla Mail · Stealth domains' },
-  { value: 'yopmail', label: 'YOPmail · Multi-domain' },
-  { value: 'mailgw', label: 'Mail.gw · Dedicated domains' },
-  { value: 'mailinator', label: 'Mailinator · Public inbox' },
-  { value: 'custom', label: 'Custom service · Private' },
-] as const;
+export const EMAIL_SERVICE_OPTIONS = TEMP_EMAIL_PROVIDER_OPTIONS;
 
 const EMAIL_SERVICE_LABELS: Readonly<Record<string, string>> = {
   catchmail: 'CatchMail.io',
@@ -86,6 +83,7 @@ interface ProviderHealthStatus {
   consecutiveFailures: number;
   avgResponseTime: number;
   circuitOpen: boolean;
+  totalRequests?: number;
 }
 
 export const ProviderHealthMeter: React.FC = () => {
@@ -206,6 +204,7 @@ export const ProviderHealthMeter: React.FC = () => {
         {healthData
           .filter((h) => HEALTH_PROVIDER_NAMES.has(h.name))
           .map((h) => {
+            const unchecked = h.totalRequests === 0;
             const pct = Math.round(h.successRate * 100);
             const isWarning =
               (h.successRate <= 0.7 && h.successRate > 0 && !h.circuitOpen) ||
@@ -214,7 +213,10 @@ export const ProviderHealthMeter: React.FC = () => {
 
             let statusClass = 'health-status-good';
             let statusText = 'Healthy';
-            if (isDead) {
+            if (unchecked) {
+              statusClass = 'health-status-unknown';
+              statusText = 'Not checked';
+            } else if (isDead) {
               statusClass = 'health-status-dead';
               statusText = h.circuitOpen ? 'Cooling down' : 'Offline';
             } else if (isWarning) {
@@ -223,11 +225,12 @@ export const ProviderHealthMeter: React.FC = () => {
             }
 
             const ms = Math.round(h.avgResponseTime);
-            const detail =
-              `${h.name}: ${statusText} · ${pct}% success · ~${ms}ms avg` +
-              (h.consecutiveFailures > 0
-                ? ` · ${h.consecutiveFailures} failure${h.consecutiveFailures === 1 ? '' : 's'} in a row`
-                : '');
+            const detail = unchecked
+              ? `${h.name}: no API calls recorded yet`
+              : `${h.name}: ${statusText} · ${pct}% success · ~${ms}ms avg` +
+                (h.consecutiveFailures > 0
+                  ? ` · ${h.consecutiveFailures} failure${h.consecutiveFailures === 1 ? '' : 's'} in a row`
+                  : '');
 
             return (
               <div key={h.name} className="health-pill-card" title={detail}>
@@ -239,7 +242,7 @@ export const ProviderHealthMeter: React.FC = () => {
                 </div>
                 <div className="health-status-group">
                   <span className="health-percent" aria-label={detail}>
-                    {pct}% · {ms}ms
+                    {unchecked ? '—' : `${pct}% · ${ms}ms`}
                   </span>
                   <span className={`health-dot ${statusClass}`} aria-hidden="true" />
                 </div>
@@ -247,6 +250,9 @@ export const ProviderHealthMeter: React.FC = () => {
             );
           })}
       </div>
+      <p className="health-hint">
+        Status reflects API requests. Email delivery is not verified by an empty inbox.
+      </p>
     </div>
   );
 };
@@ -610,6 +616,12 @@ export const EmailTab: React.FC<EmailTabProps> = ({
               Preferred email service
             </label>
             <p>Choose the default service for generating temporary emails</p>
+            {!isSelectableEmailProvider(settings.preferredEmailService) && (
+              <p role="status">
+                {getEmailServiceLabel(settings.preferredEmailService)} is no longer offered for new
+                inboxes. Choose a listed service. Saved inboxes can still be opened.
+              </p>
+            )}
             {settings.preferredEmailService === 'driftz' && (
               <p>
                 Driftz uses <strong>bbjbinin.mn</strong> by default. GhostFill checks the returned
@@ -1175,7 +1187,9 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
             <label id="debug-mode-label" htmlFor="debug-mode" className="fs-15-fw-600">
               Debug logging
             </label>
-            <p>Show detailed GhostFill activity in the browser console. Changes save automatically.</p>
+            <p>
+              Show detailed GhostFill activity in the browser console. Changes save automatically.
+            </p>
             <p>Logs stay in your browser. Sensitive values are masked.</p>
           </div>
           <ToggleSwitch
@@ -1285,6 +1299,108 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
 };
 
 // ─── About Tab Component ─────────────────────────────────────────────────────
+const AutomaticUpdateStatus: React.FC<{ version: string }> = ({ version }) => {
+  const [state, setState] = useState<AutomaticUpdateState | null>(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const request = useRef<AbortController | null>(null);
+
+  const refresh = useCallback(async () => {
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
+    setLoading(true);
+    setError('');
+    try {
+      const result = await readAutomaticUpdateState(controller.signal);
+      if (!controller.signal.aborted) {
+        setState(result);
+      }
+    } catch {
+      if (!controller.signal.aborted) {
+        setState(null);
+        setError(
+          'Status could not be read. Run Enable Automatic Updates.cmd in your installed folder again.'
+        );
+      }
+    } finally {
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!IS_GMAIL_ENABLED) {
+      setLoading(false);
+      return;
+    }
+    void refresh();
+    const onFocus = () => {
+      void refresh();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      request.current?.abort();
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [refresh]);
+
+  const pending = state && compareExtensionVersions(state.installedVersion, version) > 0;
+  const status = loading
+    ? 'Reading update status…'
+    : error ||
+      (state?.autoUpdateEnabled
+        ? 'Enabled: Windows checks for stable releases every six hours while you are signed in.'
+        : 'Automatic updates are off. Enable them once from your installed folder.');
+
+  return (
+    <div className="setting-item">
+      <div className="setting-info">
+        <span className="fs-15-fw-600">Automatic updates on Windows</span>
+        {IS_GMAIL_ENABLED ? (
+          <>
+            <p role="status" aria-live="polite">
+              {status}
+            </p>
+            {state?.lastCheckedAt && (
+              <p>Last helper check: {new Date(state.lastCheckedAt).toLocaleString()}</p>
+            )}
+            {pending && <p>Version {state.installedVersion} is installed and ready to load.</p>}
+            <p>
+              Open your installed GhostFill folder and double-click{' '}
+              <strong>Enable Automatic Updates.cmd</strong>. The helper verifies and installs newer
+              packages. GhostFill reloads after verification work is idle and its popup and Options
+              page are closed. Refresh your signup tabs afterward.
+            </p>
+            <p>
+              To turn it off, run <strong>Disable Automatic Updates.cmd</strong> in the same folder.
+            </p>
+          </>
+        ) : (
+          <p>
+            Automatic updates need the full build used by GitHub Releases. Use a matching
+            temporary-email-only package to update this installation.
+          </p>
+        )}
+      </div>
+      {IS_GMAIL_ENABLED && (
+        <Button
+          type="button"
+          size="sm"
+          disabled={loading}
+          aria-busy={loading}
+          onClick={() => {
+            void refresh();
+          }}
+        >
+          {loading ? 'Reading…' : 'Refresh status'}
+        </Button>
+      )}
+    </div>
+  );
+};
+
 export const AboutTab: React.FC = () => {
   const version = APP_VERSION;
   const [storageUsage, setStorageUsage] = useState<{ used: number; quota: number } | null>(null);
@@ -1408,7 +1524,9 @@ export const AboutTab: React.FC = () => {
         <div className="setting-item">
           <div className="setting-info">
             <span className="fs-15-fw-600">Installed version {version}</span>
-            <p role="status" aria-live="polite">{updateMessage}</p>
+            <p role="status" aria-live="polite">
+              {updateMessage}
+            </p>
             {updateError && <p role="alert">{updateError}</p>}
           </div>
           <Button
@@ -1458,22 +1576,27 @@ export const AboutTab: React.FC = () => {
           <div className="setting-info">
             <span className="fs-15-fw-600">Apply the update, then reload</span>
             <p>
-              On Windows, open your installed GhostFill folder and run Update GhostFill.cmd.
-              To use a downloaded package, save the ZIP and checksum together, then drag the ZIP onto that shortcut.
-              On macOS or Linux, replace the files in the same installed folder with the matching built package.
+              On Windows, open your installed GhostFill folder and run Update GhostFill.cmd. To use
+              a downloaded package, save the ZIP and checksum together, then drag the ZIP onto that
+              shortcut. On macOS or Linux, replace the files in the same installed folder with the
+              matching built package.
             </p>
             {!IS_GMAIL_ENABLED && (
-              <p>This is the temporary-email-only build. Ask your maintainer for the same build profile; published ZIPs include Gmail.</p>
+              <p>
+                This is the temporary-email-only build. Ask your maintainer for the same build
+                profile; published ZIPs include Gmail.
+              </p>
             )}
             <p>
-              Finish your current signup before reloading. Reload loads files already on your computer;
-              refresh your signup tabs afterward.
+              Finish your current signup before reloading. Reload loads files already on your
+              computer; refresh your signup tabs afterward.
             </p>
           </div>
           <Button type="button" size="sm" onClick={() => chrome.runtime.reload()}>
             Reload after updating
           </Button>
         </div>
+        <AutomaticUpdateStatus version={version} />
       </SettingsSection>
 
       <SettingsSection id="storage-usage" title="Storage usage" icon={<Database size={18} />}>

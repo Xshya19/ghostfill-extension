@@ -4,8 +4,8 @@ import { EmailAccount, Email, MailTmDomain, MailTmAccount, MailTmMessage } from 
 import { API, fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
 import { getSenderSource } from '../../utils/emailIdentity';
 import { getRandomInt, getRandomString } from '../../utils/encryption';
-import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
+import { runBoundedProviderOperation } from './providerOperations';
 
 const log = createLogger('MailTmService');
 
@@ -103,7 +103,11 @@ export class MailTmService {
     }
 
     // Server-side faults are not credential faults either.
-    if (/\b5\d\d\b/.test(msg) || msg.includes('bad gateway') || msg.includes('service unavailable')) {
+    if (
+      /\b5\d\d\b/.test(msg) ||
+      msg.includes('bad gateway') ||
+      msg.includes('service unavailable')
+    ) {
       return false;
     }
 
@@ -150,25 +154,35 @@ export class MailTmService {
       return this.cachedDomainsList;
     }
 
-    const fallbackDomains = ['bugfoo.com', 'karenkey.com'];
     try {
-      const response = await this.fetchWithRetry(
-        `${this.baseUrl}${API.MAIL_TM.ENDPOINTS.DOMAINS}`,
-        { signal: signal ?? null, timeout: 4000 },
-        1 // Only 1 attempt for domains fetch
+      const data = await runBoundedProviderOperation(
+        async (boundedSignal) => {
+          const response = await this.fetchWithRetry(
+            `${this.baseUrl}${API.MAIL_TM.ENDPOINTS.DOMAINS}`,
+            { signal: boundedSignal, timeout: 4000, headers: { Accept: 'application/ld+json' } },
+            1
+          );
+          if (!response.ok) {
+            throw new Error(`Mail.tm domains: HTTP error ${response.status}`);
+          }
+          return response.json();
+        },
+        signal,
+        4000
       );
-
-      if (!response.ok) {
-        log.warn(`Failed to fetch domains (HTTP ${response.status}), using fallback`);
-        return fallbackDomains;
+      const domains: MailTmDomain[] = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.['hydra:member'])
+          ? data['hydra:member']
+          : [];
+      const result = domains
+        .filter(
+          (d) => d && d.isActive === true && d.isPrivate !== true && typeof d.domain === 'string'
+        )
+        .map((d) => d.domain);
+      if (result.length === 0) {
+        return [];
       }
-
-      const data = await response.json();
-      const domains: MailTmDomain[] = data['hydra:member'] || [];
-
-      const activeDomains = domains.filter((d) => d.isActive && !d.isPrivate).map((d) => d.domain);
-
-      const result = activeDomains.length > 0 ? activeDomains : fallbackDomains;
       // Cache the result in memory
       this.cachedDomainsList = result;
       this.domainsCacheTime = Date.now();
@@ -180,11 +194,14 @@ export class MailTmService {
           error.message.includes('Aborted') ||
           error.message.includes('timed out'))
       ) {
-        log.debug('Failed to fetch Mail.tm domains due to abort/timeout, using fallback');
+        log.debug('Mail.tm domain check was aborted or timed out');
       } else {
-        log.error('Failed to fetch Mail.tm domains, using fallback', error);
+        log.warn('Failed to fetch current Mail.tm domains', error);
       }
-      return fallbackDomains;
+      if (signal?.aborted) {
+        throw error;
+      }
+      return [];
     }
   }
 
@@ -291,7 +308,9 @@ export class MailTmService {
       // Generate random address if not provided
       // Pick a random domain to increase chance of bypassing blacklists
       const domain = domains[getRandomInt(0, domains.length - 1)]!;
-      const login = address || generateHumanLikeUsername();
+      // The live API rejects some dotted human-name usernames with HTTP 422.
+      // Keep generated local parts alphanumeric and independently random.
+      const login = address || getRandomString(24, 'abcdefghijklmnopqrstuvwxyz0123456789');
       const fullEmail = `${login}@${domain}`;
       const pwd =
         password ||
@@ -594,7 +613,7 @@ export class MailTmService {
         }
 
         const data = await retryResponse.json();
-        const messages: MailTmMessage[] = data['hydra:member'] || [];
+        const messages: MailTmMessage[] = Array.isArray(data) ? data : data['hydra:member'] || [];
 
         this.consecutiveErrors = 0;
         return this.enrichWithFullBody(messages, signal);
@@ -605,7 +624,7 @@ export class MailTmService {
       }
 
       const data = await response.json();
-      const messages: MailTmMessage[] = data['hydra:member'] || [];
+      const messages: MailTmMessage[] = Array.isArray(data) ? data : data['hydra:member'] || [];
 
       this.consecutiveErrors = 0;
       return this.enrichWithFullBody(messages, signal);
@@ -776,9 +795,10 @@ export class MailTmService {
     const rawBody = includeBody ? msg.text || msg.intro || '' : msg.intro || '';
     const bodyStr = contentToString(rawBody);
     const textStr = contentToString(msg.text || rawBody);
-    const htmlStr = includeBody && msg.html
-      ? contentToString(Array.isArray(msg.html) ? msg.html.join('') : msg.html)
-      : '';
+    const htmlStr =
+      includeBody && msg.html
+        ? contentToString(Array.isArray(msg.html) ? msg.html.join('') : msg.html)
+        : '';
 
     const result: Email = {
       id: String(msg.id),

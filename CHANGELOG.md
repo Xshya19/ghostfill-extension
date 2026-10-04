@@ -2,6 +2,27 @@
 
 All notable changes are documented here.
 
+## 1.1.5 — 2026-10-04
+
+- Add opt-in automatic Windows updates: a current-user helper checks stable releases every six hours, verifies the ZIP and checksum, retains rollback, and records installed status. GhostFill loads newer installed files when verification and writes are idle and extension pages are closed.
+- Remove the current Mailinator and YOPmail adapters from new-provider choices and automatic fallback; use one supported-provider registry and recheck admission cached by older versions. Stored accounts retain read routing.
+- Accept both JSON-array and Hydra collections in Mail.tm/Mail.gw domain and message APIs, remove obsolete fallback domains, and check locally generated providers before presenting a new address.
+- Use random alphanumeric Mail.tm usernames after reproducing HTTP 422 with the previous default; verify account creation, authentication, and inbox retrieval with the corrected adapter.
+- Replace static domain-list health pings with bounded real API checks. Unreachable providers leave automatic fallback until a later check recovers; session-based integrations stay explicitly unchecked.
+- Correct Tempmail.plus receiving domains and complete-address inbox queries; preserve sender names and actual message timestamps, and report provider errors instead of claiming an empty inbox.
+- Add a captioned 47-second illustrated installation, signup, verification, and automatic-update walkthrough to the README.
+- Share concurrent verification extraction, normalize code evidence once per message, and serialize the bounded encrypted detection cache. Optional cache failures no longer hang verification.
+- Reuse hydrated Driftz and Catchmail message bodies within a bounded, address-scoped memory cache while continuing to refresh inbox lists; persist recovered bodies even when headers do not change.
+- Preserve provider detail timestamps when inbox summaries omit them. Undated messages stay available for review with a clear unavailable-date label and no automatic verification actions.
+- Share concurrent message reads and account creation, respect read-only inbox requests, and stop provider fallback and retry waits when a request is cancelled.
+- Prevent late storage reads or decryption from replacing newer values, restoring deleted data, or repopulating memory after unload. Share overlapping batch/single reads and storage-change listeners.
+- Cancel superseded optimistic edits and delayed writes when data is cleared; bound remaining storage read, removal, and clear operations.
+- Prevent duplicate polling timers and stale SSE connections from modifying a newer session; restore bounded reconnect backoff and retain the offscreen relay across ordinary worker suspension.
+- Restore keyboard command registration and initialize a cold service worker before executing a shortcut.
+- Suppress notifications from superseded inbox sessions, including delayed settings/permission checks and retries.
+- Produce debug-history snapshots on demand and fix OTP redaction that mistakenly repeated the secret code.
+- Add reproducible extraction benchmarks and backend regression coverage; keep release delivery manual.
+
 ## 1.1.4 — 2026-10-03
 
 - Require visible verification instructions before treating numbers as OTPs; extractor agreement cannot promote postal codes, customer numbers, or newsletter artifacts.

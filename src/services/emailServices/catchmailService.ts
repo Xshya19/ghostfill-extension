@@ -14,11 +14,18 @@ import { getSenderSource } from '../../utils/emailIdentity';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 import { isRetryableError, throttledWarn } from './isRetryableError';
+import { MessageHydrationCache } from './messageHydrationCache';
 
 const log = createLogger('CatchmailService');
 const BASE_URL = 'https://api.catchmail.io';
 
 export class CatchmailService {
+  private readonly messageCache = new MessageHydrationCache();
+
+  clearMessageCache(): void {
+    this.messageCache.clear();
+  }
+
   async getDomains(_signal?: AbortSignal): Promise<string[]> {
     return ['catchmail.io'];
   }
@@ -58,29 +65,17 @@ export class CatchmailService {
       const data = await response.json();
       const messages = data.messages || [];
 
-      // Fetch full body for first 5 messages in parallel
+      // Refresh the list on every poll, reusing already hydrated bodies.
       const recentMessages = messages.slice(0, 5);
       const fullBodyResults = await Promise.all(
         recentMessages.map(async (msg: any) => {
           try {
-            const msgResponse = await fetchWithTimeout(
-              `${BASE_URL}/api/v1/message/${encodeURIComponent(msg.id)}?mailbox=${encodeURIComponent(fullEmail)}`,
-              { signal: signal ?? null }
-            );
-            if (!msgResponse.ok) {
-              return { body: '', htmlBody: '', textBody: '' };
+            return await this.getMessage(fullEmail, String(msg.id), signal);
+          } catch (error) {
+            if (signal?.aborted || (error as Error)?.name === 'AbortError') {
+              throw error;
             }
-            const fullMsg = await msgResponse.json();
-            const htmlStr = extractHtmlFromBody(fullMsg.html_body || fullMsg.html || fullMsg.body);
-            const textStr = extractTextFromBody(fullMsg.text_body || fullMsg.text || fullMsg.body);
-            const bodyStr = textStr || htmlStr;
-            return {
-              body: bodyStr,
-              htmlBody: htmlStr,
-              textBody: textStr,
-            };
-          } catch {
-            return { body: '', htmlBody: '', textBody: '' };
+            return undefined;
           }
         })
       );
@@ -91,13 +86,16 @@ export class CatchmailService {
           from: getSenderSource(undefined, msg.from),
           to: contentToString(msg.mailbox || fullEmail),
           subject: contentToString(msg.subject, '(No Subject)'),
-          date: safeParseDate(msg.date),
+          date: safeParseDate(msg.date, 0),
           body: '',
           read: false,
           attachments: [],
         };
         if (idx < 5 && fullBodyResults[idx]) {
           const body = fullBodyResults[idx]!;
+          if (email.date === 0 && body.date > 0) {
+            email.date = body.date;
+          }
           email.body = body.body;
           email.htmlBody = body.htmlBody;
           email.textBody = body.textBody;
@@ -116,6 +114,19 @@ export class CatchmailService {
   }
 
   async getMessage(fullEmail: string, emailId: string, signal?: AbortSignal): Promise<Email> {
+    return this.messageCache.get(
+      fullEmail,
+      emailId,
+      () => this.fetchMessage(fullEmail, emailId, signal),
+      signal
+    );
+  }
+
+  private async fetchMessage(
+    fullEmail: string,
+    emailId: string,
+    signal?: AbortSignal
+  ): Promise<Email> {
     try {
       const response = await fetchWithTimeout(
         `${BASE_URL}/api/v1/message/${encodeURIComponent(emailId)}?mailbox=${encodeURIComponent(fullEmail)}`,
@@ -136,7 +147,7 @@ export class CatchmailService {
         from: getSenderSource(undefined, msg.from),
         to: contentToString(msg.mailbox || fullEmail),
         subject: contentToString(msg.subject, '(No Subject)'),
-        date: safeParseDate(msg.date),
+        date: safeParseDate(msg.date, 0),
         body: bodyStr,
         htmlBody: htmlStr,
         textBody: textStr,
@@ -144,7 +155,9 @@ export class CatchmailService {
         attachments: [],
       };
     } catch (error) {
-      log.error('Failed to fetch Catchmail message details', error);
+      if (!signal?.aborted && (error as Error)?.name !== 'AbortError') {
+        log.debug('Failed to fetch Catchmail message details', error);
+      }
       throw error;
     }
   }

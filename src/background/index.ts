@@ -11,8 +11,10 @@ import { sleep } from '../utils/core';
 import { createLogger, initRemoteLogger } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
 
+import { setupAutomaticUpdates, recordAutomaticUpdateActivity } from './automaticUpdates';
 import { dumpMenuStats } from './contextMenu';
 import {
+  ensureInitialized as guardEnsureInitialized,
   registerInitCallbacks,
   setInitialized as guardSetInitialized,
   setActiveInitPromise as guardSetActiveInitPromise,
@@ -234,6 +236,8 @@ registerInitCallbacks(
 );
 export { activeInitPromise };
 
+setupAutomaticUpdates();
+
 const metrics: BackgroundMetrics = {
   initStartedAt: null,
   initCompletedAt: null,
@@ -248,6 +252,9 @@ const metrics: BackgroundMetrics = {
 };
 
 const commands = new Map<string, CommandDef>();
+// Populate the registry independently of listener installation. Listeners are
+// already installed at module load, so their guard is true during every boot.
+registerCommands();
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  LIFECYCLE — INSTALL
@@ -367,7 +374,6 @@ async function initialize(trigger: InitTrigger, previousVersion?: string): Promi
       // Here we only register the remaining listeners (commands, alarms, keepalive).
       log.debug('▶️ Phase 4: Event listeners');
       if (!listenersInstalled) {
-        registerCommands();
         installListeners();
         installKeepAlive();
         // setupMessageHandler() is intentionally NOT called here — it was registered
@@ -574,6 +580,7 @@ function installListeners(): void {
 
   // Commands
   chrome.commands.onCommand.addListener((cmd) => {
+    recordAutomaticUpdateActivity();
     void handleCommand(cmd);
   });
 
@@ -599,9 +606,9 @@ function installListeners(): void {
   // Suspend cleanup (SECURITY FIX C12)
   chrome.runtime.onSuspend.addListener(() => {
     log.info('Extension suspending, cleaning up resources');
-    import('./offscreenManager')
-      .then(({ closeOffscreenDocument }) => closeOffscreenDocument())
-      .catch(() => {});
+    // The offscreen SSE relay survives normal worker suspension. Explicit
+    // account resets/disconnects stop its stream; Chrome disposes the document
+    // when the extension is unloaded.
     import('./serviceWorker')
       .then(({ clearDeferredTimers }) => {
         clearDeferredTimers();
@@ -614,6 +621,14 @@ function installListeners(): void {
 }
 
 async function handleCommand(cmd: string): Promise<void> {
+  // A shortcut can wake an idle worker without onStartup/onInstalled. Wait for
+  // the same cold-boot guard used by messages before invoking service handlers.
+  try {
+    await guardEnsureInitialized();
+  } catch (error) {
+    log.error('Command initialization failed', { cmd, error: extractMsg(error) });
+    return;
+  }
   // NOTE: The `_execute_action` command (extension popup) is handled natively
   // by Chrome and never reaches this listener, so the keyboard-shortcuts
   // toggle only gates the custom commands below (generate-email,

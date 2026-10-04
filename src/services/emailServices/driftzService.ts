@@ -3,12 +3,25 @@ import { fetchWithTimeout, contentToString, isValidEmail } from '../../utils/cor
 import { getSenderSource } from '../../utils/emailIdentity';
 import { createLogger } from '../../utils/logger';
 import { isRetryableError, throttledWarn } from './isRetryableError';
+import { MessageHydrationCache } from './messageHydrationCache';
 
 const log = createLogger('DriftzService');
 const BASE_URL = 'https://api.driftz.net';
 const PREFERRED_DOMAIN = 'bbjbinin.mn';
 
+function messageTimestamp(receivedAt: unknown): number {
+  const seconds =
+    typeof receivedAt === 'number' || typeof receivedAt === 'string' ? Number(receivedAt) : 0;
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 0;
+}
+
 export class DriftzService {
+  private readonly messageCache = new MessageHydrationCache();
+
+  clearMessageCache(): void {
+    this.messageCache.clear();
+  }
+
   async getDomains(signal?: AbortSignal): Promise<string[]> {
     try {
       const response = await fetchWithTimeout(`${BASE_URL}/domains`, { signal: signal ?? null });
@@ -25,7 +38,9 @@ export class DriftzService {
         Array.isArray(data.result?.temp) && data.result.temp.length > 0
           ? data.result.temp
           : [PREFERRED_DOMAIN, 'manornewtech.org'];
-      return tempDomains.sort((a, b) => (a === PREFERRED_DOMAIN ? -1 : b === PREFERRED_DOMAIN ? 1 : 0));
+      return tempDomains.sort((a, b) =>
+        a === PREFERRED_DOMAIN ? -1 : b === PREFERRED_DOMAIN ? 1 : 0
+      );
     } catch (error) {
       log.debug('Driftz domains unavailable, using fallback domains', { error: String(error) });
       return [PREFERRED_DOMAIN, 'manornewtech.org'];
@@ -72,9 +87,12 @@ export class DriftzService {
 
   async getMessages(address: string, signal?: AbortSignal): Promise<Email[]> {
     try {
-      const response = await fetchWithTimeout(`${BASE_URL}/temp/${encodeURIComponent(address)}?limit=50`, {
-        signal: signal ?? null,
-      });
+      const response = await fetchWithTimeout(
+        `${BASE_URL}/temp/${encodeURIComponent(address)}?limit=50`,
+        {
+          signal: signal ?? null,
+        }
+      );
       if (!response.ok) {
         if (response.status === 404) {
           return [];
@@ -88,31 +106,17 @@ export class DriftzService {
 
       const messages = data.result?.items || [];
 
-      // Fetch full body for first 5 messages in parallel
+      // Refresh the list on every poll, reusing already hydrated bodies.
       const recentMessages = messages.slice(0, 5);
       const fullBodyResults = await Promise.all(
         recentMessages.map(async (msg: any) => {
           try {
-            const msgResponse = await fetchWithTimeout(
-              `${BASE_URL}/temp/${encodeURIComponent(address)}/${encodeURIComponent(msg.id)}`,
-              { signal: signal ?? null }
-            );
-            if (!msgResponse.ok) {
-              return { body: '', htmlBody: '', textBody: '' };
+            return await this.getMessage(address, String(msg.id), signal);
+          } catch (error) {
+            if (signal?.aborted || (error as Error)?.name === 'AbortError') {
+              throw error;
             }
-            const msgData = await msgResponse.json();
-            if (!msgData.success) {
-              return { body: '', htmlBody: '', textBody: '' };
-            }
-            const fullMsg = msgData.result;
-            return {
-              from: getSenderSource(fullMsg.fromName || msg.fromName, fullMsg.fromAddress || msg.fromAddress),
-              body: contentToString(fullMsg.textContent || fullMsg.htmlContent),
-              htmlBody: contentToString(fullMsg.htmlContent || fullMsg.textContent),
-              textBody: contentToString(fullMsg.textContent || ''),
-            };
-          } catch {
-            return { body: '', htmlBody: '', textBody: '' };
+            return undefined;
           }
         })
       );
@@ -123,14 +127,17 @@ export class DriftzService {
           from: getSenderSource(msg.fromName, msg.fromAddress),
           to: contentToString(msg.toAddress || address),
           subject: contentToString(msg.subject, '(No Subject)'),
-          date: msg.receivedAt ? Number(msg.receivedAt) * 1000 : Date.now(),
+          date: messageTimestamp(msg.receivedAt),
           body: '',
           read: false,
           attachments: [],
         };
         if (idx < 5 && fullBodyResults[idx]) {
           const body = fullBodyResults[idx]!;
-          if ('from' in body) {
+          if (email.date === 0 && body.date > 0) {
+            email.date = body.date;
+          }
+          if (body.from !== 'Unknown Sender') {
             email.from = body.from;
           }
           email.body = body.body;
@@ -150,6 +157,19 @@ export class DriftzService {
   }
 
   async getMessage(address: string, emailId: string, signal?: AbortSignal): Promise<Email> {
+    return this.messageCache.get(
+      address,
+      emailId,
+      () => this.fetchMessage(address, emailId, signal),
+      signal
+    );
+  }
+
+  private async fetchMessage(
+    address: string,
+    emailId: string,
+    signal?: AbortSignal
+  ): Promise<Email> {
     try {
       const response = await fetchWithTimeout(
         `${BASE_URL}/temp/${encodeURIComponent(address)}/${encodeURIComponent(emailId)}`,
@@ -173,7 +193,7 @@ export class DriftzService {
         from: getSenderSource(msg.fromName, msg.fromAddress),
         to: contentToString(msg.toAddress || address),
         subject: contentToString(msg.subject, '(No Subject)'),
-        date: msg.receivedAt ? Number(msg.receivedAt) * 1000 : Date.now(),
+        date: messageTimestamp(msg.receivedAt),
         body: bodyStr,
         htmlBody: htmlStr,
         textBody: textStr,
@@ -183,7 +203,9 @@ export class DriftzService {
           : [],
       };
     } catch (error) {
-      log.error('Failed to fetch Driftz message details', error);
+      if (!signal?.aborted && (error as Error)?.name !== 'AbortError') {
+        log.debug('Failed to fetch Driftz message details', error);
+      }
       throw error;
     }
   }
@@ -228,7 +250,12 @@ export class DriftzService {
       }));
     } catch (error) {
       if (isRetryableError(error)) {
-        throttledWarn(log, 'driftz-getPermanentMessages', 'Failed to fetch Driftz permanent messages', error);
+        throttledWarn(
+          log,
+          'driftz-getPermanentMessages',
+          'Failed to fetch Driftz permanent messages',
+          error
+        );
         throw error;
       }
       log.debug('Driftz getPermanentMessages non-retryable error, returning []', error);

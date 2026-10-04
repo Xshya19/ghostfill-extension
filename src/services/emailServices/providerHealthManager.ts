@@ -11,6 +11,7 @@ import {
   ProviderHealthEventListener,
   IProviderHealthManager,
 } from '../types/email-services.types';
+import { GENERATION_PROVIDER_PRIORITY } from './providerRegistry';
 
 const log = createLogger('ProviderHealth');
 
@@ -39,35 +40,7 @@ class ProviderHealthManager implements IProviderHealthManager {
   private listeners: Set<ProviderHealthEventListener> = new Set();
 
   // Priority order for providers (best first) — speed + reliability ranking
-  private readonly providerPriority: EmailService[] = [
-    'catchmail', // Fast, 7-day retention, custom names, zero auth (Primary)
-    'throwawaymail', // Fast, zero auth REST API (Verified 200 OK)
-    'mailtm', // Highly reliable API, JWT auth (Verified 200 OK)
-    'tempmailplus', // Multi-domain, fast (Verified 200 OK)
-    'maildrop', // GraphQL, 24h retention (Verified 200 OK)
-    'driftz', // Blocklist bypass (.mn, .org)
-    'mailinator', // Fast, public REST API (Verified 200 OK)
-    'guerrilla', // 10 domains (sharklasers, grr.la) (Verified 200 OK)
-    'yopmail', // Multi-domain, 8-day retention (Verified 200 OK)
-    'mailgw', // JWT auth, alternative to mail.tm (Verified 200 OK)
-    'custom', // Private self-hosted infrastructure
-    // Deprecated / non-working services kept at bottom of priority list.
-    // Do NOT promote 'tempmail'/'1secmail': 1secmail.com is unstable
-    // (intermittent outages since 2025, 1secmail.io parked) and the free
-    // api.1secmail.com endpoints this client uses degrade to fallback
-    // domains. Kept registered + health-gated only so existing stored
-    // accounts keep working — never make them defaults again.
-    'mailcx',
-    'dropmail',
-    'mailboxtemp',
-    'openinbox',
-    'evilmail',
-    'getnada',
-    'tempmaillol',
-    'mailnesia',
-    'tempmail',
-    '1secmail',
-  ];
+  private readonly providerPriority: readonly EmailService[] = GENERATION_PROVIDER_PRIORITY;
 
   constructor() {
     this.initializeProviders();
