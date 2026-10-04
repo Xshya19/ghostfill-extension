@@ -660,6 +660,23 @@ textarea:disabled,
 .action-icon:active {
   transform: scale(0.94);
 }
+.inbox-refresh-button[aria-busy='true'],
+.inbox-refresh-button[aria-busy='true']:hover,
+.inbox-refresh-button[aria-busy='true']:active {
+  /* Keep the control's center fixed while its child rotates. */
+  transform: none;
+  transition-property: color, border-color, background;
+}
+.inbox-refresh-icon {
+  display: block;
+  flex: none;
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+.inbox-refresh-icon--spinning {
+  animation: gf-spin 1s linear infinite;
+  will-change: transform;
+}
 .action-icon.success {
   color: var(--gf-mint);
   border-color: rgba(var(--gf-mint-rgb), 0.35);
@@ -3670,6 +3687,10 @@ textarea:disabled,
   }
 
   .spin {
+    animation-duration: 1.6s;
+  }
+
+  .inbox-refresh-icon--spinning {
     animation-duration: 1.6s;
   }
 

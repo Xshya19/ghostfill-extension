@@ -2,6 +2,10 @@
 
 All notable changes are documented here.
 
+## 1.1.6 — 2026-10-04
+
+- Stabilize popup inbox refresh controls while loading: rotate only the centered SVG glyph, keep the button fixed during hover/press, and slow the spinner slightly to prevent visible wobble.
+
 ## 1.1.5 — 2026-10-04
 
 - Add opt-in automatic Windows updates: a current-user helper checks stable releases every six hours, verifies the ZIP and checksum, retains rollback, and records installed status. GhostFill loads newer installed files when verification and writes are idle and extension pages are closed.

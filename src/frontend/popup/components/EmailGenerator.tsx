@@ -431,14 +431,17 @@ const EmailGenerator: React.FC<Props> = ({
                   {/* Refresh: Just icon with tooltip, shows Syncing… when active */}
                   <motion.button
                     type="button"
-                    className="action-icon"
+                    className="action-icon inbox-refresh-button"
                     onClick={() => void checkInbox()}
                     disabled={checking}
                     aria-busy={checking}
                     title={checking ? 'Syncing…' : 'Refresh inbox'}
                     aria-label="Refresh inbox"
                   >
-                    <RefreshCw size={16} className={checking ? 'spin' : ''} />
+                    <RefreshCw
+                      size={16}
+                      className={`inbox-refresh-icon${checking ? ' inbox-refresh-icon--spinning' : ''}`}
+                    />
                   </motion.button>
                 </div>
 
