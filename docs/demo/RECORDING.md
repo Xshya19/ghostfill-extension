@@ -1,6 +1,6 @@
 # Recording a safe GhostFill demonstration
 
-No recording was produced in this workspace. The removed historical GIF showed a personalised browser profile and must not be reused.
+The README includes an illustrated walkthrough and a cropped, redacted copy of the supplied screen recording (`ghostfill-screen-recording.gif`). The recording shows an earlier interface and does not demonstrate receiving a verification email. Keep the original raw GIF, which contains a personalised browser profile and saved account details, out of public assets.
 
 ## Preparation
 

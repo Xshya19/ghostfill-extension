@@ -4,6 +4,7 @@ import {
   isRealMailServiceAvailable,
   isTemporaryMailAccount,
 } from '../config/buildProfile';
+import { dedupService } from '../services/dedupService';
 import { assessEmailDecision, selectVerificationAction } from '../services/emailDecisionEngine';
 import { emailService } from '../services/emailServices';
 import { senderMatchesSite } from '../services/emailServices/privacy';
@@ -53,7 +54,7 @@ import {
 } from '../types';
 import { contentFingerprint } from '../utils/contentFingerprint';
 import { getSenderDomain } from '../utils/emailIdentity';
-import { createLogger, diag } from '../utils/logger';
+import { createLogger, diag, logger } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
 import { validateMessage } from '../utils/validation';
 import { isActivationTab, onContentScriptReady } from './activationRegistry';
@@ -62,6 +63,7 @@ import { ensureInitialized } from './initGuard';
 import { notifySuccess, notifyError, resetNotificationSession } from './notifications';
 import {
   startEmailPolling,
+  stopEmailPolling,
   startFastOTPPolling,
   stopFastOTPPolling,
   startFastWatchBurst,
@@ -80,6 +82,25 @@ import { sseManager } from './sseManager';
 
 const log = createLogger('MessageHandler');
 let gmailInboxFetchSeq = 0;
+let accountDataGeneration = 0;
+let clearingData = false;
+const pendingGmailWrites = new Set<Promise<unknown>>();
+
+async function persistGmailState(generation: number, operation: () => Promise<unknown>): Promise<void> {
+  if (clearingData || generation !== accountDataGeneration) {
+    throw new Error('Account data was cleared');
+  }
+  const write = operation().catch(() => undefined);
+  pendingGmailWrites.add(write);
+  try {
+    await write;
+    if (generation !== accountDataGeneration) {
+      throw new Error('Account data was cleared');
+    }
+  } finally {
+    pendingGmailWrites.delete(write);
+  }
+}
 
 const REAL_MAIL_ACTIONS = new Set<ExtensionMessage['action']>([
   'GENERATE_GMAIL_ALIAS',
@@ -366,6 +387,7 @@ const HIGH_PRIORITY_ACTIONS = new Set([
   'GMAIL_GET_STATUS',
   // Connect/disconnect are user mutations — a double-click must never be
   // swallowed as a "duplicate" and answered with a fake success.
+  'CLEAR_DATA',
   'ZOHO_CONNECT',
   'ZOHO_DISCONNECT',
   'ZOHO_GET_STATUS',
@@ -581,6 +603,9 @@ async function handleMessage(
   sender: chrome.runtime.MessageSender
 ): Promise<ExtensionResponse> {
   log.debug('Incoming message', { action: message.action, origin: sender.url });
+  if (clearingData) {
+    return { success: false, error: 'Data clearing is in progress. Please try again.' };
+  }
 
   if (!IS_GMAIL_ENABLED && REAL_MAIL_ACTIONS.has(message.action)) {
     return {
@@ -1381,11 +1406,35 @@ async function handleMessage(
     }
 
     case 'CLEAR_DATA': {
-      await storageService.clear();
-      await emailService.clearData();
-      await passwordService.clearHistory();
-      log.info('All extension data cleared');
-      return { success: true };
+      clearingData = true;
+      accountDataGeneration++;
+      try {
+        suppressNextEmailTypeTransition('disposable');
+        stopEmailPolling();
+        invalidateGmailInboxFetches();
+        await resetEmailSession();
+        resetNotificationSession();
+        linkService.clearData();
+        await Promise.all([
+          gmailApiService.signOut(),
+          disconnectMicrosoft(),
+          disconnectZoho(),
+          identityService.clearIdentity(),
+          dedupService.clear(),
+        ]);
+        await emailService.clearData();
+        await passwordService.clearHistory();
+        await Promise.allSettled([...pendingGmailWrites]);
+        stopEmailPolling();
+        // Clear storage last so disconnect/reset writes cannot restore removed data.
+        await storageService.clear();
+        logger.clearHistory();
+        diag.clear();
+        log.info('All extension data cleared');
+        return { success: true };
+      } finally {
+        clearingData = false;
+      }
     }
 
     case 'OPEN_OPTIONS': {
@@ -1437,6 +1486,7 @@ async function handleMessage(
 
     // ── GMAIL API HANDLERS ────────────────────────────────────────
     case 'GMAIL_GET_STATUS': {
+      const generation = accountDataGeneration;
       // Returns current auth status without triggering a sign-in
       const authState = getGmailAuthSetupState();
       const profile = gmailApiService.getCachedProfile();
@@ -1461,10 +1511,10 @@ async function handleMessage(
         // Try silent auth restoration (SW restart recovery)
         const silentProfile = await gmailApiService.checkSilentAuth();
         if (silentProfile) {
-          await storageService.set('gmailProfile', silentProfile).catch(() => {});
-          await storageService.set('gmailBase', silentProfile.email).catch(() => {});
-          await storageService.set('gmailConnected', true).catch(() => {});
-          await setGmailConnectedAt().catch(() => {});
+          await persistGmailState(generation, () => storageService.set('gmailProfile', silentProfile));
+          await persistGmailState(generation, () => storageService.set('gmailBase', silentProfile.email));
+          await persistGmailState(generation, () => storageService.set('gmailConnected', true));
+          await persistGmailState(generation, () => setGmailConnectedAt());
           const nextAuthState = getGmailAuthSetupState();
           return {
             success: true,
@@ -1497,27 +1547,28 @@ async function handleMessage(
     }
 
     case 'GMAIL_SIGN_IN': {
+      const generation = accountDataGeneration;
       try {
         if (!gmailApiService.isConfigured()) {
           throw new Error('GhostFill Gmail client_id is not configured.');
         }
         const profile = await gmailApiService.signIn();
         // Persist profile so other parts of the extension can read it
-        await storageService.set('gmailProfile', profile).catch(() => {});
-        await storageService.set('gmailBase', profile.email).catch(() => {});
-        await storageService.set('gmailConnected', true).catch(() => {});
-        await setGmailConnectedAt().catch(() => {});
+        await persistGmailState(generation, () => storageService.set('gmailProfile', profile));
+        await persistGmailState(generation, () => storageService.set('gmailBase', profile.email));
+        await persistGmailState(generation, () => storageService.set('gmailConnected', true));
+        await persistGmailState(generation, () => setGmailConnectedAt());
         sseManager.disconnect();
-        await storageService.set('preferredEmailType', 'gmail').catch(() => {});
-        await storageService.set('inbox', []).catch(() => {});
+        await persistGmailState(generation, () => storageService.set('preferredEmailType', 'gmail'));
+        await persistGmailState(generation, () => storageService.set('inbox', []));
         invalidateGmailInboxFetches();
-        await storageService.set('gmailInbox', []).catch(() => {});
-        await storageService.set('gmailSyncState', {}).catch(() => {});
-        await clearGmailAliasSessions().catch(() => {});
+        await persistGmailState(generation, () => storageService.set('gmailInbox', []));
+        await persistGmailState(generation, () => storageService.set('gmailSyncState', {}));
+        await persistGmailState(generation, () => clearGmailAliasSessions());
         // Seed an initial alias session for the base email so that
         // GMAIL_FETCH_INBOX calls arriving immediately after sign-in
         // can find an active session (fixes race condition).
-        await rememberGmailAliasSession(profile.email, profile.email, 'global').catch(() => {});
+        await persistGmailState(generation, () => rememberGmailAliasSession(profile.email, profile.email, 'global'));
         log.info('Gmail sign-in completed', { email: profile.email });
         return { success: true, profile };
       } catch (e: unknown) {

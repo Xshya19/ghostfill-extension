@@ -108,6 +108,7 @@ describe('MailTmService robustness', () => {
 
 describe('CustomDomainService robustness', () => {
   it('rejects account creation when backend registration fails', async () => {
+    vi.stubGlobal('chrome', { ...chrome, permissions: { contains: vi.fn().mockResolvedValue(true) } });
     const recordFailure = vi.fn();
     vi.doMock('../src/services/emailServices/providerHealthManager', () => ({
       providerHealth: { recordFailure },

@@ -1,3 +1,4 @@
+import { rootDomain } from '../utils/core';
 import { verificationSiteRoot } from '../utils/verificationSite';
 import { scoreActivationLink } from './extraction/activationLinkGuard';
 import type {
@@ -16,7 +17,6 @@ interface DecisionInput {
 }
 
 const SUSPICIOUS_TLDS = new Set(['tk', 'ml', 'ga', 'cf', 'gq', 'buzz', 'top', 'xyz']);
-const COMMON_SECOND_LEVEL_TLDS = new Set(['ac', 'co', 'com', 'edu', 'gov', 'mil', 'net', 'org']);
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -58,19 +58,6 @@ function mapPurpose(intent: EmailIntent): EmailDecisionPurpose {
     default:
       return 'unknown';
   }
-}
-
-function rootDomain(hostname: string): string {
-  const parts = hostname.toLowerCase().replace(/\.$/, '').split('.').filter(Boolean);
-  if (parts.length <= 2) {
-    return parts.join('.');
-  }
-
-  const secondLevel = parts[parts.length - 2];
-  if (secondLevel && COMMON_SECOND_LEVEL_TLDS.has(secondLevel) && parts.length >= 3) {
-    return parts.slice(-3).join('.');
-  }
-  return parts.slice(-2).join('.');
 }
 
 function senderRoot(sender?: string): string | null {

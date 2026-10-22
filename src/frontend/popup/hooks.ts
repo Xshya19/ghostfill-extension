@@ -12,7 +12,8 @@ import {
 } from '../../services/extraction/explicitCode';
 import { storageService } from '../../services/storageService';
 import { Email, StorageSchema } from '../../types';
-import { isWebUrl } from '../../utils/core';
+import { contentFingerprint } from '../../utils/contentFingerprint';
+import { contentToString, isWebUrl } from '../../utils/core';
 import { safeSendMessage } from '../../utils/messaging';
 
 const normalizePopupOTP = (otp: string | undefined): string | null => {
@@ -31,6 +32,17 @@ const normalizePopupOTP = (otp: string | undefined): string | null => {
   return clean;
 };
 
+const emailExtractionKey = (email: Email): string =>
+  contentFingerprint([
+    String(email.id),
+    String(email.date),
+    contentToString(email.from),
+    contentToString(email.subject),
+    contentToString(email.body),
+    contentToString(email.textBody),
+    contentToString(email.htmlBody),
+  ]);
+
 /**
  * Hook to asynchronously extract high-quality OTPs from a list of emails
  * using the background script's 12-layer extractor.
@@ -43,15 +55,23 @@ export function useOTPExtractor(emails: Email[]): {
   const [emailLinks, setEmailLinks] = useState<Record<string, string | null>>({});
   const otpsRef = useRef<Record<string, string | null>>({});
   const linksRef = useRef<Record<string, string | null>>({});
+  const extractedKeysRef = useRef<Record<string, string>>({});
   const emailKey = useMemo(
-    () => emails.map((email) => `${email.id}:${email.date}`).join('|'),
+    () => emails.map(emailExtractionKey).join('|'),
     [emails]
   );
   const stableEmails = useMemo(() => emails, [emailKey]);
 
   useEffect(() => {
     let mounted = true;
-    const activeIds = new Set(stableEmails.map((email) => email.id));
+    const activeIds = new Set(
+      stableEmails
+        .filter((email) => extractedKeysRef.current[email.id] === emailExtractionKey(email))
+        .map((email) => email.id)
+    );
+    extractedKeysRef.current = Object.fromEntries(
+      Object.entries(extractedKeysRef.current).filter(([id]) => activeIds.has(id))
+    );
     otpsRef.current = Object.fromEntries(
       Object.entries(otpsRef.current).filter(([id]) => activeIds.has(id))
     );
@@ -85,39 +105,9 @@ export function useOTPExtractor(emails: Email[]): {
         }
 
         try {
-          const toSafeStr = (v: unknown): string => {
-            if (typeof v === 'string') {
-              return v;
-            }
-            if (!v) {
-              return '';
-            }
-            if (typeof v === 'object') {
-              const obj = v as Record<string, unknown>;
-              if (typeof obj.text === 'string') {
-                return obj.text;
-              }
-              if (typeof obj.html === 'string') {
-                return obj.html;
-              }
-              if (typeof obj.body === 'string') {
-                return obj.body;
-              }
-              if (typeof obj.content === 'string') {
-                return obj.content;
-              }
-              try {
-                return JSON.stringify(v);
-              } catch {
-                return String(v);
-              }
-            }
-            return String(v);
-          };
-
-          const rawBody = toSafeStr(email.body);
-          const rawTextBody = toSafeStr(email.textBody) || rawBody;
-          const rawHtmlBody = toSafeStr(email.htmlBody) || (rawBody.includes('<') ? rawBody : '');
+          const rawBody = contentToString(email.body);
+          const rawTextBody = contentToString(email.textBody) || rawBody;
+          const rawHtmlBody = contentToString(email.htmlBody) || (rawBody.includes('<') ? rawBody : '');
 
           const response = (await safeSendMessage({
             action: 'EXTRACT_OTP',
@@ -150,10 +140,9 @@ export function useOTPExtractor(emails: Email[]): {
                 ? response.link
                 : null;
             if (response?.success) {
+              extractedKeysRef.current[email.id] = emailExtractionKey(email);
               otpsRef.current = { ...otpsRef.current, [email.id]: otpVal };
               setEmailOTPs((prev) => ({ ...prev, [email.id]: otpVal }));
-            }
-            if (linkVal !== null) {
               linksRef.current = { ...linksRef.current, [email.id]: linkVal };
               setEmailLinks((prev) => ({ ...prev, [email.id]: linkVal }));
             }

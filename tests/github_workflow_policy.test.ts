@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest';
 
 const workflowsDirectory = join(process.cwd(), '.github', 'workflows');
 
-const readWorkflow = (name: string): string => readFileSync(join(workflowsDirectory, name), 'utf8');
+const readWorkflow = (name: string): string =>
+  readFileSync(join(workflowsDirectory, name), 'utf8').replace(/\r\n/g, '\n');
 
 describe('GitHub workflow policy', () => {
   it('pins every referenced action to an immutable full commit SHA', () => {

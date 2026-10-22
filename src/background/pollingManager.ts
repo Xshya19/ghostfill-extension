@@ -24,6 +24,7 @@ import { otpService, smartDetectionService } from '../services/otpService';
 import { storageService } from '../services/storageService';
 import type { DetectionResult } from '../services/types/extraction.types';
 import { Email, EmailAccount } from '../types';
+import { rootDomain } from '../utils/core';
 import { getSenderDomain } from '../utils/emailIdentity';
 import { createLogger, diag } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
@@ -234,6 +235,10 @@ interface SessionState {
   pm_lastNotificationTime?: number;
 }
 
+function isTemporaryInboxFailure(message: string): boolean {
+  return /\b(failed to fetch|fetch failed|networkerror|network (?:error|request failed)|aborted|aborterror|timeout|timed out|cors|load failed|429|rate limit|too many requests)\b|\bHTTP\b[^\n]*\b5\d{2}\b/i.test(message);
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  §3  CIRCUIT BREAKER
 // ═════════════════════════════════════════════════════════════��═
@@ -306,9 +311,7 @@ export class CircuitBreaker {
     const msg = error instanceof Error ? error.message : String(error);
     const isAuthError = /\b(401|403|419|token|jwt|unauthor|forbidden)\b/i.test(msg);
     const isRateLimitError = /\b(429|rate limit|too many requests)\b/i.test(msg);
-    const isTransportError =
-      /\b(fetch|network|aborted|timeout|cors|load failed)\b/i.test(msg) ||
-      msg.includes('Failed to fetch');
+    const isTransportError = isTemporaryInboxFailure(msg);
 
     if (isAuthError) {
       log.debug('Auth error — not tripping engine circuit', { msg });
@@ -820,30 +823,7 @@ class DomainMatcher {
   // ─── Domain utilities ───────────────────────────────────────
 
   private static getRootDomain(hostname: string): string {
-    if (!hostname) {
-      return '';
-    }
-    // Defensive exit for raw IPv4 or IPv6 addresses
-    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) || hostname.includes(':')) {
-      return hostname;
-    }
-
-    const parts = hostname.split('.');
-    if (parts.length <= 2) {
-      return hostname;
-    }
-
-    const secondLevel = parts[parts.length - 2]?.toLowerCase();
-
-    // M6: Expanded ccTLD list — covers co.uk, com.au, co.jp, net.au, org.uk, etc.
-    // Source: https://publicsuffix.org/list/public_suffix_list.dat (common patterns)
-    const compoundSuffixes =
-      /^(co|com|org|net|edu|gov|ac|ne|or|gen|ltd|plc|me|firm|info|mod|sch|police|nhs|id|my|on|in|biz|tv|web|name|pro|health|go|mil|asn|conf|oz|act|nsw|qld|sa|tas|vic|wa)$/;
-    if (secondLevel && compoundSuffixes.test(secondLevel)) {
-      return parts.slice(-3).join('.');
-    }
-
-    return parts.slice(-2).join('.');
+    return rootDomain(hostname);
   }
 }
 
@@ -1303,6 +1283,7 @@ async function performCheck(mode: CheckMode): Promise<void> {
   rateLimiter.stamp();
   let checkSucceeded = false;
   let finalDetail = 'Inbox check complete';
+  let failureLevel: 'warn' | 'error' = 'error';
 
   activeCheckPromise = (async () => {
     try {
@@ -1388,6 +1369,7 @@ async function performCheck(mode: CheckMode): Promise<void> {
       checkSucceeded = true;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
+      failureLevel = isTemporaryInboxFailure(errorMsg) ? 'warn' : 'error';
       const isRateLimited = /\b(429|rate limit|too many requests)\b/i.test(errorMsg);
       if (isRateLimited) {
         stopFastWatchBurst('rate_limited');
@@ -1407,7 +1389,10 @@ async function performCheck(mode: CheckMode): Promise<void> {
         error: metrics.lastErrorMessage,
         mode,
       });
-      finalDetail = 'Inbox check failed';
+      finalDetail =
+        failureLevel === 'warn'
+          ? `Temporary inbox failure; retrying: ${errorMsg}`
+          : `Inbox check failed: ${errorMsg}`;
     } finally {
       activeCheckPromise = null;
 
@@ -1419,13 +1404,21 @@ async function performCheck(mode: CheckMode): Promise<void> {
 
       lastGlobalCheckTime = Date.now();
       persistSessionState();
-      diag.endFlow(flowId, 'polling', 'inbox-check', checkSucceeded, finalDetail, {
-        mode,
-        totalChecks: metrics.totalChecks,
-        emailsProcessed: metrics.emailsProcessed,
-        otpsFound: metrics.otpsFound,
-        linksProcessed: metrics.linksProcessed,
-      });
+      diag.endFlow(
+        flowId,
+        'polling',
+        'inbox-check',
+        checkSucceeded,
+        finalDetail,
+        {
+          mode,
+          totalChecks: metrics.totalChecks,
+          emailsProcessed: metrics.emailsProcessed,
+          otpsFound: metrics.otpsFound,
+          linksProcessed: metrics.linksProcessed,
+        },
+        failureLevel
+      );
       flushPendingCheck();
     }
   })();

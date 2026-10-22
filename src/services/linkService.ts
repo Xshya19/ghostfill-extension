@@ -149,6 +149,7 @@ class LinkService {
   private lastActivationTime = 0;
   private readonly scanningEmails = new Set<string>();
   private readonly activatedUrls = new Set<string>();
+  private sessionGeneration = 0;
 
   private readonly metrics: LinkMetrics = {
     emailsScanned: 0,
@@ -179,6 +180,7 @@ class LinkService {
     emailCode?: string | null,
     linkAnchorText = ''
   ): Promise<void> {
+    const generation = this.sessionGeneration;
     const emailId = String(email.id);
     const accId = accountId || email.to || 'unknown';
 
@@ -186,6 +188,7 @@ class LinkService {
       log.debug('Email already processed for link', { emailId });
       return;
     }
+    if (generation !== this.sessionGeneration) {return;}
 
     if (this.isScanning(emailId)) {
       return;
@@ -213,6 +216,7 @@ class LinkService {
 
       // ── Auto-confirm: Check user setting before opening link ──
       const account = await storageService.get('currentEmail');
+      if (generation !== this.sessionGeneration) {return;}
       if (!canAutoOpenVerificationLink(account, email.from, linkUrl)) {
         this.metrics.linksBlocked++;
         log.info('Link saved for review; sender or signup site does not match its destination', {
@@ -225,6 +229,7 @@ class LinkService {
       if (!(await this.canAutomaticallyActivate(linkUrl, email, linkAnchorText))) {
         return;
       }
+      if (generation !== this.sessionGeneration) {return;}
 
       log.info('🔓 Auto-confirming pre-detected link', {
         url: maskUrl(linkUrl),
@@ -259,6 +264,7 @@ class LinkService {
       };
 
       await this.markProcessed(emailId, accId, true);
+      if (generation !== this.sessionGeneration) {return;}
       this.enqueue(record);
     } catch (error) {
       log.error('Pre-detected link handling failed', {
@@ -271,6 +277,7 @@ class LinkService {
   }
 
   async handleNewEmail(email: Email, accountId?: string): Promise<void> {
+    const generation = this.sessionGeneration;
     const emailId = String(email.id);
     const accId = accountId || email.to || 'unknown';
 
@@ -278,6 +285,7 @@ class LinkService {
       log.debug('Email already processed', { emailId });
       return;
     }
+    if (generation !== this.sessionGeneration) {return;}
 
     if (this.isScanning(emailId)) {
       return;
@@ -287,6 +295,7 @@ class LinkService {
 
     // Two-phase commit: mark pending during scan to prevent concurrent duplicate scans
     await dedupService.markPending(emailId, accId, 60_000);
+    if (generation !== this.sessionGeneration) {return;}
 
     log.info('Scanning for activation links', {
       emailId,
@@ -301,6 +310,7 @@ class LinkService {
         email.htmlBody || '',
         email.from || ''
       );
+      if (generation !== this.sessionGeneration) {return;}
 
       const hasLink = Boolean(detection.link);
 
@@ -332,11 +342,13 @@ class LinkService {
 
       // ── Auto-confirm: Check user setting before opening link ──
       const account = await storageService.get('currentEmail');
+      if (generation !== this.sessionGeneration) {return;}
       const canAutomaticallyActivate =
         detection.decision?.canAutoAct === true &&
         (detection.decision.action === 'open-link' || detection.decision.action === 'fill-otp-and-open-link') &&
         canAutoOpenVerificationLink(account, email.from, detection.link) &&
         await this.canAutomaticallyActivate(detection.link, email);
+      if (generation !== this.sessionGeneration) {return;}
 
       log.info('🔘 autoConfirmLinks resolved', {
         effective: canAutomaticallyActivate,
@@ -384,6 +396,7 @@ class LinkService {
       };
 
       await this.markProcessed(emailId, accId, true);
+      if (generation !== this.sessionGeneration) {return;}
       this.enqueue(record);
     } catch (error) {
       log.error('Email scan failed', {
@@ -413,6 +426,14 @@ class LinkService {
     this.activationHistory = [];
     this.scanningEmails.clear();
     log.info('🧹 History cleared (activated URL dedup retained)');
+  }
+
+  clearData(): void {
+    this.sessionGeneration++;
+    this.activationQueue.length = 0;
+    this.activatedUrls.clear();
+    this.lastActivationTime = 0;
+    this.clearHistory();
   }
 
   private isScanning(emailId: string): boolean {
@@ -473,6 +494,7 @@ class LinkService {
       return;
     }
     this.draining = true;
+    const generation = this.sessionGeneration;
 
     try {
       while (this.activationQueue.length > 0) {
@@ -481,12 +503,14 @@ class LinkService {
         if (gap < CONFIG.ACTIVATION_COOLDOWN_MS) {
           await sleep(CONFIG.ACTIVATION_COOLDOWN_MS - gap);
         }
+        if (generation !== this.sessionGeneration) {return;}
 
         const record = this.activationQueue.shift()!;
         await this.activate(record);
       }
     } finally {
       this.draining = false;
+      if (this.activationQueue.length > 0) {void this.drain();}
     }
   }
 
@@ -495,6 +519,7 @@ class LinkService {
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   private async activate(record: ActivationRecord): Promise<void> {
+    const generation = this.sessionGeneration;
     record.status = 'activating';
     record.attempts++;
 
@@ -517,6 +542,7 @@ class LinkService {
           { emailId: record.emailId, emailDate: record.emailDate, autoFillEligible: record.codeSource === 'email' }
         );
       }
+      if (generation !== this.sessionGeneration) {return;}
 
       // Open the detected action where the user can see the next step.
       log.info('🌐 Opening activation link in a new tab', { url: maskUrl(record.url) });
@@ -525,6 +551,7 @@ class LinkService {
         url: record.url,
         active: true,
       });
+      if (generation !== this.sessionGeneration) {return;}
 
       if (!tab.id) {
         throw new Error('chrome.tabs.create returned no tab id');
@@ -540,8 +567,10 @@ class LinkService {
 
       // ── Deliver code to the loaded page (if we extracted one) ──
       const { autoFillOTP } = await storageService.getSettings();
+      if (generation !== this.sessionGeneration) {return;}
       if (record.extractedCode && autoFillOTP) {
         const delivered = await this.deliverCode(tab.id, record.extractedCode, record.codeSource);
+        if (generation !== this.sessionGeneration) {return;}
         record.status = delivered ? 'delivered' : 'activated';
         if (delivered) {
           this.metrics.codesDelivered++;
@@ -552,6 +581,7 @@ class LinkService {
 
       // Brief settle for SPA hydration — keep tab open for the user
       await sleep(350);
+      if (generation !== this.sessionGeneration) {return;}
       log.info('✨ Tab is ready and waiting for user', { tabId: tab.id });
 
       // Keep the tab eligible for OTPs that arrive in a later email.
@@ -563,6 +593,7 @@ class LinkService {
       // ── Signal polling manager to cool down ──
       await this.signalPollingComplete();
     } catch (error) {
+      if (generation !== this.sessionGeneration) {return;}
       const msg = errorMessage(error);
       record.error = msg;
       this.metrics.lastErrorMessage = msg;
@@ -581,6 +612,7 @@ class LinkService {
           backoffMs: backoff,
         });
         await sleep(backoff);
+        if (generation !== this.sessionGeneration) {return;}
         await this.activate(record);
         return; // finalize happens in the retry
       }
@@ -613,7 +645,7 @@ class LinkService {
       });
     }
 
-    this.finalize(record, t0);
+    if (generation === this.sessionGeneration) {this.finalize(record, t0);}
   }
 
   private finalize(record: ActivationRecord, t0: number): void {
@@ -703,9 +735,11 @@ class LinkService {
     code: string,
     source: 'email' | 'url-extracted'
   ): Promise<boolean> {
+    const generation = this.sessionGeneration;
     const deadline = Date.now() + 22_000;
-    while (Date.now() < deadline) {
+    while (generation === this.sessionGeneration && Date.now() < deadline) {
       const ready = await this.probeContentScript(tabId);
+      if (generation !== this.sessionGeneration) {return false;}
       if (!ready) {
         log.warn('Content script never responded — delivery skipped', { tabId });
         return false;
@@ -746,9 +780,10 @@ class LinkService {
    * or the timeout expires.
    */
   private async probeContentScript(tabId: number): Promise<boolean> {
+    const generation = this.sessionGeneration;
     const deadline = Date.now() + CONFIG.CS_READY_TIMEOUT_MS;
 
-    while (Date.now() < deadline) {
+    while (generation === this.sessionGeneration && Date.now() < deadline) {
       try {
         const res = await chrome.tabs.sendMessage(tabId, { action: 'PING' });
         if (res?.alive) {

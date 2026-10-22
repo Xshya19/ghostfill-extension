@@ -9,6 +9,8 @@ The restricted temporary-mail-only profile remains available explicitly:
 
 - `npm run build:public` and `npm run build:public:zip` omit Gmail OAuth, real-mail permissions, and real-mail controls.
 
+Both profiles support a private HTTPS email endpoint. In **Options → Email**, select the custom service, enter its domain and endpoint, then click **Allow endpoint access**. Chrome requests access to that endpoint's host only. Access to all HTTPS hosts is declared optional, never granted on installation; the custom provider checks the host grant before each request and rejects redirects.
+
 The full profile is the product profile requested by this repository, but it is not automatically ready for unrestricted public distribution. Gmail's `gmail.readonly` scope is restricted, so a public real-mail release requires an owned OAuth client, a verified consent-screen configuration, an appropriate privacy policy, and any Google review or verification that applies at that time. A GitHub Pages URL alone does not establish OAuth domain ownership.
 
-To enable the full profile after installation, open **Options → Gmail (OAuth)**, confirm the OAuth client ID, then choose **Gmail** in the popup and connect the Google account. After connection, the **Aliases** button opens the Gmail alias manager.
+To connect Gmail after installing the full profile, open **Options → Email → Gmail (OAuth)**, enter and save a valid OAuth client ID, then choose **Gmail** in the popup and connect an account allowed by that client's OAuth configuration. After connection, the **Aliases** button opens the Gmail alias manager. Temporary email works without this setup.

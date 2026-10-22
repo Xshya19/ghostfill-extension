@@ -1677,7 +1677,11 @@ export class VerificationLoop {
         if (verified) {
           return { success: true, attempts: attempt, strategy: strategyUsed };
         } else {
-          log.warn(`Verification failed for field. Expected: ${value}, Got: ${candidate.element.value}. Attempting correction...`);
+          log.warn('Verification failed for field. Attempting correction...', {
+            fieldType: candidate.element.type,
+            strategy: strategyUsed,
+            attempt,
+          });
         }
       }
     }

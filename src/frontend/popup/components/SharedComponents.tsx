@@ -875,14 +875,7 @@ export const EmailAvatar: React.FC<EmailAvatarProps> = React.memo(
         : domains.includes('www.notion.com')
           ? notionLogoImg
           : null;
-      return [
-        ...(bundledLogo ? [bundledLogo] : []),
-        ...domains.flatMap((host) => [
-          `https://${host}/favicon.ico`,
-          `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(`https://${host}`)}&sz=64`,
-          `https://${host}/apple-touch-icon.png`,
-        ]),
-      ];
+      return bundledLogo ? [bundledLogo] : [];
     }, [safeFrom, website, content]);
     const [faviconIndex, setFaviconIndex] = useState(0);
     const [loadedSource, setLoadedSource] = useState<string | null>(null);
@@ -891,19 +884,6 @@ export const EmailAvatar: React.FC<EmailAvatarProps> = React.memo(
       setLoadedSource(null);
     }, [faviconSources]);
     const faviconSource = faviconSources[faviconIndex];
-
-    useEffect(() => {
-      if (!faviconSource || loadedSource === faviconSource) {
-        return;
-      }
-
-      // A host can leave an image request pending without firing onError.
-      // Move on so one slow logo endpoint cannot hold up the remaining sources.
-      const timeout = window.setTimeout(() => {
-        setFaviconIndex((index) => index + 1);
-      }, 900);
-      return () => window.clearTimeout(timeout);
-    }, [faviconSource, loadedSource]);
 
     return (
       <div

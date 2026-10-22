@@ -66,7 +66,7 @@ const TAB_ORDER: Array<{ id: TabId; label: string; hint: string }> = [
   { id: 'automation', label: 'Automation', hint: 'Verification codes, links, and shortcuts' },
   { id: 'privacy', label: 'Privacy', hint: 'History and data retention' },
   { id: 'advanced', label: 'Advanced', hint: 'Debug logging, console help, import, and reset' },
-  { id: 'about', label: 'About', hint: 'Version, storage, and support' },
+  { id: 'about', label: 'About', hint: 'Updates, version, storage, and support' },
 ];
 
 // ═══════════════════════════════════════════════════════════════
@@ -859,8 +859,19 @@ const OptionsApp: React.FC = () => {
       confirmText: t('clearAllDataAction'),
       action: () => {
         void (async () => {
-          await storageService.clear();
-          window.location.reload();
+          if (autoSaveTimerRef.current) {
+            clearTimeout(autoSaveTimerRef.current);
+          }
+          try {
+            const response = await chrome.runtime.sendMessage({ action: 'CLEAR_DATA' });
+            if (!response?.success) {
+              throw new Error(response?.error || 'Failed to clear extension data');
+            }
+            window.location.reload();
+          } catch (error) {
+            log.error('Failed to clear extension data', error);
+            setSaveState('failed');
+          }
         })();
       },
     });

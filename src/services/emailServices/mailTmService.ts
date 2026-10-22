@@ -35,6 +35,8 @@ export class MailTmService {
   private baseUrl = API.MAIL_TM.BASE_URL;
   private token: string | null = null;
   private tokenExpiry: number = 0;
+  private credentials: { address: string; password?: string } | null = null;
+  private authSession = 0;
   private tokenRefreshPromise: Promise<string> | null = null;
   private lastErrorTime: number = 0;
   private consecutiveErrors: number = 0;
@@ -206,6 +208,14 @@ export class MailTmService {
 
       try {
         const response = await fetchWithTimeout(url, options);
+        if (
+          response.status === 401 &&
+          this.token &&
+          new Headers(options.headers).get('Authorization') === `Bearer ${this.token}`
+        ) {
+          this.token = null;
+          this.tokenExpiry = 0;
+        }
         lastStatus = response.status;
         // Return immediately if successful or client error (4xx) except 429
         if (
@@ -332,6 +342,8 @@ export class MailTmService {
 
       // Mail.tm API has eventual consistency — new accounts need time to propagate
       // before they can authenticate. Progressive delay with polling.
+      this.clearAuthentication();
+      this.credentials = { address: fullEmail, password: pwd };
       await this.waitUntilAuthenticatable(fullEmail, pwd, signal);
 
       // If waitUntilAuthenticatable already got a token, skip the auth loop
@@ -343,6 +355,9 @@ export class MailTmService {
             await this.authenticate(fullEmail, pwd, signal);
             break;
           } catch (authError) {
+            if ((authError as Error).name === 'AbortError') {
+              throw authError;
+            }
             lastAuthError = authError as Error;
             if (attempt < maxAuthAttempts) {
               const delayMs = 1500 * attempt;
@@ -400,12 +415,16 @@ export class MailTmService {
   ): Promise<void> {
     const delays = [300, 500, 800, 1200]; // progressive polling
     const startTime = Date.now();
+    const authSession = this.authSession;
 
     for (const delay of delays) {
       if (Date.now() - startTime > maxWaitMs) {
         break;
       }
       await new Promise((resolve) => setTimeout(resolve, delay));
+      if (authSession !== this.authSession) {
+        throw new DOMException('Mailbox session changed', 'AbortError');
+      }
 
       try {
         const response = await fetchWithTimeout(`${this.baseUrl}${API.MAIL_TM.ENDPOINTS.TOKEN}`, {
@@ -419,12 +438,18 @@ export class MailTmService {
         if (response.ok) {
           // Consume the token so we don't double-authenticate
           const data = await response.json();
+          if (authSession !== this.authSession) {
+            throw new DOMException('Mailbox session changed', 'AbortError');
+          }
           this.token = data.token;
           this.tokenExpiry = Date.now() + 8 * 60 * 1000;
           log.debug('Account became authenticatable during wait phase');
           return;
         }
-      } catch {
+      } catch (error) {
+        if ((error as Error).name === 'AbortError') {
+          throw error;
+        }
         // Still propagating, continue waiting
         continue;
       }
@@ -437,6 +462,13 @@ export class MailTmService {
    * Authenticate and get JWT token
    */
   async authenticate(address: string, password: string, signal?: AbortSignal): Promise<string> {
+    if (this.credentials?.address !== address) {
+      this.clearAuthentication();
+    }
+    const authSession = this.authSession;
+    this.token = null;
+    this.tokenExpiry = 0;
+    this.credentials = { address, password };
     try {
       const response = await this.fetchWithRetry(`${this.baseUrl}${API.MAIL_TM.ENDPOINTS.TOKEN}`, {
         method: 'POST',
@@ -447,6 +479,9 @@ export class MailTmService {
         signal: signal ?? null,
       });
 
+      if (authSession !== this.authSession) {
+        throw new DOMException('Mailbox session changed', 'AbortError');
+      }
       if (!response.ok) {
         if (response.status === 401) {
           this.token = null;
@@ -455,6 +490,9 @@ export class MailTmService {
       }
 
       const data = await response.json();
+      if (authSession !== this.authSession) {
+        throw new DOMException('Mailbox session changed', 'AbortError');
+      }
       this.token = data.token;
       this.tokenExpiry = Date.now() + 8 * 60 * 1000;
 
@@ -479,9 +517,23 @@ export class MailTmService {
   /**
    * Set token from stored account
    */
-  async setToken(token: string): Promise<void> {
+  async setToken(token: string, address?: string, password?: string): Promise<void> {
+    // A stored account may still contain a token already replaced after a 401.
+    if (address && this.credentials?.address === address && (this.isAuthenticated() || this.tokenRefreshPromise)) {
+      return;
+    }
+    this.clearAuthentication();
+    this.credentials = address ? { address, ...(password && { password }) } : null;
     this.token = token;
     this.tokenExpiry = Date.now() + 8 * 60 * 1000;
+  }
+
+  clearAuthentication(): void {
+    this.authSession++;
+    this.token = null;
+    this.tokenExpiry = 0;
+    this.credentials = null;
+    this.tokenRefreshPromise = null;
   }
 
   /**
@@ -506,12 +558,18 @@ export class MailTmService {
     }
 
     this.tokenRefreshPromise = (async () => {
+      if (this.credentials?.password) {
+        return this.authenticate(this.credentials.address, this.credentials.password, signal);
+      }
       // Check if we have credentials in storage to re-authenticate
       try {
         const { storageService } = await import('../storageService');
         const currentEmail = await storageService.get('currentEmail');
 
-        if (currentEmail && currentEmail.service === 'mailtm' && currentEmail.password) {
+        if (
+          currentEmail && currentEmail.service === 'mailtm' && currentEmail.password &&
+          (!this.credentials || this.credentials.address === currentEmail.fullEmail)
+        ) {
           log.info('Token expired, re-authenticating...');
           await this.authenticate(currentEmail.fullEmail, currentEmail.password, signal);
           return this.token ?? '';
@@ -523,10 +581,13 @@ export class MailTmService {
       throw new Error('Not authenticated and cannot refresh token');
     })();
 
+    const refresh = this.tokenRefreshPromise;
     try {
-      await this.tokenRefreshPromise;
+      await refresh;
     } finally {
-      this.tokenRefreshPromise = null;
+      if (this.tokenRefreshPromise === refresh) {
+        this.tokenRefreshPromise = null;
+      }
     }
   }
 

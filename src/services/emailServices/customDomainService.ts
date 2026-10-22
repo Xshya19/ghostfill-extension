@@ -1,5 +1,6 @@
 import { IEmailProvider, Email, EmailAccount } from '../../types';
 import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
+import { assertCustomEndpointPermission } from '../../utils/customEndpoint';
 import { getSenderSource } from '../../utils/emailIdentity';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
@@ -40,6 +41,7 @@ export class CustomDomainService implements IEmailProvider {
     if (!settings.customDomain || !settings.customDomainUrl) {
       return null;
     }
+    await assertCustomEndpointPermission(settings.customDomainUrl);
     // SECURITY FIX: Get API key from session-only storage (not persisted)
     const apiKey = await storageService.getCustomDomainKey();
     return {
@@ -71,6 +73,8 @@ export class CustomDomainService implements IEmailProvider {
 
         const fetchInit: RequestInit = {
           method: 'POST',
+          redirect: 'error',
+          credentials: 'omit',
           headers,
           body: JSON.stringify({ action: 'create', prefix, domain: config.domain, fullEmail }),
           signal: signal ?? null,
@@ -143,6 +147,8 @@ export class CustomDomainService implements IEmailProvider {
       const t0 = performance.now();
       const fetchInit: RequestInit = {
         method: 'GET',
+        redirect: 'error',
+        credentials: 'omit',
         headers,
         signal: signal ?? null,
       };
@@ -168,13 +174,17 @@ export class CustomDomainService implements IEmailProvider {
           date?: string | number;
         }
 
-        return data.messages.map((msg: CustomMessage, idx: number) => {
+        const duplicateCounts = new Map<string, number>();
+        return data.messages.map((msg: CustomMessage) => {
           const bodyStr = contentToString(msg.body);
           const htmlStr = contentToString(msg.htmlBody || msg.body);
-          // Date.now() alone collides within the same ms (dedup then keeps
-          // only the first mail). Suffix with the index + a body hash so
-          // ids are stable per poll AND unique within a batch.
-          const fallbackId = `custom_${Date.now()}_${idx}_${bodyStr.length}_${hashBody(bodyStr)}`;
+          const identity = JSON.stringify([
+            account.fullEmail, msg.from || '', msg.subject || '', msg.date ?? '', bodyStr, htmlStr,
+          ]);
+          const occurrence = duplicateCounts.get(identity) || 0;
+          duplicateCounts.set(identity, occurrence + 1);
+          // Identical copies need separate IDs without coupling identity to batch order or poll time.
+          const fallbackId = `custom_${hashBody(identity)}_${occurrence}`;
           return {
             id: msg.id || fallbackId,
             from: getSenderSource(undefined, msg.from),

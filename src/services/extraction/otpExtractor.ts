@@ -1079,7 +1079,7 @@ export function extractOTP(
 
   // Absolute floor — refuse to return garbage
   if (best.rawScore < CONFIG.absoluteMinRawScore) {
-    log.debug(`Best candidate ${best.code} below absolute floor (${best.rawScore.toFixed(1)})`);
+    log.debug('Best OTP candidate below absolute floor', { code: best.code, score: best.rawScore });
     return null;
   }
 

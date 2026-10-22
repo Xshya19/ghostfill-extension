@@ -1393,6 +1393,7 @@ export class ContextEngine {
       }
 
       if (shouldRescan) {
+        this.lastScanFingerprint = '';
         this.triggerDebouncedScan();
       }
     });
@@ -1408,6 +1409,7 @@ export class ContextEngine {
   }
 
   private handleNavigation = (): void => {
+    this.lastScanFingerprint = '';
     this.triggerDebouncedScan();
   };
 
@@ -1449,7 +1451,10 @@ export class ContextEngine {
   async scan(): Promise<void> {
     try {
       const currentFingerprint = this.getDOMFingerprint();
-      if (currentFingerprint === this.lastScanFingerprint) {
+      if (
+        currentFingerprint === this.lastScanFingerprint &&
+        this.candidates.every((candidate) => candidate.element.isConnected)
+      ) {
         return;
       }
       this.lastScanFingerprint = currentFingerprint;

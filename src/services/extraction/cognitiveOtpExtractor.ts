@@ -281,7 +281,7 @@ export function extractOTPCognitive(
   if (best.fromSplit) {matchedSignals.push({ name: 'split-digit-reconstruction', points: 55, layer: 'structural', detail: 'Reconstructed from per-character DOM cells' });}
   if (best.isolated) {matchedSignals.push({ name: 'dom-isolation', points: 20, layer: 'isolation', detail: 'Sole content of its DOM parent' });}
 
-  log.info(`Cognitive OTP: ${best.code} (${(confidence * 100).toFixed(0)}%) points=${best.points.toFixed(1)} ambiguous=${ambiguous}`);
+  log.info('Cognitive OTP selected', { code: best.code, confidence, points: best.points, ambiguous });
 
   return {
     code: best.code,

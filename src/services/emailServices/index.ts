@@ -56,12 +56,13 @@ class EmailServiceAggregator {
    * backend the aggregator can still serve.
    *
    * Deprecated backends (tempmail/1secmail, mailcx, dropmail, mailboxtemp,
-   * openinbox, evilmail, getnada, tempmaillol, mailinator, mailnesia) keep
+   * openinbox, evilmail, getnada, tempmaillol, mailnesia) keep
    * their create/check/read/getDomains passthroughs below so previously
    * stored accounts keep working, but they are NEVER health-checked, NEVER
    * defaults, and NEVER in the preferred-service picker. In particular do
    * NOT re-add 1secmail: api.1secmail.com is flaky, 1secmail.io is parked,
    * and the key-based 1sec-mail.com API is a different operator.
+   * Mailinator is available by explicit saved preference, outside automatic fallback selection.
    *
    * Health checks always iterate this full list (never reassign-then-
    * iterate) so a provider that recovers is re-admitted on the next check.
@@ -266,6 +267,7 @@ class EmailServiceAggregator {
     if (this.generateEmailPromise) {
       return this.generateEmailPromise;
     }
+    const sessionGeneration = this.inboxSessionGeneration;
 
     const now = Date.now();
     const diff = this.GENERATION_COOLDOWN_MS - (now - this.lastGenerationTime);
@@ -299,6 +301,7 @@ class EmailServiceAggregator {
       if (
         !options.service &&
         service !== 'custom' &&
+        service !== 'mailinator' &&
         !this.availableServices.includes(service) &&
         this.availableServices.length > 0
       ) {
@@ -315,16 +318,19 @@ class EmailServiceAggregator {
           account.originUrl = options.originUrl;
         }
       } catch (error) {
+        if ((error as Error).name === 'AbortError' || sessionGeneration !== this.inboxSessionGeneration) {
+          throw new DOMException('Email session changed', 'AbortError');
+        }
         // Record failure for health tracking
         this.healthManager.recordFailure(service, error as Error);
         log.warn(`Failed to generate email with ${service}, executing fallback logic...`, error);
 
         // Smart fallback with health-aware provider selection
-        return this.generateEmailWithFallback(options, service, startTime);
+        return this.generateEmailWithFallback(options, service, startTime, sessionGeneration);
       }
 
       // Success path - store and return (use account.service, not the requested service)
-      return this.finalizeEmailGeneration(account, account.service as EmailService, startTime);
+      return this.finalizeEmailGeneration(account, account.service as EmailService, startTime, sessionGeneration);
     })();
 
     try {
@@ -424,7 +430,8 @@ class EmailServiceAggregator {
   private async generateEmailWithFallback(
     options: { prefix?: string; domain?: string; originUrl?: string; signal?: AbortSignal },
     failedService: EmailService,
-    startTime: number
+    startTime: number,
+    sessionGeneration = this.inboxSessionGeneration
   ): Promise<EmailAccount> {
     const triedProviders: EmailService[] = [failedService];
     const maxRetries = 5;
@@ -458,17 +465,21 @@ class EmailServiceAggregator {
       await new Promise((resolve) => {
         setTimeout(resolve, delay);
       });
+      if (sessionGeneration !== this.inboxSessionGeneration) {
+        throw new DOMException('Email session changed', 'AbortError');
+      }
 
       try {
         const account = await this.createAccountWithService(nextProvider, options);
         if (options.originUrl) {
           account.originUrl = options.originUrl;
         }
-        return this.finalizeEmailGeneration(account, account.service as EmailService, startTime);
+        return this.finalizeEmailGeneration(account, account.service as EmailService, startTime, sessionGeneration);
       } catch (error) {
-        if ((error as Error).name !== 'AbortError') {
-          this.healthManager.recordFailure(nextProvider, error as Error);
+        if ((error as Error).name === 'AbortError' || sessionGeneration !== this.inboxSessionGeneration) {
+          throw new DOMException('Email session changed', 'AbortError');
         }
+        this.healthManager.recordFailure(nextProvider, error as Error);
         log.warn(`Fallback to ${nextProvider} failed (attempt ${attempt + 1})`, error);
         // Continue to next provider
       }
@@ -484,8 +495,15 @@ class EmailServiceAggregator {
   private async finalizeEmailGeneration(
     account: EmailAccount,
     service: EmailService,
-    startTime: number
+    startTime: number,
+    sessionGeneration = this.inboxSessionGeneration
   ): Promise<EmailAccount> {
+    const assertActiveSession = () => {
+      if (sessionGeneration !== this.inboxSessionGeneration) {
+        throw new DOMException('Email session changed', 'AbortError');
+      }
+    };
+    assertActiveSession();
     // CRITICAL: Validate account.id before saving — required for SSE
     if (service === 'mailtm' && !account.id) {
       // Generate a fallback ID from the email address
@@ -504,6 +522,7 @@ class EmailServiceAggregator {
     // is active (or preferred not set) so Gmail-tab fill is never overwritten mid-session.
     await storageService.set('disposableEmail', account);
     const preferred = getEffectiveEmailType(await storageService.get('preferredEmailType'));
+    assertActiveSession();
     if (preferred !== 'gmail') {
       await storageService.set('currentEmail', account);
     }
@@ -513,6 +532,7 @@ class EmailServiceAggregator {
     // entirely rather than writing and pretending to prune.
     try {
       const settings = await storageService.getSettings();
+      assertActiveSession();
       if (settings.saveHistory !== false) {
         await storageService.pushToArray(
           'emailHistory',
@@ -529,6 +549,9 @@ class EmailServiceAggregator {
         log.debug('History write skipped (saveHistory disabled)');
       }
     } catch (e) {
+      if ((e as Error).name === 'AbortError') {
+        throw e;
+      }
       log.warn('Failed to record email history', e);
     }
 
@@ -687,6 +710,7 @@ class EmailServiceAggregator {
   }
 
   private async checkInboxInternal(account: EmailAccount, signal?: AbortSignal): Promise<Email[]> {
+    const requestStarted = performance.now();
     try {
       if (!isRealMailServiceAvailable(account?.service)) {
         throw new Error('Real-mail integrations are unavailable in the public build.');
@@ -859,7 +883,7 @@ class EmailServiceAggregator {
           break;
         case 'mailtm':
           if (account.token) {
-            await mailTmService.setToken(account.token);
+            await mailTmService.setToken(account.token, account.fullEmail, account.password);
           } else if (account.password) {
             await mailTmService.authenticate(account.fullEmail, account.password, signal);
           }
@@ -948,6 +972,10 @@ class EmailServiceAggregator {
         subject: sanitizeEmailSubject(email.subject || '(No Subject)'),
         from: getSenderSource(undefined, email.from),
       }));
+
+      if (!isSelfManaged) {
+        this.healthManager.recordSuccess(account.service, performance.now() - requestStarted);
+      }
 
       // PERFORMANCE FIX: Efficient comparison using ID concatenation
       const slicedSafeEmails = safeEmails.slice(0, 50);
@@ -1133,7 +1161,9 @@ class EmailServiceAggregator {
           break;
         case 'mailtm':
           if (account.token) {
-            await mailTmService.setToken(account.token);
+            await mailTmService.setToken(account.token, account.fullEmail, account.password);
+          } else if (account.password) {
+            await mailTmService.authenticate(account.fullEmail, account.password, signal);
           }
           email = await mailTmService.getMessage(emailId.toString(), signal);
           break;
@@ -1191,6 +1221,9 @@ class EmailServiceAggregator {
           break;
         case 'mailinator':
           email = await mailinatorService.getMessage(account.fullEmail, emailId.toString(), signal);
+          break;
+        case 'mailnesia':
+          email = await mailnesiaService.getMessage(account.fullEmail, emailId.toString(), signal);
           break;
         case 'tempmail':
         case '1secmail':
@@ -1351,6 +1384,10 @@ class EmailServiceAggregator {
    */
   async clearData(): Promise<void> {
     this.invalidateInboxSession();
+    // Drain any already-started storage writes before the final storage wipe.
+    await this.generateEmailPromise?.catch(() => undefined);
+    mailTmService.clearAuthentication();
+    mailGwService.setToken('');
     await storageService.remove('currentEmail');
     await storageService.remove('disposableEmail');
     await storageService.set('inbox', []);

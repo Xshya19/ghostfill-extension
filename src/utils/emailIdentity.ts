@@ -5,6 +5,8 @@
  * the product look broken even when the message is valid.
  */
 
+import { rootDomain as getRootDomain } from './core';
+
 export interface ParsedEmailIdentity {
   readonly displayName: string;
   readonly email: string;
@@ -14,18 +16,6 @@ export interface ParsedEmailIdentity {
 
 const AUTOMATED_LOCAL_PART =
   /^(?:bounces?|mailer|mail|no[-_ ]?reply|noreply|notifications?|support|info|hello|accounts?|security|team)(?:[+._-]|$)/i;
-const COMMON_SECOND_LEVEL_DOMAINS = new Set([
-  'ac',
-  'co',
-  'com',
-  'edu',
-  'gov',
-  'mil',
-  'net',
-  'nom',
-  'org',
-  'sch',
-]);
 
 function toSafeString(value: unknown, depth = 0): string {
   if (typeof value === 'string') {
@@ -89,20 +79,6 @@ function cleanDisplayName(value: string): string {
       .trim()
       .slice(0, 254)
   );
-}
-
-function getRootDomain(domain: string): string {
-  const parts = domain.split('.').filter(Boolean);
-  if (parts.length <= 2) {
-    return parts.join('.');
-  }
-
-  const last = parts[parts.length - 1];
-  const secondLast = parts[parts.length - 2];
-  if (last && secondLast && COMMON_SECOND_LEVEL_DOMAINS.has(secondLast)) {
-    return parts.slice(-3).join('.');
-  }
-  return parts.slice(-2).join('.');
 }
 
 export function parseEmailIdentity(value: unknown): ParsedEmailIdentity {

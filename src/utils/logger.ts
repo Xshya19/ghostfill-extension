@@ -61,8 +61,13 @@ const SENSITIVE_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
   { pattern: /(\+?1?[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g, replacement: '[PHONE]' },
   {
     pattern:
-      /\b(otp|code|verification|confirm|auth|security|pin|token|passcode).{0,50}\b([0-9]{4,10})\b/gi,
-    replacement: '$2=[REDACTED]',
+      /\b(otp|code|verification|confirm|auth|security|pin|token|passcode)\s*(?:[=:]\s*|(?:is\s+))([a-z0-9]{4,10})\b/gi,
+    replacement: '$1=[REDACTED]',
+  },
+  {
+    pattern:
+      /\b(otp|code|verification|confirm|auth|security|pin|token|passcode).{0,50}?\b([0-9]{4,10})\b/gi,
+    replacement: '$1=[REDACTED]',
   },
   {
     pattern:
@@ -819,7 +824,8 @@ export const diag = {
     action: string,
     success: boolean,
     detail?: string,
-    data?: Record<string, unknown>
+    data?: Record<string, unknown>,
+    failureLevel: 'warn' | 'error' = 'error'
   ): void {
     const stepNum = (diagStepCounters.get(flowId) ?? 0) + 1;
     diagStepCounters.set(flowId, stepNum);
@@ -829,7 +835,7 @@ export const diag = {
     diagStepCounters.delete(flowId);
     diagFlowStartTs.delete(flowId);
     diag.log(
-      success ? 'info' : 'error',
+      success ? 'info' : failureLevel,
       category,
       `◀ END ${action}`,
       `${success ? '✅ Success' : '❌ Failed'} — ${detail || ''} (${duration}ms)`,

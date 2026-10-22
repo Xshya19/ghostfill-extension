@@ -23,6 +23,12 @@ import { IS_GMAIL_ENABLED } from '../../../config/buildProfile';
 import { storageService } from '../../../services/storageService';
 import { UserSettings } from '../../../types/storage.types';
 import { APP_VERSION } from '../../../utils/core';
+import { requestCustomEndpointPermission } from '../../../utils/customEndpoint';
+import {
+  checkExtensionUpdate,
+  EXTENSION_RELEASES_URL,
+  type ExtensionUpdate,
+} from '../../../utils/extensionUpdate';
 import { createLogger } from '../../../utils/logger';
 import {
   MAX_SETTINGS_IMPORT_BYTES,
@@ -545,6 +551,27 @@ export const EmailTab: React.FC<EmailTabProps> = ({
   onFieldBlur,
 }) => {
   const [gmailClientId, setGmailClientId] = useState('');
+  const [endpointAccess, setEndpointAccess] = useState<{
+    endpoint: string;
+    message: string;
+  } | null>(null);
+  const allowEndpointAccess = async (): Promise<void> => {
+    const endpoint = settings.customDomainUrl?.trim() ?? '';
+    try {
+      const granted = await requestCustomEndpointPermission(endpoint);
+      setEndpointAccess({
+        endpoint,
+        message: granted
+          ? 'Endpoint access allowed.'
+          : 'Access was not granted. Your custom service cannot connect yet.',
+      });
+    } catch (error) {
+      setEndpointAccess({
+        endpoint,
+        message: error instanceof Error ? error.message : 'Could not allow endpoint access.',
+      });
+    }
+  };
   const [gmailClientIdError, setGmailClientIdError] = useState<string | null>(null);
   const [gmailClientIdSaveStatus, setGmailClientIdSaveStatus] = useState<
     'idle' | 'saving' | 'saved'
@@ -683,6 +710,21 @@ export const EmailTab: React.FC<EmailTabProps> = ({
                   {getFieldError('customDomainUrl')}
                 </span>
               )}
+              <p className="setting-description">
+                Allow GhostFill to connect to this endpoint before using your custom service.
+              </p>
+              <Button
+                variant="ghost"
+                disabled={!settings.customDomainUrl?.trim()}
+                onClick={() => void allowEndpointAccess()}
+              >
+                Allow endpoint access
+              </Button>
+              <span role="status" aria-live="polite">
+                {endpointAccess && endpointAccess.endpoint === settings.customDomainUrl?.trim()
+                  ? endpointAccess.message
+                  : ''}
+              </span>
             </div>
 
             <div className="setting-item vertical-group">
@@ -1170,7 +1212,9 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
             <label id="debug-mode-label" htmlFor="debug-mode" className="fs-15-fw-600">
               Debug logging
             </label>
-            <p>Show detailed GhostFill activity in the browser console. Changes save automatically.</p>
+            <p>
+              Show detailed GhostFill activity in the browser console. Changes save automatically.
+            </p>
             <p>Logs stay in your browser. Sensitive values are masked.</p>
           </div>
           <ToggleSwitch
@@ -1283,6 +1327,49 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
 export const AboutTab: React.FC = () => {
   const version = APP_VERSION;
   const [storageUsage, setStorageUsage] = useState<{ used: number; quota: number } | null>(null);
+  const [update, setUpdate] = useState<ExtensionUpdate | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateError, setUpdateError] = useState('');
+  const updateRequest = useRef<AbortController | null>(null);
+
+  useEffect(() => () => updateRequest.current?.abort(), []);
+
+  const handleCheckUpdate = async () => {
+    updateRequest.current?.abort();
+    const controller = new AbortController();
+    updateRequest.current = controller;
+    setCheckingUpdate(true);
+    setUpdateError('');
+    setUpdate(null);
+    try {
+      const result = await checkExtensionUpdate(version, controller.signal);
+      if (!controller.signal.aborted) {
+        setUpdate(result);
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setUpdateError(
+          error instanceof Error && !/fetch|network|timeout|timed out/i.test(error.message)
+            ? error.message
+            : 'Could not check for updates. Check your connection and try again.'
+        );
+      }
+    } finally {
+      if (!controller.signal.aborted) {
+        setCheckingUpdate(false);
+      }
+    }
+  };
+
+  const updateMessage = checkingUpdate
+    ? 'Checking the latest published release…'
+    : update?.status === 'available'
+      ? `Version ${update.version} is available. You have ${version}.`
+      : update?.status === 'ahead'
+        ? `Your installed version ${version} is newer than the published version ${update.version}.`
+        : update?.status === 'current'
+          ? `Version ${version} matches the latest published release.`
+          : 'Check for a newer published version of GhostFill.';
 
   useEffect(() => {
     if (typeof chrome === 'undefined' || !chrome.storage?.local?.getBytesInUse) {
@@ -1353,6 +1440,84 @@ export const AboutTab: React.FC = () => {
             MIT license
             <ExternalLink size={16} aria-hidden="true" />
           </a>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection id="extension-updates" title="Updates" icon={<ExternalLink size={18} />}>
+        <div className="setting-item">
+          <div className="setting-info">
+            <span className="fs-15-fw-600">Installed version {version}</span>
+            <p role="status" aria-live="polite">
+              {updateMessage}
+            </p>
+            {updateError && <p role="alert">{updateError}</p>}
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            disabled={checkingUpdate}
+            aria-busy={checkingUpdate}
+            onClick={handleCheckUpdate}
+          >
+            {checkingUpdate ? 'Checking…' : 'Check for updates'}
+          </Button>
+        </div>
+        <div className="about-links">
+          {update?.status === 'available' && IS_GMAIL_ENABLED && (
+            <>
+              <a
+                href={update.zipUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="about-link"
+              >
+                Download version {update.version} ZIP
+                <ExternalLink size={16} aria-hidden="true" />
+              </a>
+              <a
+                href={update.checksumUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="about-link"
+              >
+                Download matching checksum
+                <ExternalLink size={16} aria-hidden="true" />
+              </a>
+            </>
+          )}
+          <a
+            href={update?.releaseUrl ?? EXTENSION_RELEASES_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="about-link"
+          >
+            View published releases
+            <ExternalLink size={16} aria-hidden="true" />
+          </a>
+        </div>
+        <div className="setting-item">
+          <div className="setting-info">
+            <span className="fs-15-fw-600">Apply the update, then reload</span>
+            <p>
+              On Windows, open your installed GhostFill folder and run Update GhostFill.cmd. To use
+              a downloaded package, save the ZIP and checksum together, then drag the ZIP onto that
+              shortcut. On macOS or Linux, replace the files in the same installed folder with the
+              matching built package.
+            </p>
+            {!IS_GMAIL_ENABLED && (
+              <p>
+                This is the temporary-email-only build. Ask your maintainer for the same build
+                profile; published ZIPs include Gmail.
+              </p>
+            )}
+            <p>
+              Finish your current signup before reloading. Reload loads files already on your
+              computer; refresh your signup tabs afterward.
+            </p>
+          </div>
+          <Button type="button" size="sm" onClick={() => chrome.runtime.reload()}>
+            Reload after updating
+          </Button>
         </div>
       </SettingsSection>
 

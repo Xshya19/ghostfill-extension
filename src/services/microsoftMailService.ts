@@ -33,6 +33,23 @@ let cachedToken: string | null = null;
 let tokenExpiresAt: number | null = null;
 let silentAuthBlockedUntil = 0;
 let lastAuthFailure: string | null = null;
+let authGeneration = 0;
+const pendingAuthWrites = new Set<Promise<void>>();
+
+async function persistAuthWrite(write: Promise<void>): Promise<void> {
+  pendingAuthWrites.add(write);
+  try {
+    await write;
+  } finally {
+    pendingAuthWrites.delete(write);
+  }
+}
+
+function requireCurrentAuth(generation: number): void {
+  if (generation !== authGeneration) {
+    throw new Error('Microsoft connection was cleared');
+  }
+}
 
 // ---------- Helpers ---------------------------------------------------------
 
@@ -95,7 +112,9 @@ async function buildMicrosoftAuthUrl(interactive: boolean): Promise<string> {
 }
 
 async function launchMicrosoftOAuth(interactive: boolean): Promise<string> {
+  const generation = authGeneration;
   const url = await buildMicrosoftAuthUrl(interactive);
+  requireCurrentAuth(generation);
   return new Promise<string>((resolve, reject) => {
     chrome.identity.launchWebAuthFlow({ url, interactive }, (redirectUrl) => {
       if (chrome.runtime.lastError) {
@@ -104,6 +123,7 @@ async function launchMicrosoftOAuth(interactive: boolean): Promise<string> {
       }
       if (!redirectUrl) { reject(new Error('No redirect URL from Microsoft OAuth')); return; }
       try {
+        requireCurrentAuth(generation);
         const { token, expiresIn } = parseTokenFromRedirect(redirectUrl);
         cachedToken = token;
         tokenExpiresAt = Date.now() + expiresIn * 1000 - TOKEN_EXPIRY_BUFFER_MS;
@@ -140,6 +160,7 @@ async function fetchMicrosoftProfile(token: string): Promise<MicrosoftProfile> {
 // ---------- Token Acquisition -----------------------------------------------
 
 export async function ensureMicrosoftToken(interactive = false): Promise<string> {
+  const generation = authGeneration;
   // tokenExpiresAt already includes the expiry buffer (set at acquisition).
   if (cachedToken && tokenExpiresAt && Date.now() < tokenExpiresAt) {
     return cachedToken;
@@ -151,11 +172,13 @@ export async function ensureMicrosoftToken(interactive = false): Promise<string>
   try {
     token = await launchMicrosoftOAuth(interactive);
   } catch (err) {
-    if (!interactive) {recordAuthFailure(err);}
+    if (!interactive && generation === authGeneration) {recordAuthFailure(err);}
     throw err;
   }
-  try { await chrome.storage.session.set({ msAccessToken: token, msTokenExpiry: tokenExpiresAt }); }
+  requireCurrentAuth(generation);
+  try { await persistAuthWrite(chrome.storage.session.set({ msAccessToken: token, msTokenExpiry: tokenExpiresAt })); }
   catch { /* ignore */ }
+  requireCurrentAuth(generation);
   clearAuthBackoff();
   return token;
 }
@@ -163,17 +186,24 @@ export async function ensureMicrosoftToken(interactive = false): Promise<string>
 // ---------- Public Connect / Disconnect -------------------------------------
 
 export async function connectMicrosoft(): Promise<MicrosoftProfile> {
+  const generation = authGeneration;
   const token = await ensureMicrosoftToken(true);
   const profile = await fetchMicrosoftProfile(token);
-  await storageService.set('microsoftConnected', true);
-  await storageService.set('microsoftConnectedAt', Date.now());
-  await storageService.set('microsoftProfile', profile);
+  requireCurrentAuth(generation);
+  await persistAuthWrite(storageService.set('microsoftConnected', true));
+  requireCurrentAuth(generation);
+  await persistAuthWrite(storageService.set('microsoftConnectedAt', Date.now()));
+  requireCurrentAuth(generation);
+  await persistAuthWrite(storageService.set('microsoftProfile', profile));
+  requireCurrentAuth(generation);
   log.info('Microsoft Mail connected', { email: profile.email });
   return profile;
 }
 
 export async function disconnectMicrosoft(): Promise<void> {
+  authGeneration++;
   cachedToken = null; tokenExpiresAt = null; clearAuthBackoff();
+  await Promise.allSettled([...pendingAuthWrites]);
   try { await chrome.storage.session.remove(['msAccessToken', 'msTokenExpiry']); } catch { /* ignore */ }
   await storageService.set('microsoftConnected', false);
   await storageService.set('microsoftConnectedAt', null);
@@ -219,7 +249,9 @@ export async function searchMicrosoftInbox(
   alias: string,
   sinceMs?: number
 ): Promise<GmailMessage[]> {
+  const generation = authGeneration;
   const token = await ensureMicrosoftToken(false);
+  requireCurrentAuth(generation);
 
   // OData string escaping: a single quote in the alias must be doubled,
   // otherwise Graph 400s and the poller serves silent [].
@@ -239,6 +271,7 @@ export async function searchMicrosoftInbox(
   const resp = await fetch(url, {
     headers: { Authorization: `Bearer ${token}`, ConsistencyLevel: 'eventual' },
   });
+  requireCurrentAuth(generation);
   if (resp.status === 401) {
     // Revoked/expired token: drop the cache now instead of serving [] until
     // the nominal expiry. Next poll re-authenticates (or backs off loudly).
@@ -297,8 +330,9 @@ export async function searchMicrosoftInbox(
 // ---------- Session storage restore on SW restart ---------------------------
 
 if (typeof chrome !== 'undefined' && chrome.storage?.session) {
+  const generation = authGeneration;
   chrome.storage.session.get(['msAccessToken', 'msTokenExpiry'], (res) => {
-    if (res?.msAccessToken) {
+    if (generation === authGeneration && res?.msAccessToken) {
       cachedToken = res.msAccessToken as string;
       tokenExpiresAt = (res.msTokenExpiry as number) ?? null;
       log.info('Restored Microsoft access token from session storage');

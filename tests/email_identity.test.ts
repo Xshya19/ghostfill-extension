@@ -18,7 +18,7 @@ import {
 } from '../src/utils/emailIdentity';
 
 describe('email identity normalization', () => {
-  it('keeps the fallback icon visible until a logo loads and retries a failed source', () => {
+  it('keeps the local fallback visible until a bundled logo loads and after a load failure', () => {
     const container = document.createElement('div');
     const root = createRoot(container);
     try {
@@ -35,8 +35,8 @@ describe('email identity normalization', () => {
       flushSync(() => image.dispatchEvent(new Event('load')));
       expect(image.style.visibility).toBe('visible');
       flushSync(() => image.dispatchEvent(new Event('error')));
-      expect(image.src).not.toBe(firstSource);
-      expect(image.style.visibility).toBe('hidden');
+      expect(container.querySelector('img')).toBeNull();
+      expect(container.querySelector('.email-avatar-fallback svg')).not.toBeNull();
     } finally {
       flushSync(() => root.unmount());
     }

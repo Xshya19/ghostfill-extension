@@ -52,6 +52,23 @@ export interface GmailClientIdStatus {
 let cachedToken: string | null = null;
 let tokenExpiresAt: number | null = null; // Unix ms
 let cachedProfile: GmailProfile | null = null;
+let authGeneration = 0;
+const pendingAuthWrites = new Set<Promise<void>>();
+
+async function persistAuthWrite(write: Promise<void>): Promise<void> {
+  pendingAuthWrites.add(write);
+  try {
+    await write;
+  } finally {
+    pendingAuthWrites.delete(write);
+  }
+}
+
+function requireCurrentAuth(generation: number): void {
+  if (generation !== authGeneration) {
+    throw new Error('Gmail connection was cleared');
+  }
+}
 let silentAuthBlockedUntil = 0;
 let lastSilentAuthFailure: string | null = null;
 let silentAuthFailurePermanent = false;
@@ -229,8 +246,9 @@ if (typeof chrome !== 'undefined' && chrome.storage?.local) {
 
 // Initial load of token from session storage (SW restart recovery)
 if (typeof chrome !== 'undefined' && chrome.storage?.session) {
+  const generation = authGeneration;
   chrome.storage.session.get(['gmailAccessToken', 'gmailTokenExpiry'], (res) => {
-    if (res?.gmailAccessToken) {
+    if (generation === authGeneration && res?.gmailAccessToken) {
       cachedToken = res.gmailAccessToken as string;
       tokenExpiresAt = (res.gmailTokenExpiry as number) ?? null;
       log.info('Restored Gmail access token from session storage on startup');
@@ -295,11 +313,16 @@ async function removeCachedIdentityToken(token: string): Promise<void> {
 }
 
 async function requestChromeIdentityToken(interactive: boolean): Promise<string> {
+  const generation = authGeneration;
   if (!usesBundledClientId() || typeof chrome === 'undefined' || !chrome.identity?.getAuthToken) {
     throw new Error('Chrome Identity token flow is unavailable for this Gmail client.');
   }
   return new Promise((resolve, reject) => {
     chrome.identity.getAuthToken({ interactive, scopes: GMAIL_SCOPES }, (token) => {
+      if (generation !== authGeneration) {
+        reject(new Error('Gmail connection was cleared'));
+        return;
+      }
       const errorMessage = chrome.runtime.lastError?.message;
       if (errorMessage) {
         reject(normalizeOAuthError(errorMessage));
@@ -317,6 +340,7 @@ async function requestChromeIdentityToken(interactive: boolean): Promise<string>
 }
 
 async function launchOAuth(interactive: boolean): Promise<string> {
+  const generation = authGeneration;
   if (activeClientId.includes('YOUR_CLIENT_ID')) {
     throw new Error('GhostFill Gmail client_id not configured. Please configure it in Settings.');
   }
@@ -334,6 +358,7 @@ async function launchOAuth(interactive: boolean): Promise<string> {
           return;
         }
         try {
+          requireCurrentAuth(generation);
           const { token, expiresIn } = parseTokenFromRedirect(redirectUrl);
           cachedToken = token;
           tokenExpiresAt = Date.now() + expiresIn * 1000 - TOKEN_EXPIRY_BUFFER_MS;
@@ -355,12 +380,14 @@ async function launchOAuth(interactive: boolean): Promise<string> {
 const pendingTokenAcquisitions = new Map<'silent' | 'interactive', Promise<string>>();
 
 async function doAcquireToken(interactive: boolean): Promise<string> {
+  const generation = authGeneration;
   if (usesBundledClientId()) {
     try {
       const token = await requestChromeIdentityToken(interactive);
-      await persistToken(token);
+      await persistToken(token, generation);
       return token;
     } catch (error) {
+      requireCurrentAuth(generation);
       // If the user actively cancelled the interactive prompt, surface the
       // cancellation instead of immediately popping a second OAuth window.
       if (interactive && error instanceof Error && error.message === 'user_cancelled') {
@@ -370,7 +397,7 @@ async function doAcquireToken(interactive: boolean): Promise<string> {
     }
   }
   const token = await launchOAuth(interactive);
-  await persistToken(token);
+  await persistToken(token, generation);
   return token;
 }
 
@@ -407,12 +434,15 @@ function isTokenExpired(): boolean {
 }
 
 async function ensureValidToken(interactive = false): Promise<string> {
+  const generation = authGeneration;
   await ensureClientIdReady();
+  requireCurrentAuth(generation);
 
   // Restore from session storage if in-memory cache was cleared (SW restart)
   if (!cachedToken) {
     try {
       const res = await chrome.storage.session.get(['gmailAccessToken', 'gmailTokenExpiry']);
+      requireCurrentAuth(generation);
       if (res?.gmailAccessToken) {
         cachedToken = res.gmailAccessToken as string;
         tokenExpiresAt = (res.gmailTokenExpiry as number) ?? null;
@@ -421,6 +451,8 @@ async function ensureValidToken(interactive = false): Promise<string> {
       /* Intentionally ignored */
     }
   }
+
+  requireCurrentAuth(generation);
 
   if (cachedToken && !isTokenExpired()) {
     clearSilentAuthBackoff();
@@ -438,6 +470,7 @@ async function ensureValidToken(interactive = false): Promise<string> {
       }
       return await acquireToken(false);
     } catch (error) {
+      requireCurrentAuth(generation);
       recordSilentAuthFailure(error, true);
       log.debug('Silent Gmail auth failed', error);
       cachedToken = null;
@@ -449,22 +482,26 @@ async function ensureValidToken(interactive = false): Promise<string> {
   return acquireToken(true);
 }
 
-async function persistToken(token: string): Promise<void> {
+async function persistToken(token: string, generation: number): Promise<void> {
+  requireCurrentAuth(generation);
   cachedToken = token;
   clearSilentAuthBackoff();
   try {
-    await chrome.storage.session.set({
+    await persistAuthWrite(chrome.storage.session.set({
       gmailAccessToken: token,
       gmailTokenExpiry: tokenExpiresAt || Date.now() + DEFAULT_TOKEN_TTL_MS,
-    });
+    }));
   } catch {
     /* Intentionally ignored */
   }
+  requireCurrentAuth(generation);
 }
 
 // ─── REST Fetch Utility ─────────────────────────────────
 async function gmailFetch<T>(path: string, options: RequestInit = {}, retried = false): Promise<T> {
+  const generation = authGeneration;
   const token = await ensureValidToken(false);
+  requireCurrentAuth(generation);
   const url = path.startsWith('http') ? path : `${GMAIL_API_BASE}${path}`;
 
   const headers: Record<string, string> = {};
@@ -483,6 +520,7 @@ async function gmailFetch<T>(path: string, options: RequestInit = {}, retried = 
     headers,
     timeout: GMAIL_REQUEST_TIMEOUT_MS,
   });
+  requireCurrentAuth(generation);
 
   if (res.status === 401 && !retried) {
     log.warn('401 received - clearing token and retrying once');
@@ -506,12 +544,16 @@ async function gmailFetch<T>(path: string, options: RequestInit = {}, retried = 
     throw new Error(`Gmail API ${res.status}: ${body}`);
   }
 
-  return res.json() as Promise<T>;
+  const data = await res.json() as T;
+  requireCurrentAuth(generation);
+  return data;
 }
 
 // ─── Public API ─────────────────────────────────────
 export async function signIn(): Promise<GmailProfile> {
+  const generation = authGeneration;
   await ensureClientIdReady();
+  requireCurrentAuth(generation);
 
   if (!isConfigured()) {
     throw new Error(
@@ -529,12 +571,14 @@ export async function signIn(): Promise<GmailProfile> {
   try {
     await acquireToken(true);
   } catch (error) {
+    requireCurrentAuth(generation);
     if (isClientConfigurationError(getErrorMessage(error))) {
       recordSilentAuthFailure(error);
     }
     throw new Error(describeAuthFailure(error));
   }
   const profile = await fetchProfile();
+  requireCurrentAuth(generation);
   cachedProfile = profile;
   log.info('Gmail sign-in successful', { email: profile.email });
   return profile;
@@ -542,22 +586,26 @@ export async function signIn(): Promise<GmailProfile> {
 
 export async function signOut(): Promise<void> {
   log.info('Signing out of Gmail…');
+  authGeneration++;
   const tokenToRevoke = cachedToken;
-  if (tokenToRevoke) {
-    await removeCachedIdentityToken(tokenToRevoke).catch(() => {});
-    fetch('https://oauth2.googleapis.com/revoke?token=' + tokenToRevoke, { method: 'POST' }).catch(
-      (e) => log.debug('Token revocation request failed (non-critical)', e)
-    );
-  }
   cachedToken = null;
   tokenExpiresAt = null;
   cachedProfile = null;
   clearSilentAuthBackoff();
   messageDetailsCache.clear();
+  pendingTokenAcquisitions.clear();
+  // Finish writes already dispatched before removing their stored credentials.
+  await Promise.allSettled([...pendingAuthWrites]);
   try {
     await chrome.storage.session.remove(['gmailAccessToken', 'gmailTokenExpiry']);
   } catch {
     /* Intentionally ignored */
+  }
+  if (tokenToRevoke) {
+    await removeCachedIdentityToken(tokenToRevoke).catch(() => {});
+    fetch('https://oauth2.googleapis.com/revoke?token=' + tokenToRevoke, { method: 'POST' }).catch(
+      (e) => log.debug('Token revocation request failed (non-critical)', e)
+    );
   }
 }
 
@@ -598,12 +646,15 @@ export async function ensureAuthenticated(interactive = false): Promise<boolean>
 }
 
 export async function checkSilentAuth(): Promise<GmailProfile | null> {
+  const generation = authGeneration;
   try {
     await ensureValidToken(false);
     const profile = await fetchProfile();
+    requireCurrentAuth(generation);
     cachedProfile = profile;
     return profile;
   } catch {
+    if (generation !== authGeneration) {return null;}
     cachedToken = null;
     tokenExpiresAt = null;
     cachedProfile = null;

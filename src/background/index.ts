@@ -11,6 +11,11 @@ import { sleep } from '../utils/core';
 import { createLogger, initRemoteLogger } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
 
+import {
+  onUpdateAlarm,
+  setupUpdateAlarm,
+  handleUpdateNotificationClick,
+} from './autoUpdater';
 import { dumpMenuStats } from './contextMenu';
 import {
   registerInitCallbacks,
@@ -250,6 +255,8 @@ const metrics: BackgroundMetrics = {
 };
 
 const commands = new Map<string, CommandDef>();
+// A worker may wake for a shortcut without an install/startup event.
+registerCommands();
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  LIFECYCLE — INSTALL
@@ -366,20 +373,18 @@ async function initialize(trigger: InitTrigger, previousVersion?: string): Promi
 
       // Phase 4: Event listeners (idempotent)
       // NOTE: setupMessageHandler() was already called synchronously at module load.
-      // Here we only register the remaining listeners (commands, alarms, keepalive).
+      // Commands and listeners are already registered synchronously on every wake.
       log.debug('▶️ Phase 4: Event listeners');
-      if (!listenersInstalled) {
-        registerCommands();
-        installListeners();
-        installKeepAlive();
-        // setupMessageHandler() is intentionally NOT called here — it was registered
-        // synchronously at module load to handle early wakeup messages.
-        listenersInstalled = true;
-      }
+      installListeners();
+      installKeepAlive();
 
       // Phase 5: Health monitor
       log.debug('▶️ Phase 5: Health monitor');
       await setupHealthAlarm();
+
+      // Phase 5.5: Auto-update checker
+      log.debug('▶️ Phase 5.5: Auto-update alarm');
+      await setupUpdateAlarm();
 
       // Phase 6: Dev utilities
       if (CONFIG.DEV_MODE) {
@@ -592,10 +597,15 @@ function installListeners(): void {
         .catch((e) => log.warn('Rotation alarm route failed', extractMsg(e)));
     }
     // Other system alarms
-    else {
+    else if (!onUpdateAlarm(alarm)) {
       onServiceWorkerAlarm(alarm);
       onPollingAlarm(alarm);
     }
+  });
+
+  // Notification click — handle update notification
+  chrome.notifications.onClicked.addListener((notificationId) => {
+    handleUpdateNotificationClick(notificationId);
   });
 
   // Suspend cleanup (SECURITY FIX C12)

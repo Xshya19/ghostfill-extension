@@ -764,6 +764,7 @@ export class AutoFiller {
               { timeout: 20_000, retries: 1 }
             );
             if (genResp?.success && (genResp as any).email?.fullEmail) {
+              this.identityCache = null;
               const refetched = await this.fetchIdentityAndOTP();
               if (refetched.identity) {
                 identity = refetched.identity;
@@ -789,6 +790,7 @@ export class AutoFiller {
             { timeout: 8_000, retries: 1 }
           );
           if (genPass?.success) {
+            this.identityCache = null;
             const refetched = await this.fetchIdentityAndOTP();
             if (refetched.identity) {
               identity = refetched.identity;
@@ -888,14 +890,49 @@ export class AutoFiller {
 
     await this.adaptive.init();
 
+    await this.contextEngine.scan();
     const candidates = this.contextEngine.getCandidates();
 
     let filledCount = 0;
+    let otpGroup: OTPFieldGroup | null = null;
+    if (otpCode) {
+      const group = OTPFieldDiscovery.discover(context);
+      const cleanOTP = otpCode.replace(/[-\s]/g, '');
+      const safeGroup = group ? this.normalizeOTPGroup(group, cleanOTP.length, context) : null;
+      otpGroup = safeGroup;
+      if (safeGroup) {
+        const result = await OTPFiller.fill(
+          this.resolveOtpValueForGroup(safeGroup, otpCode, cleanOTP),
+          safeGroup,
+          context.framework
+        );
+        if (result.success) {
+          filledCount += result.filledCount;
+          this.markOTPUsed(otpCode);
+          this.saveTrustedSelector('otp', this.buildFieldSelector(safeGroup.fields[0]));
+          details.push({
+            fieldType: 'otp',
+            selector: this.buildFieldSelector(safeGroup.fields[0]),
+            strategy: result.strategy,
+            success: true,
+          });
+          void AutoSubmitDetector.checkAndHighlight(safeGroup);
+        }
+      }
+    }
     for (let index = 0; index < candidates.length; index++) {
       if (this.destroyed) {
         break;
       }
       const candidate = candidates[index]!;
+      // OTPs must use the group-aware path so split boxes receive one character each.
+      if (
+        candidate.fieldType === 'otp' ||
+        otpGroup?.fields.includes(candidate.element as HTMLInputElement) ||
+        !candidate.element.isConnected
+      ) {
+        continue;
+      }
       if (candidate.decision === 'BLOCK') {
         log.warn(`Field fill blocked by safety gate: ${candidate.selector}`);
         continue;
@@ -1166,6 +1203,7 @@ export class AutoFiller {
             { timeout: 20_000, retries: 1 }
           );
           if (genResp?.success && (genResp as any).email?.fullEmail) {
+            this.identityCache = null;
             const refetched = await this.fetchIdentityAndOTP();
             if (refetched.identity) {
               identity = refetched.identity;
@@ -1523,6 +1561,9 @@ export class AutoFiller {
       return 0;
     }
     const type = calibrated.fieldType;
+    if (type === 'otp') {
+      return 0;
+    }
     if (!this.isCompatibleTarget(type, input)) {
       log.debug('Focused fill skipped: field contract does not match classifier', {
         expected: type,

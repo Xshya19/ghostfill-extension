@@ -55,6 +55,7 @@ import { otpService, smartDetectionService } from '../src/services/otpService';
 import { linkService } from '../src/services/linkService';
 import { dedupService } from '../src/services/dedupService';
 import { safeSendTabMessage } from '../src/utils/messaging';
+import { diag } from '../src/utils/logger';
 import { storageService } from '../src/services/storageService';
 import type { EmailDecision } from '../src/services/types/extraction.types';
 
@@ -101,6 +102,47 @@ afterEach(() => {
 });
 
 describe('verification action routing', () => {
+  it.each(['Request timed out after 15000ms', 'Failed to fetch', 'HTTP error 503', 'HTTP error 429'])(
+    'records a recoverable inbox failure as a warning and then recovers: %s',
+    async (message) => {
+      diag.clear();
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      vi.mocked(emailService.checkInbox).mockRejectedValueOnce(new Error(message));
+      recordEmailReceived();
+      await vi.waitFor(() => {
+        const end = diag.getEntries({ category: 'polling' }).find((entry) => entry.action === '◀ END inbox-check');
+        expect(end?.level).toBe('warn');
+        expect(end?.detail).toContain(message);
+      });
+      expect(errorSpy).not.toHaveBeenCalled();
+      // Move past the existing request spacing and first rate-limit cooldown.
+      vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 10_000);
+      diag.clear();
+      recordEmailReceived();
+      await vi.waitFor(() => {
+        const end = diag.getEntries({ category: 'polling' }).find((entry) => entry.action === '◀ END inbox-check');
+        expect(end?.level).toBe('info');
+        expect(end?.detail).toContain('Success');
+        expect(emailService.checkInbox).toHaveBeenCalledTimes(2);
+      });
+    }
+  );
+
+  it.each(['Cannot read properties of undefined', "Cannot read properties of undefined (reading 'network')"])(
+    'keeps unexpected programming failures at error level with the reason visible: %s', async (message) => {
+      diag.clear();
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      vi.mocked(emailService.checkInbox).mockRejectedValueOnce(new TypeError(message));
+      recordEmailReceived();
+      await vi.waitFor(() => {
+        const end = diag.getEntries({ category: 'polling' }).find((entry) => entry.action === '◀ END inbox-check');
+        expect(end?.level).toBe('error');
+        expect(end?.detail).toContain(message);
+      });
+      expect(errorSpy).toHaveBeenCalled();
+    }
+  );
+
   it('saves the code without typing when the auto-fill preference cannot be read', async () => {
     waitOn(9, 'chat.qwen.ai');
     vi.mocked(storageService.getSettings).mockRejectedValueOnce(new Error('Storage temporarily unavailable'));

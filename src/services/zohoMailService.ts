@@ -36,6 +36,23 @@ let cachedAccountId: string | null = null;
 let cachedEmail: string | null = null;
 let silentAuthBlockedUntil = 0;
 let lastAuthFailure: string | null = null;
+let authGeneration = 0;
+const pendingAuthWrites = new Set<Promise<void>>();
+
+async function persistAuthWrite(write: Promise<void>): Promise<void> {
+  pendingAuthWrites.add(write);
+  try {
+    await write;
+  } finally {
+    pendingAuthWrites.delete(write);
+  }
+}
+
+function requireCurrentAuth(generation: number): void {
+  if (generation !== authGeneration) {
+    throw new Error('Zoho connection was cleared');
+  }
+}
 
 // ---------- Helpers ---------------------------------------------------------
 
@@ -96,7 +113,9 @@ async function buildZohoAuthUrl(region: ZohoRegionDomain, interactive: boolean):
 }
 
 async function launchZohoOAuth(region: ZohoRegionDomain, interactive: boolean): Promise<string> {
+  const generation = authGeneration;
   const url = await buildZohoAuthUrl(region, interactive);
+  requireCurrentAuth(generation);
   return new Promise<string>((resolve, reject) => {
     chrome.identity.launchWebAuthFlow({ url, interactive }, (redirectUrl) => {
       if (chrome.runtime.lastError) {
@@ -105,6 +124,7 @@ async function launchZohoOAuth(region: ZohoRegionDomain, interactive: boolean): 
       }
       if (!redirectUrl) { reject(new Error('No redirect URL from Zoho OAuth')); return; }
       try {
+        requireCurrentAuth(generation);
         const { token, expiresIn } = parseTokenFromRedirect(redirectUrl);
         cachedToken = token;
         tokenExpiresAt = Date.now() + expiresIn * 1000 - TOKEN_EXPIRY_BUFFER_MS;
@@ -117,8 +137,10 @@ async function launchZohoOAuth(region: ZohoRegionDomain, interactive: boolean): 
 // ---------- Region Auto-Detection -------------------------------------------
 
 async function detectZohoRegion(token: string): Promise<ZohoRegionDomain> {
+  const generation = authGeneration;
   if (detectedRegion) {return detectedRegion;}
   const saved = await storageService.get('zohoRegion');
+  requireCurrentAuth(generation);
   if (typeof saved === 'string' && (ZOHO_REGION_DOMAINS as readonly string[]).includes(saved)) {
     detectedRegion = saved as ZohoRegionDomain;
     return detectedRegion;
@@ -128,13 +150,15 @@ async function detectZohoRegion(token: string): Promise<ZohoRegionDomain> {
       const resp = await fetch(`${getZohoApiBase(region)}/accounts`, {
         headers: { Authorization: `Zoho-oauthtoken ${token}` },
       });
+      requireCurrentAuth(generation);
       if (resp.ok) {
         detectedRegion = region;
-        await storageService.set('zohoRegion', region);
+        await persistAuthWrite(storageService.set('zohoRegion', region));
+        requireCurrentAuth(generation);
         log.info('Zoho region detected', { region });
         return region;
       }
-    } catch { /* try next */ }
+    } catch { requireCurrentAuth(generation); }
   }
   throw new Error('Could not detect your Zoho Mail region. Check your account.');
 }
@@ -173,6 +197,7 @@ async function fetchZohoProfile(token: string, region: ZohoRegionDomain): Promis
 // ---------- Token Acquisition -----------------------------------------------
 
 export async function ensureZohoToken(interactive = false): Promise<string> {
+  const generation = authGeneration;
   // tokenExpiresAt already includes the expiry buffer (set at acquisition).
   if (cachedToken && tokenExpiresAt && Date.now() < tokenExpiresAt) {
     return cachedToken;
@@ -186,9 +211,11 @@ export async function ensureZohoToken(interactive = false): Promise<string> {
   for (const region of ZOHO_REGION_DOMAINS) {
     try {
       token = await launchZohoOAuth(region, interactive);
+      requireCurrentAuth(generation);
       detectedRegion = region;
       break;
     } catch (err) {
+      requireCurrentAuth(generation);
       if (getErrorMessage(err) === 'user_cancelled') {throw err;}
     }
   }
@@ -196,8 +223,9 @@ export async function ensureZohoToken(interactive = false): Promise<string> {
     if (!interactive) {recordAuthFailure(new Error('Silent Zoho OAuth failed on all regions'));}
     throw new Error('Zoho authentication failed. Connect your Zoho Mail in Settings.');
   }
-  try { await chrome.storage.session.set({ zohoAccessToken: token, zohoTokenExpiry: tokenExpiresAt }); }
+  try { await persistAuthWrite(chrome.storage.session.set({ zohoAccessToken: token, zohoTokenExpiry: tokenExpiresAt })); }
   catch { /* ignore */ }
+  requireCurrentAuth(generation);
   clearAuthBackoff();
   return token;
 }
@@ -205,21 +233,29 @@ export async function ensureZohoToken(interactive = false): Promise<string> {
 // ---------- Public Connect / Disconnect -------------------------------------
 
 export async function connectZoho(): Promise<ZohoProfile> {
+  const generation = authGeneration;
   const token = await ensureZohoToken(true);
   const region = await detectZohoRegion(token);
+  requireCurrentAuth(generation);
   const profile = await fetchZohoProfile(token, region);
+  requireCurrentAuth(generation);
   cachedAccountId = profile.accountId;
   cachedEmail = profile.email;
-  await storageService.set('zohoConnected', true);
-  await storageService.set('zohoConnectedAt', Date.now());
-  await storageService.set('zohoProfile', profile);
+  await persistAuthWrite(storageService.set('zohoConnected', true));
+  requireCurrentAuth(generation);
+  await persistAuthWrite(storageService.set('zohoConnectedAt', Date.now()));
+  requireCurrentAuth(generation);
+  await persistAuthWrite(storageService.set('zohoProfile', profile));
+  requireCurrentAuth(generation);
   log.info('Zoho Mail connected', { email: profile.email, region });
   return profile;
 }
 
 export async function disconnectZoho(): Promise<void> {
+  authGeneration++;
   cachedToken = null; tokenExpiresAt = null; cachedAccountId = null;
   cachedEmail = null; detectedRegion = null; clearAuthBackoff();
+  await Promise.allSettled([...pendingAuthWrites]);
   try { await chrome.storage.session.remove(['zohoAccessToken', 'zohoTokenExpiry']); } catch { /* ignore */ }
   await storageService.set('zohoConnected', false);
   await storageService.set('zohoConnectedAt', null);
@@ -259,7 +295,9 @@ export function isZohoEmail(email: string): boolean {
 // ---------- Inbox Search ----------------------------------------------------
 
 export async function searchZohoInbox(alias: string, sinceMs?: number): Promise<GmailMessage[]> {
+  const generation = authGeneration;
   const token = await ensureZohoToken(false);
+  requireCurrentAuth(generation);
   const region = detectedRegion ?? (await detectZohoRegion(token));
   const accountId =
     cachedAccountId ??
@@ -281,6 +319,7 @@ export async function searchZohoInbox(alias: string, sinceMs?: number): Promise<
 
   const url = `${getZohoApiBase(region)}/accounts/${accountId}/messages/search?${searchParams.toString()}`;
   const resp = await fetch(url, { headers: { Authorization: `Zoho-oauthtoken ${token}` } });
+  requireCurrentAuth(generation);
   if (resp.status === 401) {
     // Token dead or region wrong (e.g. user moved data centers): drop all
     // cached auth + region state so the next call re-authenticates and
@@ -360,8 +399,9 @@ export async function searchZohoInbox(alias: string, sinceMs?: number): Promise<
 // ---------- Session storage restore on SW restart ---------------------------
 
 if (typeof chrome !== 'undefined' && chrome.storage?.session) {
+  const generation = authGeneration;
   chrome.storage.session.get(['zohoAccessToken', 'zohoTokenExpiry'], (res) => {
-    if (res?.zohoAccessToken) {
+    if (generation === authGeneration && res?.zohoAccessToken) {
       cachedToken = res.zohoAccessToken as string;
       tokenExpiresAt = (res.zohoTokenExpiry as number) ?? null;
       log.info('Restored Zoho access token from session storage');

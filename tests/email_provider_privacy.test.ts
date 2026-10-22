@@ -69,6 +69,21 @@ describe('email provider inbox privacy', () => {
     expect(senderMatchesSite('', 'https://signup.acme.com')).toBe(false);
     expect(senderMatchesSite('verify@acme.com', 'invalid-url')).toBe(false);
   });
+
+  it.each([
+    ['victim.co.il', 'attacker.co.il'],
+    ['victim.github.io', 'attacker.github.io'],
+    ['victim.blogspot.com', 'attacker.blogspot.com'],
+    ['victim.s3.amazonaws.com', 'attacker.s3.amazonaws.com'],
+  ])('keeps separate public-suffix tenants apart: %s and %s', (victim, attacker) => {
+    expect(senderMatchesSite(`verify@${victim}`, `https://${attacker}/otp`)).toBe(false);
+    expect(canAutoOpenVerificationLink(
+      account('mailtm', { originUrl: `https://${victim}/signup` }),
+      `verify@${victim}`,
+      `https://${attacker}/verify`
+    )).toBe(false);
+    expect(senderMatchesSite(`verify@mail.${victim}`, `https://signup.${victim}`)).toBe(true);
+  });
   it('matches Qwen first-party domains without trusting lookalikes or shared mail hosts', () => {
     const page = 'https://chat.qwen.ai/auth?mode=register';
     expect(senderMatchesSite('Qwen <noreply@qwenlm.ai>', page)).toBe(true);
