@@ -79,7 +79,7 @@
   },
   "license": "MIT",
   "dependencies": {
-    "dompurify": "^3.4.16",
+    "dompurify": "^3.4.17",
     "framer-motion": "^13.5.0",
     "lucide-react": "^1.49.0",
     "react": "^19.3.0",
