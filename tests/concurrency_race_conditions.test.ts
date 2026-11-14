@@ -77,9 +77,7 @@ describe('Concurrency & Race Condition Stress Suite', () => {
       });
 
       // Mark all processed in parallel
-      await Promise.all(
-        items.map((id) => dedupService.markProcessed(id, accountId, true, false))
-      );
+      await Promise.all(items.map((id) => dedupService.markProcessed(id, accountId, true, false)));
 
       // Now all should be processed
       const subsequentChecks = await Promise.all(

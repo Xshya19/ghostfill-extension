@@ -118,7 +118,9 @@ describe('assessEmailDecision() — purpose mapping', () => {
   });
 
   it('maps device-confirmation to two-factor', () => {
-    const d = assessEmailDecision({ extraction: makeExtraction({ intent: 'device-confirmation' }) });
+    const d = assessEmailDecision({
+      extraction: makeExtraction({ intent: 'device-confirmation' }),
+    });
     expect(d.purpose).toBe('two-factor');
   });
 
@@ -143,12 +145,16 @@ describe('assessEmailDecision() — purpose mapping', () => {
   });
 
   it('maps social-notification intent', () => {
-    const d = assessEmailDecision({ extraction: makeExtraction({ intent: 'social-notification' }) });
+    const d = assessEmailDecision({
+      extraction: makeExtraction({ intent: 'social-notification' }),
+    });
     expect(d.purpose).toBe('social-notification');
   });
 
   it('maps unknown intent to unknown', () => {
-    const d = assessEmailDecision({ extraction: makeExtraction({ intent: 'unknown-future' as any }) });
+    const d = assessEmailDecision({
+      extraction: makeExtraction({ intent: 'unknown-future' as any }),
+    });
     expect(d.purpose).toBe('unknown');
   });
 });
@@ -173,7 +179,14 @@ describe('assessEmailDecision() — risk scoring', () => {
       extraction: makeExtraction({
         intent: 'verification',
         link: makeLink({ url: 'https://192.168.1.1/verify', confidence: 0.9 }),
-        debugInfo: { securityRisk: 'high', urlsFound: 0, intentScores: {}, provider: null, intentSignals: [], contextValidated: true },
+        debugInfo: {
+          securityRisk: 'high',
+          urlsFound: 0,
+          intentScores: {},
+          provider: null,
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
     });
     // securityRisk:'high' = 50pts + raw-ip-link = 45pts = 95pts >= 60
@@ -184,7 +197,14 @@ describe('assessEmailDecision() — risk scoring', () => {
     const d = assessEmailDecision({
       extraction: makeExtraction({
         intent: 'verification',
-        debugInfo: { securityRisk: 'medium', urlsFound: 0, intentScores: {}, provider: null, intentSignals: [], contextValidated: true },
+        debugInfo: {
+          securityRisk: 'medium',
+          urlsFound: 0,
+          intentScores: {},
+          provider: null,
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
     });
     expect(['medium', 'low']).toContain(d.risk);
@@ -194,7 +214,14 @@ describe('assessEmailDecision() — risk scoring', () => {
     const d = assessEmailDecision({
       extraction: makeExtraction({
         intent: 'verification',
-        debugInfo: { securityRisk: 'low', urlsFound: 20, intentScores: {}, provider: null, intentSignals: [], contextValidated: true },
+        debugInfo: {
+          securityRisk: 'low',
+          urlsFound: 20,
+          intentScores: {},
+          provider: null,
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
     });
     expect(d.warnings).toContain('many-links-in-email');
@@ -205,7 +232,14 @@ describe('assessEmailDecision() — risk scoring', () => {
       extraction: makeExtraction({
         intent: 'verification',
         link: makeLink({ url: 'http://example.com/verify?token=abc', confidence: 0.9 }),
-        debugInfo: { securityRisk: 'low', urlsFound: 1, intentScores: {}, provider: null, intentSignals: [], contextValidated: true },
+        debugInfo: {
+          securityRisk: 'low',
+          urlsFound: 1,
+          intentScores: {},
+          provider: null,
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
     });
     expect(d.warnings).toContain('non-https-link');
@@ -216,7 +250,14 @@ describe('assessEmailDecision() — risk scoring', () => {
       extraction: makeExtraction({
         intent: 'verification',
         link: makeLink({ url: 'https://192.168.1.1/verify', confidence: 0.9 }),
-        debugInfo: { securityRisk: 'low', urlsFound: 1, intentScores: {}, provider: null, intentSignals: [], contextValidated: true },
+        debugInfo: {
+          securityRisk: 'low',
+          urlsFound: 1,
+          intentScores: {},
+          provider: null,
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
     });
     expect(d.warnings).toContain('raw-ip-link');
@@ -227,7 +268,14 @@ describe('assessEmailDecision() — risk scoring', () => {
       extraction: makeExtraction({
         intent: 'verification',
         link: makeLink({ url: 'https://localhost/verify', confidence: 0.9 }),
-        debugInfo: { securityRisk: 'low', urlsFound: 1, intentScores: {}, provider: null, intentSignals: [], contextValidated: true },
+        debugInfo: {
+          securityRisk: 'low',
+          urlsFound: 1,
+          intentScores: {},
+          provider: null,
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
     });
     expect(d.warnings).toContain('localhost-link');
@@ -238,7 +286,14 @@ describe('assessEmailDecision() — risk scoring', () => {
       extraction: makeExtraction({
         intent: 'verification',
         link: makeLink({ url: 'https://xn--e1afmapc.xn--p1ai/verify', confidence: 0.9 }),
-        debugInfo: { securityRisk: 'low', urlsFound: 1, intentScores: {}, provider: null, intentSignals: [], contextValidated: true },
+        debugInfo: {
+          securityRisk: 'low',
+          urlsFound: 1,
+          intentScores: {},
+          provider: null,
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
     });
     expect(d.warnings).toContain('punycode-domain');
@@ -249,7 +304,14 @@ describe('assessEmailDecision() — risk scoring', () => {
       extraction: makeExtraction({
         intent: 'verification',
         link: makeLink({ url: 'https://example.tk/verify', confidence: 0.9 }),
-        debugInfo: { securityRisk: 'low', urlsFound: 1, intentScores: {}, provider: null, intentSignals: [], contextValidated: true },
+        debugInfo: {
+          securityRisk: 'low',
+          urlsFound: 1,
+          intentScores: {},
+          provider: null,
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
     });
     expect(d.warnings).toContain('suspicious-tld');
@@ -260,7 +322,14 @@ describe('assessEmailDecision() — risk scoring', () => {
       extraction: makeExtraction({
         intent: 'verification',
         link: makeLink({ url: 'https://user:pass@example.com/verify', confidence: 0.9 }),
-        debugInfo: { securityRisk: 'low', urlsFound: 1, intentScores: {}, provider: null, intentSignals: [], contextValidated: true },
+        debugInfo: {
+          securityRisk: 'low',
+          urlsFound: 1,
+          intentScores: {},
+          provider: null,
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
     });
     expect(d.warnings).toContain('link-contains-credentials');
@@ -271,7 +340,14 @@ describe('assessEmailDecision() — risk scoring', () => {
       extraction: makeExtraction({
         intent: 'verification',
         link: makeLink({ url: 'https://a.b.c.d.e.f.g.example.com/verify', confidence: 0.9 }),
-        debugInfo: { securityRisk: 'low', urlsFound: 1, intentScores: {}, provider: null, intentSignals: [], contextValidated: true },
+        debugInfo: {
+          securityRisk: 'low',
+          urlsFound: 1,
+          intentScores: {},
+          provider: null,
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
     });
     expect(d.reasons).toContain('deep-subdomain-chain');
@@ -330,7 +406,14 @@ describe('assessEmailDecision() — action selection', () => {
       extraction: makeExtraction({
         intent: 'verification',
         link: makeLink({ url: 'https://example.com/verify', confidence: 0.9 }),
-        debugInfo: { securityRisk: 'high', urlsFound: 1, intentScores: {}, provider: null, intentSignals: [], contextValidated: true },
+        debugInfo: {
+          securityRisk: 'high',
+          urlsFound: 1,
+          intentScores: {},
+          provider: null,
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
     });
     expect(d.action).toBe('show-review');
@@ -342,7 +425,14 @@ describe('assessEmailDecision() — action selection', () => {
         intent: 'verification',
         otp: makeOtp({ code: '123456', confidence: 0.95 }),
         link: makeLink({ url: 'https://example.com/verify', confidence: 0.9 }),
-        debugInfo: { securityRisk: 'high', urlsFound: 1, intentScores: {}, provider: null, intentSignals: [], contextValidated: true },
+        debugInfo: {
+          securityRisk: 'high',
+          urlsFound: 1,
+          intentScores: {},
+          provider: null,
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
     });
     // High risk should prevent link opening, but OTP should still work
@@ -360,7 +450,14 @@ describe('assessEmailDecision() — domain context', () => {
       extraction: makeExtraction({
         intent: 'verification',
         link: makeLink({ url: 'https://example.com/verify?token=abc', confidence: 0.9 }),
-        debugInfo: { securityRisk: 'low', urlsFound: 1, intentScores: {}, provider: null, intentSignals: [], contextValidated: true },
+        debugInfo: {
+          securityRisk: 'low',
+          urlsFound: 1,
+          intentScores: {},
+          provider: null,
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
       sender: 'noreply@example.com',
     });
@@ -372,7 +469,14 @@ describe('assessEmailDecision() — domain context', () => {
       extraction: makeExtraction({
         intent: 'verification',
         link: makeLink({ url: 'https://differentsite.com/verify?token=abc', confidence: 0.9 }),
-        debugInfo: { securityRisk: 'low', urlsFound: 1, intentScores: {}, provider: null, intentSignals: [], contextValidated: true },
+        debugInfo: {
+          securityRisk: 'low',
+          urlsFound: 1,
+          intentScores: {},
+          provider: null,
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
       sender: 'noreply@example.com',
     });
@@ -385,7 +489,14 @@ describe('assessEmailDecision() — domain context', () => {
       extraction: makeExtraction({
         intent: 'verification',
         link: makeLink({ url: 'https://example.com/verify?token=abc', confidence: 0.9 }),
-        debugInfo: { securityRisk: 'low', urlsFound: 1, intentScores: {}, provider: null, intentSignals: [], contextValidated: true },
+        debugInfo: {
+          securityRisk: 'low',
+          urlsFound: 1,
+          intentScores: {},
+          provider: null,
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
       expectedDomains: ['https://example.com'],
     });
@@ -397,7 +508,14 @@ describe('assessEmailDecision() — domain context', () => {
       extraction: makeExtraction({
         intent: 'verification',
         link: makeLink({ url: 'https://other.com/verify?token=abc', confidence: 0.9 }),
-        debugInfo: { securityRisk: 'low', urlsFound: 1, intentScores: {}, provider: null, intentSignals: [], contextValidated: true },
+        debugInfo: {
+          securityRisk: 'low',
+          urlsFound: 1,
+          intentScores: {},
+          provider: null,
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
       expectedDomains: ['https://example.com'],
     });
@@ -457,7 +575,14 @@ describe('assessEmailDecision() — confidence', () => {
       makeExtraction({
         intent: 'marketing',
         link: makeLink({ url: 'https://example.com', type: 'marketing', confidence: 0.3 }),
-        debugInfo: { securityRisk: 'high', urlsFound: 20, intentScores: {}, provider: null, intentSignals: [], contextValidated: true },
+        debugInfo: {
+          securityRisk: 'high',
+          urlsFound: 20,
+          intentScores: {},
+          provider: null,
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
     ];
 
@@ -513,7 +638,14 @@ describe('assessEmailDecision() — confidence', () => {
       extraction: makeExtraction({
         intent: 'verification',
         otp: makeOtp({ code: '123456', confidence: 0.9 }),
-        debugInfo: { securityRisk: 'high', urlsFound: 20, intentScores: {}, provider: null, intentSignals: [], contextValidated: true },
+        debugInfo: {
+          securityRisk: 'high',
+          urlsFound: 20,
+          intentScores: {},
+          provider: null,
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
     });
 
@@ -531,7 +663,14 @@ describe('assessEmailDecision() — edge cases', () => {
       extraction: makeExtraction({
         intent: 'verification',
         link: makeLink({ url: 'not-a-url', confidence: 0.5 }),
-        debugInfo: { securityRisk: 'low', urlsFound: 1, intentScores: {}, provider: null, intentSignals: [], contextValidated: true },
+        debugInfo: {
+          securityRisk: 'low',
+          urlsFound: 1,
+          intentScores: {},
+          provider: null,
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
     });
     expect(d).toBeDefined();
@@ -543,7 +682,14 @@ describe('assessEmailDecision() — edge cases', () => {
       extraction: makeExtraction({
         intent: 'verification',
         link: makeLink({ url: '', confidence: 0.5 }),
-        debugInfo: { securityRisk: 'low', urlsFound: 0, intentScores: {}, provider: null, intentSignals: [], contextValidated: true },
+        debugInfo: {
+          securityRisk: 'low',
+          urlsFound: 0,
+          intentScores: {},
+          provider: null,
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
     });
     expect(d).toBeDefined();
@@ -554,7 +700,14 @@ describe('assessEmailDecision() — edge cases', () => {
       extraction: makeExtraction({
         intent: 'verification',
         link: makeLink({ url: 'https://example.com/verify', confidence: 0.9 }),
-        debugInfo: { securityRisk: 'low', urlsFound: 1, intentScores: {}, provider: null, intentSignals: [], contextValidated: true },
+        debugInfo: {
+          securityRisk: 'low',
+          urlsFound: 1,
+          intentScores: {},
+          provider: null,
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
       sender: undefined,
     });
@@ -565,14 +718,22 @@ describe('assessEmailDecision() — edge cases', () => {
     const d = assessEmailDecision({
       extraction: makeExtraction({ intent: 'verification' }),
     });
-    expect(d.reasons.some(r => r.startsWith('intent:'))).toBe(true);
+    expect(d.reasons.some((r) => r.startsWith('intent:'))).toBe(true);
   });
 
   it('reasons include provider when available', () => {
     const d = assessEmailDecision({
       extraction: makeExtraction({
         intent: 'verification',
-        debugInfo: { provider: 'GitHub', providerConfidence: 0.9, intentScores: {}, urlsFound: 0, securityRisk: 'low', intentSignals: [], contextValidated: true },
+        debugInfo: {
+          provider: 'GitHub',
+          providerConfidence: 0.9,
+          intentScores: {},
+          urlsFound: 0,
+          securityRisk: 'low',
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
     });
     expect(d.reasons).toContain('provider:GitHub');
@@ -582,9 +743,16 @@ describe('assessEmailDecision() — edge cases', () => {
     const d = assessEmailDecision({
       extraction: makeExtraction({
         intent: 'verification',
-        debugInfo: { securityRisk: 'medium', urlsFound: 0, intentScores: {}, provider: null, intentSignals: [], contextValidated: true },
+        debugInfo: {
+          securityRisk: 'medium',
+          urlsFound: 0,
+          intentScores: {},
+          provider: null,
+          intentSignals: [],
+          contextValidated: true,
+        },
       }),
     });
-    expect(d.reasons.some(r => r.startsWith('risk-points:'))).toBe(true);
+    expect(d.reasons.some((r) => r.startsWith('risk-points:'))).toBe(true);
   });
 });

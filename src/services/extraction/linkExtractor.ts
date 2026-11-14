@@ -29,7 +29,7 @@ import {
   stripHtmlPreserveStructure,
   getZoneForPosition,
   getContextAround,
-} from './zoneAnalyzer';
+} from './zoneAnalyzer'; // eslint-disable-line @typescript-eslint/no-unused-vars
 
 const log = createLogger('LinkExtractor');
 

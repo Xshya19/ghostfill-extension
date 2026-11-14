@@ -23,8 +23,20 @@ export interface DOMNode {
 }
 
 const VOID_TAGS = new Set([
-  'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
-  'link', 'meta', 'param', 'source', 'track', 'wbr',
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr',
 ]);
 
 // Content of these must be swallowed raw (never parsed as tags/entities).
@@ -34,7 +46,9 @@ const RAW_CONTENT_TAGS = new Set(['script', 'style', 'head', 'title', 'noscript'
 // Handles zero-width chars, NBSP variants, full-width digits (NFKC),
 // smart quotes — the #1 silent-failure cause in banking/enterprise templates.
 export function normalizeForExtraction(input: unknown): string {
-  if (!input) {return '';}
+  if (!input) {
+    return '';
+  }
   const str =
     typeof input === 'string'
       ? input
@@ -56,16 +70,25 @@ export function normalizeForExtraction(input: unknown): string {
 }
 
 const ENTITY_MAP: Record<string, string> = {
-  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
-  copy: '©', reg: '®', trade: '™', hellip: '…', mdash: '—', ndash: '–',
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: ' ',
+  copy: '©',
+  reg: '®',
+  trade: '™',
+  hellip: '…',
+  mdash: '—',
+  ndash: '–',
 };
 
 function decodeEntitiesLocal(text: string): string {
   const decoded = text.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (m, ent) => {
     if (ent[0] === '#') {
-      const code = ent[1]?.toLowerCase() === 'x'
-        ? parseInt(ent.slice(2), 16)
-        : parseInt(ent.slice(1), 10);
+      const code =
+        ent[1]?.toLowerCase() === 'x' ? parseInt(ent.slice(2), 16) : parseInt(ent.slice(1), 10);
       return Number.isFinite(code) ? String.fromCodePoint(code) : m;
     }
     return ENTITY_MAP[ent.toLowerCase()] ?? m;
@@ -77,17 +100,26 @@ function parseStyleAttr(styleStr: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const decl of styleStr.split(';')) {
     const idx = decl.indexOf(':');
-    if (idx === -1) {continue;}
+    if (idx === -1) {
+      continue;
+    }
     const prop = decl.slice(0, idx).trim().toLowerCase();
-    const val = decl.slice(idx + 1).trim().toLowerCase();
-    if (prop && val) {out[prop] = val;}
+    const val = decl
+      .slice(idx + 1)
+      .trim()
+      .toLowerCase();
+    if (prop && val) {
+      out[prop] = val;
+    }
   }
   return out;
 }
 
 function parseAttrs(attrStr: string): Record<string, string> {
   const attrs: Record<string, string> = {};
-  if (!attrStr) {return attrs;}
+  if (!attrStr) {
+    return attrs;
+  }
   const re = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*(?:=\s*("([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(attrStr)) !== null) {
@@ -105,12 +137,17 @@ function parseAttrs(attrStr: string): Record<string, string> {
  */
 export function buildDom(html: string): DOMNode {
   const root: DOMNode = {
-    type: 'element', tag: '#root', children: [], parent: null,
-    startIndex: 0, endIndex: html.length,
+    type: 'element',
+    tag: '#root',
+    children: [],
+    parent: null,
+    startIndex: 0,
+    endIndex: html.length,
   };
   const stack: DOMNode[] = [root];
   // Matches: comments, CDATA, closing tags, opening/self-closing tags.
-  const tagRe = /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<(\/)?([a-zA-Z][a-zA-Z0-9:-]*)((?:\s+[^<>]*?)?)\s*(\/)?>/g;
+  const tagRe =
+    /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<(\/)?([a-zA-Z][a-zA-Z0-9:-]*)((?:\s+[^<>]*?)?)\s*(\/)?>/g;
   let lastIndex = 0;
   let rawSwallowTag: string | null = null;
   let m: RegExpExecArray | null;
@@ -129,17 +166,25 @@ export function buildDom(html: string): DOMNode {
       if (!rawSwallowTag && raw) {
         const parent = stack[stack.length - 1]!;
         parent.children.push({
-          type: 'text', text: decodeEntitiesLocal(raw), children: [],
-          parent, startIndex: lastIndex, endIndex: idx,
+          type: 'text',
+          text: decodeEntitiesLocal(raw),
+          children: [],
+          parent,
+          startIndex: lastIndex,
+          endIndex: idx,
         });
       }
     }
     lastIndex = idx + full.length;
 
-    if (full.startsWith('<!--') || full.startsWith('<![CDATA[')) {continue;}
+    if (full.startsWith('<!--') || full.startsWith('<![CDATA[')) {
+      continue;
+    }
 
     if (rawSwallowTag) {
-      if (closing && tagName === rawSwallowTag) {rawSwallowTag = null;}
+      if (closing && tagName === rawSwallowTag) {
+        rawSwallowTag = null;
+      }
       continue;
     }
 
@@ -157,10 +202,17 @@ export function buildDom(html: string): DOMNode {
 
     const parent = stack[stack.length - 1]!;
     const node: DOMNode = {
-      type: 'element', tag: tagName, attrs: parseAttrs(attrStr),
-      children: [], parent, startIndex: idx, endIndex: idx + full.length,
+      type: 'element',
+      tag: tagName,
+      attrs: parseAttrs(attrStr),
+      children: [],
+      parent,
+      startIndex: idx,
+      endIndex: idx + full.length,
     };
-    if (node.attrs?.style) {node.ownStyle = parseStyleAttr(node.attrs.style);}
+    if (node.attrs?.style) {
+      node.ownStyle = parseStyleAttr(node.attrs.style);
+    }
     parent.children.push(node);
 
     if (RAW_CONTENT_TAGS.has(tagName) && !selfClose) {
@@ -177,8 +229,12 @@ export function buildDom(html: string): DOMNode {
     if (raw.trim()) {
       const parent = stack[stack.length - 1]!;
       parent.children.push({
-        type: 'text', text: decodeEntitiesLocal(raw), children: [],
-        parent, startIndex: lastIndex, endIndex: html.length,
+        type: 'text',
+        text: decodeEntitiesLocal(raw),
+        children: [],
+        parent,
+        startIndex: lastIndex,
+        endIndex: html.length,
       });
     }
   }
@@ -189,7 +245,9 @@ export function buildDom(html: string): DOMNode {
 // ── Tree traversal utilities ─────────────────────────────────────────────
 
 export function getFlattenedText(node: DOMNode): string {
-  if (node.type === 'text') {return node.text || '';}
+  if (node.type === 'text') {
+    return node.text || '';
+  }
   let out = '';
   for (const child of node.children) {
     out += getFlattenedText(child);
@@ -202,16 +260,24 @@ export function getFlattenedText(node: DOMNode): string {
 
 export function* walkTextNodes(node: DOMNode): Generator<DOMNode> {
   if (node.type === 'text') {
-    if ((node.text || '').trim()) {yield node;}
+    if ((node.text || '').trim()) {
+      yield node;
+    }
     return;
   }
-  for (const child of node.children) {yield* walkTextNodes(child);}
+  for (const child of node.children) {
+    yield* walkTextNodes(child);
+  }
 }
 
 export function* walkElements(node: DOMNode, tags?: Set<string>): Generator<DOMNode> {
   if (node.type === 'element') {
-    if (!tags || tags.has(node.tag || '')) {yield node;}
-    for (const child of node.children) {yield* walkElements(child, tags);}
+    if (!tags || tags.has(node.tag || '')) {
+      yield node;
+    }
+    for (const child of node.children) {
+      yield* walkElements(child, tags);
+    }
   }
 }
 
@@ -232,7 +298,9 @@ export function getEffectiveStyle(node: DOMNode, prop: string): string | null {
   let cur: DOMNode | null = node.type === 'text' ? node.parent : node;
   let depth = 0;
   while (cur && depth < 12) {
-    if (cur.ownStyle?.[prop]) {return cur.ownStyle[prop];}
+    if (cur.ownStyle?.[prop]) {
+      return cur.ownStyle[prop];
+    }
     cur = cur.parent;
     depth++;
   }
@@ -256,7 +324,9 @@ export function findAncestorTag(node: DOMNode, tag: string, maxDepth = 6): DOMNo
   let cur = node.parent;
   let depth = 0;
   while (cur && depth < maxDepth) {
-    if (cur.tag === tag) {return cur;}
+    if (cur.tag === tag) {
+      return cur;
+    }
     cur = cur.parent;
     depth++;
   }
@@ -266,10 +336,16 @@ export function findAncestorTag(node: DOMNode, tag: string, maxDepth = 6): DOMNo
 /** Is this text node the sole meaningful content of its parent element? */
 export function isIsolatedInParent(node: DOMNode): boolean {
   const parent = node.parent;
-  if (!parent) {return false;}
+  if (!parent) {
+    return false;
+  }
   const meaningfulSiblings = parent.children.filter((c) => {
-    if (c === node) {return false;}
-    if (c.type === 'text') {return (c.text || '').trim().length > 0;}
+    if (c === node) {
+      return false;
+    }
+    if (c.type === 'text') {
+      return (c.text || '').trim().length > 0;
+    }
     return true; // element siblings count against isolation
   });
   return meaningfulSiblings.length === 0;

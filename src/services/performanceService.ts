@@ -493,20 +493,30 @@ class PerformanceService {
   }
 
   private getPercentile(latencies: number[], percentile: number): number {
-    if (latencies.length === 0) {return 0;}
+    if (latencies.length === 0) {
+      return 0;
+    }
     const sorted = [...latencies].sort((a, b) => a - b);
     const index = Math.ceil((percentile / 100) * sorted.length) - 1;
     return sorted[index] ?? 0;
   }
 
-  private detectRegression(metrics: OperationMetric[]): { regressed: boolean; percentageIncrease: number } {
-    if (metrics.length < 20) {return { regressed: false, percentageIncrease: 0 };}
+  private detectRegression(metrics: OperationMetric[]): {
+    regressed: boolean;
+    percentageIncrease: number;
+  } {
+    if (metrics.length < 20) {
+      return { regressed: false, percentageIncrease: 0 };
+    }
     const recent = metrics.slice(-5);
     const baseline = metrics.slice(0, -5);
     const recentAvg = recent.reduce((sum, m) => sum + m.latencyMs, 0) / recent.length;
     const baselineAvg = baseline.reduce((sum, m) => sum + m.latencyMs, 0) / baseline.length;
     if (baselineAvg > 0 && recentAvg > baselineAvg * 1.5) {
-      return { regressed: true, percentageIncrease: ((recentAvg - baselineAvg) / baselineAvg) * 100 };
+      return {
+        regressed: true,
+        percentageIncrease: ((recentAvg - baselineAvg) / baselineAvg) * 100,
+      };
     }
     return { regressed: false, percentageIncrease: 0 };
   }
@@ -642,7 +652,9 @@ class PerformanceMonitor {
     const observer = new PerformanceObserver((entryList) => {
       const entries = entryList.getEntries();
       const lastEntry = entries[entries.length - 1];
-      if (!lastEntry) {return;}
+      if (!lastEntry) {
+        return;
+      }
 
       const metric: LocalMetric = {
         name: 'LCP',
@@ -828,8 +840,12 @@ class PerformanceMonitor {
 
   private getRating(metric: MetricType, value: number): 'good' | 'needs-improvement' | 'poor' {
     const budget = PERFORMANCE_BUDGETS[metric];
-    if (value <= budget * 0.8) {return 'good';}
-    if (value <= budget) {return 'needs-improvement';}
+    if (value <= budget * 0.8) {
+      return 'good';
+    }
+    if (value <= budget) {
+      return 'needs-improvement';
+    }
     return 'poor';
   }
 
@@ -857,7 +873,9 @@ class PerformanceMonitor {
 
   getAverage(name: string): number | null {
     const metrics = this.metrics.get(name);
-    if (!metrics || metrics.length === 0) {return null;}
+    if (!metrics || metrics.length === 0) {
+      return null;
+    }
     const sum = metrics.reduce((acc, m) => acc + m.value, 0);
     return sum / metrics.length;
   }
@@ -922,7 +940,9 @@ export class MemoryMonitor {
   }
 
   private checkForLeaks(): void {
-    if (this.snapshots.length < 10) {return;}
+    if (this.snapshots.length < 10) {
+      return;
+    }
     const recent = this.snapshots.slice(-10);
     const first = recent[0]!.usedJSHeapSize;
     const last = recent[recent.length - 1]!.usedJSHeapSize;
@@ -940,12 +960,18 @@ export class MemoryMonitor {
   }
 
   getTrend(): MemoryTrend {
-    if (this.snapshots.length < 2) {return 'stable';}
+    if (this.snapshots.length < 2) {
+      return 'stable';
+    }
     const first = this.snapshots[0]!.usedJSHeapSize;
     const last = this.snapshots[this.snapshots.length - 1]!.usedJSHeapSize;
     const change = (last - first) / first;
-    if (change > 0.1) {return 'increasing';}
-    if (change < -0.1) {return 'decreasing';}
+    if (change > 0.1) {
+      return 'increasing';
+    }
+    if (change < -0.1) {
+      return 'decreasing';
+    }
     return 'stable';
   }
 
@@ -1064,4 +1090,3 @@ export class ErrorTracker {
 export const performanceMonitor = new PerformanceMonitor();
 export const memoryMonitor = new MemoryMonitor();
 export const errorTracker = new ErrorTracker();
-

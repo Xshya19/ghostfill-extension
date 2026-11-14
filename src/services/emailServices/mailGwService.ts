@@ -6,14 +6,23 @@ import { getSenderSource } from '../../utils/emailIdentity';
 import { getRandomInt, getRandomString } from '../../utils/encryption';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
-import { runBoundedProviderOperation } from './providerOperations';
+import { extractMessageList } from './messageListShape';
 
 const log = createLogger('MailGwService');
 
-export class MailGwService {
+class MailGwService {
   private baseUrl = API.MAIL_GW.BASE_URL;
   private token: string | null = null;
   private tokenExpiry: number = 0;
+  /**
+   * Account credentials kept in memory next to the token.
+   *
+   * WHY: the Mail.gw JWT only lives for an hour and the service worker is
+   * killed/restarted constantly. Without the credentials the service had no
+   * way to obtain a fresh token, so the inbox silently stopped being polled
+   * (0 HTTP requests) an hour after every restart.
+   */
+  private credentials: { address: string; password: string } | null = null;
 
   /**
    * Fetch with robust retry logic (Exponential Backoff + Jitter)
@@ -118,32 +127,31 @@ export class MailGwService {
    * Get available domains
    */
   async getDomains(signal?: AbortSignal): Promise<string[]> {
+    const fallbackDomains = ['exdonuts.com'];
     try {
-      const data = await runBoundedProviderOperation(
-        async (boundedSignal) => {
-          const response = await this.fetchWithRetry(
-            `${this.baseUrl}${API.MAIL_GW.ENDPOINTS.DOMAINS}`,
-            { signal: boundedSignal, timeout: 4000, headers: { Accept: 'application/ld+json' } },
-            1
-          );
-          if (!response.ok) {
-            throw new Error(`Mail.gw domains: HTTP error ${response.status}`);
-          }
-          return response.json();
-        },
-        signal,
-        4000
+      const options: RequestInit & { timeout?: number } = {
+        timeout: 4000,
+      };
+      if (signal) {
+        options.signal = signal;
+      }
+      const response = await this.fetchWithRetry(
+        `${this.baseUrl}${API.MAIL_GW.ENDPOINTS.DOMAINS}`,
+        options,
+        1 // Only 1 attempt for domains fetch
       );
-      const domains: MailTmDomain[] = Array.isArray(data)
-        ? data
-        : Array.isArray(data?.['hydra:member'])
-          ? data['hydra:member']
-          : [];
-      return domains
-        .filter(
-          (d) => d && d.isActive === true && d.isPrivate !== true && typeof d.domain === 'string'
-        )
-        .map((d) => d.domain);
+
+      if (!response.ok) {
+        log.warn(`Failed to fetch domains (HTTP ${response.status}), using fallback`);
+        return fallbackDomains;
+      }
+
+      const data = await response.json();
+      const domains: MailTmDomain[] = data['hydra:member'] || [];
+
+      const activeDomains = domains.filter((d) => d.isActive && !d.isPrivate).map((d) => d.domain);
+
+      return activeDomains.length > 0 ? activeDomains : fallbackDomains;
     } catch (error) {
       if (
         error instanceof Error &&
@@ -151,14 +159,11 @@ export class MailGwService {
           error.message.includes('Aborted') ||
           error.message.includes('timed out'))
       ) {
-        log.debug('Mail.gw domain check was aborted or timed out');
+        log.debug('Failed to fetch Mail.gw domains due to abort/timeout, using fallback');
       } else {
-        log.warn('Failed to fetch current Mail.gw domains', error);
+        log.warn('Failed to fetch Mail.gw domains, using fallback', error);
       }
-      if (signal?.aborted) {
-        throw error;
-      }
-      return [];
+      return fallbackDomains;
     }
   }
 
@@ -271,6 +276,8 @@ export class MailGwService {
       const data = await response.json();
       this.token = data.token;
       this.tokenExpiry = Date.now() + 60 * 60 * 1000; // 1 hour
+      // Keep the credentials so the token can be renewed later on.
+      this.credentials = { address, password };
 
       log.debug('Mail.gw authenticated');
       if (!this.token) {
@@ -284,11 +291,45 @@ export class MailGwService {
   }
 
   /**
-   * Set token from stored account
+   * Set token from stored account.
+   *
+   * The address/password are kept in memory next to the token so the
+   * service can renew the token by itself once the 1 h TTL expires — also
+   * right after a service-worker restart, where no in-memory state survives
+   * but the caller still knows the account credentials.
    */
-  setToken(token: string): void {
+  setToken(token: string, address?: string, password?: string): void {
+    if (!token) {
+      // Explicit sign-out (clearData) — drop the token AND the credentials.
+      this.token = null;
+      this.tokenExpiry = 0;
+      this.credentials = null;
+      return;
+    }
+
+    if (
+      address &&
+      this.credentials?.address === address &&
+      (this.isAuthenticated() || this.tokenRefreshPromise)
+    ) {
+      // Same account with a live token — keep it. The in-memory token can be
+      // newer than the persisted one (e.g. after a 401-triggered re-auth),
+      // and replacing it would restart the auth dance on every poll.
+      if (password) {
+        this.credentials = { address, password };
+      }
+      return;
+    }
+
     this.token = token;
     this.tokenExpiry = Date.now() + 60 * 60 * 1000;
+    this.credentials = address
+      ? {
+          address,
+          password:
+            password || (this.credentials?.address === address ? this.credentials.password : ''),
+        }
+      : null;
   }
 
   /**
@@ -299,6 +340,41 @@ export class MailGwService {
   }
 
   private tokenRefreshPromise: Promise<string> | null = null;
+
+  /**
+   * Read the Mail.gw account from storage.
+   *
+   * BOTH keys are checked: the aggregator always stores a disposable account
+   * under 'disposableEmail' and only mirrors it into 'currentEmail' when the
+   * user is not on a Gmail alias. Reading 'currentEmail' alone therefore
+   * locked out every user whose active mailbox lived in 'disposableEmail'
+   * (or whose 'currentEmail' was a different provider).
+   */
+  private async readStoredAccount(): Promise<EmailAccount | null> {
+    const { storageService } = await import('../storageService');
+    const candidates: EmailAccount[] = [];
+
+    for (const key of ['currentEmail', 'disposableEmail'] as const) {
+      try {
+        const account = await storageService.get(key);
+        if (account && account.service === 'mailgw' && account.fullEmail && account.password) {
+          candidates.push(account);
+        }
+      } catch (error) {
+        log.warn(`Failed to read "${key}" while looking for Mail.gw credentials`, error);
+      }
+    }
+
+    // Prefer the account we were last asked to poll.
+    const preferred = this.credentials?.address;
+    if (preferred) {
+      const match = candidates.find((account) => account.fullEmail === preferred);
+      if (match) {
+        return match;
+      }
+    }
+    return candidates[0] ?? null;
+  }
 
   /**
    * Ensure we have a valid token, re-authenticating if necessary
@@ -314,21 +390,36 @@ export class MailGwService {
     }
 
     this.tokenRefreshPromise = (async () => {
-      try {
-        const { storageService } = await import('../storageService');
-        const currentEmail = await storageService.get('currentEmail');
-
-        if (currentEmail && currentEmail.service === 'mailgw' && currentEmail.password) {
-          log.info('Token expired, re-authenticating...');
-          return await this.authenticate(currentEmail.fullEmail, currentEmail.password, signal);
-        }
-        throw new Error('Not authenticated and cannot refresh token');
-      } finally {
-        this.tokenRefreshPromise = null;
+      // (1) In-memory credentials win: they belong to the account the
+      //     aggregator is currently polling.
+      const inMemory = this.credentials;
+      if (inMemory?.address && inMemory.password) {
+        log.info('Mail.gw token expired, re-authenticating with in-memory credentials');
+        return this.authenticate(inMemory.address, inMemory.password, signal);
       }
+
+      // (2) Storage fallback — 'currentEmail' AND 'disposableEmail'.
+      try {
+        const stored = await this.readStoredAccount();
+        if (stored?.fullEmail && stored.password) {
+          log.info('Mail.gw token expired, re-authenticating with stored account');
+          return await this.authenticate(stored.fullEmail, stored.password, signal);
+        }
+      } catch (error) {
+        log.warn('Failed to retrieve credentials for Mail.gw re-authentication', error);
+      }
+
+      throw new Error('Not authenticated and cannot refresh token');
     })();
 
-    await this.tokenRefreshPromise;
+    const refresh = this.tokenRefreshPromise;
+    try {
+      await refresh;
+    } finally {
+      if (this.tokenRefreshPromise === refresh) {
+        this.tokenRefreshPromise = null;
+      }
+    }
   }
 
   /**
@@ -395,7 +486,12 @@ export class MailGwService {
         }
 
         const data = await response.json();
-        const messages: MailTmMessage[] = Array.isArray(data) ? data : data['hydra:member'] || [];
+        // A malformed payload must throw: mapping it onto [] would look like
+        // an empty inbox and the aggregator would score the check as a
+        // success (no circuit breaker, no fallback provider).
+        const messages = extractMessageList(data, 'Mail.gw getMessages', {
+          keys: ['hydra:member'],
+        }) as MailTmMessage[];
 
         // Fetch full body for first 5 messages
         const recentMessages = messages.slice(0, 5);

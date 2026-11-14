@@ -18,7 +18,7 @@ import {
   GeneralTab,
   PasswordTab,
   PrivacyTab,
-  EMAIL_SERVICE_OPTIONS,
+  EMAIL_SERVICE_IDS,
 } from './components/OptionsTabs';
 import { Sidebar, TabId } from './components/OptionsUI';
 
@@ -59,14 +59,14 @@ const EMPTY_MODAL: ConfirmModalState = {
   type: 'warning',
 };
 
-const TAB_ORDER: Array<{ id: TabId; label: string; hint: string }> = [
-  { id: 'general', label: 'General', hint: 'Appearance, notifications, and app data' },
-  { id: 'email', label: 'Email', hint: 'Providers and custom domains' },
-  { id: 'password', label: 'Passwords', hint: 'Secure password defaults' },
-  { id: 'automation', label: 'Automation', hint: 'Verification codes, links, and shortcuts' },
-  { id: 'privacy', label: 'Privacy', hint: 'History and data retention' },
-  { id: 'advanced', label: 'Advanced', hint: 'Debug logging, console help, import, and reset' },
-  { id: 'about', label: 'About', hint: 'Updates, version, storage, and support' },
+const TAB_ORDER: Array<{ id: TabId; labelKey: string; hintKey: string }> = [
+  { id: 'general', labelKey: 'tabGeneral', hintKey: 'tabGeneralHint' },
+  { id: 'email', labelKey: 'tabEmail', hintKey: 'tabEmailHint' },
+  { id: 'password', labelKey: 'tabPasswords', hintKey: 'tabPasswordHint' },
+  { id: 'automation', labelKey: 'tabAutomation', hintKey: 'tabAutomationHint' },
+  { id: 'privacy', labelKey: 'tabPrivacy', hintKey: 'tabPrivacyHint' },
+  { id: 'advanced', labelKey: 'tabAdvanced', hintKey: 'tabAdvancedHint' },
+  { id: 'about', labelKey: 'tabAbout', hintKey: 'tabAboutHint' },
 ];
 
 // ═══════════════════════════════════════════════════════════════
@@ -160,8 +160,8 @@ function validateSettings(s: UserSettings): SettingsFormErrors {
   // Without this, an unknown value sails through to UPDATE_SETTINGS and the
   // service worker rejects the whole save ("backend rejected" with no field
   // hint and a retry that can never succeed).
-  if (!EMAIL_SERVICE_OPTIONS.some((o) => o.value === (s.preferredEmailService as string))) {
-    errors.preferredEmailService = `Unknown email service: ${String(s.preferredEmailService)}`;
+  if (!EMAIL_SERVICE_IDS.includes(s.preferredEmailService as (typeof EMAIL_SERVICE_IDS)[number])) {
+    errors.preferredEmailService = t('unknownEmailService', [String(s.preferredEmailService)]);
   }
 
   return errors;
@@ -316,18 +316,23 @@ const LoadingSpinner: React.FC = () => (
 );
 
 /** Accessible live region for screen readers. */
-const SAVE_LABELS = {
+const SAVE_LABEL_KEYS = {
   idle: '',
-  pending: 'Changes pending…',
-  saving: 'Saving…',
-  saved: 'Saved',
-  failed: 'Save failed — retry?',
-  invalid: 'Review settings to save',
+  pending: 'saveStatePending',
+  saving: 'saveStateSaving',
+  saved: 'saveStateSaved',
+  failed: 'saveStateFailed',
+  invalid: 'saveStateInvalid',
 } as const;
 
-const ScreenReaderAnnouncer: React.FC<{ state: keyof typeof SAVE_LABELS }> = ({ state }) => (
+const saveLabel = (state: keyof typeof SAVE_LABEL_KEYS): string => {
+  const key = SAVE_LABEL_KEYS[state];
+  return key ? t(key) : '';
+};
+
+const ScreenReaderAnnouncer: React.FC<{ state: keyof typeof SAVE_LABEL_KEYS }> = ({ state }) => (
   <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
-    {state === 'saved' ? t('settingsSavedSuccessfully') : SAVE_LABELS[state]}
+    {state === 'saved' ? t('settingsSavedSuccessfully') : saveLabel(state)}
   </div>
 );
 
@@ -335,7 +340,7 @@ const ScreenReaderAnnouncer: React.FC<{ state: keyof typeof SAVE_LABELS }> = ({ 
 const ConfirmModal: React.FC<{
   modal: ConfirmModalState;
   onClose: () => void;
-  modalRef: React.RefObject<HTMLDivElement | null>;
+  modalRef: React.RefObject<HTMLDivElement>;
 }> = ({ modal, onClose, modalRef }) => {
   const overlayRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -350,7 +355,7 @@ const ConfirmModal: React.FC<{
   return (
     /* Backdrop clicks are a pointer convenience; Escape and the focus trap
        provide the keyboard path. */
-    /* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */
+    /* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions, jsx-a11y/no-noninteractive-element-interactions */
     <div
       ref={overlayRef}
       className="modal-overlay"
@@ -360,6 +365,7 @@ const ConfirmModal: React.FC<{
         }
       }}
     >
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
       <div
         ref={modalRef}
         className="modal-content liquid-glass"
@@ -370,7 +376,7 @@ const ConfirmModal: React.FC<{
       >
         <h3 id={titleId}>{modal.title}</h3>
         <p id={descriptionId}>{modal.message}</p>
-        <div className="modal-actions" role="group" aria-label="Confirmation actions">
+        <div className="modal-actions" role="group" aria-label={t('confirmationActionsAriaLabel')}>
           {modal.showCancel !== false && (
             <Button onClick={onClose} type="button">
               {t('cancel')}
@@ -499,7 +505,7 @@ const OptionsApp: React.FC = () => {
         throw new Error(
           (response as { error?: unknown } | null)?.error
             ? String((response as { error?: unknown }).error)
-            : 'Service worker returned no settings'
+            : t('serviceWorkerNoSettings')
         );
       }
       const customDomainKey = (await storageService.getCustomDomainKey()) || '';
@@ -642,7 +648,7 @@ const OptionsApp: React.FC = () => {
       if (autoSaveTimerRef.current) {
         clearTimeout(autoSaveTimerRef.current);
       }
-
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       const timers = secretSaveTimersRef.current;
       for (const k in timers) {
         if (timers[k]) {
@@ -744,6 +750,7 @@ const OptionsApp: React.FC = () => {
   // ═══════════════════════════════════════════════════════════
 
   const handleChange = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (key: keyof UserSettings, value: any) => {
       if (key === 'darkMode' && (value === true || value === false || value === 'system')) {
         const nextSettings = { ...settingsRef.current, darkMode: value };
@@ -783,6 +790,7 @@ const OptionsApp: React.FC = () => {
   }, []);
 
   const handlePasswordDefaultChange = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (key: keyof UserSettings['passwordDefaults'], value: any) => {
       setSettings((prev) => ({
         ...prev,
@@ -856,8 +864,19 @@ const OptionsApp: React.FC = () => {
       confirmText: t('clearAllDataAction'),
       action: () => {
         void (async () => {
-          await storageService.clear();
-          window.location.reload();
+          if (autoSaveTimerRef.current) {
+            clearTimeout(autoSaveTimerRef.current);
+          }
+          try {
+            const response = await chrome.runtime.sendMessage({ action: 'CLEAR_DATA' });
+            if (!response?.success) {
+              throw new Error(response?.error || 'Failed to clear extension data');
+            }
+            window.location.reload();
+          } catch (error) {
+            log.error('Failed to clear extension data', error);
+            setSaveState('failed');
+          }
         })();
       },
     });
@@ -979,9 +998,9 @@ const OptionsApp: React.FC = () => {
   };
 
   return (
-    <div className="options-app" aria-label="GhostFill Settings">
+    <div className="options-app" aria-label={t('ghostfillSettingsAriaLabel')}>
       <a className="options-skip-link" href="#main-content">
-        Skip to settings
+        {t('skipToSettings')}
       </a>
       {/* ── Header ── */}
       <header className="options-header liquid-glass" role="banner">
@@ -999,11 +1018,11 @@ const OptionsApp: React.FC = () => {
               aria-keyshortcuts="Control+k Meta+k"
               onClick={() => setCommandPaletteOpen(true)}
               type="button"
-              aria-label="Search settings sections"
-              title={`Search settings sections (${MOD_KEY}+K)`}
+              aria-label={t('searchSettingsSections')}
+              title={`${t('searchSettingsSections')} (${MOD_KEY}+K)`}
             >
               <Search size={15} />
-              <span>Search</span>
+              <span>{t('search')}</span>
               <kbd>{MOD_KEY} K</kbd>
             </button>
             <button
@@ -1014,12 +1033,18 @@ const OptionsApp: React.FC = () => {
               }}
               type="button"
               aria-pressed={resolveTheme(settings.darkMode) === 'dark'}
-              aria-label={`Current theme: ${resolveTheme(settings.darkMode)}. Switch to ${resolveTheme(settings.darkMode) === 'dark' ? 'light' : 'dark'}.`}
-              title={`Current theme: ${resolveTheme(settings.darkMode)}. Switch to ${resolveTheme(settings.darkMode) === 'dark' ? 'light' : 'dark'}.`}
+              aria-label={t('themeToggleAriaLabel', [
+                resolveTheme(settings.darkMode) === 'dark' ? t('themeDark') : t('themeLight'),
+                resolveTheme(settings.darkMode) === 'dark' ? t('themeLight') : t('themeDark'),
+              ])}
+              title={t('themeToggleAriaLabel', [
+                resolveTheme(settings.darkMode) === 'dark' ? t('themeDark') : t('themeLight'),
+                resolveTheme(settings.darkMode) === 'dark' ? t('themeLight') : t('themeDark'),
+              ])}
             >
               {resolveTheme(settings.darkMode) === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
               <span className="theme-toggle-label">
-                {resolveTheme(settings.darkMode) === 'dark' ? 'Light' : 'Dark'}
+                {resolveTheme(settings.darkMode) === 'dark' ? t('themeLight') : t('themeDark')}
               </span>
             </button>
           </div>
@@ -1028,10 +1053,7 @@ const OptionsApp: React.FC = () => {
 
       {loadError && (
         <div className="settings-load-error" role="alert">
-          <span>
-            Couldn&apos;t load your saved settings ({loadError}). Showing defaults — changes
-            won&apos;t autosave until loading succeeds.
-          </span>
+          <span>{t('settingsLoadError', [loadError])}</span>
           <button
             type="button"
             className="gf-btn gf-btn--sm"
@@ -1040,7 +1062,7 @@ const OptionsApp: React.FC = () => {
               void loadSettings();
             }}
           >
-            Retry
+            {t('retry')}
           </button>
         </div>
       )}
@@ -1064,8 +1086,8 @@ const OptionsApp: React.FC = () => {
         >
           <div key={activeTab} className="options-page-content" data-motion={tabMotion}>
             <div className="options-page-heading">
-              <h2 id="options-page-title">{activePage.label}</h2>
-              <p>{activePage.hint}</p>
+              <h2 id="options-page-title">{t(activePage.labelKey)}</h2>
+              <p>{t(activePage.hintKey)}</p>
             </div>
             <div
               id="settings-tab-panel"
@@ -1121,7 +1143,7 @@ const SaveStatusIndicator: React.FC<{
   if (state === 'idle') {
     return null;
   }
-  const label = SAVE_LABELS[state];
+  const label = saveLabel(state);
   const cls = `options-save-indicator liquid-glass options-save-indicator-${state === 'invalid' ? 'failed' : state}`;
   const StatusIcon =
     state === 'saved' ? Check : state === 'failed' || state === 'invalid' ? AlertCircle : Clock;
@@ -1168,7 +1190,8 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
 
   const q = query.trim().toLowerCase();
   const filtered = TAB_ORDER.filter(
-    (t) => !q || t.label.toLowerCase().includes(q) || t.hint.toLowerCase().includes(q)
+    (tab) =>
+      !q || t(tab.labelKey).toLowerCase().includes(q) || t(tab.hintKey).toLowerCase().includes(q)
   );
 
   useEffect(() => {
@@ -1191,23 +1214,23 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
   }
 
   return (
-    /* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */
+    /* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions, jsx-a11y/no-noninteractive-element-interactions */
     <div ref={overlayRef} className="command-palette-overlay" onClick={onClose}>
-      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions */}
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions, jsx-a11y/no-noninteractive-element-interactions */}
       <div
         ref={paletteRef}
         className="command-palette liquid-glass"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label="Jump to settings section"
+        aria-label={t('jumpToSettingsSection')}
       >
         <div className="command-palette-search">
           <Search size={19} aria-hidden="true" />
           <input
             id="command-palette-input"
             className="command-palette-input"
-            placeholder="Search settings sections…"
+            placeholder={`${t('searchSettingsSections')}…`}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -1229,7 +1252,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
                 }
               }
             }}
-            aria-label="Search settings sections"
+            aria-label={t('searchSettingsSections')}
             autoComplete="off"
             spellCheck={false}
             role="combobox"
@@ -1243,7 +1266,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
           <button
             type="button"
             className="command-palette-close"
-            aria-label="Close search"
+            aria-label={t('closeSearch')}
             onClick={onClose}
           >
             <X size={18} aria-hidden="true" />
@@ -1251,12 +1274,12 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
         </div>
         <ul id="command-palette-list" className="command-palette-list" role="listbox">
           {filtered.length === 0 ? (
-            <li className="command-palette-empty">No matches</li>
+            <li className="command-palette-empty">{t('noMatches')}</li>
           ) : (
-            filtered.map((t, idx) => (
+            filtered.map((tab, idx) => (
               <li
-                key={t.id}
-                id={`command-option-${t.id}`}
+                key={tab.id}
+                id={`command-option-${tab.id}`}
                 role="option"
                 aria-selected={idx === highlightIdx}
                 className={
@@ -1268,18 +1291,20 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
-                    onSelectTab(t.id);
+                    onSelectTab(tab.id);
                     onClose();
                   }
                 }}
                 onClick={() => {
-                  onSelectTab(t.id);
+                  onSelectTab(tab.id);
                   onClose();
                 }}
               >
-                <span className="command-palette-item-label">{t.label}</span>
-                <span className="command-palette-item-hint">{t.hint}</span>
-                {t.id === activeTab && <span className="command-palette-item-badge">Current</span>}
+                <span className="command-palette-item-label">{t(tab.labelKey)}</span>
+                <span className="command-palette-item-hint">{t(tab.hintKey)}</span>
+                {tab.id === activeTab && (
+                  <span className="command-palette-item-badge">{t('currentBadge')}</span>
+                )}
               </li>
             ))
           )}
@@ -1287,11 +1312,11 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
         <div className="command-palette-footer">
           <kbd>↑</kbd>
           <kbd>↓</kbd>
-          <span>navigate</span>
+          <span>{t('paletteNavigate')}</span>
           <kbd>↵</kbd>
-          <span>select</span>
+          <span>{t('paletteSelect')}</span>
           <kbd>Esc</kbd>
-          <span>close</span>
+          <span>{t('paletteClose')}</span>
         </div>
       </div>
     </div>

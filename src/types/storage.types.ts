@@ -101,6 +101,9 @@ export interface UserSettings {
   debugMode: boolean;
   analyticsEnabled: boolean;
 
+  // Auto-update settings
+  autoUpdateCheck: boolean;
+
   // Custom Infrastructure
   // SECURITY FIX: API keys removed from persistent settings
   // Keys are now stored in session-only storage (chrome.storage.session)
@@ -220,7 +223,6 @@ export interface StorageSchema {
 
   // Email service health state (persisted health check results)
   emailServiceHealth?: {
-    checkVersion?: 1;
     timestamp: number;
     availableServices: EmailService[];
   };
@@ -276,6 +278,15 @@ export interface StorageSchema {
   microsoftAliasSessions?: Record<string, GmailAliasSession>;
 
   performanceReport?: any;
+
+  // Auto-update state
+  availableUpdate?: {
+    version: string;
+    releaseUrl: string;
+    checkedAt: string;
+    dismissed: boolean;
+    downloadUrl: string | null;
+  } | null;
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
@@ -309,6 +320,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
   allowGmailSessionFallback: false,
   debugMode: false,
   analyticsEnabled: false,
+  // Auto-update: check GitHub Releases every 6 hours by default
+  autoUpdateCheck: true,
   // Custom domain defaults
   customDomain: '',
   customDomainUrl: '',

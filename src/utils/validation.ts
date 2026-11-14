@@ -320,8 +320,22 @@ export const updateSettingsPayloadSchema = userSettingsSchema.partial();
 export const showNotificationPayloadSchema = z.object({
   title: safeString.max(200),
   message: safeString.max(500),
-  type: z.enum(['info', 'success', 'warning', 'error']).optional(),
+  type: z.enum(['info', 'success', 'warning', 'error', 'link']).optional(),
   duration: safeNumber.min(1000).max(30000).optional().nullable(),
+  // Only used for type 'link': the destination the "Open link" button
+  // opens when the extension could not open the verification link itself.
+  link: z
+    .string()
+    .max(2000)
+    .refine((value) => {
+      try {
+        const parsed = new URL(value);
+        return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+      } catch {
+        return false;
+      }
+    }, 'link must be an http(s) URL')
+    .optional(),
 });
 
 export const newEmailReceivedPayloadSchema = z.object({
@@ -514,6 +528,13 @@ export const messagePayloadSchemas: Record<string, z.ZodSchema> = {
   POLLING_STATE_CHANGE: z
     .object({
       state: safeString,
+    })
+    .optional(),
+  // Connectivity broadcast from the polling engine (offline / back online).
+  CONNECTIVITY_CHANGE: z
+    .object({
+      online: safeBoolean,
+      since: safeNumber.optional(),
     })
     .optional(),
 };

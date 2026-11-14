@@ -131,7 +131,6 @@ audit_*.json
 *audit*.txt
 *audit*.json
 *audit*.html
-!docs/PROVIDER_AUDIT.md
 audits/
 frontend_audit.md
 check_*.js
@@ -237,6 +236,7 @@ vitest-out.txt
 # Local Scripts & IDE Tools
 # ───────────────────────────────────────────────────────────────────
 .serena/
+.playwright-mcp/
 
 # Preserve agent workflow docs
 !.agents/**

@@ -11,12 +11,24 @@ function mockFetchOnce(impl: (req: RequestInfo, init?: RequestInit) => Promise<R
   return spy;
 }
 function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
-function sleep(ms: number) { return new Promise<void>(r=> setTimeout(r, ms)); }
+function sleep(ms: number) {
+  return new Promise<void>((r) => setTimeout(r, ms));
+}
 const originalFetch = globalThis.fetch;
-beforeEach(() => { vi.clearAllMocks(); });
-afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); if (originalFetch) vi.stubGlobal('fetch', originalFetch); vi.restoreAllMocks(); });
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  if (originalFetch) vi.stubGlobal('fetch', originalFetch);
+  vi.restoreAllMocks();
+});
 
 import { catchmailService } from '../src/services/emailServices/catchmailService';
 import { maildropService } from '../src/services/emailServices/maildropService';
@@ -31,7 +43,10 @@ import { tempMailLolService } from '../src/services/emailServices/tempMailLolSer
 import { tempmailPlusService } from '../src/services/emailServices/tempmailPlusService';
 import { mailCxService } from '../src/services/emailServices/mailCxService';
 import { getnadaService } from '../src/services/emailServices/getnadaService';
-import { ProviderHealthManager, providerHealth } from '../src/services/emailServices/providerHealthManager';
+import {
+  ProviderHealthManager,
+  providerHealth,
+} from '../src/services/emailServices/providerHealthManager';
 import { EmailServiceAggregator } from '../src/services/emailServices';
 import { storageService } from '../src/services/storageService';
 
@@ -41,7 +56,7 @@ describe('CatchmailService — extreme', () => {
     const acc = await catchmailService.createAccount('testuser123');
     expect(acc.fullEmail).toBe('testuser123@catchmail.io');
     expect(acc.service).toBe('catchmail');
-    expect(acc.expiresAt - acc.createdAt).toBe(7*24*60*60*1000);
+    expect(acc.expiresAt - acc.createdAt).toBe(7 * 24 * 60 * 60 * 1000);
     expect(acc.id).toContain('catchmail_');
   });
   it('createAccount with undefined prefix generates human-like', async () => {
@@ -56,10 +71,19 @@ describe('CatchmailService — extreme', () => {
   it('getMessages handles 500 on full-body fetches and uses fallback values', async () => {
     mockFetchOnce(async (url: RequestInfo) => {
       const u = String(url);
-      if (u.includes('/mailbox?')) return jsonResponse({ messages: [
-        { id: 'a1', from: 'svc@x.com', subject: 'Hi', date: new Date().toISOString(), mailbox: 'ghost@catchmail.io' },
-        { id: 'a2', from: null, subject: null, date: 'invalid', mailbox: '' }
-      ]});
+      if (u.includes('/mailbox?'))
+        return jsonResponse({
+          messages: [
+            {
+              id: 'a1',
+              from: 'svc@x.com',
+              subject: 'Hi',
+              date: new Date().toISOString(),
+              mailbox: 'ghost@catchmail.io',
+            },
+            { id: 'a2', from: null, subject: null, date: 'invalid', mailbox: '' },
+          ],
+        });
       return new Response('', { status: 500 });
     });
     const r = await catchmailService.getMessages('ghost@catchmail.io');
@@ -70,13 +94,23 @@ describe('CatchmailService — extreme', () => {
   it('getMessage 500 throws, object body mapping does not crash', async () => {
     mockFetchOnce(async () => new Response('', { status: 500 }));
     await expect(catchmailService.getMessage('ghost@catchmail.io', 'id1')).rejects.toThrow();
-    mockFetchOnce(async () => jsonResponse({ id: 'id1', from: 'a@b.com', subject: 'Hi', date: new Date().toISOString(), body: 'hello', html_body: '<b>hi</b>' }));
+    mockFetchOnce(async () =>
+      jsonResponse({
+        id: 'id1',
+        from: 'a@b.com',
+        subject: 'Hi',
+        date: new Date().toISOString(),
+        body: 'hello',
+        html_body: '<b>hi</b>',
+      })
+    );
     const ok = await catchmailService.getMessage('ghost@catchmail.io', 'id1');
     expect(ok.body).toContain('hello');
   });
   it('getMessages aborted throws (retryable errors propagate)', async () => {
     mockFetchOnce(async () => jsonResponse({ messages: [] }));
-    const ctrl = new AbortController(); ctrl.abort();
+    const ctrl = new AbortController();
+    ctrl.abort();
     // Abort errors are retryable — they should propagate so the circuit breaker can act
     await expect(catchmailService.getMessages('a@catchmail.io', ctrl.signal)).rejects.toThrow();
   });
@@ -88,7 +122,10 @@ describe('DriftzService generation fallback', () => {
     const fetchSpy = mockFetchOnce(async (_url, init) => {
       expect(JSON.parse(String(init?.body))).toEqual({ domain: 'bbjbinin.mn' });
       attempt++;
-      return jsonResponse({ success: true, result: { address: attempt === 1 ? 'test@manornewtech.org' : 'test@bbjbinin.mn' } });
+      return jsonResponse({
+        success: true,
+        result: { address: attempt === 1 ? 'test@manornewtech.org' : 'test@bbjbinin.mn' },
+      });
     });
     const account = await driftzService.createAccount();
     expect(account.fullEmail).toBe('test@bbjbinin.mn');
@@ -96,7 +133,9 @@ describe('DriftzService generation fallback', () => {
   });
 
   it('limits domain retries so the aggregator can fall back without accepting the wrong domain', async () => {
-    const fetchSpy = mockFetchOnce(async () => jsonResponse({ success: true, result: { address: 'test@manornewtech.org' } }));
+    const fetchSpy = mockFetchOnce(async () =>
+      jsonResponse({ success: true, result: { address: 'test@manornewtech.org' } })
+    );
     await expect(driftzService.createAccount()).rejects.toThrow('bbjbinin.mn after 3 attempts');
     expect(fetchSpy).toHaveBeenCalledTimes(3);
   });
@@ -117,12 +156,16 @@ describe('DriftzService generation fallback', () => {
       controller.abort();
       return jsonResponse({ success: true, result: { address: 'test@manornewtech.org' } });
     });
-    await expect(driftzService.createAccount(controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(driftzService.createAccount(controller.signal)).rejects.toMatchObject({
+      name: 'AbortError',
+    });
     expect(fetchSpy).toHaveBeenCalledOnce();
   });
 
   it('rejects malformed addresses without retrying', async () => {
-    const fetchSpy = mockFetchOnce(async () => jsonResponse({ success: true, result: { address: 'test@bbjbinin.mn@other.example' } }));
+    const fetchSpy = mockFetchOnce(async () =>
+      jsonResponse({ success: true, result: { address: 'test@bbjbinin.mn@other.example' } })
+    );
     await expect(driftzService.createAccount()).rejects.toThrow('valid email address');
     expect(fetchSpy).toHaveBeenCalledOnce();
   });
@@ -166,8 +209,14 @@ describe('DriftzService generation fallback', () => {
 describe('MaildropService — GraphQL retries', () => {
   it('createAccount tolerates ping failure and still creates', async () => {
     mockFetchOnce(async (url, init) => {
-      const body = (()=>{ try{ return JSON.parse(String((init as any)?.body ?? '{}'))}catch{return {}} })();
-      if (body.query?.includes('ping')) return jsonResponse({ errors: [{ message: 'timeout' }]});
+      const body = (() => {
+        try {
+          return JSON.parse(String((init as any)?.body ?? '{}'));
+        } catch {
+          return {};
+        }
+      })();
+      if (body.query?.includes('ping')) return jsonResponse({ errors: [{ message: 'timeout' }] });
       return new Response('', { status: 500 });
     });
     const acc = await maildropService.createAccount('myprefix');
@@ -177,39 +226,92 @@ describe('MaildropService — GraphQL retries', () => {
   it('getMessages retries 429/5xx then succeeds and falls back on full message 500', async () => {
     let inboxAttempts = 0;
     mockFetchOnce(async (_u, init) => {
-      const body = (()=>{ try{ return JSON.parse(String((init as any)?.body ?? '{}'))}catch{return {}} })();
+      const body = (() => {
+        try {
+          return JSON.parse(String((init as any)?.body ?? '{}'));
+        } catch {
+          return {};
+        }
+      })();
       if (body.query?.includes('inbox')) {
         inboxAttempts++;
-        if (inboxAttempts < 3) return jsonResponse({ errors: [{ message: 'rate limit exceeded' }]});
-        return jsonResponse({ data: { inbox: [{ id: '1', mailfrom: 'a@b.com', subject: 'Verify', date: new Date().toISOString(), headerfrom: 'A <a@b.com>' }] } });
+        if (inboxAttempts < 3)
+          return jsonResponse({ errors: [{ message: 'rate limit exceeded' }] });
+        return jsonResponse({
+          data: {
+            inbox: [
+              {
+                id: '1',
+                mailfrom: 'a@b.com',
+                subject: 'Verify',
+                date: new Date().toISOString(),
+                headerfrom: 'A <a@b.com>',
+              },
+            ],
+          },
+        });
       }
       if (body.query?.includes('message(')) return new Response('', { status: 500 });
-      if (body.query?.includes('ping')) return jsonResponse({ data: { ping: 'pong' }});
+      if (body.query?.includes('ping')) return jsonResponse({ data: { ping: 'pong' } });
       return jsonResponse({ data: {} });
     });
-    const acc = { token: 'mybox', username: 'mybox', login: 'mybox', domain: 'maildrop.cc', fullEmail: 'mybox@maildrop.cc', createdAt: Date.now(), expiresAt: Date.now()+1e9, id: 'maildrop_test', service: 'maildrop' } as any;
+    const acc = {
+      token: 'mybox',
+      username: 'mybox',
+      login: 'mybox',
+      domain: 'maildrop.cc',
+      fullEmail: 'mybox@maildrop.cc',
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 1e9,
+      id: 'maildrop_test',
+      service: 'maildrop',
+    } as any;
     const msgs = await maildropService.getMessages(acc);
     expect(msgs.length).toBe(1);
     expect(msgs[0]!.from).toContain('a@b.com');
   });
   it('getMessages missing identifier throws', async () => {
-    await expect(maildropService.getMessages({} as any)).rejects.toThrow('No mailbox identifier available');
+    await expect(maildropService.getMessages({} as any)).rejects.toThrow(
+      'No mailbox identifier available'
+    );
   });
   it('getMessage null throws, delete no-op', async () => {
     mockFetchOnce(async (_u, init) => {
-      const body = (()=>{ try{ return JSON.parse(String((init as any)?.body ?? '{}'))}catch{return {}} })();
-      if (body.query?.includes('message(')) return jsonResponse({ data: { message: null }});
-      return jsonResponse({ data: { ping: 'pong' }});
+      const body = (() => {
+        try {
+          return JSON.parse(String((init as any)?.body ?? '{}'));
+        } catch {
+          return {};
+        }
+      })();
+      if (body.query?.includes('message(')) return jsonResponse({ data: { message: null } });
+      return jsonResponse({ data: { ping: 'pong' } });
     });
-    const acc = { token: 'box', username: 'box', login: 'box', domain: 'maildrop.cc', fullEmail: 'box@maildrop.cc', createdAt: 0, expiresAt: 0, id: '1', service: 'maildrop' } as any;
+    const acc = {
+      token: 'box',
+      username: 'box',
+      login: 'box',
+      domain: 'maildrop.cc',
+      fullEmail: 'box@maildrop.cc',
+      createdAt: 0,
+      expiresAt: 0,
+      id: '1',
+      service: 'maildrop',
+    } as any;
     await expect(maildropService.getMessage('nonexistent', acc)).rejects.toThrow(/not found/i);
     await expect(maildropService.deleteMessage('any')).resolves.toBeUndefined();
   });
   it('getDomains returns [] when ping 500 (provider ejected from health)', async () => {
     mockFetchOnce(async (_u, init) => {
-      const body = (()=>{ try{ return JSON.parse(String((init as any)?.body ?? '{}'))}catch{return {}} })();
+      const body = (() => {
+        try {
+          return JSON.parse(String((init as any)?.body ?? '{}'));
+        } catch {
+          return {};
+        }
+      })();
       if (body.query?.includes('ping')) return new Response('', { status: 500 });
-      return jsonResponse({ data: { ping: 'pong' }});
+      return jsonResponse({ data: { ping: 'pong' } });
     });
     const d = await maildropService.getDomains();
     // A dead ping must surface as unhealthy ([]) — previously this returned
@@ -221,7 +323,12 @@ describe('MaildropService — GraphQL retries', () => {
 describe('MailTmService — auth & enrich', () => {
   it('getDomains caches 5min and fallback', async () => {
     let fetchCount = 0;
-    mockFetchOnce(async () => { fetchCount++; return jsonResponse({ 'hydra:member': [{ domain: 'active.com', isActive: true, isPrivate: false }] }); });
+    mockFetchOnce(async () => {
+      fetchCount++;
+      return jsonResponse({
+        'hydra:member': [{ domain: 'active.com', isActive: true, isPrivate: false }],
+      });
+    });
     const svc = new MailTmService();
     const d1 = await svc.getDomains();
     expect(d1).toEqual(['active.com']);
@@ -230,7 +337,15 @@ describe('MailTmService — auth & enrich', () => {
     expect(fetchCount).toBe(1);
   });
   it('getDomains parses active non-private only', async () => {
-    mockFetchOnce(async () => jsonResponse({ 'hydra:member': [{ domain: 'active.com', isActive: true, isPrivate: false }, { domain: 'inactive.com', isActive: false, isPrivate: false }, { domain: 'private.com', isActive: true, isPrivate: true }]}));
+    mockFetchOnce(async () =>
+      jsonResponse({
+        'hydra:member': [
+          { domain: 'active.com', isActive: true, isPrivate: false },
+          { domain: 'inactive.com', isActive: false, isPrivate: false },
+          { domain: 'private.com', isActive: true, isPrivate: true },
+        ],
+      })
+    );
     const svc = new MailTmService();
     const d = await svc.getDomains();
     expect(d).toEqual(['active.com']);
@@ -239,7 +354,10 @@ describe('MailTmService — auth & enrich', () => {
     const svc = new MailTmService();
     mockFetchOnce(async (url: RequestInfo) => {
       const u = String(url);
-      if (u.includes('/domains')) return jsonResponse({ 'hydra:member': [{ domain: 'bugfoo.com', isActive: true, isPrivate: false }]});
+      if (u.includes('/domains'))
+        return jsonResponse({
+          'hydra:member': [{ domain: 'bugfoo.com', isActive: true, isPrivate: false }],
+        });
       if (u.includes('/accounts')) return jsonResponse({ address: 'test@bugfoo.com' });
       if (u.includes('/token')) return jsonResponse({ token: 'jwt-123' });
       return new Response('', { status: 404 });
@@ -251,7 +369,9 @@ describe('MailTmService — auth & enrich', () => {
   it('circuit breaker trips after 3 failures', async () => {
     const svc = new MailTmService();
     expect(svc.isCircuitBreakerOpen()).toBe(false);
-    svc.recordAuthFailure(); svc.recordAuthFailure(); svc.recordAuthFailure();
+    svc.recordAuthFailure();
+    svc.recordAuthFailure();
+    svc.recordAuthFailure();
     expect(svc.isCircuitBreakerOpen()).toBe(true);
     svc.recordAuthSuccess();
     expect(svc.isCircuitBreakerOpen()).toBe(false);
@@ -259,7 +379,9 @@ describe('MailTmService — auth & enrich', () => {
   it('getMessages with transient network throws but not hang', async () => {
     const svc = new MailTmService();
     await svc.setToken('tok2');
-    mockFetchOnce(async () => { throw new TypeError('Failed to fetch'); });
+    mockFetchOnce(async () => {
+      throw new TypeError('Failed to fetch');
+    });
     (svc as any).ensureAuthenticated = async () => {};
     await expect(svc.getMessages()).rejects.toThrow();
   });
@@ -268,8 +390,34 @@ describe('MailTmService — auth & enrich', () => {
     await svc.setToken('tok3');
     mockFetchOnce(async (url: RequestInfo) => {
       const u = String(url);
-      if (u.includes('/messages') && !u.includes('/messages/')) return jsonResponse({ 'hydra:member': [{ id: '123', from: { address: 'a@b.com' }, to: [{ address: 'me@bugfoo.com' }], subject: { note: 'hi' }, createdAt: 'invalid', intro: { text: 'obj' }, text: { arr: 1 }, html: ['<b>hi</b>', '<i>yo</i>'], seen: true }]});
-      if (u.includes('/messages/123')) return jsonResponse({ id: '123', from: { address: 'a@b.com' }, to: [{ address: 'me@bugfoo.com' }], subject: 'Hello', createdAt: new Date().toISOString(), text: 'hello', html: ['<p>hi</p>'], seen: true, intro: 'hello' });
+      if (u.includes('/messages') && !u.includes('/messages/'))
+        return jsonResponse({
+          'hydra:member': [
+            {
+              id: '123',
+              from: { address: 'a@b.com' },
+              to: [{ address: 'me@bugfoo.com' }],
+              subject: { note: 'hi' },
+              createdAt: 'invalid',
+              intro: { text: 'obj' },
+              text: { arr: 1 },
+              html: ['<b>hi</b>', '<i>yo</i>'],
+              seen: true,
+            },
+          ],
+        });
+      if (u.includes('/messages/123'))
+        return jsonResponse({
+          id: '123',
+          from: { address: 'a@b.com' },
+          to: [{ address: 'me@bugfoo.com' }],
+          subject: 'Hello',
+          createdAt: new Date().toISOString(),
+          text: 'hello',
+          html: ['<p>hi</p>'],
+          seen: true,
+          intro: 'hello',
+        });
       return jsonResponse({});
     });
     (svc as any).ensureAuthenticated = async () => {};
@@ -278,13 +426,16 @@ describe('MailTmService — auth & enrich', () => {
   });
   it('fetchWithRetry honors AbortSignal', async () => {
     const svc = new MailTmService();
-    const ctrl = new AbortController(); ctrl.abort();
+    const ctrl = new AbortController();
+    ctrl.abort();
     mockFetchOnce(async (_u, init) => {
       if (init?.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
       return jsonResponse({ 'hydra:member': [] }, 429);
     });
     const spy = (svc as any).fetchWithRetry.bind(svc);
-    await expect(spy('https://api.mail.tm/domains', { signal: ctrl.signal } as any, 2)).rejects.toThrow();
+    await expect(
+      spy('https://api.mail.tm/domains', { signal: ctrl.signal } as any, 2)
+    ).rejects.toThrow();
   });
 });
 
@@ -295,13 +446,16 @@ describe('GuerrillaMailService — queue & backoff', () => {
   });
   it('serialize concurrent requests via queue', async () => {
     let order: number[] = [];
-    mockFetchOnce(async () => { order.push(Date.now()); return jsonResponse({ list: [] }); });
+    mockFetchOnce(async () => {
+      order.push(Date.now());
+      return jsonResponse({ list: [] });
+    });
     // reduce interval for speed
     (guerrillaMailService as any).minRequestInterval = 5;
     const p = Promise.all([
-      guerrillaMailService.getMessages('sid1').catch(()=>[]),
-      guerrillaMailService.getMessages('sid1').catch(()=>[]),
-      guerrillaMailService.getMessages('sid1').catch(()=>[]),
+      guerrillaMailService.getMessages('sid1').catch(() => []),
+      guerrillaMailService.getMessages('sid1').catch(() => []),
+      guerrillaMailService.getMessages('sid1').catch(() => []),
     ]);
     await p;
     expect(order.length).toBe(3);
@@ -310,7 +464,12 @@ describe('GuerrillaMailService — queue & backoff', () => {
   it('createAccount fallback on set_email_user 500', async () => {
     mockFetchOnce(async (url: RequestInfo) => {
       const u = String(url);
-      if (u.includes('f=get_email_address')) return jsonResponse({ email_addr: 'server123@sharklasers.com', sid_token: 'tok123', email_timestamp: Date.now() });
+      if (u.includes('f=get_email_address'))
+        return jsonResponse({
+          email_addr: 'server123@sharklasers.com',
+          sid_token: 'tok123',
+          email_timestamp: Date.now(),
+        });
       if (u.includes('f=set_email_user')) return new Response('', { status: 500 });
       return jsonResponse({});
     });
@@ -333,8 +492,29 @@ describe('GuerrillaMailService — queue & backoff', () => {
     (guerrillaMailService as any).cooldownUntil = 0;
     mockFetchOnce(async (url: RequestInfo) => {
       const u = String(url);
-      if (u.includes('get_email_list')) return jsonResponse({ list: [{ mail_id: '1', mail_from: 'no-reply@example.com', mail_subject: '<script>XSS</script> Verify', mail_timestamp: String(Math.floor(Date.now()/1000)), mail_excerpt: 'code 123', mail_read: 0 }]});
-      if (u.includes('fetch_email')) return jsonResponse({ mail_id: '1', mail_from: 'no-reply@example.com', mail_subject: 'Verify', mail_timestamp: String(Math.floor(Date.now()/1000)), mail_body: '<P>body <b>hi</b></P>', mail_excerpt: 'code', mail_read: 0 });
+      if (u.includes('get_email_list'))
+        return jsonResponse({
+          list: [
+            {
+              mail_id: '1',
+              mail_from: 'no-reply@example.com',
+              mail_subject: '<script>XSS</script> Verify',
+              mail_timestamp: String(Math.floor(Date.now() / 1000)),
+              mail_excerpt: 'code 123',
+              mail_read: 0,
+            },
+          ],
+        });
+      if (u.includes('fetch_email'))
+        return jsonResponse({
+          mail_id: '1',
+          mail_from: 'no-reply@example.com',
+          mail_subject: 'Verify',
+          mail_timestamp: String(Math.floor(Date.now() / 1000)),
+          mail_body: '<P>body <b>hi</b></P>',
+          mail_excerpt: 'code',
+          mail_read: 0,
+        });
       return jsonResponse({});
     });
     const msgs = await guerrillaMailService.getMessages('sid-ok');
@@ -363,14 +543,50 @@ describe('DropmailService', () => {
     expect(r).toEqual([]);
   });
   it('getMessages handles weird dates', async () => {
-    mockFetchOnce(async () => jsonResponse({ data: { session: { mails: [{ id: 'm1', fromAddr: 'evil@attacker.com', toAddr: null, headerSubject: null, text: { payload: 'text' }, html: null, receivedAt: 'not-a-date' }] } } }));
+    mockFetchOnce(async () =>
+      jsonResponse({
+        data: {
+          session: {
+            mails: [
+              {
+                id: 'm1',
+                fromAddr: 'evil@attacker.com',
+                toAddr: null,
+                headerSubject: null,
+                text: { payload: 'text' },
+                html: null,
+                receivedAt: 'not-a-date',
+              },
+            ],
+          },
+        },
+      })
+    );
     const acc = { token: 'sess1', id: 'sess1', fullEmail: 'a@dropmail.me' } as any;
     const r = await dropmailService.getMessages(acc);
     expect(r[0]!.from).toBe('evil@attacker.com');
     expect(r[0]!.date).toBeGreaterThan(0);
   });
   it('getMessage found via filter', async () => {
-    mockFetchOnce(async () => jsonResponse({ data: { session: { mails: [{ id: 'a', fromAddr: 'x@y.com', toAddr: 'a@dropmail.me', headerSubject: 'Hi', text: 'body', html: '<b>hi</b>', receivedAt: new Date().toISOString() }] } } }));
+    mockFetchOnce(async () =>
+      jsonResponse({
+        data: {
+          session: {
+            mails: [
+              {
+                id: 'a',
+                fromAddr: 'x@y.com',
+                toAddr: 'a@dropmail.me',
+                headerSubject: 'Hi',
+                text: 'body',
+                html: '<b>hi</b>',
+                receivedAt: new Date().toISOString(),
+              },
+            ],
+          },
+        },
+      })
+    );
     const acc = { token: 'sess1', id: 'sess1', fullEmail: 'a@dropmail.me' } as any;
     const msg = await dropmailService.getMessage(acc, 'a');
     expect(msg.id).toBe('a');
@@ -381,7 +597,16 @@ describe('One-file providers', () => {
   it('evilmail 500 full-body fallback + object body', async () => {
     mockFetchOnce(async (url: RequestInfo) => {
       const u = String(url);
-      if (u.includes('/inbox?')) return jsonResponse([{ id: 'm1', from: 'noreply@test.com', subject: 'Verify', timestamp: Date.now(), body: { text: 'code' } }]);
+      if (u.includes('/inbox?'))
+        return jsonResponse([
+          {
+            id: 'm1',
+            from: 'noreply@test.com',
+            subject: 'Verify',
+            timestamp: Date.now(),
+            body: { text: 'code' },
+          },
+        ]);
       if (u.includes('/message/')) return new Response('', { status: 500 });
       return new Response('', { status: 404 });
     });
@@ -389,15 +614,46 @@ describe('One-file providers', () => {
     expect(r.length).toBe(1);
   });
   it('evilmail getMessage html/text', async () => {
-    mockFetchOnce(async () => jsonResponse({ data: { id: 'm1', from: 'from@test.com', sender: null, subject: 'Hi', timestamp: Date.now(), body: 'Hello', html: '<p>Hello</p>', text: 'Hello' }}));
+    mockFetchOnce(async () =>
+      jsonResponse({
+        data: {
+          id: 'm1',
+          from: 'from@test.com',
+          sender: null,
+          subject: 'Hi',
+          timestamp: Date.now(),
+          body: 'Hello',
+          html: '<p>Hello</p>',
+          text: 'Hello',
+        },
+      })
+    );
     const m = await evilmailService.getMessage('a@evilmail.dev', 'm1');
     expect(m.id).toBe('m1');
   });
   it('openinbox full flow', async () => {
     mockFetchOnce(async (url: RequestInfo) => {
       const u = String(url);
-      if (u.includes('/messages') && !/\/messages\//.test(u)) return jsonResponse([{ id: '1', from: 'a@b.com', subject: 'Hey', createdAt: new Date().toISOString(), body: 'hi' }]);
-      if (/\/messages\//.test(u)) return jsonResponse({ id: '1', from: 'a@b.com', subject: 'Hey', createdAt: new Date().toISOString(), body: 'full', html: '<b>full</b>', text: 'full' });
+      if (u.includes('/messages') && !/\/messages\//.test(u))
+        return jsonResponse([
+          {
+            id: '1',
+            from: 'a@b.com',
+            subject: 'Hey',
+            createdAt: new Date().toISOString(),
+            body: 'hi',
+          },
+        ]);
+      if (/\/messages\//.test(u))
+        return jsonResponse({
+          id: '1',
+          from: 'a@b.com',
+          subject: 'Hey',
+          createdAt: new Date().toISOString(),
+          body: 'full',
+          html: '<b>full</b>',
+          text: 'full',
+        });
       return new Response('', { status: 404 });
     });
     const r = await openinboxService.getMessages('a@openinbox.io');
@@ -415,7 +671,13 @@ describe('One-file providers', () => {
       }
       return jsonResponse([]);
     });
-    for (const svc of [mailCxService, driftzService, getnadaService, tempmailPlusService, tempMailLolService] as any[]) {
+    for (const svc of [
+      mailCxService,
+      driftzService,
+      getnadaService,
+      tempmailPlusService,
+      tempMailLolService,
+    ] as any[]) {
       const ds = await svc.getDomains();
       expect(Array.isArray(ds)).toBe(true);
       const acc = await svc.createAccount('testprefix');
@@ -426,11 +688,25 @@ describe('One-file providers', () => {
 
 describe('TempMailService — rate limiter & fallback', () => {
   it('checkInbox truncates >50 and validates id types', async () => {
-    const many = Array.from({ length: 60 }, (_, i) => ({ id: i, from: 'a@b.com', subject: 'Hi', date: new Date().toISOString() }));
+    const many = Array.from({ length: 60 }, (_, i) => ({
+      id: i,
+      from: 'a@b.com',
+      subject: 'Hi',
+      date: new Date().toISOString(),
+    }));
     mockFetchOnce(async (url: RequestInfo) => {
       const u = String(url);
       if (u.includes('getMessages')) return jsonResponse(many);
-      if (u.includes('readMessage')) return jsonResponse({ id: 0, from: 'a@b.com', subject: 'Hi', date: new Date().toISOString(), body: 'hello', htmlBody: '<b>hi</b>', textBody: 'hi' });
+      if (u.includes('readMessage'))
+        return jsonResponse({
+          id: 0,
+          from: 'a@b.com',
+          subject: 'Hi',
+          date: new Date().toISOString(),
+          body: 'hello',
+          htmlBody: '<b>hi</b>',
+          textBody: 'hi',
+        });
       if (u.includes('getDomainList')) return jsonResponse(['1secmail.com']);
       return jsonResponse({});
     });
@@ -442,10 +718,15 @@ describe('TempMailService — rate limiter & fallback', () => {
     (tempMailService as any).requestTimestamps = [];
     mockFetchOnce(async (url: RequestInfo) => {
       const u = String(url);
-      if (u.includes('getMessages')) return jsonResponse([{ id: {}, from: 'a@b.com', subject: 'Hi', date: new Date().toISOString() }]);
+      if (u.includes('getMessages'))
+        return jsonResponse([
+          { id: {}, from: 'a@b.com', subject: 'Hi', date: new Date().toISOString() },
+        ]);
       return jsonResponse({});
     });
-    await expect(tempMailService.checkInbox('login', '1secmail.com')).rejects.toThrow(/Invalid message ID/);
+    await expect(tempMailService.checkInbox('login', '1secmail.com')).rejects.toThrow(
+      /Invalid message ID/
+    );
   });
   it('generateEmail fallback to humanLike on API failure', async () => {
     (tempMailService as any).requestTimestamps = [];
@@ -468,7 +749,10 @@ describe('TempMailService — rate limiter & fallback', () => {
     expect(d1.length).toBeGreaterThan(0);
     expect((Fresh as any).isUsingFallbackDomains()).toBe(true);
     let fetched = false;
-    mockFetchOnce(async () => { fetched = true; return jsonResponse(['should-not-happen']); });
+    mockFetchOnce(async () => {
+      fetched = true;
+      return jsonResponse(['should-not-happen']);
+    });
     const d2 = await Fresh.getDomains();
     expect(d2).toEqual(d1);
     expect(fetched).toBe(false);
@@ -478,8 +762,11 @@ describe('TempMailService — rate limiter & fallback', () => {
 describe('ProviderHealthManager', () => {
   it('circuit open with crypto jitter ±20%', async () => {
     const mgr = new ProviderHealthManager();
-    const spy = vi.spyOn(crypto as any, 'getRandomValues').mockImplementation((arr: any) => { (arr as any)[0]=2147483647; return arr; });
-    for(let i=0;i<3;i++) mgr.recordFailure('catchmail' as any, new Error('net fail'));
+    const spy = vi.spyOn(crypto as any, 'getRandomValues').mockImplementation((arr: any) => {
+      (arr as any)[0] = 2147483647;
+      return arr;
+    });
+    for (let i = 0; i < 3; i++) mgr.recordFailure('catchmail' as any, new Error('net fail'));
     expect(mgr.isAvailable('catchmail' as any)).toBe(false);
     const health = (mgr as any).health.get('catchmail');
     expect(health.cooldownUntil).toBeGreaterThan(Date.now());
@@ -500,7 +787,10 @@ describe('ProviderHealthManager', () => {
     const mgr = new ProviderHealthManager();
     expect(mgr.calculateScore('unknown' as any)).toBe(50);
     const h = (mgr as any).health.get('mailtm');
-    h.avgResponseTime = 3000; h.lastSuccess = Date.now(); h.successRate = 0.9; h.consecutiveFailures = 0;
+    h.avgResponseTime = 3000;
+    h.lastSuccess = Date.now();
+    h.successRate = 0.9;
+    h.consecutiveFailures = 0;
     const sSlow = mgr.calculateScore('mailtm' as any);
     h.avgResponseTime = 200;
     const sFast = mgr.calculateScore('mailtm' as any);
@@ -513,7 +803,7 @@ describe('ProviderHealthManager', () => {
     const mgr = new ProviderHealthManager();
     const bestWithExclude = mgr.getBestProvider(['catchmail' as any]);
     expect(bestWithExclude).not.toBe('catchmail');
-    for(let i=0;i<3;i++) mgr.recordFailure('catchmail' as any, new Error('x'));
+    for (let i = 0; i < 3; i++) mgr.recordFailure('catchmail' as any, new Error('x'));
     expect(mgr.isAvailable('catchmail' as any)).toBe(false);
     const best = mgr.getBestProvider();
     expect(best).not.toBe('catchmail');
@@ -523,7 +813,8 @@ describe('ProviderHealthManager', () => {
   it('tryRecover after cooldown', async () => {
     const mgr = new ProviderHealthManager();
     const h = (mgr as any).health.get('mailtm');
-    h.circuitOpen = true; h.cooldownUntil = Date.now() - 1000;
+    h.circuitOpen = true;
+    h.cooldownUntil = Date.now() - 1000;
     expect(mgr.isAvailable('mailtm' as any)).toBe(true);
     expect(h.circuitOpen).toBe(false);
   });
@@ -535,7 +826,7 @@ describe('ProviderHealthManager', () => {
   it('subscribe events then unsubscribe', async () => {
     const mgr = new ProviderHealthManager();
     const events: string[] = [];
-    const unsub = mgr.subscribe((e)=> events.push(e.type));
+    const unsub = mgr.subscribe((e) => events.push(e.type));
     mgr.recordFailure('mailtm' as any, new Error('boom'));
     mgr.recordFailure('mailtm' as any, new Error('boom'));
     mgr.recordFailure('mailtm' as any, new Error('boom')); // circuit-open
@@ -554,14 +845,16 @@ describe('ProviderHealthManager', () => {
   });
   it('load/save roundtrip via chrome.storage.session (mocked persistence)', async () => {
     // mock chrome.storage.session to actually persist
-    let stored: Record<string,string> = {};
-    const fakeSet = vi.fn(async (obj: Record<string,string>) => { Object.assign(stored, obj); });
+    let stored: Record<string, string> = {};
+    const fakeSet = vi.fn(async (obj: Record<string, string>) => {
+      Object.assign(stored, obj);
+    });
     const fakeGet = vi.fn(async (_key: string) => stored as any);
     const origSession = (globalThis as any).chrome?.storage?.session;
     (globalThis as any).chrome.storage.session = { get: fakeGet, set: fakeSet } as any;
     const mgr = new ProviderHealthManager();
     mgr.recordFailure('catchmail' as any, new Error('persist me'));
-    await new Promise(r=> setTimeout(r, 5));
+    await new Promise((r) => setTimeout(r, 5));
     // manually ensure stored phm_health exists — if not, force save
     if (!stored.phm_health) {
       await (mgr as any).saveState?.();
@@ -584,31 +877,59 @@ describe('ProviderHealthManager', () => {
 });
 
 describe('EmailServiceAggregator — exhaustive', () => {
-  function makeAgg() { return new EmailServiceAggregator(new ProviderHealthManager() as any); }
+  function makeAgg() {
+    return new EmailServiceAggregator(new ProviderHealthManager() as any);
+  }
 
   it('generateEmail coalesces 10 concurrent', async () => {
     const health = new ProviderHealthManager();
     const agg = new EmailServiceAggregator(health as any);
     let calls = 0;
-    vi.spyOn(agg as any, 'createAccountWithService').mockImplementation(async () => { calls++; await sleep(30); return { id: '1', fullEmail: 'a@catchmail.io', domain: 'catchmail.io', login: 'a', service: 'catchmail', createdAt: Date.now(), expiresAt: Date.now()+1e9 } as any; });
+    vi.spyOn(agg as any, 'createAccountWithService').mockImplementation(async () => {
+      calls++;
+      await sleep(30);
+      return {
+        id: '1',
+        fullEmail: 'a@catchmail.io',
+        domain: 'catchmail.io',
+        login: 'a',
+        service: 'catchmail',
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 1e9,
+      } as any;
+    });
     (agg as any).lastGenerationTime = 0;
     vi.spyOn(storageService, 'set').mockResolvedValue(undefined as any);
-    vi.spyOn(storageService, 'getSettings').mockResolvedValue({ preferredEmailService: 'catchmail' } as any);
+    vi.spyOn(storageService, 'getSettings').mockResolvedValue({
+      preferredEmailService: 'catchmail',
+    } as any);
     vi.spyOn(storageService, 'get').mockResolvedValue('disposable' as any);
     vi.spyOn(storageService, 'pushToArray').mockResolvedValue(undefined as any);
-    const promises = Array.from({length:10}, ()=> agg.generateEmail({ service: 'catchmail' as any }));
+    const promises = Array.from({ length: 10 }, () =>
+      agg.generateEmail({ service: 'catchmail' as any })
+    );
     const res = await Promise.all(promises);
     expect(calls).toBe(1);
-    expect(res.every(r=> r.fullEmail === 'a@catchmail.io')).toBe(true);
+    expect(res.every((r) => r.fullEmail === 'a@catchmail.io')).toBe(true);
     (agg as any).generateEmailPromise = null;
   });
   it('generateEmail coalesces the 150ms cooldown on serial calls instead of rejecting', async () => {
     const agg = makeAgg();
-    vi.spyOn(storageService, 'getSettings').mockResolvedValue({ preferredEmailService: 'catchmail' } as any);
+    vi.spyOn(storageService, 'getSettings').mockResolvedValue({
+      preferredEmailService: 'catchmail',
+    } as any);
     vi.spyOn(storageService, 'set').mockResolvedValue(undefined as any);
     vi.spyOn(storageService, 'get').mockResolvedValue('disposable' as any);
     vi.spyOn(storageService, 'pushToArray').mockResolvedValue(undefined as any);
-    vi.spyOn(agg as any, 'createAccountWithService').mockResolvedValue({ id: '1', fullEmail: 'a@catchmail.io', domain: 'catchmail.io', login: 'a', service: 'catchmail', createdAt: Date.now(), expiresAt: Date.now()+1e9 } as any);
+    vi.spyOn(agg as any, 'createAccountWithService').mockResolvedValue({
+      id: '1',
+      fullEmail: 'a@catchmail.io',
+      domain: 'catchmail.io',
+      login: 'a',
+      service: 'catchmail',
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 1e9,
+    } as any);
     (agg as any).lastGenerationTime = 0;
     await agg.generateEmail({ service: 'catchmail' as any });
     (agg as any).generateEmailPromise = null;
@@ -622,18 +943,34 @@ describe('EmailServiceAggregator — exhaustive', () => {
     const health = new ProviderHealthManager();
     const agg = new EmailServiceAggregator(health as any);
     let tries = 0;
-    vi.spyOn(health, 'getBestProvider').mockImplementation((exclude?: any) => { tries++; if(tries>6) return null; return ('maildrop' as any); });
+    vi.spyOn(health, 'getBestProvider').mockImplementation((exclude?: any) => {
+      tries++;
+      if (tries > 6) return null;
+      return 'maildrop' as any;
+    });
     vi.spyOn(health, 'getRetryDelay').mockReturnValue(1);
     vi.spyOn(agg as any, 'createAccountWithService').mockRejectedValue(new Error('boom'));
     (agg as any).lastGenerationTime = 0;
-    vi.spyOn(storageService, 'getSettings').mockResolvedValue({ preferredEmailService: 'catchmail' } as any);
-    await expect((agg as any).generateEmailWithFallback({} as any, 'catchmail' as any, Date.now())).rejects.toThrow(/All email services/);
+    vi.spyOn(storageService, 'getSettings').mockResolvedValue({
+      preferredEmailService: 'catchmail',
+    } as any);
+    await expect(
+      (agg as any).generateEmailWithFallback({} as any, 'catchmail' as any, Date.now())
+    ).rejects.toThrow(/All email services/);
   });
   it('getCurrentEmail returns disposable when preferred disposable', async () => {
     const agg = makeAgg();
     vi.spyOn(storageService, 'get').mockImplementation(async (key: any) => {
       if (key === 'preferredEmailType') return 'disposable';
-      if (key === 'disposableEmail') return { id: '1', fullEmail: 'a@catchmail.io', domain: 'catchmail.io', service: 'catchmail', createdAt: Date.now(), expiresAt: Date.now()+1e9 } as any;
+      if (key === 'disposableEmail')
+        return {
+          id: '1',
+          fullEmail: 'a@catchmail.io',
+          domain: 'catchmail.io',
+          service: 'catchmail',
+          createdAt: Date.now(),
+          expiresAt: Date.now() + 1e9,
+        } as any;
       if (key === 'currentEmail') return null;
       return null as any;
     });
@@ -652,8 +989,22 @@ describe('EmailServiceAggregator — exhaustive', () => {
   });
   it('getCurrentEmail expired auto-regenerates unless prevent=true', async () => {
     const agg = makeAgg();
-    const expired = { id: '1', fullEmail: 'a@catchmail.io', domain: 'catchmail.io', service: 'catchmail', createdAt: Date.now()-2e9, expiresAt: Date.now()-1000 } as any;
-    const spyGen = vi.spyOn(agg, 'generateEmail').mockResolvedValue({ id: '2', fullEmail: 'b@catchmail.io', domain: 'catchmail.io', service: 'catchmail', createdAt: Date.now(), expiresAt: Date.now()+1e9 } as any);
+    const expired = {
+      id: '1',
+      fullEmail: 'a@catchmail.io',
+      domain: 'catchmail.io',
+      service: 'catchmail',
+      createdAt: Date.now() - 2e9,
+      expiresAt: Date.now() - 1000,
+    } as any;
+    const spyGen = vi.spyOn(agg, 'generateEmail').mockResolvedValue({
+      id: '2',
+      fullEmail: 'b@catchmail.io',
+      domain: 'catchmail.io',
+      service: 'catchmail',
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 1e9,
+    } as any);
     vi.spyOn(storageService, 'get').mockImplementation(async (key: any) => {
       if (key === 'preferredEmailType') return 'disposable';
       if (key === 'disposableEmail') return expired;
@@ -672,27 +1023,53 @@ describe('EmailServiceAggregator — exhaustive', () => {
     const agg = makeAgg();
     let getCalls = 0;
     vi.spyOn(storageService, 'get').mockImplementation(async (key: any) => {
-      if (key === 'preferredEmailType') { getCalls++; await sleep(20); return 'disposable'; }
+      if (key === 'preferredEmailType') {
+        getCalls++;
+        await sleep(20);
+        return 'disposable';
+      }
       if (key === 'disposableEmail' || key === 'currentEmail') return null;
       return null as any;
     });
-    const [a,b,c] = await Promise.all([agg.getCurrentEmail(), agg.getCurrentEmail(), agg.getCurrentEmail()]);
+    const [a, b, c] = await Promise.all([
+      agg.getCurrentEmail(),
+      agg.getCurrentEmail(),
+      agg.getCurrentEmail(),
+    ]);
     expect(getCalls).toBe(1);
     expect(a).toBeNull();
   });
   it('checkInbox validates missing fullEmail', async () => {
     const agg = makeAgg();
     await expect(agg.checkInbox({} as any)).rejects.toThrow(/Invalid email account/);
-    await expect(agg.checkInbox({ fullEmail: 'no-at-sign' } as any)).rejects.toThrow(/Invalid email format/);
+    await expect(agg.checkInbox({ fullEmail: 'no-at-sign' } as any)).rejects.toThrow(
+      /Invalid email format/
+    );
   });
   it('checkInbox sanitizes XSS', async () => {
     const agg = makeAgg();
     vi.spyOn(storageService, 'get').mockResolvedValue([] as any);
     vi.spyOn(storageService, 'set').mockResolvedValue(undefined as any);
     vi.spyOn(tempMailService, 'checkInbox').mockResolvedValue([
-      { id: '1', from: '<img src=x onerror=alert(1)>evil@attacker.com', subject: '<script>alert(1)</script>Hi', date: Date.now(), body: 'b', read: false, attachments: [] } as any,
+      {
+        id: '1',
+        from: '<img src=x onerror=alert(1)>evil@attacker.com',
+        subject: '<script>alert(1)</script>Hi',
+        date: Date.now(),
+        body: 'b',
+        read: false,
+        attachments: [],
+      } as any,
     ]);
-    const acc = { fullEmail: 'a@1secmail.com', domain: '1secmail.com', login: 'a', service: 'tempmail' as any, createdAt: Date.now(), expiresAt: Date.now()+1e9, username: 'a' } as any;
+    const acc = {
+      fullEmail: 'a@1secmail.com',
+      domain: '1secmail.com',
+      login: 'a',
+      service: 'tempmail' as any,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 1e9,
+      username: 'a',
+    } as any;
     const r = await agg.checkInbox(acc);
     expect(r[0]!.subject).not.toContain('<script>');
     expect(r[0]!.from).not.toContain('<img');
@@ -700,12 +1077,32 @@ describe('EmailServiceAggregator — exhaustive', () => {
   });
   it('checkInbox inboxHash skips set when identical', async () => {
     const agg = makeAgg();
-    const inbox = [{ id: '1', from: 'a@b.com', subject: 'Hi', date: Date.now(), body: 'x', read: false, attachments: [] } as any];
+    const inbox = [
+      {
+        id: '1',
+        from: 'a@b.com',
+        subject: 'Hi',
+        date: Date.now(),
+        body: 'x',
+        read: false,
+        attachments: [],
+      } as any,
+    ];
     vi.spyOn(tempMailService, 'checkInbox').mockResolvedValue(inbox);
     let setCalls = 0;
     vi.spyOn(storageService, 'get').mockResolvedValue(inbox as any);
-    vi.spyOn(storageService, 'set').mockImplementation(async () => { setCalls++; });
-    const acc = { fullEmail: 'x@1secmail.com', domain: '1secmail.com', login: 'x', service: 'tempmail' as any, createdAt: Date.now(), expiresAt: Date.now()+1e9, username: 'x' } as any;
+    vi.spyOn(storageService, 'set').mockImplementation(async () => {
+      setCalls++;
+    });
+    const acc = {
+      fullEmail: 'x@1secmail.com',
+      domain: '1secmail.com',
+      login: 'x',
+      service: 'tempmail' as any,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 1e9,
+      username: 'x',
+    } as any;
     await agg.checkInbox(acc);
     expect(setCalls).toBe(0);
     (tempMailService.checkInbox as any).mockRestore?.();
@@ -730,7 +1127,11 @@ describe('EmailServiceAggregator — exhaustive', () => {
       username: 'a',
     } as any;
 
-    const results = await Promise.all([agg.checkInbox(acc), agg.checkInbox(acc), agg.checkInbox(acc)]);
+    const results = await Promise.all([
+      agg.checkInbox(acc),
+      agg.checkInbox(acc),
+      agg.checkInbox(acc),
+    ]);
 
     expect(providerCalls).toBe(1);
     expect(results).toHaveLength(3);
@@ -782,7 +1183,15 @@ describe('EmailServiceAggregator — exhaustive', () => {
     const health = new ProviderHealthManager();
     const agg = new EmailServiceAggregator(health as any);
     vi.spyOn(tempMailService, 'checkInbox').mockRejectedValue(new Error('fetch failed'));
-    const acc = { fullEmail: 'a@1secmail.com', domain: '1secmail.com', login: 'a', service: 'tempmail' as any, createdAt: Date.now(), expiresAt: Date.now()+1e9, username: 'a' } as any;
+    const acc = {
+      fullEmail: 'a@1secmail.com',
+      domain: '1secmail.com',
+      login: 'a',
+      service: 'tempmail' as any,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 1e9,
+      username: 'a',
+    } as any;
     await expect(agg.checkInbox(acc)).rejects.toThrow(/Inbox check failed for tempmail/);
     const h = (health as any).health.get('tempmail');
     expect(h.consecutiveFailures).toBe(1);
@@ -793,26 +1202,72 @@ describe('EmailServiceAggregator — exhaustive', () => {
     const agg = new EmailServiceAggregator(health as any);
     const abortErr = new DOMException('aborted', 'AbortError');
     vi.spyOn(tempMailService, 'checkInbox').mockRejectedValue(abortErr);
-    const acc = { fullEmail: 'a@1secmail.com', domain: '1secmail.com', login: 'a', service: 'tempmail' as any, createdAt: Date.now(), expiresAt: Date.now()+1e9, username: 'a' } as any;
+    const acc = {
+      fullEmail: 'a@1secmail.com',
+      domain: '1secmail.com',
+      login: 'a',
+      service: 'tempmail' as any,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 1e9,
+      username: 'a',
+    } as any;
     await expect(agg.checkInbox(acc)).rejects.toThrow();
     expect((health as any).health.get('tempmail')?.consecutiveFailures ?? 0).toBe(0);
   });
   it('readEmail sanitizes and handles corrupted inbox', async () => {
     const agg = makeAgg();
-    vi.spyOn(maildropService, 'getMessage').mockResolvedValue({ id: '1', from: '<b>evil</b> from@x.com', subject: '<script>X</script>Hello', date: Date.now(), body: 'body', htmlBody: '<script>b</script>', read: false, attachments: [] } as any);
+    vi.spyOn(maildropService, 'getMessage').mockResolvedValue({
+      id: '1',
+      from: '<b>evil</b> from@x.com',
+      subject: '<script>X</script>Hello',
+      date: Date.now(),
+      body: 'body',
+      htmlBody: '<script>b</script>',
+      read: false,
+      attachments: [],
+    } as any);
     vi.spyOn(storageService, 'get').mockResolvedValue([] as any);
     vi.spyOn(storageService, 'set').mockResolvedValue(undefined as any);
-    const email = await agg.readEmail('1', { fullEmail: 'a@maildrop.cc', token: 'tok', id: 'tok', login: 'a', domain: 'maildrop.cc', createdAt: 0, expiresAt: Date.now()+1e9, service: 'maildrop' } as any);
+    const email = await agg.readEmail('1', {
+      fullEmail: 'a@maildrop.cc',
+      token: 'tok',
+      id: 'tok',
+      login: 'a',
+      domain: 'maildrop.cc',
+      createdAt: 0,
+      expiresAt: Date.now() + 1e9,
+      service: 'maildrop',
+    } as any);
     expect(email.subject).not.toContain('<script>');
     (maildropService.getMessage as any).mockRestore?.();
   });
   it('readEmail corrupted inbox not array resets', async () => {
     const agg = makeAgg();
-    vi.spyOn(maildropService, 'getMessage').mockResolvedValue({ id: '1', from: 'a@b.com', subject: 'Hi', date: Date.now(), body: 'b', htmlBody: 'b', read: false, attachments: [] } as any);
+    vi.spyOn(maildropService, 'getMessage').mockResolvedValue({
+      id: '1',
+      from: 'a@b.com',
+      subject: 'Hi',
+      date: Date.now(),
+      body: 'b',
+      htmlBody: 'b',
+      read: false,
+      attachments: [],
+    } as any);
     vi.spyOn(storageService, 'get').mockResolvedValue('not-an-array' as any);
     let setArg: any = null;
-    vi.spyOn(storageService, 'set').mockImplementation(async (k, v) => { setArg = {k,v}; });
-    const acc = { fullEmail: 'a@maildrop.cc', token: 'tok', id: 'tok', login: 'a', domain: 'maildrop.cc', createdAt: 0, expiresAt: Date.now()+1e9, service: 'maildrop' } as any;
+    vi.spyOn(storageService, 'set').mockImplementation(async (k, v) => {
+      setArg = { k, v };
+    });
+    const acc = {
+      fullEmail: 'a@maildrop.cc',
+      token: 'tok',
+      id: 'tok',
+      login: 'a',
+      domain: 'maildrop.cc',
+      createdAt: 0,
+      expiresAt: Date.now() + 1e9,
+      service: 'maildrop',
+    } as any;
     const email = await agg.readEmail('1', acc);
     expect(setArg?.k).toBe('inbox');
     expect(email.id).toBe('1');
@@ -831,7 +1286,13 @@ describe('EmailServiceAggregator — exhaustive', () => {
   it('prewarm throttles 30s', async () => {
     const agg = makeAgg();
     let fetchCalls = 0;
-    vi.stubGlobal('fetch', vi.fn(async () => { fetchCalls++; return new Response('', { status: 200 }); }) as any);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        fetchCalls++;
+        return new Response('', { status: 200 });
+      }) as any
+    );
     await agg.prewarmConnections();
     await agg.prewarmConnections();
     expect(fetchCalls).toBe(2);
@@ -842,19 +1303,31 @@ describe('EmailServiceAggregator — exhaustive', () => {
   it('clearData removes current/disposable and resets inbox', async () => {
     const agg = makeAgg();
     const removeCalls: string[] = [];
-    const setCalls: Array<{k:string;v:any}> = [];
-    vi.spyOn(storageService, 'remove').mockImplementation(async (k: any)=> { removeCalls.push(k); });
-    vi.spyOn(storageService, 'set').mockImplementation(async (k: any, v: any)=> { setCalls.push({k,v}); });
+    const setCalls: Array<{ k: string; v: any }> = [];
+    vi.spyOn(storageService, 'remove').mockImplementation(async (k: any) => {
+      removeCalls.push(k);
+    });
+    vi.spyOn(storageService, 'set').mockImplementation(async (k: any, v: any) => {
+      setCalls.push({ k, v });
+    });
     await agg.clearData();
     expect(removeCalls).toContain('currentEmail');
-    expect(setCalls.some(c=> c.k==='inbox')).toBe(true);
+    expect(setCalls.some((c) => c.k === 'inbox')).toBe(true);
   });
   it('finalize fallback id for mailtm missing id', async () => {
     const agg = makeAgg();
     vi.spyOn(storageService, 'set').mockResolvedValue(undefined as any);
     vi.spyOn(storageService, 'get').mockResolvedValue('disposable' as any);
     vi.spyOn(storageService, 'pushToArray').mockResolvedValue(undefined as any);
-    const acc = { id: '', fullEmail: 'a@bugfoo.com', domain: 'bugfoo.com', login: 'a', service: 'mailtm', createdAt: Date.now(), expiresAt: Date.now()+1e9 } as any;
+    const acc = {
+      id: '',
+      fullEmail: 'a@bugfoo.com',
+      domain: 'bugfoo.com',
+      login: 'a',
+      service: 'mailtm',
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 1e9,
+    } as any;
     const out = await (agg as any).finalizeEmailGeneration(acc, 'mailtm' as any, Date.now());
     expect(out.id).toContain('fallback_');
   });
@@ -862,13 +1335,35 @@ describe('EmailServiceAggregator — exhaustive', () => {
 
 describe('Inbox cross-provider hardening', () => {
   it('huge inbox sliced to 50 persisted', async () => {
-    const huge = Array.from({ length: 100 }, (_, i) => ({ id: String(i), from: 'a@b.com', subject: `Sub ${i} <script>x</script>`, date: Date.now(), body: 'x'.repeat(1000), read: i%2===0, attachments: [] } as any));
+    const huge = Array.from(
+      { length: 100 },
+      (_, i) =>
+        ({
+          id: String(i),
+          from: 'a@b.com',
+          subject: `Sub ${i} <script>x</script>`,
+          date: Date.now(),
+          body: 'x'.repeat(1000),
+          read: i % 2 === 0,
+          attachments: [],
+        }) as any
+    );
     const agg = new EmailServiceAggregator(new ProviderHealthManager() as any);
     vi.spyOn(tempMailService, 'checkInbox').mockResolvedValue(huge);
     let setInbox: any = null;
     vi.spyOn(storageService, 'get').mockResolvedValue([] as any);
-    vi.spyOn(storageService, 'set').mockImplementation(async (k,v)=> { if(k==='inbox') setInbox = v; });
-    const acc = { fullEmail: 'a@1secmail.com', domain: '1secmail.com', login: 'a', service: 'tempmail' as any, createdAt: Date.now(), expiresAt: Date.now()+1e9, username: 'a' } as any;
+    vi.spyOn(storageService, 'set').mockImplementation(async (k, v) => {
+      if (k === 'inbox') setInbox = v;
+    });
+    const acc = {
+      fullEmail: 'a@1secmail.com',
+      domain: '1secmail.com',
+      login: 'a',
+      service: 'tempmail' as any,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 1e9,
+      username: 'a',
+    } as any;
     const r = await agg.checkInbox(acc);
     expect(r.length).toBe(100);
     expect(setInbox?.length).toBeLessThanOrEqual(50);
@@ -878,19 +1373,62 @@ describe('Inbox cross-provider hardening', () => {
   it('mailgw 401 wrapped with provider context', async () => {
     const health = new ProviderHealthManager();
     const agg = new EmailServiceAggregator(health as any);
-    const spy = vi.spyOn((await import('../src/services/emailServices/mailGwService')).mailGwService as any, 'getMessages').mockRejectedValue(new Error('HTTP error: 401'));
-    const acc = { fullEmail: 'a@mail.gw', domain: 'mail.gw', login: 'a', service: 'mailgw', createdAt: Date.now(), expiresAt: Date.now()+1e9, token: 't' } as any;
+    const spy = vi
+      .spyOn(
+        (await import('../src/services/emailServices/mailGwService')).mailGwService as any,
+        'getMessages'
+      )
+      .mockRejectedValue(new Error('HTTP error: 401'));
+    const acc = {
+      fullEmail: 'a@mail.gw',
+      domain: 'mail.gw',
+      login: 'a',
+      service: 'mailgw',
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 1e9,
+      token: 't',
+    } as any;
     await expect(agg.checkInbox(acc)).rejects.toThrow(/Inbox check failed for mailgw/);
     spy.mockRestore();
   });
   it('hash diff detects read flag flip', async () => {
     const agg = new EmailServiceAggregator(new ProviderHealthManager() as any);
-    const base = [{ id: '1', from: 'a@b.com', subject: 'Hi', date: Date.now(), body: 'x', read: false, attachments: [] } as any];
+    const base = [
+      {
+        id: '1',
+        from: 'a@b.com',
+        subject: 'Hi',
+        date: Date.now(),
+        body: 'x',
+        read: false,
+        attachments: [],
+      } as any,
+    ];
     vi.spyOn(tempMailService, 'checkInbox').mockResolvedValue(base);
-    const acc = { fullEmail: 'a@1secmail.com', domain: '1secmail.com', login: 'a', service: 'tempmail' as any, createdAt: Date.now(), expiresAt: Date.now()+1e9, username: 'a' } as any;
-    vi.spyOn(storageService, 'get').mockResolvedValue([{ id: '1', from: 'a@b.com', subject: 'Hi', date: Date.now(), body: 'x', read: true, attachments: [] } as any]);
+    const acc = {
+      fullEmail: 'a@1secmail.com',
+      domain: '1secmail.com',
+      login: 'a',
+      service: 'tempmail' as any,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 1e9,
+      username: 'a',
+    } as any;
+    vi.spyOn(storageService, 'get').mockResolvedValue([
+      {
+        id: '1',
+        from: 'a@b.com',
+        subject: 'Hi',
+        date: Date.now(),
+        body: 'x',
+        read: true,
+        attachments: [],
+      } as any,
+    ]);
     let persisted: any = null;
-    vi.spyOn(storageService, 'set').mockImplementation(async (_k,v)=> { persisted = v; });
+    vi.spyOn(storageService, 'set').mockImplementation(async (_k, v) => {
+      persisted = v;
+    });
     await agg.checkInbox(acc);
     expect(persisted).not.toBeNull();
     (tempMailService.checkInbox as any).mockRestore?.();
@@ -899,19 +1437,50 @@ describe('Inbox cross-provider hardening', () => {
     const agg = new EmailServiceAggregator(new ProviderHealthManager() as any);
     const gmailApi = await import('../src/services/gmailApiService');
     const spy = vi.spyOn(gmailApi as any, 'ensureAuthenticated').mockResolvedValue(false);
-    const spy2 = vi.spyOn(gmailApi as any, 'getAuthIssue').mockReturnValue({ silentAuthBlocked: true, reason: 'test', permanent: false });
-    const gmailAcc = { fullEmail: 'alias@gmail.com', gmailBaseEmail: 'base@gmail.com', domain: 'gmail.com', service: 'gmail' as any, id: 'gmail_1', createdAt: Date.now(), expiresAt: Date.now()+1e9 } as any;
-    const r = await agg.checkInbox(gmailAcc).catch(()=> []);
+    const spy2 = vi
+      .spyOn(gmailApi as any, 'getAuthIssue')
+      .mockReturnValue({ silentAuthBlocked: true, reason: 'test', permanent: false });
+    const gmailAcc = {
+      fullEmail: 'alias@gmail.com',
+      gmailBaseEmail: 'base@gmail.com',
+      domain: 'gmail.com',
+      service: 'gmail' as any,
+      id: 'gmail_1',
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 1e9,
+    } as any;
+    const r = await agg.checkInbox(gmailAcc).catch(() => []);
     expect(Array.isArray(r)).toBe(true);
-    spy.mockRestore(); spy2.mockRestore();
+    spy.mockRestore();
+    spy2.mockRestore();
   });
   it('all providers getDomains smoke', async () => {
     const agg = new EmailServiceAggregator(providerHealth as any);
-    const svcs: any[] = ['catchmail','maildrop','mailtm','mailgw','guerrilla','driftz','getnada','mailboxtemp','dropmail','evilmail','openinbox','tempmail','tempmaillol','tempmailplus','mailcx','mailinator','mailnesia','1secmail','custom'] ;
+    const svcs: any[] = [
+      'catchmail',
+      'maildrop',
+      'mailtm',
+      'mailgw',
+      'guerrilla',
+      'driftz',
+      'getnada',
+      'mailboxtemp',
+      'dropmail',
+      'evilmail',
+      'openinbox',
+      'tempmail',
+      'tempmaillol',
+      'tempmailplus',
+      'mailcx',
+      'mailinator',
+      'mailnesia',
+      '1secmail',
+      'custom',
+    ];
     for (const s of svcs) {
       // mock fetch to avoid real network for those that need it
       mockFetchOnce(async () => jsonResponse({ 'hydra:member': [] }));
-      const d = await agg.getDomains(s as any).catch(()=> []);
+      const d = await agg.getDomains(s as any).catch(() => []);
       expect(Array.isArray(d)).toBe(true);
     }
   });

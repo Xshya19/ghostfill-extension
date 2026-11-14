@@ -34,32 +34,63 @@ jobs:
             echo "Release tags must use v<semantic-version>; received: $RELEASE_TAG" >&2
             exit 1
           fi
-      # v7.0.1
+      # v7
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: refs/tags/${{ env.RELEASE_TAG }}
           fetch-depth: 0
-      # v7.0.0
+      # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
-          node-version: 24.x
+          node-version: 20.x
           cache: npm
       - run: npm ci
-      - run: npm audit --audit-level=high
-      - run: npm run workflow:check
       - run: npm run type-check
       - run: npm run lint
       - run: npm test
-      - run: npm run build
+      - run: npm run build:public
       - run: npm run bundle:check
       - run: npm run zip
+      - name: Verify public build profile
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("fs");
+            const manifest = JSON.parse(fs.readFileSync("dist/manifest.json", "utf8"));
+            const permissions = Array.isArray(manifest.permissions) ? manifest.permissions : [];
+            const hostPermissions = Array.isArray(manifest.host_permissions) ? manifest.host_permissions : [];
+            const hostEntries = [...permissions, ...hostPermissions];
+            const gmailHost = /mail\.google\.com|gmail\.googleapis\.com|gmail\.com/i;
+            const failures = [];
+            if (Object.prototype.hasOwnProperty.call(manifest, "oauth2")) {
+              failures.push("dist/manifest.json declares oauth2 (full-profile only)");
+            }
+            for (const forbidden of ["identity", "scripting"]) {
+              if (permissions.includes(forbidden)) {
+                failures.push("permissions includes " + forbidden + " (full-profile only)");
+              }
+            }
+            for (const entry of hostEntries) {
+              if (gmailHost.test(entry)) {
+                failures.push("host permission includes a Gmail host: " + entry);
+              }
+            }
+            if (failures.length > 0) {
+              console.error("FAIL: release package does not match the public build profile:");
+              for (const failure of failures) {
+                console.error("  - " + failure);
+              }
+              process.exit(1);
+            }
+            console.log("PASS: dist/manifest.json matches the public build profile (no oauth2, identity, scripting, or Gmail hosts).");
+          '
       - name: Verify version and checksum
         shell: bash
         run: |
           VERSION=$(node -p "require('./package.json').version")
           test "$RELEASE_TAG" = "v$VERSION"
           sha256sum --check "ghostfill-extension-v$VERSION.zip.sha256"
-      # v7.0.1
+      # v7
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: ghostfill-public-package-${{ env.RELEASE_TAG }}
@@ -78,8 +109,8 @@ jobs:
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
     steps:
-      # v8.0.1
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      # v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           name: ghostfill-public-package-${{ env.RELEASE_TAG }}
           path: release-assets

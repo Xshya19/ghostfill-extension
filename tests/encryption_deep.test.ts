@@ -157,11 +157,10 @@ describe('encrypt()/decrypt() deep tests', () => {
   });
 
   it('round-trips with CryptoKey directly', async () => {
-    const key = await crypto.subtle.generateKey(
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['encrypt', 'decrypt']
-    );
+    const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
+      'encrypt',
+      'decrypt',
+    ]);
     const enc = await encrypt({ msg: 'hello' }, key);
     const dec = await decrypt<{ msg: string }>(enc, key);
     expect(dec).toEqual({ msg: 'hello' });
@@ -203,7 +202,10 @@ describe('generateSecurePassword() deep tests', () => {
 
   it('uses all character types (statistical)', () => {
     // Generate many passwords to check coverage
-    let hasUpper = false, hasLower = false, hasNum = false, hasSpecial = false;
+    let hasUpper = false,
+      hasLower = false,
+      hasNum = false,
+      hasSpecial = false;
     for (let i = 0; i < 50; i++) {
       const pw = generateSecurePassword(32);
       if (/[A-Z]/.test(pw)) hasUpper = true;
@@ -250,22 +252,22 @@ describe('validatePasswordStrength() deep tests', () => {
 
   it('provides length feedback', () => {
     const result = validatePasswordStrength('Short1!');
-    expect(result.feedback.some(f => f.includes('12 characters'))).toBe(true);
+    expect(result.feedback.some((f) => f.includes('12 characters'))).toBe(true);
   });
 
   it('provides uppercase feedback', () => {
     const result = validatePasswordStrength('nouppercase1!');
-    expect(result.feedback.some(f => f.includes('uppercase'))).toBe(true);
+    expect(result.feedback.some((f) => f.includes('uppercase'))).toBe(true);
   });
 
   it('provides digit feedback', () => {
     const result = validatePasswordStrength('NoDigitsHere!');
-    expect(result.feedback.some(f => f.includes('numbers'))).toBe(true);
+    expect(result.feedback.some((f) => f.includes('numbers'))).toBe(true);
   });
 
   it('provides special char feedback', () => {
     const result = validatePasswordStrength('NoSpecialChars1A');
-    expect(result.feedback.some(f => f.includes('special'))).toBe(true);
+    expect(result.feedback.some((f) => f.includes('special'))).toBe(true);
   });
 });
 
@@ -364,7 +366,7 @@ describe('getRandomBytes()', () => {
 
   it('produces non-zero output', () => {
     const bytes = getRandomBytes(32);
-    const hasNonZero = bytes.some(b => b !== 0);
+    const hasNonZero = bytes.some((b) => b !== 0);
     expect(hasNonZero).toBe(true);
   });
 

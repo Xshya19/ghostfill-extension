@@ -28,6 +28,22 @@ import { ensureOffscreenDocument } from './offscreenManager';
 
 const log = createLogger('SSEManager');
 
+/**
+ * Default email-arrival handler used when no explicit callback has been
+ * installed in this worker life (H1 fix). After a service-worker restart
+ * `onEmailReceived` is null until the next GENERATE_EMAIL; without this
+ * default, every relay event after a wake was logged and discarded,
+ * degrading instant delivery to the 1-minute alarm poll. The dynamic
+ * import avoids a static cycle (pollingManager imports this module).
+ */
+const defaultEmailReceived = (): void => {
+  void import('./pollingManager')
+    .then((m) => m.recordEmailReceived())
+    .catch(() => {
+      /* polling module unavailable — alarm poll remains the fallback */
+    });
+};
+
 // Mercure hub URL for Mail.tm
 const MERCURE_HUB_URL = 'https://mercure.mail.tm/.well-known/mercure';
 
@@ -97,6 +113,8 @@ class SSEManager {
    * setup cost on every reconnect cycle.
    */
   private offscreenUnavailable = false;
+  /** Transient offscreen latch: retry again after this epoch ms (M1 fix). */
+  private offscreenRetryAt = 0;
 
   constructor() {
     // Receive notifications from the offscreen SSE relay. Registered on the
@@ -126,22 +144,25 @@ class SSEManager {
     if (!message || typeof message.type !== 'string') {
       return;
     }
-    if (message.accountId && message.accountId !== this.state.accountId) {
-      log.debug('Ignoring SSE relay update for a stale account session', {
-        eventAccountId: message.accountId,
-        activeAccountId: this.state.accountId,
-      });
-      return;
-    }
 
     switch (message.type) {
       case 'SSE_EMAIL_EVENT': {
         this.state.lastEventTime = Date.now();
         this.state.totalEventsReceived++;
         const accountId = message.accountId ?? this.state.accountId;
-        log.debug('📨 SSE relay event received', { accountId });
-        if (this.onEmailReceived && accountId && accountId === this.state.accountId) {
-          this.onEmailReceived(accountId);
+        // H1 fix: after a service-worker restart this module's state is
+        // empty while the offscreen relay is still streaming. The relay's
+        // accountId is authoritative for the live mailbox — adopt it so
+        // events are processed instead of being discarded as "stale"
+        // until the next GENERATE_EMAIL.
+        if (!this.state.accountId && message.accountId) {
+          this.state.accountId = message.accountId;
+          log.info('Adopted live SSE session from offscreen relay after worker restart', {
+            accountId: message.accountId,
+          });
+        }
+        if (accountId && accountId === this.state.accountId) {
+          (this.onEmailReceived ?? defaultEmailReceived)(accountId);
         } else if (accountId && accountId !== this.state.accountId) {
           log.debug('Ignoring SSE event for a stale account session', {
             eventAccountId: accountId,
@@ -157,6 +178,11 @@ class SSEManager {
         this.state.reconnectAttempts = 0;
         this.state.lastEventTime = Date.now();
         this.state.consecutiveServerErrors = 0;
+        // H1 fix: the relay announces the account it streams for; adopt it
+        // so post-restart events match the "current" session immediately.
+        if (message.accountId && message.accountId !== this.state.accountId) {
+          this.state.accountId = message.accountId;
+        }
         log.info('✅ SSE relay connected (offscreen) — survives worker suspension');
         break;
       }
@@ -171,7 +197,18 @@ class SSEManager {
       case 'SSE_RELAY_FAILED': {
         this.state.connected = false;
         this.state.transport = 'none';
-        log.error('SSE relay exhausted reconnects — relying on polling fallback');
+        // M2 fix: the relay burns its fast reconnect attempts (auth failures
+        // included) and then push is dead for the session. Schedule one
+        // supervised retry — reconnect() re-authenticates via
+        // reconnectAccount() before re-establishing the relay.
+        log.warn('SSE relay exhausted reconnects — scheduling supervised retry with fresh auth');
+        try {
+          if (typeof chrome !== 'undefined' && chrome.alarms?.create) {
+            chrome.alarms.create('sse-reconnect', { when: Date.now() + 45_000 });
+          }
+        } catch (e) {
+          log.debug('Failed to schedule SSE relay recovery alarm', e);
+        }
         break;
       }
 
@@ -188,23 +225,23 @@ class SSEManager {
   private async connectViaOffscreen(
     url: string,
     token: string,
-    accountId: string,
-    generation: number
+    accountId: string
   ): Promise<boolean> {
-    if (this.offscreenUnavailable) {
+    // Transient latch (M1 fix): a slow first document load previously set a
+    // permanent boolean that disabled the push transport for the entire
+    // worker lifetime. Only hard failures latch long; timeouts retry soon.
+    if (Date.now() < this.offscreenRetryAt) {
       return false;
     }
 
     try {
       if (typeof chrome === 'undefined' || !chrome.offscreen) {
         this.offscreenUnavailable = true;
+        this.offscreenRetryAt = Date.now() + 10 * 60_000;
         return false;
       }
 
       await ensureOffscreenDocument();
-      if (generation !== this.connectionGeneration) {
-        return false;
-      }
 
       const response = (await chrome.runtime.sendMessage({
         target: 'offscreen-doc',
@@ -214,7 +251,7 @@ class SSEManager {
         accountId,
       })) as { success?: boolean } | undefined;
 
-      if (generation !== this.connectionGeneration || !response?.success) {
+      if (!response?.success) {
         return false;
       }
 
@@ -223,14 +260,14 @@ class SSEManager {
       this.state.reconnectAttempts = 0;
       this.state.lastEventTime = Date.now();
       this.state.consecutiveServerErrors = 0;
+      this.offscreenUnavailable = false;
+      this.offscreenRetryAt = 0;
       log.info('✅ SSE stream hosted in offscreen document');
       return true;
     } catch (e) {
-      if (generation !== this.connectionGeneration) {
-        return false;
-      }
       log.debug('Offscreen SSE unavailable — falling back to in-worker stream', e);
       this.offscreenUnavailable = true;
+      this.offscreenRetryAt = Date.now() + 60_000;
       return false;
     }
   }
@@ -240,8 +277,11 @@ class SSEManager {
    * Returns true if a healthy stream is already running there.
    */
   async syncWithOffscreen(): Promise<boolean> {
-    const generation = this.connectionGeneration;
-    if (this.offscreenUnavailable || typeof chrome === 'undefined' || !chrome.offscreen) {
+    if (
+      (this.offscreenUnavailable && Date.now() < this.offscreenRetryAt) ||
+      typeof chrome === 'undefined' ||
+      !chrome.offscreen
+    ) {
       return false;
     }
 
@@ -250,10 +290,6 @@ class SSEManager {
         target: 'offscreen-doc',
         type: 'SSE_STATUS',
       })) as { success?: boolean; connected?: boolean; accountId?: string } | undefined;
-
-      if (generation !== this.connectionGeneration) {
-        return false;
-      }
 
       if (status?.success && status.connected) {
         this.state.transport = 'offscreen';
@@ -264,10 +300,6 @@ class SSEManager {
       }
     } catch {
       // No offscreen document listening — caller falls back.
-    }
-
-    if (generation !== this.connectionGeneration) {
-      return false;
     }
 
     if (this.state.transport === 'offscreen') {
@@ -334,13 +366,8 @@ class SSEManager {
 
     // Disconnect existing connection
     diag.step(flowId, 'sse', 'Disconnecting existing', '');
-    const reconnectAttempts =
-      this.state.accountId === account.id ? this.state.reconnectAttempts : 0;
     const generation = ++this.connectionGeneration;
     this.disconnect(false);
-    // A reconnect replaces its transport without resetting its retry budget.
-    // New accounts and explicit disconnects still begin a fresh retry cycle.
-    this.state.reconnectAttempts = reconnectAttempts;
 
     this.state.accountId = account.id;
 
@@ -348,10 +375,6 @@ class SSEManager {
       // Ensure we have a valid token
       diag.step(flowId, 'sse', 'Ensuring authenticated', '');
       await mailTmService.ensureAuthenticated?.();
-      if (generation !== this.connectionGeneration) {
-        diag.endFlow(flowId, 'sse', 'SSE Connect', false, 'Connection superseded');
-        return false;
-      }
 
       const token = mailTmService.getToken();
       if (!token) {
@@ -369,7 +392,7 @@ class SSEManager {
 
       // Prefer the offscreen relay — it is the only transport that survives
       // service-worker suspension, which is what caused missed OTP pushes.
-      const relayUp = await this.connectViaOffscreen(sseUrl, token, account.id, generation);
+      const relayUp = await this.connectViaOffscreen(sseUrl, token, account.id);
 
       if (generation !== this.connectionGeneration) {
         diag.endFlow(flowId, 'sse', 'SSE Connect', false, 'Connection superseded');
@@ -393,10 +416,6 @@ class SSEManager {
       diag.endFlow(flowId, 'sse', 'SSE Connect', true, 'Connected successfully');
       return true;
     } catch (error) {
-      if (generation !== this.connectionGeneration) {
-        diag.endFlow(flowId, 'sse', 'SSE Connect', false, 'Connection superseded');
-        return false;
-      }
       const errMsg = error instanceof Error ? error.message : String(error);
       diag.log('error', 'sse', 'SSE connection failed', errMsg, { error }, flowId, 4);
       log.error('Failed to connect to SSE', error);
@@ -411,9 +430,6 @@ class SSEManager {
    * (EventSource doesn't support custom headers)
    */
   private async connectWithAuth(url: string, token: string, generation: number): Promise<void> {
-    if (generation !== this.connectionGeneration) {
-      return;
-    }
     // Cancel any existing stream
     if (this.currentAbortController) {
       this.currentAbortController.abort();
@@ -430,9 +446,6 @@ class SSEManager {
         },
         signal: abortController.signal,
       });
-      if (generation !== this.connectionGeneration) {
-        return;
-      }
 
       if (!response.ok) {
         const status = response.status;
@@ -514,9 +527,6 @@ class SSEManager {
 
       while (!abortController.signal.aborted && generation === this.connectionGeneration) {
         const { done, value } = await reader.read();
-        if (generation !== this.connectionGeneration) {
-          return;
-        }
         if (done) {
           log.info('SSE stream ended');
           break;
@@ -541,9 +551,6 @@ class SSEManager {
       log.warn('SSE stream closed, reconnecting...');
 
       const currentEmail = await emailService.getCurrentEmail();
-      if (generation !== this.connectionGeneration) {
-        return;
-      }
       if (currentEmail && currentEmail.service === 'mailtm' && currentEmail.id) {
         this.scheduleReconnect(currentEmail);
       } else {
@@ -553,10 +560,6 @@ class SSEManager {
         });
       }
     } catch (error) {
-      if (generation !== this.connectionGeneration) {
-        log.debug('Ignoring stale SSE connection error after newer connection started');
-        return;
-      }
       this.state.connected = false;
       this.state.streamReader = null;
 
@@ -566,6 +569,11 @@ class SSEManager {
             ? 'SSE connection aborted (intentional)'
             : 'SSE connection superseded'
         );
+        return;
+      }
+
+      if (generation !== this.connectionGeneration) {
+        log.debug('Ignoring stale SSE connection error after newer connection started');
         return;
       }
 
@@ -582,6 +590,10 @@ class SSEManager {
         } else {
           log.debug(`Circuit breaker active — skipping reconnect (${remaining}min remaining)`);
         }
+        // H3 fix: nothing previously scheduled a retry for after the
+        // cooldown, so the stream stayed down until an unrelated
+        // GENERATE_EMAIL. Arm the existing sse-reconnect alarm for expiry.
+        this.scheduleBreakerRecovery();
         return; // Don't schedule reconnect while circuit breaker is active
       }
 
@@ -595,9 +607,6 @@ class SSEManager {
       }
 
       const currentEmail = await emailService.getCurrentEmail();
-      if (generation !== this.connectionGeneration) {
-        return;
-      }
       if (currentEmail && currentEmail.service === 'mailtm' && currentEmail.id) {
         this.scheduleReconnect(currentEmail);
       } else {
@@ -706,6 +715,23 @@ class SSEManager {
         log.error('SSE reconnect failed', e);
       }
     }, delay);
+  }
+
+  /**
+   * Arm a one-shot recovery alarm for when the circuit breaker expires
+   * (H3 fix). The 'sse-reconnect' alarm name is already routed to
+   * reconnect() by the central alarm router, which re-authenticates and
+   * re-establishes the stream without waiting for user activity.
+   */
+  private scheduleBreakerRecovery(): void {
+    if (typeof chrome === 'undefined' || !chrome.alarms?.create) {
+      return;
+    }
+    try {
+      chrome.alarms.create('sse-reconnect', { when: this.state.circuitBreakerUntil + 1000 });
+    } catch (e) {
+      log.debug('Failed to schedule SSE breaker recovery alarm', e);
+    }
   }
 
   /**

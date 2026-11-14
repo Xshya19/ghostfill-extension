@@ -73,6 +73,7 @@ const EmailGenerator: React.FC<Props> = ({
   const [showConfirm, setShowConfirm] = useState(false);
   const [timeLeft, setTimeLeft] = useState<string>('');
   const lastCheckedIdRef = useRef<string | null>(null);
+  const expiredLabel = t('expiredLabel');
 
   // Memoize top 50 emails and asynchronously fetch their OTPs
   const latestInbox = React.useMemo(() => inbox.slice(0, 50), [inbox]);
@@ -98,7 +99,7 @@ const EmailGenerator: React.FC<Props> = ({
       setViewerLoading(true);
       try {
         if (!emailAccount?.fullEmail || !emailAccount.fullEmail.includes('@')) {
-          throw new Error('No active email account');
+          throw new Error(t('noActiveEmailAccount'));
         }
         const [login = '', domain = ''] = emailAccount.fullEmail.split('@');
         const res = (await safeSendMessage({
@@ -131,13 +132,13 @@ const EmailGenerator: React.FC<Props> = ({
             setViewerLink(typeof extract.link === 'string' && extract.link ? extract.link : null);
           }
         } else if (res?.error) {
-          setViewerError(typeof res.error === 'string' ? res.error : 'Could not load message');
+          setViewerError(typeof res.error === 'string' ? res.error : t('couldNotLoadMessage'));
         } else {
-          setViewerError('Could not load message');
+          setViewerError(t('couldNotLoadMessage'));
         }
       } catch (err) {
         if (viewerSeqRef.current === seq) {
-          setViewerError(err instanceof Error ? err.message : 'Failed to load message');
+          setViewerError(err instanceof Error ? err.message : t('failedToLoadMessage'));
         }
       } finally {
         if (viewerSeqRef.current === seq) {
@@ -145,7 +146,7 @@ const EmailGenerator: React.FC<Props> = ({
         }
       }
     },
-
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [emailAccount?.fullEmail, emailAccount?.service, emailOTPs, emailLinks]
   );
 
@@ -179,22 +180,26 @@ const EmailGenerator: React.FC<Props> = ({
           setSyncError(null);
           if (showToast) {
             if (emails.length > 0) {
-              onToast(`${emails.length} new email(s) found`);
+              onToast(
+                emails.length === 1
+                  ? t('newEmailsFoundOne', [String(emails.length)])
+                  : t('newEmailsFoundMany', [String(emails.length)])
+              );
             } else {
-              onToast('Inbox is up to date (0 new)');
+              onToast(t('inboxUpToDate'));
             }
           }
           return true;
         }
-        setSyncError(response?.error || 'Sync failed: No response');
+        setSyncError(response?.error || t('syncFailedNoResponse'));
         if (showToast) {
-          onToast(response?.error || 'Sync failed: No response');
+          onToast(response?.error || t('syncFailedNoResponse'));
         }
         return false;
       } catch {
-        setSyncError('Connection lost');
+        setSyncError(t('connectionLost'));
         if (showToast) {
-          onToast('Sync failed: Connection lost');
+          onToast(t('syncFailedConnectionLost'));
         }
         return false;
       } finally {
@@ -212,7 +217,7 @@ const EmailGenerator: React.FC<Props> = ({
     const updateTimer = () => {
       const remaining = emailAccount.expiresAt - Date.now();
       if (remaining <= 0) {
-        setTimeLeft('Expired');
+        setTimeLeft(expiredLabel);
         return;
       }
       const totalMins = Math.floor(remaining / 60000);
@@ -230,7 +235,7 @@ const EmailGenerator: React.FC<Props> = ({
     updateTimer();
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
-  }, [emailAccount]);
+  }, [emailAccount, expiredLabel]);
 
   useEffect(() => {
     if (emailAccount && emailAccount.fullEmail !== lastCheckedIdRef.current) {
@@ -257,12 +262,12 @@ const EmailGenerator: React.FC<Props> = ({
     try {
       const copied = await copyToClipboard(emailAccount.fullEmail);
       if (!copied) {
-        onToast('Copy failed');
+        onToast(t('copyFailed'));
         setCopySuccess(false);
         return;
       }
       setCopySuccess(true);
-      onToast('Email copied');
+      onToast(t('emailCopiedToast'));
 
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
@@ -271,7 +276,7 @@ const EmailGenerator: React.FC<Props> = ({
         setCopySuccess(false);
       }, 1500);
     } catch {
-      onToast('Copy failed');
+      onToast(t('copyFailed'));
       setCopySuccess(false);
     }
   }, [emailAccount, onToast]);
@@ -279,7 +284,7 @@ const EmailGenerator: React.FC<Props> = ({
   const copyCode = useCallback(
     async (code: string) => {
       const ok = await copyToClipboard(code);
-      onToast(ok ? `Code ${code} copied` : 'Copy failed');
+      onToast(ok ? t('codeCopiedToast', [code]) : t('copyFailed'));
     },
     [onToast]
   );
@@ -287,7 +292,7 @@ const EmailGenerator: React.FC<Props> = ({
   const openActivationLink = useCallback(
     (event: React.MouseEvent, activationLink: string) => {
       event.stopPropagation();
-      onToast('Opening activation link…');
+      onToast(t('openingActivationLinkEllipsis'));
       openSafeUrl(activationLink);
     },
     [onToast]
@@ -319,10 +324,10 @@ const EmailGenerator: React.FC<Props> = ({
                     >
                       <RefreshCw size={12} className={checking || syncing ? 'spin' : ''} />
                       {checking
-                        ? 'Checking…'
+                        ? t('checkingEllipsis')
                         : syncing
-                          ? 'Syncing…'
-                          : `Updated ${formatRelativeTime(lastUpdated)}`}
+                          ? t('syncingEllipsis')
+                          : t('updatedRelative', [formatRelativeTime(lastUpdated)])}
                     </motion.div>
                   </AnimatePresence>
                 </div>
@@ -342,11 +347,11 @@ const EmailGenerator: React.FC<Props> = ({
                   <div className="identity-status-badges">
                     <div className="identity-status-temporary">
                       <div className="identity-status-dot" />
-                      Temporary
+                      {t('temporaryBadge')}
                     </div>
                     {timeLeft && (
                       <div
-                        className={`identity-status-time ${timeLeft === 'Expired' ? 'identity-status-expired' : ''}`}
+                        className={`identity-status-time ${timeLeft === expiredLabel ? 'identity-status-expired' : ''}`}
                       >
                         <Clock size={12} strokeWidth={2.5} />
                         {timeLeft}
@@ -359,7 +364,7 @@ const EmailGenerator: React.FC<Props> = ({
                   type="button"
                   className={`copy-button ${copySuccess ? 'copy-success' : ''}`}
                   onClick={() => void copyEmail()}
-                  aria-label="Copy email to clipboard"
+                  aria-label={t('copyEmailToClipboard')}
                 >
                   <Copy size={22} strokeWidth={2} />
                 </motion.button>
@@ -372,22 +377,22 @@ const EmailGenerator: React.FC<Props> = ({
                   disabled={syncing}
                 >
                   <RefreshCw size={18} className={syncing ? 'spin' : ''} />
-                  New email
+                  {t('newEmailButton')}
                 </Button>
                 <Button
                   variant="primary"
                   className="identity-action-btn"
                   onClick={() => void checkInbox()}
-                  disabled={checking || timeLeft === 'Expired'}
+                  disabled={checking || timeLeft === expiredLabel}
                 >
-                  {timeLeft === 'Expired' ? (
+                  {timeLeft === expiredLabel ? (
                     <>
-                      <Clock size={18} /> Expired
+                      <Clock size={18} /> {expiredLabel}
                     </>
                   ) : (
                     <>
                       <Inbox size={18} />
-                      {checking ? 'Refreshing…' : 'Refresh inbox'}
+                      {checking ? t('refreshingEllipsis') : t('refreshInbox')}
                     </>
                   )}
                 </Button>
@@ -419,37 +424,36 @@ const EmailGenerator: React.FC<Props> = ({
                       type="button"
                       className="action-icon email-back-btn"
                       onClick={onBack}
-                      title="Go back"
-                      aria-label="Go back to dashboard"
+                      title={t('goBack')}
+                      aria-label={t('goBackToDashboard')}
                     >
                       <ChevronLeft size={18} />
                     </motion.button>
                     <Inbox size={22} />
-                    <span>Inbox</span>
+                    <span>{t('recentMessages')}</span>
                     {inbox.length > 0 && <span className="inbox-count">{inbox.length}</span>}
                   </div>
                   {/* Refresh: Just icon with tooltip, shows Syncing… when active */}
                   <motion.button
                     type="button"
-                    className="action-icon inbox-refresh-button"
+                    className="action-icon"
                     onClick={() => void checkInbox()}
                     disabled={checking}
                     aria-busy={checking}
-                    title={checking ? 'Syncing…' : 'Refresh inbox'}
-                    aria-label="Refresh inbox"
+                    title={checking ? t('syncingEllipsis') : t('refreshInbox')}
+                    aria-label={t('refreshInbox')}
                   >
-                    <RefreshCw
-                      size={16}
-                      className={`inbox-refresh-icon${checking ? ' inbox-refresh-icon--spinning' : ''}`}
-                    />
+                    <RefreshCw size={16} className={checking ? 'spin' : ''} />
                   </motion.button>
                 </div>
 
                 {/* Announce meaningful inbox changes without making the full list live. */}
                 <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
                   {latestInbox.length > 0
-                    ? `${latestInbox.length} message${latestInbox.length === 1 ? '' : 's'} in inbox`
-                    : 'No messages in inbox'}
+                    ? latestInbox.length === 1
+                      ? t('messagesInInboxOne', [String(latestInbox.length)])
+                      : t('messagesInInboxMany', [String(latestInbox.length)])
+                    : t('noMessagesInInbox')}
                 </div>
                 {/* Email List - Dashboard Style */}
                 <div className="inbox-list inbox-list-scroll">
@@ -487,7 +491,7 @@ const EmailGenerator: React.FC<Props> = ({
                               </span>
                               <span className="inbox-item-date">
                                 {emailTimestamp === null
-                                  ? 'Date unavailable'
+                                  ? t('dateUnavailable')
                                   : formatRelativeTime(emailTimestamp)}
                               </span>
                             </div>
@@ -508,10 +512,10 @@ const EmailGenerator: React.FC<Props> = ({
                                     e.stopPropagation();
                                     void copyCode(verificationCode);
                                   }}
-                                  aria-label={`Copy verification code ${verificationCode}`}
+                                  aria-label={t('copyVerificationCode', [verificationCode])}
                                 >
                                   <span className="inbox-action-label" aria-hidden="true">
-                                    Code
+                                    {t('codeLabel')}
                                   </span>
                                   <span className="otp-badge-code">{verificationCode}</span>
                                   <Copy size={12} aria-hidden="true" />
@@ -522,9 +526,9 @@ const EmailGenerator: React.FC<Props> = ({
                                   type="button"
                                   className="link-badge"
                                   onClick={(e) => void openActivationLink(e, activationLink)}
-                                  aria-label="Open verification link"
+                                  aria-label={t('openVerificationLinkAriaLabel')}
                                 >
-                                  <span className="otp-badge-code">Open link</span>
+                                  <span className="otp-badge-code">{t('openLink')}</span>
                                   <ChevronRight size={12} />
                                 </motion.button>
                               )}
@@ -533,7 +537,11 @@ const EmailGenerator: React.FC<Props> = ({
                           <button
                             type="button"
                             className="inbox-item-open-button"
-                            aria-label={`${item.read ? 'Open email' : 'Open unread email'} from ${senderLabel}: ${item.subject}`}
+                            aria-label={t('openEmailFrom', [
+                              t(item.read ? 'openEmail' : 'openUnreadEmail'),
+                              senderLabel,
+                              item.subject,
+                            ])}
                             onClick={() => void openEmailInViewer(item)}
                           >
                             <ChevronRight
@@ -589,7 +597,7 @@ const EmailGenerator: React.FC<Props> = ({
                             className="inbox-item-avatar"
                           >
                             {!item.read && (
-                              <div className="unread-dot" title="Unread" aria-hidden="true" />
+                              <div className="unread-dot" title={t('unread')} aria-hidden="true" />
                             )}
                           </EmailAvatar>
 
@@ -604,7 +612,7 @@ const EmailGenerator: React.FC<Props> = ({
                               </div>
                               <div className="inbox-date-default">
                                 {emailTimestamp === null
-                                  ? 'Date unavailable'
+                                  ? t('dateUnavailable')
                                   : formatRelativeTime(emailTimestamp)}
                               </div>
                             </div>
@@ -625,7 +633,7 @@ const EmailGenerator: React.FC<Props> = ({
                                     e.stopPropagation();
                                     void copyCode(verificationCode);
                                   }}
-                                  aria-label={`Copy verification code ${verificationCode}`}
+                                  aria-label={t('copyVerificationCode', [verificationCode])}
                                 >
                                   <Hash size={12} aria-hidden="true" />
                                   <span className="otp-badge-code">{verificationCode}</span>
@@ -637,9 +645,9 @@ const EmailGenerator: React.FC<Props> = ({
                                   type="button"
                                   className="link-badge"
                                   onClick={(e) => void openActivationLink(e, activationLink)}
-                                  aria-label="Open verification link"
+                                  aria-label={t('openVerificationLinkAriaLabel')}
                                 >
-                                  Verify Link
+                                  {t('verifyLink')}
                                   <ChevronRight size={12} />
                                 </motion.button>
                               )}
@@ -649,7 +657,11 @@ const EmailGenerator: React.FC<Props> = ({
                           <button
                             type="button"
                             className="inbox-item-open-button"
-                            aria-label={`${item.read ? 'Open email' : 'Open unread email'} from ${senderLabel}: ${item.subject}`}
+                            aria-label={t('openEmailFrom', [
+                              t(item.read ? 'openEmail' : 'openUnreadEmail'),
+                              senderLabel,
+                              item.subject,
+                            ])}
                             onClick={() => void openEmailInViewer(item)}
                           >
                             <ChevronRight
@@ -667,10 +679,8 @@ const EmailGenerator: React.FC<Props> = ({
                         <div className="inbox-empty-icon">
                           <Inbox size={32} strokeWidth={1.5} className="email-empty-icon" />
                         </div>
-                        <div className="inbox-empty-title">Inbox is Empty</div>
-                        <div className="inbox-empty-desc">
-                          Messages will appear here when received.
-                        </div>
+                        <div className="inbox-empty-title">{t('inboxIsEmpty')}</div>
+                        <div className="inbox-empty-desc">{t('messagesWillAppear')}</div>
                       </div>
                     </div>
                   )}
@@ -700,10 +710,10 @@ const EmailGenerator: React.FC<Props> = ({
 
       <ConfirmModal
         isOpen={showConfirm}
-        title="Generate a new email?"
-        message="Your current temporary email and its inbox will be permanently lost. This action cannot be undone."
-        confirmText="Generate email"
-        cancelText="Cancel"
+        title={t('confirmGenerateEmailTitle')}
+        message={t('confirmGenerateEmailMessage')}
+        confirmText={t('generateEmailConfirm')}
+        cancelText={t('cancel')}
         onConfirm={() => {
           setShowConfirm(false);
           onGenerate();

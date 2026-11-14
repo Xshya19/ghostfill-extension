@@ -559,7 +559,7 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
   private render(): void {
     this.root.replaceChildren();
     // Apply styles via adoptedStyleSheets where possible (CSP-safe)
-
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if ('adoptedStyleSheets' in (document as any)) {
       if (!sharedStyleSheet) {
         sharedStyleSheet = new CSSStyleSheet();
@@ -762,7 +762,7 @@ if (typeof customElements !== 'undefined' && customElements && !customElements.g
     }
   } catch (e) {
     // Silently ignore if already defined in another context
-
+    // eslint-disable-next-line no-console
     console.debug('[GhostFill] GhostLabel registration skipped:', e);
   }
 }

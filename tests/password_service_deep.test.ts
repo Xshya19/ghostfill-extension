@@ -28,27 +28,54 @@ describe('PasswordService deep tests', () => {
     });
 
     it('respects uppercase flag', () => {
-      const result = passwordService.generate({ length: 100, uppercase: true, lowercase: false, numbers: false, symbols: false });
+      const result = passwordService.generate({
+        length: 100,
+        uppercase: true,
+        lowercase: false,
+        numbers: false,
+        symbols: false,
+      });
       expect(result.password).toMatch(/^[A-Z]+$/);
     });
 
     it('respects lowercase flag', () => {
-      const result = passwordService.generate({ length: 100, uppercase: false, lowercase: true, numbers: false, symbols: false });
+      const result = passwordService.generate({
+        length: 100,
+        uppercase: false,
+        lowercase: true,
+        numbers: false,
+        symbols: false,
+      });
       expect(result.password).toMatch(/^[a-z]+$/);
     });
 
     it('respects numbers flag', () => {
-      const result = passwordService.generate({ length: 100, uppercase: false, lowercase: false, numbers: true, symbols: false });
+      const result = passwordService.generate({
+        length: 100,
+        uppercase: false,
+        lowercase: false,
+        numbers: true,
+        symbols: false,
+      });
       expect(result.password).toMatch(/^[0-9]+$/);
     });
 
     it('respects symbols flag', () => {
-      const result = passwordService.generate({ length: 100, uppercase: false, lowercase: false, numbers: false, symbols: true });
+      const result = passwordService.generate({
+        length: 100,
+        uppercase: false,
+        lowercase: false,
+        numbers: false,
+        symbols: true,
+      });
       expect(result.password).toMatch(/^[^A-Za-z0-9]+$/);
     });
 
     it('includes all enabled character types (statistical)', () => {
-      let hasUpper = false, hasLower = false, hasNum = false, hasSymbol = false;
+      let hasUpper = false,
+        hasLower = false,
+        hasNum = false,
+        hasSymbol = false;
       for (let i = 0; i < 20; i++) {
         const pw = passwordService.generate({ length: 32 }).password;
         if (/[A-Z]/.test(pw)) hasUpper = true;
@@ -266,10 +293,10 @@ describe('PasswordService deep tests', () => {
 
     it('strength levels are correctly ordered', () => {
       const levelOrder: Record<string, number> = {
-        'weak': 0,
-        'fair': 1,
-        'good': 2,
-        'strong': 3,
+        weak: 0,
+        fair: 1,
+        good: 2,
+        strong: 3,
         'very-strong': 4,
       };
 

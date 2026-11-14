@@ -75,7 +75,7 @@ const formatGmailSignInFailure = (res: GmailSignInResult | undefined): string =>
   if (isGmailSetupResponse(res)) {
     return formatGmailSetupError(res?.error);
   }
-  return res?.error || 'Sign-in failed';
+  return res?.error || t('signInFailed');
 };
 
 const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast }) => {
@@ -287,11 +287,11 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
             setGmailInbox(res.messages);
           }
         } else if (requestSeq === gmailInboxRequestSeqRef.current) {
-          setGmailInboxError(res?.error || 'Failed to fetch Gmail inbox');
+          setGmailInboxError(res?.error || t('failedFetchGmailInbox'));
         }
       } catch (e: unknown) {
         if (requestSeq === gmailInboxRequestSeqRef.current) {
-          setGmailInboxError(e instanceof Error ? e.message : 'Failed to fetch Gmail inbox');
+          setGmailInboxError(e instanceof Error ? e.message : t('failedFetchGmailInbox'));
         }
       } finally {
         if (requestSeq === gmailInboxRequestSeqRef.current) {
@@ -336,7 +336,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
         setPassword(response.result.password);
       }
     } catch {
-      onToast('Failed to generate password');
+      onToast(t('failedToGeneratePassword'));
     } finally {
       setIsGeneratingPassword(false);
     }
@@ -364,7 +364,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
   // Handlers
   const copyEmail = useCallback(async () => {
     if (!activeEmailAddress) {
-      onToast('No email address yet — generate one first');
+      onToast(t('noEmailGenerateFirst'));
       return;
     }
 
@@ -443,12 +443,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
         const now = Date.now();
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
           const { lastGenerateEmailTime } = await chrome.storage.local.get('lastGenerateEmailTime');
-          const lastTime =
-            typeof lastGenerateEmailTime === 'string'
-              ? Number.parseInt(lastGenerateEmailTime, 10)
-              : typeof lastGenerateEmailTime === 'number'
-                ? lastGenerateEmailTime
-                : 0;
+          const lastTime = parseInt(lastGenerateEmailTime || '0', 10);
           if (now - lastTime < RATE_LIMIT_MS.GENERATE_EMAIL) {
             setEmailCooldown(true);
             if (emailCooldownTimeoutRef.current) {
@@ -458,7 +453,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
               () => setEmailCooldown(false),
               RATE_LIMIT_MS.GENERATE_EMAIL - (now - lastTime)
             );
-            onToast('Please wait before generating a new email');
+            onToast(t('pleaseWaitGenerateEmail'));
             return;
           }
           await chrome.storage.local.set({ lastGenerateEmailTime: now.toString() });
@@ -466,7 +461,7 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
 
         onGenerate();
       } catch {
-        onToast('Failed to generate email. Please try again.');
+        onToast(t('failedGenerateEmail'));
       }
     })();
   }, [onGenerate, onToast]);
@@ -494,10 +489,10 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
     (event: React.MouseEvent, url: string) => {
       event.stopPropagation();
       if (!isWebUrl(url)) {
-        onToast('This message has no web link to open.');
+        onToast(t('noWebLink'));
         return;
       }
-      onToast('Opening activation link…');
+      onToast(t('openingActivationLinkEllipsis'));
       openSafeUrl(url);
     },
     [onToast]
@@ -595,12 +590,12 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
               setViewerLink(typeof extract.link === 'string' && extract.link ? extract.link : null);
             }
           } else if (res?.error) {
-            setViewerError(typeof res.error === 'string' ? res.error : 'Could not load message');
+            setViewerError(typeof res.error === 'string' ? res.error : t('couldNotLoadMessage'));
           }
         } else {
           const account = emailAccount;
           if (!account?.fullEmail) {
-            setViewerError('No active email account');
+            setViewerError(t('noActiveEmailAccount'));
             return;
           }
           const atIndex = account.fullEmail.indexOf('@');
@@ -662,12 +657,12 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
               setViewerLink(typeof extract.link === 'string' && extract.link ? extract.link : null);
             }
           } else if (res?.error) {
-            setViewerError(typeof res.error === 'string' ? res.error : 'Could not load message');
+            setViewerError(typeof res.error === 'string' ? res.error : t('couldNotLoadMessage'));
           }
         }
       } catch (err) {
         if (viewerRequestSeqRef.current === requestSeq) {
-          setViewerError(err instanceof Error ? err.message : 'Failed to load message');
+          setViewerError(err instanceof Error ? err.message : t('failedToLoadMessage'));
         }
       } finally {
         if (viewerRequestSeqRef.current === requestSeq) {
@@ -709,12 +704,12 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
         setGmailIsManual(false);
         setPreferredEmailType('gmail');
         await persistGmailConnection(res.profile, false);
-        onToast(`Connected: ${res.profile.email}`);
+        onToast(t('connectedWithEmail', [res.profile.email]));
       } else {
         onToast(formatGmailSignInFailure(res));
       }
     } catch (e) {
-      onToast(e instanceof Error ? e.message : 'Sign-in failed');
+      onToast(e instanceof Error ? e.message : t('signInFailed'));
     } finally {
       setGmailSigningIn(false);
     }
@@ -740,10 +735,10 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       const disposableEmail = emailAccount || (await storageService.get('disposableEmail'));
       if (isTemporaryMailAccount(disposableEmail)) {
         await storageService.setImmediate('currentEmail', disposableEmail);
-        onToast(`Temp Mail active: ${disposableEmail.fullEmail}`);
+        onToast(t('tempMailActive', [disposableEmail.fullEmail]));
       } else {
         await storageService.remove('currentEmail');
-        onToast('Temp Mail tab active — generate a temp address to fill');
+        onToast(t('tempMailTabActive'));
       }
     })();
   }, [setPreferredEmailType, emailAccount, onToast]);
@@ -756,9 +751,9 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
       await storageService.setImmediate('preferredEmailType', 'gmail');
       setPreferredEmailType('gmail');
       if (activeEmailAddress) {
-        onToast(`Gmail active: ${activeEmailAddress}`);
+        onToast(t('gmailActive', [activeEmailAddress]));
       } else {
-        onToast('Gmail active — connect your account');
+        onToast(t('gmailActiveConnect'));
       }
     })();
   }, [setPreferredEmailType, activeEmailAddress, onToast]);
@@ -885,9 +880,9 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
                 setGmailProfile(null);
                 setGmailBase(null);
                 setGmailIsManual(false);
-                onToast('Gmail disconnected');
+                onToast(t('gmailDisconnected'));
               } catch {
-                onToast('Failed to disconnect Gmail');
+                onToast(t('failedDisconnectGmail'));
               }
             }}
             gmailProfile={gmailProfile}
@@ -927,10 +922,10 @@ const Hub: React.FC<Props> = ({ onNavigate, emailAccount, onGenerate, onToast })
 
       <ConfirmModal
         isOpen={showConfirmEmail}
-        title="Generate a new email?"
-        message="Your current temporary email and its inbox will be permanently lost. This action cannot be undone."
-        confirmText="Generate"
-        cancelText="Cancel"
+        title={t('confirmGenerateEmailTitle')}
+        message={t('confirmGenerateEmailMessage')}
+        confirmText={t('generateConfirm')}
+        cancelText={t('cancel')}
         onConfirm={executeGenerateEmail}
         onCancel={() => setShowConfirmEmail(false)}
         isDestructive={true}

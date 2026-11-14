@@ -38,7 +38,11 @@ vi.mock('../src/background/sseManager', () => ({
 }));
 
 import { setupMessageHandler } from '../src/background/messageHandler';
-import { destroyPollingManager, getOTPWaitingTabs, resetEmailSession } from '../src/background/pollingManager';
+import {
+  destroyPollingManager,
+  getOTPWaitingTabs,
+  resetEmailSession,
+} from '../src/background/pollingManager';
 import { emailService } from '../src/services/emailServices';
 import { linkService } from '../src/services/linkService';
 import { otpService } from '../src/services/otpService';
@@ -90,6 +94,17 @@ function waitOnNotion() {
     deliveryAttempts: 0,
   });
 }
+function waitOnClaude() {
+  const tabs = getOTPWaitingTabs() as Map<number, unknown>;
+  tabs.set(11, {
+    url: 'https://claude.ai/login',
+    hostname: 'claude.ai',
+    fieldSelectors: ['#otp'],
+    registeredAt: Date.now(),
+    priority: 1,
+    deliveryAttempts: 0,
+  });
+}
 
 beforeAll(() => {
   setupMessageHandler();
@@ -113,23 +128,66 @@ afterEach(() => {
 
 describe('message-to-page verification flow', () => {
   it('preserves the extracted button text when the popup hands off a magic link', async () => {
+    // The automatic hand-off is bound to the site the user is waiting on
+    // (2026-11-12 security fix): a mail that is only consistent with itself
+    // must never open a destination automatically.
+    waitOnClaude();
     const url = 'https://claude.ai/magic-link#fixture_auth_token_123456789';
-    const response = await send(message({
-      subject: 'Sign in to Claude.ai',
-      emailFrom: 'Claude <support@mail.anthropic.com>',
-      textBody: `Click the button below to finish signing in. Sign in [${url}]`,
-      htmlBody: `<h1>Sign in to Claude.ai</h1><a href="${url}">Sign in</a>`,
-    }));
+    const response = await send(
+      message({
+        subject: 'Sign in to Claude.ai',
+        emailFrom: 'Claude <support@mail.anthropic.com>',
+        textBody: `Click the button below to finish signing in. Sign in [${url}]`,
+        htmlBody: `<h1>Sign in to Claude.ai</h1><a href="${url}">Sign in</a>`,
+      })
+    );
     expect(response).toMatchObject({ success: true, link: url });
-    expect(linkService.handleDetectedLink).toHaveBeenCalledWith(expect.anything(), url, expect.anything(), null, 'Sign in');
+    expect(linkService.handleDetectedLink).toHaveBeenCalledWith(
+      expect.anything(),
+      url,
+      expect.anything(),
+      null,
+      'Sign in'
+    );
   });
 
   it('delivers a fresh saved code when its input mounts after the email arrived', async () => {
-    await otpService.saveLastOTP('641923', 'email', 'support@mail.anthropic.com', 'Your sign-in code', 0.98, { emailId: 'late-claude-field', emailDate: Date.now(), autoFillEligible: true });
-    const pageSender = { id: chrome.runtime.id, url: 'https://claude.ai/login', tab: { id: 11, url: 'https://claude.ai/login' }, frameId: 0 };
-    const response = await send({ action: 'OTP_PAGE_DETECTED', payload: { url: pageSender.url, fieldCount: 1, fieldSelectors: ['#otp'], confidence: 0.95, verdict: 'otp-page' } } as ExtensionMessage, pageSender);
+    await otpService.saveLastOTP(
+      '641923',
+      'email',
+      'support@mail.anthropic.com',
+      'Your sign-in code',
+      0.98,
+      { emailId: 'late-claude-field', emailDate: Date.now(), autoFillEligible: true }
+    );
+    const pageSender = {
+      id: chrome.runtime.id,
+      url: 'https://claude.ai/login',
+      tab: { id: 11, url: 'https://claude.ai/login' },
+      frameId: 0,
+    };
+    const response = await send(
+      {
+        action: 'OTP_PAGE_DETECTED',
+        payload: {
+          url: pageSender.url,
+          fieldCount: 1,
+          fieldSelectors: ['#otp'],
+          confidence: 0.95,
+          verdict: 'otp-page',
+        },
+      } as ExtensionMessage,
+      pageSender
+    );
     expect(response.success).toBe(true);
-    expect(safeSendTabMessage).toHaveBeenCalledWith(11, expect.objectContaining({ action: 'AUTO_FILL_OTP', payload: expect.objectContaining({ otp: '641923' }) }), expect.anything());
+    expect(safeSendTabMessage).toHaveBeenCalledWith(
+      11,
+      expect.objectContaining({
+        action: 'AUTO_FILL_OTP',
+        payload: expect.objectContaining({ otp: '641923' }),
+      }),
+      expect.anything()
+    );
   });
 
   it.each([
@@ -137,21 +195,60 @@ describe('message-to-page verification flow', () => {
     ['weak', 0.4, true, 0, false],
     ['old', 0.98, true, 60_001, false],
     ['used', 0.98, true, 0, true],
-  ] as const)('does not automatically resume a %s code', async (_kind, confidence, eligible, age, used) => {
-    await otpService.saveLastOTP('628419', 'email', 'support@mail.anthropic.com', 'Your sign-in code', confidence, { autoFillEligible: eligible });
-    if (used) { await otpService.markAsUsed(); }
-    const now = Date.now();
-    vi.spyOn(Date, 'now').mockReturnValue(now + age);
-    const pageSender = { id: chrome.runtime.id, url: 'https://claude.ai/login', tab: { id: 11, url: 'https://claude.ai/login' }, frameId: 0 };
-    const response = await send({ action: 'OTP_PAGE_DETECTED', payload: { url: pageSender.url, fieldCount: 1, fieldSelectors: ['#otp'], confidence: 0.95, verdict: 'otp-page' } } as ExtensionMessage, pageSender);
-    expect(response.success).toBe(true);
-    expect(safeSendTabMessage).not.toHaveBeenCalled();
-  });
+  ] as const)(
+    'does not automatically resume a %s code',
+    async (_kind, confidence, eligible, age, used) => {
+      await otpService.saveLastOTP(
+        '628419',
+        'email',
+        'support@mail.anthropic.com',
+        'Your sign-in code',
+        confidence,
+        { autoFillEligible: eligible }
+      );
+      if (used) {
+        await otpService.markAsUsed();
+      }
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now + age);
+      const pageSender = {
+        id: chrome.runtime.id,
+        url: 'https://claude.ai/login',
+        tab: { id: 11, url: 'https://claude.ai/login' },
+        frameId: 0,
+      };
+      const response = await send(
+        {
+          action: 'OTP_PAGE_DETECTED',
+          payload: {
+            url: pageSender.url,
+            fieldCount: 1,
+            fieldSelectors: ['#otp'],
+            confidence: 0.95,
+            verdict: 'otp-page',
+          },
+        } as ExtensionMessage,
+        pageSender
+      );
+      expect(response.success).toBe(true);
+      expect(safeSendTabMessage).not.toHaveBeenCalled();
+    }
+  );
 
   it('offers a fresh saved code on a page that registered a moment later', async () => {
-    await otpService.saveLastOTP('391827', 'email', 'accounts@notion.com', 'Your sign-in code', 0.98);
+    await otpService.saveLastOTP(
+      '391827',
+      'email',
+      'accounts@notion.com',
+      'Your sign-in code',
+      0.98
+    );
     waitOnNotion();
-    const response = await send({ action: 'GET_LAST_OTP' } as ExtensionMessage, { id: chrome.runtime.id, url: 'https://app.notion.com/signup', tab: { id: 9, url: 'https://app.notion.com/signup' } });
+    const response = await send({ action: 'GET_LAST_OTP' } as ExtensionMessage, {
+      id: chrome.runtime.id,
+      url: 'https://app.notion.com/signup',
+      tab: { id: 9, url: 'https://app.notion.com/signup' },
+    });
     expect(response).toMatchObject({ success: true, lastOTP: { code: '391827' } });
   });
   it('does not navigate again when a message whose code was already filled is reopened', async () => {
@@ -186,10 +283,15 @@ describe('message-to-page verification flow', () => {
     );
     expect(linkService.handleDetectedLink).not.toHaveBeenCalled();
   });
-  it('can use the approved companion link when there is no waiting code page', async () => {
+  it('keeps the companion link for the user when no site context confirms the destination', async () => {
+    // Without a site context (no waiting tab, no account origin) the
+    // companion link is reported but NOT opened automatically
+    // (2026-11-12 security fix): a mail that is only consistent with itself
+    // must never drive an automatic navigation. The user can still open it
+    // explicitly from the popup.
     const response = await send(message());
     expect(response).toMatchObject({ success: true, otp: '451612', link });
-    expect(linkService.handleDetectedLink).toHaveBeenCalledTimes(1);
+    expect(linkService.handleDetectedLink).not.toHaveBeenCalled();
     expect(safeSendTabMessage).not.toHaveBeenCalled();
   });
   it('uses the approved companion link after a matching page refuses the code', async () => {

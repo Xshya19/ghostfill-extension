@@ -11,7 +11,13 @@
  *  - Hard reject marketing/footer first
  *  - Token without action proof is tracking, not activation
  *  - Auto-open needs higher bar than select
+ *  - Auto-open also needs a domain binding: the destination must be a host
+ *    the caller vouches for (the account's signup site / a site the user is
+ *    waiting on). A structurally perfect link is never auto-openable on its
+ *    own, and an absent expectation fails closed.
  */
+
+import { sameVerificationSite } from '../../utils/verificationSite';
 
 export type ActivationLinkClass =
   | 'activation'
@@ -28,7 +34,31 @@ export interface ActivationLinkVerdict {
   quality: number;
   reasons: string[];
   hardReject: boolean;
+  /**
+   * True only when the structural proof passed AND the destination is bound
+   * to an expected host. Fails closed when no expectation was supplied.
+   */
   canAutoOpen: boolean;
+  /**
+   * Structural proof only (path + token + anchor + https). Kept for callers
+   * that bind the destination themselves (see canAutoOpenVerificationLink).
+   */
+  structuralAutoOpen: boolean;
+  /** True when the destination host matched the caller's expectation. */
+  domainBound: boolean;
+}
+
+/**
+ * Domain expectation for auto-open.
+ *
+ * The expectation is supplied by the decision layer, which knows the sender
+ * and the account's signup origin. The guard never guesses a trusted host:
+ * an empty or absent list means "no independent expectation" and therefore
+ * refuses the automatic open.
+ */
+export interface ActivationLinkExpectation {
+  /** Hostnames or domains (full URLs are accepted) the destination may point at. */
+  trustedHosts?: string[];
 }
 
 /** Minimum quality to surface as the extracted activation link */
@@ -74,8 +104,20 @@ const EMAIL_LOGIN_PATH_RE =
   /\/(?:login[-_]?with[-_]?email|signin[-_]?with[-_]?email|email[-_]?login|login\/email|signin\/email)(?:\/|$)/i;
 
 // ── Hard reject (never auto-open) ──
-const HARD_REJECT_URL =
-  /unsubscribe|opt[-_]?out|email[-_]?preferences|manage[-_]?preferences|privacy(?:[-_]?policy)?|terms(?:[-_]?of)?|cookie|legal|cdn\.|\/static\/|\/assets\/|fonts?\.|images?\.|img\.|\/beacon|\/pixel|analytics|view[-_]?in[-_]?browser|web[-_]?version|facebook\.com|twitter\.com|x\.com\/|linkedin\.com|instagram\.com|youtube\.com|tiktok\.com|pinterest\.com|play\.google\.com|apps\.apple\.com|itunes\.apple\.com|\/(?:dashboard|pricing|plans|billing|settings|preferences|profile|docs|documentation|blog|help|support|shop|store|sale|deals|home)(?:\/|\?|$)|shop\s*now|learn\s*more|read\s*more|download\s*app/i;
+// B4 fix (2026-11-12): the deny list previously matched the RAW URL string,
+// including query values, so a legitimate verification link like
+// `?redirect=/settings` was hard-rejected while the same destination
+// percent-encoded (`redirect=%2Fsettings`) passed — verdicts flipped on
+// incidental encoding. The list is now applied to the hostname and the
+// DECODED pathname only, never the query string. Host-level brands,
+// static/tracking infrastructure, and footer/navigation path segments
+// remain hard-rejected with the original semantics.
+const HARD_REJECT_HOST_OR_PATH =
+  /unsubscribe|opt[-_]?out|email[-_]?preferences|manage[-_]?preferences|privacy(?:[-_]?policy)?|terms(?:[-_]?of)?|cookie|legal|cdn\.|fonts?\.|images?\.|img\.|\/(?:static|assets)(?:\/|$)|\/(?:beacon|pixel)|analytics|view[-_]?in[-_]?browser|web[-_]?version/i;
+const HARD_REJECT_HOST_BRANDS =
+  /(?:^|\.)(?:facebook\.com|twitter\.com|x\.com|linkedin\.com|instagram\.com|youtube\.com|tiktok\.com|pinterest\.com|play\.google\.com|apps\.apple\.com|itunes\.apple\.com)$/i;
+const HARD_REJECT_PATH_SEGMENTS =
+  /\/(?:dashboard|pricing|plans|billing|settings|preferences|profile|docs|documentation|blog|help|support|shop|store|sale|deals|home)(?:\/|$)|shop\s*now|learn\s*more|read\s*more|download\s*app/i;
 
 const HARD_REJECT_ANCHOR =
   /\b(?:unsubscribe|opt\s*out|manage\s+preferences|privacy\s+policy|terms\s+of\s+(?:service|use)|view\s+in\s+browser|shop\s+now|buy\s+now|learn\s+more|read\s+more|download\s+(?:app|now)|visit\s+(?:our\s+)?(?:site|website|store)|view\s+(?:dashboard|profile|details)|open\s+dashboard|help\s+center|support\s+center|documentation|follow\s+us|view\s+offer|see\s+deals|browse\s+products)\b/i;
@@ -89,6 +131,55 @@ function hasAuthToken(url: string): boolean {
       url
     ) || /#(?:token|code|oobCode)=[A-Za-z0-9._%-]{8,}/i.test(url)
   );
+}
+
+/** Normalise a host expectation (bare domain or full URL) to a hostname. */
+function normalizeExpectedHost(value: string): string {
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed) {
+    return '';
+  }
+  if (trimmed.includes('://')) {
+    try {
+      return new URL(trimmed).hostname.toLowerCase().replace(/\.$/, '');
+    } catch {
+      return '';
+    }
+  }
+  return trimmed.replace(/^\.+/, '').replace(/\.$/, '');
+}
+
+/**
+ * True when `hostname` belongs to one of the expected hosts.
+ *
+ * Exact hosts, sub-domains of an expected domain and first-party aliases
+ * (see verificationSiteRoot) all count as the same site. Used to bind an
+ * activation link to the site the user is actually signing up for.
+ */
+export function hostMatchesExpectation(
+  hostname: string,
+  expectedHosts: string[] | undefined
+): boolean {
+  const host = hostname.trim().toLowerCase().replace(/\.$/, '');
+  if (!host) {
+    return false;
+  }
+  for (const raw of expectedHosts ?? []) {
+    const expected = normalizeExpectedHost(raw);
+    if (!expected) {
+      continue;
+    }
+    if (host === expected) {
+      return true;
+    }
+    if (host.endsWith(`.${expected}`)) {
+      return true;
+    }
+    if (sameVerificationSite(host, expected)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function classifyPath(url: string, anchorText = ''): ActivationLinkClass {
@@ -139,7 +230,8 @@ function classifyPath(url: string, anchorText = ''): ActivationLinkClass {
 export function scoreActivationLink(
   rawUrl: string | { url?: string } | null | undefined,
   anchorText = '',
-  surroundingText = ''
+  surroundingText = '',
+  expectation?: ActivationLinkExpectation
 ): ActivationLinkVerdict {
   const url =
     typeof rawUrl === 'string'
@@ -164,10 +256,35 @@ export function scoreActivationLink(
       reasons: ['not-http-url'],
       hardReject: true,
       canAutoOpen: false,
+      structuralAutoOpen: false,
+      domainBound: false,
     };
   }
 
-  const hardUrlHit = HARD_REJECT_URL.test(url);
+  // B4 fix: evaluate the deny list against hostname + decoded pathname
+  // only. Query values are ordinary words half the time; scanning them
+  // made verdicts depend on encoding. A fully encoded pathname that fails
+  // to decode keeps its raw form (still hostname-checked).
+  let decodedPathname = parsed.pathname;
+  try {
+    decodedPathname = decodeURIComponent(parsed.pathname);
+  } catch {
+    /* keep raw pathname */
+  }
+  // Action-path override (B4 follow-up): providers genuinely host
+  // verification routes INSIDE deny-named sections
+  // (`/settings/verify?token=…`, `/help/verify?token=…`). A path segment
+  // deny must not veto a link that also carries an explicit action
+  // segment AND auth evidence — that combination never describes a
+  // footer/dashboard page. Host-level and brand rejects are unaffected.
+  const actionPathOverride =
+    DIRECT_ACTION_PATH_RE.test(parsed.pathname) &&
+    (hasAuthToken(url) || EXPLICIT_ACTION_QUERY_RE.test(`${parsed.search}${parsed.hash}`));
+  const hardUrlHit =
+    HARD_REJECT_HOST_OR_PATH.test(parsed.hostname) ||
+    HARD_REJECT_HOST_OR_PATH.test(decodedPathname) ||
+    HARD_REJECT_HOST_BRANDS.test(parsed.hostname) ||
+    (!actionPathOverride && HARD_REJECT_PATH_SEGMENTS.test(decodedPathname));
   const hardAnchorHit = HARD_REJECT_ANCHOR.test(anchorText);
   const emailLoginPath = EMAIL_LOGIN_PATH_RE.test(parsed.pathname);
   const pathStrongEarly = STRONG_PATH_RE.test(parsed.pathname) || emailLoginPath;
@@ -181,6 +298,8 @@ export function scoreActivationLink(
       reasons: ['hard-reject-marketing-or-footer'],
       hardReject: true,
       canAutoOpen: false,
+      structuralAutoOpen: false,
+      domainBound: false,
     };
   }
   if (hardUrlHit) {
@@ -190,6 +309,8 @@ export function scoreActivationLink(
       reasons: ['hard-reject-marketing-or-footer'],
       hardReject: true,
       canAutoOpen: false,
+      structuralAutoOpen: false,
+      domainBound: false,
     };
   }
 
@@ -294,7 +415,7 @@ export function scoreActivationLink(
 
   const hardReject = quality < 20 || cls === 'reject';
 
-  const canAutoOpen =
+  const structuralAutoOpen =
     !hardReject &&
     cls !== 'unknown' &&
     quality >= AUTO_OPEN_MIN_QUALITY &&
@@ -302,11 +423,27 @@ export function scoreActivationLink(
     (((DIRECT_ACTION_PATH_RE.test(parsed.pathname) || emailLoginPath) && (token || anchorStrong)) ||
       (anchorStrong && token && softPath));
 
+  // Domain binding (2026-11-12 security fix): a structurally perfect
+  // activation link is NOT auto-openable until its destination is bound to a
+  // host the caller vouches for. The caller (decision layer) supplies the
+  // account's signup site / the sites the user is waiting on. Without an
+  // expectation the gate fails closed — a phishing email that is perfectly
+  // consistent with itself (sender domain == link domain) must never be
+  // opened automatically just because the URL looks like a verification link.
+  const trustedHosts = expectation?.trustedHosts ?? [];
+  const domainBound =
+    trustedHosts.length > 0 && hostMatchesExpectation(parsed.hostname, trustedHosts);
+  if (!domainBound) {
+    reasons.push(trustedHosts.length > 0 ? 'domain-not-expected' : 'no-domain-expectation');
+  }
+
+  const canAutoOpen = structuralAutoOpen && domainBound;
+
   if (hardReject) {
     cls = 'reject';
   }
 
-  return { cls, quality, reasons, hardReject, canAutoOpen };
+  return { cls, quality, reasons, hardReject, canAutoOpen, structuralAutoOpen, domainBound };
 }
 
 /** True if this link is good enough to *select* as the email's action link */
@@ -323,9 +460,29 @@ export function isSelectableActivationLink(
 export function isAutoOpenableActivationLink(
   url: string | { url?: string } | null | undefined,
   anchorText = '',
-  surroundingText = ''
+  surroundingText = '',
+  expectation?: ActivationLinkExpectation
 ): boolean {
-  return scoreActivationLink(url, anchorText, surroundingText).canAutoOpen;
+  const verdict = scoreActivationLink(url, anchorText, surroundingText, expectation);
+  // Without an expectation the caller has not established a domain binding
+  // yet, so only the structural proof can be judged here. Those callers must
+  // bind the destination themselves (see canAutoOpenVerificationLink in
+  // services/emailServices/privacy.ts) before opening the link.
+  return expectation ? verdict.canAutoOpen : verdict.structuralAutoOpen;
+}
+
+/**
+ * True if the link is safe to auto-open AND points at one of the expected
+ * hosts. Unlike the structural predicate above this always fails closed when
+ * the destination is not bound to an expected host.
+ */
+export function isAutoOpenableActivationLinkForHosts(
+  url: string | { url?: string } | null | undefined,
+  anchorText = '',
+  surroundingText = '',
+  trustedHosts: string[]
+): boolean {
+  return scoreActivationLink(url, anchorText, surroundingText, { trustedHosts }).canAutoOpen;
 }
 
 /** Dual-engine consensus: pick the better activation link. */

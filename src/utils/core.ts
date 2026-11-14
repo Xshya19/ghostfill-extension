@@ -3,6 +3,8 @@
  * Single consolidated source of truth for environment-agnostic and DOM helper utilities.
  */
 
+import { getDomain as getRegistrableDomain } from 'tldts';
+
 import { createLogger } from './logger';
 
 const log = createLogger('Core');
@@ -536,27 +538,6 @@ export function formatEntropy(entropy: number): string {
 
 // ─── Domain & URL Utilities ──────────────────────────────────────────
 
-const COMMON_SECOND_LEVEL_TLDS = new Set<string>([
-  'co.uk',
-  'co.jp',
-  'co.kr',
-  'co.nz',
-  'co.za',
-  'co.in',
-  'com.au',
-  'com.br',
-  'com.cn',
-  'com.mx',
-  'com.tr',
-  'com.tw',
-  'com.sg',
-  'org.uk',
-  'ac.uk',
-  'gov.uk',
-  'ne.jp',
-  'or.jp',
-]);
-
 export function isIpLiteral(s: string): boolean {
   return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(s) || /^\[.*\]$/.test(s);
 }
@@ -566,15 +547,8 @@ export function rootDomain(hostname: string): string {
   if (!host || isIpLiteral(host)) {
     return host;
   }
-  const parts = host.split('.').filter(Boolean);
-  if (parts.length <= 2) {
-    return parts.join('.');
-  }
-  const tld = parts.slice(-2).join('.');
-  if (COMMON_SECOND_LEVEL_TLDS.has(tld) && parts.length >= 3) {
-    return parts.slice(-3).join('.');
-  }
-  return tld;
+  // Private suffixes isolate tenants such as separate github.io accounts.
+  return getRegistrableDomain(host, { allowPrivateDomains: true }) ?? host;
 }
 
 export function isSubdomainOf(hostname: string, root: string): boolean {
@@ -1598,7 +1572,7 @@ export const APP_VERSION = (() => {
   try {
     return chrome.runtime.getManifest().version;
   } catch {
-    return '1.1.5';
+    return '1.1.2';
   }
 })();
 

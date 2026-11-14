@@ -17,21 +17,13 @@ import {
   X,
   ExternalLink,
 } from 'lucide-react';
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 import { IS_GMAIL_ENABLED } from '../../../config/buildProfile';
-import {
-  TEMP_EMAIL_PROVIDER_OPTIONS,
-  isSelectableEmailProvider,
-} from '../../../services/emailServices/providerRegistry';
 import { storageService } from '../../../services/storageService';
 import { UserSettings } from '../../../types/storage.types';
-import {
-  compareExtensionVersions,
-  readAutomaticUpdateState,
-  type AutomaticUpdateState,
-} from '../../../utils/automaticUpdateState';
 import { APP_VERSION } from '../../../utils/core';
+import { requestCustomEndpointPermission } from '../../../utils/customEndpoint';
 import {
   checkExtensionUpdate,
   EXTENSION_RELEASES_URL,
@@ -52,29 +44,74 @@ const log = createLogger('OptionsTabs');
 const GMAIL_CLIENT_ID_PATTERN = /^[a-z0-9-]+\.apps\.googleusercontent\.com$/i;
 const SAVE_FEEDBACK_MS = 1800;
 
-// Single source of truth for the preferred-service picker. Keep labels concise
-// so the selected value and the in-DOM CustomSelect panel remain readable.
-// Exported so OptionsApp can validate membership before saving (a service the
-// backend zod enum doesn't know would otherwise fail as "backend rejected").
-export const EMAIL_SERVICE_OPTIONS = TEMP_EMAIL_PROVIDER_OPTIONS;
+// Single source of truth for the preferred-service picker. Brand names stay
+// untranslated; the short taglines next to them are localized through the
+// emailService* keys. Exported ids feed OptionsApp's validation before saving
+// (a service the backend zod enum doesn't know would otherwise fail as
+// "backend rejected").
+export const EMAIL_SERVICE_IDS = [
+  'driftz',
+  'catchmail',
+  'throwawaymail',
+  'mailtm',
+  'tempmailplus',
+  'maildrop',
+  'guerrilla',
+  'yopmail',
+  'mailgw',
+  'mailinator',
+  'custom',
+] as const;
 
-const EMAIL_SERVICE_LABELS: Readonly<Record<string, string>> = {
+export type EmailServiceId = (typeof EMAIL_SERVICE_IDS)[number];
+
+const EMAIL_SERVICE_BRAND_NAMES: Readonly<Record<EmailServiceId, string>> = {
+  driftz: 'Driftz.net',
   catchmail: 'CatchMail.io',
   throwawaymail: 'Throwawaymail.app',
   mailtm: 'Mail.tm',
   tempmailplus: 'Tempmail.plus',
   maildrop: 'Maildrop.cc',
-  driftz: 'Driftz.net',
   guerrilla: 'Guerrilla Mail',
   yopmail: 'YOPmail',
   mailgw: 'Mail.gw',
   mailinator: 'Mailinator',
-  custom: 'Custom service',
+  custom: 'Custom',
 };
 
+const EMAIL_SERVICE_PICKER_LABEL_KEYS: Readonly<Record<EmailServiceId, string>> = {
+  driftz: 'emailServiceDriftz',
+  catchmail: 'emailServiceCatchmail',
+  throwawaymail: 'emailServiceThrowawaymail',
+  mailtm: 'emailServiceMailTm',
+  tempmailplus: 'emailServiceTempmailPlus',
+  maildrop: 'emailServiceMaildrop',
+  guerrilla: 'emailServiceGuerrilla',
+  yopmail: 'emailServiceYopmail',
+  mailgw: 'emailServiceMailGw',
+  mailinator: 'emailServiceMailinator',
+  custom: 'emailServiceCustom',
+};
+
+export interface EmailServiceOption {
+  value: string;
+  label: string;
+}
+
+/** Localized picker options (brands stay as-is; taglines are translated). */
+export const getEmailServiceOptions = (): EmailServiceOption[] =>
+  EMAIL_SERVICE_IDS.map((value) => ({
+    value,
+    label: t(EMAIL_SERVICE_PICKER_LABEL_KEYS[value]),
+  }));
+
+/** Localized plain name for health pills; brands stay as-is. */
 export const getEmailServiceLabel = (service: string): string =>
-  EMAIL_SERVICE_LABELS[service.toLowerCase()] ?? service;
-const HEALTH_PROVIDER_NAMES = new Set<string>(EMAIL_SERVICE_OPTIONS.map(({ value }) => value));
+  service.toLowerCase() === 'custom'
+    ? t('emailServiceCustomPlain')
+    : (EMAIL_SERVICE_BRAND_NAMES[service.toLowerCase() as EmailServiceId] ?? service);
+
+const HEALTH_PROVIDER_NAMES = new Set<string>(EMAIL_SERVICE_IDS);
 
 // ─── Provider Health Meter Component ──────────────────────────────────────────
 interface ProviderHealthStatus {
@@ -83,7 +120,6 @@ interface ProviderHealthStatus {
   consecutiveFailures: number;
   avgResponseTime: number;
   circuitOpen: boolean;
-  totalRequests?: number;
 }
 
 export const ProviderHealthMeter: React.FC = () => {
@@ -102,13 +138,13 @@ export const ProviderHealthMeter: React.FC = () => {
               return;
             }
             if (chrome.runtime.lastError) {
-              setError(chrome.runtime.lastError.message ?? 'Unable to reach service worker');
+              setError(chrome.runtime.lastError.message ?? t('unableToReachServiceWorker'));
               setHealthData([]);
             } else if (res && res.success && Array.isArray(res.health)) {
               setHealthData(res.health);
               setError(null);
             } else {
-              setError('No provider data returned');
+              setError(t('healthNoProviderData'));
             }
             setLoading(false);
           });
@@ -116,11 +152,11 @@ export const ProviderHealthMeter: React.FC = () => {
           if (!isMounted) {
             return;
           }
-          setError(e instanceof Error ? e.message : 'Unknown error');
+          setError(e instanceof Error ? e.message : t('unknownError'));
           setLoading(false);
         }
       } else {
-        setError('Service worker unavailable');
+        setError(t('serviceWorkerUnavailable'));
         setLoading(false);
       }
     };
@@ -168,7 +204,7 @@ export const ProviderHealthMeter: React.FC = () => {
       <div className="provider-health-meter">
         <h3 className="health-title">{t('providerHealthTitle')}</h3>
         <p className="health-empty" role="alert">
-          Couldn&apos;t load provider status ({error}). GhostFill will retry automatically.
+          {t('healthLoadFailed', [error])}
         </p>
       </div>
     );
@@ -179,11 +215,13 @@ export const ProviderHealthMeter: React.FC = () => {
       <div className="provider-health-meter">
         <h3 className="health-title">{t('providerHealthTitle')}</h3>
         <div className="health-grid">
-          {EMAIL_SERVICE_OPTIONS.map(({ value }) => (
-            <div key={value} className="health-pill-card" title="No calls recorded yet">
+          {EMAIL_SERVICE_IDS.map((value) => (
+            <div key={value} className="health-pill-card" title={t('healthNoCallsRecorded')}>
               <div className="health-provider-info">
                 <span className="health-provider-name">{getEmailServiceLabel(value)}</span>
-                <span className="health-status-label health-status-unknown">Not checked</span>
+                <span className="health-status-label health-status-unknown">
+                  {t('healthNotChecked')}
+                </span>
               </div>
               <div className="health-status-group">
                 <span className="health-percent">—</span>
@@ -192,7 +230,7 @@ export const ProviderHealthMeter: React.FC = () => {
             </div>
           ))}
         </div>
-        <p className="health-hint">Generate an email to start tracking live status.</p>
+        <p className="health-hint">{t('healthHintGenerateEmail')}</p>
       </div>
     );
   }
@@ -204,7 +242,6 @@ export const ProviderHealthMeter: React.FC = () => {
         {healthData
           .filter((h) => HEALTH_PROVIDER_NAMES.has(h.name))
           .map((h) => {
-            const unchecked = h.totalRequests === 0;
             const pct = Math.round(h.successRate * 100);
             const isWarning =
               (h.successRate <= 0.7 && h.successRate > 0 && !h.circuitOpen) ||
@@ -212,25 +249,30 @@ export const ProviderHealthMeter: React.FC = () => {
             const isDead = h.circuitOpen || h.successRate === 0;
 
             let statusClass = 'health-status-good';
-            let statusText = 'Healthy';
-            if (unchecked) {
-              statusClass = 'health-status-unknown';
-              statusText = 'Not checked';
-            } else if (isDead) {
+            let statusText = t('healthHealthy');
+            if (isDead) {
               statusClass = 'health-status-dead';
-              statusText = h.circuitOpen ? 'Cooling down' : 'Offline';
+              statusText = h.circuitOpen ? t('healthCoolingDown') : t('healthOffline');
             } else if (isWarning) {
               statusClass = 'health-status-warning';
-              statusText = 'Degraded';
+              statusText = t('healthDegraded');
             }
 
             const ms = Math.round(h.avgResponseTime);
-            const detail = unchecked
-              ? `${h.name}: no API calls recorded yet`
-              : `${h.name}: ${statusText} · ${pct}% success · ~${ms}ms avg` +
-                (h.consecutiveFailures > 0
-                  ? ` · ${h.consecutiveFailures} failure${h.consecutiveFailures === 1 ? '' : 's'} in a row`
-                  : '');
+            const detail =
+              t('healthDetail', [
+                getEmailServiceLabel(h.name),
+                statusText,
+                String(pct),
+                String(ms),
+              ]) +
+              (h.consecutiveFailures > 0
+                ? ` · ${
+                    h.consecutiveFailures === 1
+                      ? t('healthFailureOne', [String(h.consecutiveFailures)])
+                      : t('healthFailureMany', [String(h.consecutiveFailures)])
+                  }`
+                : '');
 
             return (
               <div key={h.name} className="health-pill-card" title={detail}>
@@ -242,7 +284,7 @@ export const ProviderHealthMeter: React.FC = () => {
                 </div>
                 <div className="health-status-group">
                   <span className="health-percent" aria-label={detail}>
-                    {unchecked ? '—' : `${pct}% · ${ms}ms`}
+                    {pct}% · {ms}ms
                   </span>
                   <span className={`health-dot ${statusClass}`} aria-hidden="true" />
                 </div>
@@ -250,9 +292,6 @@ export const ProviderHealthMeter: React.FC = () => {
             );
           })}
       </div>
-      <p className="health-hint">
-        Status reflects API requests. Email delivery is not verified by an empty inbox.
-      </p>
     </div>
   );
 };
@@ -556,6 +595,25 @@ export const EmailTab: React.FC<EmailTabProps> = ({
   onFieldBlur,
 }) => {
   const [gmailClientId, setGmailClientId] = useState('');
+  const [endpointAccess, setEndpointAccess] = useState<{
+    endpoint: string;
+    message: string;
+  } | null>(null);
+  const allowEndpointAccess = async (): Promise<void> => {
+    const endpoint = settings.customDomainUrl?.trim() ?? '';
+    try {
+      const granted = await requestCustomEndpointPermission(endpoint);
+      setEndpointAccess({
+        endpoint,
+        message: granted ? t('endpointAccessAllowed') : t('endpointAccessDenied'),
+      });
+    } catch (error) {
+      setEndpointAccess({
+        endpoint,
+        message: error instanceof Error ? error.message : t('endpointAccessFailed'),
+      });
+    }
+  };
   const [gmailClientIdError, setGmailClientIdError] = useState<string | null>(null);
   const [gmailClientIdSaveStatus, setGmailClientIdSaveStatus] = useState<
     'idle' | 'saving' | 'saved'
@@ -583,7 +641,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
     setGmailClientIdError(null);
 
     if (nextClientId && !GMAIL_CLIENT_ID_PATTERN.test(nextClientId)) {
-      setGmailClientIdError('Enter a valid Google OAuth client ID.');
+      setGmailClientIdError(t('gmailClientIdInvalid'));
       return;
     }
 
@@ -595,7 +653,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
       window.setTimeout(() => setGmailClientIdSaveStatus('idle'), SAVE_FEEDBACK_MS);
     } catch {
       setGmailClientIdSaveStatus('idle');
-      setGmailClientIdError('Could not save Gmail Client ID.');
+      setGmailClientIdError(t('gmailClientIdSaveFailed'));
     }
   };
 
@@ -613,26 +671,19 @@ export const EmailTab: React.FC<EmailTabProps> = ({
               htmlFor="preferred-email-service"
               className="fs-15-fw-600"
             >
-              Preferred email service
+              {t('preferredEmailService')}
             </label>
-            <p>Choose the default service for generating temporary emails</p>
-            {!isSelectableEmailProvider(settings.preferredEmailService) && (
-              <p role="status">
-                {getEmailServiceLabel(settings.preferredEmailService)} is no longer offered for new
-                inboxes. Choose a listed service. Saved inboxes can still be opened.
-              </p>
-            )}
+            <p>{t('preferredEmailServiceDescription')}</p>
             {settings.preferredEmailService === 'driftz' && (
               <p>
-                Driftz uses <strong>bbjbinin.mn</strong> by default. GhostFill checks the returned
-                domain and retries when needed. Site acceptance can vary.
+                {t('driftzNotePart1')} <strong>bbjbinin.mn</strong> {t('driftzNotePart2')}
               </p>
             )}
           </div>
           <div className="email-service-select">
             <CustomSelect
               id="preferred-email-service"
-              ariaLabel="Preferred email service"
+              ariaLabel={t('preferredEmailService')}
               ariaDescribedBy={
                 fieldHasError('preferredEmailService') ? 'preferred-email-service-error' : undefined
               }
@@ -644,7 +695,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
                   val as UserSettings['preferredEmailService']
                 )
               }
-              options={[...EMAIL_SERVICE_OPTIONS]}
+              options={getEmailServiceOptions()}
             />
           </div>
           {fieldHasError('preferredEmailService') && (
@@ -657,15 +708,19 @@ export const EmailTab: React.FC<EmailTabProps> = ({
         <ProviderHealthMeter />
 
         {settings.preferredEmailService === 'custom' && (
-          <div className="custom-domain-container" role="group" aria-label="Custom domain settings">
+          <div
+            className="custom-domain-container"
+            role="group"
+            aria-label={t('customDomainSettingsAriaLabel')}
+          >
             <div className="setting-item vertical-group">
               <div className="setting-info w-full">
-                <label htmlFor="custom-domain">Custom email domain</label>
+                <label htmlFor="custom-domain">{t('customEmailDomain')}</label>
               </div>
               <input
                 id="custom-domain"
                 type="text"
-                placeholder="e.g. mail.private.com"
+                placeholder={t('customEmailDomainPlaceholder')}
                 value={settings.customDomain || ''}
                 onChange={(e) => onSettingChange('customDomain', e.target.value)}
                 onBlur={() => onFieldBlur('customDomain')}
@@ -681,7 +736,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
 
             <div className="setting-item vertical-group">
               <div className="setting-info w-full">
-                <label htmlFor="custom-domain-url">API endpoint (Cloudflare Worker)</label>
+                <label htmlFor="custom-domain-url">{t('apiEndpointLabel')}</label>
               </div>
               <input
                 id="custom-domain-url"
@@ -700,21 +755,32 @@ export const EmailTab: React.FC<EmailTabProps> = ({
                   {getFieldError('customDomainUrl')}
                 </span>
               )}
+              <p className="setting-description">{t('customEndpointAllowHint')}</p>
+              <Button
+                variant="ghost"
+                disabled={!settings.customDomainUrl?.trim()}
+                onClick={() => void allowEndpointAccess()}
+              >
+                {t('allowEndpointAccess')}
+              </Button>
+              <span role="status" aria-live="polite">
+                {endpointAccess && endpointAccess.endpoint === settings.customDomainUrl?.trim()
+                  ? endpointAccess.message
+                  : ''}
+              </span>
             </div>
 
             <div className="setting-item vertical-group">
               <div className="setting-info w-full">
                 <label htmlFor="custom-domain-key">
-                  API key
-                  <span className="security-note">
-                    Stored in memory only (cleared on extension reload)
-                  </span>
+                  {t('apiKeyLabel')}
+                  <span className="security-note">{t('apiKeySecurityNote')}</span>
                 </label>
               </div>
               <input
                 id="custom-domain-key"
                 type="password"
-                placeholder="Secret token"
+                placeholder={t('secretTokenPlaceholder')}
                 value={sessionSecrets.customDomainKey}
                 onChange={(e) => onSessionSecretChange('customDomainKey', e.target.value)}
                 autoComplete="off"
@@ -733,14 +799,14 @@ export const EmailTab: React.FC<EmailTabProps> = ({
           <div className="setting-item vertical-group">
             <div className="setting-info w-full">
               <label htmlFor="gmail-client-id" className="fs-15-fw-600">
-                OAuth client ID
+                {t('oauthClientId')}
                 <span
                   className={`client-id-status-badge ${gmailClientId ? 'client-id-status-badge--configured' : 'client-id-status-badge--none'}`}
                 >
-                  {gmailClientId ? 'Configured' : 'Not configured'}
+                  {gmailClientId ? t('clientIdConfigured') : t('clientIdNotConfigured')}
                 </span>
               </label>
-              <p>Required for Gmail API sign-in.</p>
+              <p>{t('gmailClientIdHint')}</p>
             </div>
             <input
               id="gmail-client-id"
@@ -779,7 +845,9 @@ export const EmailTab: React.FC<EmailTabProps> = ({
                 disabled={gmailClientIdSaveStatus === 'saving'}
               >
                 {gmailClientIdSaveStatus === 'saved' ? <Check size={16} /> : <Save size={16} />}
-                <span>{gmailClientIdSaveStatus === 'saved' ? 'Saved' : 'Save'}</span>
+                <span>
+                  {gmailClientIdSaveStatus === 'saved' ? t('saveStateSaved') : t('saveAction')}
+                </span>
               </Button>
               <Button
                 type="button"
@@ -796,13 +864,13 @@ export const EmailTab: React.FC<EmailTabProps> = ({
                     })
                     .catch(() => {
                       setGmailClientIdSaveStatus('idle');
-                      setGmailClientIdError('Could not clear Gmail Client ID.');
+                      setGmailClientIdError(t('gmailClientIdClearFailed'));
                     });
                 }}
                 disabled={gmailClientIdSaveStatus === 'saving'}
               >
                 <X size={16} />
-                <span>Clear</span>
+                <span>{t('clearAction')}</span>
               </Button>
             </div>
           </div>
@@ -817,23 +885,23 @@ export const EmailTab: React.FC<EmailTabProps> = ({
         <div className="setting-item">
           <div className="setting-info">
             <label id="auto-check-label" htmlFor="auto-check-inbox">
-              Auto-check inbox
+              {t('autoCheckInbox')}
             </label>
-            <p>Automatically check for new emails in the background</p>
+            <p>{t('autoCheckInboxDescription')}</p>
           </div>
           <ToggleSwitch
             id="auto-check-inbox"
             checked={settings.autoCheckInbox}
             onChange={(checked) => onSettingChange('autoCheckInbox', checked)}
-            ariaLabel="Auto-check inbox"
+            ariaLabel={t('autoCheckInbox')}
             ariaLabelledBy="auto-check-label"
           />
         </div>
 
         <div className="setting-item">
           <div className="setting-info">
-            <label htmlFor="check-interval">Check interval</label>
-            <p>Used when auto-check is on. Enter 3–60 seconds.</p>
+            <label htmlFor="check-interval">{t('checkInterval')}</label>
+            <p>{t('checkIntervalDescription')}</p>
           </div>
           <input
             id="check-interval"
@@ -849,7 +917,7 @@ export const EmailTab: React.FC<EmailTabProps> = ({
             }
           />
           <span id="check-interval-desc" className="sr-only">
-            Enter a value between 3 and 60 seconds
+            {t('checkIntervalAriaDescription')}
           </span>
           {fieldHasError('checkIntervalSeconds') && (
             <span id="check-interval-error" className="field-error" role="alert">
@@ -874,11 +942,14 @@ interface AutomationTabProps {
   onSettingChange: (key: keyof UserSettings, value: UserSettings[keyof UserSettings]) => void;
 }
 
+// Descriptions are intentionally empty: the Chrome-enumerated command
+// description (manifest-provided, English) wins when available; otherwise the
+// localized default renders via COMMAND_LABEL_KEYS below.
 const FALLBACK_COMMANDS: CommandInfo[] = [
-  { name: '_execute_action', shortcut: 'Alt+Shift+E', description: 'Open GhostFill' },
-  { name: 'generate-email', shortcut: 'Alt+Shift+M', description: 'Generate new email' },
-  { name: 'generate-password', shortcut: 'Alt+Shift+G', description: 'Generate new password' },
-  { name: 'auto-fill', shortcut: 'Alt+Shift+F', description: 'Auto-fill current form' },
+  { name: '_execute_action', shortcut: 'Alt+Shift+E', description: '' },
+  { name: 'generate-email', shortcut: 'Alt+Shift+M', description: '' },
+  { name: 'generate-password', shortcut: 'Alt+Shift+G', description: '' },
+  { name: 'auto-fill', shortcut: 'Alt+Shift+F', description: '' },
 ];
 
 const COMMAND_ORDER = ['_execute_action', 'generate-email', 'generate-password', 'auto-fill'];
@@ -912,7 +983,7 @@ export const AutomationTab: React.FC<AutomationTabProps> = ({ settings, onSettin
           const info = byName.get(name);
           return {
             name,
-            shortcut: info?.shortcut || 'Not assigned',
+            shortcut: info?.shortcut || t('notAssigned'),
             description: info?.description || '',
           } as CommandInfo;
         });
@@ -996,7 +1067,7 @@ export const AutomationTab: React.FC<AutomationTabProps> = ({ settings, onSettin
                 }
               }}
             >
-              Configure in Chrome
+              {t('configureInChrome')}
             </Button>
           </div>
           <div className="shortcut-list">
@@ -1138,7 +1209,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
     }
 
     if (file.size > MAX_SETTINGS_IMPORT_BYTES) {
-      onError?.('Settings files must be smaller than 256 KB.');
+      onError?.(t('settingsFileTooLarge'));
       e.target.value = '';
       return;
     }
@@ -1159,7 +1230,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
       } catch (err) {
         log.error('Import failed:', err);
         if (onError) {
-          onError('Invalid settings file. Please select a valid GhostFill settings JSON.');
+          onError(t('invalidSettingsFile'));
         } else {
           log.warn('Invalid settings file. Please select a valid GhostFill settings JSON.');
         }
@@ -1167,7 +1238,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
     };
     reader.onerror = () => {
       if (onError) {
-        onError('GhostFill could not read that settings file.');
+        onError(t('settingsFileUnreadable'));
       } else {
         log.warn('GhostFill could not read that settings file.');
       }
@@ -1181,16 +1252,14 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
 
   return (
     <div>
-      <SettingsSection id="debugging" title="Debugging" icon={<Info size={18} />}>
+      <SettingsSection id="debugging" title={t('debuggingSection')} icon={<Info size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
             <label id="debug-mode-label" htmlFor="debug-mode" className="fs-15-fw-600">
-              Debug logging
+              {t('debugLogging')}
             </label>
-            <p>
-              Show detailed GhostFill activity in the browser console. Changes save automatically.
-            </p>
-            <p>Logs stay in your browser. Sensitive values are masked.</p>
+            <p>{t('debugLoggingDescription')}</p>
+            <p>{t('debugLoggingMaskedNote')}</p>
           </div>
           <ToggleSwitch
             id="debug-mode"
@@ -1201,18 +1270,25 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
         </div>
         <div className="setting-item vertical-group">
           <div className="setting-info w-full">
-            <span className="fs-15-fw-600">View the logs</span>
+            <span className="fs-15-fw-600">{t('viewTheLogs')}</span>
             <p>
-              For inbox and verification activity, open <code>chrome://extensions</code>, find
-              GhostFill, and click <strong>service worker</strong>. Select <strong>Console</strong>.
+              {t('debugLogsInboxPart1')}
+              <code>chrome://extensions</code>
+              {t('debugLogsInboxPart2')}
+              <strong>service worker</strong>
+              {t('debugLogsInboxPart3')}
+              <strong>Console</strong>.
             </p>
             <p>
-              For field detection and filling, open Developer Tools on the signup page (F12 on
-              Windows/Linux, Option + Command + I on macOS) and select <strong>Console</strong>.
+              {t('debugLogsFieldPart1')}
+              <strong>Console</strong>.
             </p>
             <p>
-              Filter for <code>GhostFill</code>, enable <strong>Preserve log</strong>, then repeat
-              the action that failed. Turn debug logging off when finished.
+              {t('debugLogsFilterPart1')}
+              <code>GhostFill</code>
+              {t('debugLogsFilterPart2')}
+              <strong>Preserve log</strong>
+              {t('debugLogsFilterPart3')}
             </p>
           </div>
         </div>
@@ -1221,20 +1297,20 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
       <SettingsSection id="backup" title={t('backupRestoreSection')} icon={<Save size={18} />}>
         <div className="setting-item">
           <div className="setting-info">
-            <span className="fs-15-fw-600">Export settings</span>
-            <p>Download your current settings as a JSON file</p>
+            <span className="fs-15-fw-600">{t('exportSettings')}</span>
+            <p>{t('exportSettingsDescription')}</p>
           </div>
           <Button size="sm" type="button" onClick={handleExport}>
-            Export
+            {t('exportAction')}
           </Button>
         </div>
 
         <div className="setting-item">
           <div className="setting-info">
             <span className="fs-15-fw-600" id="import-settings-label">
-              Import settings
+              {t('importSettings')}
             </span>
-            <p>Load settings from a previously exported JSON file</p>
+            <p>{t('importSettingsDescription')}</p>
           </div>
           <button
             type="button"
@@ -1242,7 +1318,7 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
             onClick={() => fileInputRef.current?.click()}
             aria-labelledby="import-settings-label"
           >
-            Import
+            {t('importAction')}
           </button>
           <input
             ref={fileInputRef}
@@ -1259,38 +1335,38 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
 
       <SettingsSection
         id="danger-zone"
-        title="Danger zone"
+        title={t('dangerZone')}
         icon={<AlertTriangle size={18} />}
         variant="danger"
       >
         <div className="setting-item">
           <div className="setting-info">
-            <span className="fs-15-fw-600">Reset settings</span>
-            <p>Restore all settings to their defaults</p>
+            <span className="fs-15-fw-600">{t('resetSettingsAction')}</span>
+            <p>{t('resetSettingsDescription')}</p>
           </div>
           <Button
             size="sm"
             onClick={onReset}
             type="button"
-            aria-label="Reset all settings to defaults"
+            aria-label={t('resetAllSettingsAriaLabel')}
           >
-            Reset
+            {t('resetLabel')}
           </Button>
         </div>
 
         <div className="setting-item">
           <div className="setting-info">
-            <span className="fs-15-fw-600">Clear all data</span>
-            <p>Delete all emails, passwords, and history</p>
+            <span className="fs-15-fw-600">{t('clearAllDataAction')}</span>
+            <p>{t('deleteAllDataDescription')}</p>
           </div>
           <Button
             variant="danger"
             size="sm"
             onClick={onClearData}
             type="button"
-            aria-label="Clear all stored data"
+            aria-label={t('clearAllStoredDataAriaLabel')}
           >
-            Clear data
+            {t('clearData')}
           </Button>
         </div>
       </SettingsSection>
@@ -1299,108 +1375,6 @@ export const AdvancedTab: React.FC<AdvancedTabProps> = ({
 };
 
 // ─── About Tab Component ─────────────────────────────────────────────────────
-const AutomaticUpdateStatus: React.FC<{ version: string }> = ({ version }) => {
-  const [state, setState] = useState<AutomaticUpdateState | null>(null);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
-  const request = useRef<AbortController | null>(null);
-
-  const refresh = useCallback(async () => {
-    request.current?.abort();
-    const controller = new AbortController();
-    request.current = controller;
-    setLoading(true);
-    setError('');
-    try {
-      const result = await readAutomaticUpdateState(controller.signal);
-      if (!controller.signal.aborted) {
-        setState(result);
-      }
-    } catch {
-      if (!controller.signal.aborted) {
-        setState(null);
-        setError(
-          'Status could not be read. Run Enable Automatic Updates.cmd in your installed folder again.'
-        );
-      }
-    } finally {
-      if (!controller.signal.aborted) {
-        setLoading(false);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!IS_GMAIL_ENABLED) {
-      setLoading(false);
-      return;
-    }
-    void refresh();
-    const onFocus = () => {
-      void refresh();
-    };
-    window.addEventListener('focus', onFocus);
-    return () => {
-      request.current?.abort();
-      window.removeEventListener('focus', onFocus);
-    };
-  }, [refresh]);
-
-  const pending = state && compareExtensionVersions(state.installedVersion, version) > 0;
-  const status = loading
-    ? 'Reading update status…'
-    : error ||
-      (state?.autoUpdateEnabled
-        ? 'Enabled: Windows checks for stable releases every six hours while you are signed in.'
-        : 'Automatic updates are off. Enable them once from your installed folder.');
-
-  return (
-    <div className="setting-item">
-      <div className="setting-info">
-        <span className="fs-15-fw-600">Automatic updates on Windows</span>
-        {IS_GMAIL_ENABLED ? (
-          <>
-            <p role="status" aria-live="polite">
-              {status}
-            </p>
-            {state?.lastCheckedAt && (
-              <p>Last helper check: {new Date(state.lastCheckedAt).toLocaleString()}</p>
-            )}
-            {pending && <p>Version {state.installedVersion} is installed and ready to load.</p>}
-            <p>
-              Open your installed GhostFill folder and double-click{' '}
-              <strong>Enable Automatic Updates.cmd</strong>. The helper verifies and installs newer
-              packages. GhostFill reloads after verification work is idle and its popup and Options
-              page are closed. Refresh your signup tabs afterward.
-            </p>
-            <p>
-              To turn it off, run <strong>Disable Automatic Updates.cmd</strong> in the same folder.
-            </p>
-          </>
-        ) : (
-          <p>
-            Automatic updates need the full build used by GitHub Releases. Use a matching
-            temporary-email-only package to update this installation.
-          </p>
-        )}
-      </div>
-      {IS_GMAIL_ENABLED && (
-        <Button
-          type="button"
-          size="sm"
-          disabled={loading}
-          aria-busy={loading}
-          onClick={() => {
-            void refresh();
-          }}
-        >
-          {loading ? 'Reading…' : 'Refresh status'}
-        </Button>
-      )}
-    </div>
-  );
-};
-
 export const AboutTab: React.FC = () => {
   const version = APP_VERSION;
   const [storageUsage, setStorageUsage] = useState<{ used: number; quota: number } | null>(null);
@@ -1428,7 +1402,7 @@ export const AboutTab: React.FC = () => {
         setUpdateError(
           error instanceof Error && !/fetch|network|timeout|timed out/i.test(error.message)
             ? error.message
-            : 'Could not check for updates. Check your connection and try again.'
+            : t('updateCheckFailed')
         );
       }
     } finally {
@@ -1439,14 +1413,14 @@ export const AboutTab: React.FC = () => {
   };
 
   const updateMessage = checkingUpdate
-    ? 'Checking the latest published release…'
+    ? t('checkingUpdateMessage')
     : update?.status === 'available'
-      ? `Version ${update.version} is available. You have ${version}.`
+      ? t('updateAvailable', [update.version, version])
       : update?.status === 'ahead'
-        ? `Your installed version ${version} is newer than the published version ${update.version}.`
+        ? t('updateAhead', [version, update.version])
         : update?.status === 'current'
-          ? `Version ${version} matches the latest published release.`
-          : 'Check for a newer published version of GhostFill.';
+          ? t('updateCurrent', [version])
+          : t('updateCheckPrompt');
 
   useEffect(() => {
     if (typeof chrome === 'undefined' || !chrome.storage?.local?.getBytesInUse) {
@@ -1480,12 +1454,12 @@ export const AboutTab: React.FC = () => {
       <SettingsSection id="extension-info" title="GhostFill" icon={<Info size={18} />}>
         <div className="about-hero">
           <div className="about-version">
-            <span className="version-badge">Version {version}</span>
+            <span className="version-badge">{t('versionBadge', [version])}</span>
           </div>
           <p className="about-tagline">
-            Disposable emails, secure passwords, and automatic OTP detection & fill.
+            {t('aboutTagline')}
             <br />
-            Free and open source.
+            {t('aboutTaglineSub')}
           </p>
         </div>
 
@@ -1496,7 +1470,7 @@ export const AboutTab: React.FC = () => {
             rel="noopener noreferrer"
             className="about-link"
           >
-            Source on GitHub
+            {t('sourceOnGithub')}
             <ExternalLink size={16} aria-hidden="true" />
           </a>
           <a
@@ -1505,7 +1479,7 @@ export const AboutTab: React.FC = () => {
             rel="noopener noreferrer"
             className="about-link"
           >
-            Report an issue
+            {t('reportAnIssue')}
             <ExternalLink size={16} aria-hidden="true" />
           </a>
           <a
@@ -1514,16 +1488,20 @@ export const AboutTab: React.FC = () => {
             rel="noopener noreferrer"
             className="about-link"
           >
-            MIT license
+            {t('mitLicense')}
             <ExternalLink size={16} aria-hidden="true" />
           </a>
         </div>
       </SettingsSection>
 
-      <SettingsSection id="extension-updates" title="Updates" icon={<ExternalLink size={18} />}>
+      <SettingsSection
+        id="extension-updates"
+        title={t('updatesSection')}
+        icon={<ExternalLink size={18} />}
+      >
         <div className="setting-item">
           <div className="setting-info">
-            <span className="fs-15-fw-600">Installed version {version}</span>
+            <span className="fs-15-fw-600">{t('installedVersion', [version])}</span>
             <p role="status" aria-live="polite">
               {updateMessage}
             </p>
@@ -1536,7 +1514,7 @@ export const AboutTab: React.FC = () => {
             aria-busy={checkingUpdate}
             onClick={handleCheckUpdate}
           >
-            {checkingUpdate ? 'Checking…' : 'Check for updates'}
+            {checkingUpdate ? t('checkingEllipsis') : t('checkForUpdates')}
           </Button>
         </div>
         <div className="about-links">
@@ -1548,7 +1526,7 @@ export const AboutTab: React.FC = () => {
                 rel="noopener noreferrer"
                 className="about-link"
               >
-                Download version {update.version} ZIP
+                {t('downloadVersionZip', [update.version])}
                 <ExternalLink size={16} aria-hidden="true" />
               </a>
               <a
@@ -1557,7 +1535,7 @@ export const AboutTab: React.FC = () => {
                 rel="noopener noreferrer"
                 className="about-link"
               >
-                Download matching checksum
+                {t('downloadMatchingChecksum')}
                 <ExternalLink size={16} aria-hidden="true" />
               </a>
             </>
@@ -1568,38 +1546,28 @@ export const AboutTab: React.FC = () => {
             rel="noopener noreferrer"
             className="about-link"
           >
-            View published releases
+            {t('viewPublishedReleases')}
             <ExternalLink size={16} aria-hidden="true" />
           </a>
         </div>
         <div className="setting-item">
           <div className="setting-info">
-            <span className="fs-15-fw-600">Apply the update, then reload</span>
-            <p>
-              On Windows, open your installed GhostFill folder and run Update GhostFill.cmd. To use
-              a downloaded package, save the ZIP and checksum together, then drag the ZIP onto that
-              shortcut. On macOS or Linux, replace the files in the same installed folder with the
-              matching built package.
-            </p>
-            {!IS_GMAIL_ENABLED && (
-              <p>
-                This is the temporary-email-only build. Ask your maintainer for the same build
-                profile; published ZIPs include Gmail.
-              </p>
-            )}
-            <p>
-              Finish your current signup before reloading. Reload loads files already on your
-              computer; refresh your signup tabs afterward.
-            </p>
+            <span className="fs-15-fw-600">{t('applyUpdateThenReload')}</span>
+            <p>{t('applyUpdateInstructions')}</p>
+            {!IS_GMAIL_ENABLED && <p>{t('tempEmailOnlyBuildNote')}</p>}
+            <p>{t('reloadAfterSignupNote')}</p>
           </div>
           <Button type="button" size="sm" onClick={() => chrome.runtime.reload()}>
-            Reload after updating
+            {t('reloadAfterUpdating')}
           </Button>
         </div>
-        <AutomaticUpdateStatus version={version} />
       </SettingsSection>
 
-      <SettingsSection id="storage-usage" title="Storage usage" icon={<Database size={18} />}>
+      <SettingsSection
+        id="storage-usage"
+        title={t('storageUsageSection')}
+        icon={<Database size={18} />}
+      >
         {storageUsage ? (
           <div className="storage-monitor">
             <div className="storage-bar-wrapper">
@@ -1610,13 +1578,16 @@ export const AboutTab: React.FC = () => {
                 aria-valuenow={Math.round(usagePercent)}
                 aria-valuemin={0}
                 aria-valuemax={100}
-                aria-label="Storage usage"
-                aria-valuetext={`${formatBytes(storageUsage.used)} of ${formatBytes(storageUsage.quota)} used`}
+                aria-label={t('storageUsageSection')}
+                aria-valuetext={t('storageUsedOfQuota', [
+                  formatBytes(storageUsage.used),
+                  formatBytes(storageUsage.quota),
+                ])}
               />
             </div>
             <div className="storage-stats">
-              <span>{formatBytes(storageUsage.used)} used</span>
-              <span>{formatBytes(storageUsage.quota)} total</span>
+              <span>{t('storageUsedLabel', [formatBytes(storageUsage.used)])}</span>
+              <span>{t('storageTotalLabel', [formatBytes(storageUsage.quota)])}</span>
             </div>
           </div>
         ) : (

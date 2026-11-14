@@ -4,15 +4,131 @@
 //  Zero dependencies on other service modules
 // ═══════════════════════════════════════════════════════════════════════
 
+import { truncate } from '../../utils/core';
+
 // ───────────────────────────────────────────────────────────────────────
 //  HTML PROCESSING UTILITIES
 // ───────────────────────────────────────────────────────────────────────
 
 /**
+ * Strip quoted reply/forward history from email text (2026-11-12).
+ *
+ * Why: quoted history repeats OLD verification codes. The extractor then
+ * preferred the quoted copy of a stale code over the fresh one (observed:
+ * with the history placed above the fresh message, the OLD code was
+ * returned at 49% instead of the new one).
+ *
+ * Design — a small state machine over the message lines:
+ * - `>`-prefixed lines are quoted history, always removed;
+ * - a history marker ("On <date> … wrote:", Outlook/Gmail forward
+ *   separators) opens a quoted region;
+ * - inside a quoted region, header lines (From:/Sent:/To:/Subject:) and
+ *   the quoted body are removed;
+ * - a quoted region RESUMES at a paragraph break followed by a line that
+ *   carries its own code label — that is a fresh message continuing after
+ *   the quote (common in threads where the quote is on top). Without this
+ *   resume rule the fresh code would be deleted along with the quote.
+ *
+ * Everything the stripper cannot classify with confidence is left in
+ * place, and callers should verify that the stripped text still contains
+ * a code before trusting it (see `hasFreshCodeSignal`).
+ */
+export function stripQuotedHistory(text: string): string {
+  if (!text) {
+    return text;
+  }
+
+  const lines = text.split('\n');
+  const kept: string[] = [];
+
+  // "On Mar 3, 2026, Alice <a@b.c> wrote:" — reply quoting.
+  const wroteMarker = /^\s*On\b.{0,160}\bwrote:\s*$/i;
+  // "-----Original Message-----" / "---------- Forwarded message ----------"
+  const forwardMarker = /^\s*-{3,}\s*(?:original message|forwarded message|forwarded)\s*-{3,}\s*$/i;
+  // Quoted-message header lines (Outlook style).
+  const quoteHeader = /^\s*(?:from|sent|to|cc|subject|date|reply-to)\s*:/i;
+  // A line that mentions a code — used for the resume rule.
+  const codeLabel = /(?:code|otp|pin|passcode|verification|one[-\s]?time|security)/i;
+
+  let inQuote = false;
+  let quoteHadCode = false;
+  let pendingBlank = false;
+
+  for (const line of lines) {
+    // Quoted lines are history in every layout. The upstream text
+    // sanitizer encodes ">" as "&gt;", so both spellings must match.
+    if (/^\s*(?:>|&gt;){1,}/i.test(line)) {
+      if (codeLabel.test(line)) {
+        quoteHadCode = true;
+      }
+      continue;
+    }
+
+    if (inQuote) {
+      if (quoteHeader.test(line)) {
+        continue; // header of the quoted message
+      }
+      if (!line.trim()) {
+        pendingBlank = true;
+        continue; // blank line inside the quoted message
+      }
+      // Resume point: a fresh paragraph carrying its own code label,
+      // separated from the quoted message by a blank line.
+      if (pendingBlank && quoteHadCode && codeLabel.test(line)) {
+        inQuote = false;
+        pendingBlank = false;
+        kept.push(line);
+        continue;
+      }
+      if (codeLabel.test(line)) {
+        quoteHadCode = true;
+      }
+      pendingBlank = false;
+      continue; // still inside the quoted message
+    }
+
+    if (wroteMarker.test(line) || forwardMarker.test(line)) {
+      inQuote = true;
+      quoteHadCode = false;
+      pendingBlank = false;
+      continue; // the marker itself is not content
+    }
+
+    kept.push(line);
+  }
+
+  return kept.join('\n');
+}
+
+/**
+ * True when the text still carries a code statement of its own
+ * ("your code is 482913", "verification code: 482913", …).
+ *
+ * Used to decide whether the quote-stripped text may be trusted: if the
+ * fresh part of a message has no code, stripping would delete the ONLY
+ * code in the message, so the original text must be used instead.
+ */
+export function hasFreshCodeSignal(text: string): boolean {
+  if (!text) {
+    return false;
+  }
+  // A code statement looks like a label followed (on the same line) by a
+  // short token that contains at least one digit: "code is 555666",
+  // "verification code: 482913", "otp 1234". Requiring a digit keeps
+  // prose like "code is below" from being mistaken for a code.
+  const re = /\b(?:code|otp|pin|passcode)\b[^\n]{0,12}?([0-9A-Za-z]{4,10})\b/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (/[0-9]/.test(m[1] ?? '')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Decode HTML entities to their character equivalents
  */
-import { truncate } from '../../utils/core';
-
 export function decodeHtmlEntities(html: string): string {
   if (!html) {
     return '';

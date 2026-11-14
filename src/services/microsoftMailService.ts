@@ -33,17 +33,40 @@ let cachedToken: string | null = null;
 let tokenExpiresAt: number | null = null;
 let silentAuthBlockedUntil = 0;
 let lastAuthFailure: string | null = null;
+let authGeneration = 0;
+const pendingAuthWrites = new Set<Promise<void>>();
+
+async function persistAuthWrite(write: Promise<void>): Promise<void> {
+  pendingAuthWrites.add(write);
+  try {
+    await write;
+  } finally {
+    pendingAuthWrites.delete(write);
+  }
+}
+
+function requireCurrentAuth(generation: number): void {
+  if (generation !== authGeneration) {
+    throw new Error('Microsoft connection was cleared');
+  }
+}
 
 // ---------- Helpers ---------------------------------------------------------
 
 function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) {return error.message;}
+  if (error instanceof Error) {
+    return error.message;
+  }
   return String(error ?? '');
 }
 
 function normalizeOAuthError(message: string): Error {
   const lower = message.toLowerCase();
-  if (lower.includes('did not approve') || lower.includes('cancel') || lower.includes('access_denied')) {
+  if (
+    lower.includes('did not approve') ||
+    lower.includes('cancel') ||
+    lower.includes('access_denied')
+  ) {
     return new Error('user_cancelled');
   }
   return new Error(message || 'Microsoft OAuth flow failed');
@@ -69,7 +92,9 @@ function parseTokenFromRedirect(redirectUrl: string): { token: string; expiresIn
   const params = new URLSearchParams(hash);
   const token = params.get('access_token');
   const expiresIn = parseInt(params.get('expires_in') ?? '3600', 10);
-  if (!token) {throw new Error('No access_token in Microsoft redirect URL');}
+  if (!token) {
+    throw new Error('No access_token in Microsoft redirect URL');
+  }
   return { token, expiresIn };
 }
 
@@ -95,20 +120,28 @@ async function buildMicrosoftAuthUrl(interactive: boolean): Promise<string> {
 }
 
 async function launchMicrosoftOAuth(interactive: boolean): Promise<string> {
+  const generation = authGeneration;
   const url = await buildMicrosoftAuthUrl(interactive);
+  requireCurrentAuth(generation);
   return new Promise<string>((resolve, reject) => {
     chrome.identity.launchWebAuthFlow({ url, interactive }, (redirectUrl) => {
       if (chrome.runtime.lastError) {
         reject(normalizeOAuthError(chrome.runtime.lastError.message ?? 'Microsoft OAuth failed'));
         return;
       }
-      if (!redirectUrl) { reject(new Error('No redirect URL from Microsoft OAuth')); return; }
+      if (!redirectUrl) {
+        reject(new Error('No redirect URL from Microsoft OAuth'));
+        return;
+      }
       try {
+        requireCurrentAuth(generation);
         const { token, expiresIn } = parseTokenFromRedirect(redirectUrl);
         cachedToken = token;
         tokenExpiresAt = Date.now() + expiresIn * 1000 - TOKEN_EXPIRY_BUFFER_MS;
         resolve(token);
-      } catch (e) { reject(e); }
+      } catch (e) {
+        reject(e);
+      }
     });
   });
 }
@@ -122,10 +155,15 @@ export interface MicrosoftProfile {
 }
 
 async function fetchMicrosoftProfile(token: string): Promise<MicrosoftProfile> {
-  const resp = await fetch(`${MICROSOFT_GRAPH_BASE}/me?$select=id,displayName,mail,userPrincipalName`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!resp.ok) {throw new Error(`Microsoft Graph /me error: ${resp.status}`);}
+  const resp = await fetch(
+    `${MICROSOFT_GRAPH_BASE}/me?$select=id,displayName,mail,userPrincipalName`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+  if (!resp.ok) {
+    throw new Error(`Microsoft Graph /me error: ${resp.status}`);
+  }
   const data = (await resp.json()) as {
     id: string;
     displayName?: string;
@@ -133,13 +171,16 @@ async function fetchMicrosoftProfile(token: string): Promise<MicrosoftProfile> {
     userPrincipalName?: string;
   };
   const email = (data.mail ?? data.userPrincipalName ?? '').toLowerCase();
-  if (!email) {throw new Error('No email returned from Microsoft Graph /me');}
+  if (!email) {
+    throw new Error('No email returned from Microsoft Graph /me');
+  }
   return { userId: data.id, email, displayName: data.displayName ?? email };
 }
 
 // ---------- Token Acquisition -----------------------------------------------
 
 export async function ensureMicrosoftToken(interactive = false): Promise<string> {
+  const generation = authGeneration;
   // tokenExpiresAt already includes the expiry buffer (set at acquisition).
   if (cachedToken && tokenExpiresAt && Date.now() < tokenExpiresAt) {
     return cachedToken;
@@ -151,11 +192,20 @@ export async function ensureMicrosoftToken(interactive = false): Promise<string>
   try {
     token = await launchMicrosoftOAuth(interactive);
   } catch (err) {
-    if (!interactive) {recordAuthFailure(err);}
+    if (!interactive && generation === authGeneration) {
+      recordAuthFailure(err);
+    }
     throw err;
   }
-  try { await chrome.storage.session.set({ msAccessToken: token, msTokenExpiry: tokenExpiresAt }); }
-  catch { /* ignore */ }
+  requireCurrentAuth(generation);
+  try {
+    await persistAuthWrite(
+      chrome.storage.session.set({ msAccessToken: token, msTokenExpiry: tokenExpiresAt })
+    );
+  } catch {
+    /* ignore */
+  }
+  requireCurrentAuth(generation);
   clearAuthBackoff();
   return token;
 }
@@ -163,18 +213,31 @@ export async function ensureMicrosoftToken(interactive = false): Promise<string>
 // ---------- Public Connect / Disconnect -------------------------------------
 
 export async function connectMicrosoft(): Promise<MicrosoftProfile> {
+  const generation = authGeneration;
   const token = await ensureMicrosoftToken(true);
   const profile = await fetchMicrosoftProfile(token);
-  await storageService.set('microsoftConnected', true);
-  await storageService.set('microsoftConnectedAt', Date.now());
-  await storageService.set('microsoftProfile', profile);
+  requireCurrentAuth(generation);
+  await persistAuthWrite(storageService.set('microsoftConnected', true));
+  requireCurrentAuth(generation);
+  await persistAuthWrite(storageService.set('microsoftConnectedAt', Date.now()));
+  requireCurrentAuth(generation);
+  await persistAuthWrite(storageService.set('microsoftProfile', profile));
+  requireCurrentAuth(generation);
   log.info('Microsoft Mail connected', { email: profile.email });
   return profile;
 }
 
 export async function disconnectMicrosoft(): Promise<void> {
-  cachedToken = null; tokenExpiresAt = null; clearAuthBackoff();
-  try { await chrome.storage.session.remove(['msAccessToken', 'msTokenExpiry']); } catch { /* ignore */ }
+  authGeneration++;
+  cachedToken = null;
+  tokenExpiresAt = null;
+  clearAuthBackoff();
+  await Promise.allSettled([...pendingAuthWrites]);
+  try {
+    await chrome.storage.session.remove(['msAccessToken', 'msTokenExpiry']);
+  } catch {
+    /* ignore */
+  }
   await storageService.set('microsoftConnected', false);
   await storageService.set('microsoftConnectedAt', null);
   await storageService.set('microsoftProfile', null);
@@ -183,7 +246,8 @@ export async function disconnectMicrosoft(): Promise<void> {
 }
 
 export async function getMicrosoftConnectionStatus(): Promise<{
-  connected: boolean; email: string | null;
+  connected: boolean;
+  email: string | null;
 }> {
   const connected = (await storageService.get('microsoftConnected')) === true;
   const profile = (await storageService.get('microsoftProfile')) as MicrosoftProfile | null;
@@ -194,11 +258,14 @@ export async function getMicrosoftConnectionStatus(): Promise<{
 
 export async function getMicrosoftAlias(website: string, baseEmail?: string): Promise<string> {
   const base =
-    baseEmail ??
-    ((await storageService.get('microsoftProfile')) as MicrosoftProfile | null)?.email;
-  if (!base) {throw new Error('Microsoft base email not available. Connect Outlook first.');}
+    baseEmail ?? ((await storageService.get('microsoftProfile')) as MicrosoftProfile | null)?.email;
+  if (!base) {
+    throw new Error('Microsoft base email not available. Connect Outlook first.');
+  }
   const [localPart, domainPart] = base.split('@');
-  if (!localPart || !domainPart) {throw new Error(`Invalid Microsoft base email: ${base}`);}
+  if (!localPart || !domainPart) {
+    throw new Error(`Invalid Microsoft base email: ${base}`);
+  }
   const tag = getAliasPlusSuffix(website);
   return `${localPart}+ghostfill-${tag}@${domainPart}`;
 }
@@ -219,18 +286,19 @@ export async function searchMicrosoftInbox(
   alias: string,
   sinceMs?: number
 ): Promise<GmailMessage[]> {
+  const generation = authGeneration;
   const token = await ensureMicrosoftToken(false);
+  requireCurrentAuth(generation);
 
   // OData string escaping: a single quote in the alias must be doubled,
   // otherwise Graph 400s and the poller serves silent [].
   const safeAlias = alias.replace(/'/g, "''");
   const aliasFilter = `toRecipients/any(r:r/emailAddress/address eq '${safeAlias}')`;
-  const sinceFilter = sinceMs
-    ? ` and receivedDateTime gt ${new Date(sinceMs).toISOString()}`
-    : '';
+  const sinceFilter = sinceMs ? ` and receivedDateTime gt ${new Date(sinceMs).toISOString()}` : '';
   const filter = encodeURIComponent(`${aliasFilter}${sinceFilter}`);
 
-  const select = 'id,conversationId,from,toRecipients,subject,receivedDateTime,bodyPreview,body,isRead';
+  const select =
+    'id,conversationId,from,toRecipients,subject,receivedDateTime,bodyPreview,body,isRead';
   const url = `${MICROSOFT_GRAPH_BASE}/me/messages?$filter=${filter}&$select=${select}&$top=${MAX_MESSAGES}&$orderby=receivedDateTime desc`;
 
   // ConsistencyLevel: eventual is required by Graph for $filter over
@@ -239,6 +307,7 @@ export async function searchMicrosoftInbox(
   const resp = await fetch(url, {
     headers: { Authorization: `Bearer ${token}`, ConsistencyLevel: 'eventual' },
   });
+  requireCurrentAuth(generation);
   if (resp.status === 401) {
     // Revoked/expired token: drop the cache now instead of serving [] until
     // the nominal expiry. Next poll re-authenticates (or backs off loudly).
@@ -297,8 +366,9 @@ export async function searchMicrosoftInbox(
 // ---------- Session storage restore on SW restart ---------------------------
 
 if (typeof chrome !== 'undefined' && chrome.storage?.session) {
+  const generation = authGeneration;
   chrome.storage.session.get(['msAccessToken', 'msTokenExpiry'], (res) => {
-    if (res?.msAccessToken) {
+    if (generation === authGeneration && res?.msAccessToken) {
       cachedToken = res.msAccessToken as string;
       tokenExpiresAt = (res.msTokenExpiry as number) ?? null;
       log.info('Restored Microsoft access token from session storage');

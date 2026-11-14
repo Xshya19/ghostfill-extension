@@ -55,7 +55,7 @@ interface MenuItemSpec {
   id: string;
   title: string;
   parentId?: string;
-  contexts: NonNullable<chrome.contextMenus.CreateProperties['contexts']>;
+  contexts: chrome.contextMenus.ContextType[];
   type?: 'normal' | 'separator';
   enabled?: boolean;
   visible?: boolean;
@@ -447,7 +447,7 @@ async function reconcile(items: MenuItemSpec[]): Promise<void> {
       chrome.contextMenus.create({
         id: item.id,
         title: item.title,
-        ...(item.parentId === undefined ? {} : { parentId: item.parentId }),
+        parentId: item.parentId,
         contexts: item.contexts,
         type: item.type ?? 'normal',
         enabled: item.enabled ?? true,
@@ -466,7 +466,7 @@ async function reconcile(items: MenuItemSpec[]): Promise<void> {
  * Update a single menu item without full rebuild.
  * Falls back to full rebuild if the update fails.
  */
-function safeUpdate(id: string, updates: Parameters<typeof chrome.contextMenus.update>[1]): void {
+function safeUpdate(id: string, updates: chrome.contextMenus.UpdateProperties): void {
   try {
     chrome.contextMenus.update(id, updates, () => {
       if (chrome.runtime.lastError) {

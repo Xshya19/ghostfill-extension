@@ -50,7 +50,7 @@
 
 import { storageService } from '../services/storageService';
 import { contentFingerprint } from '../utils/contentFingerprint';
-import { sleep } from '../utils/core';
+import { isWebUrl, openSafeUrl, sleep } from '../utils/core';
 import { getSenderEmail, getSenderLabel } from '../utils/emailIdentity';
 import { getRandomString } from '../utils/encryption';
 import { createLogger } from '../utils/logger';
@@ -242,12 +242,8 @@ export function initNotifications(): void {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async function restoreDedupCache(): Promise<void> {
-  const generation = notificationSessionGeneration;
   try {
     const data = await chrome.storage.session.get('notif_dedup');
-    if (generation !== notificationSessionGeneration) {
-      return;
-    }
     if (data.notif_dedup && typeof data.notif_dedup === 'object') {
       const entries = data.notif_dedup as Record<string, DedupEntry>;
       const now = Date.now();
@@ -283,7 +279,6 @@ export function destroyNotifications(): void {
     return;
   }
   initialized = false;
-  notificationSessionGeneration++;
 
   // Clear all active notification timers
   for (const [, active] of activeNotifications) {
@@ -471,21 +466,18 @@ function registerDefaultActions(): void {
   });
 
   // ── Open link button ──
+  // data.link comes straight from the mail body — never open it unvalidated.
+  // Only http(s) URLs are allowed through; anything else is refused (L3).
   registerButtonAction('open-link', async (_notifId, data) => {
     const link = data.link as string | undefined;
-    if (link) {
-      try {
-        await chrome.tabs.create({ url: link, active: true });
-      } catch {
-        // Fallback: copy link to clipboard
-        await copyToClipboard(link);
-        await notify({
-          category: 'success',
-          title: 'Link Copied',
-          message: 'Activation link copied to clipboard',
-        });
-      }
+    if (!link) {
+      return;
     }
+    if (!isWebUrl(link)) {
+      log.warn('Refused to open notification link: unsafe or non-http(s) URL');
+      return;
+    }
+    openSafeUrl(link);
   });
 
   // ── OTP notification click → open popup ──
@@ -595,6 +587,34 @@ export async function notifyLinkActivated(url: string, code?: string): Promise<s
   });
 }
 
+/**
+ * "The link is ready — tap to open" fallback (2026-11-12).
+ *
+ * When the extension cannot open the verification link itself (tab
+ * creation failed, the page refused to load, the auto-open was declined),
+ * the user must not be left hunting for the link in the message reader:
+ * the notification carries an "Open link" button that opens the exact
+ * destination with one tap.
+ */
+export async function notifyLinkReady(
+  url: string,
+  title = 'Verification link ready',
+  message = 'Tap to open the verification link.'
+): Promise<string> {
+  return notify({
+    category: 'link',
+    title,
+    message,
+    priority: 2,
+    requireInteraction: true,
+    buttons: [
+      { title: 'Open link', action: 'open-link' },
+      { title: 'Dismiss', action: 'dismiss' },
+    ],
+    data: { link: url },
+  });
+}
+
 export async function notifySuccess(title: string, message: string): Promise<string> {
   return notify({
     category: 'success',
@@ -628,16 +648,10 @@ export async function notifySystem(title: string, message: string): Promise<stri
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async function notify(spec: NotificationSpec): Promise<string> {
-  // Capture the inbox session before any asynchronous gate. Capturing it only
-  // at enqueue time lets a request from the old inbox enter the new session.
-  const sessionGeneration = notificationSessionGeneration;
   log.debug(`Notification requested: ${spec.category} - ${spec.title}`);
 
   // ── Gate 1: Global notifications enabled? ──
   const globalEnabled = await areNotificationsEnabled();
-  if (sessionGeneration !== notificationSessionGeneration) {
-    return '';
-  }
   log.debug('Global enabled', globalEnabled);
   if (!globalEnabled) {
     metrics.suppressed++;
@@ -646,9 +660,6 @@ async function notify(spec: NotificationSpec): Promise<string> {
 
   // ── Gate 2: Category enabled? ──
   const catSettings = await getCategorySettings(spec.category);
-  if (sessionGeneration !== notificationSessionGeneration) {
-    return '';
-  }
   log.debug('Category settings', catSettings);
   if (!catSettings.enabled) {
     metrics.suppressed++;
@@ -673,9 +684,6 @@ async function notify(spec: NotificationSpec): Promise<string> {
 
   // ── Gate 5: Permission ──
   const permitted = await checkPermission();
-  if (sessionGeneration !== notificationSessionGeneration) {
-    return '';
-  }
   log.debug('Permission', permitted);
   if (!permitted) {
     metrics.suppressed++;
@@ -697,7 +705,7 @@ async function notify(spec: NotificationSpec): Promise<string> {
     sendQueue.push({
       id,
       spec,
-      sessionGeneration,
+      sessionGeneration: notificationSessionGeneration,
       resolve,
       reject,
       attempt: 0,
@@ -727,10 +735,6 @@ async function drain(): Promise<void> {
 }
 
 async function processQueueItem(item: QueueItem): Promise<void> {
-  if (item.sessionGeneration !== notificationSessionGeneration) {
-    item.resolve('');
-    return;
-  }
   const { id, spec } = item;
   const t0 = performance.now();
 
@@ -752,10 +756,6 @@ async function processQueueItem(item: QueueItem): Promise<void> {
     recordHistory(id, spec);
     item.resolve(id);
   } catch (error) {
-    if (item.sessionGeneration !== notificationSessionGeneration) {
-      item.resolve('');
-      return;
-    }
     item.attempt++;
 
     if (item.attempt <= CONFIG.MAX_RETRIES) {
@@ -789,7 +789,7 @@ function sendNotification(id: string, spec: NotificationSpec): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const iconUrl = chrome.runtime.getURL(spec.iconPath ?? DEFAULT_ICON_PATH);
 
-    const options: chrome.notifications.NotificationCreateOptions = {
+    const options: chrome.notifications.NotificationOptions<true> = {
       type: 'basic',
       iconUrl,
       title: spec.title,

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+build/
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+scripts/

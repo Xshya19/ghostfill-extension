@@ -1,8 +1,6 @@
 # Recording a safe GhostFill demonstration
 
-The README links to a **47-second illustrated quick-start video** (`ghostfill-quickstart.mp4`) covering installation, signup, verification, and automatic Windows updates. It uses generated demo frames, has readable captions in the video and a separate WebVTT file, and makes no claim of live email delivery. Rebuild it with `python docs/demo/build-walkthrough.py` after installing Pillow and FFmpeg. The older 19-second showcase remains available in the README's Preview section.
-
-No live screen recording was produced for this tutorial. The removed historical GIF showed a personalised browser profile and must not be reused. Follow the steps below when recording a real session.
+The README includes an illustrated walkthrough and a cropped, redacted copy of the supplied screen recording (`ghostfill-screen-recording.gif`). The recording shows an earlier interface and does not demonstrate receiving a verification email. Keep the original raw GIF, which contains a personalised browser profile and saved account details, out of public assets.
 
 ## Preparation
 

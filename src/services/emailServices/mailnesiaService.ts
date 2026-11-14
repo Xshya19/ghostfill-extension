@@ -48,7 +48,7 @@ export class MailnesiaService {
   async getMessages(fullEmail: string, signal?: AbortSignal): Promise<Email[]> {
     try {
       const [login] = fullEmail.split('@');
-      
+
       // Mailnesia provides an RSS feed for easy parsing
       const response = await fetchWithTimeout(
         `${BASE_URL}/rss/${encodeURIComponent(login || '')}`,
@@ -61,32 +61,38 @@ export class MailnesiaService {
       throwIfRetryableStatus(response, 'Mailnesia getMessages');
 
       const xmlText = await response.text();
-      
+
       // Simple regex parser for RSS since DOMParser isn't available in service workers
       const items: any[] = [];
       const itemRegex = /<item>([\s\S]*?)<\/item>/g;
       let match;
-      
+
       while ((match = itemRegex.exec(xmlText)) !== null) {
         const itemContent = match[1];
-        
-        const titleMatch = /<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>|<title>([\s\S]*?)<\/title>/.exec(itemContent || '');
-        const descMatch = /<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>|<description>([\s\S]*?)<\/description>/.exec(itemContent || '');
+
+        const titleMatch =
+          /<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>|<title>([\s\S]*?)<\/title>/.exec(
+            itemContent || ''
+          );
+        const descMatch =
+          /<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>|<description>([\s\S]*?)<\/description>/.exec(
+            itemContent || ''
+          );
         const linkMatch = /<link>([\s\S]*?)<\/link>/.exec(itemContent || '');
         const pubDateMatch = /<pubDate>([\s\S]*?)<\/pubDate>/.exec(itemContent || '');
-        
+
         const title = (titleMatch?.[1] || titleMatch?.[2] || 'No Subject').trim();
         const description = (descMatch?.[1] || descMatch?.[2] || '').trim();
         const link = (linkMatch?.[1] || '').trim();
         const pubDate = (pubDateMatch?.[1] || '').trim();
-        
+
         // Extract sender from title (Mailnesia formats title as "Sender: Subject")
         let from = 'Unknown Sender';
         let subject = title;
         if (title.includes(':')) {
-           const parts = title.split(':');
-           from = parts[0]?.trim() || 'Unknown Sender';
-           subject = parts.slice(1).join(':').trim();
+          const parts = title.split(':');
+          from = parts[0]?.trim() || 'Unknown Sender';
+          subject = parts.slice(1).join(':').trim();
         }
 
         // Deterministic ID: Math.random() breaks dedup (new identity every
@@ -95,14 +101,14 @@ export class MailnesiaService {
         const msgId = link
           ? link.split('/').pop() || stableId(link, title, pubDate)
           : stableId(title, description, pubDate);
-        
+
         items.push({
-           id: msgId,
-           title: subject,
-           description,
-           link,
-           pubDate,
-           from
+          id: msgId,
+          title: subject,
+          description,
+          link,
+          pubDate,
+          from,
         });
       }
 

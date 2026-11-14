@@ -38,7 +38,8 @@ export const LINK_PATTERN_DATABASE: LinkPattern[] = [
     description: 'Signup verification',
   },
   {
-    pattern: /\/(?:email[-_]?verification|verify[-_]?email|confirm[-_]?email|email\/confirm|email\/action|auth\/action)/i,
+    pattern:
+      /\/(?:email[-_]?verification|verify[-_]?email|confirm[-_]?email|email\/confirm|email\/action|auth\/action)/i,
     name: 'email-confirmation-path',
     baseConfidence: 94,
     type: 'activation',
@@ -196,7 +197,8 @@ export const LINK_PATTERN_DATABASE: LinkPattern[] = [
   },
   {
     // /user/activate, /users/verify, /account/activate
-    pattern: /\/(?:user|users|account|accounts|member|members)\/(?:activate|verify|confirm|validate)(?:\/|$|\?)/i,
+    pattern:
+      /\/(?:user|users|account|accounts|member|members)\/(?:activate|verify|confirm|validate)(?:\/|$|\?)/i,
     name: 'user-activate-path',
     baseConfidence: 94,
     type: 'activation',
@@ -221,7 +223,8 @@ export const LINK_PATTERN_DATABASE: LinkPattern[] = [
   {
     // Hash-fragment tokens: /verify#token=abc123, /activate#code=xyz
     // Standard URL parsers strip fragments — we detect them here before normalisation
-    pattern: /#(?:token|code|access_token|id_token|invite_token|confirmation_token|magic_token|auth_token)=[A-Za-z0-9._%-]{8,}/i,
+    pattern:
+      /#(?:token|code|access_token|id_token|invite_token|confirmation_token|magic_token|auth_token)=[A-Za-z0-9._%-]{8,}/i,
     name: 'hash-fragment-token',
     baseConfidence: 90,
     type: 'activation',
@@ -244,4 +247,3 @@ export const LINK_PATTERN_DATABASE: LinkPattern[] = [
     description: 'Email link login path (Supabase/Firebase)',
   },
 ];
-

@@ -68,6 +68,7 @@ export type MessageAction =
   | 'RESET_STATE'
   // Polling pipeline state broadcasts (background → waiting tabs)
   | 'POLLING_STATE_CHANGE'
+  | 'CONNECTIVITY_CHANGE'
   // Event-driven polling triggers
   | 'REGISTRATION_FORM_SUBMITTED'
   // Diagnostic export
@@ -420,8 +421,14 @@ export interface ShowNotificationMessage extends BaseMessage {
   payload: {
     title: string;
     message: string;
-    type?: 'info' | 'success' | 'warning' | 'error';
+    type?: 'info' | 'success' | 'warning' | 'error' | 'link';
     duration?: number;
+    /**
+     * Destination for the "Open link" action (type: 'link'). Used when
+     * the extension could not open the verification link itself — the
+     * user still gets one tap to open it (2026-11-12).
+     */
+    link?: string;
   };
 }
 
@@ -559,6 +566,19 @@ export interface PollingStateChangeMessage extends BaseMessage {
   };
 }
 
+/**
+ * Connectivity broadcast (background → extension pages and content).
+ * `since` is the epoch ms at which the current state was first observed,
+ * so a freshly opened popup can show how long the outage has lasted.
+ */
+export interface ConnectivityChangeMessage extends BaseMessage {
+  action: 'CONNECTIVITY_CHANGE';
+  payload?: {
+    online: boolean;
+    since?: number;
+  };
+}
+
 export interface RegistrationFormSubmittedMessage extends BaseMessage {
   action: 'REGISTRATION_FORM_SUBMITTED';
   payload?: {
@@ -575,6 +595,19 @@ export interface GetDiagnosticReportMessage extends BaseMessage {
 export interface DiagnosticReportResponse {
   success: boolean;
   report?: unknown;
+  /** Delivery funnel counters (received → extracted → decided → delivered). */
+  funnel?: {
+    received: number;
+    extracted: number;
+    decided: number;
+    delivered: number;
+    dropped: number;
+    dropReasons: Record<string, number>;
+    lastAction: string | null;
+    lastDeliveryLatencyMs: number | null;
+    avgDeliveryLatencyMs: number | null;
+    lastTransitionAt: number | null;
+  };
   error?: string;
 }
 
@@ -871,7 +904,12 @@ export type ExtensionResponse =
   | MicrosoftGenerateAliasResponse
   | MicrosoftSearchInboxResponse
   | { success: boolean; alias?: string; error?: string }
-  | { success: boolean; health?: unknown[]; error?: string }
+  | {
+      success: boolean;
+      health?: unknown[];
+      connectivity?: { offline: boolean; since: number | null };
+      error?: string;
+    }
   | { success: boolean; isFresh?: boolean; error?: string }
   | { success: boolean; error?: string };
 

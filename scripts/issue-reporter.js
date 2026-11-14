@@ -46,16 +46,16 @@ function runCommand(cmd, description) {
 
 // Run all checks
 console.log('\n🟢 PART 1: TYPESCRIPT TYPE CHECK\n');
-const tsResult = runCommand('npm run type-check 2>&1 || true', 'TypeScript Type Check');
+const tsResult = runCommand('npm run type-check', 'TypeScript Type Check');
 
 console.log('\n🟢 PART 2: ESLINT CHECK\n');
-const lintResult = runCommand('npm run lint 2>&1 || true', 'ESLint Check');
+const lintResult = runCommand('npm run lint', 'ESLint Check');
 
 console.log('\n🟢 PART 3: BUILD CHECK\n');
-const buildResult = runCommand('npm run build 2>&1 || true', 'Build Check');
+const buildResult = runCommand('npm run build', 'Build Check');
 
 console.log('\n🟢 PART 4: TEST CHECK\n');
-const testResult = runCommand('npm test 2>&1 || echo "Tests skipped or failed"', 'Test Check');
+const testResult = runCommand('npm test', 'Test Check');
 
 // Summary
 console.log('\n' + '═'.repeat(80));

@@ -2,6 +2,7 @@ import { FormInputElement, FrameworkType } from '../../types/form.types';
 import { getRandomInt } from '../../utils/encryption';
 import { createLogger } from '../../utils/logger';
 import { FieldCandidate } from '../formDetector';
+import { setTrackedValue } from './nativeValue';
 
 export interface OTPFieldGroup {
   fields: HTMLInputElement[];
@@ -426,6 +427,33 @@ export class FieldSetter {
       return false;
     }
 
+    // Focus handling (2026-11-12): filling a form while the user works
+    // elsewhere used to move focus into the field, collapsing their
+    // selection and firing site focus handlers (tooltips, panels). The
+    // write itself does not need focus — only some site scripts do — so
+    // focus is restored after a BACKGROUND fill (the extension acted on
+    // its own). For a user-initiated fill the focus stays in the field
+    // they just filled, which is what they expect.
+    const previouslyFocused =
+      isBackgroundTab && document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+
+    const restoreFocus = (): void => {
+      if (
+        previouslyFocused &&
+        previouslyFocused !== element &&
+        previouslyFocused.isConnected &&
+        document.activeElement !== previouslyFocused
+      ) {
+        try {
+          previouslyFocused.focus({ preventScroll: true });
+        } catch {
+          /* focus restoration is best-effort */
+        }
+      }
+    };
+
     const strategies = [
       {
         name: 'NativeSetter',
@@ -475,6 +503,7 @@ export class FieldSetter {
         const success = await strategy.fn();
         if (success && element.value === value) {
           log.debug(`Field set via ${strategy.name}`);
+          restoreFocus();
           return true;
         }
       } catch (err) {
@@ -516,7 +545,7 @@ export class FieldSetter {
       element.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
 
       if (element.value !== value) {
-        element.focus();
+        element.focus({ preventScroll: true });
         element.select?.();
         document.execCommand('insertText', false, value);
       }
@@ -524,6 +553,7 @@ export class FieldSetter {
       const success = element.value === value;
       if (success) {
         log.debug('Field set via brute-force fallback');
+        restoreFocus();
         return true;
       }
     } catch (err) {
@@ -615,37 +645,15 @@ export class FieldSetter {
   }
 
   private static setViaNativeSetter(element: FormInputElement, value: string): boolean {
-    const proto =
-      element instanceof HTMLInputElement
-        ? HTMLInputElement.prototype
-        : HTMLTextAreaElement.prototype;
-    const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-    const oldValue = element.value;
-
-    if (!nativeSetter) {
-      element.value = value;
-      const tracker = (element as any)._valueTracker;
-      if (tracker) {
-        tracker.setValue(oldValue);
-      }
-      element.dispatchEvent(EventFactory.input(value));
-      element.dispatchEvent(new Event('change', { bubbles: true }));
-      return element.value === value;
-    }
-
-    element.focus();
-    nativeSetter.call(element, value);
-    const tracker = (element as any)._valueTracker;
-    if (tracker) {
-      tracker.setValue(oldValue);
-    }
-    element.dispatchEvent(EventFactory.input(value));
-    element.dispatchEvent(new Event('change', { bubbles: true }));
-    return element.value === value;
+    // Tracker-aware write (2026-11-12): the prototype setter + value
+    // tracker reset + input/change dispatch live in the shared helper so
+    // the OTP engine rolls back exactly the way a normal fill writes.
+    element.focus({ preventScroll: true });
+    return setTrackedValue(element, value);
   }
 
   private static setViaInputEvent(element: FormInputElement, value: string): void {
-    element.focus();
+    element.focus({ preventScroll: true });
     const proto =
       element instanceof HTMLInputElement
         ? HTMLInputElement.prototype
@@ -696,7 +704,7 @@ export class FieldSetter {
       if (!navigator.clipboard) {
         return false;
       }
-      element.focus();
+      element.focus({ preventScroll: true });
 
       const dataTransfer = new DataTransfer();
       dataTransfer.setData('text/plain', value);
@@ -813,7 +821,7 @@ export class FieldSetter {
         return false;
       }
 
-      editableEl.focus();
+      editableEl.focus({ preventScroll: true });
       editableEl.textContent = '';
       editableEl.textContent = value;
 
@@ -1147,7 +1155,7 @@ export class ExecCommandStrategy extends FillStrategy {
 
   async execute(element: HTMLInputElement | HTMLTextAreaElement, value: string): Promise<boolean> {
     try {
-      element.focus();
+      element.focus({ preventScroll: true });
       element.select();
       const success = document.execCommand('insertText', false, value);
       if (success) {
@@ -1186,7 +1194,7 @@ export class NativeSetterStrategy extends FillStrategy {
         return element.value === value;
       }
 
-      element.focus();
+      element.focus({ preventScroll: true });
       (nativeSetter as any).call(element, value);
       const tracker = (element as any)._valueTracker;
       if (tracker) {
@@ -1210,7 +1218,7 @@ export class InputEventSequenceStrategy extends FillStrategy {
 
   async execute(element: HTMLInputElement | HTMLTextAreaElement, value: string): Promise<boolean> {
     try {
-      element.focus();
+      element.focus({ preventScroll: true });
       const nativeSetter =
         element instanceof HTMLInputElement ? nativeInputSetter : nativeTextAreaSetter;
       const writeValue = (v: string) =>
@@ -1255,7 +1263,7 @@ export class ClipboardPasteStrategy extends FillStrategy {
 
   async execute(element: HTMLInputElement | HTMLTextAreaElement, value: string): Promise<boolean> {
     try {
-      element.focus();
+      element.focus({ preventScroll: true });
       const dataTransfer = new DataTransfer();
       dataTransfer.setData('text/plain', value);
       const pasteEvent = new ClipboardEvent('paste', {
@@ -1297,7 +1305,7 @@ export class ContentEditableStrategy extends FillStrategy {
         return false;
       }
 
-      editableEl.focus();
+      editableEl.focus({ preventScroll: true });
 
       // Select all and insert via execCommand to keep editor frameworks in sync
       try {

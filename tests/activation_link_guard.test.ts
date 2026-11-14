@@ -17,17 +17,34 @@ describe('activationLinkGuard — semantic (not brand-scripted)', () => {
     const v = scoreActivationLink(
       'https://any-service.example/verify?token=struct_token_abcdef123456',
       'Verify Email',
-      'please click to active your mail'
+      'please click to active your mail',
+      // The automatic open additionally needs a domain binding (2026-11-12):
+      // the destination has to be a host the caller vouches for.
+      { trustedHosts: ['any-service.example'] }
     );
     expect(v.hardReject).toBe(false);
     expect(v.cls).toBe('activation');
     expect(v.quality).toBeGreaterThanOrEqual(86);
+    expect(v.domainBound).toBe(true);
     expect(v.canAutoOpen).toBe(true);
+  });
+
+  it('refuses the automatic open when no destination can be vouched for', () => {
+    const v = scoreActivationLink(
+      'https://any-service.example/verify?token=struct_token_abcdef123456',
+      'Verify Email',
+      'please click to active your mail'
+    );
+    expect(v.structuralAutoOpen).toBe(true);
+    expect(v.domainBound).toBe(false);
+    expect(v.canAutoOpen).toBe(false);
   });
 
   it('requires strong evidence and HTTPS before opening a link automatically', () => {
     expect(isAutoOpenableActivationLink('https://service.example/verify')).toBe(false);
-    expect(isAutoOpenableActivationLink('https://service.example/auth?token=tracking123456')).toBe(false);
+    expect(isAutoOpenableActivationLink('https://service.example/auth?token=tracking123456')).toBe(
+      false
+    );
     expect(
       isAutoOpenableActivationLink('http://service.example/verify?token=verification123456')
     ).toBe(false);

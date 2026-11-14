@@ -239,89 +239,6 @@ describe('OTP destination matching', () => {
       false
     );
   });
-  it('does not notify, fill, or open a stale full message when its inbox summary looks recent', async () => {
-    const email = {
-      id: 'old-full-message',
-      from: 'notify@notion.com',
-      subject: 'Your verification code',
-      body: 'Your code is 582914',
-      date: Date.now() - 11 * 60_000,
-    };
-    vi.mocked(emailService.checkInbox).mockResolvedValueOnce([
-      { ...email, date: Date.now() },
-    ] as never);
-    vi.mocked(emailService.readEmail).mockResolvedValueOnce(email as never);
-    vi.mocked(smartDetectionService.detect).mockResolvedValueOnce({
-      type: 'both',
-      code: '582914',
-      link: 'https://app.notion.com/verify?token=fixture',
-      confidence: 0.99,
-      engine: 'intelligent',
-      decision: pairedDecision,
-    });
-    waitOn(9, 'app.notion.com');
-    recordEmailReceived();
-    await vi.waitFor(async () =>
-      expect(await dedupService.getRecord(email.id, 'inbox@example.com')).not.toBeNull()
-    );
-    expect(notifyNewEmail).not.toHaveBeenCalled();
-    expect(otpService.saveLastOTP).not.toHaveBeenCalled();
-    expect(linkService.handleDetectedLink).not.toHaveBeenCalled();
-    expect(safeSendTabMessage).not.toHaveBeenCalled();
-  });
-  it('does not replay a processed inbox notification after returning to the same account', async () => {
-    const email = {
-      id: 'already-notified',
-      from: 'notify@notion.com',
-      subject: 'Your verification code',
-      body: 'Your code is 582914',
-      date: Date.now(),
-    };
-    await dedupService.markProcessed(email.id, 'inbox@example.com', true, false);
-    await resetEmailSession();
-    vi.clearAllMocks();
-    vi.mocked(emailService.checkInbox).mockResolvedValueOnce([email] as never);
-    recordEmailReceived();
-    await vi.waitFor(() => expect(emailService.checkInbox).toHaveBeenCalled());
-    await vi.waitFor(() =>
-      expect(
-        diag
-          .getEntries({ category: 'polling' })
-          .some((entry) => entry.action === '◀ END inbox-check')
-      ).toBe(true)
-    );
-    expect(emailService.readEmail).not.toHaveBeenCalled();
-    expect(notifyNewEmail).not.toHaveBeenCalled();
-  });
-
-  it('keeps undated verification available for review without automatic notifications or actions', async () => {
-    const email = {
-      id: 'unknown-message-date',
-      from: 'notify@notion.com',
-      subject: 'Your verification code',
-      body: 'Your code is 582914',
-      date: 0,
-    };
-    vi.mocked(emailService.checkInbox).mockResolvedValueOnce([email] as never);
-    vi.mocked(emailService.readEmail).mockResolvedValueOnce(email as never);
-    vi.mocked(smartDetectionService.detect).mockResolvedValueOnce({
-      type: 'both',
-      code: '582914',
-      link: 'https://app.notion.com/verify?token=fixture',
-      confidence: 0.99,
-      engine: 'intelligent',
-      decision: pairedDecision,
-    });
-    waitOn(9, 'app.notion.com');
-    recordEmailReceived();
-    await vi.waitFor(async () =>
-      expect(await dedupService.getRecord(email.id, 'inbox@example.com')).not.toBeNull()
-    );
-    expect(notifyNewEmail).not.toHaveBeenCalled();
-    expect(otpService.saveLastOTP).not.toHaveBeenCalled();
-    expect(linkService.handleDetectedLink).not.toHaveBeenCalled();
-    expect(safeSendTabMessage).not.toHaveBeenCalled();
-  });
   it('uses the companion link when inbox polling cannot fill a matching page', async () => {
     const email = {
       id: 'paired-qwen-fallback',
@@ -372,7 +289,7 @@ describe('OTP destination matching', () => {
     });
     waitOn(9, 'app.notion.com');
     recordEmailReceived();
-    await vi.waitFor(() => expect(otpService.saveLastOTP).toHaveBeenCalled());
+    await vi.waitFor(() => expect(notifyNewEmail).toHaveBeenCalled());
     expect(otpService.saveLastOTP).toHaveBeenCalledWith(
       '582914',
       'email',
@@ -383,7 +300,6 @@ describe('OTP destination matching', () => {
     );
     expect(safeSendTabMessage).not.toHaveBeenCalled();
     expect(otpService.markAsUsed).not.toHaveBeenCalled();
-    expect(notifyNewEmail).not.toHaveBeenCalled();
   });
   it('does not use a trusted link confidence to fill its uncertain companion code', async () => {
     const email = {

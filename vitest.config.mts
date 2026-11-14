@@ -4,7 +4,6 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     pool: 'forks',
-    maxWorkers: 4,
     include: ['src/**/__tests__/**/*.test.ts', 'tests/**/*.test.ts'],
     environment: 'jsdom',
     globals: true,

@@ -88,7 +88,11 @@ export const OutlookLogo: React.FC<ProviderLogoProps> = ({ size = 20, className 
 /**
  * Crisp vector SVG for Zoho Mail
  */
-export const ZohoVectorLogo: React.FC<ProviderLogoProps> = ({ size = 24, className = '', style }) => (
+export const ZohoVectorLogo: React.FC<ProviderLogoProps> = ({
+  size = 24,
+  className = '',
+  style,
+}) => (
   <svg
     width={size}
     height={size}
@@ -116,19 +120,18 @@ export const ZohoVectorLogo: React.FC<ProviderLogoProps> = ({ size = 24, classNa
       strokeLinejoin="round"
     />
     {/* Accent shadow on right flap intersection */}
-    <path
-      d="M 68 60 L 73 57"
-      stroke="#2B5885"
-      strokeWidth="7.5"
-      strokeLinecap="round"
-    />
+    <path d="M 68 60 L 73 57" stroke="#2B5885" strokeWidth="7.5" strokeLinecap="round" />
   </svg>
 );
 
 /**
  * Crisp vector SVG for Microsoft Outlook
  */
-export const OutlookVectorLogo: React.FC<ProviderLogoProps> = ({ size = 24, className = '', style }) => (
+export const OutlookVectorLogo: React.FC<ProviderLogoProps> = ({
+  size = 24,
+  className = '',
+  style,
+}) => (
   <svg
     width={size}
     height={size}

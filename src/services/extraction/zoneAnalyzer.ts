@@ -5,7 +5,11 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import type { EmailZone, ZoneType } from '../types/extraction.types';
-import { decodeHtmlEntities, stripHtml, stripHtmlPreserveStructure } from '../utils/extraction.utils';
+import {
+  decodeHtmlEntities,
+  stripHtml,
+  stripHtmlPreserveStructure,
+} from '../utils/extraction.utils';
 
 // Re-export for use by other modules
 export { decodeHtmlEntities, stripHtml, stripHtmlPreserveStructure };
@@ -214,7 +218,9 @@ export function analyzeEmailZones(html: string = '', plainText: string = ''): Em
  * @returns The index where footer starts, or -1 if not found
  */
 function findFooterStart(lower: string): number {
-  if (typeof lower !== 'string') {return -1;}
+  if (typeof lower !== 'string') {
+    return -1;
+  }
   let earliest = -1;
 
   for (const signal of FOOTER_SIGNALS) {
@@ -236,7 +242,9 @@ function findFooterStart(lower: string): number {
  * @returns The index where header ends, or -1 if not found
  */
 function findHeaderEnd(lower: string): number {
-  if (typeof lower !== 'string') {return -1;}
+  if (typeof lower !== 'string') {
+    return -1;
+  }
   const signals = [/<h[12][^>]*>/i, /class\s*=\s*["'][^"']*(?:content|main|body)[^"']*["']/i];
 
   for (const signal of signals) {
@@ -276,7 +284,10 @@ function findBlockStart(html: string, idx: number): number {
  * @param pos - Position to find zone for
  * @returns The containing zone or null
  */
-export function getZoneForPosition(zones: EmailZone[] | null | undefined, pos: number): EmailZone | null {
+export function getZoneForPosition(
+  zones: EmailZone[] | null | undefined,
+  pos: number
+): EmailZone | null {
   if (!Array.isArray(zones) || zones.length === 0) {
     return null;
   }

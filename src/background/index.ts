@@ -11,10 +11,9 @@ import { sleep } from '../utils/core';
 import { createLogger, initRemoteLogger } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
 
-import { setupAutomaticUpdates, recordAutomaticUpdateActivity } from './automaticUpdates';
+import { onUpdateAlarm, setupUpdateAlarm, handleUpdateNotificationClick } from './autoUpdater';
 import { dumpMenuStats } from './contextMenu';
 import {
-  ensureInitialized as guardEnsureInitialized,
   registerInitCallbacks,
   setInitialized as guardSetInitialized,
   setActiveInitPromise as guardSetActiveInitPromise,
@@ -32,6 +31,7 @@ import {
 {
   interface GlobalWithTrustedTypes {
     trustedTypes?: {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       createPolicy: (name: string, rules: any) => void;
     };
     setImmediate?: (callback: (...args: unknown[]) => void, ...args: unknown[]) => void;
@@ -61,6 +61,7 @@ import {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const g2 = globalThis as any;
   g2.setImmediate = (callback: (...args: unknown[]) => void, ...args: unknown[]) => {
     return setTimeout(callback, 0, ...args);
@@ -177,7 +178,7 @@ log.info(
 
 // ━━━ Types ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-type InstallReason = `${chrome.runtime.OnInstalledReason}`;
+type InstallReason = chrome.runtime.OnInstalledReason;
 type InitTrigger = InstallReason | 'startup' | 'manual';
 
 interface CommandDef {
@@ -236,8 +237,6 @@ registerInitCallbacks(
 );
 export { activeInitPromise };
 
-setupAutomaticUpdates();
-
 const metrics: BackgroundMetrics = {
   initStartedAt: null,
   initCompletedAt: null,
@@ -252,8 +251,7 @@ const metrics: BackgroundMetrics = {
 };
 
 const commands = new Map<string, CommandDef>();
-// Populate the registry independently of listener installation. Listeners are
-// already installed at module load, so their guard is true during every boot.
+// A worker may wake for a shortcut without an install/startup event.
 registerCommands();
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -371,19 +369,18 @@ async function initialize(trigger: InitTrigger, previousVersion?: string): Promi
 
       // Phase 4: Event listeners (idempotent)
       // NOTE: setupMessageHandler() was already called synchronously at module load.
-      // Here we only register the remaining listeners (commands, alarms, keepalive).
+      // Commands and listeners are already registered synchronously on every wake.
       log.debug('▶️ Phase 4: Event listeners');
-      if (!listenersInstalled) {
-        installListeners();
-        installKeepAlive();
-        // setupMessageHandler() is intentionally NOT called here — it was registered
-        // synchronously at module load to handle early wakeup messages.
-        listenersInstalled = true;
-      }
+      installListeners();
+      installKeepAlive();
 
       // Phase 5: Health monitor
       log.debug('▶️ Phase 5: Health monitor');
       await setupHealthAlarm();
+
+      // Phase 5.5: Auto-update checker
+      log.debug('▶️ Phase 5.5: Auto-update alarm');
+      await setupUpdateAlarm();
 
       // Phase 6: Dev utilities
       if (CONFIG.DEV_MODE) {
@@ -549,18 +546,11 @@ function registerCommands(): void {
     }
   });
 
-  register('check-inbox', async () => {
-    const { emailService } = await import('../services/emailServices');
-    const { notifySuccess, notifyError } = await import('./notifications');
-
-    const current = await emailService.getCurrentEmail();
-    if (!current) {
-      await notifyError('No Email', 'Generate an email first');
-      return;
-    }
-    const emails = await emailService.checkInbox(current);
-    await notifySuccess('Inbox Checked', `${emails.length} email(s)`);
-  });
+  // NOTE: the 'check-inbox' command intentionally has NO registration
+  // here — the manifest declares no keyboard shortcut for it, so this
+  // listener would never fire. The context-menu path implements its own
+  // check-inbox (contextMenu.ts). Registering it here only produced a
+  // dead handler and an unreachable metrics bucket (2026-11-14).
 }
 
 function register(name: string, handler: () => Promise<void>): void {
@@ -580,7 +570,6 @@ function installListeners(): void {
 
   // Commands
   chrome.commands.onCommand.addListener((cmd) => {
-    recordAutomaticUpdateActivity();
     void handleCommand(cmd);
   });
 
@@ -597,18 +586,25 @@ function installListeners(): void {
         .catch((e) => log.warn('Rotation alarm route failed', extractMsg(e)));
     }
     // Other system alarms
-    else {
+    else if (!onUpdateAlarm(alarm)) {
       onServiceWorkerAlarm(alarm);
       onPollingAlarm(alarm);
     }
   });
 
+  // Notification click — handle update notification
+  chrome.notifications.onClicked.addListener((notificationId) => {
+    handleUpdateNotificationClick(notificationId);
+  });
+
   // Suspend cleanup (SECURITY FIX C12)
   chrome.runtime.onSuspend.addListener(() => {
     log.info('Extension suspending, cleaning up resources');
-    // The offscreen SSE relay survives normal worker suspension. Explicit
-    // account resets/disconnects stop its stream; Chrome disposes the document
-    // when the extension is unloaded.
+    // H2 fix: the offscreen document is deliberately designed to outlive
+    // service-worker suspension (it hosts the long-lived Mail.tm SSE
+    // relay). Closing it here destroyed the push stream exactly when the
+    // worker went idle, degrading every delivery to the 1-minute alarm
+    // poll. The document is torn down on update/uninstall instead.
     import('./serviceWorker')
       .then(({ clearDeferredTimers }) => {
         clearDeferredTimers();
@@ -621,18 +617,10 @@ function installListeners(): void {
 }
 
 async function handleCommand(cmd: string): Promise<void> {
-  // A shortcut can wake an idle worker without onStartup/onInstalled. Wait for
-  // the same cold-boot guard used by messages before invoking service handlers.
-  try {
-    await guardEnsureInitialized();
-  } catch (error) {
-    log.error('Command initialization failed', { cmd, error: extractMsg(error) });
-    return;
-  }
   // NOTE: The `_execute_action` command (extension popup) is handled natively
   // by Chrome and never reaches this listener, so the keyboard-shortcuts
   // toggle only gates the custom commands below (generate-email,
-  // generate-password, auto-fill, check-inbox).
+  // generate-password, auto-fill).
   try {
     const { storageService } = await import('../services/storageService');
     const settings = await storageService.getSettings();

@@ -1,10 +1,11 @@
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout, contentToString } from '../../utils/core';
+import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
 import { getSenderSource } from '../../utils/emailIdentity';
 import { getRandomInt } from '../../utils/encryption';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 import { isRetryableError, throttledWarn, throwIfRetryableStatus } from './isRetryableError';
+import { extractMessageList } from './messageListShape';
 
 const log = createLogger('MailinatorService');
 const BASE_URL = 'https://www.mailinator.com/v2/domains/public/inboxes';
@@ -52,10 +53,9 @@ export class MailinatorService {
   async getMessages(fullEmail: string, signal?: AbortSignal): Promise<Email[]> {
     try {
       const [login] = fullEmail.split('@');
-      const response = await fetchWithTimeout(
-        `${BASE_URL}/${encodeURIComponent(login || '')}`,
-        { signal: signal ?? null }
-      );
+      const response = await fetchWithTimeout(`${BASE_URL}/${encodeURIComponent(login || '')}`, {
+        signal: signal ?? null,
+      });
 
       if (response.status === 404) {
         return [];
@@ -63,8 +63,13 @@ export class MailinatorService {
       throwIfRetryableStatus(response, 'Mailinator getMessages');
 
       const data = await response.json();
-      const messages = data?.msgs || data?.messages || data || [];
-      const msgList = Array.isArray(messages) ? messages : [];
+      // Malformed payloads must throw — mapping them onto [] would look like
+      // an empty inbox and the aggregator would score the check as a success
+      // (no circuit breaker, no fallback provider).
+      const msgList = extractMessageList(data, 'Mailinator getMessages', {
+        keys: ['msgs', 'messages'],
+        allowBareArray: true,
+      }) as any[];
 
       // Fetch full body for first 5 messages in parallel
       const recentMessages = msgList.slice(0, 5);
@@ -95,7 +100,9 @@ export class MailinatorService {
           from: getSenderSource(undefined, msg.fromfull || msg.from || msg.sender),
           to: fullEmail,
           subject: contentToString(msg.subject, '(No Subject)'),
-          date: msg.time ? Number(msg.time) : Date.now(),
+          // Mailinator reports "11/12/2026 10:23:00" (or a unix timestamp) —
+          // Number() turns that into NaN, so the shared safe parser is used.
+          date: safeParseDate(msg.time),
           body: contentToString(fullMsg?.body),
           htmlBody: contentToString(fullMsg?.htmlBody),
           textBody: contentToString(fullMsg?.textBody),
@@ -141,8 +148,8 @@ export class MailinatorService {
     for (const part of parts) {
       // Header names vary in case across responses — compare lowercased.
       const headers = part.headers ?? {};
-      const contentType = Object.entries(headers).find(([k]) =>
-        String(k).toLowerCase() === 'content-type'
+      const contentType = Object.entries(headers).find(
+        ([k]) => String(k).toLowerCase() === 'content-type'
       )?.[1];
       const contentTypeStr = Array.isArray(contentType)
         ? String(contentType[0] ?? '')
@@ -167,7 +174,7 @@ export class MailinatorService {
       textBody: finalText,
       subject: contentToString(fullMsg?.subject, '(No Subject)'),
       from: getSenderSource(undefined, fullMsg?.origfrom || fullMsg?.fromfull || fullMsg?.from),
-      date: fullMsg?.time ? Number(fullMsg.time) : Date.now(),
+      date: safeParseDate(fullMsg?.time),
     };
   }
 

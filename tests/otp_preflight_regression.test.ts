@@ -50,7 +50,8 @@ describe('verification preflight form', () => {
   });
 
   it('reads registration attributes when named controls shadow form properties', () => {
-    document.body.innerHTML = '<form name="signup" action="/register"><input name="name"><input type="email"><input type="password"></form>';
+    document.body.innerHTML =
+      '<form name="signup" action="/register"><input name="name"><input type="email"><input type="password"></form>';
     showInputs();
     const form = document.querySelector('form')!;
     // Browsers expose named controls before form IDL properties; jsdom does not.
@@ -59,7 +60,11 @@ describe('verification preflight form', () => {
     }
     const detector = new OTPPageDetector({} as AutoFiller, {} as FormDetector);
     try {
-      expect((detector as unknown as { isRegistrationForm: (form: HTMLFormElement) => boolean }).isRegistrationForm(form)).toBe(true);
+      expect(
+        (
+          detector as unknown as { isRegistrationForm: (form: HTMLFormElement) => boolean }
+        ).isRegistrationForm(form)
+      ).toBe(true);
       expect(extractFieldRecord(form.querySelector('input')!).formAction).toBe('/register');
     } finally {
       detector.destroy();

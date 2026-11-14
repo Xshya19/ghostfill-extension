@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { clearNotification, destroyNotifications, notifyNewEmail } from '../src/background/notifications';
+import {
+  clearNotification,
+  destroyNotifications,
+  notifyNewEmail,
+} from '../src/background/notifications';
 
 afterEach(() => {
   destroyNotifications();
@@ -30,17 +34,29 @@ it('uses a packaged extension image for OTP notifications', async () => {
 });
 
 it('uses the same evidence-based sender label in native notifications', async () => {
-  const id = await notifyNewEmail('bounces+opaque', 'Your NovaMesh sign-in code', '582914', undefined,
-    '<a href="https://novamesh.io/signin">Sign in</a>');
-  const options = vi.mocked(chrome.notifications.create).mock.calls[0]![1] as chrome.notifications.NotificationOptions<true>;
+  const id = await notifyNewEmail(
+    'bounces+opaque',
+    'Your NovaMesh sign-in code',
+    '582914',
+    undefined,
+    '<a href="https://novamesh.io/signin">Sign in</a>'
+  );
+  const options = vi.mocked(chrome.notifications.create).mock
+    .calls[0]![1] as chrome.notifications.NotificationOptions<true>;
   expect(options.message).toBe('NovaMesh\nYour NovaMesh sign-in code');
   await clearNotification(id);
 });
 
-it('keeps paired-code notifications within Chrome\'s two-button limit', async () => {
-  const id = await notifyNewEmail('sender@example.com', 'Your sign-in alternatives', '005612', 'https://example.com/verify?token=fixture');
-  const options = vi.mocked(chrome.notifications.create).mock.calls[0]![1] as chrome.notifications.NotificationOptions<true>;
-  expect(options.buttons?.map(button => button.title)).toEqual(['Copy code', 'Open link']);
+it("keeps paired-code notifications within Chrome's two-button limit", async () => {
+  const id = await notifyNewEmail(
+    'sender@example.com',
+    'Your sign-in alternatives',
+    '005612',
+    'https://example.com/verify?token=fixture'
+  );
+  const options = vi.mocked(chrome.notifications.create).mock
+    .calls[0]![1] as chrome.notifications.NotificationOptions<true>;
+  expect(options.buttons?.map((button) => button.title)).toEqual(['Copy code', 'Open link']);
   await clearNotification(id);
 });
 

@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mailinatorService, MailinatorService } from '../src/services/emailServices/mailinatorService';
+import {
+  mailinatorService,
+  MailinatorService,
+} from '../src/services/emailServices/mailinatorService';
 import { emailService } from '../src/services/emailServices';
 
 describe('MailinatorService', () => {
@@ -140,22 +143,23 @@ describe('MailinatorService', () => {
     it('fetches a single message by ID', async () => {
       vi.stubGlobal(
         'fetch',
-        vi.fn(async () =>
-          new Response(
-            JSON.stringify({
-              id: 'single-msg',
-              from: 'Sender <sender@example.com>',
-              subject: 'Single Message Subject',
-              time: 1700000000000,
-              parts: [
-                {
-                  headers: { 'content-type': 'text/plain' },
-                  body: 'Single message plain text content',
-                },
-              ],
-            }),
-            { status: 200, headers: { 'Content-Type': 'application/json' } }
-          )
+        vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({
+                id: 'single-msg',
+                from: 'Sender <sender@example.com>',
+                subject: 'Single Message Subject',
+                time: 1700000000000,
+                parts: [
+                  {
+                    headers: { 'content-type': 'text/plain' },
+                    body: 'Single message plain text content',
+                  },
+                ],
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } }
+            )
         )
       );
 

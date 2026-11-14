@@ -14,9 +14,10 @@ const manifest = JSON.parse(
 const extensionPolicy = manifest.content_security_policy?.extension_pages ?? '';
 
 describe('extension security boundary', () => {
-  it('allows sender-site favicons while keeping fonts local', () => {
+  it('allows extension/inline images only (no remote img-src) while keeping fonts local', () => {
     expect(extensionPolicy).toContain("font-src 'self'");
-    expect(extensionPolicy).toContain("img-src 'self' data: blob: https:");
+    expect(extensionPolicy).toContain("img-src 'self' data: blob:");
+    expect(extensionPolicy).not.toContain('img-src https:');
     expect(extensionPolicy).not.toContain('fonts.gstatic.com');
     expect(extensionPolicy).not.toContain('googleusercontent.com');
   });

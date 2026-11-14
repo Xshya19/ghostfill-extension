@@ -20,12 +20,31 @@ import {
   OTPDisplay,
   PasswordGenerator,
 } from './components/SharedComponents';
+import { useConnectivity } from './hooks';
 import { useAppStore } from './store';
 
 const log = createLogger('App');
 
 type AppView = 'hub' | 'email' | 'password' | 'otp' | 'aliases';
 type AliasPanelTab = 'generator' | 'inbox' | 'history';
+
+/**
+ * Persistent offline notice shown above the view content (2026-11-12).
+ * The last-known inbox stays readable; only network-backed actions are
+ * paused. Dismissal is not offered because the state is factual, not a
+ * warning — it clears itself the moment connectivity returns.
+ */
+const OfflineBanner: React.FC<{ online: boolean }> = ({ online }) => {
+  if (online) {
+    return null;
+  }
+  return (
+    <div className="offline-banner" role="status">
+      <span className="offline-banner-dot" aria-hidden="true" />
+      <span className="offline-banner-text">{t('offlineBannerText')}</span>
+    </div>
+  );
+};
 
 const App: React.FC = () => {
   const view = useAppStore((s) => s.view);
@@ -38,6 +57,7 @@ const App: React.FC = () => {
   const setIsFirstTime = useAppStore((s) => s.setIsFirstTime);
   const emailAccount = useAppStore((s) => s.emailAccount);
   const setEmailAccount = useAppStore((s) => s.setEmailAccount);
+  const { online: isOnline } = useConnectivity();
 
   // Real Mail Provider store hooks (Gmail-only in the UI; Zoho/Outlook
   // hydration below is legacy stored-data compat and stays write-only)
@@ -135,7 +155,7 @@ const App: React.FC = () => {
   const generateIdentity = useCallback(async () => {
     if (!navigator.onLine) {
       log.warn('Attempted to generate identity while offline');
-      showToast('You are offline. Please connect to the internet to generate an identity.');
+      showToast(t('offlineGenerateIdentity'));
       return;
     }
 
@@ -179,7 +199,7 @@ const App: React.FC = () => {
         (e instanceof Error && e.message === 'Timeout') ||
         (e as { message?: string })?.message === 'Timeout'
       ) {
-        showToast('Server took too long. Try again.');
+        showToast(t('serverTimeout'));
       } else {
         showToast(t('generationFailed'));
       }
@@ -478,15 +498,23 @@ const App: React.FC = () => {
   }, []);
 
   const triggerGenerateIdentity = useCallback(() => {
+    // Generating a temp address requires the provider network; identity
+    // fields and passwords are local, but the combined flow needs the
+    // network, so fail fast with a clear reason instead of a provider
+    // timeout discovered seconds later.
+    if (!isOnline) {
+      showToast(t('offlineReconnect'));
+      return;
+    }
     void generateIdentity();
-  }, [generateIdentity]);
+  }, [generateIdentity, isOnline, showToast]);
 
   const dismissOnboarding = handleDismissOnboarding;
 
   return (
     <div className="app">
       <a href="#main-content" className="skip-link">
-        Skip to main content
+        {t('skipToMainContent')}
       </a>
       <Toast message={toast} revision={toastRevision} />
       <main className="main-content-area" id="main-content" tabIndex={-1}>
@@ -508,6 +536,7 @@ const App: React.FC = () => {
               className="app-view-container"
             >
               <Header onOpenSettings={handleOpenSettings} onOpenHelp={handleOpenHelp} />
+              <OfflineBanner online={isOnline} />
               <Hub
                 onNavigate={safeSetView}
                 emailAccount={emailAccount}
@@ -526,6 +555,7 @@ const App: React.FC = () => {
               className="app-view-container"
             >
               <Header onOpenSettings={handleOpenSettings} onOpenHelp={handleOpenHelp} />
+              <OfflineBanner online={isOnline} />
               <div className="ghost-dashboard inbox-detailed-dashboard">
                 <EmailGenerator
                   emailAccount={emailAccount}
@@ -555,7 +585,7 @@ const App: React.FC = () => {
                       type="button"
                       className="icon-button detail-view-back-btn"
                       onClick={() => safeSetView('hub')}
-                      aria-label="Go back to hub"
+                      aria-label={t('goBackToHub')}
                     >
                       <ChevronLeft size={18} strokeWidth={2.5} />
                     </button>

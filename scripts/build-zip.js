@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { ZipArchive } = require('archiver');
+const archiver = require('archiver');
 
 const ROOT_DIR = path.join(__dirname, '..');
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
@@ -68,14 +68,10 @@ function validateDist() {
     'options.css',
     'offscreen.html',
     'offscreen.js',
-    'ghostfill-update-state.json',
-    'Update GhostFill.cmd',
-    'Enable Automatic Updates.cmd',
-    'Disable Automatic Updates.cmd',
-    'scripts/update-extension.ps1',
-    'scripts/auto-update-common.ps1',
-    'scripts/setup-auto-updates.ps1',
-    'scripts/auto-update-extension.ps1',
+    // Production builds (both profiles) emit a shared vendor chunk for the
+    // popup/options entries (see webpack.config.cjs splitChunks), and
+    // scripts/update-extension.ps1 refuses to install a package missing it.
+    'vendor.js',
   ]);
 
   const manifestPath = path.join(DIST_DIR, 'manifest.json');
@@ -171,7 +167,7 @@ if (fs.existsSync(checksumFilePath)) {
 }
 
 const output = fs.createWriteStream(zipFilePath);
-const archive = new ZipArchive({ zlib: { level: 9 } });
+const archive = archiver('zip', { zlib: { level: 9 } });
 
 output.on('close', () => {
   const hash = crypto.createHash('sha256').update(fs.readFileSync(zipFilePath)).digest('hex');

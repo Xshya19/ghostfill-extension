@@ -219,7 +219,7 @@ function findCodeGroup(input: HTMLInputElement): HTMLElement | null {
     const boxes = Array.from(node.querySelectorAll<HTMLInputElement>('input')).filter(
       (candidate) =>
         candidate.maxLength === 1 ||
-        (candidate.inputMode === 'numeric' && candidate.value.length <= 1),
+        (candidate.inputMode === 'numeric' && candidate.value.length <= 1)
     );
     if (boxes.length >= CODE_GROUP_MIN && boxes.length <= CODE_GROUP_MAX) {
       return node;
@@ -253,7 +253,7 @@ export function collectFieldEvidence(el: HTMLElement): FieldEvidence {
       el.getAttribute('title'),
     ]
       .filter(Boolean)
-      .join(' '),
+      .join(' ')
   ).slice(0, 240);
 
   return {
@@ -333,10 +333,18 @@ export function evaluateFab(target: EventTarget | null, options: GateOptions = {
   const input = target instanceof HTMLInputElement ? target : null;
   const classification = input ? intelligence.classify(extractFieldRecord(input)) : null;
   const fieldType = classification?.decision === 'FILL' ? classification.fieldType : 'unknown';
-  const semanticMode: FabMode | null =
-    ['first-name', 'last-name', 'full-name', 'username'].includes(fieldType) ? 'user' :
-      ['password', 'confirm-password'].includes(fieldType) ? 'password' :
-        fieldType === 'email' || fieldType === 'otp' ? fieldType : null;
+  const semanticMode: FabMode | null = [
+    'first-name',
+    'last-name',
+    'full-name',
+    'username',
+  ].includes(fieldType)
+    ? 'user'
+    : ['password', 'confirm-password'].includes(fieldType)
+      ? 'password'
+      : fieldType === 'email' || fieldType === 'otp'
+        ? fieldType
+        : null;
   const isPasswordType = evidence.type === 'password';
   const hasCredentialAutocomplete = evidence.autocompleteTokens.some(
     (token) =>
@@ -345,11 +353,14 @@ export function evaluateFab(target: EventTarget | null, options: GateOptions = {
       token === 'current-password' ||
       token === 'new-password' ||
       token === 'email' ||
-      token === 'username',
+      token === 'username'
   );
   /** A real credential contract from the site — overrides descriptor blocks. */
   const credentialContract =
-    isPasswordType || evidence.type === 'email' || hasCredentialAutocomplete || Boolean(semanticMode);
+    isPasswordType ||
+    evidence.type === 'email' ||
+    hasCredentialAutocomplete ||
+    Boolean(semanticMode);
   const authUrl = AUTH_PATH_RE.test(href);
 
   // ── 1. Hard blocks ───────────────────────────────────────────

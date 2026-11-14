@@ -17,12 +17,13 @@
     "declarationMap": false,
     "sourceMap": true,
     "rootDir": "./src",
+    "baseUrl": "./src",
     "paths": {
-      "@/*": ["./src/*"],
-      "@content/*": ["./src/content/*"],
-      "@services/*": ["./src/services/*"],
-      "@utils/*": ["./src/utils/*"],
-      "@types/*": ["./src/types/*"]
+      "@/*": ["./*"],
+      "@content/*": ["content/*"],
+      "@services/*": ["services/*"],
+      "@utils/*": ["utils/*"],
+      "@types/*": ["types/*"]
     },
     "types": ["chrome"],
     "noUncheckedIndexedAccess": true,

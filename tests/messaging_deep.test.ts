@@ -7,10 +7,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import {
-  safeSendMessage,
-  safeSendTabMessage,
-} from '../src/utils/messaging';
+import { safeSendMessage, safeSendTabMessage } from '../src/utils/messaging';
 
 describe('safeSendMessage() deep tests', () => {
   beforeEach(() => {
@@ -108,10 +105,10 @@ describe('safeSendMessage() deep tests', () => {
       () => new Promise(() => {}) // never resolves
     );
 
-    const result = await safeSendMessage(
-      { action: 'GET_LAST_OTP' } as any,
-      { timeout: 25, retries: 2 }
-    );
+    const result = await safeSendMessage({ action: 'GET_LAST_OTP' } as any, {
+      timeout: 25,
+      retries: 2,
+    });
     expect(result).toBeNull();
     expect((chrome.runtime.sendMessage as any).mock.calls).toHaveLength(1);
   }, 10000);
@@ -125,7 +122,10 @@ describe('safeSendTabMessage() deep tests', () => {
   it('sends message to specific tab', async () => {
     (chrome.tabs.sendMessage as any).mockResolvedValue({ success: true });
 
-    const result = await safeSendTabMessage(1, { action: 'FILL_OTP', payload: { otp: '123456' } } as any);
+    const result = await safeSendTabMessage(1, {
+      action: 'FILL_OTP',
+      payload: { otp: '123456' },
+    } as any);
     expect(result).toBeDefined();
     expect(chrome.tabs.sendMessage).toHaveBeenCalled();
   });
@@ -135,23 +135,30 @@ describe('safeSendTabMessage() deep tests', () => {
       new Error('Could not establish connection. Receiving end does not exist.')
     );
 
-    const result = await safeSendTabMessage(999, { action: 'FILL_OTP', payload: { otp: '123456' } } as any);
+    const result = await safeSendTabMessage(999, {
+      action: 'FILL_OTP',
+      payload: { otp: '123456' },
+    } as any);
     expect(result).toBeNull();
   });
 
   it('handles invalid tab ID', async () => {
-    (chrome.tabs.sendMessage as any).mockRejectedValue(
-      new Error('No tab with id: -1')
-    );
+    (chrome.tabs.sendMessage as any).mockRejectedValue(new Error('No tab with id: -1'));
 
-    const result = await safeSendTabMessage(-1, { action: 'FILL_OTP', payload: { otp: '123456' } } as any);
+    const result = await safeSendTabMessage(-1, {
+      action: 'FILL_OTP',
+      payload: { otp: '123456' },
+    } as any);
     expect(result).toBeNull();
   });
 
   it('returns null for non-existent tab', async () => {
     (chrome.tabs.sendMessage as any).mockRejectedValue(new Error('Tab not found'));
 
-    const result = await safeSendTabMessage(99999, { action: 'FILL_OTP', payload: { otp: '123456' } } as any);
+    const result = await safeSendTabMessage(99999, {
+      action: 'FILL_OTP',
+      payload: { otp: '123456' },
+    } as any);
     expect(result).toBeNull();
   });
 

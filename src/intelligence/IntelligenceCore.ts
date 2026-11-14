@@ -1338,11 +1338,7 @@ export class HistoryManager {
   ): Promise<TrustedSelectorEntry[]> {
     try {
       const data = await chrome.storage.local.get(`${this.KEY_PREFIX}${domain}`);
-      const stored = data[`${this.KEY_PREFIX}${domain}`];
-      const raw =
-        typeof stored === 'object' && stored !== null && !Array.isArray(stored)
-          ? (stored as Record<string, unknown>)[type]
-          : undefined;
+      const raw = data[`${this.KEY_PREFIX}${domain}`]?.[type];
       if (!raw) {
         return [];
       }
@@ -1383,11 +1379,7 @@ export class HistoryManager {
     }
     try {
       const key = `${this.KEY_PREFIX}${domain}`;
-      const stored = (await chrome.storage.local.get(key))[key];
-      const bag =
-        typeof stored === 'object' && stored !== null && !Array.isArray(stored)
-          ? (stored as Record<string, unknown>)
-          : {};
+      const bag = (await chrome.storage.local.get(key))[key] || {};
       let list: TrustedSelectorEntry[] = [];
       const prev = bag[type];
       if (typeof prev === 'string') {
@@ -1425,11 +1417,7 @@ export class HistoryManager {
   ): Promise<void> {
     try {
       const key = `${this.KEY_PREFIX}${domain}`;
-      const stored = (await chrome.storage.local.get(key))[key];
-      const bag =
-        typeof stored === 'object' && stored !== null && !Array.isArray(stored)
-          ? (stored as Record<string, unknown>)
-          : {};
+      const bag = (await chrome.storage.local.get(key))[key] || {};
       const prev = bag[type];
       if (!Array.isArray(prev)) {
         if (typeof prev === 'string' && prev === selector) {
@@ -1805,9 +1793,11 @@ export class VerificationLoop {
         if (verified) {
           return { success: true, attempts: attempt, strategy: strategyUsed };
         } else {
-          log.warn(
-            `Verification failed for field. Expected: ${value}, Got: ${candidate.element.value}. Attempting correction...`
-          );
+          log.warn('Verification failed for field. Attempting correction...', {
+            fieldType: candidate.element.type,
+            strategy: strategyUsed,
+            attempt,
+          });
         }
       }
     }

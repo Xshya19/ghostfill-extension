@@ -100,7 +100,9 @@ class GuerrillaMailService {
       const remainingTime = this.cooldownUntil - now;
       // If cooldown is longer than 3 seconds, fail fast so aggregator fallback kicks in
       if (remainingTime > 3000) {
-        throw new Error(`Guerrilla Mail in cooldown (${Math.round(remainingTime / 1000)}s remaining)`);
+        throw new Error(
+          `Guerrilla Mail in cooldown (${Math.round(remainingTime / 1000)}s remaining)`
+        );
       }
       const waitTime = Math.min(remainingTime, this.maxCooldownMs);
       if (waitTime > 0) {

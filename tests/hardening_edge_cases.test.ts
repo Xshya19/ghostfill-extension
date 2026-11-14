@@ -110,7 +110,9 @@ describe('Hardening & Edge Cases Test Suite', () => {
       expect(sanitizeUrl('javascript:alert(1)')).toBe('');
       expect(sanitizeUrl('data:text/html,<script>alert(1)</script>')).toBe('');
       expect(sanitizeUrl('vbscript:msgbox(1)')).toBe('');
-      expect(sanitizeUrl('https://example.com/verify?token=abc')).toBe('https://example.com/verify?token=abc');
+      expect(sanitizeUrl('https://example.com/verify?token=abc')).toBe(
+        'https://example.com/verify?token=abc'
+      );
       expect(sanitizeUrl('http://localhost:3000/confirm')).toBe('http://localhost:3000/confirm');
       expect(sanitizeUrl('mailto:support@example.com')).toBe('mailto:support@example.com');
     });

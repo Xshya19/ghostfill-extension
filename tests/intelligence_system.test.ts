@@ -135,7 +135,7 @@ describe('GhostFill Intelligence System Tests', () => {
 
       // Get initial ranking
       const initial = engine.getOptimalStrategyOrder('https://mykeeta.com', strategies);
-      expect(initial.map(s => s.name)).toEqual(strategies.map(s => s.name));
+      expect(initial.map((s) => s.name)).toEqual(strategies.map((s) => s.name));
 
       // Report a success for strategy-native
       await engine.recordOutcome('https://mykeeta.com', 'strategy-native', 'otp', true, 10);

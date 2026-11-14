@@ -4,8 +4,9 @@ import { EmailAccount, Email, MailTmDomain, MailTmAccount, MailTmMessage } from 
 import { API, fetchWithTimeout, contentToString, safeParseDate } from '../../utils/core';
 import { getSenderSource } from '../../utils/emailIdentity';
 import { getRandomInt, getRandomString } from '../../utils/encryption';
+import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
-import { runBoundedProviderOperation } from './providerOperations';
+import { extractMessageList } from './messageListShape';
 
 const log = createLogger('MailTmService');
 
@@ -35,6 +36,8 @@ export class MailTmService {
   private baseUrl = API.MAIL_TM.BASE_URL;
   private token: string | null = null;
   private tokenExpiry: number = 0;
+  private credentials: { address: string; password?: string } | null = null;
+  private authSession = 0;
   private tokenRefreshPromise: Promise<string> | null = null;
   private lastErrorTime: number = 0;
   private consecutiveErrors: number = 0;
@@ -154,35 +157,25 @@ export class MailTmService {
       return this.cachedDomainsList;
     }
 
+    const fallbackDomains = ['bugfoo.com', 'karenkey.com'];
     try {
-      const data = await runBoundedProviderOperation(
-        async (boundedSignal) => {
-          const response = await this.fetchWithRetry(
-            `${this.baseUrl}${API.MAIL_TM.ENDPOINTS.DOMAINS}`,
-            { signal: boundedSignal, timeout: 4000, headers: { Accept: 'application/ld+json' } },
-            1
-          );
-          if (!response.ok) {
-            throw new Error(`Mail.tm domains: HTTP error ${response.status}`);
-          }
-          return response.json();
-        },
-        signal,
-        4000
+      const response = await this.fetchWithRetry(
+        `${this.baseUrl}${API.MAIL_TM.ENDPOINTS.DOMAINS}`,
+        { signal: signal ?? null, timeout: 4000 },
+        1 // Only 1 attempt for domains fetch
       );
-      const domains: MailTmDomain[] = Array.isArray(data)
-        ? data
-        : Array.isArray(data?.['hydra:member'])
-          ? data['hydra:member']
-          : [];
-      const result = domains
-        .filter(
-          (d) => d && d.isActive === true && d.isPrivate !== true && typeof d.domain === 'string'
-        )
-        .map((d) => d.domain);
-      if (result.length === 0) {
-        return [];
+
+      if (!response.ok) {
+        log.warn(`Failed to fetch domains (HTTP ${response.status}), using fallback`);
+        return fallbackDomains;
       }
+
+      const data = await response.json();
+      const domains: MailTmDomain[] = data['hydra:member'] || [];
+
+      const activeDomains = domains.filter((d) => d.isActive && !d.isPrivate).map((d) => d.domain);
+
+      const result = activeDomains.length > 0 ? activeDomains : fallbackDomains;
       // Cache the result in memory
       this.cachedDomainsList = result;
       this.domainsCacheTime = Date.now();
@@ -194,14 +187,11 @@ export class MailTmService {
           error.message.includes('Aborted') ||
           error.message.includes('timed out'))
       ) {
-        log.debug('Mail.tm domain check was aborted or timed out');
+        log.debug('Failed to fetch Mail.tm domains due to abort/timeout, using fallback');
       } else {
-        log.warn('Failed to fetch current Mail.tm domains', error);
+        log.error('Failed to fetch Mail.tm domains, using fallback', error);
       }
-      if (signal?.aborted) {
-        throw error;
-      }
-      return [];
+      return fallbackDomains;
     }
   }
 
@@ -223,6 +213,14 @@ export class MailTmService {
 
       try {
         const response = await fetchWithTimeout(url, options);
+        if (
+          response.status === 401 &&
+          this.token &&
+          new Headers(options.headers).get('Authorization') === `Bearer ${this.token}`
+        ) {
+          this.token = null;
+          this.tokenExpiry = 0;
+        }
         lastStatus = response.status;
         // Return immediately if successful or client error (4xx) except 429
         if (
@@ -308,9 +306,7 @@ export class MailTmService {
       // Generate random address if not provided
       // Pick a random domain to increase chance of bypassing blacklists
       const domain = domains[getRandomInt(0, domains.length - 1)]!;
-      // The live API rejects some dotted human-name usernames with HTTP 422.
-      // Keep generated local parts alphanumeric and independently random.
-      const login = address || getRandomString(24, 'abcdefghijklmnopqrstuvwxyz0123456789');
+      const login = address || generateHumanLikeUsername();
       const fullEmail = `${login}@${domain}`;
       const pwd =
         password ||
@@ -351,6 +347,8 @@ export class MailTmService {
 
       // Mail.tm API has eventual consistency — new accounts need time to propagate
       // before they can authenticate. Progressive delay with polling.
+      this.clearAuthentication();
+      this.credentials = { address: fullEmail, password: pwd };
       await this.waitUntilAuthenticatable(fullEmail, pwd, signal);
 
       // If waitUntilAuthenticatable already got a token, skip the auth loop
@@ -362,6 +360,9 @@ export class MailTmService {
             await this.authenticate(fullEmail, pwd, signal);
             break;
           } catch (authError) {
+            if ((authError as Error).name === 'AbortError') {
+              throw authError;
+            }
             lastAuthError = authError as Error;
             if (attempt < maxAuthAttempts) {
               const delayMs = 1500 * attempt;
@@ -419,12 +420,16 @@ export class MailTmService {
   ): Promise<void> {
     const delays = [300, 500, 800, 1200]; // progressive polling
     const startTime = Date.now();
+    const authSession = this.authSession;
 
     for (const delay of delays) {
       if (Date.now() - startTime > maxWaitMs) {
         break;
       }
       await new Promise((resolve) => setTimeout(resolve, delay));
+      if (authSession !== this.authSession) {
+        throw new DOMException('Mailbox session changed', 'AbortError');
+      }
 
       try {
         const response = await fetchWithTimeout(`${this.baseUrl}${API.MAIL_TM.ENDPOINTS.TOKEN}`, {
@@ -438,12 +443,18 @@ export class MailTmService {
         if (response.ok) {
           // Consume the token so we don't double-authenticate
           const data = await response.json();
+          if (authSession !== this.authSession) {
+            throw new DOMException('Mailbox session changed', 'AbortError');
+          }
           this.token = data.token;
           this.tokenExpiry = Date.now() + 8 * 60 * 1000;
           log.debug('Account became authenticatable during wait phase');
           return;
         }
-      } catch {
+      } catch (error) {
+        if ((error as Error).name === 'AbortError') {
+          throw error;
+        }
         // Still propagating, continue waiting
         continue;
       }
@@ -456,6 +467,13 @@ export class MailTmService {
    * Authenticate and get JWT token
    */
   async authenticate(address: string, password: string, signal?: AbortSignal): Promise<string> {
+    if (this.credentials?.address !== address) {
+      this.clearAuthentication();
+    }
+    const authSession = this.authSession;
+    this.token = null;
+    this.tokenExpiry = 0;
+    this.credentials = { address, password };
     try {
       const response = await this.fetchWithRetry(`${this.baseUrl}${API.MAIL_TM.ENDPOINTS.TOKEN}`, {
         method: 'POST',
@@ -466,6 +484,9 @@ export class MailTmService {
         signal: signal ?? null,
       });
 
+      if (authSession !== this.authSession) {
+        throw new DOMException('Mailbox session changed', 'AbortError');
+      }
       if (!response.ok) {
         if (response.status === 401) {
           this.token = null;
@@ -474,6 +495,9 @@ export class MailTmService {
       }
 
       const data = await response.json();
+      if (authSession !== this.authSession) {
+        throw new DOMException('Mailbox session changed', 'AbortError');
+      }
       this.token = data.token;
       this.tokenExpiry = Date.now() + 8 * 60 * 1000;
 
@@ -498,9 +522,27 @@ export class MailTmService {
   /**
    * Set token from stored account
    */
-  async setToken(token: string): Promise<void> {
+  async setToken(token: string, address?: string, password?: string): Promise<void> {
+    // A stored account may still contain a token already replaced after a 401.
+    if (
+      address &&
+      this.credentials?.address === address &&
+      (this.isAuthenticated() || this.tokenRefreshPromise)
+    ) {
+      return;
+    }
+    this.clearAuthentication();
+    this.credentials = address ? { address, ...(password && { password }) } : null;
     this.token = token;
     this.tokenExpiry = Date.now() + 8 * 60 * 1000;
+  }
+
+  clearAuthentication(): void {
+    this.authSession++;
+    this.token = null;
+    this.tokenExpiry = 0;
+    this.credentials = null;
+    this.tokenRefreshPromise = null;
   }
 
   /**
@@ -525,12 +567,20 @@ export class MailTmService {
     }
 
     this.tokenRefreshPromise = (async () => {
+      if (this.credentials?.password) {
+        return this.authenticate(this.credentials.address, this.credentials.password, signal);
+      }
       // Check if we have credentials in storage to re-authenticate
       try {
         const { storageService } = await import('../storageService');
         const currentEmail = await storageService.get('currentEmail');
 
-        if (currentEmail && currentEmail.service === 'mailtm' && currentEmail.password) {
+        if (
+          currentEmail &&
+          currentEmail.service === 'mailtm' &&
+          currentEmail.password &&
+          (!this.credentials || this.credentials.address === currentEmail.fullEmail)
+        ) {
           log.info('Token expired, re-authenticating...');
           await this.authenticate(currentEmail.fullEmail, currentEmail.password, signal);
           return this.token ?? '';
@@ -542,10 +592,13 @@ export class MailTmService {
       throw new Error('Not authenticated and cannot refresh token');
     })();
 
+    const refresh = this.tokenRefreshPromise;
     try {
-      await this.tokenRefreshPromise;
+      await refresh;
     } finally {
-      this.tokenRefreshPromise = null;
+      if (this.tokenRefreshPromise === refresh) {
+        this.tokenRefreshPromise = null;
+      }
     }
   }
 
@@ -613,7 +666,12 @@ export class MailTmService {
         }
 
         const data = await retryResponse.json();
-        const messages: MailTmMessage[] = Array.isArray(data) ? data : data['hydra:member'] || [];
+        // Malformed payloads must throw — mapping them onto [] would look
+        // like an empty inbox and the aggregator would score the check as a
+        // success (no circuit breaker, no fallback provider).
+        const messages = extractMessageList(data, 'Mail.tm getMessages', {
+          keys: ['hydra:member'],
+        }) as MailTmMessage[];
 
         this.consecutiveErrors = 0;
         return this.enrichWithFullBody(messages, signal);
@@ -624,7 +682,9 @@ export class MailTmService {
       }
 
       const data = await response.json();
-      const messages: MailTmMessage[] = Array.isArray(data) ? data : data['hydra:member'] || [];
+      const messages = extractMessageList(data, 'Mail.tm getMessages', {
+        keys: ['hydra:member'],
+      }) as MailTmMessage[];
 
       this.consecutiveErrors = 0;
       return this.enrichWithFullBody(messages, signal);

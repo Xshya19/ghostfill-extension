@@ -123,22 +123,17 @@ const IMMEDIATE_WRITE_KEYS = new Set<keyof StorageSchema>([
 const STORAGE_OP_TIMEOUT_MS = 4_000; // hard timeout for storage ops
 const USAGE_CACHE_TTL_MS = 2_500;
 
-class StorageTimeoutError extends Error {
-  constructor(label: string) {
-    super(`Storage operation timed out: ${label}`);
-    this.name = 'StorageTimeoutError';
-  }
-}
-
 /** Wraps a storage promise with a hard timeout to prevent UI from hanging */
 function withStorageTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
-  let deadline: ReturnType<typeof setTimeout> | undefined;
   return Promise.race([
     promise,
     new Promise<T>((_, reject) => {
-      deadline = setTimeout(() => reject(new StorageTimeoutError(label)), STORAGE_OP_TIMEOUT_MS);
+      setTimeout(
+        () => reject(new Error(`Storage operation timed out: ${label}`)),
+        STORAGE_OP_TIMEOUT_MS
+      );
     }),
-  ]).finally(() => clearTimeout(deadline));
+  ]);
 }
 
 /**
@@ -167,11 +162,6 @@ function isQuotaError(error: unknown): boolean {
 }
 
 export class StorageService {
-  /** Automatic reloads must wait for buffered writes and in-progress storage operations. */
-  hasPendingWrites(): boolean {
-    return this.pendingWrites.size > 0 || this.optimisticTimers.size > 0 || this.isLocked;
-  }
-
   // PERFORMANCE: O(1) LRU Cache instead of array-based O(n)
   private readonly cache: LRUCache<keyof StorageSchema, unknown>;
   private initialized: boolean = false;
@@ -181,8 +171,6 @@ export class StorageService {
   // writeQueue removed (Grandmaster Fix: single-queue mutex)
   private pendingWrites: Map<string, unknown> = new Map();
   private writeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-  private writeRetryTimer: ReturnType<typeof setTimeout> | null = null;
-  private writeRetryAttempts = 0;
   private pendingResolvers: Array<{ resolve: () => void; reject: (err: unknown) => void }> = [];
   private readonly WRITE_BATCH_DELAY = 40; // snappy batching for non-critical keys
   private storageAvailable: boolean = true;
@@ -206,20 +194,7 @@ export class StorageService {
   // PERFORMANCE: Cache statistics + coalesced in-flight reads
   private cacheHits = 0;
   private cacheMisses = 0;
-  private readonly inflightGets = new Map<
-    string,
-    {
-      promise: Promise<unknown>;
-      token: object;
-      fresh: boolean;
-    }
-  >();
-  private cacheRevision = 0;
-  private readonly changeCallbacks = new Set<
-    (changes: Record<string, chrome.storage.StorageChange>) => void
-  >();
-  private changeListener:
-    ((changes: Record<string, chrome.storage.StorageChange>, area: string) => void) | null = null;
+  private readonly inflightGets = new Map<string, Promise<unknown>>();
   private cachedUsage: { used: number; total: number; percentage: number; ts: number } | null =
     null;
 
@@ -271,7 +246,7 @@ export class StorageService {
    * Acquire write mutex lock
    * @returns Promise that resolves when lock is acquired
    */
-  private async acquireWriteMutex(timeoutMs: number = 20_000): Promise<void> {
+  private async acquireWriteMutex(timeoutMs: number = 5000): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!this.isLocked) {
         this.isLocked = true;
@@ -353,18 +328,23 @@ export class StorageService {
     value: StorageSchema[K],
     syncDelay: number = 500
   ): Promise<void> {
-    await this.ensureInitialized();
-    this.cancelOptimisticUpdate(key);
-    this.invalidateRead(key);
+    const previousValue = this.cache.get(key) as StorageSchema[K] | undefined;
     this.optimisticUpdates.set(key, value);
     this.cache.set(key, value);
 
-    const timerId = setTimeout(() => {
-      // The normal write path owns retry/rollback and cancels this timer. A
-      // second editor write must never be undone by this callback's completion.
-      void this.setImmediate(key, value).catch((error) => {
-        log.debug(`Optimistic update persistence delayed for ${String(key)}`, error);
-      });
+    const timerId = setTimeout(async () => {
+      try {
+        await this.setImmediate(key, value);
+        this.optimisticUpdates.delete(key);
+      } catch (error) {
+        log.error(`Optimistic update failed for ${String(key)}`, error);
+        if (previousValue !== undefined) {
+          this.cache.set(key, previousValue);
+        } else {
+          this.cache.delete(key);
+        }
+        this.optimisticUpdates.delete(key);
+      }
     }, syncDelay);
     this.optimisticTimers.set(key, timerId);
     return Promise.resolve();
@@ -424,7 +404,6 @@ export class StorageService {
    */
   clearEncryptionKey(): void {
     clearEncryptionKeys();
-    this.invalidateReads();
     // Clear cache to prevent access to encrypted data without key
     this.cache.clear();
     log.info('Encryption keys cleared');
@@ -783,15 +762,14 @@ export class StorageService {
     const inflightKey = String(key);
     const existing = this.inflightGets.get(inflightKey);
     if (existing) {
-      return existing.promise as Promise<StorageSchema[K] | undefined>;
+      return existing as Promise<StorageSchema[K] | undefined>;
     }
 
-    return this.startRead(
-      key,
-      Promise.resolve().then(() =>
-        withStorageTimeout(chrome.storage.local.get(key), `get:${String(key)}`)
-      )
-    );
+    const loadPromise = this.loadAndDecrypt(key).finally(() => {
+      this.inflightGets.delete(inflightKey);
+    });
+    this.inflightGets.set(inflightKey, loadPromise);
+    return loadPromise;
   }
 
   /**
@@ -809,61 +787,21 @@ export class StorageService {
       return this.pendingWrites.get(key as string) as StorageSchema[K] | undefined;
     }
 
+    this.cache.delete(key);
+    this.inflightGets.delete(String(key));
+
     if (!this.storageAvailable || typeof chrome === 'undefined' || !chrome.storage?.local) {
       return undefined;
     }
 
-    const existing = this.inflightGets.get(String(key));
-    if (existing?.fresh) {
-      return existing.promise as Promise<StorageSchema[K] | undefined>;
-    }
-    this.invalidateRead(key);
-    this.cache.delete(key);
-    return this.startRead(
-      key,
-      Promise.resolve().then(() =>
-        withStorageTimeout(chrome.storage.local.get(key), `getFresh:${String(key)}`)
-      ),
-      true
-    );
-  }
-
-  private invalidateRead(key: keyof StorageSchema): void {
-    this.cacheRevision++;
-    this.inflightGets.delete(String(key));
-  }
-
-  private invalidateReads(): void {
-    this.cacheRevision++;
-    this.inflightGets.clear();
-  }
-
-  /** Share decoding as well as I/O; only the current request may populate the cache. */
-  private startRead<K extends keyof StorageSchema>(
-    key: K,
-    result: Promise<Record<string, unknown>>,
-    fresh = false
-  ): Promise<StorageSchema[K] | undefined> {
-    const token = {};
-    const promise = this.loadAndDecrypt(key, result, token).finally(() => {
-      if (this.inflightGets.get(String(key))?.token === token) {
-        this.inflightGets.delete(String(key));
-      }
-    });
-    this.inflightGets.set(String(key), { promise, token, fresh });
-    return promise;
+    return this.loadAndDecrypt(key);
   }
 
   private async loadAndDecrypt<K extends keyof StorageSchema>(
-    key: K,
-    pendingResult: Promise<Record<string, unknown>>,
-    token: object
+    key: K
   ): Promise<StorageSchema[K] | undefined> {
     try {
-      const result = await pendingResult;
-      if (this.inflightGets.get(String(key))?.token !== token) {
-        return this.get(key);
-      }
+      const result = await withStorageTimeout(chrome.storage.local.get(key), `get:${String(key)}`);
 
       if (!result || !(key in result)) {
         this.cache.set(key, StorageService.NEGATIVE_CACHE_SENTINEL);
@@ -872,7 +810,6 @@ export class StorageService {
 
       let value = result[key] as StorageSchema[K] | undefined;
 
-      let migratePlaintext = false;
       // Decrypt sensitive data
       if (value && SENSITIVE_KEYS.includes(key)) {
         if (typeof value === 'string' && value.startsWith('v1:')) {
@@ -884,30 +821,21 @@ export class StorageService {
           }
         } else {
           // Legacy plaintext from older builds. Return it once and rewrite encrypted.
-          migratePlaintext = true;
+          log.warn(`Sensitive key ${key} was plaintext; migrating to encrypted storage`);
+          void this.setInternal(key, value).catch((error) =>
+            log.warn(`Failed to migrate sensitive key ${String(key)}`, error)
+          );
         }
       }
 
-      if (this.inflightGets.get(String(key))?.token !== token) {
-        return this.get(key);
-      }
       if (value !== undefined) {
         this.cache.set(key, value);
       } else {
         this.cache.set(key, StorageService.NEGATIVE_CACHE_SENTINEL);
       }
 
-      if (migratePlaintext && value !== undefined) {
-        log.warn(`Sensitive key ${key} was plaintext; migrating to encrypted storage`);
-        void this.setInternal(key, value).catch((error) =>
-          log.warn(`Failed to migrate sensitive key ${String(key)}`, error)
-        );
-      }
       return value;
     } catch (error) {
-      if (this.inflightGets.get(String(key))?.token !== token) {
-        return this.get(key);
-      }
       log.error(`Failed to get ${key}`, error);
       return undefined;
     }
@@ -927,8 +855,6 @@ export class StorageService {
     value: StorageSchema[K]
   ): Promise<void> {
     // Invalidate negative cache + surface value immediately
-    this.cancelOptimisticUpdate(key);
-    this.invalidateRead(key);
     this.pendingWrites.set(key as string, value);
     this.cache.set(key as keyof StorageSchema, value);
 
@@ -995,7 +921,7 @@ export class StorageService {
     // GRANDMASTER FIX: Removed `this.writeQueue` chain.
     // The Mutex alone guarantees sequential, non-dropping writes.
     await this.acquireWriteMutex();
-    let plaintextByKey = new Map<string, unknown>();
+    const writesAttempted = Array.from(this.pendingWrites.keys());
 
     try {
       if (this.pendingWrites.size === 0) {
@@ -1003,14 +929,13 @@ export class StorageService {
       }
 
       const writes = new Map(this.pendingWrites);
-      plaintextByKey = new Map(writes);
       this.pendingWrites.clear();
 
       // Cached quota check (avoids getBytesInUse on every micro-flush)
       const usage = await this.getUsageCached();
 
       if (usage.percentage >= this.QUOTA_WARNING_THRESHOLD * 100) {
-        log.warn(`Storage quota at ${usage.percentage.toFixed(1)}% - pruning then writing`);
+        log.error(`Storage quota at ${usage.percentage.toFixed(1)}% - pruning then writing`);
         await this.pruneOldData();
         for (const [pKey, pVal] of this.pendingWrites.entries()) {
           writes.set(pKey, pVal);
@@ -1020,7 +945,7 @@ export class StorageService {
       }
 
       // Keep plaintext values for cache; encrypt copies for disk in parallel
-      plaintextByKey = new Map(writes);
+      const plaintextByKey = new Map(writes);
       const masterKey = getMasterKey();
 
       const encryptJobs = Array.from(writes.entries()).map(async ([key, value]) => {
@@ -1049,19 +974,13 @@ export class StorageService {
           }
         }
 
-        // Setters already published plaintext. Reapplying this older batch after
-        // encryption would overwrite a newer value queued while we awaited it.
+        // Cache always holds plaintext for instant subsequent reads
+        this.cache.set(key as keyof StorageSchema, plaintextByKey.get(key));
       });
 
       await Promise.all(encryptJobs);
 
-      await this.writeWithQuotaRecovery(writes, plaintextByKey);
-
-      if (this.writeRetryTimer) {
-        clearTimeout(this.writeRetryTimer);
-        this.writeRetryTimer = null;
-      }
-      this.writeRetryAttempts = 0;
+      await this.writeWithQuotaRecovery(writes);
 
       // Bust usage cache after successful write
       this.cachedUsage = null;
@@ -1073,26 +992,14 @@ export class StorageService {
       if (contextEnded) {
         this.storageAvailable = false;
         log.debug('Storage write cancelled because the extension context ended');
-      } else if (error instanceof StorageTimeoutError) {
-        // Newer values queued while this batch was in flight must always win.
-        for (const [key, value] of plaintextByKey) {
-          if (!this.pendingWrites.has(key)) {
-            this.pendingWrites.set(key, value);
-            this.cache.set(key as keyof StorageSchema, value);
-          }
-        }
-        log.warn('Storage write delayed; queued values retained for retry', error);
-        this.scheduleWriteRetry();
       } else {
         log.error('Failed to flush pending writes', error);
       }
 
-      if (!(error instanceof StorageTimeoutError) || contextEnded) {
-        for (const key of plaintextByKey.keys()) {
-          if (!this.pendingWrites.has(key)) {
-            this.cache.delete(key as keyof StorageSchema);
-          }
-        }
+      for (const key of writesAttempted) {
+        this.pendingWrites.delete(key);
+        // Drop stale cache entries so next get reloads from disk
+        this.cache.delete(key as keyof StorageSchema);
       }
 
       if (!contextEnded) {
@@ -1100,46 +1007,6 @@ export class StorageService {
       }
     } finally {
       this.releaseWriteMutex();
-    }
-  }
-
-  private scheduleWriteRetry(): void {
-    if (this.writeRetryTimer || this.writeRetryAttempts >= 2 || !this.storageAvailable) {
-      return;
-    }
-    const delay = 500 * ++this.writeRetryAttempts;
-    this.writeRetryTimer = setTimeout(() => {
-      this.writeRetryTimer = null;
-      if (this.pendingWrites.size > 0) {
-        void this.flushPendingWrites().catch((error) => {
-          log.debug('Storage retry remains pending', error);
-        });
-      }
-    }, delay);
-  }
-
-  private async persistBatch(writes: Map<string, unknown>, label: string): Promise<void> {
-    try {
-      await withStorageTimeout(chrome.storage.local.set(Object.fromEntries(writes)), label);
-    } catch (error) {
-      if (!(error instanceof StorageTimeoutError)) {
-        throw error;
-      }
-      // A lost acknowledgement does not prove that the data was not committed.
-      const stored = await withStorageTimeout(
-        chrome.storage.local.get([...writes.keys()]),
-        `verify:${label}`
-      ).catch(() => null);
-      if (
-        stored &&
-        [...writes].every(
-          ([key, value]) => key in stored && JSON.stringify(stored[key]) === JSON.stringify(value)
-        )
-      ) {
-        log.warn('Storage acknowledgement delayed; persisted values verified');
-        return;
-      }
-      throw error;
     }
   }
 
@@ -1160,12 +1027,12 @@ export class StorageService {
    *      persist only the essential keys — the newest user data is never the
    *      thing we choose to drop.
    */
-  private async writeWithQuotaRecovery(
-    writes: Map<string, unknown>,
-    plaintextByKey: Map<string, unknown>
-  ): Promise<void> {
+  private async writeWithQuotaRecovery(writes: Map<string, unknown>): Promise<void> {
     try {
-      await this.persistBatch(writes, `set:${writes.size}-keys`);
+      await withStorageTimeout(
+        chrome.storage.local.set(Object.fromEntries(writes)),
+        `set:${writes.size}-keys`
+      );
       return;
     } catch (error) {
       if (!isQuotaError(error)) {
@@ -1176,24 +1043,17 @@ export class StorageService {
 
     // ── Phase 1: aggressive prune, retry the full batch ─────────────────
     await this.pruneOldData(true);
-    const pruned = new Map(this.pendingWrites);
-    this.pendingWrites.clear();
-    for (const [pKey, pVal] of pruned) {
-      plaintextByKey.set(pKey, pVal);
-      if (SENSITIVE_KEYS.includes(pKey as keyof StorageSchema)) {
-        const masterKey = getMasterKey();
-        if (!masterKey) {
-          throw new Error('Encryption not initialized');
-        }
-        writes.set(pKey, await encrypt(pVal, masterKey));
-      } else {
-        writes.set(pKey, pVal);
-      }
+    for (const [pKey, pVal] of this.pendingWrites.entries()) {
+      writes.set(pKey, pVal);
     }
+    this.pendingWrites.clear();
     this.cachedUsage = null;
 
     try {
-      await this.persistBatch(writes, `set-retry:${writes.size}-keys`);
+      await withStorageTimeout(
+        chrome.storage.local.set(Object.fromEntries(writes)),
+        `set-retry:${writes.size}-keys`
+      );
       log.info('Recovered from storage quota pressure after pruning');
       return;
     } catch (error) {
@@ -1239,7 +1099,10 @@ export class StorageService {
       throw new Error('Storage quota exceeded and no essential keys remained to write');
     }
 
-    await this.persistBatch(essential, `set-essential:${essential.size}-keys`);
+    await withStorageTimeout(
+      chrome.storage.local.set(Object.fromEntries(essential)),
+      `set-essential:${essential.size}-keys`
+    );
     log.warn(`Persisted ${essential.size} essential key(s) after shedding ${dropped.length}`, {
       dropped,
     });
@@ -1254,8 +1117,6 @@ export class StorageService {
     value: StorageSchema[K]
   ): Promise<void> {
     await this.ensureInitialized();
-    this.cancelOptimisticUpdate(key);
-    this.invalidateRead(key);
     this.pendingWrites.set(key as string, value);
     this.cache.set(key as keyof StorageSchema, value);
     return this.flushNow();
@@ -1265,7 +1126,7 @@ export class StorageService {
    * Remove a value from storage
    * NOTE: This bypasses the debatched write system intentionally — removals
    * must be immediate to prevent stale data from being flushed after deletion.
-   * The write mutex orders deletion after any active flush.
+   * JS single-threaded safety ensures no concurrent flush can interleave.
    */
   async remove(key: keyof StorageSchema): Promise<void> {
     await this.ensureInitialized();
@@ -1273,9 +1134,7 @@ export class StorageService {
     const originalValue = this.cache.get(key);
 
     // Optimistic update
-    this.invalidateRead(key);
-    this.cancelOptimisticUpdate(key);
-    this.cache.set(key, StorageService.NEGATIVE_CACHE_SENTINEL);
+    this.cache.delete(key);
 
     // FIX §7.6: Cancel any pending buffered write for this key so a debounced
     // batch-flush cannot re-write the value we are about to delete.
@@ -1290,16 +1149,12 @@ export class StorageService {
           log.debug(`Removed ${key} from in-memory cache only`);
           return;
         }
-        await withStorageTimeout(chrome.storage.local.remove(key), `remove:${String(key)}`);
+        await chrome.storage.local.remove(key);
         log.debug(`Removed ${key}`);
       } catch (error) {
         log.error(`Failed to remove ${key}`, error);
         // Rollback optimistic update
-        if (
-          originalValue !== undefined &&
-          this.cache.get(key) === StorageService.NEGATIVE_CACHE_SENTINEL &&
-          !this.pendingWrites.has(key)
-        ) {
+        if (originalValue !== undefined) {
           this.cache.set(key, originalValue);
         }
         throw error;
@@ -1322,8 +1177,7 @@ export class StorageService {
         return {};
       }
 
-      const revision = this.cacheRevision;
-      const result = await withStorageTimeout(chrome.storage.local.get(null), 'getAll');
+      const result = (await chrome.storage.local.get(null)) as Record<string, unknown>;
       const decryptedResult: Record<string, unknown> = {};
 
       // Update cache with all data, decrypting sensitive fields
@@ -1343,21 +1197,14 @@ export class StorageService {
             // Expected when data was encrypted with different key or corrupted
             // Clear the corrupted data to prevent repeated failures
             log.debug(`Failed to decrypt ${key}, clearing corrupted data`, error);
-            if (revision === this.cacheRevision) {
-              void withStorageTimeout(
-                chrome.storage.local.remove(key),
-                `remove-corrupt:${key}`
-              ).catch(() => {});
-            }
+            void chrome.storage.local.remove(key);
             finalValue = undefined;
           }
         }
 
         if (finalValue !== undefined) {
           decryptedResult[key] = finalValue;
-          if (revision === this.cacheRevision && this.storageAvailable) {
-            this.cache.set(key as keyof StorageSchema, finalValue);
-          }
+          this.cache.set(key as keyof StorageSchema, finalValue);
         }
       }
 
@@ -1374,53 +1221,44 @@ export class StorageService {
    */
   async clear(): Promise<void> {
     await this.ensureInitialized();
-    return this.withWriteMutex(async () => {
-      if (this.writeRetryTimer) {
-        clearTimeout(this.writeRetryTimer);
-        this.writeRetryTimer = null;
+    try {
+      // FIX #16: Cancel pending write debounce timer to prevent stale flush after clear
+      if (this.writeDebounceTimer) {
+        clearTimeout(this.writeDebounceTimer);
+        this.writeDebounceTimer = null;
       }
-      this.writeRetryAttempts = 0;
-      try {
-        // FIX #16: Cancel pending write debounce timer to prevent stale flush after clear
-        if (this.writeDebounceTimer) {
-          clearTimeout(this.writeDebounceTimer);
-          this.writeDebounceTimer = null;
-        }
-        this.cache.clear();
-        this.invalidateReads();
-        this.clearOptimisticUpdates();
+      this.cache.clear();
+      this.optimisticUpdates.clear();
 
-        if (!this.storageAvailable || typeof chrome === 'undefined' || !chrome.storage?.local) {
-          log.info('Cleared in-memory cache');
-          return;
-        }
-        // Preserve encryption bootstrap material so data written after a clear
-        const preservedLocal = await withStorageTimeout(
-          chrome.storage.local.get(['masterKeySeed', 'internalEncryptionSalt']),
-          'preserve-clear-state'
-        );
-
-        await withStorageTimeout(chrome.storage.local.clear(), 'clear');
-        if (Object.keys(preservedLocal).length > 0) {
-          await withStorageTimeout(chrome.storage.local.set(preservedLocal), 'restore-clear-state');
-        }
-        if (chrome.storage.session) {
-          await withStorageTimeout(chrome.storage.session.clear(), 'clear-session');
-        }
-        this.cache.clear();
-        this.invalidateReads();
-        this.pendingWrites.clear();
-        const pendingResolvers = [...this.pendingResolvers];
-        this.pendingResolvers = [];
-        pendingResolvers.forEach((r) => r.resolve());
-        // FIX #10: Also clear in-memory session secrets when storage is wiped
-        this.clearSessionSecrets();
-        log.info('Storage cleared (including session secrets)');
-      } catch (error) {
-        log.error('Failed to clear storage', error);
-        throw error;
+      if (!this.storageAvailable || typeof chrome === 'undefined' || !chrome.storage?.local) {
+        log.info('Cleared in-memory cache');
+        return;
       }
-    });
+      // Preserve encryption bootstrap material so data written after a clear
+      const preservedLocal = await chrome.storage.local.get([
+        'masterKeySeed',
+        'internalEncryptionSalt',
+      ]);
+
+      await withStorageTimeout(chrome.storage.local.clear(), 'clear');
+      if (Object.keys(preservedLocal).length > 0) {
+        await withStorageTimeout(chrome.storage.local.set(preservedLocal), 'restore-clear-state');
+      }
+      if (chrome.storage.session) {
+        await chrome.storage.session.clear();
+      }
+      this.cache.clear();
+      this.pendingWrites.clear();
+      const pendingResolvers = [...this.pendingResolvers];
+      this.pendingResolvers = [];
+      pendingResolvers.forEach((r) => r.resolve());
+      // FIX #10: Also clear in-memory session secrets when storage is wiped
+      this.clearSessionSecrets();
+      log.info('Storage cleared (including session secrets)');
+    } catch (error) {
+      log.error('Failed to clear storage', error);
+      throw error;
+    }
   }
 
   /**
@@ -1442,9 +1280,8 @@ export class StorageService {
     await this.ensureInitialized();
     const out: Partial<Pick<StorageSchema, K>> = {};
     const missing: K[] = [];
-    const reads = new Map<K, Promise<StorageSchema[K] | undefined>>();
 
-    for (const key of new Set(keys)) {
+    for (const key of keys) {
       if (this.optimisticUpdates.has(key as string)) {
         out[key] = this.optimisticUpdates.get(key as string) as StorageSchema[K];
         continue;
@@ -1460,39 +1297,55 @@ export class StorageService {
         }
         this.cacheHits++;
       } else {
+        missing.push(key);
         this.cacheMisses++;
-        const existing = this.inflightGets.get(String(key));
-        if (existing) {
-          reads.set(key, existing.promise as Promise<StorageSchema[K] | undefined>);
-        } else {
-          missing.push(key);
-        }
       }
     }
 
-    if (!this.storageAvailable) {
+    if (missing.length === 0 || !this.storageAvailable) {
       return out;
     }
 
-    if (missing.length > 0) {
-      const batch = Promise.resolve().then(() =>
-        withStorageTimeout(
-          chrome.storage.local.get(missing as string[]),
-          `getMany:${missing.length}`
-        )
+    try {
+      const result = await withStorageTimeout(
+        chrome.storage.local.get(missing as string[]),
+        `getMany:${missing.length}`
       );
-      for (const key of missing) {
-        reads.set(key, this.startRead(key, batch));
-      }
+      const masterKey = getMasterKey();
+      await Promise.all(
+        missing.map(async (key) => {
+          if (!(key in result)) {
+            this.cache.set(key, StorageService.NEGATIVE_CACHE_SENTINEL);
+            return;
+          }
+          let value = result[key as string] as StorageSchema[K] | undefined;
+          if (
+            value &&
+            SENSITIVE_KEYS.includes(key) &&
+            typeof value === 'string' &&
+            value.startsWith('v1:')
+          ) {
+            try {
+              if (masterKey) {
+                value = (await decrypt(value, masterKey)) as StorageSchema[K];
+              } else {
+                value = undefined;
+              }
+            } catch {
+              value = undefined;
+            }
+          }
+          if (value !== undefined) {
+            this.cache.set(key, value);
+            out[key] = value;
+          } else {
+            this.cache.set(key, StorageService.NEGATIVE_CACHE_SENTINEL);
+          }
+        })
+      );
+    } catch (e) {
+      log.error('getMany failed', e);
     }
-    await Promise.all(
-      Array.from(reads, async ([key, reading]) => {
-        const value = await reading;
-        if (value !== undefined) {
-          out[key] = value;
-        }
-      })
-    );
     return out;
   }
 
@@ -1653,10 +1506,7 @@ export class StorageService {
         this.cachedUsage = empty;
         return empty;
       }
-      const bytesInUse = await withStorageTimeout(
-        chrome.storage.local.getBytesInUse(null),
-        'storage-usage'
-      );
+      const bytesInUse = await chrome.storage.local.getBytesInUse(null);
       const total = chrome.storage.local.QUOTA_BYTES || 10485760;
       const snap = {
         used: bytesInUse || 0,
@@ -1682,49 +1532,53 @@ export class StorageService {
     if (!this.storageAvailable || typeof chrome === 'undefined' || !chrome.storage?.onChanged) {
       return () => {};
     }
-    // Each registration owns its subscription, even when callers reuse a function.
-    const subscription = (changes: Record<string, chrome.storage.StorageChange>) =>
-      callback(changes);
-    this.changeCallbacks.add(subscription);
-    if (!this.changeListener) {
-      this.changeListener = (changes, areaName) => {
-        if (areaName !== 'local' || !this.storageAvailable) {
-          return;
-        }
-        const reads = Object.entries(changes).map(([key, change]) => {
-          const typedKey = key as keyof StorageSchema;
-          this.invalidateRead(typedKey);
-          // A local queued write wins over an older Chrome change event.
-          if (this.pendingWrites.has(key) || this.optimisticUpdates.has(key)) {
-            return;
-          }
-          this.cache.delete(typedKey);
-          const result = this.ensureInitialized().then(() =>
-            change.newValue === undefined ? {} : { [key]: change.newValue }
-          );
-          return this.startRead(typedKey, result);
-        });
-        void Promise.all(reads)
-          .then(() => {
-            for (const observer of this.changeCallbacks) {
-              try {
-                observer(changes);
-              } catch (error) {
-                log.debug('Storage change observer failed', error);
-              }
+    const listener = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      areaName: string
+    ) => {
+      if (areaName === 'local') {
+        void (async () => {
+          await this.ensureInitialized();
+          // Keep cache in sync with decrypted values for sensitive keys.
+          for (const key in changes) {
+            const typedKey = key as keyof StorageSchema;
+            const newValue = changes[key]!.newValue;
+
+            if (newValue === undefined) {
+              this.cache.delete(typedKey);
+              continue;
             }
-          })
-          .catch((error) => log.debug('Storage change cache sync unavailable', error));
-      };
-      chrome.storage.onChanged.addListener(this.changeListener);
-    }
+
+            if (
+              SENSITIVE_KEYS.includes(typedKey) &&
+              typeof newValue === 'string' &&
+              newValue.startsWith('v1:')
+            ) {
+              try {
+                const masterKey = getMasterKey();
+                if (!masterKey) {
+                  this.cache.delete(typedKey);
+                  return;
+                }
+                const decryptedValue = await decrypt(newValue, masterKey);
+                this.cache.set(typedKey, decryptedValue);
+              } catch (error) {
+                log.warn(`Failed to decrypt changed key ${key}, clearing cache entry`, error);
+                this.cache.delete(typedKey);
+              }
+            } else {
+              this.cache.set(typedKey, newValue);
+            }
+          }
+          callback(changes);
+        })().catch((error) => log.debug('Storage change cache sync unavailable', error));
+      }
+    };
+
+    chrome.storage.onChanged.addListener(listener);
 
     return () => {
-      this.changeCallbacks.delete(subscription);
-      if (this.changeCallbacks.size === 0 && this.changeListener) {
-        chrome.storage.onChanged.removeListener(this.changeListener);
-        this.changeListener = null;
-      }
+      chrome.storage.onChanged.removeListener(listener);
     };
   }
 
@@ -1732,8 +1586,36 @@ export class StorageService {
    * PERFORMANCE: Preload frequently accessed keys into cache
    */
   async preload(keys: (keyof StorageSchema)[]): Promise<void> {
-    const result = await this.getMany(keys);
-    log.debug(`Preloaded ${Object.keys(result).length} keys`);
+    await this.ensureInitialized();
+    if (!this.storageAvailable || typeof chrome === 'undefined' || !chrome.storage?.local) {
+      return;
+    }
+
+    try {
+      const result = await chrome.storage.local.get(keys as string[]);
+      // FIX #17: Decrypt sensitive keys before caching to prevent serving
+      // encrypted ciphertext from the cache
+      for (const [key, value] of Object.entries(result)) {
+        const typedKey = key as keyof StorageSchema;
+        if (
+          SENSITIVE_KEYS.includes(typedKey) &&
+          typeof value === 'string' &&
+          value.startsWith('v1:')
+        ) {
+          try {
+            const decrypted = await decrypt(value, this.getEncryptionKey());
+            this.cache.set(typedKey, decrypted);
+          } catch {
+            log.debug(`Skipping corrupted preload key: ${key}`);
+          }
+        } else {
+          this.cache.set(typedKey, value);
+        }
+      }
+      log.debug(`Preloaded ${Object.keys(result).length} keys`);
+    } catch (error) {
+      log.warn('Failed to preload keys', error);
+    }
   }
 
   /**
@@ -1785,11 +1667,6 @@ export class StorageService {
   onExtensionUnload(): void {
     log.info('Extension unload detected - clearing all sensitive data');
     this.storageAvailable = false;
-    if (this.writeRetryTimer) {
-      clearTimeout(this.writeRetryTimer);
-      this.writeRetryTimer = null;
-    }
-    this.writeRetryAttempts = 0;
     if (this.writeDebounceTimer) {
       clearTimeout(this.writeDebounceTimer);
       this.writeDebounceTimer = null;
@@ -1801,15 +1678,6 @@ export class StorageService {
     this.optimisticUpdates.clear();
     this.pendingWrites.clear();
     this.pendingResolvers.splice(0).forEach(({ resolve }) => resolve());
-    if (this.changeListener) {
-      try {
-        chrome.storage.onChanged.removeListener(this.changeListener);
-      } catch {
-        /* The extension context may already be invalidated. */
-      }
-    }
-    this.changeListener = null;
-    this.changeCallbacks.clear();
 
     // Clear encryption keys
     clearEncryptionKeys();
@@ -1818,7 +1686,6 @@ export class StorageService {
     this.clearSessionSecrets();
 
     // Clear cache
-    this.invalidateReads();
     this.cache.clear();
 
     log.info('All sensitive data cleared from memory');

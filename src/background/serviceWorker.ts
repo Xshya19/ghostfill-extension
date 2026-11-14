@@ -564,13 +564,13 @@ async function executeBootSequence(): Promise<void> {
       }
 
       const phaseStart = Date.now();
-      
+
       // GRANDMASTER FIX: AbortController to kill phantom promises
       const phaseController = new AbortController();
-      
+
       const phaseResult = await Promise.race([
-        executePhase(phase, phaseController.signal), 
-        bootTimeout.promise
+        executePhase(phase, phaseController.signal),
+        bootTimeout.promise,
       ]);
 
       if (phaseResult === 'timeout') {
@@ -723,7 +723,11 @@ async function executePhase(phase: PhaseDefinition, signal?: AbortSignal): Promi
 //  TASK EXECUTOR (with retry & timeout)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-async function executeTask(task: TaskDefinition, phase: number, signal?: AbortSignal): Promise<void> {
+async function executeTask(
+  task: TaskDefinition,
+  phase: number,
+  signal?: AbortSignal
+): Promise<void> {
   const record: ServiceRecord = {
     name: task.name,
     phase,
@@ -752,14 +756,18 @@ async function executeTask(task: TaskDefinition, phase: number, signal?: AbortSi
       await Promise.race([task.fn(signal), timeout.promise]);
       timeout.cancel();
 
-      if (signal?.aborted) {return;} // Prevent late success mutations
+      if (signal?.aborted) {
+        return;
+      } // Prevent late success mutations
 
       record.health = 'up';
       record.initDurationMs = Math.round(performance.now() - t0);
       record.lastError = null;
       return; // success
     } catch (error) {
-      if (signal?.aborted) {return;} // Prevent late failure mutations
+      if (signal?.aborted) {
+        return;
+      } // Prevent late failure mutations
       record.retries++;
       metrics.retriesTotal++;
 
@@ -1153,4 +1161,3 @@ function truncate(s: string, max: number): string {
 export function keepAlive(): void {
   log.warn('keepAlive() is deprecated — keep-alive is now managed by chrome.alarms');
 }
-

@@ -2098,6 +2098,12 @@ export class FloatingButton {
     if (!this.otpWaitingInterval) {
       this.otpWaitingInterval = setInterval(() => {
         if (this.destroyed || !this.isWaitingForOTP) {
+          // WHY: self-heal instead of a bare return. If an OTP_PAGE_LEFT
+          // message or destroy() bookkeeping is ever missed, this tick would
+          // otherwise keep firing every 2s forever (leaked interval + wasted
+          // scans). Clearing here is safe: hideOTPWaitingIndicator is
+          // idempotent and the indicator is re-created on the next show call.
+          this.hideOTPWaitingIndicator();
           return;
         }
         const analysis = this.getPageAnalysis();

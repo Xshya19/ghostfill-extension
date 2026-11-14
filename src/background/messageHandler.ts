@@ -4,6 +4,7 @@ import {
   isRealMailServiceAvailable,
   isTemporaryMailAccount,
 } from '../config/buildProfile';
+import { dedupService } from '../services/dedupService';
 import { assessEmailDecision, selectVerificationAction } from '../services/emailDecisionEngine';
 import { emailService } from '../services/emailServices';
 import { senderMatchesSite } from '../services/emailServices/privacy';
@@ -53,33 +54,65 @@ import {
 } from '../types';
 import { contentFingerprint } from '../utils/contentFingerprint';
 import { getSenderDomain } from '../utils/emailIdentity';
-import { createLogger, diag } from '../utils/logger';
+import { createLogger, diag, logger } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
 import { validateMessage } from '../utils/validation';
 import { isActivationTab, onContentScriptReady } from './activationRegistry';
 import { updateOTPMenuItem } from './contextMenu';
+import { exportFunnelReport, getDeliveryFunnel } from './deliveryFunnel';
 import { ensureInitialized } from './initGuard';
-import { notifySuccess, notifyError, resetNotificationSession } from './notifications';
+import {
+  notifySuccess,
+  notifyError,
+  notifyLinkReady,
+  resetNotificationSession,
+} from './notifications';
 import {
   startEmailPolling,
+  stopEmailPolling,
   startFastOTPPolling,
   stopFastOTPPolling,
   startFastWatchBurst,
   recordEmailReceived,
   getOTPWaitingTabs,
   resetEmailSession,
+  markOtpExpectation,
   suppressNextEmailTypeTransition,
   startGmailAliasFastPolling,
   extractEmailOnce,
   deliverOTP,
   hasMatchingOTPWaiter,
+  getConnectivityState,
   type EmailContext,
 } from './pollingManager';
 import { getBootState } from './serviceWorker';
+import { maybeBindSignupOrigin, senderTabUrl } from './signupOriginBinder';
 import { sseManager } from './sseManager';
 
 const log = createLogger('MessageHandler');
 let gmailInboxFetchSeq = 0;
+let accountDataGeneration = 0;
+let clearingData = false;
+const pendingGmailWrites = new Set<Promise<unknown>>();
+
+async function persistGmailState(
+  generation: number,
+  operation: () => Promise<unknown>
+): Promise<void> {
+  if (clearingData || generation !== accountDataGeneration) {
+    throw new Error('Account data was cleared');
+  }
+  const write = operation().catch(() => undefined);
+  pendingGmailWrites.add(write);
+  try {
+    await write;
+    if (generation !== accountDataGeneration) {
+      throw new Error('Account data was cleared');
+    }
+  } finally {
+    pendingGmailWrites.delete(write);
+  }
+}
 
 const REAL_MAIL_ACTIONS = new Set<ExtensionMessage['action']>([
   'GENERATE_GMAIL_ALIAS',
@@ -374,6 +407,7 @@ const HIGH_PRIORITY_ACTIONS = new Set([
   'GMAIL_GET_STATUS',
   // Connect/disconnect are user mutations — a double-click must never be
   // swallowed as a "duplicate" and answered with a fake success.
+  'CLEAR_DATA',
   'ZOHO_CONNECT',
   'ZOHO_DISCONNECT',
   'ZOHO_GET_STATUS',
@@ -589,6 +623,9 @@ async function handleMessage(
   sender: chrome.runtime.MessageSender
 ): Promise<ExtensionResponse> {
   log.debug('Incoming message', { action: message.action, origin: sender.url });
+  if (clearingData) {
+    return { success: false, error: 'Data clearing is in progress. Please try again.' };
+  }
 
   if (!IS_GMAIL_ENABLED && REAL_MAIL_ACTIONS.has(message.action)) {
     return {
@@ -648,6 +685,24 @@ async function handleMessage(
       await identityService.saveIdentity(identity);
 
       const emailPayload = message.action === 'GENERATE_EMAIL' ? message.payload || {} : {};
+      // Signup-origin capture (2026-11-14): page-triggered generation sends
+      // `payload.originUrl` explicitly (floating button / Smart Fill), but
+      // the popup's own "Generate email" does not. Without an origin the
+      // verified-link auto-open stays fail-closed forever (security fix
+      // requires destination↔signup-site binding), so fall back to the
+      // active tab — it IS the signup page when generation happens from
+      // the popup. Best-effort: never block generation on tab lookup.
+      if (!emailPayload.originUrl) {
+        try {
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          const tabOrigin = tab?.url ? new URL(tab.url) : null;
+          if (tabOrigin && (tabOrigin.protocol === 'https:' || tabOrigin.protocol === 'http:')) {
+            (emailPayload as Record<string, unknown>).originUrl = tabOrigin.origin;
+          }
+        } catch {
+          /* no tab context — the link auto-open stays fail-closed */
+        }
+      }
       // Switch to Temp Mail tab BEFORE save so currentEmail is updated for fill
       await storageService.setImmediate('preferredEmailType', 'disposable');
       const email = await emailService.generateEmail({
@@ -658,6 +713,10 @@ async function handleMessage(
       // 7. Always start polling immediately when email is generated.
       // SSE is a bonus push layer — polling is the reliable fallback.
       startFastWatchBurst('email_gen');
+      // The address now exists and the user is about to use it: a
+      // verification code is expected, so the cadence stays tight even
+      // before a tab registers itself as waiting (2026-11-12).
+      markOtpExpectation('email_generated');
 
       if (email?.service === 'mailtm') {
         sseManager.setOnEmailReceived(() => {
@@ -827,14 +886,15 @@ async function handleMessage(
 
     case 'GET_EMAIL_HISTORY': {
       const history = await emailService.getHistory();
-
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return { success: true, history: history as any };
     }
 
     case 'GET_PROVIDER_HEALTH': {
       const health = emailService.getProviderHealth();
-
-      return { success: true, health: health as any[] };
+      // Connectivity snapshot lets the UI distinguish "provider is down"
+      // from "the machine has no internet" without extra probes.
+      return { success: true, health: health as any[], connectivity: getConnectivityState() };
     }
 
     // ── OTP ACTIONS ───────────────────────────────────────────────
@@ -925,6 +985,11 @@ async function handleMessage(
           verdict,
         });
 
+        // Bind the signup origin from the browser-provided tab URL
+        // (never from the page-controlled payload.url). The OTP page is
+        // the signup site — the verification link must be bound to it.
+        await maybeBindSignupOrigin(senderTabUrl(sender), 'otp_page');
+
         if (sender.tab?.id) {
           if (isActivationTab(sender.tab.id)) {
             log.info('Activation tab exposed OTP fields; registering it for code delivery', {
@@ -966,7 +1031,13 @@ async function handleMessage(
     // ── EVENT-DRIVEN POLLING TRIGGERS ─────────────────────────────
     case 'REGISTRATION_FORM_SUBMITTED': {
       log.info('⚡ Registration form submitted — triggering ultra polling');
+      // The tab that just took the form is the signup site — bind it so
+      // the verification link can auto-open (fail-closed bind, 2026-11-14).
+      await maybeBindSignupOrigin(senderTabUrl(sender), 'form_submit');
       startFastWatchBurst('form_submit');
+      // The site just took the address — the code is on its way. Keep the
+      // cadence tight until a tab registers (2026-11-12).
+      markOtpExpectation('form_submitted');
 
       if (IS_GMAIL_ENABLED) {
         const currentEmail = await storageService.get('currentEmail');
@@ -1060,6 +1131,10 @@ async function handleMessage(
           extraction: result,
           sender: senderEmail,
           expectedDomains,
+          // Same fail-closed binding as the inbox path (2026-11-14):
+          // the account's signup origin is the independent anchor the
+          // link auto-open gate needs when no waiting tab exists.
+          ...(initialAccount?.originUrl ? { originUrl: initialAccount.originUrl } : {}),
         });
         return {
           code: result.otp?.code ?? null,
@@ -1265,9 +1340,19 @@ async function handleMessage(
 
     // ── IDENTITY ACTIONS ─────────────────────────────────────────
     case 'GET_IDENTITY': {
+      // Learn the signup origin from the tab this message came from —
+      // the browser provides sender.tab.url, so it cannot be forged by
+      // the page. Without this the account often never acquires an
+      // origin (popup open on a non-signup tab at generation time) and
+      // the verification-link gate must fail closed; the link then
+      // never opens (2026-11-14).
+      await maybeBindSignupOrigin(senderTabUrl(sender), 'identity_fill');
       // User is filling identity on a tab right now — arm fast-watch burst so
       // incoming verification emails or links are caught within 2-3s without waiting.
       startFastWatchBurst('identity_fill');
+      // Identity is being handed to a site: a verification code is
+      // expected (2026-11-12).
+      markOtpExpectation('identity_fill');
 
       // Popup Temp Mail / Gmail tab is source of truth via preferredEmailType.
       // Never cross-fill: disposable tab → temp mail only; Gmail tab → gmail only.
@@ -1378,6 +1463,7 @@ async function handleMessage(
         title?: string;
         message?: string;
         type?: string;
+        link?: string;
       };
       const title = typeof payload.title === 'string' ? payload.title : 'GhostFill';
       const text = typeof payload.message === 'string' ? payload.message : '';
@@ -1385,6 +1471,10 @@ async function handleMessage(
 
       if (type === 'error') {
         await notifyError(title, text);
+      } else if (type === 'link' && typeof payload.link === 'string' && payload.link) {
+        // "Link ready — tap to open": the user gets a one-tap action
+        // instead of a dead-end error message (2026-11-12).
+        await notifyLinkReady(payload.link, title, text);
       } else {
         await notifySuccess(title, text);
       }
@@ -1406,11 +1496,35 @@ async function handleMessage(
     }
 
     case 'CLEAR_DATA': {
-      await storageService.clear();
-      await emailService.clearData();
-      await passwordService.clearHistory();
-      log.info('All extension data cleared');
-      return { success: true };
+      clearingData = true;
+      accountDataGeneration++;
+      try {
+        suppressNextEmailTypeTransition('disposable');
+        stopEmailPolling();
+        invalidateGmailInboxFetches();
+        await resetEmailSession();
+        resetNotificationSession();
+        linkService.clearData();
+        await Promise.all([
+          gmailApiService.signOut(),
+          disconnectMicrosoft(),
+          disconnectZoho(),
+          identityService.clearIdentity(),
+          dedupService.clear(),
+        ]);
+        await emailService.clearData();
+        await passwordService.clearHistory();
+        await Promise.allSettled([...pendingGmailWrites]);
+        stopEmailPolling();
+        // Clear storage last so disconnect/reset writes cannot restore removed data.
+        await storageService.clear();
+        logger.clearHistory();
+        diag.clear();
+        log.info('All extension data cleared');
+        return { success: true };
+      } finally {
+        clearingData = false;
+      }
     }
 
     case 'OPEN_OPTIONS': {
@@ -1457,11 +1571,20 @@ async function handleMessage(
     // ── DIAGNOSTIC EXPORT ────────────────────────────────────────
     case 'GET_DIAGNOSTIC_REPORT': {
       const report = diag.exportReport();
-      return { success: true, report };
+      // The delivery funnel (2026-11-12) turns "sometimes it does not
+      // fill" into numbers: how many emails arrived, produced a code,
+      // got a decision, and actually reached the user — plus where the
+      // ones that did not got stuck.
+      return {
+        success: true,
+        report: `${report}\n\n${exportFunnelReport()}`,
+        funnel: getDeliveryFunnel(),
+      };
     }
 
     // ── GMAIL API HANDLERS ────────────────────────────────────────
     case 'GMAIL_GET_STATUS': {
+      const generation = accountDataGeneration;
       // Returns current auth status without triggering a sign-in
       const authState = getGmailAuthSetupState();
       const profile = gmailApiService.getCachedProfile();
@@ -1486,10 +1609,14 @@ async function handleMessage(
         // Try silent auth restoration (SW restart recovery)
         const silentProfile = await gmailApiService.checkSilentAuth();
         if (silentProfile) {
-          await storageService.set('gmailProfile', silentProfile).catch(() => {});
-          await storageService.set('gmailBase', silentProfile.email).catch(() => {});
-          await storageService.set('gmailConnected', true).catch(() => {});
-          await setGmailConnectedAt().catch(() => {});
+          await persistGmailState(generation, () =>
+            storageService.set('gmailProfile', silentProfile)
+          );
+          await persistGmailState(generation, () =>
+            storageService.set('gmailBase', silentProfile.email)
+          );
+          await persistGmailState(generation, () => storageService.set('gmailConnected', true));
+          await persistGmailState(generation, () => setGmailConnectedAt());
           const nextAuthState = getGmailAuthSetupState();
           return {
             success: true,
@@ -1522,27 +1649,32 @@ async function handleMessage(
     }
 
     case 'GMAIL_SIGN_IN': {
+      const generation = accountDataGeneration;
       try {
         if (!gmailApiService.isConfigured()) {
           throw new Error('GhostFill Gmail client_id is not configured.');
         }
         const profile = await gmailApiService.signIn();
         // Persist profile so other parts of the extension can read it
-        await storageService.set('gmailProfile', profile).catch(() => {});
-        await storageService.set('gmailBase', profile.email).catch(() => {});
-        await storageService.set('gmailConnected', true).catch(() => {});
-        await setGmailConnectedAt().catch(() => {});
+        await persistGmailState(generation, () => storageService.set('gmailProfile', profile));
+        await persistGmailState(generation, () => storageService.set('gmailBase', profile.email));
+        await persistGmailState(generation, () => storageService.set('gmailConnected', true));
+        await persistGmailState(generation, () => setGmailConnectedAt());
         sseManager.disconnect();
-        await storageService.set('preferredEmailType', 'gmail').catch(() => {});
-        await storageService.set('inbox', []).catch(() => {});
+        await persistGmailState(generation, () =>
+          storageService.set('preferredEmailType', 'gmail')
+        );
+        await persistGmailState(generation, () => storageService.set('inbox', []));
         invalidateGmailInboxFetches();
-        await storageService.set('gmailInbox', []).catch(() => {});
-        await storageService.set('gmailSyncState', {}).catch(() => {});
-        await clearGmailAliasSessions().catch(() => {});
+        await persistGmailState(generation, () => storageService.set('gmailInbox', []));
+        await persistGmailState(generation, () => storageService.set('gmailSyncState', {}));
+        await persistGmailState(generation, () => clearGmailAliasSessions());
         // Seed an initial alias session for the base email so that
         // GMAIL_FETCH_INBOX calls arriving immediately after sign-in
         // can find an active session (fixes race condition).
-        await rememberGmailAliasSession(profile.email, profile.email, 'global').catch(() => {});
+        await persistGmailState(generation, () =>
+          rememberGmailAliasSession(profile.email, profile.email, 'global')
+        );
         log.info('Gmail sign-in completed', { email: profile.email });
         return { success: true, profile };
       } catch (e: unknown) {

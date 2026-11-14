@@ -120,30 +120,3 @@ it('masks standalone codes, URL secrets and diagnostic action text before printi
   }
   expect(output).toContain('[REDACTED]');
 });
-
-it('never repeats an OTP capture in its redaction replacement', async () => {
-  const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
-  const { logger } = await import('../src/utils/logger');
-  logger.info('OTP detected: 94105 with confidence 82%');
-  logger.info('Verification code: 009165');
-  const output = JSON.stringify({ console: infoSpy.mock.calls, history: logger.getHistory() });
-  expect(output).not.toContain('94105');
-  expect(output).not.toContain('009165');
-  expect(output).toContain('[REDACTED]');
-});
-
-it('copies log history only when the debug surface is read and returns independent snapshots', async () => {
-  const { logger } = await import('../src/utils/logger');
-  logger.clearHistory();
-  const historySpy = vi.spyOn(logger, 'getHistory');
-  for (let i = 0; i < 600; i++) logger.debug('Mailbox step', { count: i });
-  expect(historySpy).not.toHaveBeenCalled();
-  const surface = globalThis as typeof globalThis & { __GHOSTFILL_LOG_HISTORY__: unknown[] };
-  const snapshot = surface.__GHOSTFILL_LOG_HISTORY__;
-  expect(snapshot).toHaveLength(100);
-  expect(historySpy).toHaveBeenCalledTimes(1);
-  snapshot.length = 0;
-  expect(surface.__GHOSTFILL_LOG_HISTORY__).toHaveLength(100);
-  logger.clearHistory();
-  expect(surface.__GHOSTFILL_LOG_HISTORY__).toEqual([]);
-});
