@@ -1572,7 +1572,7 @@ export const APP_VERSION = (() => {
   try {
     return chrome.runtime.getManifest().version;
   } catch {
-    return '1.1.2';
+    return '1.1.7';
   }
 })();
 

@@ -2,6 +2,16 @@
 
 All notable changes are documented here.
 
+## 1.1.7 — 2026-11-14
+
+- Complete system audit, security hardening, and reliability overhaul.
+- Added strict origin binding (`signupOriginBinder.ts`) and delivery funnels (`deliveryFunnel.ts`) to prevent cross-tab code leakage.
+- Enhanced activation link guard and intelligent intent classification for magic links and one-time verification.
+- Added native value setters for React, Vue, and Angular input forms.
+- Added normalized message list parsing across all temporary email providers.
+- Expanded full internationalization (i18n) support for English and Spanish.
+- Formatted all codebase files with Prettier and added extensive regression test coverage (1,512 tests passed).
+
 ## 1.1.2 — 2026-10-02
 
 - Report temporary inbox timeouts, network failures, and throttling as warnings with the cause visible; retain automatic retries and error-level reporting for unexpected failures.
