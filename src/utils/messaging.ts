@@ -289,11 +289,14 @@ export async function safeSendTabMessage(
         lastError = error instanceof Error ? error : new Error(errorMsg);
 
         if (error instanceof MessageTimeoutError) {
-          log.warn('Tab message timed out; delivery outcome is unknown, so it will not be retried', {
-            tabId,
-            action: message.action,
-            timeout,
-          });
+          log.warn(
+            'Tab message timed out; delivery outcome is unknown, so it will not be retried',
+            {
+              tabId,
+              action: message.action,
+              timeout,
+            }
+          );
           return null;
         }
 

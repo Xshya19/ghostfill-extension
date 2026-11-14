@@ -20,8 +20,6 @@ const log = createLogger('GmailConnectionService');
 // ─── Part 1: aliasService.ts (Alias Generation Engine) ─────────────────
 // ═══════════════════════════════════════════════════════════════════════
 
-
-
 const RESERVED_DOMAIN_LABEL = 'general';
 const RANDOM_TAG_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 const RANDOM_TAG_LENGTH = 5;
@@ -131,7 +129,9 @@ export const normalizeGmailUsername = canonicalizeGmailUsername;
 
 /** Preserves the plus-suffix for users who have existing Gmail filters */
 export function preserveGmailUsername(username: string): { base: string; suffix: string | null } {
-  const clean = String(username).toLowerCase().replace(/[^a-z0-9+]/g, '');
+  const clean = String(username)
+    .toLowerCase()
+    .replace(/[^a-z0-9+]/g, '');
   const plusIdx = clean.indexOf('+');
   if (plusIdx >= 0) {
     return { base: clean.slice(0, plusIdx), suffix: clean.slice(plusIdx + 1) };
@@ -202,7 +202,8 @@ export function getAliasPlusSuffix(domain: string): string {
     brandName = parts[0]!;
   } else {
     const secondLevel = parts[parts.length - 2];
-    const isCompoundTld = secondLevel && COMMON_SECOND_LEVEL_TLDS.has(secondLevel) && secondLevel.length <= 3;
+    const isCompoundTld =
+      secondLevel && COMMON_SECOND_LEVEL_TLDS.has(secondLevel) && secondLevel.length <= 3;
     if (parts.length > 2 && isCompoundTld) {
       brandName = parts[parts.length - 3] || RESERVED_DOMAIN_LABEL;
     } else {
@@ -789,7 +790,10 @@ export function formatGmailSetupError(errorText?: string): string {
   return 'Gmail needs a valid OAuth Client ID in Options > Email.';
 }
 
-export async function persistGmailConnection(profile: GmailProfile, isManual: boolean): Promise<void> {
+export async function persistGmailConnection(
+  profile: GmailProfile,
+  isManual: boolean
+): Promise<void> {
   await Promise.all([
     setGmailConnectedAt(),
     storageService.setImmediate('gmailProfile', profile),
@@ -830,4 +834,3 @@ export async function clearGmailConnection(isManual: boolean): Promise<void> {
     clearGmailAliasSessions(),
   ]);
 }
-

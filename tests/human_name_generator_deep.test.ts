@@ -68,8 +68,8 @@ describe('generateHumanLikeUsername() deep tests', () => {
       noSeparator: false,
       hasNumber: false,
       noNumber: false,
-      veryShort: false,  // like "sarahm"
-      middleInitial: false,  // like "emma.r.taylor"
+      veryShort: false, // like "sarahm"
+      middleInitial: false, // like "emma.r.taylor"
     };
 
     for (let i = 0; i < 1000; i++) {

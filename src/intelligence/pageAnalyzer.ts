@@ -169,12 +169,14 @@ export class MultilingualKeywordEngine {
   private static profiles: Map<string, KeywordProfile[]> = new Map();
 
   private static addProfile(lang: string, profiles: KeywordProfileRaw[]): void {
-    const compiled = profiles.map(p => ({
+    const compiled = profiles.map((p) => ({
       language: p.language,
       field_class: p.field_class,
       exact_matches: new Set(p.exact_matches),
-      partial_patterns: p.partial_patterns.length > 0 ? new RegExp(p.partial_patterns.join('|'), 'i') : /(?!)/,
-      negative_signals: p.negative_signals.length > 0 ? new RegExp(p.negative_signals.join('|'), 'i') : /(?!)/,
+      partial_patterns:
+        p.partial_patterns.length > 0 ? new RegExp(p.partial_patterns.join('|'), 'i') : /(?!)/,
+      negative_signals:
+        p.negative_signals.length > 0 ? new RegExp(p.negative_signals.join('|'), 'i') : /(?!)/,
     }));
     this.profiles.set(lang, compiled);
   }
@@ -571,8 +573,6 @@ export class MultilingualKeywordEngine {
     ]);
   }
 
-
-
   public static detectPageLanguage(): string {
     const htmlLang = document.documentElement.lang?.substring(0, 2).toLowerCase();
     if (htmlLang && this.profiles.has(htmlLang)) {
@@ -627,7 +627,18 @@ export class MultilingualKeywordEngine {
 
   public static detect(el: HTMLElement, lang: string): Record<string, number> {
     const scores: Record<string, number> = {};
-    for (const cls of ['Email', 'Username', 'Password', 'Target_Password_Confirm', 'Phone', 'OTP', 'First_Name', 'Last_Name', 'Full_Name', 'Unknown']) {
+    for (const cls of [
+      'Email',
+      'Username',
+      'Password',
+      'Target_Password_Confirm',
+      'Phone',
+      'OTP',
+      'First_Name',
+      'Last_Name',
+      'Full_Name',
+      'Unknown',
+    ]) {
       scores[cls] = 0;
     }
 
@@ -668,13 +679,25 @@ export class MultilingualKeywordEngine {
     const type = (el as HTMLInputElement).type || '';
     const combinedTextVal = textSignals.join(' ');
     const hasConfirmKeyword = /confirm|repeat|retype|verify/i.test(combinedTextVal);
-    const hasPasswordContext = type.toLowerCase() === 'password' || /pass|pwd/i.test(combinedTextVal);
+    const hasPasswordContext =
+      type.toLowerCase() === 'password' || /pass|pwd/i.test(combinedTextVal);
     if (hasConfirmKeyword && hasPasswordContext) {
       scores.Target_Password_Confirm = (scores.Target_Password_Confirm ?? 0) + 2.0;
       scores.Password = 0;
     }
 
-    for (const cls of ['Email', 'Username', 'Password', 'Target_Password_Confirm', 'Phone', 'OTP', 'First_Name', 'Last_Name', 'Full_Name', 'Unknown']) {
+    for (const cls of [
+      'Email',
+      'Username',
+      'Password',
+      'Target_Password_Confirm',
+      'Phone',
+      'OTP',
+      'First_Name',
+      'Last_Name',
+      'Full_Name',
+      'Unknown',
+    ]) {
       if (scores[cls]! < 0) {
         scores[cls] = 0;
       }
@@ -745,9 +768,8 @@ export class VisualStateTracker {
     const inViewport = this.isInViewport(rect);
 
     // GRANDMASTER FIX: Only check obscuration if it's actually visible and in viewport
-    const isObscuredVal = isVisibleVal && inViewport
-      ? this.checkIfObscured(el, rect, style)
-      : false;
+    const isObscuredVal =
+      isVisibleVal && inViewport ? this.checkIfObscured(el, rect, style) : false;
 
     return {
       isVisible: isVisibleVal,
@@ -762,15 +784,25 @@ export class VisualStateTracker {
   }
 
   private checkVisibility(el: HTMLElement, style: CSSStyleDeclaration): boolean {
-    if (style.display === 'none') { return false; }
-    if (style.visibility === 'hidden') { return false; }
-    if (parseFloat(style.opacity) < 0.01) { return false; }
-    if (el.offsetWidth <= 0 || el.offsetHeight <= 0) { return false; }
+    if (style.display === 'none') {
+      return false;
+    }
+    if (style.visibility === 'hidden') {
+      return false;
+    }
+    if (parseFloat(style.opacity) < 0.01) {
+      return false;
+    }
+    if (el.offsetWidth <= 0 || el.offsetHeight <= 0) {
+      return false;
+    }
 
     let curr: HTMLElement | null = el.parentElement;
     while (curr) {
       const pStyle = this.getCachedStyle(curr);
-      if (pStyle.display === 'none') { return false; }
+      if (pStyle.display === 'none') {
+        return false;
+      }
       if (pStyle.overflow === 'hidden' && (curr.offsetWidth === 0 || curr.offsetHeight === 0)) {
         return false;
       }
@@ -780,14 +812,16 @@ export class VisualStateTracker {
   }
 
   private checkIfObscured(el: HTMLElement, rect: DOMRect, style: CSSStyleDeclaration): boolean {
-    if (rect.width === 0 || rect.height === 0) { return false; }
+    if (rect.width === 0 || rect.height === 0) {
+      return false;
+    }
 
     const points = [
       { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
       { x: rect.left + 2, y: rect.top + 2 },
       { x: rect.right - 2, y: rect.top + 2 },
       { x: rect.left + 2, y: rect.bottom - 2 },
-      { x: rect.right - 2, y: rect.bottom - 2 }
+      { x: rect.right - 2, y: rect.bottom - 2 },
     ];
 
     let obscuredPoints = 0;
@@ -798,7 +832,9 @@ export class VisualStateTracker {
         continue;
       }
       const elementAtPoint = document.elementFromPoint(pt.x, pt.y);
-      if (!elementAtPoint) { continue; }
+      if (!elementAtPoint) {
+        continue;
+      }
       if (elementAtPoint !== el && !el.contains(elementAtPoint) && !elementAtPoint.contains(el)) {
         const obsStyle = this.getCachedStyle(elementAtPoint as HTMLElement);
         const obsZ = parseInt(obsStyle.zIndex, 10) || 0;
@@ -827,9 +863,14 @@ export class VisualStateTracker {
   }
 
   private predictFutureVisibility(el: HTMLElement, style: CSSStyleDeclaration): boolean {
-    if (this.checkVisibility(el, style)) { return true; }
+    if (this.checkVisibility(el, style)) {
+      return true;
+    }
     const transition = style.transitionProperty || '';
-    if (parseFloat(style.opacity) === 0 && (transition.includes('opacity') || transition.includes('all'))) {
+    if (
+      parseFloat(style.opacity) === 0 &&
+      (transition.includes('opacity') || transition.includes('all'))
+    ) {
       return true;
     }
 
@@ -839,12 +880,18 @@ export class VisualStateTracker {
       const pTransition = pStyle.transitionProperty || '';
       const pAnimation = pStyle.animationName || '';
       if (
-        (pTransition !== 'none' && (pTransition.includes('opacity') || pTransition.includes('visibility') || pTransition.includes('display') || pTransition.includes('all'))) ||
-        (pAnimation !== 'none')
+        (pTransition !== 'none' &&
+          (pTransition.includes('opacity') ||
+            pTransition.includes('visibility') ||
+            pTransition.includes('display') ||
+            pTransition.includes('all'))) ||
+        pAnimation !== 'none'
       ) {
         return true;
       }
-      if (curr.tagName === 'DIALOG') { return true; }
+      if (curr.tagName === 'DIALOG') {
+        return true;
+      }
       curr = curr.parentElement;
     }
 
@@ -879,7 +926,9 @@ export class FuzzyFormFingerprint {
 
     const l2 = inputs
       .map((el) => {
-        if (el.tagName === 'SELECT') { return 'select'; }
+        if (el.tagName === 'SELECT') {
+          return 'select';
+        }
         return (el as HTMLInputElement).type || 'text';
       })
       .join(',');
@@ -887,7 +936,10 @@ export class FuzzyFormFingerprint {
     const l3 = inputs
       .map((el) => {
         const raw = el.id || el.getAttribute('name') || '';
-        return raw.toLowerCase().replace(/[^a-z]/g, '').slice(0, 10);
+        return raw
+          .toLowerCase()
+          .replace(/[^a-z]/g, '')
+          .slice(0, 10);
       })
       .filter(Boolean)
       .join(',');
@@ -895,13 +947,20 @@ export class FuzzyFormFingerprint {
     return { l1, l2, l3 };
   }
 
-  public static match(current: FormFingerprint, history: FormFingerprint[]): { matched: boolean; score: number } {
+  public static match(
+    current: FormFingerprint,
+    history: FormFingerprint[]
+  ): { matched: boolean; score: number } {
     let bestScore = 0;
 
     for (const hist of history) {
       let score = 0;
-      if (current.l1 === hist.l1) { score += 0.5; }
-      if (current.l2 === hist.l2) { score += 0.3; }
+      if (current.l1 === hist.l1) {
+        score += 0.5;
+      }
+      if (current.l2 === hist.l2) {
+        score += 0.3;
+      }
 
       if (current.l3 && hist.l3) {
         const currTokens = current.l3.split(',');
@@ -933,7 +992,9 @@ function rootOf(el: Element): Document | ShadowRoot {
 
 function labelTextWithoutActions(label: Element): string {
   const copy = label.cloneNode(true) as Element;
-  copy.querySelectorAll('a, button, [role="button"], [role="link"]').forEach((action) => action.remove());
+  copy
+    .querySelectorAll('a, button, [role="button"], [role="link"]')
+    .forEach((action) => action.remove());
   return copy.textContent?.trim() || '';
 }
 
@@ -949,14 +1010,23 @@ export function resolveLabelText(el: HTMLElement): string {
 
   const labelledBy = el.getAttribute('aria-labelledby');
   if (labelledBy) {
-    const parts = labelledBy.split(/\s+/).map((id) => textById(root, id)).filter(Boolean);
-    if (parts.length) { return parts.join(' '); }
+    const parts = labelledBy
+      .split(/\s+/)
+      .map((id) => textById(root, id))
+      .filter(Boolean);
+    if (parts.length) {
+      return parts.join(' ');
+    }
   }
   const ariaLabel = el.getAttribute('aria-label')?.trim();
-  if (ariaLabel) { return ariaLabel; }
+  if (ariaLabel) {
+    return ariaLabel;
+  }
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
     const labels = Array.from(el.labels ?? [], labelTextWithoutActions).filter(Boolean);
-    if (labels.length) { return labels.join(' '); }
+    if (labels.length) {
+      return labels.join(' ');
+    }
   }
 
   if (el.id) {
@@ -977,16 +1047,31 @@ export function resolveLabelText(el: HTMLElement): string {
   }
 
   // ponytail: inspect four single-control wrappers; deeper layouts need explicit labels.
-  for (let node: HTMLElement | null = el, depth = 0; node && depth < 4; node = node.parentElement, depth++) {
-    if (node.matches('form, fieldset') ||
-      (node !== el && node.querySelectorAll('input, textarea, select').length !== 1)) { break; }
+  for (
+    let node: HTMLElement | null = el, depth = 0;
+    node && depth < 4;
+    node = node.parentElement, depth++
+  ) {
+    if (
+      node.matches('form, fieldset') ||
+      (node !== el && node.querySelectorAll('input, textarea, select').length !== 1)
+    ) {
+      break;
+    }
     const sibling = node.previousElementSibling;
-    if (!sibling || sibling.matches('input, textarea, select, button') ||
+    if (
+      !sibling ||
+      sibling.matches('input, textarea, select, button') ||
       sibling.querySelector('input, textarea, select, button') ||
       sibling.matches('a, [role="button"], [role="link"]') ||
-      (sibling.hasAttribute('for') && sibling.getAttribute('for') !== el.id)) { continue; }
+      (sibling.hasAttribute('for') && sibling.getAttribute('for') !== el.id)
+    ) {
+      continue;
+    }
     const text = labelTextWithoutActions(sibling);
-    if (text && text.length < 100) { return text; }
+    if (text && text.length < 100) {
+      return text;
+    }
   }
 
   return '';
@@ -1000,7 +1085,7 @@ function findClosestHeadingText(el: Element): string {
       if (headings.length > 0) {
         for (let i = headings.length - 1; i >= 0; i--) {
           const h = headings[i];
-          if (h && (h.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING)) {
+          if (h && h.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) {
             return h.textContent?.trim() || '';
           }
         }
@@ -1080,7 +1165,12 @@ function countSameShapeSiblings(el: Fillable, layoutCache?: LayoutCache): number
     const widthI = rectI.width;
     const inputModeMatches = i.getAttribute('inputmode') === el.getAttribute('inputmode');
     const widthMatches = Math.abs(widthI - widthEl) <= 5;
-    if (i.maxLength === ml && (ml === 1 || (ml > 0 && ml <= 2)) && inputModeMatches && widthMatches) {
+    if (
+      i.maxLength === ml &&
+      (ml === 1 || (ml > 0 && ml <= 2)) &&
+      inputModeMatches &&
+      widthMatches
+    ) {
       n++;
     }
   }
@@ -1128,7 +1218,9 @@ export function extractFieldRecord(el: Fillable, layoutCache?: LayoutCache): Raw
   const style = window.getComputedStyle(el);
   const isAnimating = style.animationName !== 'none' || style.transitionProperty !== 'none';
   const form = el.closest('form') as HTMLFormElement | null;
-  const formFieldCount = form ? form.querySelectorAll('input:not([type="hidden"]), textarea').length : 0;
+  const formFieldCount = form
+    ? form.querySelectorAll('input:not([type="hidden"]), textarea').length
+    : 0;
   const formAction = form?.getAttribute('action') || '';
   const closestHeadingText = findClosestHeadingText(el);
 
@@ -1137,7 +1229,9 @@ export function extractFieldRecord(el: Fillable, layoutCache?: LayoutCache): Raw
     selector: id ? '#' + id : name ? tag + '[name="' + name + '"]' : tag,
     tag,
     type,
-    role: el.closest('[role="search"]') ? 'searchbox' : (el.getAttribute('role') || '').toLowerCase(),
+    role: el.closest('[role="search"]')
+      ? 'searchbox'
+      : (el.getAttribute('role') || '').toLowerCase(),
     autocomplete,
     name,
     id,
@@ -1173,13 +1267,16 @@ export function extractFieldRecord(el: Fillable, layoutCache?: LayoutCache): Raw
   return rec;
 }
 
-export function buildStructural(rec: RawFieldRecord, vis: {
-  opacityZero: boolean;
-  offscreen: boolean;
-  tiny: boolean;
-  sameShape: number;
-  inForm: boolean;
-}): number[] {
+export function buildStructural(
+  rec: RawFieldRecord,
+  vis: {
+    opacityZero: boolean;
+    offscreen: boolean;
+    tiny: boolean;
+    sameShape: number;
+    inForm: boolean;
+  }
+): number[] {
   const v = emptyStructural();
   const set = (i: number, val = 1) => {
     if (i >= 0 && i < NUM_STRUCTURAL_FEATURES) {
@@ -1328,7 +1425,12 @@ export function buildStructural(rec: RawFieldRecord, vis: {
     set(STRUCT.KW_OTP_LENGTH_HINT);
   }
 
-  if (rec.dataAttributes && (rec.dataAttributes['data-testid'] || rec.dataAttributes['data-cy'] || rec.dataAttributes['data-automation-id'])) {
+  if (
+    rec.dataAttributes &&
+    (rec.dataAttributes['data-testid'] ||
+      rec.dataAttributes['data-cy'] ||
+      rec.dataAttributes['data-automation-id'])
+  ) {
     set(STRUCT.HAS_DATA_TESTID);
   }
   if (rec.title) {
@@ -1343,7 +1445,10 @@ export function buildStructural(rec: RawFieldRecord, vis: {
   if (typeof rec.tabIndex === 'number' && rec.tabIndex >= 0) {
     set(STRUCT.TAB_INDEX_SET);
   }
-  if (/login|signup|register|sign-in|sign-up|join|enter/i.test(rec.url || '') || /login|signup|register|sign-in|sign-up|join|enter/i.test(rec.formAction || '')) {
+  if (
+    /login|signup|register|sign-in|sign-up|join|enter/i.test(rec.url || '') ||
+    /login|signup|register|sign-in|sign-up|join|enter/i.test(rec.formAction || '')
+  ) {
     set(STRUCT.URL_LOGIN_SIGNUP);
   }
   if (rec.closestHeadingText && /otp|code|verify|verification|pin/i.test(rec.closestHeadingText)) {
@@ -1474,284 +1579,294 @@ export class PageAnalyzer {
     readonly pattern: RegExp;
     readonly signal: string;
   }> = [
-      {
-        type: 'verification',
-        pattern:
-          /verify|verification|confirm[\s._-]*email|activate[\s._-]*account|enter[\s._-]*(your\s+)?code|one[-_\s]?time|otp|self[-_\s]?service[\s._-]*verification/i,
-        signal: 'page:verification',
-      },
-      {
-        type: '2fa',
-        pattern: /two[-_\s]?factor|2fa|mfa|authenticat[\w]*[\s._-]*code|security[\s._-]*code/i,
-        signal: 'page:2fa',
-      },
-      {
-        type: 'password-reset',
-        pattern:
-          /reset[\s._-]*password|forgot[\s._-]*password|recover|new[\s._-]*password|change[\s._-]*password/i,
-        signal: 'page:password-reset',
-      },
-      {
-        type: 'signup',
-        pattern: /sign\s*up|register|create\s*account|get\s*started|join\s*(us|now|free)|enroll/i,
-        signal: 'page:signup',
-      },
-      {
-        type: 'login',
-        pattern: /sign\s*in|log\s*in|login|authenticate/i,
-        signal: 'page:login',
-      },
-      {
-        type: 'checkout',
-        pattern: /checkout|billing|payment|subscribe|purchase/i,
-        signal: 'page:checkout',
-      },
-      {
-        type: 'profile',
-        pattern: /profile|settings|account\s*settings|edit\s*profile|preferences/i,
-        signal: 'page:profile',
-      },
-    ] as const;
+    {
+      type: 'verification',
+      pattern:
+        /verify|verification|confirm[\s._-]*email|activate[\s._-]*account|enter[\s._-]*(your\s+)?code|one[-_\s]?time|otp|self[-_\s]?service[\s._-]*verification/i,
+      signal: 'page:verification',
+    },
+    {
+      type: '2fa',
+      pattern: /two[-_\s]?factor|2fa|mfa|authenticat[\w]*[\s._-]*code|security[\s._-]*code/i,
+      signal: 'page:2fa',
+    },
+    {
+      type: 'password-reset',
+      pattern:
+        /reset[\s._-]*password|forgot[\s._-]*password|recover|new[\s._-]*password|change[\s._-]*password/i,
+      signal: 'page:password-reset',
+    },
+    {
+      type: 'signup',
+      pattern: /sign\s*up|register|create\s*account|get\s*started|join\s*(us|now|free)|enroll/i,
+      signal: 'page:signup',
+    },
+    {
+      type: 'login',
+      pattern: /sign\s*in|log\s*in|login|authenticate/i,
+      signal: 'page:login',
+    },
+    {
+      type: 'checkout',
+      pattern: /checkout|billing|payment|subscribe|purchase/i,
+      signal: 'page:checkout',
+    },
+    {
+      type: 'profile',
+      pattern: /profile|settings|account\s*settings|edit\s*profile|preferences/i,
+      signal: 'page:profile',
+    },
+  ] as const;
 
-    private static readonly FIELD_SELECTORS = {
-      email:
-        'input[type="email"], input[name*="email" i], input[id*="email" i], input[autocomplete*="email"], input[placeholder*="email" i], input[aria-label*="email" i]',
-      password: 'input[type="password"]',
-      otp: [
-        'input[autocomplete~="one-time-code" i]',
-        'input[name*="otp" i]',
-        'input[name="code"]',
-        'input[id*="otp" i]',
-      ].join(', '),
-      name: 'input[name*="name" i]:not([name*="user" i]), input[autocomplete="given-name"], input[autocomplete="family-name"]',
-    } as const;
+  private static readonly FIELD_SELECTORS = {
+    email:
+      'input[type="email"], input[name*="email" i], input[id*="email" i], input[autocomplete*="email"], input[placeholder*="email" i], input[aria-label*="email" i]',
+    password: 'input[type="password"]',
+    otp: [
+      'input[autocomplete~="one-time-code" i]',
+      'input[name*="otp" i]',
+      'input[name="code"]',
+      'input[id*="otp" i]',
+    ].join(', '),
+    name: 'input[name*="name" i]:not([name*="user" i]), input[autocomplete="given-name"], input[autocomplete="family-name"]',
+  } as const;
 
-    private static readonly FRAMEWORK_DETECTORS: ReadonlyArray<{
-      readonly name: string;
-      readonly detect: () => boolean;
-    }> = [
-      {
-        name: 'nextjs',
-        detect: () => !!safeQuerySelector(document, 'script[id="__NEXT_DATA__"]'),
-      },
-      {
-        name: 'react',
-        detect: () => {
-          const el =
-            safeQuerySelector<HTMLElement>(document, 'input') ??
-            safeQuerySelector<HTMLElement>(document, 'div');
-          if (!el) {
-            return false;
-          }
-          return Object.keys(el).some(
-            (k) =>
-              k.startsWith('__reactFiber$') ||
-              k.startsWith('__reactProps$') ||
-              k.startsWith('__reactInternalInstance$')
-          );
-        },
-      },
-      {
-        name: 'vue',
-        detect: () => {
-          if ((document as Document & { __vue_app__?: unknown }).__vue_app__) {
-            return true;
-          }
-          if (!document.body) { return false; }
-          // GRANDMASTER FIX: Use TreeWalker to avoid querySelectorAll('*') memory spike
-          const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
-          let count = 0;
-          let node = walker.nextNode() as Element | null;
-
-          while (node && count < 100) {
-            // Vue 2 and 3 add data-v-xxxxxxxx attributes to scoped elements
-            for (let i = 0; i < node.attributes.length; i++) {
-              if (node.attributes[i]!.name.startsWith('data-v-')) {
-                return true;
-              }
-            }
-            node = walker.nextNode() as Element | null;
-            count++;
-          }
+  private static readonly FRAMEWORK_DETECTORS: ReadonlyArray<{
+    readonly name: string;
+    readonly detect: () => boolean;
+  }> = [
+    {
+      name: 'nextjs',
+      detect: () => !!safeQuerySelector(document, 'script[id="__NEXT_DATA__"]'),
+    },
+    {
+      name: 'react',
+      detect: () => {
+        const el =
+          safeQuerySelector<HTMLElement>(document, 'input') ??
+          safeQuerySelector<HTMLElement>(document, 'div');
+        if (!el) {
           return false;
-        },
+        }
+        return Object.keys(el).some(
+          (k) =>
+            k.startsWith('__reactFiber$') ||
+            k.startsWith('__reactProps$') ||
+            k.startsWith('__reactInternalInstance$')
+        );
       },
-      {
-        name: 'angular',
-        detect: () =>
-          !!(
-            (window as Window & { ng?: unknown }).ng ??
-            safeQuerySelector(document, '[ng-version]') ??
-            safeQuerySelector(document, '[_nghost]') ??
-            safeQuerySelector(document, '[ng-app]')
-          ),
-      },
-      {
-        name: 'svelte',
-        detect: () =>
-          !!(
-            safeQuerySelector(document, '[class*="svelte-"]') ??
-            safeQuerySelector(document, 'script[type="svelte-data"]')
-          ),
-      },
-      {
-        name: 'solid',
-        detect: () =>
-          !!(
-            (window as Window & { _$HY?: unknown })._$HY ?? safeQuerySelector(document, '[data-hk]')
-          ),
-      },
-      {
-        name: 'htmx',
-        detect: () => !!safeQuerySelector(document, '[hx-get], [hx-post], [hx-trigger]'),
-      },
-      {
-        name: 'qwik',
-        detect: () => !!safeQuerySelector(document, '[q\\:container], [q\\:id]'),
-      },
-    ];
+    },
+    {
+      name: 'vue',
+      detect: () => {
+        if ((document as Document & { __vue_app__?: unknown }).__vue_app__) {
+          return true;
+        }
+        if (!document.body) {
+          return false;
+        }
+        // GRANDMASTER FIX: Use TreeWalker to avoid querySelectorAll('*') memory spike
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+        let count = 0;
+        let node = walker.nextNode() as Element | null;
 
-    static analyze(): PageAnalysis {
-      const url = window.location.href.toLowerCase();
-      const path = window.location.pathname.toLowerCase();
-      const title = document.title.toLowerCase();
-      const bodyText = this.pageText();
-      const metaContent = Array.from(document.querySelectorAll('meta'))
-        .map((m) => (m.getAttribute('content') ?? '').toLowerCase())
-        .join(' ');
-      const combined = `${url} ${path} ${title} ${bodyText} ${metaContent}`;
-      const routeAndTitle = `${path} ${window.location.search.toLowerCase()} ${title}`;
-      const signals: string[] = [];
+        while (node && count < 100) {
+          // Vue 2 and 3 add data-v-xxxxxxxx attributes to scoped elements
+          for (let i = 0; i < node.attributes.length; i++) {
+            if (node.attributes[i]!.name.startsWith('data-v-')) {
+              return true;
+            }
+          }
+          node = walker.nextNode() as Element | null;
+          count++;
+        }
+        return false;
+      },
+    },
+    {
+      name: 'angular',
+      detect: () =>
+        !!(
+          (window as Window & { ng?: unknown }).ng ??
+          safeQuerySelector(document, '[ng-version]') ??
+          safeQuerySelector(document, '[_nghost]') ??
+          safeQuerySelector(document, '[ng-app]')
+        ),
+    },
+    {
+      name: 'svelte',
+      detect: () =>
+        !!(
+          safeQuerySelector(document, '[class*="svelte-"]') ??
+          safeQuerySelector(document, 'script[type="svelte-data"]')
+        ),
+    },
+    {
+      name: 'solid',
+      detect: () =>
+        !!(
+          (window as Window & { _$HY?: unknown })._$HY ?? safeQuerySelector(document, '[data-hk]')
+        ),
+    },
+    {
+      name: 'htmx',
+      detect: () => !!safeQuerySelector(document, '[hx-get], [hx-post], [hx-trigger]'),
+    },
+    {
+      name: 'qwik',
+      detect: () => !!safeQuerySelector(document, '[q\\:container], [q\\:id]'),
+    },
+  ];
 
-      const hasEmailField = deepQuerySelectorAll(this.FIELD_SELECTORS.email).length > 0;
-      const hasPasswordField = deepQuerySelectorAll(this.FIELD_SELECTORS.password).length > 0;
-      const hasOTPField =
-        deepQuerySelectorAll(this.FIELD_SELECTORS.otp).length > 0 || this.hasSplitOTPGroup();
-      const hasNameFields = deepQuerySelectorAll(this.FIELD_SELECTORS.name).length > 0;
-      const formCount = deepQuerySelectorAll('form').length;
-      const inputCount = deepQuerySelectorAll(
-        'input:not([type="hidden"]):not([type="submit"]):not([type="button"])' +
+  static analyze(): PageAnalysis {
+    const url = window.location.href.toLowerCase();
+    const path = window.location.pathname.toLowerCase();
+    const title = document.title.toLowerCase();
+    const bodyText = this.pageText();
+    const metaContent = Array.from(document.querySelectorAll('meta'))
+      .map((m) => (m.getAttribute('content') ?? '').toLowerCase())
+      .join(' ');
+    const combined = `${url} ${path} ${title} ${bodyText} ${metaContent}`;
+    const routeAndTitle = `${path} ${window.location.search.toLowerCase()} ${title}`;
+    const signals: string[] = [];
+
+    const hasEmailField = deepQuerySelectorAll(this.FIELD_SELECTORS.email).length > 0;
+    const hasPasswordField = deepQuerySelectorAll(this.FIELD_SELECTORS.password).length > 0;
+    const hasOTPField =
+      deepQuerySelectorAll(this.FIELD_SELECTORS.otp).length > 0 || this.hasSplitOTPGroup();
+    const hasNameFields = deepQuerySelectorAll(this.FIELD_SELECTORS.name).length > 0;
+    const formCount = deepQuerySelectorAll('form').length;
+    const inputCount = deepQuerySelectorAll(
+      'input:not([type="hidden"]):not([type="submit"]):not([type="button"])' +
         ':not([type="reset"]):not([type="checkbox"]):not([type="radio"])' +
         ':not([type="file"]):not([type="image"]):not([type="range"])' +
         ':not([type="color"]):not([type="search"])'
-      ).length;
+    ).length;
 
-      const pageType = this.classifyPage(
-        routeAndTitle,
-        combined,
-        hasOTPField,
-        hasPasswordField,
-        hasEmailField,
-        signals
-      );
+    const pageType = this.classifyPage(
+      routeAndTitle,
+      combined,
+      hasOTPField,
+      hasPasswordField,
+      hasEmailField,
+      signals
+    );
 
-      const provider = this.detectProvider(url, signals);
+    const provider = this.detectProvider(url, signals);
 
-      const framework = this.detectFramework();
-      signals.push(`framework:${framework}`);
+    const framework = this.detectFramework();
+    signals.push(`framework:${framework}`);
 
-      return Object.freeze({
-        pageType,
-        hasEmailField,
-        hasPasswordField,
-        hasOTPField,
-        hasNameFields,
-        formCount,
-        inputCount,
-        isAuthRelated: pageType !== 'non-auth',
-        provider,
-        framework,
-        signals: Object.freeze(signals),
-      });
-    }
+    return Object.freeze({
+      pageType,
+      hasEmailField,
+      hasPasswordField,
+      hasOTPField,
+      hasNameFields,
+      formCount,
+      inputCount,
+      isAuthRelated: pageType !== 'non-auth',
+      provider,
+      framework,
+      signals: Object.freeze(signals),
+    });
+  }
 
   private static classifyPage(
-      routeAndTitle: string,
-      combined: string,
-      hasOTPField: boolean,
-      hasPasswordField: boolean,
-      hasEmailField: boolean,
-      signals: string[]
-    ): PageType {
-      if(hasOTPField || this.PAGE_PATTERNS[0]!.pattern.test(combined)) {
+    routeAndTitle: string,
+    combined: string,
+    hasOTPField: boolean,
+    hasPasswordField: boolean,
+    hasEmailField: boolean,
+    signals: string[]
+  ): PageType {
+    if (hasOTPField || this.PAGE_PATTERNS[0]!.pattern.test(combined)) {
       const is2FA = this.PAGE_PATTERNS[1]!.pattern.test(combined);
       const type = is2FA ? '2fa' : 'verification';
       signals.push(`page:${type}`);
       return type;
     }
 
-    for(const { type, pattern, signal } of this.PAGE_PATTERNS) {
-    if (pattern.test(routeAndTitle)) {
-      signals.push(signal);
-      return type;
+    for (const { type, pattern, signal } of this.PAGE_PATTERNS) {
+      if (pattern.test(routeAndTitle)) {
+        signals.push(signal);
+        return type;
+      }
     }
-  }
 
-  for(const { type, pattern, signal } of this.PAGE_PATTERNS) {
-    if (pattern.test(combined)) {
-      signals.push(signal);
-      return type;
+    for (const { type, pattern, signal } of this.PAGE_PATTERNS) {
+      if (pattern.test(combined)) {
+        signals.push(signal);
+        return type;
+      }
     }
-  }
 
-  if(hasPasswordField || hasEmailField) {
-  signals.push('page:generic-form');
-  return 'generic-form';
-}
+    if (hasPasswordField || hasEmailField) {
+      signals.push('page:generic-form');
+      return 'generic-form';
+    }
 
-return 'non-auth';
+    return 'non-auth';
   }
 
   private static pageText(): string {
-  if (!document.body) { return ''; }
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-  let text = '';
-  while (walker.nextNode() && text.length < PAGE_TEXT_SCAN_LIMIT) {
-    const node = walker.currentNode;
-    if (node.parentElement?.closest('a, button, [role="button"], [role="link"], script, style, noscript')) {
-      continue;
+    if (!document.body) {
+      return '';
     }
-    const chunk = node.textContent?.trim();
-    if (chunk) { text += ` ${chunk}`; }
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let text = '';
+    while (walker.nextNode() && text.length < PAGE_TEXT_SCAN_LIMIT) {
+      const node = walker.currentNode;
+      if (
+        node.parentElement?.closest(
+          'a, button, [role="button"], [role="link"], script, style, noscript'
+        )
+      ) {
+        continue;
+      }
+      const chunk = node.textContent?.trim();
+      if (chunk) {
+        text += ` ${chunk}`;
+      }
+    }
+    return text.slice(0, PAGE_TEXT_SCAN_LIMIT).toLowerCase();
   }
-  return text.slice(0, PAGE_TEXT_SCAN_LIMIT).toLowerCase();
-}
 
   private static hasSplitOTPGroup(): boolean {
-  const digitInputs = deepQuerySelectorAll<HTMLInputElement>(
-    'input[maxlength="1"][type="text"], input[maxlength="1"][type="tel"], input[maxlength="1"][type="number"]'
-  );
-  const groupCounts = new Map<Element, number>();
-  for (const input of digitInputs) {
-    for (const group of [input.parentElement, input.parentElement?.parentElement]) {
-      if (!group) { continue; }
-      const count = (groupCounts.get(group) ?? 0) + 1;
-      groupCounts.set(group, count);
+    const digitInputs = deepQuerySelectorAll<HTMLInputElement>(
+      'input[maxlength="1"][type="text"], input[maxlength="1"][type="tel"], input[maxlength="1"][type="number"]'
+    );
+    const groupCounts = new Map<Element, number>();
+    for (const input of digitInputs) {
+      for (const group of [input.parentElement, input.parentElement?.parentElement]) {
+        if (!group) {
+          continue;
+        }
+        const count = (groupCounts.get(group) ?? 0) + 1;
+        groupCounts.set(group, count);
+      }
     }
+    return Array.from(groupCounts.values()).some(
+      (count) => count >= OTP_CONSTANTS.MIN_SPLIT_FIELDS && count <= OTP_CONSTANTS.MAX_SPLIT_FIELDS
+    );
   }
-  return Array.from(groupCounts.values()).some(
-    (count) =>
-      count >= OTP_CONSTANTS.MIN_SPLIT_FIELDS &&
-      count <= OTP_CONSTANTS.MAX_SPLIT_FIELDS
-  );
-}
 
   private static detectProvider(_url: string, _signals: string[]): string | null {
     return null;
   }
 
   private static detectFramework(): string {
-  for (const detector of this.FRAMEWORK_DETECTORS) {
-    try {
-      if (detector.detect()) {
-        return detector.name;
+    for (const detector of this.FRAMEWORK_DETECTORS) {
+      try {
+        if (detector.detect()) {
+          return detector.name;
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
     }
+    return 'unknown';
   }
-  return 'unknown';
-}
 }
 
 // ─── 7. LAYOUT PATTERN DETECTOR (formerly layout.ts) ──────────────────

@@ -140,7 +140,7 @@ describe('generateRandomString()', () => {
   it('produces roughly uniform distribution', () => {
     const charset = 'AB';
     const result = generateRandomString(10000, charset);
-    const countA = [...result].filter(c => c === 'A').length;
+    const countA = [...result].filter((c) => c === 'A').length;
     // Expect roughly 50% ± 5%
     expect(countA).toBeGreaterThan(4500);
     expect(countA).toBeLessThan(5500);
@@ -321,7 +321,8 @@ describe('retry()', () => {
   });
 
   it('retries on failure and succeeds', async () => {
-    const fn = vi.fn()
+    const fn = vi
+      .fn()
       .mockRejectedValueOnce(new Error('fail1'))
       .mockRejectedValueOnce(new Error('fail2'))
       .mockResolvedValue('ok');
@@ -346,9 +347,7 @@ describe('withRetry()', () => {
   });
 
   it('retries on thrown error', async () => {
-    const fn = vi.fn()
-      .mockRejectedValueOnce(new Error('oops'))
-      .mockResolvedValue('recovered');
+    const fn = vi.fn().mockRejectedValueOnce(new Error('oops')).mockResolvedValue('recovered');
     const result = await withRetry(fn, 3, 10);
     expect(result).toBe('recovered');
     expect(fn).toHaveBeenCalledTimes(2);
@@ -367,7 +366,7 @@ describe('withTimeout()', () => {
   });
 
   it('rejects if promise exceeds timeout', async () => {
-    const slow = new Promise(r => setTimeout(r, 5000));
+    const slow = new Promise((r) => setTimeout(r, 5000));
     await expect(withTimeout(slow, 50)).rejects.toThrow('Timeout');
   });
 
@@ -538,7 +537,7 @@ describe('escapeHtml()', () => {
   });
 
   it('escapes single quotes', () => {
-    expect(escapeHtml("it's")).toBe("it&#39;s");
+    expect(escapeHtml("it's")).toBe('it&#39;s');
   });
 });
 
@@ -859,13 +858,15 @@ describe('isStringArray()', () => {
 
 describe('isEmailAccount()', () => {
   it('validates complete account', () => {
-    expect(isEmailAccount({
-      fullEmail: 'user@example.com',
-      domain: 'example.com',
-      createdAt: Date.now(),
-      expiresAt: Date.now() + 3600000,
-      service: 'catchmail',
-    })).toBe(true);
+    expect(
+      isEmailAccount({
+        fullEmail: 'user@example.com',
+        domain: 'example.com',
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 3600000,
+        service: 'catchmail',
+      })
+    ).toBe(true);
   });
 
   it('rejects missing fields', () => {
@@ -873,13 +874,15 @@ describe('isEmailAccount()', () => {
   });
 
   it('rejects non-email fullEmail', () => {
-    expect(isEmailAccount({
-      fullEmail: 'notemail',
-      domain: 'x',
-      createdAt: 1,
-      expiresAt: 2,
-      service: 's',
-    })).toBe(false);
+    expect(
+      isEmailAccount({
+        fullEmail: 'notemail',
+        domain: 'x',
+        createdAt: 1,
+        expiresAt: 2,
+        service: 's',
+      })
+    ).toBe(false);
   });
 });
 
@@ -970,7 +973,11 @@ describe('tryCatch()', () => {
   });
 
   it('returns fallback on error', () => {
-    expect(tryCatch(() => { throw new Error('oops'); }, -1)).toBe(-1);
+    expect(
+      tryCatch(() => {
+        throw new Error('oops');
+      }, -1)
+    ).toBe(-1);
   });
 });
 
@@ -1256,7 +1263,8 @@ describe('extractActivationLink()', () => {
   });
 
   it('prefers activation link over tracking link', () => {
-    const text = 'Click https://example.com/analytics/tracking?id=123 or https://example.com/verify?token=abc to activate your account.';
+    const text =
+      'Click https://example.com/analytics/tracking?id=123 or https://example.com/verify?token=abc to activate your account.';
     const link = extractActivationLink(text);
     expect(link).toContain('/verify');
   });

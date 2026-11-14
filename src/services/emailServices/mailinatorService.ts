@@ -53,10 +53,9 @@ export class MailinatorService {
   async getMessages(fullEmail: string, signal?: AbortSignal): Promise<Email[]> {
     try {
       const [login] = fullEmail.split('@');
-      const response = await fetchWithTimeout(
-        `${BASE_URL}/${encodeURIComponent(login || '')}`,
-        { signal: signal ?? null }
-      );
+      const response = await fetchWithTimeout(`${BASE_URL}/${encodeURIComponent(login || '')}`, {
+        signal: signal ?? null,
+      });
 
       if (response.status === 404) {
         return [];
@@ -149,8 +148,8 @@ export class MailinatorService {
     for (const part of parts) {
       // Header names vary in case across responses — compare lowercased.
       const headers = part.headers ?? {};
-      const contentType = Object.entries(headers).find(([k]) =>
-        String(k).toLowerCase() === 'content-type'
+      const contentType = Object.entries(headers).find(
+        ([k]) => String(k).toLowerCase() === 'content-type'
       )?.[1];
       const contentTypeStr = Array.isArray(contentType)
         ? String(contentType[0] ?? '')

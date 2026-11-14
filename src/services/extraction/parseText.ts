@@ -5,13 +5,28 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 const NAMED: Record<string, string> = {
-  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
-  hellip: '…', mdash: '—', ndash: '–', rsquo: '’', lsquo: '‘',
-  ldquo: '“', rdquo: '”', zwnj: '', zwj: '', shy: '',
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: ' ',
+  hellip: '…',
+  mdash: '—',
+  ndash: '–',
+  rsquo: '’',
+  lsquo: '‘',
+  ldquo: '“',
+  rdquo: '”',
+  zwnj: '',
+  zwj: '',
+  shy: '',
 };
 
 export function decodeEntities(s: string): string {
-  if (!s) {return '';}
+  if (!s) {
+    return '';
+  }
   let out = s;
   // Bounded multi-pass: emails double-encode (&amp;#39;)
   for (let i = 0; i < 3; i++) {
@@ -19,15 +34,23 @@ export function decodeEntities(s: string): string {
       .replace(/&#x([0-9a-f]+);?/gi, (_, h) => safeCp(parseInt(h, 16)))
       .replace(/&#(\d+);?/g, (_, d) => safeCp(parseInt(d, 10)))
       .replace(/&([a-z]+);/gi, (m, n) => NAMED[n.toLowerCase()] ?? m);
-    if (next === out) {break;}
+    if (next === out) {
+      break;
+    }
     out = next;
   }
   return out;
 }
 
 function safeCp(n: number): string {
-  if (!Number.isFinite(n) || n < 0 || n > 0x10ffff) {return '';}
-  try { return String.fromCodePoint(n); } catch { return ''; }
+  if (!Number.isFinite(n) || n < 0 || n > 0x10ffff) {
+    return '';
+  }
+  try {
+    return String.fromCodePoint(n);
+  } catch {
+    return '';
+  }
 }
 
 /** Invisible chars used to split OTPs and defeat regex. Must die before parsing. */
@@ -35,15 +58,37 @@ const INVISIBLE = /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF\u00AD\u180E]/g
 
 /* Homoglyph fold: only for comparison, never for the emitted code. */
 const HOMOGLYPH: Record<string, string> = {
-  '\u0410': 'A', '\u0412': 'B', '\u0421': 'C', '\u0415': 'E', '\u041D': 'H',
-  '\u041A': 'K', '\u041C': 'M', '\u041E': 'O', '\u0420': 'P', '\u0422': 'T',
-  '\u0425': 'X', '\u03A1': 'P', '\u0391': 'A', '\u039F': 'O',
-  '\uFF10': '0', '\uFF11': '1', '\uFF12': '2', '\uFF13': '3', '\uFF14': '4',
-  '\uFF15': '5', '\uFF16': '6', '\uFF17': '7', '\uFF18': '8', '\uFF19': '9',
+  '\u0410': 'A',
+  '\u0412': 'B',
+  '\u0421': 'C',
+  '\u0415': 'E',
+  '\u041D': 'H',
+  '\u041A': 'K',
+  '\u041C': 'M',
+  '\u041E': 'O',
+  '\u0420': 'P',
+  '\u0422': 'T',
+  '\u0425': 'X',
+  '\u03A1': 'P',
+  '\u0391': 'A',
+  '\u039F': 'O',
+  '\uFF10': '0',
+  '\uFF11': '1',
+  '\uFF12': '2',
+  '\uFF13': '3',
+  '\uFF14': '4',
+  '\uFF15': '5',
+  '\uFF16': '6',
+  '\uFF17': '7',
+  '\uFF18': '8',
+  '\uFF19': '9',
 };
 
 export function foldHomoglyphs(s: string): string {
-  return s.replace(/[\u0410\u0412\u0421\u0415\u041D\u041A\u041C\u041E\u0420\u0422\u0425\u03A1\u0391\u039F\uFF10-\uFF19]/g, (c) => HOMOGLYPH[c] ?? c);
+  return s.replace(
+    /[\u0410\u0412\u0421\u0415\u041D\u041A\u041C\u041E\u0420\u0422\u0425\u03A1\u0391\u039F\uFF10-\uFF19]/g,
+    (c) => HOMOGLYPH[c] ?? c
+  );
 }
 
 export interface ParsedEmail {

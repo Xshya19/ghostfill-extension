@@ -92,12 +92,15 @@ export function isRetryableError(error: unknown): boolean {
     typeof (error as any)?.message === 'string'
       ? (error as any).message
       : typeof error === 'string'
-      ? error
-      : String(error);
+        ? error
+        : String(error);
 
   // AbortError / DOMException AbortError — always propagate so the polling engine can respect
   // cancellation signals properly.
-  if (name === 'AbortError' || (name === 'DOMException' && message.toLowerCase().includes('abort'))) {
+  if (
+    name === 'AbortError' ||
+    (name === 'DOMException' && message.toLowerCase().includes('abort'))
+  ) {
     return true;
   }
 

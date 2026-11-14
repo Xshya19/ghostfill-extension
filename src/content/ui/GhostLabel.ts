@@ -436,7 +436,15 @@ export class GhostLabel extends HTMLElement implements GhostLabelElement {
     });
     this.inputObserver.observe(input, {
       attributes: true,
-      attributeFilter: ['type', 'disabled', 'readonly', 'style', 'class', 'hidden', 'data-ghostfill-fab-active'],
+      attributeFilter: [
+        'type',
+        'disabled',
+        'readonly',
+        'style',
+        'class',
+        'hidden',
+        'data-ghostfill-fab-active',
+      ],
     });
 
     // Listen for value changes to adjust opacity

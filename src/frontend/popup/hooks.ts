@@ -57,10 +57,7 @@ export function useOTPExtractor(emails: Email[]): {
   const otpsRef = useRef<Record<string, string | null>>({});
   const linksRef = useRef<Record<string, string | null>>({});
   const extractedKeysRef = useRef<Record<string, string>>({});
-  const emailKey = useMemo(
-    () => emails.map(emailExtractionKey).join('|'),
-    [emails]
-  );
+  const emailKey = useMemo(() => emails.map(emailExtractionKey).join('|'), [emails]);
   const stableEmails = useMemo(() => emails, [emailKey]);
 
   useEffect(() => {
@@ -108,7 +105,8 @@ export function useOTPExtractor(emails: Email[]): {
         try {
           const rawBody = contentToString(email.body);
           const rawTextBody = contentToString(email.textBody) || rawBody;
-          const rawHtmlBody = contentToString(email.htmlBody) || (rawBody.includes('<') ? rawBody : '');
+          const rawHtmlBody =
+            contentToString(email.htmlBody) || (rawBody.includes('<') ? rawBody : '');
 
           const response = (await safeSendMessage({
             action: 'EXTRACT_OTP',
@@ -137,9 +135,7 @@ export function useOTPExtractor(emails: Email[]): {
                 ? responseCode
                 : null);
             const linkVal =
-              response?.success && response?.link && isWebUrl(response.link)
-                ? response.link
-                : null;
+              response?.success && response?.link && isWebUrl(response.link) ? response.link : null;
             if (response?.success) {
               extractedKeysRef.current[email.id] = emailExtractionKey(email);
               otpsRef.current = { ...otpsRef.current, [email.id]: otpVal };

@@ -26,8 +26,9 @@ afterEach(() => {
 
 const SPLIT_OTP_FORM = '<form>' + '<input name="otp" maxlength="1">'.repeat(6) + '</form>';
 
-const countSplitInputs = (): HTMLInputElement[] =>
-  [...document.querySelectorAll<HTMLInputElement>('form input')];
+const countSplitInputs = (): HTMLInputElement[] => [
+  ...document.querySelectorAll<HTMLInputElement>('form input'),
+];
 
 describe('duplicate OTP delivery suppression', () => {
   it('writes a repeated identical code only once within the dedupe window', async () => {
@@ -93,8 +94,7 @@ describe('duplicate OTP delivery suppression', () => {
     // Fails on an implementation that marks the code as delivered before the
     // fill actually succeeds: the retry after the widget grew to six boxes
     // would be suppressed and the fields would stay empty.
-    document.body.innerHTML =
-      '<form>' + '<input name="otp" maxlength="1">'.repeat(4) + '</form>';
+    document.body.innerHTML = '<form>' + '<input name="otp" maxlength="1">'.repeat(4) + '</form>';
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
       new DOMRect(0, 0, 40, 40)
     );
@@ -106,7 +106,11 @@ describe('duplicate OTP delivery suppression', () => {
       // A 6-digit code cannot land in a 4-box widget (length mismatch, fields
       // untouched) — this delivery failed and must not suppress the next one.
       expect(await filler.fillOTP('451612', undefined, true)).toBe(false);
-      expect(countSplitInputs().map((input) => input.value).join('')).toBe('');
+      expect(
+        countSplitInputs()
+          .map((input) => input.value)
+          .join('')
+      ).toBe('');
 
       for (let i = 0; i < 2; i++) {
         const box = document.createElement('input');

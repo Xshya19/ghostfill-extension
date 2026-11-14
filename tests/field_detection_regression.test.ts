@@ -38,8 +38,16 @@ it('keeps profile, credential, and unrelated fields distinct through hydration a
     ['<label for="f">Preferred name</label><input id="f">', 'full-name', 'user'],
     ['<label for="f">Email address</label><input id="f" type="text">', 'email', 'email'],
     ['<label for="f">Email address</label><input id="f" name="name">', 'email', 'email'],
-    ['<div><label>Email address</label><div><div><input name="name"></div></div></div>', 'email', 'email'],
-    ['<div><span>Email address</span><div><div><div><input name="name"></div></div></div></div>', 'email', 'email'],
+    [
+      '<div><label>Email address</label><div><div><input name="name"></div></div></div>',
+      'email',
+      'email',
+    ],
+    [
+      '<div><span>Email address</span><div><div><div><input name="name"></div></div></div></div>',
+      'email',
+      'email',
+    ],
     ['<input aria-label="Email address" data-testid="full-name">', 'email', 'email'],
     ['<input type="email" name="full-name" autocomplete="name">', 'email', 'email'],
     [
@@ -61,8 +69,16 @@ it('keeps profile, credential, and unrelated fields distinct through hydration a
     ['<input aria-label="Company name" name="name">', 'unknown', 'hidden'],
     ['<input autocomplete="cc-name">', 'unknown', 'hidden'],
     ['<input aria-label="Search by name" name="name">', 'unknown', 'hidden'],
-    ['<input aria-label="Your name" style="display:none;transition:opacity .2s">', 'unknown', 'hidden'],
-    ['<input aria-label="Your name" style="visibility:hidden;transition:opacity .2s">', 'unknown', 'hidden'],
+    [
+      '<input aria-label="Your name" style="display:none;transition:opacity .2s">',
+      'unknown',
+      'hidden',
+    ],
+    [
+      '<input aria-label="Your name" style="visibility:hidden;transition:opacity .2s">',
+      'unknown',
+      'hidden',
+    ],
     ['<input aria-label="Promotion code" inputmode="numeric" maxlength="6">', 'unknown', 'hidden'],
     ['<input aria-label="Message">', 'unknown', 'hidden'],
     ['<input name="title">', 'unknown', 'hidden'],

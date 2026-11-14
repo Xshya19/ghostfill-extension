@@ -5,15 +5,21 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-beforeEach(()=> vi.clearAllMocks());
-afterEach(()=> { vi.useRealTimers(); vi.restoreAllMocks(); });
+beforeEach(() => vi.clearAllMocks());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 // We test the classes by importing their modules — need to expose internals via dynamic import hacks
 // Since pollingManager's classes are not exported, we import the file and grab via (global as any) or test via public behavior.
 // Simpler: re-implement the exact class logic checks via observable behavior through EmailServiceAggregator/pollingManager public API
 // But for hard coverage we directly test the file's internal classes by reading source and re-creating them here identically — ensures contract.
 
-import { providerHealth, ProviderHealthManager } from '../src/services/emailServices/providerHealthManager';
+import {
+  providerHealth,
+  ProviderHealthManager,
+} from '../src/services/emailServices/providerHealthManager';
 
 // ── CircuitBreaker contract (mirrors pollingManager's implementation) ───────────
 describe('Polling CircuitBreaker — transport decay 45s, auth vs rate-limit', () => {
@@ -43,72 +49,116 @@ describe('Polling CircuitBreaker — transport decay 45s, auth vs rate-limit', (
   });
   it('circuit opens after threshold 6 (polling) vs 3 (providerHealth) — both exponential backoff capped', async () => {
     const mgr = new ProviderHealthManager(); // threshold 3
-    for(let i=0;i<3;i++) mgr.recordFailure('mailtm' as any, new Error('net'));
+    for (let i = 0; i < 3; i++) mgr.recordFailure('mailtm' as any, new Error('net'));
     expect(mgr.isAvailable('mailtm' as any)).toBe(false);
     const h = (mgr as any).health.get('mailtm');
     expect(h.cooldownUntil).toBeGreaterThan(Date.now());
     expect(h.cooldownUntil - Date.now()).toBeGreaterThan(8000);
-    expect(h.cooldownUntil - Date.now()).toBeLessThan(15*60*1000 + 10000);
+    expect(h.cooldownUntil - Date.now()).toBeLessThan(15 * 60 * 1000 + 10000);
   });
 });
 
 describe('SlidingRateLimiter — binary prune correctness', () => {
   it('prune O(log n) removes exactly expired entries, preserves sorted order', async () => {
     vi.useFakeTimers();
-    const { ProviderHealthManager } = await import('../src/services/emailServices/providerHealthManager');
+    const { ProviderHealthManager } =
+      await import('../src/services/emailServices/providerHealthManager');
     // Instead test SlidingRateLimiter via pollingManager's Rate logic: providerHealth not same, but we can directly instantiate pollingManager's internal class via eval
     // Quick direct class extracted for test
     class SlidingRateLimiter {
-      timestamps:number[]=[]; prune(){ if(!this.timestamps.length) return; const cutoff=Date.now()-60000; if(this.timestamps[0]!>=cutoff) return; if(this.timestamps[this.timestamps.length-1]!<cutoff){ this.timestamps.length=0; return; } let lo=0,hi=this.timestamps.length; while(lo<hi){ const mid=(lo+hi)>>>1; if(this.timestamps[mid]!<cutoff) lo=mid+1; else hi=mid; } if(lo>0) this.timestamps.splice(0,lo); }
-      stamp(){ this.timestamps.push(Date.now()); }
-      isLimited(){ this.prune(); return this.timestamps.length>=90; }
+      timestamps: number[] = [];
+      prune() {
+        if (!this.timestamps.length) return;
+        const cutoff = Date.now() - 60000;
+        if (this.timestamps[0]! >= cutoff) return;
+        if (this.timestamps[this.timestamps.length - 1]! < cutoff) {
+          this.timestamps.length = 0;
+          return;
+        }
+        let lo = 0,
+          hi = this.timestamps.length;
+        while (lo < hi) {
+          const mid = (lo + hi) >>> 1;
+          if (this.timestamps[mid]! < cutoff) lo = mid + 1;
+          else hi = mid;
+        }
+        if (lo > 0) this.timestamps.splice(0, lo);
+      }
+      stamp() {
+        this.timestamps.push(Date.now());
+      }
+      isLimited() {
+        this.prune();
+        return this.timestamps.length >= 90;
+      }
     }
     const lim = new SlidingRateLimiter();
     // fill 90 at T0
-    for(let i=0;i<90;i++) lim.stamp();
+    for (let i = 0; i < 90; i++) lim.stamp();
     expect(lim.isLimited()).toBe(true);
     vi.advanceTimersByTime(61000);
     expect(lim.isLimited()).toBe(false);
     expect(lim.timestamps.length).toBe(0);
     // mixed: 45 old + 45 fresh
-    for(let i=0;i<45;i++) { lim.timestamps.push(Date.now()-61000); }
-    for(let i=0;i<45;i++) lim.stamp();
+    for (let i = 0; i < 45; i++) {
+      lim.timestamps.push(Date.now() - 61000);
+    }
+    for (let i = 0; i < 45; i++) lim.stamp();
     lim.prune();
     expect(lim.timestamps.length).toBe(45);
     vi.useRealTimers();
   });
   it('all-expired fast path clears in O(1)', () => {
     vi.useFakeTimers();
-    class Lim { timestamps:number[]=[...Array(90)].map(()=> Date.now()-70000); prune(){ const cutoff=Date.now()-60000; if(this.timestamps[this.timestamps.length-1]!<cutoff) this.timestamps.length=0; } }
-    const l = new Lim(); l.prune(); expect(l.timestamps.length).toBe(0);
+    class Lim {
+      timestamps: number[] = [...Array(90)].map(() => Date.now() - 70000);
+      prune() {
+        const cutoff = Date.now() - 60000;
+        if (this.timestamps[this.timestamps.length - 1]! < cutoff) this.timestamps.length = 0;
+      }
+    }
+    const l = new Lim();
+    l.prune();
+    expect(l.timestamps.length).toBe(0);
     vi.useRealTimers();
   });
 });
 
 describe('AdaptiveScheduler — fast/general intervals', () => {
-  function calcFastInterval(waitingTabs: Map<number,{registeredAt:number}>, now: number){
-    const TIMING={ FAST_AGGRESSIVE_MS:2000, FAST_NORMAL_MS:2000, FAST_RELAXED_MS:4000, FAST_CEILING_MS:6000, FAST_AGGRESSIVE_UNTIL_MS:120_000, FAST_NORMAL_UNTIL_MS:240_000, FAST_RELAXED_UNTIL_MS:420_000 };
-    if(waitingTabs.size===0) return TIMING.FAST_CEILING_MS;
-    let oldest=now; for(const reg of waitingTabs.values()) if(reg.registeredAt<oldest) oldest=reg.registeredAt;
-    const waited=now-oldest;
-    if(waited<TIMING.FAST_AGGRESSIVE_UNTIL_MS) return TIMING.FAST_AGGRESSIVE_MS;
-    if(waited<TIMING.FAST_NORMAL_UNTIL_MS) return TIMING.FAST_NORMAL_MS;
-    if(waited<TIMING.FAST_RELAXED_UNTIL_MS) return TIMING.FAST_RELAXED_MS;
+  function calcFastInterval(waitingTabs: Map<number, { registeredAt: number }>, now: number) {
+    const TIMING = {
+      FAST_AGGRESSIVE_MS: 2000,
+      FAST_NORMAL_MS: 2000,
+      FAST_RELAXED_MS: 4000,
+      FAST_CEILING_MS: 6000,
+      FAST_AGGRESSIVE_UNTIL_MS: 120_000,
+      FAST_NORMAL_UNTIL_MS: 240_000,
+      FAST_RELAXED_UNTIL_MS: 420_000,
+    };
+    if (waitingTabs.size === 0) return TIMING.FAST_CEILING_MS;
+    let oldest = now;
+    for (const reg of waitingTabs.values())
+      if (reg.registeredAt < oldest) oldest = reg.registeredAt;
+    const waited = now - oldest;
+    if (waited < TIMING.FAST_AGGRESSIVE_UNTIL_MS) return TIMING.FAST_AGGRESSIVE_MS;
+    if (waited < TIMING.FAST_NORMAL_UNTIL_MS) return TIMING.FAST_NORMAL_MS;
+    if (waited < TIMING.FAST_RELAXED_UNTIL_MS) return TIMING.FAST_RELAXED_MS;
     return TIMING.FAST_CEILING_MS;
   }
   it('FAST ladder transitions at 120s/240s/420s', () => {
-    vi.useFakeTimers(); const base=Date.now();
-    const tabs=new Map([[1,{registeredAt:base}]]);
-    expect(calcFastInterval(tabs, base+10_000)).toBe(2000);
-    expect(calcFastInterval(tabs, base+130_000)).toBe(2000);
-    expect(calcFastInterval(tabs, base+250_000)).toBe(4000);
-    expect(calcFastInterval(tabs, base+500_000)).toBe(6000);
+    vi.useFakeTimers();
+    const base = Date.now();
+    const tabs = new Map([[1, { registeredAt: base }]]);
+    expect(calcFastInterval(tabs, base + 10_000)).toBe(2000);
+    expect(calcFastInterval(tabs, base + 130_000)).toBe(2000);
+    expect(calcFastInterval(tabs, base + 250_000)).toBe(4000);
+    expect(calcFastInterval(tabs, base + 500_000)).toBe(6000);
     expect(calcFastInterval(new Map(), base)).toBe(6000);
     vi.useRealTimers();
   });
   it('general interval 3s if waiting else 5s', () => {
-    const calcGeneral=(m:Map<number,any>)=> m.size>0?3000:5000;
-    expect(calcGeneral(new Map([[1,{}]]))).toBe(3000);
+    const calcGeneral = (m: Map<number, any>) => (m.size > 0 ? 3000 : 5000);
+    expect(calcGeneral(new Map([[1, {}]]))).toBe(3000);
     expect(calcGeneral(new Map())).toBe(5000);
   });
 });
@@ -124,7 +174,7 @@ describe('DomainMatcher — case insensitive & hyphen collapse', () => {
   it('brandMatches collapses hyphen/space and is case-insensitive', async () => {
     const text = 'Welcome to Hugging Face';
     const tokens = ['huggingface'];
-    const normalizedText = text.toLowerCase().replace(/[-_\s]+/g,'');
+    const normalizedText = text.toLowerCase().replace(/[-_\s]+/g, '');
     expect(normalizedText.includes('huggingface')).toBe(true);
   });
 });
@@ -140,13 +190,19 @@ describe('SSEManager — generation, stale reader, buffer split', () => {
   it('buffer split across chunks with \\r\\n and stream:true', async () => {
     const decoder = new TextDecoder();
     let buffer = '';
-    const chunks = ['event: mes','sage\ndata: {"t"', 'ype":"email"}\n\n', 'event: messa','ge\ndata: {"type":"email2"}\r\n\r\n'];
+    const chunks = [
+      'event: mes',
+      'sage\ndata: {"t"',
+      'ype":"email"}\n\n',
+      'event: messa',
+      'ge\ndata: {"type":"email2"}\r\n\r\n',
+    ];
     const events: string[] = [];
     for (const ch of chunks) {
       buffer += ch;
       const parts = buffer.split('\n');
       buffer = parts.pop()!;
-      for (const line of parts) if(line.startsWith('data:')) events.push(line);
+      for (const line of parts) if (line.startsWith('data:')) events.push(line);
       void decoder.decode(new Uint8Array(), { stream: true });
     }
     expect(events.length).toBe(2);
@@ -154,7 +210,7 @@ describe('SSEManager — generation, stale reader, buffer split', () => {
   it('MAX_RECONNECT 8 then fallback to polling not throw', async () => {
     const sse = await import('../src/background/sseManager');
     (sse.sseManager as any).reconnectAttempts = 8;
-    await expect(sse.sseManager.reconnect().catch(()=> 'ok')).resolves.toBeUndefined();
+    await expect(sse.sseManager.reconnect().catch(() => 'ok')).resolves.toBeUndefined();
   });
 });
 
@@ -164,16 +220,16 @@ describe('ServiceWorker boot — re-entrancy, exponential backoff, circuit 5→1
     expect(typeof sw.getBootState).toBe('function');
     expect(typeof sw.initServiceWorker).toBe('function');
     // re-entrancy: second init returns a promise
-    const p1 = sw.initServiceWorker().catch(()=>{});
-    const p2 = sw.initServiceWorker().catch(()=>{});
+    const p1 = sw.initServiceWorker().catch(() => {});
+    const p2 = sw.initServiceWorker().catch(() => {});
     expect(p1).toBeDefined();
     expect(p2).toBeDefined();
-    await Promise.all([p1,p2].map(p=> p.catch(()=>{})));
+    await Promise.all([p1, p2].map((p) => p.catch(() => {})));
   });
   it('clearDeferredTimers idempotent', async () => {
     const sw = await import('../src/background/serviceWorker');
-    expect(()=> sw.clearDeferredTimers()).not.toThrow();
-    expect(()=> sw.clearDeferredTimers()).not.toThrow();
+    expect(() => sw.clearDeferredTimers()).not.toThrow();
+    expect(() => sw.clearDeferredTimers()).not.toThrow();
   });
 });
 
@@ -193,14 +249,14 @@ describe('PollingManager performCheck coalescing — fast vs general starvation'
     // This is a contract test: document expected behavior
     const FAST_FLOOR = 1200;
     let lastGlobalCheckTime = Date.now();
-    const checkPermitted = (mode: 'fast'|'general', now:number) => {
-      if(mode==='fast' && now - lastGlobalCheckTime < FAST_FLOOR) return false;
+    const checkPermitted = (mode: 'fast' | 'general', now: number) => {
+      if (mode === 'fast' && now - lastGlobalCheckTime < FAST_FLOOR) return false;
       return true;
     };
     const now = lastGlobalCheckTime + 100;
     expect(checkPermitted('fast', now)).toBe(false);
     expect(checkPermitted('general', now)).toBe(true); // general not gated by FAST_FLOOR
-    expect(checkPermitted('fast', lastGlobalCheckTime+1200)).toBe(true);
+    expect(checkPermitted('fast', lastGlobalCheckTime + 1200)).toBe(true);
   });
   it('OTPCodeExtractor 5-source fallback chain truncates 50KB', async () => {
     const { EmailServiceAggregator } = await import('../src/services/emailServices');

@@ -145,10 +145,7 @@ describe('connectivity — reachability probe', () => {
   });
 
   it('never throws when the network stack misbehaves', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockRejectedValue(new Error('boom'))
-    );
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('boom')));
     await expect(probeConnectivity(100)).resolves.toBe(false);
   });
 });

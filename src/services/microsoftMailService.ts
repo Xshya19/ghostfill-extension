@@ -54,13 +54,19 @@ function requireCurrentAuth(generation: number): void {
 // ---------- Helpers ---------------------------------------------------------
 
 function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) {return error.message;}
+  if (error instanceof Error) {
+    return error.message;
+  }
   return String(error ?? '');
 }
 
 function normalizeOAuthError(message: string): Error {
   const lower = message.toLowerCase();
-  if (lower.includes('did not approve') || lower.includes('cancel') || lower.includes('access_denied')) {
+  if (
+    lower.includes('did not approve') ||
+    lower.includes('cancel') ||
+    lower.includes('access_denied')
+  ) {
     return new Error('user_cancelled');
   }
   return new Error(message || 'Microsoft OAuth flow failed');
@@ -86,7 +92,9 @@ function parseTokenFromRedirect(redirectUrl: string): { token: string; expiresIn
   const params = new URLSearchParams(hash);
   const token = params.get('access_token');
   const expiresIn = parseInt(params.get('expires_in') ?? '3600', 10);
-  if (!token) {throw new Error('No access_token in Microsoft redirect URL');}
+  if (!token) {
+    throw new Error('No access_token in Microsoft redirect URL');
+  }
   return { token, expiresIn };
 }
 
@@ -121,14 +129,19 @@ async function launchMicrosoftOAuth(interactive: boolean): Promise<string> {
         reject(normalizeOAuthError(chrome.runtime.lastError.message ?? 'Microsoft OAuth failed'));
         return;
       }
-      if (!redirectUrl) { reject(new Error('No redirect URL from Microsoft OAuth')); return; }
+      if (!redirectUrl) {
+        reject(new Error('No redirect URL from Microsoft OAuth'));
+        return;
+      }
       try {
         requireCurrentAuth(generation);
         const { token, expiresIn } = parseTokenFromRedirect(redirectUrl);
         cachedToken = token;
         tokenExpiresAt = Date.now() + expiresIn * 1000 - TOKEN_EXPIRY_BUFFER_MS;
         resolve(token);
-      } catch (e) { reject(e); }
+      } catch (e) {
+        reject(e);
+      }
     });
   });
 }
@@ -142,10 +155,15 @@ export interface MicrosoftProfile {
 }
 
 async function fetchMicrosoftProfile(token: string): Promise<MicrosoftProfile> {
-  const resp = await fetch(`${MICROSOFT_GRAPH_BASE}/me?$select=id,displayName,mail,userPrincipalName`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!resp.ok) {throw new Error(`Microsoft Graph /me error: ${resp.status}`);}
+  const resp = await fetch(
+    `${MICROSOFT_GRAPH_BASE}/me?$select=id,displayName,mail,userPrincipalName`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+  if (!resp.ok) {
+    throw new Error(`Microsoft Graph /me error: ${resp.status}`);
+  }
   const data = (await resp.json()) as {
     id: string;
     displayName?: string;
@@ -153,7 +171,9 @@ async function fetchMicrosoftProfile(token: string): Promise<MicrosoftProfile> {
     userPrincipalName?: string;
   };
   const email = (data.mail ?? data.userPrincipalName ?? '').toLowerCase();
-  if (!email) {throw new Error('No email returned from Microsoft Graph /me');}
+  if (!email) {
+    throw new Error('No email returned from Microsoft Graph /me');
+  }
   return { userId: data.id, email, displayName: data.displayName ?? email };
 }
 
@@ -172,12 +192,19 @@ export async function ensureMicrosoftToken(interactive = false): Promise<string>
   try {
     token = await launchMicrosoftOAuth(interactive);
   } catch (err) {
-    if (!interactive && generation === authGeneration) {recordAuthFailure(err);}
+    if (!interactive && generation === authGeneration) {
+      recordAuthFailure(err);
+    }
     throw err;
   }
   requireCurrentAuth(generation);
-  try { await persistAuthWrite(chrome.storage.session.set({ msAccessToken: token, msTokenExpiry: tokenExpiresAt })); }
-  catch { /* ignore */ }
+  try {
+    await persistAuthWrite(
+      chrome.storage.session.set({ msAccessToken: token, msTokenExpiry: tokenExpiresAt })
+    );
+  } catch {
+    /* ignore */
+  }
   requireCurrentAuth(generation);
   clearAuthBackoff();
   return token;
@@ -202,9 +229,15 @@ export async function connectMicrosoft(): Promise<MicrosoftProfile> {
 
 export async function disconnectMicrosoft(): Promise<void> {
   authGeneration++;
-  cachedToken = null; tokenExpiresAt = null; clearAuthBackoff();
+  cachedToken = null;
+  tokenExpiresAt = null;
+  clearAuthBackoff();
   await Promise.allSettled([...pendingAuthWrites]);
-  try { await chrome.storage.session.remove(['msAccessToken', 'msTokenExpiry']); } catch { /* ignore */ }
+  try {
+    await chrome.storage.session.remove(['msAccessToken', 'msTokenExpiry']);
+  } catch {
+    /* ignore */
+  }
   await storageService.set('microsoftConnected', false);
   await storageService.set('microsoftConnectedAt', null);
   await storageService.set('microsoftProfile', null);
@@ -213,7 +246,8 @@ export async function disconnectMicrosoft(): Promise<void> {
 }
 
 export async function getMicrosoftConnectionStatus(): Promise<{
-  connected: boolean; email: string | null;
+  connected: boolean;
+  email: string | null;
 }> {
   const connected = (await storageService.get('microsoftConnected')) === true;
   const profile = (await storageService.get('microsoftProfile')) as MicrosoftProfile | null;
@@ -224,11 +258,14 @@ export async function getMicrosoftConnectionStatus(): Promise<{
 
 export async function getMicrosoftAlias(website: string, baseEmail?: string): Promise<string> {
   const base =
-    baseEmail ??
-    ((await storageService.get('microsoftProfile')) as MicrosoftProfile | null)?.email;
-  if (!base) {throw new Error('Microsoft base email not available. Connect Outlook first.');}
+    baseEmail ?? ((await storageService.get('microsoftProfile')) as MicrosoftProfile | null)?.email;
+  if (!base) {
+    throw new Error('Microsoft base email not available. Connect Outlook first.');
+  }
   const [localPart, domainPart] = base.split('@');
-  if (!localPart || !domainPart) {throw new Error(`Invalid Microsoft base email: ${base}`);}
+  if (!localPart || !domainPart) {
+    throw new Error(`Invalid Microsoft base email: ${base}`);
+  }
   const tag = getAliasPlusSuffix(website);
   return `${localPart}+ghostfill-${tag}@${domainPart}`;
 }
@@ -257,12 +294,11 @@ export async function searchMicrosoftInbox(
   // otherwise Graph 400s and the poller serves silent [].
   const safeAlias = alias.replace(/'/g, "''");
   const aliasFilter = `toRecipients/any(r:r/emailAddress/address eq '${safeAlias}')`;
-  const sinceFilter = sinceMs
-    ? ` and receivedDateTime gt ${new Date(sinceMs).toISOString()}`
-    : '';
+  const sinceFilter = sinceMs ? ` and receivedDateTime gt ${new Date(sinceMs).toISOString()}` : '';
   const filter = encodeURIComponent(`${aliasFilter}${sinceFilter}`);
 
-  const select = 'id,conversationId,from,toRecipients,subject,receivedDateTime,bodyPreview,body,isRead';
+  const select =
+    'id,conversationId,from,toRecipients,subject,receivedDateTime,bodyPreview,body,isRead';
   const url = `${MICROSOFT_GRAPH_BASE}/me/messages?$filter=${filter}&$select=${select}&$top=${MAX_MESSAGES}&$orderby=receivedDateTime desc`;
 
   // ConsistencyLevel: eventual is required by Graph for $filter over

@@ -101,7 +101,7 @@ describe('username vs email resolution', () => {
   it('fills a focused Mistral-style email input with a text type and example placeholder', async () => {
     document.title = 'Login - Mistral AI';
     const f = form(
-      '<h1>Let\'s start building</h1><p>Login or signup below</p>' +
+      "<h1>Let's start building</h1><p>Login or signup below</p>" +
         '<label for="mistral-email">Email<span><a href="/recovery">Forgot password?</a></span></label>' +
         '<input id="mistral-email" name="email" type="text" inputmode="email" autocomplete="username" placeholder="you@example.com">'
     );
@@ -140,7 +140,11 @@ describe('username vs email resolution', () => {
       control.setMode('email');
       fab.showNearField(input);
       control.identityCache = {
-        response: { success: true, identity: { email: identity.email }, preferredEmailType: 'disposable' },
+        response: {
+          success: true,
+          identity: { email: identity.email },
+          preferredEmailType: 'disposable',
+        },
         ts: Date.now(),
       };
       await control.handlePrimaryAction();
@@ -154,7 +158,9 @@ describe('username vs email resolution', () => {
 
   it('recognizes a verification step that keeps a login title before its code field appears', () => {
     document.title = 'Login - Mistral AI';
-    form('<h1>Check your inbox</h1><p>Enter the verification code sent to your email.</p><input name="email">');
+    form(
+      '<h1>Check your inbox</h1><p>Enter the verification code sent to your email.</p><input name="email">'
+    );
 
     expect(PageAnalyzer.analyze().pageType).toBe('verification');
     expect(PageIntelligence.analyze()).toMatchObject({

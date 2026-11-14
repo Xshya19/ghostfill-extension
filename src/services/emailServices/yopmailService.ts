@@ -162,7 +162,9 @@ function isValidYjCache(cache: YopmailYjCache | null | undefined): cache is Yopm
 
 /** Decode basic HTML entities safely without full DOM requirement */
 export function decodeHtmlEntities(encodedString: string): string {
-  if (!encodedString) {return '';}
+  if (!encodedString) {
+    return '';
+  }
   return encodedString
     .replace(/&#(\d+);/g, (_, dec) => {
       try {
@@ -260,12 +262,8 @@ export class YopmailService {
   async getDomains(signal?: AbortSignal): Promise<string[]> {
     void this.refreshAlternatePool(signal);
     const pool = this.getGenerationPool();
-    const rest = [...PRIMARY_DOMAINS, ...LEGACY_COMPAT_DOMAINS].filter(
-      (d) => !pool.includes(d)
-    );
-    const freshRest = (this.altPool ?? []).filter(
-      (d) => !pool.includes(d) && !rest.includes(d)
-    );
+    const rest = [...PRIMARY_DOMAINS, ...LEGACY_COMPAT_DOMAINS].filter((d) => !pool.includes(d));
+    const freshRest = (this.altPool ?? []).filter((d) => !pool.includes(d) && !rest.includes(d));
     return [...pool, ...rest, ...freshRest];
   }
 
@@ -637,7 +635,9 @@ export class YopmailService {
     if ((response.status === 400 || response.status === 403) && !isRetry) {
       const now = Date.now();
       if (now - this.lastTokenRefreshTime < 60_000) {
-        log.warn('YOPmail 400/403 received, tokens refreshed within last 60s. Refusing runaway refresh loop.');
+        log.warn(
+          'YOPmail 400/403 received, tokens refreshed within last 60s. Refusing runaway refresh loop.'
+        );
         throw new Error(`YOPmail getMessages: HTTP error ${response.status}`);
       }
       this.lastTokenRefreshTime = now;
@@ -780,7 +780,9 @@ export class YopmailService {
     if ((response.status === 400 || response.status === 403) && !isRetry) {
       const now = Date.now();
       if (now - this.lastTokenRefreshTime < 60_000) {
-        log.warn('YOPmail mail fetch 400/403 received, tokens refreshed within last 60s. Refusing runaway refresh loop.');
+        log.warn(
+          'YOPmail mail fetch 400/403 received, tokens refreshed within last 60s. Refusing runaway refresh loop.'
+        );
         throw new Error(`YOPmail getMessage: HTTP error ${response.status}`);
       }
       this.lastTokenRefreshTime = now;

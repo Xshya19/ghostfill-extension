@@ -11,7 +11,9 @@ const { store, setSpy } = vi.hoisted(() => {
 
 vi.mock('../src/services/storageService', () => ({
   storageService: {
-    get: vi.fn(async (key: string) => (store.has(key) ? structuredClone(store.get(key)) : undefined)),
+    get: vi.fn(async (key: string) =>
+      store.has(key) ? structuredClone(store.get(key)) : undefined
+    ),
     set: setSpy,
   },
 }));
@@ -66,9 +68,14 @@ describe('originFromTabUrl', () => {
 describe('senderTabUrl', () => {
   it('prefers the browser-provided tab URL over any frame URL', () => {
     expect(
-      senderTabUrl({ tab: { url: 'https://signup.example.com/form' }, url: 'https://other.example.com/' })
+      senderTabUrl({
+        tab: { url: 'https://signup.example.com/form' },
+        url: 'https://other.example.com/',
+      })
     ).toBe('https://signup.example.com/form');
-    expect(senderTabUrl({ url: 'https://framed.example.com/' })).toBe('https://framed.example.com/');
+    expect(senderTabUrl({ url: 'https://framed.example.com/' })).toBe(
+      'https://framed.example.com/'
+    );
     expect(senderTabUrl({})).toBeUndefined();
   });
 });

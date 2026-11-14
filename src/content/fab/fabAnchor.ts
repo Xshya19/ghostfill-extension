@@ -17,7 +17,11 @@
  */
 
 export type FabPlacement =
-  'inside-right' | 'outside-right' | 'outside-left' | 'below-right' | 'above-right';
+  | 'inside-right'
+  | 'outside-right'
+  | 'outside-left'
+  | 'below-right'
+  | 'above-right';
 
 export interface PlacementResult {
   readonly left: number;
@@ -27,7 +31,11 @@ export interface PlacementResult {
 }
 
 export type FabHideReason =
-  'field-detached' | 'field-hidden' | 'field-clipped' | 'no-safe-placement' | 'page-hidden';
+  | 'field-detached'
+  | 'field-hidden'
+  | 'field-clipped'
+  | 'no-safe-placement'
+  | 'page-hidden';
 
 export interface FabAnchorOptions {
   /** Shadow host element that carries the FAB. */
@@ -295,7 +303,7 @@ export class FabAnchor {
     fieldRect: Rect,
     visible: Rect,
     clip: Rect,
-    viewport: Rect,
+    viewport: Rect
   ): PlacementResult | null {
     const size = this.options.size;
     const margin = this.options.margin ?? 8;
@@ -500,7 +508,7 @@ export class FabAnchor {
       vv.left + margin,
       vv.top + margin,
       Math.max(0, vv.width - margin * 2),
-      Math.max(0, vv.height - margin * 2),
+      Math.max(0, vv.height - margin * 2)
     );
   }
 

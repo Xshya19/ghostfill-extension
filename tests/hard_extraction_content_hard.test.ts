@@ -10,8 +10,13 @@ import { analyzeEmailZones } from '../src/services/extraction/zoneAnalyzer';
 import { detectProvider } from '../src/services/extraction/providerDetector';
 import { deepQuerySelectorAll, getUniqueSelector } from '../src/utils/core';
 
-beforeEach(() => { vi.clearAllMocks(); });
-afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe('ZoneAnalyzer — non-string robustness', () => {
   it('handles null, undefined, numbers, objects without throwing', () => {
@@ -37,23 +42,38 @@ describe('ZoneAnalyzer — non-string robustness', () => {
 describe('IntelligentExtractor — cross-validation & double-sanitize', () => {
   it('extractAll handles html vs text double-escape &amp;amp; not double-escaped', () => {
     const html = '<p>Your code is 482913 &amp; valid</p>';
-    const result = extractAll('Verify your account', 'Your code is 482913 & valid', html, 'no-reply@example.com');
+    const result = extractAll(
+      'Verify your account',
+      'Your code is 482913 & valid',
+      html,
+      'no-reply@example.com'
+    );
     expect(result.otp === null || result.otp?.code === '482913').toBe(true);
     if (result.otp) expect(result.otp.code).not.toContain('&amp;');
   });
 
   it('extractAll falls back plain text when html stripping loses context', () => {
-    const result = extractAll('Subject is Hi', 'plain body has code 294018 for verification', '', 'a@b.com');
+    const result = extractAll(
+      'Subject is Hi',
+      'plain body has code 294018 for verification',
+      '',
+      'a@b.com'
+    );
     expect(result.otp?.code).toBeDefined();
   });
 
   it('link extraction ESP unwrapping inside extractAll CTA vs footer discrimination', () => {
     const html = `
       <div class="email-wrapper"><table><tbody>
-      ${Array.from({length:20},(_,i)=> `<tr><td><a href="https://marketing.example.com/promo?id=${i}">Deal ${i}</a></td></tr>`).join('')}
+      ${Array.from({ length: 20 }, (_, i) => `<tr><td><a href="https://marketing.example.com/promo?id=${i}">Deal ${i}</a></td></tr>`).join('')}
       <tr><td><a href="https://auth.example.com/verify-email?token=sec_token_998877" class="btn" style="background:#6366f1;color:#fff;padding:12px;">Verify Email Address</a></td></tr>
       </tbody></table><footer><a href="https://marketing.example.com/unsubscribe">Unsubscribe</a></footer></div>`;
-    const r = extractAll('Confirm your registration', 'Confirm: https://auth.example.com/verify-email?token=sec_token_998877', html, 'no-reply@example.com');
+    const r = extractAll(
+      'Confirm your registration',
+      'Confirm: https://auth.example.com/verify-email?token=sec_token_998877',
+      html,
+      'no-reply@example.com'
+    );
     expect(r.link?.url).toContain('sec_token_998877');
   });
 });
@@ -68,7 +88,12 @@ describe('ZoneAnalyzer — class-only CTA miss', () => {
 
 describe('ProviderDetector — phishing boost guard', () => {
   it('detects known providers', () => {
-    const provider = detectProvider('security@github.com', 'Your GitHub verification code is 123456', '', 'github.com');
+    const provider = detectProvider(
+      'security@github.com',
+      'Your GitHub verification code is 123456',
+      '',
+      'github.com'
+    );
     expect(provider).toBeDefined();
   });
 });

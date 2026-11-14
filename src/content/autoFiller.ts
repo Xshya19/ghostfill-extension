@@ -23,7 +23,13 @@ import {
   OTPFieldGroup,
   UniversalFiller,
 } from './autofill/formFiller';
-import { PageIntelligence, OTPFieldDiscovery, OTPFiller, FieldWatcher, NegativePatternMatcher } from './autofill/otpEngine';
+import {
+  PageIntelligence,
+  OTPFieldDiscovery,
+  OTPFiller,
+  FieldWatcher,
+  NegativePatternMatcher,
+} from './autofill/otpEngine';
 import { UltraDetector, ContextEngine } from './formDetector';
 
 const log = createLogger('AutoFiller');
@@ -377,17 +383,25 @@ export class AutoFiller {
   ): Promise<boolean> {
     const active = getDeepActiveElement();
     const activeRoot = active?.getRootNode();
-    const rawFields = [...new Set(selectors
-      .map((selector) => {
-        const candidates = deepQuerySelectorAll<HTMLInputElement>(selector)
-          .filter((field) => !field.disabled && !field.readOnly);
-        return candidates.find((field) => field === active) ??
-          candidates.find((field) => field.getRootNode() === activeRoot) ??
-          (candidates.length === 1 ? candidates[0] ?? null : null);
-      })
-      .filter(
-        (field): field is HTMLInputElement => field !== null && !field.disabled && !field.readOnly
-      ))];
+    const rawFields = [
+      ...new Set(
+        selectors
+          .map((selector) => {
+            const candidates = deepQuerySelectorAll<HTMLInputElement>(selector).filter(
+              (field) => !field.disabled && !field.readOnly
+            );
+            return (
+              candidates.find((field) => field === active) ??
+              candidates.find((field) => field.getRootNode() === activeRoot) ??
+              (candidates.length === 1 ? (candidates[0] ?? null) : null)
+            );
+          })
+          .filter(
+            (field): field is HTMLInputElement =>
+              field !== null && !field.disabled && !field.readOnly
+          )
+      ),
+    ];
 
     if (rawFields.length === 0) {
       return false;
@@ -565,7 +579,9 @@ export class AutoFiller {
     if (!this.isOTPCompatibleInput(field)) {
       return false;
     }
-    if (field.maxLength > 0 && field.maxLength < expectedLength) {return false;}
+    if (field.maxLength > 0 && field.maxLength < expectedLength) {
+      return false;
+    }
 
     const calibrated = this.getClassification(field);
     if (calibrated.decision === 'BLOCK') {
@@ -593,7 +609,9 @@ export class AutoFiller {
   }
 
   private isOTPCompatibleInput(field: HTMLInputElement): boolean {
-    return OTP_COMPATIBLE_INPUT_TYPES.has(field.type) && !NegativePatternMatcher.isLikelyNotOTP(field);
+    return (
+      OTP_COMPATIBLE_INPUT_TYPES.has(field.type) && !NegativePatternMatcher.isLikelyNotOTP(field)
+    );
   }
 
   private hasStrongOTPSignal(

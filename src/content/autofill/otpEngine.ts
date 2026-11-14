@@ -1,11 +1,27 @@
-import { detectHardNegative, looksLikeOtpField, verifyFill } from '../../intelligence/IntelligenceCore';
-import { extractFieldRecord, OTP_PATTERNS, OTP_CONSTANTS, PageAnalyzer } from '../../intelligence/pageAnalyzer';
+import {
+  detectHardNegative,
+  looksLikeOtpField,
+  verifyFill,
+} from '../../intelligence/IntelligenceCore';
+import {
+  extractFieldRecord,
+  OTP_PATTERNS,
+  OTP_CONSTANTS,
+  PageAnalyzer,
+} from '../../intelligence/pageAnalyzer';
 import { FrameworkType, PageContext } from '../../types/form.types';
 import { deepQuerySelectorAll, getDeepActiveElement } from '../../utils/core';
 import { createLogger } from '../../utils/logger';
-import { OTPFieldGroup, OTPFillOutcome , FieldSetter, PhantomTyper, delay, VisibilityEngine, EventFactory } from './formFiller';
+import {
+  OTPFieldGroup,
+  OTPFillOutcome,
+  FieldSetter,
+  PhantomTyper,
+  delay,
+  VisibilityEngine,
+  EventFactory,
+} from './formFiller';
 import { setTrackedValue } from './nativeValue';
-
 
 const log = createLogger('AutofillOTPEngine');
 
@@ -53,10 +69,20 @@ export class NegativePatternMatcher {
 
   static isLikelyNotOTP(input: HTMLInputElement): boolean {
     const record = extractFieldRecord(input);
-    if (detectHardNegative(record)) {return true;}
+    if (detectHardNegative(record)) {
+      return true;
+    }
     const nameId = `${record.name} ${record.id}`.toLowerCase();
-    const combined = [nameId, record.placeholder, record.autocomplete, record.ariaLabel,
-      record.labelText, ...Object.values(record.dataAttributes ?? {})].join(' ').toLowerCase();
+    const combined = [
+      nameId,
+      record.placeholder,
+      record.autocomplete,
+      record.ariaLabel,
+      record.labelText,
+      ...Object.values(record.dataAttributes ?? {}),
+    ]
+      .join(' ')
+      .toLowerCase();
     const type = record.type;
     const hasOTPSignal = looksLikeOtpField(record);
 
@@ -66,7 +92,8 @@ export class NegativePatternMatcher {
 
     if (
       (/phone|tel|mobile/i.test(nameId) || type === 'tel') &&
-      (record.maxLength > 4 || record.maxLength === -1) && !hasOTPSignal
+      (record.maxLength > 4 || record.maxLength === -1) &&
+      !hasOTPSignal
     ) {
       return true;
     }
@@ -244,9 +271,24 @@ export class OTPFieldDiscovery {
   private static readonly MIN_SPLIT_FIELDS = 4;
   private static readonly MAX_SPLIT_FIELDS = 8;
   private static readonly OTP_EXACT_FIELD_NAMES = new Set([
-    'otp', 'otc', 'code', 'pin', 'token', 'passcode', 'verifycode', 'verify-code',
-    'verify_code', 'verificationcode', 'verification-code', 'verification_code',
-    'authcode', 'auth-code', 'auth_code', 'one-time-code', 'one_time_code', 'onetimecode',
+    'otp',
+    'otc',
+    'code',
+    'pin',
+    'token',
+    'passcode',
+    'verifycode',
+    'verify-code',
+    'verify_code',
+    'verificationcode',
+    'verification-code',
+    'verification_code',
+    'authcode',
+    'auth-code',
+    'auth_code',
+    'one-time-code',
+    'one_time_code',
+    'onetimecode',
   ]);
 
   private static readonly STRONG_OTP_DESCRIPTOR_PATTERN =
@@ -256,7 +298,9 @@ export class OTPFieldDiscovery {
     const active = getDeepActiveElement();
     if (active instanceof HTMLInputElement && active.maxLength === 1) {
       const split = this.findSplitDigitFields();
-      if (split?.fields.includes(active)) {return split;}
+      if (split?.fields.includes(active)) {
+        return split;
+      }
     }
     const strategies = [
       {
@@ -267,20 +311,36 @@ export class OTPFieldDiscovery {
       {
         name: 'S2:keyworded-identity',
         sel: [
-          'input[name="otp"]', 'input[id="otp"]', 'input[name="otc"]', 'input[name*="otp" i]',
-          'input[id*="otp" i]', 'input[name*="verification" i]', 'input[id*="verification" i]',
-          'input[name*="passcode" i]', 'input[id*="passcode" i]', 'input[name*="token" i]',
-          'input[id*="token" i]', 'input[name*="2fa" i]', 'input[id*="2fa" i]',
-          'input[name*="mfa" i]', 'input[id*="mfa" i]',
+          'input[name="otp"]',
+          'input[id="otp"]',
+          'input[name="otc"]',
+          'input[name*="otp" i]',
+          'input[id*="otp" i]',
+          'input[name*="verification" i]',
+          'input[id*="verification" i]',
+          'input[name*="passcode" i]',
+          'input[id*="passcode" i]',
+          'input[name*="token" i]',
+          'input[id*="token" i]',
+          'input[name*="2fa" i]',
+          'input[id*="2fa" i]',
+          'input[name*="mfa" i]',
+          'input[id*="mfa" i]',
         ].join(', '),
         score: 95,
       },
       {
         name: 'S3:pattern-digit-otp',
         sel: [
-          'input[pattern="\\d{4}"]', 'input[pattern="\\d{5}"]', 'input[pattern="\\d{6}"]',
-          'input[pattern="\\d{7}"]', 'input[pattern="\\d{8}"]', 'input[pattern="[0-9]{4}"]',
-          'input[pattern="[0-9]{5}"]', 'input[pattern="[0-9]{6}"]', 'input[pattern="[0-9]{7}"]',
+          'input[pattern="\\d{4}"]',
+          'input[pattern="\\d{5}"]',
+          'input[pattern="\\d{6}"]',
+          'input[pattern="\\d{7}"]',
+          'input[pattern="\\d{8}"]',
+          'input[pattern="[0-9]{4}"]',
+          'input[pattern="[0-9]{5}"]',
+          'input[pattern="[0-9]{6}"]',
+          'input[pattern="[0-9]{7}"]',
           'input[pattern="[0-9]{8}"]',
         ].join(', '),
         score: 92,
@@ -293,12 +353,22 @@ export class OTPFieldDiscovery {
       {
         name: 'S5:labels-and-placeholders',
         sel: [
-          'input[aria-label*="otp" i]', 'input[aria-label*="code" i]', 'input[placeholder*="otp" i]',
-          'input[placeholder*="verification" i]', 'input[placeholder*="passcode" i]',
-          'input[placeholder*="enter code" i]', 'input[placeholder*="6-digit" i]',
-          'input[placeholder*="4-digit" i]', 'input[data-testid*="otp" i]', 'input[data-testid*="code" i]',
-          'input[data-testid*="verification" i]', 'input[aria-describedby*="otp" i]',
-          'input[aria-describedby*="code" i]', 'input[placeholder="code" i]', 'input[name="code"]', 'input[id="code"]'
+          'input[aria-label*="otp" i]',
+          'input[aria-label*="code" i]',
+          'input[placeholder*="otp" i]',
+          'input[placeholder*="verification" i]',
+          'input[placeholder*="passcode" i]',
+          'input[placeholder*="enter code" i]',
+          'input[placeholder*="6-digit" i]',
+          'input[placeholder*="4-digit" i]',
+          'input[data-testid*="otp" i]',
+          'input[data-testid*="code" i]',
+          'input[data-testid*="verification" i]',
+          'input[aria-describedby*="otp" i]',
+          'input[aria-describedby*="code" i]',
+          'input[placeholder="code" i]',
+          'input[name="code"]',
+          'input[id="code"]',
         ].join(', '),
         score: 80,
       },
@@ -308,19 +378,28 @@ export class OTPFieldDiscovery {
         score: 75,
       },
     ];
-    strategies.sort((a, b) => Number(active?.matches(b.sel) ?? false) - Number(active?.matches(a.sel) ?? false));
+    strategies.sort(
+      (a, b) => Number(active?.matches(b.sel) ?? false) - Number(active?.matches(a.sel) ?? false)
+    );
 
     for (const strategy of strategies) {
       const fields = this.queryVisible(strategy.sel);
 
       if (strategy.name === 'S4:inputmode-numeric-short') {
         const filtered = fields.filter((f) => {
-          if (this.hasStrongOTPSignal(f, context)) {return true;}
+          if (this.hasStrongOTPSignal(f, context)) {
+            return true;
+          }
 
-          const hasVerificationContext = context.isVerificationPage || context.is2FAPage || context.hasOTPLanguage;
-          if (!hasVerificationContext) {return false;}
+          const hasVerificationContext =
+            context.isVerificationPage || context.is2FAPage || context.hasOTPLanguage;
+          if (!hasVerificationContext) {
+            return false;
+          }
 
-          if (f.maxLength >= 4 && f.maxLength <= 8) {return true;}
+          if (f.maxLength >= 4 && f.maxLength <= 8) {
+            return true;
+          }
 
           const width = f.offsetWidth;
           const numericish =
@@ -328,13 +407,17 @@ export class OTPFieldDiscovery {
             f.getAttribute('inputmode') === 'numeric' ||
             f.type === 'number' ||
             f.type === 'tel';
-          if (numericish && width > 0 && width < 140) {return true;}
+          if (numericish && width > 0 && width < 140) {
+            return true;
+          }
 
           return false;
         });
         if (filtered.length > 0 && filtered.length <= this.MAX_SPLIT_FIELDS) {
           const group = this.wrap(filtered, strategy.score, strategy.name);
-          if (group) {return group;}
+          if (group) {
+            return group;
+          }
         }
         continue;
       }
@@ -349,20 +432,29 @@ export class OTPFieldDiscovery {
 
       if (fields.length > 0) {
         const group = this.wrap(fields, strategy.score, strategy.name);
-        if (group) {return group;}
+        if (group) {
+          return group;
+        }
       }
     }
 
     const split = this.findSplitDigitFields();
-    if (split) {return split;}
+    if (split) {
+      return split;
+    }
 
     const singleInputSplit = this.findSingleInputSplitOTP();
-    if (singleInputSplit) {return singleInputSplit;}
+    if (singleInputSplit) {
+      return singleInputSplit;
+    }
 
     return null;
   }
 
-  static queryVisible(selector: string, root: Document | Element | ShadowRoot = document): HTMLInputElement[] {
+  static queryVisible(
+    selector: string,
+    root: Document | Element | ShadowRoot = document
+  ): HTMLInputElement[] {
     return deepQuerySelectorAll<HTMLInputElement>(selector, root)
       .filter((f) => VisibilityEngine.isFillable(f))
       .filter((f) => !NegativePatternMatcher.isLikelyNotOTP(f));
@@ -376,25 +468,37 @@ export class OTPFieldDiscovery {
     });
   }
 
-  private static wrap(fields: HTMLInputElement[], score: number, strategy: string): OTPFieldGroup | null {
+  private static wrap(
+    fields: HTMLInputElement[],
+    score: number,
+    strategy: string
+  ): OTPFieldGroup | null {
     const active = getDeepActiveElement();
     const seed = fields.find((field) => field === active) ?? fields[0]!;
     let selected = [seed];
     const isSplit = seed.maxLength === 1;
     if (isSplit) {
-      const candidates = fields.filter((field) => field.maxLength === 1 &&
-        field.form === seed.form && field.getRootNode() === seed.getRootNode());
+      const candidates = fields.filter(
+        (field) =>
+          field.maxLength === 1 &&
+          field.form === seed.form &&
+          field.getRootNode() === seed.getRootNode()
+      );
       let container: Node | null = seed.parentNode;
       while (container) {
         const scoped = candidates.filter((field) => container!.contains(field));
         if (scoped.length >= this.MIN_SPLIT_FIELDS) {
-          if (scoped.length > this.MAX_SPLIT_FIELDS) {return null;}
+          if (scoped.length > this.MAX_SPLIT_FIELDS) {
+            return null;
+          }
           selected = scoped;
           break;
         }
         container = container.parentNode;
       }
-      if (selected.length < this.MIN_SPLIT_FIELDS) {return null;}
+      if (selected.length < this.MIN_SPLIT_FIELDS) {
+        return null;
+      }
     }
     const sorted = this.sortByPosition(selected);
     return {
@@ -402,17 +506,23 @@ export class OTPFieldDiscovery {
       score,
       strategy,
       isSplit,
-      expectedLength: isSplit ? sorted.length : (sorted[0]?.maxLength ?? 0) > 0 ? (sorted[0]?.maxLength ?? 6) : 6,
+      expectedLength: isSplit
+        ? sorted.length
+        : (sorted[0]?.maxLength ?? 0) > 0
+          ? (sorted[0]?.maxLength ?? 6)
+          : 6,
       signals: [`strategy:${strategy}`],
     };
   }
 
   private static findSplitDigitFields(): OTPFieldGroup | null {
     const candidates = this.queryVisible('input[maxlength="1"]');
-    if (candidates.length < this.MIN_SPLIT_FIELDS) {return null;}
-    
+    if (candidates.length < this.MIN_SPLIT_FIELDS) {
+      return null;
+    }
+
     const sortedWithRects = candidates
-      .map(el => ({ el, rect: el.getBoundingClientRect() }))
+      .map((el) => ({ el, rect: el.getBoundingClientRect() }))
       .sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left);
 
     const groups: { el: HTMLInputElement; rect: DOMRect }[][] = [];
@@ -424,8 +534,12 @@ export class OTPFieldDiscovery {
         const rectLead = lead.rect;
         const yDiff = Math.abs(rectEl.top - rectLead.top);
         const xDiff = Math.abs(rectEl.left - group[group.length - 1]!.rect.right);
-        if (item.el.form === lead.el.form && item.el.getRootNode() === lead.el.getRootNode() &&
-          yDiff <= 50 && xDiff <= 300) {
+        if (
+          item.el.form === lead.el.form &&
+          item.el.getRootNode() === lead.el.getRootNode() &&
+          yDiff <= 50 &&
+          xDiff <= 300
+        ) {
           group.push(item);
           added = true;
           break;
@@ -437,10 +551,17 @@ export class OTPFieldDiscovery {
     }
 
     const active = getDeepActiveElement();
-    const validGroups = groups.filter(g => g.length >= this.MIN_SPLIT_FIELDS && g.length <= this.MAX_SPLIT_FIELDS);
-    const validGroup = validGroups.find(g => g.some(item => item.el === active)) ?? validGroups[0];
+    const validGroups = groups.filter(
+      (g) => g.length >= this.MIN_SPLIT_FIELDS && g.length <= this.MAX_SPLIT_FIELDS
+    );
+    const validGroup =
+      validGroups.find((g) => g.some((item) => item.el === active)) ?? validGroups[0];
     if (validGroup) {
-      return this.wrap(validGroup.map(g => g.el), 90, 'S3:split-digit');
+      return this.wrap(
+        validGroup.map((g) => g.el),
+        90,
+        'S3:split-digit'
+      );
     }
 
     return null;
@@ -452,7 +573,9 @@ export class OTPFieldDiscovery {
     );
 
     for (const input of candidates) {
-      if (NegativePatternMatcher.isLikelyNotOTP(input)) {continue;}
+      if (NegativePatternMatcher.isLikelyNotOTP(input)) {
+        continue;
+      }
 
       const style = window.getComputedStyle(input);
       const hasSplitStyling =
@@ -463,7 +586,13 @@ export class OTPFieldDiscovery {
       const isShortWide = input.offsetWidth > 150 && input.maxLength >= 4;
 
       const hasOTPSignal = /otp|code|verification|passcode|2fa|mfa/i.test(
-        input.placeholder + ' ' + input.name + ' ' + input.id + ' ' + (input.getAttribute('aria-label') || '')
+        input.placeholder +
+          ' ' +
+          input.name +
+          ' ' +
+          input.id +
+          ' ' +
+          (input.getAttribute('aria-label') || '')
       );
 
       if ((hasSplitStyling && isShortWide) || hasOTPSignal) {
@@ -475,8 +604,14 @@ export class OTPFieldDiscovery {
 
   private static hasStrongOTPSignal(input: HTMLInputElement, context: PageContext): boolean {
     const descriptor = [
-      input.type, input.name, input.id, input.placeholder, input.autocomplete, input.inputMode,
-      input.getAttribute('aria-label'), input.getAttribute('aria-describedby'),
+      input.type,
+      input.name,
+      input.id,
+      input.placeholder,
+      input.autocomplete,
+      input.inputMode,
+      input.getAttribute('aria-label'),
+      input.getAttribute('aria-describedby'),
     ]
       .filter(Boolean)
       .join(' ')
@@ -484,9 +619,15 @@ export class OTPFieldDiscovery {
     const name = input.name.toLowerCase();
     const id = input.id.toLowerCase();
 
-    if (input.matches('[autocomplete~="one-time-code" i]')) {return true;}
-    if (this.OTP_EXACT_FIELD_NAMES.has(name) || this.OTP_EXACT_FIELD_NAMES.has(id)) {return true;}
-    if (this.STRONG_OTP_DESCRIPTOR_PATTERN.test(descriptor)) {return true;}
+    if (input.matches('[autocomplete~="one-time-code" i]')) {
+      return true;
+    }
+    if (this.OTP_EXACT_FIELD_NAMES.has(name) || this.OTP_EXACT_FIELD_NAMES.has(id)) {
+      return true;
+    }
+    if (this.STRONG_OTP_DESCRIPTOR_PATTERN.test(descriptor)) {
+      return true;
+    }
 
     const numericish =
       input.inputMode === 'numeric' ||
@@ -503,7 +644,11 @@ export class OTPFieldDiscovery {
     );
   }
 
-  private static wrapEditable(fields: HTMLElement[], score: number, strategy: string): OTPFieldGroup | null {
+  private static wrapEditable(
+    fields: HTMLElement[],
+    score: number,
+    strategy: string
+  ): OTPFieldGroup | null {
     const sorted = [...fields].sort((a, b) => {
       const rA = a.getBoundingClientRect();
       const rB = b.getBoundingClientRect();
@@ -539,7 +684,11 @@ export class OTPFiller {
 
     const isEditableGroup = group.signals?.includes('contenteditable');
     if (isEditableGroup) {
-      return this.fillContentEditable(cleanOTP, group.fields as unknown as HTMLElement[], framework);
+      return this.fillContentEditable(
+        cleanOTP,
+        group.fields as unknown as HTMLElement[],
+        framework
+      );
     }
 
     return group.isSplit
@@ -553,11 +702,16 @@ export class OTPFiller {
     framework: FrameworkType,
     isBackgroundTab: boolean = false
   ): Promise<OTPFillOutcome> {
-    if (!field) {return { success: false, filledCount: 0, strategy: 'single-field' };}
+    if (!field) {
+      return { success: false, filledCount: 0, strategy: 'single-field' };
+    }
 
     const cleanOTP = otp.replace(/[-\s]/g, '');
     if (field.maxLength > 0 && field.maxLength < cleanOTP.length) {
-      log.debug('Code exceeds the single field length', { codeLength: cleanOTP.length, maxLength: field.maxLength });
+      log.debug('Code exceeds the single field length', {
+        codeLength: cleanOTP.length,
+        maxLength: field.maxLength,
+      });
       return { success: false, filledCount: 0, strategy: 'single-length-mismatch' };
     }
     const valueToSet = field.type === 'number' ? cleanOTP : otp;
@@ -589,7 +743,10 @@ export class OTPFiller {
     isBackgroundTab: boolean = false
   ): Promise<OTPFillOutcome> {
     if (digits.length !== fields.length) {
-      log.debug('Code length does not match the split widget', { codeLength: digits.length, fieldCount: fields.length });
+      log.debug('Code length does not match the split widget', {
+        codeLength: digits.length,
+        fieldCount: fields.length,
+      });
       return { success: false, filledCount: 0, strategy: 'split-length-mismatch' };
     }
     const total = digits.length;
@@ -597,12 +754,16 @@ export class OTPFiller {
 
     for (let i = 0; i < fields.length; i++) {
       const field = fields[i];
-      if (!field) {continue;}
-      if (await FieldSetter.setValue(field, digits[i]!, framework, isBackgroundTab)) {filledCount++;}
+      if (!field) {
+        continue;
+      }
+      if (await FieldSetter.setValue(field, digits[i]!, framework, isBackgroundTab)) {
+        filledCount++;
+      }
     }
 
     const success = this.readSplitValue(fields) === digits;
-    if (!success && !isBackgroundTab && await this.tryPasteDistributedCode(digits, fields)) {
+    if (!success && !isBackgroundTab && (await this.tryPasteDistributedCode(digits, fields))) {
       return { success: true, filledCount: total, strategy: 'split-field-paste' };
     }
     return {
@@ -626,12 +787,14 @@ export class OTPFiller {
 
     for (let i = 0; i < fields.length; i++) {
       const field = fields[i];
-      if (!field) {continue;}
+      if (!field) {
+        continue;
+      }
 
       if (i < total) {
         const char = isSplit ? digits[i]! : digits;
         field.focus({ preventScroll: true });
-        
+
         if (!field.dispatchEvent(EventFactory.beforeInput(char))) {
           return { success: false, filledCount, strategy: 'contenteditable-cancelled' };
         }
@@ -640,7 +803,9 @@ export class OTPFiller {
         field.dispatchEvent(EventFactory.input(char));
         field.dispatchEvent(new Event('change', { bubbles: true }));
 
-        if (field.textContent === char) {filledCount++;}
+        if (field.textContent === char) {
+          filledCount++;
+        }
       }
 
       if (i < fields.length - 1) {
@@ -648,7 +813,9 @@ export class OTPFiller {
         if (document.activeElement === field) {
           field.blur();
           const nextField = fields[i + 1];
-          if (nextField) {nextField.focus({ preventScroll: true });}
+          if (nextField) {
+            nextField.focus({ preventScroll: true });
+          }
         }
       }
     }
@@ -662,9 +829,14 @@ export class OTPFiller {
     };
   }
 
-  private static async tryPasteDistributedCode(digits: string, fields: HTMLInputElement[]): Promise<boolean> {
+  private static async tryPasteDistributedCode(
+    digits: string,
+    fields: HTMLInputElement[]
+  ): Promise<boolean> {
     const target = fields[0];
-    if (!target) {return false;}
+    if (!target) {
+      return false;
+    }
 
     const originalValues = fields.map((f) => f.value);
 
@@ -676,9 +848,24 @@ export class OTPFiller {
       const dataTransfer = new DataTransfer();
       dataTransfer.setData('text/plain', digits);
 
-      target.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dataTransfer, bubbles: true, cancelable: true }));
-      target.dispatchEvent(new InputEvent('beforeinput', { data: digits, inputType: 'insertFromPaste', bubbles: true, cancelable: true }));
-      target.dispatchEvent(new InputEvent('input', { data: digits, inputType: 'insertFromPaste', bubbles: true }));
+      target.dispatchEvent(
+        new ClipboardEvent('paste', {
+          clipboardData: dataTransfer,
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+      target.dispatchEvent(
+        new InputEvent('beforeinput', {
+          data: digits,
+          inputType: 'insertFromPaste',
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+      target.dispatchEvent(
+        new InputEvent('input', { data: digits, inputType: 'insertFromPaste', bubbles: true })
+      );
 
       await delay(80);
       const success = this.readSplitValue(fields).slice(0, digits.length) === digits;
@@ -718,10 +905,7 @@ export class OTPFiller {
    * the page ignores would leave GhostFill believing the fields are
    * empty while the site still holds the pasted digits.
    */
-  private static restoreSplitValues(
-    fields: HTMLInputElement[],
-    originalValues: string[]
-  ): boolean {
+  private static restoreSplitValues(fields: HTMLInputElement[], originalValues: string[]): boolean {
     for (let i = 0; i < fields.length; i++) {
       const field = fields[i];
       if (field) {
@@ -730,7 +914,8 @@ export class OTPFiller {
     }
     const current = this.readSplitValue(fields);
     const expected = originalValues.join('');
-    return current.slice(0, expected.length) === expected;  }
+    return current.slice(0, expected.length) === expected;
+  }
 
   private static readSplitValue(fields: HTMLInputElement[]): string {
     return fields.map((field) => field.value ?? '').join('');
@@ -755,7 +940,9 @@ export class FieldWatcher {
 
   async watch(otp: string, context: PageContext, timeoutMs: number): Promise<boolean> {
     return new Promise((resolve) => {
-      if (this.isActive) {this.stop();}
+      if (this.isActive) {
+        this.stop();
+      }
 
       this.isActive = true;
       this.pendingOTP = otp;
@@ -763,7 +950,9 @@ export class FieldWatcher {
 
       let resolved = false;
       const resolveOnce = (result: boolean): void => {
-        if (resolved) {return;}
+        if (resolved) {
+          return;
+        }
         resolved = true;
         this.pendingResolve = null;
         this.stop();
@@ -772,10 +961,14 @@ export class FieldWatcher {
       this.pendingResolve = resolveOnce;
 
       const checkFields = async (): Promise<void> => {
-        if (!this.pendingOTP || !this.pendingContext || resolved) {return;}
+        if (!this.pendingOTP || !this.pendingContext || resolved) {
+          return;
+        }
 
         const group = OTPFieldDiscovery.discover(this.pendingContext);
-        if (!group) {return;}
+        if (!group) {
+          return;
+        }
 
         const otpToFill = this.pendingOTP;
         const framework = this.pendingContext.framework;
@@ -801,7 +994,9 @@ export class FieldWatcher {
 
       this.pollingInterval = setInterval(() => {
         void checkFields();
-        if (document.body) {this.scanAndObserveShadowRoots(document.body, checkFields);}
+        if (document.body) {
+          this.scanAndObserveShadowRoots(document.body, checkFields);
+        }
       }, 1000);
 
       this.safetyTimeout = setTimeout(() => {
@@ -811,15 +1006,21 @@ export class FieldWatcher {
   }
 
   private onMutation(checkFields: () => Promise<void>): void {
-    if (this.debounceTimeout) {clearTimeout(this.debounceTimeout);}
+    if (this.debounceTimeout) {
+      clearTimeout(this.debounceTimeout);
+    }
     this.debounceTimeout = setTimeout(() => {
       void this.handleMutationTick(checkFields);
     }, 250);
   }
 
   private async handleMutationTick(checkFields: () => Promise<void>): Promise<void> {
-    if (!this.pendingContext || !this.pendingOTP) {return;}
-    if (document.body) {this.scanAndObserveShadowRoots(document.body, checkFields);}
+    if (!this.pendingContext || !this.pendingOTP) {
+      return;
+    }
+    if (document.body) {
+      this.scanAndObserveShadowRoots(document.body, checkFields);
+    }
     void checkFields();
   }
 
@@ -834,9 +1035,13 @@ export class FieldWatcher {
       const shadow = el.shadowRoot;
       if (shadow && !this.knownShadowRoots.has(shadow)) {
         // Only observe shadows that look form-related
-        const isFormRelated = el.closest('form, [role="form"], [class*="otp"], [class*="verify"], [class*="auth"]') !== null
-          || el.tagName.toLowerCase().includes('-');
-        if (!isFormRelated) { node = walker.nextNode(); continue; }
+        const isFormRelated =
+          el.closest('form, [role="form"], [class*="otp"], [class*="verify"], [class*="auth"]') !==
+            null || el.tagName.toLowerCase().includes('-');
+        if (!isFormRelated) {
+          node = walker.nextNode();
+          continue;
+        }
         this.knownShadowRoots.add(shadow);
         const obs = new MutationObserver(() => this.onMutation(checkFields));
         // Avoid attributes:true to reduce noise from spinner/class changes

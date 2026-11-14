@@ -53,13 +53,17 @@ export interface AppState {
   zohoConnected: boolean;
   setZohoConnected: (connected: boolean) => void;
   zohoProfile: { accountId: string; email: string; displayName: string } | null;
-  setZohoProfile: (profile: { accountId: string; email: string; displayName: string } | null) => void;
+  setZohoProfile: (
+    profile: { accountId: string; email: string; displayName: string } | null
+  ) => void;
 
   // Microsoft Outlook connection states
   microsoftConnected: boolean;
   setMicrosoftConnected: (connected: boolean) => void;
   microsoftProfile: { userId: string; email: string; displayName: string } | null;
-  setMicrosoftProfile: (profile: { userId: string; email: string; displayName: string } | null) => void;
+  setMicrosoftProfile: (
+    profile: { userId: string; email: string; displayName: string } | null
+  ) => void;
 
   // Current tab hostname (read once on mount by Hub)
   currentTabHostname: string | null;
@@ -172,4 +176,3 @@ export const useAppStore = create<AppState>()(
     }
   )
 );
-

@@ -68,7 +68,6 @@ export type MessageAction =
   | 'RESET_STATE'
   // Polling pipeline state broadcasts (background → waiting tabs)
   | 'POLLING_STATE_CHANGE'
-
   | 'CONNECTIVITY_CHANGE'
   // Event-driven polling triggers
   | 'REGISTRATION_FORM_SUBMITTED'
@@ -905,7 +904,12 @@ export type ExtensionResponse =
   | MicrosoftGenerateAliasResponse
   | MicrosoftSearchInboxResponse
   | { success: boolean; alias?: string; error?: string }
-  | { success: boolean; health?: unknown[]; connectivity?: { offline: boolean; since: number | null }; error?: string }
+  | {
+      success: boolean;
+      health?: unknown[];
+      connectivity?: { offline: boolean; since: number | null };
+      error?: string;
+    }
   | { success: boolean; isFresh?: boolean; error?: string }
   | { success: boolean; error?: string };
 

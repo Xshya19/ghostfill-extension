@@ -23,12 +23,13 @@ export class GetnadaService {
         const pool = Array.isArray(data)
           ? data
           : data && typeof data === 'object'
-            ? (data as Record<string, unknown>).inboxes ?? (data as Record<string, unknown>).data
+            ? ((data as Record<string, unknown>).inboxes ?? (data as Record<string, unknown>).data)
             : null;
         if (Array.isArray(pool) && pool.length > 0) {
-          const inbox = pool[Math.floor(Math.random() * pool.length)] as
-            | Record<string, unknown>
-            | null;
+          const inbox = pool[Math.floor(Math.random() * pool.length)] as Record<
+            string,
+            unknown
+          > | null;
           const sharedEmail = inbox && (inbox.email || inbox.address || inbox.id);
           if (typeof sharedEmail === 'string' && sharedEmail.includes('@')) {
             const [login = '', domain = 'getnada.com'] = sharedEmail.split('@');

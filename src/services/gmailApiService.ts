@@ -487,10 +487,12 @@ async function persistToken(token: string, generation: number): Promise<void> {
   cachedToken = token;
   clearSilentAuthBackoff();
   try {
-    await persistAuthWrite(chrome.storage.session.set({
-      gmailAccessToken: token,
-      gmailTokenExpiry: tokenExpiresAt || Date.now() + DEFAULT_TOKEN_TTL_MS,
-    }));
+    await persistAuthWrite(
+      chrome.storage.session.set({
+        gmailAccessToken: token,
+        gmailTokenExpiry: tokenExpiresAt || Date.now() + DEFAULT_TOKEN_TTL_MS,
+      })
+    );
   } catch {
     /* Intentionally ignored */
   }
@@ -544,7 +546,7 @@ async function gmailFetch<T>(path: string, options: RequestInit = {}, retried = 
     throw new Error(`Gmail API ${res.status}: ${body}`);
   }
 
-  const data = await res.json() as T;
+  const data = (await res.json()) as T;
   requireCurrentAuth(generation);
   return data;
 }
@@ -654,7 +656,9 @@ export async function checkSilentAuth(): Promise<GmailProfile | null> {
     cachedProfile = profile;
     return profile;
   } catch {
-    if (generation !== authGeneration) {return null;}
+    if (generation !== authGeneration) {
+      return null;
+    }
     cachedToken = null;
     tokenExpiresAt = null;
     cachedProfile = null;

@@ -408,12 +408,7 @@ export function assessEmailDecision(input: DecisionInput): EmailDecision {
       );
     }
 
-    if (
-      !gate.canAutoOpen ||
-      !siteBound ||
-      risk !== 'low' ||
-      domainContext.warnings.length > 0
-    ) {
+    if (!gate.canAutoOpen || !siteBound || risk !== 'low' || domainContext.warnings.length > 0) {
       action = extraction.otp ? 'fill-otp' : 'show-review';
       warnings.push('link-requires-review');
     }

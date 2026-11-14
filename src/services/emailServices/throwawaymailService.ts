@@ -70,9 +70,12 @@ export class ThrowawaymailService {
     }
 
     try {
-      const response = await fetchWithTimeout(`${BASE_URL}/api/mailboxes/${encodeURIComponent(mailboxId)}/messages`, {
-        signal: signal ?? null,
-      });
+      const response = await fetchWithTimeout(
+        `${BASE_URL}/api/mailboxes/${encodeURIComponent(mailboxId)}/messages`,
+        {
+          signal: signal ?? null,
+        }
+      );
 
       if (!response.ok) {
         if (response.status === 404) {

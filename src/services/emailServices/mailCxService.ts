@@ -114,10 +114,9 @@ export class MailCxService {
 
   async getMessage(fullEmail: string, emailId: string, signal?: AbortSignal): Promise<Email> {
     try {
-      const response = await fetchWithTimeout(
-        `${BASE_URL}/email/${encodeURIComponent(emailId)}`,
-        { signal: signal ?? null }
-      );
+      const response = await fetchWithTimeout(`${BASE_URL}/email/${encodeURIComponent(emailId)}`, {
+        signal: signal ?? null,
+      });
 
       if (!response.ok) {
         throw new Error(`HTTP error: ${response.status}`);

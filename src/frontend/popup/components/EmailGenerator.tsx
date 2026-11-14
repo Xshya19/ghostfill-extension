@@ -465,8 +465,12 @@ const EmailGenerator: React.FC<Props> = ({
                       const activationLink = emailLinks[item.id] || null;
                       const emailTimestamp = getEmailTimestamp(item);
                       const preview = getEmailPreview(item.snippet || item.textBody || item.body);
-                      const senderLabel = getSenderLabel(item.from, item.subject, activationLink,
-                        item.htmlBody || item.textBody || item.body || item.snippet);
+                      const senderLabel = getSenderLabel(
+                        item.from,
+                        item.subject,
+                        activationLink,
+                        item.htmlBody || item.textBody || item.body || item.snippet
+                      );
 
                       return (
                         <div key={item.id} className="inbox-item" data-unread={!item.read}>
@@ -483,9 +487,7 @@ const EmailGenerator: React.FC<Props> = ({
                                 {!item.read && (
                                   <span className="inbox-unread-dot" aria-hidden="true" />
                                 )}
-                                <span className="inbox-sender-name">
-                                  {senderLabel}
-                                </span>
+                                <span className="inbox-sender-name">{senderLabel}</span>
                               </span>
                               <span className="inbox-item-date">
                                 {emailTimestamp === null
@@ -577,8 +579,12 @@ const EmailGenerator: React.FC<Props> = ({
                       const verificationCode = emailOTPs[item.id] || null;
                       const activationLink = emailLinks[item.id] || null;
                       const emailTimestamp = getEmailTimestamp(item);
-                      const senderLabel = getSenderLabel(item.from, item.subject, activationLink,
-                        item.htmlBody || item.textBody || item.body || item.snippet);
+                      const senderLabel = getSenderLabel(
+                        item.from,
+                        item.subject,
+                        activationLink,
+                        item.htmlBody || item.textBody || item.body || item.snippet
+                      );
 
                       return (
                         <div key={item.id} className="inbox-item-default">

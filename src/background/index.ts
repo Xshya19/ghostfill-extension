@@ -11,11 +11,7 @@ import { sleep } from '../utils/core';
 import { createLogger, initRemoteLogger } from '../utils/logger';
 import { safeSendTabMessage } from '../utils/messaging';
 
-import {
-  onUpdateAlarm,
-  setupUpdateAlarm,
-  handleUpdateNotificationClick,
-} from './autoUpdater';
+import { onUpdateAlarm, setupUpdateAlarm, handleUpdateNotificationClick } from './autoUpdater';
 import { dumpMenuStats } from './contextMenu';
 import {
   registerInitCallbacks,

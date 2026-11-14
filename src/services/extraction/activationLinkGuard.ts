@@ -279,8 +279,7 @@ export function scoreActivationLink(
   // footer/dashboard page. Host-level and brand rejects are unaffected.
   const actionPathOverride =
     DIRECT_ACTION_PATH_RE.test(parsed.pathname) &&
-    (hasAuthToken(url) ||
-      EXPLICIT_ACTION_QUERY_RE.test(`${parsed.search}${parsed.hash}`));
+    (hasAuthToken(url) || EXPLICIT_ACTION_QUERY_RE.test(`${parsed.search}${parsed.hash}`));
   const hardUrlHit =
     HARD_REJECT_HOST_OR_PATH.test(parsed.hostname) ||
     HARD_REJECT_HOST_OR_PATH.test(decodedPathname) ||

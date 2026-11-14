@@ -207,14 +207,36 @@ describe('email identity normalization', () => {
     const container = document.createElement('div');
     const root = createRoot(container);
     try {
-      flushSync(() => root.render(React.createElement(AliasInbox, {
-        isManual: false, loading: false, error: null, signingIn: false, openingMessageId: null,
-        onRefresh: () => {}, onSignIn: () => {}, onOpenMessage: () => {},
-        inbox: [{ id: 'fixture', threadId: 'fixture', from: 'bounces+opaque',
-          fromName: '', fromEmail: 'bounces+opaque', subject: 'Your secure link to Claude.ai is here',
-          date: Date.now(), dateFormatted: 'Today', snippet: '',
-          body: 'Sign in https://claude.ai/magic-link#fixture', isUnread: true, labelIds: [] }],
-      })));
+      flushSync(() =>
+        root.render(
+          React.createElement(AliasInbox, {
+            isManual: false,
+            loading: false,
+            error: null,
+            signingIn: false,
+            openingMessageId: null,
+            onRefresh: () => {},
+            onSignIn: () => {},
+            onOpenMessage: () => {},
+            inbox: [
+              {
+                id: 'fixture',
+                threadId: 'fixture',
+                from: 'bounces+opaque',
+                fromName: '',
+                fromEmail: 'bounces+opaque',
+                subject: 'Your secure link to Claude.ai is here',
+                date: Date.now(),
+                dateFormatted: 'Today',
+                snippet: '',
+                body: 'Sign in https://claude.ai/magic-link#fixture',
+                isUnread: true,
+                labelIds: [],
+              },
+            ],
+          })
+        )
+      );
       expect(container.querySelector('.inbox-item-from')?.textContent).toBe('Claude');
       expect(container.querySelector('[aria-label*="from Claude:"]')).not.toBeNull();
       expect(container.querySelector('.inbox-item-avatar')?.getAttribute('title')).toBe('Claude');

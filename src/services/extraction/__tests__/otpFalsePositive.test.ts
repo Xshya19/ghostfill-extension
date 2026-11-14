@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  extractOTP,
-  isCodeEmbeddedInEmail,
-  hasIsolatedOtpContext,
-} from '../otpExtractor';
+import { extractOTP, isCodeEmbeddedInEmail, hasIsolatedOtpContext } from '../otpExtractor';
 import type { IntentResult, EmailIntent } from '../../types/extraction.types';
 
 // Regression for a reported false positive: an account-activation email whose
@@ -59,13 +55,7 @@ describe('hasIsolatedOtpContext', () => {
 
 describe('extractOTP — email-address segment false positive (reported bug)', () => {
   it('does NOT extract an address-segment number from an activation-only email', () => {
-    const otp = extractOTP(
-      ACTIVATION_ONLY_EMAIL,
-      '',
-      null,
-      [],
-      intentOf('activation')
-    );
+    const otp = extractOTP(ACTIVATION_ONLY_EMAIL, '', null, [], intentOf('activation'));
     expect(otp).toBeNull();
   });
 
@@ -76,8 +66,7 @@ describe('extractOTP — email-address segment false positive (reported bug)', (
   });
 
   it('still extracts the real code when the address also contains a numeric segment', () => {
-    const body =
-      'Hi mark.kennedy.5561@mail.com, your security code is 482913. Enter it now.';
+    const body = 'Hi mark.kennedy.5561@mail.com, your security code is 482913. Enter it now.';
     const otp = extractOTP(body, '', null, [], intentOf('verification'));
     expect(otp?.code).toBe('482913');
   });

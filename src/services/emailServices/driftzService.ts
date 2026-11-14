@@ -29,7 +29,9 @@ export class DriftzService {
         Array.isArray(data.result?.temp) && data.result.temp.length > 0
           ? data.result.temp
           : [PREFERRED_DOMAIN, 'manornewtech.org'];
-      return tempDomains.sort((a, b) => (a === PREFERRED_DOMAIN ? -1 : b === PREFERRED_DOMAIN ? 1 : 0));
+      return tempDomains.sort((a, b) =>
+        a === PREFERRED_DOMAIN ? -1 : b === PREFERRED_DOMAIN ? 1 : 0
+      );
     } catch (error) {
       log.debug('Driftz domains unavailable, using fallback domains', { error: String(error) });
       return [PREFERRED_DOMAIN, 'manornewtech.org'];
@@ -76,9 +78,12 @@ export class DriftzService {
 
   async getMessages(address: string, signal?: AbortSignal): Promise<Email[]> {
     try {
-      const response = await fetchWithTimeout(`${BASE_URL}/temp/${encodeURIComponent(address)}?limit=50`, {
-        signal: signal ?? null,
-      });
+      const response = await fetchWithTimeout(
+        `${BASE_URL}/temp/${encodeURIComponent(address)}?limit=50`,
+        {
+          signal: signal ?? null,
+        }
+      );
       if (!response.ok) {
         if (response.status === 404) {
           return [];
@@ -113,7 +118,10 @@ export class DriftzService {
             }
             const fullMsg = msgData.result;
             return {
-              from: getSenderSource(fullMsg.fromName || msg.fromName, fullMsg.fromAddress || msg.fromAddress),
+              from: getSenderSource(
+                fullMsg.fromName || msg.fromName,
+                fullMsg.fromAddress || msg.fromAddress
+              ),
               body: contentToString(fullMsg.textContent || fullMsg.htmlContent),
               htmlBody: contentToString(fullMsg.htmlContent || fullMsg.textContent),
               textBody: contentToString(fullMsg.textContent || ''),
@@ -237,7 +245,12 @@ export class DriftzService {
       }));
     } catch (error) {
       if (isRetryableError(error)) {
-        throttledWarn(log, 'driftz-getPermanentMessages', 'Failed to fetch Driftz permanent messages', error);
+        throttledWarn(
+          log,
+          'driftz-getPermanentMessages',
+          'Failed to fetch Driftz permanent messages',
+          error
+        );
         throw error;
       }
       log.debug('Driftz getPermanentMessages non-retryable error, returning []', error);

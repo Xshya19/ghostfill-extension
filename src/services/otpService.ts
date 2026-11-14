@@ -567,7 +567,10 @@ class OTPService {
           }
           // Refreshing the popup must not reset a message's arrival time.
           if (sameMessage) {
-            if (metadata.autoFillEligible !== undefined && metadata.autoFillEligible !== existing.autoFillEligible) {
+            if (
+              metadata.autoFillEligible !== undefined &&
+              metadata.autoFillEligible !== existing.autoFillEligible
+            ) {
               existing.autoFillEligible = metadata.autoFillEligible;
               await storageService.set('lastOTP', existing);
             }

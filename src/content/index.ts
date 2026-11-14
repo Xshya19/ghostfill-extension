@@ -128,42 +128,42 @@ function runSafely(taskName: string, task: () => Promise<unknown> | void): void 
 
 // Global error boundary for content script
 if (shouldRunContentScript) {
-window.addEventListener('error', (event) => {
-  const msg = event.message?.toLowerCase() ?? '';
-  const filename = event.filename ?? '';
+  window.addEventListener('error', (event) => {
+    const msg = event.message?.toLowerCase() ?? '';
+    const filename = event.filename ?? '';
 
-  if (isKnownLifecycleMessage(msg)) {
-    log.debug('GhostFill: Content script context invalidated (expected on reload)');
-    event.preventDefault();
-    return;
-  }
+    if (isKnownLifecycleMessage(msg)) {
+      log.debug('GhostFill: Content script context invalidated (expected on reload)');
+      event.preventDefault();
+      return;
+    }
 
-  if (!isExtensionOwnedText(`${msg}\n${filename}`)) {
-    return;
-  }
+    if (!isExtensionOwnedText(`${msg}\n${filename}`)) {
+      return;
+    }
 
-  log.error('Unhandled content script error:', event.error);
-});
+    log.error('Unhandled content script error:', event.error);
+  });
 }
 
 if (shouldRunContentScript) {
-window.addEventListener('unhandledrejection', (event) => {
-  const reason = event.reason;
-  const reasonStr = reason instanceof Error ? reason.message : String(reason);
-  const reasonStrLower = reasonStr.toLowerCase();
+  window.addEventListener('unhandledrejection', (event) => {
+    const reason = event.reason;
+    const reasonStr = reason instanceof Error ? reason.message : String(reason);
+    const reasonStrLower = reasonStr.toLowerCase();
 
-  if (isKnownLifecycleMessage(reasonStrLower)) {
-    log.debug('GhostFill: Extension context invalidated (expected on reload)');
-    event.preventDefault();
-    return;
-  }
+    if (isKnownLifecycleMessage(reasonStrLower)) {
+      log.debug('GhostFill: Extension context invalidated (expected on reload)');
+      event.preventDefault();
+      return;
+    }
 
-  if (!isExtensionOwnedRejection(reason)) {
-    return;
-  }
+    if (!isExtensionOwnedRejection(reason)) {
+      return;
+    }
 
-  log.error('Unhandled content script promise rejection:', event.reason);
-});
+    log.error('Unhandled content script promise rejection:', event.reason);
+  });
 }
 
 if (shouldRunContentScript) {
@@ -274,7 +274,9 @@ function isLikelyRelevantInput(input: HTMLInputElement | HTMLTextAreaElement): b
 
 function hasRelevantField(): boolean {
   try {
-    if (deepQuerySelectorAll<HTMLInputElement>(RELEVANT_FIELD_SELECTOR).some(isLikelyRelevantInput)) {
+    if (
+      deepQuerySelectorAll<HTMLInputElement>(RELEVANT_FIELD_SELECTOR).some(isLikelyRelevantInput)
+    ) {
       return true;
     }
   } catch {
@@ -290,8 +292,12 @@ function hasRelevantField(): boolean {
 
 function hasPageActivationSignals(): boolean {
   // Fast path: URL + title match without touching DOM
-  if (PAGE_ACTIVATION_PATTERN.test(`${location.href} ${document.title}`)) {return true;}
-  if (!document.body) {return false;}
+  if (PAGE_ACTIVATION_PATTERN.test(`${location.href} ${document.title}`)) {
+    return true;
+  }
+  if (!document.body) {
+    return false;
+  }
   // Lazy walk: collect up to 2000 chars via TreeWalker without serializing entire body
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   let len = 0;
@@ -299,18 +305,27 @@ function hasPageActivationSignals(): boolean {
   let node: Node | null;
   while ((node = walker.nextNode()) && len < 2000) {
     const t = (node.nodeValue || '').trim();
-    if (!t) {continue;}
+    if (!t) {
+      continue;
+    }
     buf += t + ' ';
     len += t.length + 1;
-    if (buf.length >= 2000) {break;}
+    if (buf.length >= 2000) {
+      break;
+    }
   }
-  if (!buf) {return false;}
+  if (!buf) {
+    return false;
+  }
   return PAGE_ACTIVATION_PATTERN.test(buf.slice(0, 2000));
 }
 
 function shouldActivateImmediately(): boolean {
   const active = getDeepActiveElement();
-  return (active instanceof HTMLElement && evaluateFab(active).presence !== 'hidden') || hasRelevantField();
+  return (
+    (active instanceof HTMLElement && evaluateFab(active).presence !== 'hidden') ||
+    hasRelevantField()
+  );
 }
 
 function removePassiveActivationHooks(): void {
@@ -381,13 +396,21 @@ function installPassiveActivationHooks(): void {
           }
         }
       }
-      if (hasAddedInput) {break;}
+      if (hasAddedInput) {
+        break;
+      }
     }
-    if (!hasAddedInput) {return;}
-    if (parkedDebounce) {return;}
+    if (!hasAddedInput) {
+      return;
+    }
+    if (parkedDebounce) {
+      return;
+    }
     parkedDebounce = setTimeout(() => {
       parkedDebounce = null;
-      if (isInitialized) {return;}
+      if (isInitialized) {
+        return;
+      }
       // Re-check: if any relevant field now exists, activate
       if (hasRelevantField()) {
         safeInit(true);

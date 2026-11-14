@@ -211,10 +211,35 @@ function sanitizeHtmlInternal(dirty: string, options?: SanitizerConfig): string 
 
   const defaultOptions: SanitizerConfig = {
     ALLOWED_TAGS: [
-      'p', 'br', 'strong', 'em', 'u', 'b', 'i', 'a', 'title',
-      'ul', 'ol', 'li', 'div', 'span', 'h1', 'h2', 'h3', 'h4',
-      'h5', 'h6', 'blockquote', 'pre', 'code', 'table', 'thead',
-      'tbody', 'tr', 'th', 'td',
+      'p',
+      'br',
+      'strong',
+      'em',
+      'u',
+      'b',
+      'i',
+      'a',
+      'title',
+      'ul',
+      'ol',
+      'li',
+      'div',
+      'span',
+      'h1',
+      'h2',
+      'h3',
+      'h4',
+      'h5',
+      'h6',
+      'blockquote',
+      'pre',
+      'code',
+      'table',
+      'thead',
+      'tbody',
+      'tr',
+      'th',
+      'td',
     ],
     ALLOWED_ATTR: ['href', 'alt', 'title', 'target', 'rel'],
     ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/i,
@@ -247,7 +272,10 @@ export function sanitizeHtml(dirty: string, options?: SanitizerConfig): string {
   if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     try {
       let basicClean = sanitizeHtmlInternal(dirty, options);
-      basicClean = basicClean.replace(/href\s*=\s*(['"])javascript:(?:(?!\1).)*?\1/gi, `href=$1#$1`);
+      basicClean = basicClean.replace(
+        /href\s*=\s*(['"])javascript:(?:(?!\1).)*?\1/gi,
+        `href=$1#$1`
+      );
       if (trustedTypesPolicy) {
         return String(trustedTypesPolicy.createHTML(basicClean));
       }
@@ -268,7 +296,10 @@ export function sanitizeHtml(dirty: string, options?: SanitizerConfig): string {
   cleaned = cleaned.replace(/<\s*link\b[^>]*>/gi, '');
   cleaned = cleaned.replace(/<\s*meta\b[^>]*>/gi, '');
   cleaned = cleaned.replace(/<\s*svg[\s>][\s\S]*?<\s*\/\s*svg\s*>/gi, '');
-  cleaned = cleaned.replace(/<\s*(script|iframe|object|embed|form|style|link|meta|svg)\b[^>]*\/?>/gi, '');
+  cleaned = cleaned.replace(
+    /<\s*(script|iframe|object|embed|form|style|link|meta|svg)\b[^>]*\/?>/gi,
+    ''
+  );
   cleaned = cleaned.replace(/\bon[a-z]+\s*=\s*(['"])(?:(?!\1).)*?\1/gi, '');
   cleaned = cleaned.replace(/\bon[a-z]+\s*=\s*[^\s>]*/gi, '');
   cleaned = cleaned.replace(/href\s*=\s*(['"])javascript:(?:(?!\1).)*?\1/gi, `href=$1#$1`);
@@ -284,15 +315,58 @@ export function sanitizeEmailBody(
 ): string {
   if (htmlBody) {
     const allowedTags = [
-      'html', 'head', 'body', 'meta', 'title',
-      'p', 'br', 'strong', 'em', 'u', 'b', 'i', 'a',
-      'ul', 'ol', 'li', 'div', 'span', 'h1', 'h2', 'h3', 'h4',
-      'h5', 'h6', 'blockquote', 'pre', 'code', 'table', 'thead',
-      'tbody', 'tfoot', 'tr', 'th', 'td', 'hr', 'sub', 'sup',
-      'img', 'center', 'section', 'header', 'footer', 'font',
-      'small', 'mark', 'caption', 'article', 'aside',
-      'figure', 'figcaption',
-      'picture', 'source',
+      'html',
+      'head',
+      'body',
+      'meta',
+      'title',
+      'p',
+      'br',
+      'strong',
+      'em',
+      'u',
+      'b',
+      'i',
+      'a',
+      'ul',
+      'ol',
+      'li',
+      'div',
+      'span',
+      'h1',
+      'h2',
+      'h3',
+      'h4',
+      'h5',
+      'h6',
+      'blockquote',
+      'pre',
+      'code',
+      'table',
+      'thead',
+      'tbody',
+      'tfoot',
+      'tr',
+      'th',
+      'td',
+      'hr',
+      'sub',
+      'sup',
+      'img',
+      'center',
+      'section',
+      'header',
+      'footer',
+      'font',
+      'small',
+      'mark',
+      'caption',
+      'article',
+      'aside',
+      'figure',
+      'figcaption',
+      'picture',
+      'source',
     ];
     if (options?.allowStyleTag) {
       allowedTags.push('style');
@@ -303,10 +377,34 @@ export function sanitizeEmailBody(
       FORCE_BODY: false,
       ALLOWED_TAGS: allowedTags,
       ALLOWED_ATTR: [
-        'href', 'alt', 'title', 'target', 'rel', 'src', 'style', 'class', 'id',
-        'width', 'height', 'align', 'valign', 'bgcolor', 'color', 'border',
-        'cellpadding', 'cellspacing', 'dir', 'charset', 'name', 'content',
-        'background', 'srcset', 'sizes', 'role', 'aria-label', 'aria-hidden',
+        'href',
+        'alt',
+        'title',
+        'target',
+        'rel',
+        'src',
+        'style',
+        'class',
+        'id',
+        'width',
+        'height',
+        'align',
+        'valign',
+        'bgcolor',
+        'color',
+        'border',
+        'cellpadding',
+        'cellspacing',
+        'dir',
+        'charset',
+        'name',
+        'content',
+        'background',
+        'srcset',
+        'sizes',
+        'role',
+        'aria-label',
+        'aria-hidden',
       ],
       ADD_ATTR: ['target', 'rel'],
     });
@@ -322,8 +420,7 @@ const REMOTE_PROTOCOL_RELATIVE_ASSET_URL = /(?:^|,\s*)\/\//i;
 
 function containsRemoteAssetUrl(value: string): boolean {
   return (
-    REMOTE_ABSOLUTE_ASSET_URL.test(value) ||
-    REMOTE_PROTOCOL_RELATIVE_ASSET_URL.test(value.trim())
+    REMOTE_ABSOLUTE_ASSET_URL.test(value) || REMOTE_PROTOCOL_RELATIVE_ASSET_URL.test(value.trim())
   );
 }
 
@@ -388,11 +485,11 @@ export function stripRemoteEmailAssets(html: string): string {
   return html
     .replace(
       /\s(?:src|srcset|background)\s*=\s*(['"])(.*?)\1/gi,
-      (attribute, _quote: string, value: string) =>
-        containsRemoteAssetUrl(value) ? '' : attribute
+      (attribute, _quote: string, value: string) => (containsRemoteAssetUrl(value) ? '' : attribute)
     )
-    .replace(/(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi, (_match, open, css, close) =>
-      `${open}${scrubRemoteCss(css)}${close}`
+    .replace(
+      /(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi,
+      (_match, open, css, close) => `${open}${scrubRemoteCss(css)}${close}`
     )
     .replace(/\sstyle\s*=\s*(['"])(.*?)\1/gi, (attribute, _quote: string, value: string) => {
       const scrubbedStyle = scrubRemoteCss(value).trim();
@@ -442,9 +539,7 @@ export function containsRemoteEmailAssets(html: string): boolean {
     }
   }
 
-  return (
-    /(?:url\(|@import\s+)(?:\s*['"]?)(?:https?:)?\/\//i.test(html)
-  );
+  return /(?:url\(|@import\s+)(?:\s*['"]?)(?:https?:)?\/\//i.test(html);
 }
 
 /**

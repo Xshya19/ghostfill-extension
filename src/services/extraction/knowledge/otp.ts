@@ -7,7 +7,8 @@ export const OTP_PATTERN_DATABASE: OtpPattern[] = [
   // ══════════════════════════════════════════════════════════════
   {
     // "code: 123456", "otp: 123456", "verification code: 123456"
-    pattern: /\b(?:code|otp|pin|passcode|token|verification\s+code|security\s+code|confirmation\s+code|auth(?:entication)?\s+code)\s*[:\s=]\s*(\d{4,8})\b/gi,
+    pattern:
+      /\b(?:code|otp|pin|passcode|token|verification\s+code|security\s+code|confirmation\s+code|auth(?:entication)?\s+code)\s*[:\s=]\s*(\d{4,8})\b/gi,
     name: 'colon-prefixed-label',
     baseConfidence: 97,
     minLength: 4,
@@ -27,7 +28,8 @@ export const OTP_PATTERN_DATABASE: OtpPattern[] = [
   },
   {
     // "123456 is your code", "123456 is your OTP"
-    pattern: /\b(\d{4,8})\s+is\s+your\s+(?:\w+\s+){0,2}(?:code|otp|pin|passcode|verification|confirmation)\b/gi,
+    pattern:
+      /\b(\d{4,8})\s+is\s+your\s+(?:\w+\s+){0,2}(?:code|otp|pin|passcode|verification|confirmation)\b/gi,
     name: 'code-is-yours',
     baseConfidence: 97,
     minLength: 4,
@@ -37,7 +39,8 @@ export const OTP_PATTERN_DATABASE: OtpPattern[] = [
   },
   {
     // "Enter 123456 to verify/confirm/log in"
-    pattern: /\b(?:enter|use|type|input|submit|provide|copy)\s+(\d{4,8})\s+to\s+(?:verify|confirm|log\s*in|sign\s*in|authenticate|validate|complete|access|continue)\b/gi,
+    pattern:
+      /\b(?:enter|use|type|input|submit|provide|copy)\s+(\d{4,8})\s+to\s+(?:verify|confirm|log\s*in|sign\s*in|authenticate|validate|complete|access|continue)\b/gi,
     name: 'enter-to-verify',
     baseConfidence: 97,
     minLength: 4,
@@ -58,7 +61,8 @@ export const OTP_PATTERN_DATABASE: OtpPattern[] = [
   },
   {
     // Alphanumeric with explicit label: "code: ABC123", "token: XY9Z44"
-    pattern: /\b(?:code|otp|pin|passcode|token|verification\s+code)\s*[:\s=]\s*([A-Z0-9]{4,10})\b/gi,
+    pattern:
+      /\b(?:code|otp|pin|passcode|token|verification\s+code)\s*[:\s=]\s*([A-Z0-9]{4,10})\b/gi,
     name: 'colon-prefixed-alphanumeric',
     baseConfidence: 94,
     minLength: 4,
@@ -78,7 +82,8 @@ export const OTP_PATTERN_DATABASE: OtpPattern[] = [
   },
   {
     // "Your verification code: 123456" — common SaaS format
-    pattern: /(?:verification|confirmation|security|one.?time|login|sign.?in)\s+code\s*[-:–—]\s*(\d{4,8})\b/gi,
+    pattern:
+      /(?:verification|confirmation|security|one.?time|login|sign.?in)\s+code\s*[-:–—]\s*(\d{4,8})\b/gi,
     name: 'type-prefixed-code',
     baseConfidence: 96,
     minLength: 4,
@@ -104,7 +109,8 @@ export const OTP_PATTERN_DATABASE: OtpPattern[] = [
   },
   {
     // Number in center-aligned paragraph
-    pattern: /<p[^>]*(?:align\s*=\s*["']center["']|text-align\s*:\s*center)[^>]*>\s*(\d{4,8})\s*<\/p>/gi,
+    pattern:
+      /<p[^>]*(?:align\s*=\s*["']center["']|text-align\s*:\s*center)[^>]*>\s*(\d{4,8})\s*<\/p>/gi,
     name: 'centered-paragraph-number',
     baseConfidence: 88,
     minLength: 4,
@@ -416,6 +422,3 @@ export const OTP_PATTERN_DATABASE: OtpPattern[] = [
     description: 'Paytm-specific',
   },
 ];
-
-
-

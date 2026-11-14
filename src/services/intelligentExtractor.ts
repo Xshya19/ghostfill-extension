@@ -370,7 +370,12 @@ function securityUrlPoints(rawUrl: string): number {
   if (parsed.username || parsed.password) {
     points += 45;
   }
-  if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host.endsWith('.localhost')) {
+  if (
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '0.0.0.0' ||
+    host.endsWith('.localhost')
+  ) {
     points += 60;
   }
   if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) {
@@ -604,8 +609,7 @@ export function extractAll(
   // would delete the ONLY code in the message.
   const strippedBody = stripQuotedHistory(sanitizedBody);
   const strippedHtmlText = htmlText ? stripQuotedHistory(htmlText) : '';
-  const freshHasCode =
-    hasFreshCodeSignal(strippedBody) || hasFreshCodeSignal(strippedHtmlText);
+  const freshHasCode = hasFreshCodeSignal(strippedBody) || hasFreshCodeSignal(strippedHtmlText);
   const effectiveBody = freshHasCode ? strippedBody : sanitizedBody;
   const effectiveHtmlText = freshHasCode ? strippedHtmlText : htmlText;
   const bodyText = effectiveBody || effectiveHtmlText;
@@ -831,9 +835,13 @@ export function extractAll(
   if (link && link.url) {
     link.url = new URL(link.url).href;
     // Both link engines report percentage confidence; the shared result uses 0–1.
-    if (link.confidence > 1) {link.confidence /= 100;}
+    if (link.confidence > 1) {
+      link.confidence /= 100;
+    }
     const gate = scoreActivationLink(link.url, link.anchorText || '', link.context || '');
-    if (gate.cls === 'magic-login') {link.type = 'magic-link-login';}
+    if (gate.cls === 'magic-login') {
+      link.type = 'magic-link-login';
+    }
     if (cogLink?.url && tradLink?.url && cogLink.url !== tradLink.url) {
       log.info(
         `Link dual-engine: cog=${cogLink.url.substring(0, 50)} trad=${tradLink.url.substring(0, 50)} → ${link.url.substring(0, 50)}`

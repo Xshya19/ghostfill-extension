@@ -31,10 +31,7 @@ import { canAutoOpenVerificationLink } from '../src/services/emailServices/priva
 import { extractAll } from '../src/services/intelligentExtractor';
 import type { EmailAccount, EmailService } from '../src/types';
 
-function account(
-  service: EmailService,
-  fields: Partial<EmailAccount> = {}
-): EmailAccount {
+function account(service: EmailService, fields: Partial<EmailAccount> = {}): EmailAccount {
   return {
     id: 'test-inbox',
     domain: 'example.test',
@@ -99,9 +96,9 @@ describe('auto-open security gates — self-consistent phishing email', () => {
   it('never opens the phishing destination for an account without a signup origin', () => {
     // Pre-fix this returned true: the fallback compared the sender with the
     // link only, and both were written by the attacker.
-    expect(
-      canAutoOpenVerificationLink(account('mailtm'), PHISHING_SENDER, PHISHING_URL)
-    ).toBe(false);
+    expect(canAutoOpenVerificationLink(account('mailtm'), PHISHING_SENDER, PHISHING_URL)).toBe(
+      false
+    );
     expect(
       canAutoOpenVerificationLink(
         account('mailtm', { originUrl: 'https://signup.acme.com' }),
@@ -233,9 +230,7 @@ describe('auto-open security gates — unknown destinations get no free pass', (
 
   it('only auto-opens when the destination is one of the expected hosts', () => {
     const url = 'https://unknown-domain.example/verify?token=abc123456';
-    expect(isAutoOpenableActivationLinkForHosts(url, 'Verify email', '', ['acme.com'])).toBe(
-      false
-    );
+    expect(isAutoOpenableActivationLinkForHosts(url, 'Verify email', '', ['acme.com'])).toBe(false);
     expect(
       isAutoOpenableActivationLinkForHosts(url, 'Verify email', '', ['unknown-domain.example'])
     ).toBe(true);
@@ -286,7 +281,13 @@ describe('auto-open security gates — the security score is real again', () => 
     const url = 'https://xn--80ak6aa92e.com/verify?token=abc123456';
     const body = `Verify your account\n${url}`;
     const html = `<p>Verify your account</p><p><a href="${url}">Verify email</a></p>`;
-    const extraction = extractAll('Verify your account', body, html, 'security@evil-phish.example', []);
+    const extraction = extractAll(
+      'Verify your account',
+      body,
+      html,
+      'security@evil-phish.example',
+      []
+    );
 
     expect(extraction.debugInfo.securityRisk).not.toBe('low');
     expect(extraction.debugInfo.securityScore).toBeLessThan(100);
@@ -318,12 +319,19 @@ describe('auto-open security gates — the security score is real again', () => 
     // guard refuses non-https destinations outright.
     const plainHttp = 'http://ordinary-site.example/verify?token=abc123456';
     const html = `<p>Verify your account</p><p><a href="${plainHttp}">Verify email</a></p>`;
-    const extraction = extractAll('Verify your account', `Verify your account\n${plainHttp}`, html, PHISHING_SENDER, []);
+    const extraction = extractAll(
+      'Verify your account',
+      `Verify your account\n${plainHttp}`,
+      html,
+      PHISHING_SENDER,
+      []
+    );
     expect(extraction.debugInfo.securityScore).toBeLessThan(100);
   });
 
   it('raises the risk for credential-takeover wording', () => {
-    const body = 'Your account has been suspended. Confirm your password immediately to restore access.';
+    const body =
+      'Your account has been suspended. Confirm your password immediately to restore access.';
     const extraction = extractAll('Account alert', body, '', 'security@evil-phish.example', []);
 
     expect(extraction.debugInfo.securityRisk).not.toBe('low');

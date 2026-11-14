@@ -42,7 +42,9 @@ describe('activationLinkGuard — semantic (not brand-scripted)', () => {
 
   it('requires strong evidence and HTTPS before opening a link automatically', () => {
     expect(isAutoOpenableActivationLink('https://service.example/verify')).toBe(false);
-    expect(isAutoOpenableActivationLink('https://service.example/auth?token=tracking123456')).toBe(false);
+    expect(isAutoOpenableActivationLink('https://service.example/auth?token=tracking123456')).toBe(
+      false
+    );
     expect(
       isAutoOpenableActivationLink('http://service.example/verify?token=verification123456')
     ).toBe(false);

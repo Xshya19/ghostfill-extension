@@ -8,7 +8,8 @@ export function extractExplicitVerificationCode(body: string): string | null {
     return null;
   }
 
-  const labeledCode = /\b(?:your\s+(?:(?:verification|security|confirmation|authentication|login|sign[ -]?in|one[ -]?time)\s+)?(?:code|otp|passcode|pin)|(?:verification|security|confirmation|authentication|login|sign[ -]?in|one[ -]?time)\s+(?:code|otp|passcode|pin))\s*(?:is\s*)?(?::|=|#|[-–—])?\s*(\d{4,8})(?!\d)/gi;
+  const labeledCode =
+    /\b(?:your\s+(?:(?:verification|security|confirmation|authentication|login|sign[ -]?in|one[ -]?time)\s+)?(?:code|otp|passcode|pin)|(?:verification|security|confirmation|authentication|login|sign[ -]?in|one[ -]?time)\s+(?:code|otp|passcode|pin))\s*(?:is\s*)?(?::|=|#|[-–—])?\s*(\d{4,8})(?!\d)/gi;
   const match = labeledCode.exec(body.slice(0, 20_000));
   return match?.[1] ?? null;
 }

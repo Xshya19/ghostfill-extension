@@ -10,8 +10,12 @@ vi.mock('../src/services/storageService', () => {
   return {
     storageService: {
       get: vi.fn(async (key: string) => store.get(key) ?? null),
-      set: vi.fn(async (key: string, value: any) => { store.set(key, value); }),
-      remove: vi.fn(async (key: string) => { store.delete(key); }),
+      set: vi.fn(async (key: string, value: any) => {
+        store.set(key, value);
+      }),
+      remove: vi.fn(async (key: string) => {
+        store.delete(key);
+      }),
       _store: store,
     },
   };
@@ -97,7 +101,7 @@ describe('DedupService deep tests', () => {
 
   it('pending expires after TTL', async () => {
     await dedup.markPending('e1', 'a1', 10); // 10ms TTL
-    await new Promise(r => setTimeout(r, 20));
+    await new Promise((r) => setTimeout(r, 20));
     expect(await dedup.isPending('e1', 'a1')).toBe(false);
   });
 
@@ -117,11 +121,9 @@ describe('DedupService deep tests', () => {
 
     expect(dedup.size).toBe(100);
 
-    const checks = Array.from({ length: 100 }, (_, i) =>
-      dedup.isProcessed(`email-${i}`, 'a1')
-    );
+    const checks = Array.from({ length: 100 }, (_, i) => dedup.isProcessed(`email-${i}`, 'a1'));
     const results = await Promise.all(checks);
-    expect(results.every(r => r === true)).toBe(true);
+    expect(results.every((r) => r === true)).toBe(true);
   });
 
   // ── Prune ──

@@ -219,7 +219,9 @@ export const ProviderHealthMeter: React.FC = () => {
             <div key={value} className="health-pill-card" title={t('healthNoCallsRecorded')}>
               <div className="health-provider-info">
                 <span className="health-provider-name">{getEmailServiceLabel(value)}</span>
-                <span className="health-status-label health-status-unknown">{t('healthNotChecked')}</span>
+                <span className="health-status-label health-status-unknown">
+                  {t('healthNotChecked')}
+                </span>
               </div>
               <div className="health-status-group">
                 <span className="health-percent">—</span>
@@ -258,7 +260,12 @@ export const ProviderHealthMeter: React.FC = () => {
 
             const ms = Math.round(h.avgResponseTime);
             const detail =
-              t('healthDetail', [getEmailServiceLabel(h.name), statusText, String(pct), String(ms)]) +
+              t('healthDetail', [
+                getEmailServiceLabel(h.name),
+                statusText,
+                String(pct),
+                String(ms),
+              ]) +
               (h.consecutiveFailures > 0
                 ? ` · ${
                     h.consecutiveFailures === 1
@@ -701,7 +708,11 @@ export const EmailTab: React.FC<EmailTabProps> = ({
         <ProviderHealthMeter />
 
         {settings.preferredEmailService === 'custom' && (
-          <div className="custom-domain-container" role="group" aria-label={t('customDomainSettingsAriaLabel')}>
+          <div
+            className="custom-domain-container"
+            role="group"
+            aria-label={t('customDomainSettingsAriaLabel')}
+          >
             <div className="setting-item vertical-group">
               <div className="setting-info w-full">
                 <label htmlFor="custom-domain">{t('customEmailDomain')}</label>
@@ -834,7 +845,9 @@ export const EmailTab: React.FC<EmailTabProps> = ({
                 disabled={gmailClientIdSaveStatus === 'saving'}
               >
                 {gmailClientIdSaveStatus === 'saved' ? <Check size={16} /> : <Save size={16} />}
-                <span>{gmailClientIdSaveStatus === 'saved' ? t('saveStateSaved') : t('saveAction')}</span>
+                <span>
+                  {gmailClientIdSaveStatus === 'saved' ? t('saveStateSaved') : t('saveAction')}
+                </span>
               </Button>
               <Button
                 type="button"
@@ -1481,7 +1494,11 @@ export const AboutTab: React.FC = () => {
         </div>
       </SettingsSection>
 
-      <SettingsSection id="extension-updates" title={t('updatesSection')} icon={<ExternalLink size={18} />}>
+      <SettingsSection
+        id="extension-updates"
+        title={t('updatesSection')}
+        icon={<ExternalLink size={18} />}
+      >
         <div className="setting-item">
           <div className="setting-info">
             <span className="fs-15-fw-600">{t('installedVersion', [version])}</span>
@@ -1546,7 +1563,11 @@ export const AboutTab: React.FC = () => {
         </div>
       </SettingsSection>
 
-      <SettingsSection id="storage-usage" title={t('storageUsageSection')} icon={<Database size={18} />}>
+      <SettingsSection
+        id="storage-usage"
+        title={t('storageUsageSection')}
+        icon={<Database size={18} />}
+      >
         {storageUsage ? (
           <div className="storage-monitor">
             <div className="storage-bar-wrapper">

@@ -26,8 +26,18 @@ describe('paired verification messages', () => {
     const tracking = `https://url8792.mail.anthropic.com/ls/click?upn=u001.${'rFcAmKXLOm9u6wLRWHIUYb57odYuMXptiIvSnUIhs1OeXNnA7r2WnG'.repeat(12)}-2B0SMX`;
     const body = `Sign in to Claude\nClick Sign in with Claude.ai to log in.\n${url}\nAnthropic, 548 Market Street, PMB 90375, San Francisco, CA 94104-5401\nPrivacy [${tracking}]`;
     const html = `<h1>Sign in to Claude</h1><a href="${url}">Sign in with Claude.ai</a><a href="${tracking}">Privacy</a><footer>Anthropic, 548 Market Street, PMB 90375, San Francisco, CA 94104-5401</footer>`;
-    const result = await smartDetectionService.detect('Sign in to Claude', body, html, 'Claude <support@mail.anthropic.com>', ['claude.ai']);
-    expect(result).toMatchObject({ type: 'link', link: url, decision: { action: 'open-link', canAutoAct: true } });
+    const result = await smartDetectionService.detect(
+      'Sign in to Claude',
+      body,
+      html,
+      'Claude <support@mail.anthropic.com>',
+      ['claude.ai']
+    );
+    expect(result).toMatchObject({
+      type: 'link',
+      link: url,
+      decision: { action: 'open-link', canAutoAct: true },
+    });
     expect(result.code).toBeUndefined();
   });
   it.each(['451612', '038291'])(
@@ -99,9 +109,9 @@ describe('paired verification messages', () => {
         trustedHosts: ['app.notion.com'],
       }).canAutoOpen
     ).toBe(true);
-    expect(
-      scoreActivationLink(notionLink('451612'), 'Sign in with Magic Link').canAutoOpen
-    ).toBe(false);
+    expect(scoreActivationLink(notionLink('451612'), 'Sign in with Magic Link').canAutoOpen).toBe(
+      false
+    );
     expect(
       scoreActivationLink(
         'https://app.example.com/redirect?state=fixture_state_123456789',

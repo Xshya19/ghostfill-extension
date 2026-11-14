@@ -128,7 +128,7 @@ describe('debounce() deep tests', () => {
   it('preserves this context', () => {
     const obj = {
       value: 42,
-      method: debounce(function(this: any) {
+      method: debounce(function (this: any) {
         return this.value;
       }, 100),
     };

@@ -32,7 +32,14 @@ describe('validateMessage() deep tests', () => {
   });
 
   it('validates EXTRACT_OTP action with textBody payload', () => {
-    const msg = { action: 'EXTRACT_OTP', payload: { textBody: 'Your code is 123456', emailFrom: 'noreply@test.com', subject: 'Verify' } };
+    const msg = {
+      action: 'EXTRACT_OTP',
+      payload: {
+        textBody: 'Your code is 123456',
+        emailFrom: 'noreply@test.com',
+        subject: 'Verify',
+      },
+    };
     const result = validateMessage(msg);
     expect(result.valid).toBe(true);
   });
@@ -142,13 +149,15 @@ describe('validateEmail() deep tests', () => {
 
 describe('validatePasswordOptions() deep tests', () => {
   it('accepts default options', () => {
-    expect(validatePasswordOptions({
-      length: 16,
-      uppercase: true,
-      lowercase: true,
-      numbers: true,
-      symbols: true,
-    } as any).valid).toBe(true);
+    expect(
+      validatePasswordOptions({
+        length: 16,
+        uppercase: true,
+        lowercase: true,
+        numbers: true,
+        symbols: true,
+      } as any).valid
+    ).toBe(true);
   });
 
   it('rejects length < 4', () => {
@@ -160,47 +169,55 @@ describe('validatePasswordOptions() deep tests', () => {
   });
 
   it('accepts minimum length', () => {
-    expect(validatePasswordOptions({
-      length: 4,
-      uppercase: true,
-      lowercase: false,
-      numbers: false,
-      symbols: false,
-    } as any).valid).toBe(true);
+    expect(
+      validatePasswordOptions({
+        length: 4,
+        uppercase: true,
+        lowercase: false,
+        numbers: false,
+        symbols: false,
+      } as any).valid
+    ).toBe(true);
   });
 
   it('accepts maximum length', () => {
-    expect(validatePasswordOptions({
-      length: 128,
-      uppercase: true,
-      lowercase: false,
-      numbers: false,
-      symbols: false,
-    } as any).valid).toBe(true);
+    expect(
+      validatePasswordOptions({
+        length: 128,
+        uppercase: true,
+        lowercase: false,
+        numbers: false,
+        symbols: false,
+      } as any).valid
+    ).toBe(true);
   });
 
   it('rejects when all character types disabled', () => {
-    expect(validatePasswordOptions({
-      length: 16,
-      uppercase: false,
-      lowercase: false,
-      numbers: false,
-      symbols: false,
-    } as any).valid).toBe(false);
+    expect(
+      validatePasswordOptions({
+        length: 16,
+        uppercase: false,
+        lowercase: false,
+        numbers: false,
+        symbols: false,
+      } as any).valid
+    ).toBe(false);
   });
 
   it('rejects when min requirements exceed length', () => {
-    expect(validatePasswordOptions({
-      length: 4,
-      uppercase: true,
-      lowercase: true,
-      numbers: true,
-      symbols: true,
-      minUppercase: 2,
-      minLowercase: 2,
-      minNumbers: 2,
-      minSymbols: 2,
-    } as any).valid).toBe(false);
+    expect(
+      validatePasswordOptions({
+        length: 4,
+        uppercase: true,
+        lowercase: true,
+        numbers: true,
+        symbols: true,
+        minUppercase: 2,
+        minLowercase: 2,
+        minNumbers: 2,
+        minSymbols: 2,
+      } as any).valid
+    ).toBe(false);
   });
 });
 

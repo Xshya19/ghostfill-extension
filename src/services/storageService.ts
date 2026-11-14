@@ -14,7 +14,7 @@ import {
   STORAGE_KEYS,
   SessionSecrets,
 } from '../types';
-import { deepMerge , LRUCache } from '../utils/core';
+import { deepMerge, LRUCache } from '../utils/core';
 
 import {
   encrypt,
@@ -145,7 +145,9 @@ function withStorageTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
  * all known shapes so we never mistake a quota failure for a fatal one.
  */
 function isQuotaError(error: unknown): boolean {
-  if (!error) {return false;}
+  if (!error) {
+    return false;
+  }
   const parts: string[] = [];
   if (error instanceof Error) {
     parts.push(error.message, error.name);
@@ -590,7 +592,9 @@ export class StorageService {
         try {
           this.storageAvailable = this.checkStorageAvailability();
           if (!this.storageAvailable) {
-          log.debug('Storage API is not allowed or unavailable in this context (e.g. sandboxed iframe). Falling back to in-memory storage.');
+            log.debug(
+              'Storage API is not allowed or unavailable in this context (e.g. sandboxed iframe). Falling back to in-memory storage.'
+            );
             this.initialized = true;
             return;
           }
@@ -605,7 +609,10 @@ export class StorageService {
             }
 
             const allSession = await chrome.storage.session.get(null).catch((error: unknown) => {
-              if (!(error instanceof Error) || !error.message.includes('Access to storage is not allowed')) {
+              if (
+                !(error instanceof Error) ||
+                !error.message.includes('Access to storage is not allowed')
+              ) {
                 throw error;
               }
               // Content scripts can read local storage, but session secrets stay trusted-only.
@@ -674,8 +681,13 @@ export class StorageService {
           log.debug('Storage initialized with secure encryption');
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
-          if (errorMsg.includes('Access to storage is not allowed') || /extension context invalidated/i.test(errorMsg)) {
-            log.debug('GhostFill running in sandboxed environment, falling back to in-memory cache.');
+          if (
+            errorMsg.includes('Access to storage is not allowed') ||
+            /extension context invalidated/i.test(errorMsg)
+          ) {
+            log.debug(
+              'GhostFill running in sandboxed environment, falling back to in-memory cache.'
+            );
             this.storageAvailable = false;
             this.initialized = true;
             return;
@@ -906,7 +918,7 @@ export class StorageService {
       return;
     }
 
-    // GRANDMASTER FIX: Removed `this.writeQueue` chain. 
+    // GRANDMASTER FIX: Removed `this.writeQueue` chain.
     // The Mutex alone guarantees sequential, non-dropping writes.
     await this.acquireWriteMutex();
     const writesAttempted = Array.from(this.pendingWrites.keys());
@@ -974,7 +986,8 @@ export class StorageService {
       this.cachedUsage = null;
       log.debug(`Batch saved ${writes.size} keys`);
     } catch (error) {
-      const contextEnded = !this.checkStorageAvailability() ||
+      const contextEnded =
+        !this.checkStorageAvailability() ||
         (error instanceof Error && /extension context invalidated/i.test(error.message));
       if (contextEnded) {
         this.storageAvailable = false;
@@ -1426,7 +1439,11 @@ export class StorageService {
       }
 
       const passwordHistory = await this.get('passwordHistory');
-      if (passwordHistory && Array.isArray(passwordHistory) && passwordHistory.length > PASSWORD_LIMIT) {
+      if (
+        passwordHistory &&
+        Array.isArray(passwordHistory) &&
+        passwordHistory.length > PASSWORD_LIMIT
+      ) {
         const pruned = passwordHistory.slice(0, PASSWORD_LIMIT) as StorageSchema['passwordHistory'];
         this.pendingWrites.set('passwordHistory', pruned);
         this.cache.set('passwordHistory', pruned);
@@ -1445,7 +1462,11 @@ export class StorageService {
       // bulk data — it is the least valuable thing on disk when space runs out.
       if (aggressive) {
         const behavior = await this.get('behaviorData');
-        if (behavior && Array.isArray(behavior.usagePatterns) && behavior.usagePatterns.length > 25) {
+        if (
+          behavior &&
+          Array.isArray(behavior.usagePatterns) &&
+          behavior.usagePatterns.length > 25
+        ) {
           const pruned = {
             ...behavior,
             usagePatterns: behavior.usagePatterns.slice(0, 25),
@@ -1471,16 +1492,16 @@ export class StorageService {
   private async getUsageCached(
     force = false
   ): Promise<{ used: number; total: number; percentage: number }> {
-    if (
-      !force &&
-      this.cachedUsage &&
-      Date.now() - this.cachedUsage.ts < USAGE_CACHE_TTL_MS
-    ) {
+    if (!force && this.cachedUsage && Date.now() - this.cachedUsage.ts < USAGE_CACHE_TTL_MS) {
       return this.cachedUsage;
     }
 
     try {
-      if (!this.storageAvailable || typeof chrome === 'undefined' || !chrome.storage?.local?.getBytesInUse) {
+      if (
+        !this.storageAvailable ||
+        typeof chrome === 'undefined' ||
+        !chrome.storage?.local?.getBytesInUse
+      ) {
         const empty = { used: 0, total: 10485760, percentage: 0, ts: Date.now() };
         this.cachedUsage = empty;
         return empty;
@@ -1528,7 +1549,11 @@ export class StorageService {
               continue;
             }
 
-            if (SENSITIVE_KEYS.includes(typedKey) && typeof newValue === 'string' && newValue.startsWith('v1:')) {
+            if (
+              SENSITIVE_KEYS.includes(typedKey) &&
+              typeof newValue === 'string' &&
+              newValue.startsWith('v1:')
+            ) {
               try {
                 const masterKey = getMasterKey();
                 if (!masterKey) {
@@ -1572,7 +1597,11 @@ export class StorageService {
       // encrypted ciphertext from the cache
       for (const [key, value] of Object.entries(result)) {
         const typedKey = key as keyof StorageSchema;
-        if (SENSITIVE_KEYS.includes(typedKey) && typeof value === 'string' && value.startsWith('v1:')) {
+        if (
+          SENSITIVE_KEYS.includes(typedKey) &&
+          typeof value === 'string' &&
+          value.startsWith('v1:')
+        ) {
           try {
             const decrypted = await decrypt(value, this.getEncryptionKey());
             this.cache.set(typedKey, decrypted);

@@ -179,7 +179,12 @@ export class CustomDomainService implements IEmailProvider {
           const bodyStr = contentToString(msg.body);
           const htmlStr = contentToString(msg.htmlBody || msg.body);
           const identity = JSON.stringify([
-            account.fullEmail, msg.from || '', msg.subject || '', msg.date ?? '', bodyStr, htmlStr,
+            account.fullEmail,
+            msg.from || '',
+            msg.subject || '',
+            msg.date ?? '',
+            bodyStr,
+            htmlStr,
           ]);
           const occurrence = duplicateCounts.get(identity) || 0;
           duplicateCounts.set(identity, occurrence + 1);

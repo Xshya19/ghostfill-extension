@@ -1191,9 +1191,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
   const q = query.trim().toLowerCase();
   const filtered = TAB_ORDER.filter(
     (tab) =>
-      !q ||
-      t(tab.labelKey).toLowerCase().includes(q) ||
-      t(tab.hintKey).toLowerCase().includes(q)
+      !q || t(tab.labelKey).toLowerCase().includes(q) || t(tab.hintKey).toLowerCase().includes(q)
   );
 
   useEffect(() => {

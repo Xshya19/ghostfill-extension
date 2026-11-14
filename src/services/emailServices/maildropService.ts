@@ -184,7 +184,9 @@ class MaildropService {
    */
   async createAccount(prefix?: string, _signal?: AbortSignal): Promise<EmailAccount> {
     try {
-      const mailbox = prefix ? prefix.toLowerCase().replace(/[^a-z0-9]/g, '') : this.generateMailboxName();
+      const mailbox = prefix
+        ? prefix.toLowerCase().replace(/[^a-z0-9]/g, '')
+        : this.generateMailboxName();
       const domain = 'maildrop.cc';
       const fullEmail = `${mailbox}@${domain}`;
       const now = Date.now();

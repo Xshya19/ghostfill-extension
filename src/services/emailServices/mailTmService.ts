@@ -106,7 +106,11 @@ export class MailTmService {
     }
 
     // Server-side faults are not credential faults either.
-    if (/\b5\d\d\b/.test(msg) || msg.includes('bad gateway') || msg.includes('service unavailable')) {
+    if (
+      /\b5\d\d\b/.test(msg) ||
+      msg.includes('bad gateway') ||
+      msg.includes('service unavailable')
+    ) {
       return false;
     }
 
@@ -520,7 +524,11 @@ export class MailTmService {
    */
   async setToken(token: string, address?: string, password?: string): Promise<void> {
     // A stored account may still contain a token already replaced after a 401.
-    if (address && this.credentials?.address === address && (this.isAuthenticated() || this.tokenRefreshPromise)) {
+    if (
+      address &&
+      this.credentials?.address === address &&
+      (this.isAuthenticated() || this.tokenRefreshPromise)
+    ) {
       return;
     }
     this.clearAuthentication();
@@ -568,7 +576,9 @@ export class MailTmService {
         const currentEmail = await storageService.get('currentEmail');
 
         if (
-          currentEmail && currentEmail.service === 'mailtm' && currentEmail.password &&
+          currentEmail &&
+          currentEmail.service === 'mailtm' &&
+          currentEmail.password &&
           (!this.credentials || this.credentials.address === currentEmail.fullEmail)
         ) {
           log.info('Token expired, re-authenticating...');
@@ -845,9 +855,10 @@ export class MailTmService {
     const rawBody = includeBody ? msg.text || msg.intro || '' : msg.intro || '';
     const bodyStr = contentToString(rawBody);
     const textStr = contentToString(msg.text || rawBody);
-    const htmlStr = includeBody && msg.html
-      ? contentToString(Array.isArray(msg.html) ? msg.html.join('') : msg.html)
-      : '';
+    const htmlStr =
+      includeBody && msg.html
+        ? contentToString(Array.isArray(msg.html) ? msg.html.join('') : msg.html)
+        : '';
 
     const result: Email = {
       id: String(msg.id),

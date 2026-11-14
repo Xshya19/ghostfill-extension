@@ -73,39 +73,75 @@ describe('verification link navigation', () => {
     const input = email();
     const url = link();
     vi.spyOn(smartDetectionService, 'detect').mockResolvedValueOnce({
-      type: 'both', code: '90375', link: url, confidence: 0.99, otpConfidence: 0.3,
-      decision: { purpose: 'verification', action: 'open-link', canAutoAct: true, confidence: 0.99, risk: 'low', reasons: [], warnings: [] },
+      type: 'both',
+      code: '90375',
+      link: url,
+      confidence: 0.99,
+      otpConfidence: 0.3,
+      decision: {
+        purpose: 'verification',
+        action: 'open-link',
+        canAutoAct: true,
+        confidence: 0.99,
+        risk: 'low',
+        reasons: [],
+        warnings: [],
+      },
     } as never);
     await linkService.handleNewEmail(input, accountId);
     await vi.waitFor(() => expect(linkService.getHistory().at(-1)?.status).toBe('activated'));
     expect(await otpService.getLastOTP()).toBeNull();
   });
 
-  it.each([['detect', true], ['pre-detected', true], ['detect', false], ['pre-detected', false]] as const)('opens a Claude magic link through %s (HTML=%s) without inventing an OTP', async (path, formatted) => {
-    const account = await storageService.get('currentEmail');
-    await storageService.set('currentEmail', { ...account, originUrl: 'https://claude.ai/login' } as never);
-    const url = `https://claude.ai/magic-link#fixture_auth_${path}_${++sequence}_582914_123456789`;
-    const input = {
-      ...email('Claude <support@mail.anthropic.com>'),
-      subject: 'Sign in to Claude.ai',
-      body: `Click the button below to finish signing in. This link expires in 10 minutes.\nSign in [${url}]\nAnthropic, PBC, 548 Market St, PMB 90375, San Francisco CA 94104`,
-      htmlBody: formatted ? `<h1>Sign in to Claude.ai</h1><p>Click the button below to finish signing in. This link expires in 10 minutes.</p><a href="${url}">Sign in</a><footer>548 Market St, PMB 90375, San Francisco CA 94104</footer>` : '',
-    };
-    if (path === 'detect') {
-      await linkService.handleNewEmail(input, accountId);
-    } else {
-      await linkService.handleDetectedLink(input, url, accountId);
+  it.each([
+    ['detect', true],
+    ['pre-detected', true],
+    ['detect', false],
+    ['pre-detected', false],
+  ] as const)(
+    'opens a Claude magic link through %s (HTML=%s) without inventing an OTP',
+    async (path, formatted) => {
+      const account = await storageService.get('currentEmail');
+      await storageService.set('currentEmail', {
+        ...account,
+        originUrl: 'https://claude.ai/login',
+      } as never);
+      const url = `https://claude.ai/magic-link#fixture_auth_${path}_${++sequence}_582914_123456789`;
+      const input = {
+        ...email('Claude <support@mail.anthropic.com>'),
+        subject: 'Sign in to Claude.ai',
+        body: `Click the button below to finish signing in. This link expires in 10 minutes.\nSign in [${url}]\nAnthropic, PBC, 548 Market St, PMB 90375, San Francisco CA 94104`,
+        htmlBody: formatted
+          ? `<h1>Sign in to Claude.ai</h1><p>Click the button below to finish signing in. This link expires in 10 minutes.</p><a href="${url}">Sign in</a><footer>548 Market St, PMB 90375, San Francisco CA 94104</footer>`
+          : '',
+      };
+      if (path === 'detect') {
+        await linkService.handleNewEmail(input, accountId);
+      } else {
+        await linkService.handleDetectedLink(input, url, accountId);
+      }
+      await vi.waitFor(() => expect(linkService.getHistory().at(-1)?.status).toBe('activated'));
+      expect(chrome.tabs.create).toHaveBeenCalledExactlyOnceWith({ url, active: true });
+      expect(await otpService.getLastOTP()).toBeNull();
     }
-    await vi.waitFor(() => expect(linkService.getHistory().at(-1)?.status).toBe('activated'));
-    expect(chrome.tabs.create).toHaveBeenCalledExactlyOnceWith({ url, active: true });
-    expect(await otpService.getLastOTP()).toBeNull();
-  });
+  );
 
-  it.each([true, false])('keeps a tokenless action route for review when its anchor is only Help (HTML=%s)', async (formatted) => {
-    const url = 'https://chat.qwen.ai/magic-link#fixture_auth_token_123456789';
-    await linkService.handleDetectedLink({ ...email(), body: `Help [${url}]`, htmlBody: formatted ? `<a href="${url}">Help</a>` : '' }, url, accountId);
-    expect(chrome.tabs.create).not.toHaveBeenCalled();
-  });
+  it.each([true, false])(
+    'keeps a tokenless action route for review when its anchor is only Help (HTML=%s)',
+    async (formatted) => {
+      const url = 'https://chat.qwen.ai/magic-link#fixture_auth_token_123456789';
+      await linkService.handleDetectedLink(
+        {
+          ...email(),
+          body: `Help [${url}]`,
+          htmlBody: formatted ? `<a href="${url}">Help</a>` : '',
+        },
+        url,
+        accountId
+      );
+      expect(chrome.tabs.create).not.toHaveBeenCalled();
+    }
+  );
 
   it('allows the same message to be retried after all tab-creation attempts fail', async () => {
     const input = email();

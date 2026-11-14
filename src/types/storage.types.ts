@@ -3,7 +3,15 @@
 // SECURITY HARDENED: Session-based storage for sensitive data
 // ═══════════════════════════════════════════════════════════════════
 
-import { EmailAccount, EmailHistoryItem, Email, EmailService, AliasHistoryItem, GmailProfile, GmailMessage } from './email.types';
+import {
+  EmailAccount,
+  EmailHistoryItem,
+  Email,
+  EmailService,
+  AliasHistoryItem,
+  GmailProfile,
+  GmailMessage,
+} from './email.types';
 import { IdentityProfile } from './form.types';
 import { PasswordOptions, PasswordHistoryItem } from './password.types';
 

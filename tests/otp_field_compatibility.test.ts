@@ -8,8 +8,9 @@ import type { FormDetector } from '../src/content/formDetector';
 describe('OTP widget compatibility', () => {
   beforeEach(() => {
     document.title = '';
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-      .mockReturnValue(new DOMRect(0, 0, 40, 40));
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+      new DOMRect(0, 0, 40, 40)
+    );
   });
 
   afterEach(() => {
@@ -53,9 +54,12 @@ describe('OTP widget compatibility', () => {
     expect(PageAnalyzer.analyze().hasOTPField).toBe(true);
     expect(OTPFieldDiscovery.discover(PageIntelligence.analyze())?.fields).toEqual([input]);
 
-    const detector = new OTPPageDetector({} as AutoFiller, {
-      detectForms: () => ({ forms: [], standaloneFields: [] }),
-    } as unknown as FormDetector);
+    const detector = new OTPPageDetector(
+      {} as AutoFiller,
+      {
+        detectForms: () => ({ forms: [], standaloneFields: [] }),
+      } as unknown as FormDetector
+    );
     try {
       (detector as unknown as { runDetection: (trigger: string) => void }).runDetection('test');
       expect(detector.getStatus().isOTPPage).toBe(true);
@@ -87,9 +91,12 @@ describe('OTP widget compatibility', () => {
 
   it('registers a dynamically mounted shadow field when it receives focus', async () => {
     vi.useFakeTimers();
-    const detector = new OTPPageDetector({} as AutoFiller, {
-      detectForms: () => ({ forms: [], standaloneFields: [] }),
-    } as unknown as FormDetector);
+    const detector = new OTPPageDetector(
+      {} as AutoFiller,
+      {
+        detectForms: () => ({ forms: [], standaloneFields: [] }),
+      } as unknown as FormDetector
+    );
     const internal = detector as unknown as {
       installFocusListener: () => void;
       runDetection: (trigger: string) => void;
@@ -124,7 +131,8 @@ describe('OTP widget compatibility', () => {
       const host = document.createElement('code-widget');
       document.body.append(host);
       const root = host.attachShadow({ mode: 'open' });
-      root.innerHTML = '<input id="code" type="tel" autocomplete="section-auth one-time-code" maxlength="6">';
+      root.innerHTML =
+        '<input id="code" type="tel" autocomplete="section-auth one-time-code" maxlength="6">';
       inputs.push(root.querySelector<HTMLInputElement>('input')!);
     }
     inputs[1]!.focus();
@@ -173,7 +181,9 @@ describe('OTP widget compatibility', () => {
     document.body.innerHTML = '<form>' + '<input name="otp" maxlength="1">'.repeat(6) + '</form>';
     const group = OTPFieldDiscovery.discover(PageIntelligence.analyze())!;
     const events: string[] = [];
-    group.fields.forEach((field) => field.addEventListener('input', () => events.push(field.value)));
+    group.fields.forEach((field) =>
+      field.addEventListener('input', () => events.push(field.value))
+    );
     const result = await OTPFiller.fill('451612', group, 'unknown');
     expect(result.success).toBe(true);
     expect(group.fields.map((field) => field.value).join('')).toBe('451612');
@@ -181,7 +191,8 @@ describe('OTP widget compatibility', () => {
   });
 
   it('writes the complete code to one explicitly marked editable widget', async () => {
-    document.body.innerHTML = '<div contenteditable="true" role="textbox" autocomplete="one-time-code"></div>';
+    document.body.innerHTML =
+      '<div contenteditable="true" role="textbox" autocomplete="one-time-code"></div>';
     const field = document.querySelector<HTMLElement>('div')!;
     const group = OTPFieldDiscovery.discover(PageIntelligence.analyze())!;
     const result = await OTPFiller.fill('451612', group, 'unknown');

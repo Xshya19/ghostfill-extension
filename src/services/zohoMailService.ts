@@ -57,7 +57,9 @@ function requireCurrentAuth(generation: number): void {
 // ---------- Helpers ---------------------------------------------------------
 
 function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) {return error.message;}
+  if (error instanceof Error) {
+    return error.message;
+  }
   return String(error ?? '');
 }
 
@@ -89,7 +91,9 @@ function parseTokenFromRedirect(redirectUrl: string): { token: string; expiresIn
   const params = new URLSearchParams(hash);
   const token = params.get('access_token');
   const expiresIn = parseInt(params.get('expires_in') ?? '3600', 10);
-  if (!token) {throw new Error('No access_token in Zoho redirect URL');}
+  if (!token) {
+    throw new Error('No access_token in Zoho redirect URL');
+  }
   return { token, expiresIn };
 }
 
@@ -122,14 +126,19 @@ async function launchZohoOAuth(region: ZohoRegionDomain, interactive: boolean): 
         reject(normalizeOAuthError(chrome.runtime.lastError.message ?? 'Zoho OAuth flow failed'));
         return;
       }
-      if (!redirectUrl) { reject(new Error('No redirect URL from Zoho OAuth')); return; }
+      if (!redirectUrl) {
+        reject(new Error('No redirect URL from Zoho OAuth'));
+        return;
+      }
       try {
         requireCurrentAuth(generation);
         const { token, expiresIn } = parseTokenFromRedirect(redirectUrl);
         cachedToken = token;
         tokenExpiresAt = Date.now() + expiresIn * 1000 - TOKEN_EXPIRY_BUFFER_MS;
         resolve(token);
-      } catch (e) { reject(e); }
+      } catch (e) {
+        reject(e);
+      }
     });
   });
 }
@@ -138,7 +147,9 @@ async function launchZohoOAuth(region: ZohoRegionDomain, interactive: boolean): 
 
 async function detectZohoRegion(token: string): Promise<ZohoRegionDomain> {
   const generation = authGeneration;
-  if (detectedRegion) {return detectedRegion;}
+  if (detectedRegion) {
+    return detectedRegion;
+  }
   const saved = await storageService.get('zohoRegion');
   requireCurrentAuth(generation);
   if (typeof saved === 'string' && (ZOHO_REGION_DOMAINS as readonly string[]).includes(saved)) {
@@ -158,7 +169,9 @@ async function detectZohoRegion(token: string): Promise<ZohoRegionDomain> {
         log.info('Zoho region detected', { region });
         return region;
       }
-    } catch { requireCurrentAuth(generation); }
+    } catch {
+      requireCurrentAuth(generation);
+    }
   }
   throw new Error('Could not detect your Zoho Mail region. Check your account.');
 }
@@ -175,7 +188,9 @@ async function fetchZohoProfile(token: string, region: ZohoRegionDomain): Promis
   const resp = await fetch(`${getZohoApiBase(region)}/accounts`, {
     headers: { Authorization: `Zoho-oauthtoken ${token}` },
   });
-  if (!resp.ok) {throw new Error(`Zoho accounts API error: ${resp.status}`);}
+  if (!resp.ok) {
+    throw new Error(`Zoho accounts API error: ${resp.status}`);
+  }
   const data = (await resp.json()) as {
     data?: Array<{
       accountId: string;
@@ -184,9 +199,13 @@ async function fetchZohoProfile(token: string, region: ZohoRegionDomain): Promis
     }>;
   };
   const account = data.data?.[0];
-  if (!account) {throw new Error('No Zoho Mail account returned by API');}
+  if (!account) {
+    throw new Error('No Zoho Mail account returned by API');
+  }
   const defaultAddr = account.emailAddress.find((e) => e.isDefault) ?? account.emailAddress[0];
-  if (!defaultAddr) {throw new Error('No email address in Zoho account');}
+  if (!defaultAddr) {
+    throw new Error('No email address in Zoho account');
+  }
   return {
     accountId: account.accountId,
     email: defaultAddr.mailId.toLowerCase(),
@@ -203,9 +222,7 @@ export async function ensureZohoToken(interactive = false): Promise<string> {
     return cachedToken;
   }
   if (!interactive && isSilentAuthBackedOff()) {
-    throw new Error(
-      `Zoho silent auth paused. Reason: ${lastAuthFailure}`
-    );
+    throw new Error(`Zoho silent auth paused. Reason: ${lastAuthFailure}`);
   }
   let token: string | null = null;
   for (const region of ZOHO_REGION_DOMAINS) {
@@ -216,15 +233,24 @@ export async function ensureZohoToken(interactive = false): Promise<string> {
       break;
     } catch (err) {
       requireCurrentAuth(generation);
-      if (getErrorMessage(err) === 'user_cancelled') {throw err;}
+      if (getErrorMessage(err) === 'user_cancelled') {
+        throw err;
+      }
     }
   }
   if (!token) {
-    if (!interactive) {recordAuthFailure(new Error('Silent Zoho OAuth failed on all regions'));}
+    if (!interactive) {
+      recordAuthFailure(new Error('Silent Zoho OAuth failed on all regions'));
+    }
     throw new Error('Zoho authentication failed. Connect your Zoho Mail in Settings.');
   }
-  try { await persistAuthWrite(chrome.storage.session.set({ zohoAccessToken: token, zohoTokenExpiry: tokenExpiresAt })); }
-  catch { /* ignore */ }
+  try {
+    await persistAuthWrite(
+      chrome.storage.session.set({ zohoAccessToken: token, zohoTokenExpiry: tokenExpiresAt })
+    );
+  } catch {
+    /* ignore */
+  }
   requireCurrentAuth(generation);
   clearAuthBackoff();
   return token;
@@ -253,10 +279,18 @@ export async function connectZoho(): Promise<ZohoProfile> {
 
 export async function disconnectZoho(): Promise<void> {
   authGeneration++;
-  cachedToken = null; tokenExpiresAt = null; cachedAccountId = null;
-  cachedEmail = null; detectedRegion = null; clearAuthBackoff();
+  cachedToken = null;
+  tokenExpiresAt = null;
+  cachedAccountId = null;
+  cachedEmail = null;
+  detectedRegion = null;
+  clearAuthBackoff();
   await Promise.allSettled([...pendingAuthWrites]);
-  try { await chrome.storage.session.remove(['zohoAccessToken', 'zohoTokenExpiry']); } catch { /* ignore */ }
+  try {
+    await chrome.storage.session.remove(['zohoAccessToken', 'zohoTokenExpiry']);
+  } catch {
+    /* ignore */
+  }
   await storageService.set('zohoConnected', false);
   await storageService.set('zohoConnectedAt', null);
   await storageService.set('zohoProfile', null);
@@ -265,7 +299,9 @@ export async function disconnectZoho(): Promise<void> {
 }
 
 export async function getZohoConnectionStatus(): Promise<{
-  connected: boolean; email: string | null; region: ZohoRegionDomain | null;
+  connected: boolean;
+  email: string | null;
+  region: ZohoRegionDomain | null;
 }> {
   const connected = (await storageService.get('zohoConnected')) === true;
   const profile = (await storageService.get('zohoProfile')) as ZohoProfile | null;
@@ -280,9 +316,13 @@ export async function getZohoAlias(website: string, baseEmail?: string): Promise
     baseEmail ??
     cachedEmail ??
     ((await storageService.get('zohoProfile')) as ZohoProfile | null)?.email;
-  if (!base) {throw new Error('Zoho base email not available. Connect Zoho Mail first.');}
+  if (!base) {
+    throw new Error('Zoho base email not available. Connect Zoho Mail first.');
+  }
   const [localPart, domainPart] = base.split('@');
-  if (!localPart || !domainPart) {throw new Error(`Invalid Zoho base email: ${base}`);}
+  if (!localPart || !domainPart) {
+    throw new Error(`Invalid Zoho base email: ${base}`);
+  }
   const tag = getAliasPlusSuffix(website);
   return `${localPart}+ghostfill-${tag}@${domainPart}`;
 }
@@ -300,9 +340,11 @@ export async function searchZohoInbox(alias: string, sinceMs?: number): Promise<
   requireCurrentAuth(generation);
   const region = detectedRegion ?? (await detectZohoRegion(token));
   const accountId =
-    cachedAccountId ??
-    ((await storageService.get('zohoProfile')) as ZohoProfile | null)?.accountId;
-  if (!accountId) { log.warn('searchZohoInbox: accountId not available'); return []; }
+    cachedAccountId ?? ((await storageService.get('zohoProfile')) as ZohoProfile | null)?.accountId;
+  if (!accountId) {
+    log.warn('searchZohoInbox: accountId not available');
+    return [];
+  }
 
   // Zoho search syntax (zoho.com/mail/help/search-syntax.html) uses `to:`
   // for the To field — `toAddress:` is NOT a valid search parameter and
@@ -335,7 +377,10 @@ export async function searchZohoInbox(alias: string, sinceMs?: number): Promise<
     log.warn('Zoho search 401 — cleared token/region, will re-auth next poll');
     return [];
   }
-  if (!resp.ok) { log.warn('Zoho search API error', { status: resp.status }); return []; }
+  if (!resp.ok) {
+    log.warn('Zoho search API error', { status: resp.status });
+    return [];
+  }
 
   const data = (await resp.json()) as {
     status?: { code?: number; description?: string };
@@ -358,12 +403,18 @@ export async function searchZohoInbox(alias: string, sinceMs?: number): Promise<
   const parseZohoTime = (raw: unknown): number => {
     // API returns unix-ms as a STRING ("1709887053409") — new Date(str)
     // yields Invalid Date, so coerce numerically first.
-    if (typeof raw === 'number' && Number.isFinite(raw)) {return raw;}
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      return raw;
+    }
     if (typeof raw === 'string' && raw.trim().length > 0) {
       const asNum = Number(raw);
-      if (Number.isFinite(asNum)) {return asNum;}
+      if (Number.isFinite(asNum)) {
+        return asNum;
+      }
       const asDate = new Date(raw).getTime();
-      if (Number.isFinite(asDate)) {return asDate;}
+      if (Number.isFinite(asDate)) {
+        return asDate;
+      }
     }
     return Date.now();
   };

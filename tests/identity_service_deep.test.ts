@@ -10,8 +10,12 @@ vi.mock('../src/services/storageService', () => {
     storageService: {
       get: vi.fn(async (key: string) => store.get(key) ?? null),
       getFresh: vi.fn(async (key: string) => store.get(key) ?? null),
-      set: vi.fn(async (key: string, value: any) => { store.set(key, value); }),
-      remove: vi.fn(async (key: string) => { store.delete(key); }),
+      set: vi.fn(async (key: string, value: any) => {
+        store.set(key, value);
+      }),
+      remove: vi.fn(async (key: string) => {
+        store.delete(key);
+      }),
       _store: store,
     },
   };
@@ -21,7 +25,13 @@ vi.mock('../src/services/passwordService', () => ({
   passwordService: {
     generate: vi.fn(() => ({
       password: 'MockP@ssw0rd123!',
-      strength: { score: 80, level: 'strong', entropy: 70, crackTime: '1000 years', suggestions: [] },
+      strength: {
+        score: 80,
+        level: 'strong',
+        entropy: 70,
+        crackTime: '1000 years',
+        suggestions: [],
+      },
       options: {},
       generatedAt: Date.now(),
     })),

@@ -37,12 +37,7 @@ import {
   getActivationTabsSet,
 } from './activationRegistry';
 import { updateOTPMenuItem } from './contextMenu';
-import {
-  recordDecided,
-  recordExtracted,
-  recordOutcome,
-  recordReceived,
-} from './deliveryFunnel';
+import { recordDecided, recordExtracted, recordOutcome, recordReceived } from './deliveryFunnel';
 import { ensureInitialized } from './initGuard';
 import { notifyNewEmail } from './notifications';
 import { sseManager } from './sseManager';
@@ -256,7 +251,9 @@ interface SessionState {
 }
 
 function isTemporaryInboxFailure(message: string): boolean {
-  return /\b(failed to fetch|fetch failed|networkerror|network (?:error|request failed)|aborted|aborterror|timeout|timed out|cors|load failed|429|rate limit|too many requests)\b|\bHTTP\b[^\n]*\b5\d{2}\b/i.test(message);
+  return /\b(failed to fetch|fetch failed|networkerror|network (?:error|request failed)|aborted|aborterror|timeout|timed out|cors|load failed|429|rate limit|too many requests)\b|\bHTTP\b[^\n]*\b5\d{2}\b/i.test(
+    message
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1750,7 +1747,12 @@ async function processEmail(
       }
 
       await linkService
-        .handleDetectedLink(fullEmail, detection.link, currentEmail.fullEmail, canAutoFillCode ? otpCodeStr : null)
+        .handleDetectedLink(
+          fullEmail,
+          detection.link,
+          currentEmail.fullEmail,
+          canAutoFillCode ? otpCodeStr : null
+        )
         .catch((e) => log.warn('linkService error', e));
       diag.step(flowId, 'email', 'link', 'Link handling delegated', {
         link: detection.link,
@@ -1763,10 +1765,7 @@ async function processEmail(
       // A code existed but never reached a tab. The reason matters: it
       // separates "no page was waiting" from "the code was judged unsafe
       // to auto-fill" — the two have completely different fixes.
-      recordOutcome(
-        'dropped',
-        canAutoFillCode ? 'no-waiting-tab' : 'review-only-not-auto-filled'
-      );
+      recordOutcome('dropped', canAutoFillCode ? 'no-waiting-tab' : 'review-only-not-auto-filled');
     } else if (hasLink) {
       recordOutcome('dropped', 'link-not-auto-opened');
     } else {

@@ -234,8 +234,7 @@ const GeneratorTab: React.FC<GeneratorTabProps> = ({
         >
           <Sparkles size={11} />{' '}
           <span>
-            {t('sameDomainSameAlias')}{' '}
-            <kbd className="alias-kbd">Enter</kbd>
+            {t('sameDomainSameAlias')} <kbd className="alias-kbd">Enter</kbd>
             {t('toCopySuffix')}
           </span>
         </motion.div>
@@ -359,8 +358,12 @@ const InboxTab: React.FC<InboxTabProps> = ({
                 <div className="alias-inbox-item-body">
                   <div className="alias-inbox-item-top">
                     <span className="alias-inbox-from truncate">
-                      {getSenderLabel(getSenderSource(msg.fromName, msg.fromEmail || msg.from), msg.subject, null,
-                        msg.htmlBody || msg.body || msg.snippet)}
+                      {getSenderLabel(
+                        getSenderSource(msg.fromName, msg.fromEmail || msg.from),
+                        msg.subject,
+                        null,
+                        msg.htmlBody || msg.body || msg.snippet
+                      )}
                     </span>
                     <span className="alias-inbox-date">{msg.dateFormatted}</span>
                   </div>
@@ -375,7 +378,12 @@ const InboxTab: React.FC<InboxTabProps> = ({
                 onClick={() => onOpenMessage(msg)}
                 aria-label={t('openMessageFrom', [
                   t(msg.isUnread ? 'openUnreadMessage' : 'openMessage'),
-                  getSenderLabel(getSenderSource(msg.fromName, msg.fromEmail || msg.from), msg.subject, null, msg.htmlBody || msg.body || msg.snippet),
+                  getSenderLabel(
+                    getSenderSource(msg.fromName, msg.fromEmail || msg.from),
+                    msg.subject,
+                    null,
+                    msg.htmlBody || msg.body || msg.snippet
+                  ),
                   msg.subject,
                 ])}
                 disabled={openingMessageId === msg.id}

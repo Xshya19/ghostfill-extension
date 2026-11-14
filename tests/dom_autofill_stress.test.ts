@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { PhantomTyper, NativeValueWriter, VisibilityEngine } from '../src/content/autofill/formFiller';
+import {
+  PhantomTyper,
+  NativeValueWriter,
+  VisibilityEngine,
+} from '../src/content/autofill/formFiller';
 import { FormDetector } from '../src/content/formDetector';
 
 describe('DOM Autofill & Framework Stress Suite', () => {

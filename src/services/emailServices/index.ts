@@ -318,7 +318,10 @@ class EmailServiceAggregator {
           account.originUrl = options.originUrl;
         }
       } catch (error) {
-        if ((error as Error).name === 'AbortError' || sessionGeneration !== this.inboxSessionGeneration) {
+        if (
+          (error as Error).name === 'AbortError' ||
+          sessionGeneration !== this.inboxSessionGeneration
+        ) {
           throw new DOMException('Email session changed', 'AbortError');
         }
         // Record failure for health tracking
@@ -330,7 +333,12 @@ class EmailServiceAggregator {
       }
 
       // Success path - store and return (use account.service, not the requested service)
-      return this.finalizeEmailGeneration(account, account.service as EmailService, startTime, sessionGeneration);
+      return this.finalizeEmailGeneration(
+        account,
+        account.service as EmailService,
+        startTime,
+        sessionGeneration
+      );
     })();
 
     try {
@@ -474,9 +482,17 @@ class EmailServiceAggregator {
         if (options.originUrl) {
           account.originUrl = options.originUrl;
         }
-        return this.finalizeEmailGeneration(account, account.service as EmailService, startTime, sessionGeneration);
+        return this.finalizeEmailGeneration(
+          account,
+          account.service as EmailService,
+          startTime,
+          sessionGeneration
+        );
       } catch (error) {
-        if ((error as Error).name === 'AbortError' || sessionGeneration !== this.inboxSessionGeneration) {
+        if (
+          (error as Error).name === 'AbortError' ||
+          sessionGeneration !== this.inboxSessionGeneration
+        ) {
           throw new DOMException('Email session changed', 'AbortError');
         }
         this.healthManager.recordFailure(nextProvider, error as Error);
@@ -984,7 +1000,8 @@ class EmailServiceAggregator {
       // PERFORMANCE FIX: Efficient comparison using ID concatenation
       const slicedSafeEmails = safeEmails.slice(0, 50);
       const cachedInbox = (await storageService.get('inbox')) || [];
-      const inboxHash = (list: Email[]) => JSON.stringify(list.map((e) => [e.id, e.read, e.from, e.subject]));
+      const inboxHash = (list: Email[]) =>
+        JSON.stringify(list.map((e) => [e.id, e.read, e.from, e.subject]));
 
       if (
         inboxSessionGeneration === this.inboxSessionGeneration &&

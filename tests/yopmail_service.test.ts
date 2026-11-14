@@ -104,7 +104,9 @@ describe('YopmailService', () => {
 
     it('merges fresh obscure domains ahead of primaries and never generates giveaways', async () => {
       const service = new YopmailService();
-      const filler = Array.from({ length: 12 }, (_, i) => `<div>@fresh-pool-${i}.com</div>`).join('');
+      const filler = Array.from({ length: 12 }, (_, i) => `<div>@fresh-pool-${i}.com</div>`).join(
+        ''
+      );
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
@@ -147,9 +149,7 @@ describe('YopmailService', () => {
           status: 200,
           headers: new Headers(),
           text: async () =>
-            altPage(
-              Array.from({ length: 12 }, (_, i) => `<div>@sf-pool-${i}.xyz</div>`).join('')
-            ),
+            altPage(Array.from({ length: 12 }, (_, i) => `<div>@sf-pool-${i}.xyz</div>`).join('')),
         });
       });
       await Promise.all([
@@ -310,9 +310,11 @@ describe('YopmailService', () => {
       const service = new YopmailService();
 
       let inboxAttempts = 0;
-      const homeHtml = '<input type="hidden" name="yp" id="yp" value="FRESH_YP" /><script src="/ver/9.3/webmail.js"></script>';
+      const homeHtml =
+        '<input type="hidden" name="yp" id="yp" value="FRESH_YP" /><script src="/ver/9.3/webmail.js"></script>';
       const scriptJs = '&yj=FRESH_YJ&v=';
-      const inboxHtml = '<div class="m" id="e_RECOVERED"><span class="lmh">12:01</span><span class="lmf">Sender</span><div class="lms">Success</div></div>';
+      const inboxHtml =
+        '<div class="m" id="e_RECOVERED"><span class="lmh">12:01</span><span class="lmf">Sender</span><div class="lms">Success</div></div>';
 
       globalThis.fetch = vi.fn().mockImplementation((url: string) => {
         const urlStr = String(url);
@@ -565,20 +567,37 @@ describe('YopmailService', () => {
       const service = new YopmailService();
       let fetchCount = 0;
 
-      const homeHtml = '<input type="hidden" name="yp" id="yp" value="YP1" /><script src="/ver/9.3/webmail.js"></script>';
+      const homeHtml =
+        '<input type="hidden" name="yp" id="yp" value="YP1" /><script src="/ver/9.3/webmail.js"></script>';
       const scriptJs = '&yj=YJ1&v=';
-      const inboxHtml = '<div class="m" id="e_CACHED_1"><span class="lmh">12:00</span><span class="lmf">From</span><div class="lms">Sub</div></div>';
+      const inboxHtml =
+        '<div class="m" id="e_CACHED_1"><span class="lmh">12:00</span><span class="lmf">From</span><div class="lms">Sub</div></div>';
 
       globalThis.fetch = vi.fn().mockImplementation((url: string) => {
         const urlStr = String(url);
         if (urlStr.endsWith('/en/')) {
-          return Promise.resolve({ ok: true, status: 200, headers: new Headers(), text: async () => homeHtml });
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            text: async () => homeHtml,
+          });
         }
         if (urlStr.includes('webmail.js')) {
-          return Promise.resolve({ ok: true, status: 200, headers: new Headers(), text: async () => scriptJs });
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            text: async () => scriptJs,
+          });
         }
         fetchCount++;
-        return Promise.resolve({ ok: true, status: 200, headers: new Headers(), text: async () => inboxHtml });
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          text: async () => inboxHtml,
+        });
       });
 
       // Call 1: makes network requests
@@ -597,17 +616,28 @@ describe('YopmailService', () => {
       const service = new YopmailService();
       let homeFetches = 0;
 
-      const homeHtml = '<input type="hidden" name="yp" id="yp" value="YP2" /><script src="/ver/9.3/webmail.js"></script>';
+      const homeHtml =
+        '<input type="hidden" name="yp" id="yp" value="YP2" /><script src="/ver/9.3/webmail.js"></script>';
       const scriptJs = '&yj=YJ2&v=';
 
       globalThis.fetch = vi.fn().mockImplementation((url: string) => {
         const urlStr = String(url);
         if (urlStr.endsWith('/en/')) {
           homeFetches++;
-          return Promise.resolve({ ok: true, status: 200, headers: new Headers(), text: async () => homeHtml });
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            text: async () => homeHtml,
+          });
         }
         if (urlStr.includes('webmail.js')) {
-          return Promise.resolve({ ok: true, status: 200, headers: new Headers(), text: async () => scriptJs });
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            text: async () => scriptJs,
+          });
         }
         // Inbox consistently returns 400
         return Promise.resolve({
@@ -642,19 +672,36 @@ describe('YopmailService', () => {
       };
 
       try {
-        const homeHtml = '<input type="hidden" name="yp" id="yp" value="YP_CK" /><script src="/ver/9.3/webmail.js"></script>';
+        const homeHtml =
+          '<input type="hidden" name="yp" id="yp" value="YP_CK" /><script src="/ver/9.3/webmail.js"></script>';
         const scriptJs = '&yj=YJ_CK&v=';
-        const inboxHtml = '<div class="m" id="e_CK"><span class="lmh">12:00</span><span class="lmf">F</span><div class="lms">S</div></div>';
+        const inboxHtml =
+          '<div class="m" id="e_CK"><span class="lmh">12:00</span><span class="lmf">F</span><div class="lms">S</div></div>';
 
         globalThis.fetch = vi.fn().mockImplementation((url: string) => {
           const urlStr = String(url);
           if (urlStr.endsWith('/en/')) {
-            return Promise.resolve({ ok: true, status: 200, headers: new Headers(), text: async () => homeHtml });
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers(),
+              text: async () => homeHtml,
+            });
           }
           if (urlStr.includes('webmail.js')) {
-            return Promise.resolve({ ok: true, status: 200, headers: new Headers(), text: async () => scriptJs });
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers(),
+              text: async () => scriptJs,
+            });
           }
-          return Promise.resolve({ ok: true, status: 200, headers: new Headers(), text: async () => inboxHtml });
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            text: async () => inboxHtml,
+          });
         });
 
         await service.getMessages('cookie_test@mynes.com');

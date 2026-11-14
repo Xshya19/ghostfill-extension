@@ -609,10 +609,14 @@ async function processResult(result: ActionResult, ctx: ActionContext): Promise<
     if (ctx.info.frameId !== undefined) {
       options.frameId = ctx.info.frameId;
     }
-    await safeSendTabMessage(ctx.tabId, {
-      action: 'FILL_FIELD',
-      payload: fillPayload,
-    }, options).catch((err) => log.debug('Fill message failed', extractMsg(err)));
+    await safeSendTabMessage(
+      ctx.tabId,
+      {
+        action: 'FILL_FIELD',
+        payload: fillPayload,
+      },
+      options
+    ).catch((err) => log.debug('Fill message failed', extractMsg(err)));
   }
 
   // ── Notification ──

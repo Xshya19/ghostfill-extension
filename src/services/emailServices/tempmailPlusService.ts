@@ -102,7 +102,12 @@ export class TempmailPlusService {
       });
     } catch (error) {
       if (isRetryableError(error)) {
-        throttledWarn(log, 'tempmailplus-getMessages', 'Failed to fetch Tempmail.plus messages', error);
+        throttledWarn(
+          log,
+          'tempmailplus-getMessages',
+          'Failed to fetch Tempmail.plus messages',
+          error
+        );
         throw error;
       }
       log.debug('Tempmail.plus getMessages non-retryable error, returning []', error);

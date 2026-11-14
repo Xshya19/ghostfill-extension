@@ -203,10 +203,7 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
         <div className="identity-label-group">
           <span className="identity-label">{providerLabel}</span>
           {!isReal && (
-            <CountdownTimer
-              expiresAt={emailAccount?.expiresAt}
-              expiredLabel={t('expiredLabel')}
-            />
+            <CountdownTimer expiresAt={emailAccount?.expiresAt} expiredLabel={t('expiredLabel')} />
           )}
         </div>
         {(() => {
@@ -512,41 +509,47 @@ const InboxTab: React.FC<InboxTabProps> = ({
             const content = msg.htmlBody || msg.body || msg.snippet;
             const senderLabel = getSenderLabel(senderSource, msg.subject, null, content);
             return (
-            <button
-              type="button"
-              key={msg.id}
-              className={`inbox-item ${msg.isUnread ? 'alias-inbox-item--unread' : ''}`}
-              onClick={() => onOpenMessage(msg)}
-              disabled={openingMessageId === msg.id}
-              aria-label={t('openEmailFrom', [
-                t(msg.isUnread ? 'openUnreadEmail' : 'openEmail'),
-                senderLabel,
-                msg.subject,
-              ])}
-              aria-busy={openingMessageId === msg.id}
-            >
-              <EmailAvatar
-                from={senderSource}
-                subject={msg.subject}
-                content={content}
-                className="inbox-item-avatar"
-              />
-              <span className="inbox-item-content">
-                <span className="inbox-item-header">
-                  <span className="inbox-item-from truncate">{senderLabel}</span>
-                  <span className="inbox-item-date">
-                    <Clock size={10} />
-                    {msg.dateFormatted || formatInboxRelativeDate(new Date(msg.date).getTime())}
+              <button
+                type="button"
+                key={msg.id}
+                className={`inbox-item ${msg.isUnread ? 'alias-inbox-item--unread' : ''}`}
+                onClick={() => onOpenMessage(msg)}
+                disabled={openingMessageId === msg.id}
+                aria-label={t('openEmailFrom', [
+                  t(msg.isUnread ? 'openUnreadEmail' : 'openEmail'),
+                  senderLabel,
+                  msg.subject,
+                ])}
+                aria-busy={openingMessageId === msg.id}
+              >
+                <EmailAvatar
+                  from={senderSource}
+                  subject={msg.subject}
+                  content={content}
+                  className="inbox-item-avatar"
+                />
+                <span className="inbox-item-content">
+                  <span className="inbox-item-header">
+                    <span className="inbox-item-from truncate">{senderLabel}</span>
+                    <span className="inbox-item-date">
+                      <Clock size={10} />
+                      {msg.dateFormatted || formatInboxRelativeDate(new Date(msg.date).getTime())}
+                    </span>
+                  </span>
+                  <span className="inbox-item-subject truncate">
+                    {msg.subject || t('noSubject')}
                   </span>
                 </span>
-                <span className="inbox-item-subject truncate">{msg.subject || t('noSubject')}</span>
-              </span>
-              {openingMessageId === msg.id ? (
-                <RefreshCw size={14} className="inbox-item-open-chevron spin" aria-hidden="true" />
-              ) : (
-                <ChevronRight size={14} className="inbox-item-open-chevron" aria-hidden="true" />
-              )}
-            </button>
+                {openingMessageId === msg.id ? (
+                  <RefreshCw
+                    size={14}
+                    className="inbox-item-open-chevron spin"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <ChevronRight size={14} className="inbox-item-open-chevron" aria-hidden="true" />
+                )}
+              </button>
             );
           })}
         </div>
@@ -1425,8 +1428,14 @@ export const EmailViewerModal: React.FC<EmailViewerModalProps> = ({
   }, [isOpen, clearIframeKeyHandler]);
 
   const rawSender = getSenderSource(message?.fromName, message?.from || '');
-  const sender = message ? getSenderLabel(rawSender, message.subject, message.link,
-    rawHtml || contentToString(message.textBody || message.body || message.snippet)) : '';
+  const sender = message
+    ? getSenderLabel(
+        rawSender,
+        message.subject,
+        message.link,
+        rawHtml || contentToString(message.textBody || message.body || message.snippet)
+      )
+    : '';
   const avatarSource = getSenderSource(message?.fromName, message?.from || sender);
   const dateText = message ? formatDate(message) : '';
   const compactDateText = message ? formatCompactDate(message) : '';
@@ -2119,11 +2128,7 @@ const Header: React.FC<HeaderProps> = React.memo(({ onOpenSettings, onOpenHelp }
         </div>
       </div>
       <div className="header-actions">
-        <IconButton
-          label={t('openHelpCenter')}
-          title={t('helpCenterTitle')}
-          onClick={onOpenHelp}
-        >
+        <IconButton label={t('openHelpCenter')} title={t('helpCenterTitle')} onClick={onOpenHelp}>
           <HelpCircle size={18} strokeWidth={2} />
         </IconButton>
         <IconButton label={t('openSettings')} title={t('settingsTitle')} onClick={onOpenSettings}>
@@ -2304,7 +2309,12 @@ const InboxListComponent: React.FC<InboxListProps> = ({
   const canRefreshGmail = preferredEmailType === 'gmail' && gmailConnected && !gmailIsManual;
 
   return (
-    <div className="inbox-section" role="region" aria-label={t('recentMessages')} data-empty={inboxCount === 0}>
+    <div
+      className="inbox-section"
+      role="region"
+      aria-label={t('recentMessages')}
+      data-empty={inboxCount === 0}
+    >
       <div className="inbox-header-row">
         <div className="inbox-title-group">
           <Inbox size={16} className="inbox-title-icon" aria-hidden="true" />
@@ -2411,8 +2421,12 @@ const InboxListComponent: React.FC<InboxListProps> = ({
                 emailItem.activationLink && isWebUrl(emailItem.activationLink)
               );
               const senderSource = getSenderSource(emailItem.from, emailItem.senderEmail);
-              const senderLabel = getSenderLabel(senderSource, emailItem.subject, emailItem.activationLink,
-                emailItem.htmlBody || emailItem.textBody || emailItem.body || emailItem.snippet);
+              const senderLabel = getSenderLabel(
+                senderSource,
+                emailItem.subject,
+                emailItem.activationLink,
+                emailItem.htmlBody || emailItem.textBody || emailItem.body || emailItem.snippet
+              );
               return (
                 <div key={emailItem.id} className="inbox-item" data-unread={!emailItem.read}>
                   <EmailAvatar
@@ -2433,9 +2447,7 @@ const InboxListComponent: React.FC<InboxListProps> = ({
                         {!emailItem.read && (
                           <span className="inbox-unread-dot" aria-hidden="true" />
                         )}
-                        <span className="inbox-sender-name">
-                          {senderLabel}
-                        </span>
+                        <span className="inbox-sender-name">{senderLabel}</span>
                       </span>
                       <span className="inbox-item-date">
                         {formatInboxRelativeDate(new Date(emailItem.date).getTime())}
@@ -3078,9 +3090,7 @@ export const arePasswordOptionsEqual = (a: PasswordOptions, b: PasswordOptions):
   (a.minNumbers ?? 0) === (b.minNumbers ?? 0) &&
   (a.minSymbols ?? 0) === (b.minSymbols ?? 0);
 
-export const createPasswordPreviewState = (
-  options: PasswordOptions
-): PasswordPreviewState => ({
+export const createPasswordPreviewState = (options: PasswordOptions): PasswordPreviewState => ({
   baselineOptions: options,
   showingExisting: false,
   userGenerated: false,

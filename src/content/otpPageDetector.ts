@@ -1610,7 +1610,10 @@ export class OTPPageDetector {
       if (this.destroyed) {
         return;
       }
-      if (e.target instanceof HTMLInputElement || getDeepActiveElement() instanceof HTMLInputElement) {
+      if (
+        e.target instanceof HTMLInputElement ||
+        getDeepActiveElement() instanceof HTMLInputElement
+      ) {
         this.scheduleDetection('focus');
       }
     };

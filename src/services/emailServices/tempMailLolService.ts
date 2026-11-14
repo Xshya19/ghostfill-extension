@@ -91,7 +91,12 @@ export class TempMailLolService {
       });
     } catch (error) {
       if (isRetryableError(error)) {
-        throttledWarn(log, 'tempmaillol-getMessages', 'Failed to fetch TempMail.lol messages', error);
+        throttledWarn(
+          log,
+          'tempmaillol-getMessages',
+          'Failed to fetch TempMail.lol messages',
+          error
+        );
         throw error;
       }
       log.debug('TempMail.lol fetch failed (non-retryable)', error);

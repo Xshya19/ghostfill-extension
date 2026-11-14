@@ -241,7 +241,12 @@ describe('Full message list mapping (H2)', () => {
         const u = String(url);
         if (u.includes('/api/mails/')) {
           const id = u.split('/api/mails/')[1]!.split('?')[0]!;
-          return jsonResponse({ mail_id: id, subject: `Detail ${id}`, text: 'body', html: '<b>body</b>' });
+          return jsonResponse({
+            mail_id: id,
+            subject: `Detail ${id}`,
+            text: 'body',
+            html: '<b>body</b>',
+          });
         }
         // list endpoint: /api/mails?email=…&limit=50
         return jsonResponse({ mail_list: seven });
@@ -288,7 +293,12 @@ describe('Full message list mapping (H2)', () => {
         const u = String(url);
         if (u.includes(`/api/mailboxes/${mailboxId}/messages/`)) {
           const id = u.split(`/api/mailboxes/${mailboxId}/messages/`)[1]!;
-          return jsonResponse({ message_id: id, subject: `Detail ${id}`, text: 'body', html: '<b>body</b>' });
+          return jsonResponse({
+            message_id: id,
+            subject: `Detail ${id}`,
+            text: 'body',
+            html: '<b>body</b>',
+          });
         }
         if (u.includes(`/api/mailboxes/${mailboxId}/messages`)) {
           return jsonResponse({ messages: list });
@@ -380,10 +390,16 @@ describe('Malformed payload shapes throw instead of faking an empty inbox (H4)',
     const svc = new MailTmService();
     await svc.setToken('tok-h4');
 
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ unexpected: 'drift' })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ unexpected: 'drift' }))
+    );
     await expect(svc.getMessages()).rejects.toThrow(MalformedProviderResponseError);
 
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ 'hydra:member': [] })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ 'hydra:member': [] }))
+    );
     await expect(svc.getMessages()).resolves.toEqual([]);
   });
 
@@ -420,12 +436,18 @@ describe('Malformed payload shapes throw instead of faking an empty inbox (H4)',
     // drift payload resolved []. The bare-[] half is a GUARD: mailinator
     // accepts a bare array payload, and an empty one is a legitimate
     // empty inbox that must keep resolving [] without throwing.
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ nope: 'drift' })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ nope: 'drift' }))
+    );
     await expect(mailinatorService.getMessages('testuser@mailinator.com')).rejects.toThrow(
       MalformedProviderResponseError
     );
 
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse([])));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse([]))
+    );
     await expect(mailinatorService.getMessages('testuser@mailinator.com')).resolves.toEqual([]);
   });
 
@@ -467,7 +489,10 @@ describe('Malformed payload shapes throw instead of faking an empty inbox (H4)',
   it('tempmail.plus: unknown object shape throws', async () => {
     // BITE: pre-H4 `data.mail_list || data.mails || data.result || []` →
     // drift → [] scored as success.
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ unexpected: 'drift' })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ unexpected: 'drift' }))
+    );
     await expect(tempmailPlusService.getMessages('inbox@tempmail.plus')).rejects.toThrow(
       MalformedProviderResponseError
     );
@@ -475,7 +500,10 @@ describe('Malformed payload shapes throw instead of faking an empty inbox (H4)',
 
   it('catchmail: unknown object shape throws', async () => {
     // BITE: pre-H4 `data.messages || []` → drift → [] scored as success.
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ unexpected: 'drift' })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ unexpected: 'drift' }))
+    );
     await expect(catchmailService.getMessages('box@catchmail.io')).rejects.toThrow(
       MalformedProviderResponseError
     );
@@ -484,7 +512,10 @@ describe('Malformed payload shapes throw instead of faking an empty inbox (H4)',
   it('throwawaymail: unknown object shape throws', async () => {
     // BITE: pre-H4 `data.messages || []` → drift → [] scored as success.
     const account = { id: 'mbx-2', token: 'mbx-2', fullEmail: 'w@throwawaymail.app' } as any;
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ unexpected: 'drift' })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ unexpected: 'drift' }))
+    );
     await expect(throwawaymailService.getMessages(account)).rejects.toThrow(
       MalformedProviderResponseError
     );
@@ -543,7 +574,10 @@ describe('Date parsing without NaN (M6/M7)', () => {
       vi.fn(async (url: RequestInfo | URL) => {
         const u = String(url);
         if (u.includes('/temp/user%40bbjbinin.mn/')) {
-          return jsonResponse({ success: true, result: { textContent: 'code', htmlContent: '<p>code</p>' } });
+          return jsonResponse({
+            success: true,
+            result: { textContent: 'code', htmlContent: '<p>code</p>' },
+          });
         }
         // list endpoint: /temp/{address}?limit=50
         return jsonResponse({

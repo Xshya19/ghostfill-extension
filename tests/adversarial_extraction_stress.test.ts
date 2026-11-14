@@ -23,14 +23,17 @@ describe('Adversarial Extraction & False-Positive Stress Suite', () => {
       );
 
       expect(result.link).toBeDefined();
-      expect(result.link?.url).toContain('https://auth.example.com/verify-email?token=sec_token_998877665544');
+      expect(result.link?.url).toContain(
+        'https://auth.example.com/verify-email?token=sec_token_998877665544'
+      );
       expect(result.intent).toBe('activation');
     });
 
     it('extracts OTP code hidden inside zero-width spaces and Unicode formatting chars', () => {
       // Obfuscated with zero-width spaces (\u200B), zero-width non-joiners (\u200C), zero-width joiners (\u200D), BOM (\uFEFF)
-      const obfuscatedBody = 'Your security verification code is: 7\u200B4\u200C9\u200D1\uFEFF8\u20603. Use it to complete sign-in.';
-      
+      const obfuscatedBody =
+        'Your security verification code is: 7\u200B4\u200C9\u200D1\uFEFF8\u20603. Use it to complete sign-in.';
+
       const otp = extractOTP(obfuscatedBody);
       expect(otp).toBeDefined();
       expect(otp?.code).toBe('749183');
@@ -58,7 +61,8 @@ describe('Adversarial Extraction & False-Positive Stress Suite', () => {
     });
 
     it('extracts alphanumeric dashed OTP codes cleanly', () => {
-      const emailText = 'Here is your one-time verification passcode: K9X-4B2. Valid for 10 minutes.';
+      const emailText =
+        'Here is your one-time verification passcode: K9X-4B2. Valid for 10 minutes.';
       const otp = extractOTP(emailText);
       expect(otp).toBeDefined();
       expect(otp?.code.replace(/[-\s]/g, '')).toMatch(/K9X4B2/i);
@@ -101,7 +105,9 @@ describe('Adversarial Extraction & False-Positive Stress Suite', () => {
       );
 
       expect(result.link).toBeDefined();
-      expect(result.link?.url).toContain('https://app.example.com/confirm_account?token=abcdef1234567890');
+      expect(result.link?.url).toContain(
+        'https://app.example.com/confirm_account?token=abcdef1234567890'
+      );
     });
   });
 });

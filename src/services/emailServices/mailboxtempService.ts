@@ -107,7 +107,12 @@ export class MailboxtempService {
       });
     } catch (error) {
       if (isRetryableError(error)) {
-        throttledWarn(log, 'mailboxtemp-getMessages', 'Failed to fetch MailboxTemp messages', error);
+        throttledWarn(
+          log,
+          'mailboxtemp-getMessages',
+          'Failed to fetch MailboxTemp messages',
+          error
+        );
         throw error;
       }
       log.debug('MailboxTemp getMessages non-retryable error, returning []', error);

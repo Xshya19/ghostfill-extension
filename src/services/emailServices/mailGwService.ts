@@ -326,7 +326,8 @@ class MailGwService {
     this.credentials = address
       ? {
           address,
-          password: password || (this.credentials?.address === address ? this.credentials.password : ''),
+          password:
+            password || (this.credentials?.address === address ? this.credentials.password : ''),
         }
       : null;
   }
@@ -608,9 +609,10 @@ class MailGwService {
     const rawBody = includeBody ? msg.text || msg.intro || '' : msg.intro || '';
     const bodyStr = contentToString(rawBody);
     const textStr = contentToString(msg.text || rawBody);
-    const htmlStr = includeBody && msg.html
-      ? contentToString(Array.isArray(msg.html) ? msg.html.join('') : msg.html)
-      : '';
+    const htmlStr =
+      includeBody && msg.html
+        ? contentToString(Array.isArray(msg.html) ? msg.html.join('') : msg.html)
+        : '';
 
     const email: Email = {
       id: String(msg.id),

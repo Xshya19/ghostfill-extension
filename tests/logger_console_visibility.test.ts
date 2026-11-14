@@ -26,9 +26,12 @@ it('loads the saved debug setting and prints every level without the Verbose fil
   const log = createLogger('VisibilityTest');
   for (const level of ['debug', 'info', 'warn', 'error'] as const) {
     log[level]('Console visibility', { password: 'private-value' });
-    expect(spies[level === 'debug' ? 'log' : level]).toHaveBeenCalledWith(expect.stringContaining('Console visibility'), {
-      password: '[REDACTED]',
-    });
+    expect(spies[level === 'debug' ? 'log' : level]).toHaveBeenCalledWith(
+      expect.stringContaining('Console visibility'),
+      {
+        password: '[REDACTED]',
+      }
+    );
   }
   for (const level of ['step', 'state', 'info', 'perf', 'warn', 'error'] as const) {
     const spy =
@@ -70,7 +73,11 @@ it('keeps routine logs and diagnostic warnings visible with debug mode off', asy
 
 it('applies settings changes live and ignores a stale startup read and other storage areas', async () => {
   let finishRead!: (value: Record<string, unknown>) => void;
-  vi.mocked(chrome.storage.local.get).mockReturnValueOnce(new Promise((resolve) => { finishRead = resolve; }));
+  vi.mocked(chrome.storage.local.get).mockReturnValueOnce(
+    new Promise((resolve) => {
+      finishRead = resolve;
+    })
+  );
   const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   const { logger } = await import('../src/utils/logger');
   const onChange = vi.mocked(chrome.storage.onChanged.addListener).mock.calls[0]![0];
@@ -93,11 +100,22 @@ it('masks standalone codes, URL secrets and diagnostic action text before printi
   const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   const { logger, diag } = await import('../src/utils/logger');
   logger.debug('Code result', '009165');
-  diag.log('step', 'link', 'person@example.com', 'Open https://claude.ai/magic-link#sensitive-link-token', {
-    link: 'https://app.notion.com/loginwithemail?password=009165&state=sensitive-state',
-  });
+  diag.log(
+    'step',
+    'link',
+    'person@example.com',
+    'Open https://claude.ai/magic-link#sensitive-link-token',
+    {
+      link: 'https://app.notion.com/loginwithemail?password=009165&state=sensitive-state',
+    }
+  );
   const output = JSON.stringify({ calls: logSpy.mock.calls, report: diag.exportReport() });
-  for (const secret of ['009165', 'person@example.com', 'sensitive-link-token', 'sensitive-state']) {
+  for (const secret of [
+    '009165',
+    'person@example.com',
+    'sensitive-link-token',
+    'sensitive-state',
+  ]) {
     expect(output).not.toContain(secret);
   }
   expect(output).toContain('[REDACTED]');

@@ -61,7 +61,12 @@ import { isActivationTab, onContentScriptReady } from './activationRegistry';
 import { updateOTPMenuItem } from './contextMenu';
 import { exportFunnelReport, getDeliveryFunnel } from './deliveryFunnel';
 import { ensureInitialized } from './initGuard';
-import { notifySuccess, notifyError, notifyLinkReady, resetNotificationSession } from './notifications';
+import {
+  notifySuccess,
+  notifyError,
+  notifyLinkReady,
+  resetNotificationSession,
+} from './notifications';
 import {
   startEmailPolling,
   stopEmailPolling,
@@ -90,7 +95,10 @@ let accountDataGeneration = 0;
 let clearingData = false;
 const pendingGmailWrites = new Set<Promise<unknown>>();
 
-async function persistGmailState(generation: number, operation: () => Promise<unknown>): Promise<void> {
+async function persistGmailState(
+  generation: number,
+  operation: () => Promise<unknown>
+): Promise<void> {
   if (clearingData || generation !== accountDataGeneration) {
     throw new Error('Account data was cleared');
   }
@@ -295,7 +303,9 @@ async function saveExtractedOTPFromMessage(
     return;
   }
 
-  const metadata: { emailId?: string | number; emailDate?: number; autoFillEligible: boolean } = { autoFillEligible };
+  const metadata: { emailId?: string | number; emailDate?: number; autoFillEligible: boolean } = {
+    autoFillEligible,
+  };
   if (payload.emailId !== undefined) {
     metadata.emailId = payload.emailId;
   }
@@ -374,7 +384,13 @@ async function activateDetectedLink(params: {
     url: params.linkUrl.substring(0, 60),
   });
 
-  await linkService.handleDetectedLink(email, params.linkUrl, accountId, params.otpCode, params.linkAnchorText);
+  await linkService.handleDetectedLink(
+    email,
+    params.linkUrl,
+    accountId,
+    params.otpCode,
+    params.linkAnchorText
+  );
 }
 
 /**
@@ -902,7 +918,12 @@ async function handleMessage(
           });
           return { success: false, error: 'Saved code belongs to a different site' };
         }
-        if (reg && reg.registeredAt > lastOTP.extractedAt && !isActivationTab(senderTabId) && !(await otpService.isOTPFresh())) {
+        if (
+          reg &&
+          reg.registeredAt > lastOTP.extractedAt &&
+          !isActivationTab(senderTabId) &&
+          !(await otpService.isOTPFresh())
+        ) {
           log.warn('Refusing to provide stale OTP during active polling session', { senderTabId });
           return { success: false, error: 'Still waiting for new email...' };
         }
@@ -979,8 +1000,14 @@ async function handleMessage(
           startFastOTPPolling(sender.tab.id, url, selectors, sender.frameId, confidence, verdict);
           // The email may arrive before SPA hydration exposes the code input.
           const saved = await otpService.getLastOTP();
-          if (selectors.length > 0 && saved?.autoFillEligible === true && saved.confidence >= 0.7 &&
-            saved.emailFrom && senderMatchesSite(saved.emailFrom, url) && await otpService.isOTPFresh()) {
+          if (
+            selectors.length > 0 &&
+            saved?.autoFillEligible === true &&
+            saved.confidence >= 0.7 &&
+            saved.emailFrom &&
+            senderMatchesSite(saved.emailFrom, url) &&
+            (await otpService.isOTPFresh())
+          ) {
             await deliverOTP(saved.code, saved.confidence, {
               from: saved.emailFrom,
               subject: saved.emailSubject || '',
@@ -1158,7 +1185,8 @@ async function handleMessage(
 
       const otpCode = normalizeEmailOTP(extractionResult.code);
       const otpConfidence = extractionResult.otpConfidence ?? 0.8;
-      const canAutoFillCode = extractionResult.decision?.canAutoAct === true && otpConfidence >= 0.7;
+      const canAutoFillCode =
+        extractionResult.decision?.canAutoAct === true && otpConfidence >= 0.7;
       const linkUrl = extractionResult.link;
       const senderEmail = extractionResult.emailFrom || toSafeStr(payload?.emailFrom);
       const emailDate = extractionResult.emailDate ?? payload?.emailDate;
@@ -1178,13 +1206,18 @@ async function handleMessage(
       );
 
       if (sameInbox && !obsoleteCode && otpCode && payload && payload.saveToLastOTP === true) {
-        await saveExtractedOTPFromMessage(otpCode, otpConfidence, {
-          ...payload,
-          subject,
-          source,
-          emailFrom: senderEmail,
-          ...(emailDate !== undefined ? { emailDate } : {}),
-        }, canAutoFillCode);
+        await saveExtractedOTPFromMessage(
+          otpCode,
+          otpConfidence,
+          {
+            ...payload,
+            subject,
+            source,
+            emailFrom: senderEmail,
+            ...(emailDate !== undefined ? { emailDate } : {}),
+          },
+          canAutoFillCode
+        );
       }
 
       const emailCtx: EmailContext = {
@@ -1576,8 +1609,12 @@ async function handleMessage(
         // Try silent auth restoration (SW restart recovery)
         const silentProfile = await gmailApiService.checkSilentAuth();
         if (silentProfile) {
-          await persistGmailState(generation, () => storageService.set('gmailProfile', silentProfile));
-          await persistGmailState(generation, () => storageService.set('gmailBase', silentProfile.email));
+          await persistGmailState(generation, () =>
+            storageService.set('gmailProfile', silentProfile)
+          );
+          await persistGmailState(generation, () =>
+            storageService.set('gmailBase', silentProfile.email)
+          );
           await persistGmailState(generation, () => storageService.set('gmailConnected', true));
           await persistGmailState(generation, () => setGmailConnectedAt());
           const nextAuthState = getGmailAuthSetupState();
@@ -1624,7 +1661,9 @@ async function handleMessage(
         await persistGmailState(generation, () => storageService.set('gmailConnected', true));
         await persistGmailState(generation, () => setGmailConnectedAt());
         sseManager.disconnect();
-        await persistGmailState(generation, () => storageService.set('preferredEmailType', 'gmail'));
+        await persistGmailState(generation, () =>
+          storageService.set('preferredEmailType', 'gmail')
+        );
         await persistGmailState(generation, () => storageService.set('inbox', []));
         invalidateGmailInboxFetches();
         await persistGmailState(generation, () => storageService.set('gmailInbox', []));
@@ -1633,7 +1672,9 @@ async function handleMessage(
         // Seed an initial alias session for the base email so that
         // GMAIL_FETCH_INBOX calls arriving immediately after sign-in
         // can find an active session (fixes race condition).
-        await persistGmailState(generation, () => rememberGmailAliasSession(profile.email, profile.email, 'global'));
+        await persistGmailState(generation, () =>
+          rememberGmailAliasSession(profile.email, profile.email, 'global')
+        );
         log.info('Gmail sign-in completed', { email: profile.email });
         return { success: true, profile };
       } catch (e: unknown) {

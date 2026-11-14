@@ -77,11 +77,13 @@ describe('email provider inbox privacy', () => {
     ['victim.s3.amazonaws.com', 'attacker.s3.amazonaws.com'],
   ])('keeps separate public-suffix tenants apart: %s and %s', (victim, attacker) => {
     expect(senderMatchesSite(`verify@${victim}`, `https://${attacker}/otp`)).toBe(false);
-    expect(canAutoOpenVerificationLink(
-      account('mailtm', { originUrl: `https://${victim}/signup` }),
-      `verify@${victim}`,
-      `https://${attacker}/verify`
-    )).toBe(false);
+    expect(
+      canAutoOpenVerificationLink(
+        account('mailtm', { originUrl: `https://${victim}/signup` }),
+        `verify@${victim}`,
+        `https://${attacker}/verify`
+      )
+    ).toBe(false);
     expect(senderMatchesSite(`verify@mail.${victim}`, `https://signup.${victim}`)).toBe(true);
   });
   it('matches Qwen first-party domains without trusting lookalikes or shared mail hosts', () => {
