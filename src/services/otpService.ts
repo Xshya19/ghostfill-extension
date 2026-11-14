@@ -138,6 +138,42 @@ class SmartDetectionService {
     log.debug('Cache destroyed');
   }
 
+  /**
+   * The signup origin of the current account — the site the disposable
+   * address was created for. It is the only destination the extension can
+   * vouch for when the caller has no tab context, so the automatic link
+   * opening stays bound to it instead of to the (attacker controlled)
+   * sender address.
+   */
+  private async accountOrigin(): Promise<string | undefined> {
+    try {
+      // Check both hot keys: Gmail-preferred sessions keep the disposable
+      // account (with its signup origin) only under `disposableEmail`,
+      // while Temp-Mail sessions use `currentEmail` (2026-11-14).
+      const fromCurrent = (await storageService.get('currentEmail'))?.originUrl;
+      if (fromCurrent) {
+        return fromCurrent;
+      }
+      const fromDisposable = (await storageService.get('disposableEmail'))?.originUrl;
+      return fromDisposable || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Hostname of the account's signup origin, for the domain binding. */
+  private originHost(originUrl: string | undefined): string[] {
+    if (!originUrl) {
+      return [];
+    }
+    try {
+      const host = new URL(originUrl).hostname;
+      return host ? [host] : [];
+    } catch {
+      return [];
+    }
+  }
+
   async detect(
     subject: unknown = '',
     body: unknown = '',
@@ -152,7 +188,17 @@ class SmartDetectionService {
 
     this.maybeCleanupExpiredCache();
 
-    const contextKey = (expectedDomains || [])
+    // Domain binding for the automatic link opening (2026-11-12 security
+    // fix): the decision layer refuses to auto-open a link whose destination
+    // is not bound to the site the user is actually signing up for. Callers
+    // that know the tabs the user is waiting on pass them as
+    // `expectedDomains`; the inbox scan has no such context, so the account's
+    // signup origin — the one independent anchor available — is used here.
+    const originUrl = await this.accountOrigin();
+    const contextDomains =
+      expectedDomains.length > 0 ? expectedDomains : this.originHost(originUrl);
+
+    const contextKey = contextDomains
       .map((domain) => toSafeString(domain).toLowerCase())
       .sort()
       .join(',');
@@ -163,20 +209,21 @@ class SmartDetectionService {
       return cachedResult;
     }
 
-    let intelligentResult = extractAll(sSubject, sBody, sHtml, sSender, expectedDomains);
+    let intelligentResult = extractAll(sSubject, sBody, sHtml, sSender, contextDomains);
 
     if (!intelligentResult.otp && !intelligentResult.link && sHtml) {
       log.info('[SmartDetection] Primary extraction returned nothing. Trying HTML fallback...');
       const fallbackPlain = this.cleanHTML(sHtml);
       if (fallbackPlain && fallbackPlain !== sBody) {
-        intelligentResult = extractAll(sSubject, fallbackPlain, sHtml, sSender, expectedDomains);
+        intelligentResult = extractAll(sSubject, fallbackPlain, sHtml, sSender, contextDomains);
       }
     }
 
     const decision = assessEmailDecision({
       extraction: intelligentResult,
       sender: sSender,
-      expectedDomains,
+      expectedDomains: contextDomains,
+      originUrl,
     });
 
     log.info(`📊 [SmartDetection] Intent: ${intelligentResult.intent}`);

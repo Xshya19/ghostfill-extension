@@ -12,6 +12,7 @@ import {
 } from '../../utils/core';
 import { getSenderSource } from '../../utils/emailIdentity';
 import { createLogger } from '../../utils/logger';
+import { extractMessageList } from './messageListShape';
 
 const log = createLogger('ThrowawaymailService');
 const BASE_URL = 'https://throwawaymail.app';
@@ -81,7 +82,13 @@ export class ThrowawaymailService {
       }
 
       const data = await response.json();
-      const messages: any[] = Array.isArray(data) ? data : data.messages || [];
+      // Malformed payloads must throw — mapping them onto [] would look like
+      // an empty inbox and the aggregator would score the check as a success
+      // (no circuit breaker, no fallback provider).
+      const messages = extractMessageList(data, 'Throwawaymail getMessages', {
+        keys: ['messages'],
+        allowBareArray: true,
+      }) as any[];
 
       // If message list provides full body, use it; otherwise fetch top 5 message details
       const recentMessages = messages.slice(0, 5);
@@ -109,8 +116,10 @@ export class ThrowawaymailService {
         })
       );
 
-      return recentMessages.map((rawMsg: any, idx: number) => {
-        const msg = fullMessages[idx] || rawMsg;
+      // Map over the FULL list: returning only the 5 enriched messages made
+      // every mail after the fifth invisible for the rest of the session.
+      return messages.map((rawMsg: any, idx: number) => {
+        const msg = (idx < 5 ? fullMessages[idx] : undefined) || rawMsg;
         const htmlStr = extractHtmlFromBody(msg.html_body || msg.html || msg.body);
         const textStr = extractTextFromBody(msg.text_body || msg.text || msg.body);
         const bodyStr = textStr || htmlStr;

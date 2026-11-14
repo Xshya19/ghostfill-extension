@@ -74,9 +74,12 @@ describe('background command registration', () => {
     });
     expect(Object.keys(exports.getMetrics!().byCommand).sort()).toEqual([
       'auto-fill',
-      'check-inbox',
       'generate-email',
       'generate-password',
+      // NOTE: 'check-inbox' intentionally removed (2026-11-14) — the
+      // manifest declares no such keyboard shortcut, so the handler in
+      // background/index.ts was unreachable. The context-menu path
+      // (contextMenu.ts) implements its own check-inbox.
     ]);
     events.command[0]('auto-fill');
     await vi.waitFor(() => expect(send).toHaveBeenCalledWith(42, { action: 'SMART_AUTOFILL' }));

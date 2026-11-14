@@ -35,6 +35,7 @@ import type {
   ExtractedLink,
   IntentSignal,
 } from './types/extraction.types';
+import { stripQuotedHistory, hasFreshCodeSignal } from './utils/extraction.utils';
 
 interface ModelData {
   priors: Record<string, number>;
@@ -323,14 +324,99 @@ function calculateAdaptiveThresholds(
 
 /**
  * Layer 3: Security Guard — Calculates trust score based on phishing markers
+ *
+ * SECURITY (2026-11-12): this used to be a stub that returned a perfect
+ * score ("bypass all security checks"), so every phishing signal the
+ * extractor can see was discarded before the decision engine ran. The score
+ * is now derived from the links the message actually carries (same signals
+ * the decision engine re-checks) plus a few conservative body markers.
+ *
+ * A benign HTTPS link on an ordinary domain still scores 100 / "low", so the
+ * normal verification flow is unaffected.
  */
+
+/** Cheap-to-evaluate hosts that are never a legitimate verification target. */
+const SECURITY_SUSPICIOUS_TLDS = new Set(['tk', 'ml', 'ga', 'cf', 'gq', 'buzz', 'top', 'xyz']);
+
+/**
+ * Body markers that only appear in credential/account-takeover phishing.
+ * Deliberately narrow: a normal verification mail never asks the reader to
+ * re-enter a password or threatens to delete the account.
+ */
+const SECURITY_BODY_MARKERS: RegExp[] = [
+  /(?:confirm|verify|re-?enter|update)\s+(?:your\s+)?(?:password|passcode|credentials?|credit\s+card|bank\s+(?:details|account))/i,
+  /your\s+(?:account|access)\s+(?:has\s+been|was|will\s+be)\s+(?:suspended|locked|deactivated|disabled|terminated|closed|deleted)/i,
+  /(?:unusual|suspicious|unrecogni[sz]ed)\s+activity\s+(?:was\s+|has\s+been\s+)?(?:detected|noticed)/i,
+  /failure\s+to\s+(?:comply|verify|confirm)\s+(?:within|by)/i,
+  /(?:verify|confirm|update)\s+(?:your\s+)?account\s+(?:immediately|right\s+away)\s+to\s+avoid/i,
+  /(?:password|account)\s+(?:will\s+be|is)\s+(?:expire[d]?|deleted|closed)\s+(?:in|within)\s+\d+\s*(?:hours?|days?)/i,
+];
+
+function securityUrlPoints(rawUrl: string): number {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return 40; // Malformed destination
+  }
+
+  let points = 0;
+  const host = parsed.hostname.toLowerCase();
+  const labels = host.split('.');
+
+  if (parsed.protocol !== 'https:') {
+    points += parsed.protocol === 'http:' ? 18 : 45;
+  }
+  if (parsed.username || parsed.password) {
+    points += 45;
+  }
+  if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host.endsWith('.localhost')) {
+    points += 60;
+  }
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) {
+    points += 45;
+  }
+  if (labels.some((label) => label.startsWith('xn--'))) {
+    points += 45;
+  }
+  const tld = labels[labels.length - 1] ?? '';
+  if (SECURITY_SUSPICIOUS_TLDS.has(tld)) {
+    points += 25;
+  }
+  if (labels.length > 6) {
+    points += 10;
+  }
+
+  return points;
+}
+
 function calculateSecurityScore(
-  _allUrls: string[],
-  _body: string
+  allUrls: string[],
+  body: string
 ): { score: number; risk: 'low' | 'medium' | 'high' } {
-  // USER DIRECTIVE: Bypass all security checks.
-  // Always return maximum trust.
-  return { score: 100, risk: 'low' };
+  let points = 0;
+
+  const urls = (allUrls ?? []).filter((url) => typeof url === 'string' && url.length > 0);
+  for (const url of urls) {
+    points += securityUrlPoints(url);
+  }
+  if (urls.length > 10) {
+    points += 15;
+  }
+
+  const text = (body ?? '').slice(0, 8000);
+  let markerPoints = 0;
+  for (const marker of SECURITY_BODY_MARKERS) {
+    if (marker.test(text)) {
+      markerPoints += 15;
+    }
+  }
+  points += Math.min(markerPoints, 30);
+
+  const score = Math.max(0, Math.min(100, 100 - points));
+  const risk: 'low' | 'medium' | 'high' = points >= 60 ? 'high' : points >= 30 ? 'medium' : 'low';
+
+  return { score, risk };
 }
 
 function refineIntent(subject: string, body: string, currentIntent: EmailIntent): IntentResult {
@@ -505,9 +591,28 @@ export function extractAll(
 
   const sourceHtml = normHtmlBody || normBody; // Use normalized html to extract URLs
   const htmlText = sanitizedHtmlBody ? stripHtmlPreserveStructure(sanitizedHtmlBody) : '';
-  const plainText = `${sanitizedSubject}\n\n${sanitizedBody || htmlText}${sanitizedBody && htmlText ? `\n\n${htmlText}` : ''}`;
+  // B5 fix (2026-11-12): the previous template embedded body AND html
+  // text simultaneously when both existed, so every code/subject token
+  // was counted twice — a 49% code jumped to 100% purely from
+  // duplication. Build the extraction text from ONE source: the plain
+  // body when present, otherwise the HTML-stripped text.
+  //
+  // B2 fix: quoted reply/forward history is stripped before extraction
+  // so a stale code in the quoted part cannot outrank (or be re-counted
+  // against) the fresh code. The stripped text is only trusted when the
+  // fresh part still carries a code of its own — otherwise stripping
+  // would delete the ONLY code in the message.
+  const strippedBody = stripQuotedHistory(sanitizedBody);
+  const strippedHtmlText = htmlText ? stripQuotedHistory(htmlText) : '';
+  const freshHasCode =
+    hasFreshCodeSignal(strippedBody) || hasFreshCodeSignal(strippedHtmlText);
+  const effectiveBody = freshHasCode ? strippedBody : sanitizedBody;
+  const effectiveHtmlText = freshHasCode ? strippedHtmlText : htmlText;
+  const bodyText = effectiveBody || effectiveHtmlText;
+  const plainText = `${sanitizedSubject}\n\n${bodyText}`;
   const explicitBodyCode =
-    extractExplicitVerificationCode(sanitizedBody) || extractExplicitVerificationCode(htmlText);
+    extractExplicitVerificationCode(effectiveBody) ||
+    extractExplicitVerificationCode(effectiveHtmlText);
 
   log.info('═══ GhostFill Intelligent Extractor ═══');
 

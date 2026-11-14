@@ -59,17 +59,27 @@ export function canAutoOpenVerificationLink(
     return false;
   }
 
-  // Bind the sender and destination to the signup site when known. Older
-  // addresses can still use a sender-to-link match.
-  if (account.originUrl) {
-    try {
-      return (
-        senderMatchesSite(sender, account.originUrl) &&
-        sameVerificationSite(new URL(account.originUrl).hostname, new URL(linkUrl).hostname)
-      );
-    } catch {
-      return false;
-    }
+  // The sender AND the destination must both belong to the site the account
+  // was created for.
+  //
+  // SECURITY (2026-11-12): the previous fallback compared the sender with
+  // the link only (`senderMatchesSite(sender, linkUrl)`). A self-consistent
+  // phishing email — sender `security@evil-phish.example`, link
+  // `https://evil-phish.example/verify?token=…` — passed that comparison on
+  // every account that had no captured signup origin, so the automatic open
+  // completed with zero warnings. Without a known signup origin there is
+  // nothing independent to bind the destination to (the sender address is
+  // written by the attacker), so the automatic open is refused instead.
+  if (!account.originUrl) {
+    return false;
   }
-  return senderMatchesSite(sender, linkUrl);
+
+  try {
+    return (
+      senderMatchesSite(sender, account.originUrl) &&
+      sameVerificationSite(new URL(account.originUrl).hostname, new URL(linkUrl).hostname)
+    );
+  } catch {
+    return false;
+  }
 }

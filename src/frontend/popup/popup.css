@@ -5357,3 +5357,40 @@ textarea:disabled,
     backdrop-filter: none;
   }
 }
+
+/* -- Offline banner (2026-11-12) -------------------------------
+   Persistent factual state, not a warning: the inbox stays
+   readable; network-backed actions pause until reconnection. */
+.offline-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: var(--gf-warning-soft);
+  border: 1px solid rgba(var(--gf-warning-rgb), 0.35);
+  color: var(--gf-amber-text);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.offline-banner-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gf-warning);
+}
+
+.offline-banner-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .offline-banner,
+  .offline-banner-dot {
+    transition: none;
+  }
+}

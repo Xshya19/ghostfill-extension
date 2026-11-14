@@ -7,6 +7,7 @@ import { fetchWithTimeout, contentToString, safeParseDate } from '../../utils/co
 import { getSenderSource } from '../../utils/emailIdentity';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
+import { extractMessageList } from './messageListShape';
 
 const log = createLogger('MaildropService');
 
@@ -228,14 +229,25 @@ class MaildropService {
         signal
       );
 
-      const messages = data.inbox || [];
+      // Malformed payloads must throw — mapping them onto [] would look like
+      // an empty inbox and the aggregator would score the check as a success
+      // (no circuit breaker, no fallback provider).
+      const messages = extractMessageList(data, 'Maildrop getMessages', {
+        keys: ['inbox'],
+      }) as MaildropInboxMessage[];
 
       // Fetch full content concurrently so a busy inbox does not spend one
       // network round-trip per message before link/OTP extraction can start.
       const fullMessages = await Promise.all(
-        messages.slice(0, 10).map(async (msg): Promise<Email | null> => {
+        messages.map(async (msg, idx): Promise<Email | null> => {
           if (signal?.aborted) {
             return null;
+          }
+          // Detail bodies are fetched for the newest 10 messages only;
+          // older entries keep their metadata. The list itself must still
+          // contain EVERY message — truncating it made mails 11+ invisible.
+          if (idx >= 10) {
+            return this.convertMessage(msg, account.fullEmail);
           }
           try {
             const fullData = await this.executeGraphQL<{ message: MaildropFullMessage }>(

@@ -14,6 +14,7 @@ import { getSenderSource } from '../../utils/emailIdentity';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 import { isRetryableError, throttledWarn } from './isRetryableError';
+import { extractMessageList } from './messageListShape';
 
 const log = createLogger('CatchmailService');
 const BASE_URL = 'https://api.catchmail.io';
@@ -56,7 +57,13 @@ export class CatchmailService {
       }
 
       const data = await response.json();
-      const messages = data.messages || [];
+      // Malformed payloads must throw — mapping them onto [] would look like
+      // an empty inbox and the aggregator would score the check as a success
+      // (no circuit breaker, no fallback provider).
+      const messages = extractMessageList(data, 'Catchmail getMessages', {
+        keys: ['messages'],
+        allowBareArray: true,
+      }) as any[];
 
       // Fetch full body for first 5 messages in parallel
       const recentMessages = messages.slice(0, 5);

@@ -1,4 +1,3 @@
-import { harvestPageJsonl } from '../intelligence/eval/harvest';
 import { classifyHeuristic, decideFromResult, mapFieldClassToFieldType, IntelligenceCore } from '../intelligence/IntelligenceCore';
 import { extractFieldRecord, resolveLabelText } from '../intelligence/pageAnalyzer';
 import { safeGetComputedStyle } from '../shared/safeStyles';
@@ -15,7 +14,6 @@ import {
 import { getUniqueSelector, deepQuerySelectorAll, getElementLabel } from '../utils/core';
 import { debounce } from '../utils/debounce';
 import { createLogger } from '../utils/logger';
-import { pageStatus } from './ui/pageStatus';
 
 const log = createLogger('FormDetector');
 
@@ -1085,59 +1083,6 @@ export class DOMObserver {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-//  §8  F I E L D   D I A G N O S T I C S   H A R V E S T E R
-// ─────────────────────────────────────────────────────────────
-
-async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.style.position = 'fixed';
-    textarea.style.opacity = '0';
-    document.body.appendChild(textarea);
-    textarea.focus();
-    textarea.select();
-    try {
-      const successful = document.execCommand('copy');
-      document.body.removeChild(textarea);
-      return successful;
-    } catch {
-      document.body.removeChild(textarea);
-      return false;
-    }
-  }
-}
-
-export async function collectFieldDiagnostics(): Promise<void> {
-  try {
-    const jsonl = harvestPageJsonl();
-    if (!jsonl) {
-      pageStatus.error('No fillable fields found to harvest.', 2500);
-      return;
-    }
-
-    const fieldCount = jsonl.split('\n').filter(Boolean).length;
-    if (fieldCount === 0) {
-      pageStatus.error('No fillable fields found to harvest.', 2500);
-      return;
-    }
-
-    const copied = await copyToClipboard(jsonl);
-    if (copied) {
-      pageStatus.success(`Captured ${fieldCount} field diagnostics. Copied to clipboard.`, 3000);
-    } else {
-      pageStatus.error('Failed to copy field diagnostics.', 3000);
-    }
-  } catch (err) {
-    log.error('Field diagnostic collection failed', err);
-    pageStatus.error('Error collecting field diagnostics', 3000);
-  }
-}
-
 // ─── UltraDetector & ContextEngine ────────────────────────────────────
 
 export interface FieldCandidate {
@@ -1248,7 +1193,36 @@ export class UltraDetector {
     };
   }
 
+  /**
+   * True when a field carries a numeric signal that a real digit box
+   * would have: a single-character maxlength, a numeric input mode, a
+   * tel/number type, a one-time-code autocomplete hint or a numeric
+   * pattern. Used to tell a real split-OTP group apart from a row of
+   * narrow non-numeric inputs (zip code, CVV, year).
+   */
+  private hasNumericSignal(el: HTMLInputElement): boolean {
+    if (!el) {return false;}
+    if (el.maxLength === 1 || el.getAttribute('maxlength') === '1') {return true;}
+    const type = (el.getAttribute('type') || el.type || '').toLowerCase();
+    if (type === 'tel' || type === 'number') {return true;}
+    const inputMode = (el.getAttribute('inputmode') || '').toLowerCase();
+    if (inputMode === 'numeric' || inputMode === 'tel') {return true;}
+    const autocomplete = (el.getAttribute('autocomplete') || '').toLowerCase();
+    if (autocomplete === 'one-time-code') {return true;}
+    const pattern = el.getAttribute('pattern') || '';
+    if (pattern && /\[0-9\]|\d|0-9/.test(pattern)) {return true;}
+    const name = `${el.getAttribute('name') || ''} ${el.getAttribute('id') || ''} ${el.getAttribute('placeholder') || ''}`.toLowerCase();
+    return /otp|code|pin|verification|digit/.test(name);
+  }
+
   private detectSplitDigitGroups(candidates: FieldCandidate[]): void {
+    // Split-OTP signals (2026-11-12). Width alone was too greedy: any
+    // short text field (zip code, CVV row, year, phone extension) is
+    // ≤85px wide, and four such fields were treated as a digit group —
+    // the extension then distributed a 6-digit code across a zip-code
+    // form. Width alone still nominates candidates (a real digit box may
+    // carry no attributes at all), but the group only becomes an OTP
+    // group when a MAJORITY of its fields look numeric.
     const singleDigitCandidates = candidates.filter((c) => {
       const el = c.element as HTMLInputElement;
       const rect = el.getBoundingClientRect();
@@ -1283,6 +1257,14 @@ export class UltraDetector {
       if (list.length >= 4 && list.length <= 8) {
         // Ensure we don't double-group if a higher ancestor also matches
         if (list.some(c => processedElements.has(c))) {continue;}
+
+        // Majority rule: the group must look numeric, not merely narrow.
+        // A zip/CVV/year row is also narrow and often four fields wide;
+        // requiring a numeric signal on at least half of the group keeps
+        // those out while still accepting real digit boxes whose
+        // attributes are inconsistent.
+        const numericCount = list.filter((c) => this.hasNumericSignal(c.element as HTMLInputElement)).length;
+        if (numericCount * 2 < list.length) {continue;}
 
         // Sort by cached or fresh rect (only 4-8 items, so 1 reflow is acceptable here)
         const sorted = list.sort((a, b) => {

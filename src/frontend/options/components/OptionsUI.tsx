@@ -1,6 +1,8 @@
 import { Settings, Mail, Lock, Zap, Shield, Brain, Info } from 'lucide-react';
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 
+import { t } from '../../i18n';
+
 // ---------------------------------------------------------------------------
 // Settings navigation and field primitives
 // ---------------------------------------------------------------------------
@@ -15,10 +17,10 @@ export type TabId =
   | 'about';
 
 interface TabGroup {
-  title: string;
+  titleKey: string;
   items: Array<{
     id: TabId;
-    label: string;
+    labelKey: string;
     icon: React.ReactNode;
   }>;
 }
@@ -28,24 +30,24 @@ interface TabGroup {
 // as a tofu box on every row. Ctrl+K search covers the same need, once.
 const TAB_GROUPS: TabGroup[] = [
   {
-    title: 'Configuration',
+    titleKey: 'tabGroupConfiguration',
     items: [
-      { id: 'general', label: 'General', icon: <Settings size={17} /> },
-      { id: 'email', label: 'Email', icon: <Mail size={17} /> },
-      { id: 'password', label: 'Passwords', icon: <Lock size={17} /> },
-      { id: 'automation', label: 'Automation', icon: <Zap size={17} /> },
+      { id: 'general', labelKey: 'tabGeneral', icon: <Settings size={17} /> },
+      { id: 'email', labelKey: 'tabEmail', icon: <Mail size={17} /> },
+      { id: 'password', labelKey: 'tabPasswords', icon: <Lock size={17} /> },
+      { id: 'automation', labelKey: 'tabAutomation', icon: <Zap size={17} /> },
     ],
   },
   {
-    title: 'System & privacy',
+    titleKey: 'tabGroupSystemPrivacy',
     items: [
-      { id: 'privacy', label: 'Privacy', icon: <Shield size={17} /> },
-      { id: 'advanced', label: 'Advanced', icon: <Brain size={17} /> },
+      { id: 'privacy', labelKey: 'tabPrivacy', icon: <Shield size={17} /> },
+      { id: 'advanced', labelKey: 'tabAdvanced', icon: <Brain size={17} /> },
     ],
   },
   {
-    title: 'Information',
-    items: [{ id: 'about', label: 'About', icon: <Info size={17} /> }],
+    titleKey: 'tabGroupInformation',
+    items: [{ id: 'about', labelKey: 'tabAbout', icon: <Info size={17} /> }],
   },
 ];
 
@@ -74,22 +76,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
   }, []);
 
   return (
-    <nav className="settings-sidebar liquid-glass" aria-label="Settings navigation">
+    <nav className="settings-sidebar liquid-glass" aria-label={t('settingsNavAriaLabel')}>
       <div
         className="settings-tablist"
         role="tablist"
-        aria-label="Settings sections"
+        aria-label={t('settingsSectionsAriaLabel')}
         aria-orientation={compact ? 'horizontal' : 'vertical'}
       >
         {TAB_GROUPS.map((group, groupIdx) => (
           <div
-            key={group.title}
+            key={group.titleKey}
             className="sidebar-group"
             role="group"
             aria-labelledby={`settings-nav-group-${groupIdx}`}
           >
             <div id={`settings-nav-group-${groupIdx}`} className="sidebar-nav-section-label">
-              {group.title}
+              {t(group.titleKey)}
             </div>
             <div className="sidebar-nav">
               {group.items.map((tab) => {
@@ -136,7 +138,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
                     <span className="sidebar-nav-icon" aria-hidden="true">
                       {tab.icon}
                     </span>
-                    <span className="sidebar-tab-label">{tab.label}</span>
+                    <span className="sidebar-tab-label">{t(tab.labelKey)}</span>
                   </button>
                 );
               })}
@@ -259,7 +261,7 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
   const listboxId = useId();
 
   const selected = options.find((option) => option.value === value);
-  const selectedLabel = selected?.label ?? 'Select…';
+  const selectedLabel = selected?.label ?? t('selectFallback');
 
   useEffect(() => {
     if (!open) {

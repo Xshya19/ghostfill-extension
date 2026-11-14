@@ -24,6 +24,7 @@ import { otpService, smartDetectionService } from '../services/otpService';
 import { storageService } from '../services/storageService';
 import type { DetectionResult } from '../services/types/extraction.types';
 import { Email, EmailAccount } from '../types';
+import { classifyConnectivity, isNavigatorOffline } from '../utils/connectivity';
 import { rootDomain } from '../utils/core';
 import { getSenderDomain } from '../utils/emailIdentity';
 import { createLogger, diag } from '../utils/logger';
@@ -36,6 +37,12 @@ import {
   getActivationTabsSet,
 } from './activationRegistry';
 import { updateOTPMenuItem } from './contextMenu';
+import {
+  recordDecided,
+  recordExtracted,
+  recordOutcome,
+  recordReceived,
+} from './deliveryFunnel';
 import { ensureInitialized } from './initGuard';
 import { notifyNewEmail } from './notifications';
 import { sseManager } from './sseManager';
@@ -100,6 +107,15 @@ const TIMING = {
   GENERAL_ACTIVE_MS: 3_000,
   GENERAL_DEFAULT_MS: 5_000,
 
+  // OTP expectation window (2026-11-12): between "the user submitted the
+  // address" and "a tab registered itself as waiting for the code" there
+  // is no fast-mode trigger, so the cadence fell back to the general
+  // cadence — up to the user's 60s setting. That is exactly the
+  // "sometimes the code takes a minute" case. While an OTP is expected,
+  // the cadence is capped so the email is picked up within seconds.
+  OTP_EXPECTATION_FLOOR_MS: 15_000,
+  OTP_EXPECTATION_WINDOW_MS: 5 * 60_000,
+
   // Lifecycle
   STALE_TAB_MS: 420_000,
   DEDUP_TTL_MS: 24 * 60 * 60 * 1000,
@@ -147,7 +163,11 @@ const ALARM_NAMES = {
   EMAIL_SYNC: 'email-sync',
   HEALTH_SWEEP: 'polling-health-sweep',
   METRICS_REPORT: 'polling-metrics-report',
+  CONNECTIVITY_RECHECK: 'connectivity-recheck',
 } as const;
+
+/** How often to re-probe connectivity while offline (one-shot alarm). */
+const CONNECTIVITY_RECHECK_DELAY_MINUTES = 1;
 
 /** Minimum alarm period (Chrome minimum is 1 minute) */
 const MIN_ALARM_PERIOD_MINUTES = 1;
@@ -1072,6 +1092,96 @@ let initialized = false;
 let priorityCounter = 0;
 let pendingCheckMode: CheckMode | null = null;
 let pendingCheckTimer: ReturnType<typeof setTimeout> | null = null;
+
+// ── Connectivity state (2026-11-12) ─────────────────────────────────
+// Epoch ms when the machine was first observed offline in this worker
+// life, or null while online. Broadcasts only fire on state transitions
+// so repeated offline ticks stay silent.
+let offlineSince: number | null = null;
+let lastBroadcastOnline: boolean | null = null;
+
+function broadcastConnectivity(online: boolean): void {
+  // Only send on transitions; UI contexts also watch their own
+  // window online/offline events, so a missed broadcast degrades
+  // gracefully to their local signal.
+  if (lastBroadcastOnline === online) {
+    return;
+  }
+  lastBroadcastOnline = online;
+  try {
+    const payload: { action: string; payload: { online: boolean; since?: number } } = {
+      action: 'CONNECTIVITY_CHANGE',
+      payload: { online, ...(offlineSince !== null ? { since: offlineSince } : {}) },
+    };
+    void Promise.resolve(chrome.runtime.sendMessage(payload)).catch(() => {
+      /* no listeners (popup closed) — fine */
+    });
+  } catch {
+    /* runtime unavailable in tests */
+  }
+}
+
+function scheduleConnectivityRecheck(): void {
+  try {
+    void Promise.resolve(
+      chrome.alarms.create(ALARM_NAMES.CONNECTIVITY_RECHECK, {
+        delayInMinutes: CONNECTIVITY_RECHECK_DELAY_MINUTES,
+      })
+    ).catch(() => {});
+  } catch {
+    /* alarms unavailable in tests */
+  }
+}
+
+/**
+ * Record an offline observation, broadcast it once, tell OTP-waiting
+ * pages, and arm the periodic re-check alarm. Repeated observations are
+ * logged at debug only so a long outage does not spam the console.
+ */
+function noteOfflineTransition(reason: string, flowId?: string): void {
+  if (offlineSince === null) {
+    offlineSince = Date.now();
+    log.warn('📡 No internet connection — inbox checks paused', { reason });
+    broadcastConnectivity(false);
+    for (const tabId of otpWaitingTabs.keys()) {
+      void safeSendTabMessage(tabId, {
+        action: 'POLLING_STATE_CHANGE',
+        payload: { state: 'OFFLINE' },
+      }).catch(() => {});
+    }
+    if (flowId) {
+      diag.step(flowId, 'polling', 'offline', 'Network offline', { reason });
+    }
+  }
+  scheduleConnectivityRecheck();
+}
+
+/** Clear offline state after a successful reconnect and resume work. */
+function resumeFromOffline(): void {
+  if (offlineSince === null) {
+    return;
+  }
+  const pausedForMs = Date.now() - offlineSince;
+  offlineSince = null;
+  log.info(`📡 Back online after ${Math.round(pausedForMs / 1000)}s — resuming inbox checks`);
+  broadcastConnectivity(true);
+  for (const tabId of otpWaitingTabs.keys()) {
+    void safeSendTabMessage(tabId, {
+      action: 'POLLING_STATE_CHANGE',
+      payload: { state: 'ONLINE' },
+    }).catch(() => {});
+  }
+  try {
+    void Promise.resolve(chrome.alarms.clear(ALARM_NAMES.CONNECTIVITY_RECHECK)).catch(() => {});
+  } catch {
+    /* alarms unavailable in tests */
+  }
+}
+
+/** Current connectivity snapshot for UI surfaces and diagnostics. */
+export function getConnectivityState(): { offline: boolean; since: number | null } {
+  return { offline: offlineSince !== null, since: offlineSince };
+}
 let emailTypeTransitionPromise: Promise<void> | null = null;
 let pendingEmailTypeTransition: 'disposable' | 'gmail' | null = null;
 const suppressedEmailTypeTransitions = new Map<'disposable' | 'gmail', number>();
@@ -1085,6 +1195,18 @@ export const onPollingAlarm = (alarm: chrome.alarms.Alarm): void => {
   }
 
   switch (alarm.name) {
+    case ALARM_NAMES.CONNECTIVITY_RECHECK:
+      // Offline liveness probe: resume instantly when the network is
+      // back; otherwise keep probing at the same cadence.
+      if (offlineSince !== null) {
+        if (!isNavigatorOffline()) {
+          resumeFromOffline();
+          void performCheck(otpWaitingTabs.size > 0 ? 'fast' : 'general').catch(() => {});
+        } else {
+          scheduleConnectivityRecheck();
+        }
+      }
+      return;
     case ALARM_NAMES.EMAIL_SYNC:
       log.debug('⏰ Alarm sync triggered');
       void ensureInitialized()
@@ -1277,6 +1399,20 @@ async function performCheck(mode: CheckMode): Promise<void> {
     return;
   }
 
+  // Offline gate (2026-11-12): skip the check entirely when the machine
+  // has no internet. Without this, offline ticks burn retries, pollute
+  // the circuit breaker with transport failures, and surface generic
+  // provider-error copy. A re-check alarm keeps probing while offline;
+  // passing this gate after being offline resumes delivery instantly.
+  if (offlineSince !== null) {
+    resumeFromOffline();
+  }
+  if (isNavigatorOffline()) {
+    noteOfflineTransition('navigator-offline', flowId);
+    diag.endFlow(flowId, 'polling', 'inbox-check', true, 'Skipped: no internet connection');
+    return;
+  }
+
   const t0 = Date.now();
   const sessionGeneration = emailSessionGeneration;
   metrics.totalChecks++;
@@ -1341,6 +1477,10 @@ async function performCheck(mode: CheckMode): Promise<void> {
         diag.step(flowId, 'polling', 'new-emails', 'New emails detected', {
           count: newEmails.length,
         });
+        // Delivery funnel: the email entered the pipeline (2026-11-12).
+        for (let i = 0; i < newEmails.length; i++) {
+          recordReceived();
+        }
 
         stopFastWatchBurst('email_detected');
 
@@ -1369,6 +1509,20 @@ async function performCheck(mode: CheckMode): Promise<void> {
       checkSucceeded = true;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
+      const offlineFailure = classifyConnectivity(error) === 'offline';
+      if (offlineFailure) {
+        // The machine lost internet — not a provider or application
+        // failure. Skip breaker/health accounting so reconnecting is
+        // instant instead of waiting out a transport-failure cooldown,
+        // and report the true cause instead of a provider error.
+        // diag.endFlow happens in the finally block below.
+        noteOfflineTransition('inbox-fetch-failed', flowId);
+        failureLevel = 'warn';
+        metrics.lastErrorMessage = 'No internet connection';
+        metrics.lastErrorTime = Date.now();
+        finalDetail = 'No internet connection — inbox check paused';
+        return;
+      }
       failureLevel = isTemporaryInboxFailure(errorMsg) ? 'warn' : 'error';
       const isRateLimited = /\b(429|rate limit|too many requests)\b/i.test(errorMsg);
       if (isRateLimited) {
@@ -1508,6 +1662,9 @@ async function processEmail(
       canAutoAct: detection.decision?.canAutoAct,
     });
 
+    // Delivery funnel: extraction produced something actionable (or not).
+    recordExtracted(Boolean(extractedOTPCode), Boolean(detection.link));
+
     log.info('📊 Detection', {
       type: detection.type,
       hasCode: Boolean(detection.code),
@@ -1575,6 +1732,10 @@ async function processEmail(
       otpDelivered,
       otpDeliveryComplete,
     });
+
+    // Delivery funnel: a decision was taken (2026-11-12).
+    recordDecided(action);
+
     if (hasLink && detection.link && detection.decision?.canAutoAct && action === 'open-link') {
       log.info('🔗 Link detected — opening activation tab');
       metrics.linksProcessed++;
@@ -1594,6 +1755,22 @@ async function processEmail(
       diag.step(flowId, 'email', 'link', 'Link handling delegated', {
         link: detection.link,
       });
+      recordOutcome('delivered');
+    } else if (otpDelivered) {
+      // The code was typed into a waiting tab — the funnel's happy path.
+      recordOutcome('delivered');
+    } else if (hasOTP) {
+      // A code existed but never reached a tab. The reason matters: it
+      // separates "no page was waiting" from "the code was judged unsafe
+      // to auto-fill" — the two have completely different fixes.
+      recordOutcome(
+        'dropped',
+        canAutoFillCode ? 'no-waiting-tab' : 'review-only-not-auto-filled'
+      );
+    } else if (hasLink) {
+      recordOutcome('dropped', 'link-not-auto-opened');
+    } else {
+      recordOutcome('dropped', 'nothing-extractable');
     }
 
     // ── FINAL STEP: SINGLE NOTIFICATION ──
@@ -1719,6 +1896,8 @@ async function deliverOTPForSession(
   if (!saved.saved) {
     return false;
   }
+  // The expected code has arrived — the tight cadence is no longer needed.
+  clearOtpExpectation();
   if (generation !== emailSessionGeneration) {
     return false;
   }
@@ -2036,6 +2215,13 @@ export function setupPollingManager(): void {
   void rehydrateWaiters(otpWaitingTabs, TIMING.STALE_TAB_MS);
   void rehydrateActivationRegistry();
 
+  // H1 fix: on every worker wake, re-attach to a live offscreen SSE relay.
+  // After a restart the module-level callback and account are gone while
+  // the relay keeps streaming; without this hook the stream's events were
+  // dropped until the next GENERATE_EMAIL (push degraded to a 1-minute
+  // alarm poll — a primary "OTP arrives late" cause).
+  void sseManager.syncWithOffscreen().catch(() => {});
+
   runHealthSweep();
   logMetricsSnapshot();
   log.info('🚀 Polling engine initialized');
@@ -2108,6 +2294,21 @@ async function scheduleGeneralPoll(): Promise<void> {
         });
       }
       interval = userMs;
+
+      // OTP expectation floor (2026-11-12): the user just did something
+      // that implies a code is coming (address generated, form submitted).
+      // Until a tab registers itself as waiting, the general cadence would
+      // be the only thing looking for that email — and the user's setting
+      // can be as slow as 60s. Cap the cadence while the expectation is
+      // live so the email is picked up in seconds, not a minute.
+      const cap = getExpectationCadenceCapMs();
+      if (cap !== null && interval > cap) {
+        log.debug('General interval capped by OTP expectation', {
+          userMs,
+          cap,
+        });
+        interval = cap;
+      }
     }
   } catch (e) {
     log.warn('Failed to fetch user settings for polling interval', e);
@@ -2183,6 +2384,10 @@ export function startFastOTPPolling(
   });
 
   void persistWaiters(otpWaitingTabs);
+
+  // A tab is waiting for a code — refresh the expectation window so the
+  // cadence stays tight for as long as the wait lasts (2026-11-12).
+  markOtpExpectation('otp_waiter_registered');
 
   // Re-registration cooldown: if the same tab re-registers within 3s
   // (e.g. OTP detector oscillation), skip the immediate check blast.
@@ -2366,6 +2571,10 @@ export async function resetEmailSession(): Promise<void> {
   //    new-session polling from starting cleanly.
   circuitBreaker.reset();
 
+  // The previous session's code will never arrive — drop the expectation
+  // window with it so the cadence returns to the idle setting.
+  clearOtpExpectation();
+
   log.info(
     '🔄 Email session reset — pending work and waiting tabs cleared; processed history retained'
   );
@@ -2406,6 +2615,57 @@ export function triggerEventDrivenPolling(reason: string): void {
 export function recordEmailReceived(): void {
   log.info('🔔 SSE received email event — forcing immediate inbox check');
   performCheck('fast').catch((e) => log.warn('SSE-driven poll error', e));
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  OTP EXPECTATION WINDOW (2026-11-12)
+//
+//  The fast ladder only runs while a tab is REGISTERED as waiting for a
+//  code. Between "the address was handed to the site" and "the site
+//  showed the code field" there is no registration, so the cadence fell
+//  back to the general setting (up to 60s) — the classic "the OTP only
+//  arrived after a minute" report.
+//
+//  An expectation keeps the cadence tight for a bounded window after any
+//  action that implies a code is on its way (address generated, form
+//  submitted, identity filled). It is cleared as soon as a code is
+//  delivered, so the idle cadence returns immediately afterwards.
+// ═══════════════════════════════════════════════════════════════
+
+let otpExpectationUntil = 0;
+
+/** Mark that a verification code is expected to arrive soon. */
+export function markOtpExpectation(
+  reason: string,
+  windowMs: number = TIMING.OTP_EXPECTATION_WINDOW_MS
+): void {
+  const until = Date.now() + windowMs;
+  otpExpectationUntil = Math.max(otpExpectationUntil, until);
+  log.debug('⏳ OTP expectation active', {
+    reason,
+    until: new Date(otpExpectationUntil).toISOString(),
+  });
+}
+
+/** Clear the expectation window (code delivered, session reset, error). */
+export function clearOtpExpectation(): void {
+  if (otpExpectationUntil !== 0) {
+    otpExpectationUntil = 0;
+    log.debug('⏳ OTP expectation cleared');
+  }
+}
+
+/** True while a verification code is expected to arrive. */
+export function isOtpExpected(): boolean {
+  return otpExpectationUntil > Date.now();
+}
+
+/**
+ * Cadence cap applied while an OTP is expected but no tab has registered
+ * yet (see OTP EXPECTATION WINDOW above).
+ */
+export function getExpectationCadenceCapMs(): number | null {
+  return isOtpExpected() ? TIMING.OTP_EXPECTATION_FLOOR_MS : null;
 }
 
 // ═══════════════════════════════════════════════════════════════

@@ -875,7 +875,11 @@ class EmailServiceAggregator {
           break;
         case 'mailgw':
           if (account.token) {
-            mailGwService.setToken(account.token);
+            // Pass the account credentials along with the token: the Mail.gw
+            // JWT expires after an hour and the service worker is restarted
+            // constantly, so the service must be able to re-authenticate on
+            // its own instead of waiting for a token that never arrives.
+            mailGwService.setToken(account.token, account.fullEmail, account.password);
           } else if (account.password) {
             await mailGwService.authenticate(account.fullEmail, account.password, signal);
           }
@@ -1155,7 +1159,9 @@ class EmailServiceAggregator {
           break;
         case 'mailgw':
           if (account.token) {
-            mailGwService.setToken(account.token);
+            // Same as checkInbox: keep the credentials next to the token so
+            // an expired token can be renewed without touching storage.
+            mailGwService.setToken(account.token, account.fullEmail, account.password);
           }
           email = await mailGwService.getMessage(emailId.toString(), signal);
           break;

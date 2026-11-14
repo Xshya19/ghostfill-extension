@@ -9,7 +9,7 @@ import { createLogger, initRemoteLogger } from '../utils/logger';
 import { AutoFiller } from './autoFiller';
 import { evaluateFab } from './fab';
 import { FloatingButton } from './floatingButton';
-import { FormDetector, FieldAnalyzer, DOMObserver, collectFieldDiagnostics } from './formDetector';
+import { FormDetector, FieldAnalyzer, DOMObserver } from './formDetector';
 import { OTPPageDetector } from './otpPageDetector';
 import { pageStatus } from './ui/pageStatus';
 import './styles/content.css';
@@ -20,7 +20,17 @@ import './ui/GhostLabel';
 const log = createLogger('ContentScript');
 const isTopFrame = window.top === window;
 const alreadyInjected = Boolean((window as any).ghostfill_injected);
-const tinyIframe = !isTopFrame && (window.innerWidth < 100 || window.innerHeight < 100);
+/**
+ * Frame gate (2026-11-12): tracking pixels, ad iframes and hidden
+ * analytics frames must not boot the full detector stack. The module
+ * gate and the init() backstop disagreed (one used "either dimension
+ * < 100", the other "both < 10"), so a 40px tracking frame could still
+ * initialize when the script was injected without the module gate.
+ * One helper, one rule: a frame is tiny when EITHER dimension is < 100.
+ */
+const isTinyFrame = (): boolean =>
+  !isTopFrame && (window.innerWidth < 100 || window.innerHeight < 100);
+const tinyIframe = isTinyFrame();
 const shouldRunContentScript = !alreadyInjected && !tinyIframe;
 
 if (alreadyInjected) {
@@ -464,8 +474,10 @@ function init(): void {
     return;
   }
 
-  // Skip tiny frames (likely tracking pixels)
-  if (window.innerWidth < 10 && window.innerHeight < 10) {
+  // Skip tiny frames (likely tracking pixels) — same rule as the module
+  // gate above (either dimension < 100), so a frame can never slip
+  // through one gate and be stopped by the other.
+  if (isTinyFrame()) {
     return;
   }
 
@@ -733,7 +745,11 @@ async function handleMessage(message: {
     case 'POLLING_STATE_CHANGE': {
       if (message.payload && message.payload.state) {
         otpPageDetector.handlePollingStateChange(
-          message.payload.state as 'ANALYZING_EMAIL' | 'LINK_ACTIVATION_STARTED'
+          message.payload.state as
+            | 'ANALYZING_EMAIL'
+            | 'LINK_ACTIVATION_STARTED'
+            | 'OFFLINE'
+            | 'ONLINE'
         );
         return { success: true };
       }
@@ -853,19 +869,9 @@ function safeInitFromEvent(): void {
 if (shouldRunContentScript) {
   installPassiveMessageListener();
 
-  // Listen for developer keyboard shortcut (Alt+Shift+H) to collect field diagnostics.
-  document.addEventListener(
-    'keydown',
-    (event: KeyboardEvent) => {
-      if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'h') {
-        event.preventDefault();
-        event.stopPropagation();
-        log.info('Dev shortcut Alt+Shift+H triggered: collecting field diagnostics');
-        void collectFieldDiagnostics();
-      }
-    },
-    true
-  );
+  // (Alt+Shift+H field-diagnostics harvester removed — it shipped the offline
+  // eval harvest harness in the content-script graph and wrote form metadata
+  // to the clipboard on any page without a debug gate.)
 
   // Initialize safely preventing DOM node load hazards
   if (document.readyState === 'complete') {

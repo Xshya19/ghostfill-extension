@@ -50,7 +50,7 @@
 
 import { storageService } from '../services/storageService';
 import { contentFingerprint } from '../utils/contentFingerprint';
-import { sleep } from '../utils/core';
+import { isWebUrl, openSafeUrl, sleep } from '../utils/core';
 import { getSenderEmail, getSenderLabel } from '../utils/emailIdentity';
 import { getRandomString } from '../utils/encryption';
 import { createLogger } from '../utils/logger';
@@ -466,21 +466,18 @@ function registerDefaultActions(): void {
   });
 
   // ── Open link button ──
+  // data.link comes straight from the mail body — never open it unvalidated.
+  // Only http(s) URLs are allowed through; anything else is refused (L3).
   registerButtonAction('open-link', async (_notifId, data) => {
     const link = data.link as string | undefined;
-    if (link) {
-      try {
-        await chrome.tabs.create({ url: link, active: true });
-      } catch {
-        // Fallback: copy link to clipboard
-        await copyToClipboard(link);
-        await notify({
-          category: 'success',
-          title: 'Link Copied',
-          message: 'Activation link copied to clipboard',
-        });
-      }
+    if (!link) {
+      return;
     }
+    if (!isWebUrl(link)) {
+      log.warn('Refused to open notification link: unsafe or non-http(s) URL');
+      return;
+    }
+    openSafeUrl(link);
   });
 
   // ── OTP notification click → open popup ──
@@ -587,6 +584,34 @@ export async function notifyLinkActivated(url: string, code?: string): Promise<s
     message: code ? `Code ${maskOTP(code)} auto-filled!` : `Activation link opened in new tab.`,
     priority: 1,
     data: { url, code },
+  });
+}
+
+/**
+ * "The link is ready — tap to open" fallback (2026-11-12).
+ *
+ * When the extension cannot open the verification link itself (tab
+ * creation failed, the page refused to load, the auto-open was declined),
+ * the user must not be left hunting for the link in the message reader:
+ * the notification carries an "Open link" button that opens the exact
+ * destination with one tap.
+ */
+export async function notifyLinkReady(
+  url: string,
+  title = 'Verification link ready',
+  message = 'Tap to open the verification link.'
+): Promise<string> {
+  return notify({
+    category: 'link',
+    title,
+    message,
+    priority: 2,
+    requireInteraction: true,
+    buttons: [
+      { title: 'Open link', action: 'open-link' },
+      { title: 'Dismiss', action: 'dismiss' },
+    ],
+    data: { link: url },
   });
 }
 

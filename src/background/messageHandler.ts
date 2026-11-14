@@ -59,8 +59,9 @@ import { safeSendTabMessage } from '../utils/messaging';
 import { validateMessage } from '../utils/validation';
 import { isActivationTab, onContentScriptReady } from './activationRegistry';
 import { updateOTPMenuItem } from './contextMenu';
+import { exportFunnelReport, getDeliveryFunnel } from './deliveryFunnel';
 import { ensureInitialized } from './initGuard';
-import { notifySuccess, notifyError, resetNotificationSession } from './notifications';
+import { notifySuccess, notifyError, notifyLinkReady, resetNotificationSession } from './notifications';
 import {
   startEmailPolling,
   stopEmailPolling,
@@ -70,14 +71,17 @@ import {
   recordEmailReceived,
   getOTPWaitingTabs,
   resetEmailSession,
+  markOtpExpectation,
   suppressNextEmailTypeTransition,
   startGmailAliasFastPolling,
   extractEmailOnce,
   deliverOTP,
   hasMatchingOTPWaiter,
+  getConnectivityState,
   type EmailContext,
 } from './pollingManager';
 import { getBootState } from './serviceWorker';
+import { maybeBindSignupOrigin, senderTabUrl } from './signupOriginBinder';
 import { sseManager } from './sseManager';
 
 const log = createLogger('MessageHandler');
@@ -665,6 +669,24 @@ async function handleMessage(
       await identityService.saveIdentity(identity);
 
       const emailPayload = message.action === 'GENERATE_EMAIL' ? message.payload || {} : {};
+      // Signup-origin capture (2026-11-14): page-triggered generation sends
+      // `payload.originUrl` explicitly (floating button / Smart Fill), but
+      // the popup's own "Generate email" does not. Without an origin the
+      // verified-link auto-open stays fail-closed forever (security fix
+      // requires destination↔signup-site binding), so fall back to the
+      // active tab — it IS the signup page when generation happens from
+      // the popup. Best-effort: never block generation on tab lookup.
+      if (!emailPayload.originUrl) {
+        try {
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          const tabOrigin = tab?.url ? new URL(tab.url) : null;
+          if (tabOrigin && (tabOrigin.protocol === 'https:' || tabOrigin.protocol === 'http:')) {
+            (emailPayload as Record<string, unknown>).originUrl = tabOrigin.origin;
+          }
+        } catch {
+          /* no tab context — the link auto-open stays fail-closed */
+        }
+      }
       // Switch to Temp Mail tab BEFORE save so currentEmail is updated for fill
       await storageService.setImmediate('preferredEmailType', 'disposable');
       const email = await emailService.generateEmail({
@@ -675,6 +697,10 @@ async function handleMessage(
       // 7. Always start polling immediately when email is generated.
       // SSE is a bonus push layer — polling is the reliable fallback.
       startFastWatchBurst('email_gen');
+      // The address now exists and the user is about to use it: a
+      // verification code is expected, so the cadence stays tight even
+      // before a tab registers itself as waiting (2026-11-12).
+      markOtpExpectation('email_generated');
 
       if (email?.service === 'mailtm') {
         sseManager.setOnEmailReceived(() => {
@@ -850,8 +876,9 @@ async function handleMessage(
 
     case 'GET_PROVIDER_HEALTH': {
       const health = emailService.getProviderHealth();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return { success: true, health: health as any[] };
+      // Connectivity snapshot lets the UI distinguish "provider is down"
+      // from "the machine has no internet" without extra probes.
+      return { success: true, health: health as any[], connectivity: getConnectivityState() };
     }
 
     // ── OTP ACTIONS ───────────────────────────────────────────────
@@ -937,6 +964,11 @@ async function handleMessage(
           verdict,
         });
 
+        // Bind the signup origin from the browser-provided tab URL
+        // (never from the page-controlled payload.url). The OTP page is
+        // the signup site — the verification link must be bound to it.
+        await maybeBindSignupOrigin(senderTabUrl(sender), 'otp_page');
+
         if (sender.tab?.id) {
           if (isActivationTab(sender.tab.id)) {
             log.info('Activation tab exposed OTP fields; registering it for code delivery', {
@@ -972,7 +1004,13 @@ async function handleMessage(
     // ── EVENT-DRIVEN POLLING TRIGGERS ─────────────────────────────
     case 'REGISTRATION_FORM_SUBMITTED': {
       log.info('⚡ Registration form submitted — triggering ultra polling');
+      // The tab that just took the form is the signup site — bind it so
+      // the verification link can auto-open (fail-closed bind, 2026-11-14).
+      await maybeBindSignupOrigin(senderTabUrl(sender), 'form_submit');
       startFastWatchBurst('form_submit');
+      // The site just took the address — the code is on its way. Keep the
+      // cadence tight until a tab registers (2026-11-12).
+      markOtpExpectation('form_submitted');
 
       if (IS_GMAIL_ENABLED) {
         const currentEmail = await storageService.get('currentEmail');
@@ -1066,6 +1104,10 @@ async function handleMessage(
           extraction: result,
           sender: senderEmail,
           expectedDomains,
+          // Same fail-closed binding as the inbox path (2026-11-14):
+          // the account's signup origin is the independent anchor the
+          // link auto-open gate needs when no waiting tab exists.
+          ...(initialAccount?.originUrl ? { originUrl: initialAccount.originUrl } : {}),
         });
         return {
           code: result.otp?.code ?? null,
@@ -1265,9 +1307,19 @@ async function handleMessage(
 
     // ── IDENTITY ACTIONS ─────────────────────────────────────────
     case 'GET_IDENTITY': {
+      // Learn the signup origin from the tab this message came from —
+      // the browser provides sender.tab.url, so it cannot be forged by
+      // the page. Without this the account often never acquires an
+      // origin (popup open on a non-signup tab at generation time) and
+      // the verification-link gate must fail closed; the link then
+      // never opens (2026-11-14).
+      await maybeBindSignupOrigin(senderTabUrl(sender), 'identity_fill');
       // User is filling identity on a tab right now — arm fast-watch burst so
       // incoming verification emails or links are caught within 2-3s without waiting.
       startFastWatchBurst('identity_fill');
+      // Identity is being handed to a site: a verification code is
+      // expected (2026-11-12).
+      markOtpExpectation('identity_fill');
 
       // Popup Temp Mail / Gmail tab is source of truth via preferredEmailType.
       // Never cross-fill: disposable tab → temp mail only; Gmail tab → gmail only.
@@ -1378,6 +1430,7 @@ async function handleMessage(
         title?: string;
         message?: string;
         type?: string;
+        link?: string;
       };
       const title = typeof payload.title === 'string' ? payload.title : 'GhostFill';
       const text = typeof payload.message === 'string' ? payload.message : '';
@@ -1385,6 +1438,10 @@ async function handleMessage(
 
       if (type === 'error') {
         await notifyError(title, text);
+      } else if (type === 'link' && typeof payload.link === 'string' && payload.link) {
+        // "Link ready — tap to open": the user gets a one-tap action
+        // instead of a dead-end error message (2026-11-12).
+        await notifyLinkReady(payload.link, title, text);
       } else {
         await notifySuccess(title, text);
       }
@@ -1481,7 +1538,15 @@ async function handleMessage(
     // ── DIAGNOSTIC EXPORT ────────────────────────────────────────
     case 'GET_DIAGNOSTIC_REPORT': {
       const report = diag.exportReport();
-      return { success: true, report };
+      // The delivery funnel (2026-11-12) turns "sometimes it does not
+      // fill" into numbers: how many emails arrived, produced a code,
+      // got a decision, and actually reached the user — plus where the
+      // ones that did not got stuck.
+      return {
+        success: true,
+        report: `${report}\n\n${exportFunnelReport()}`,
+        funnel: getDeliveryFunnel(),
+      };
     }
 
     // ── GMAIL API HANDLERS ────────────────────────────────────────

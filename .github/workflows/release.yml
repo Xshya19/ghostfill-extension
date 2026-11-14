@@ -48,9 +48,42 @@ jobs:
       - run: npm run type-check
       - run: npm run lint
       - run: npm test
-      - run: npm run build
+      - run: npm run build:public
       - run: npm run bundle:check
       - run: npm run zip
+      - name: Verify public build profile
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("fs");
+            const manifest = JSON.parse(fs.readFileSync("dist/manifest.json", "utf8"));
+            const permissions = Array.isArray(manifest.permissions) ? manifest.permissions : [];
+            const hostPermissions = Array.isArray(manifest.host_permissions) ? manifest.host_permissions : [];
+            const hostEntries = [...permissions, ...hostPermissions];
+            const gmailHost = /mail\.google\.com|gmail\.googleapis\.com|gmail\.com/i;
+            const failures = [];
+            if (Object.prototype.hasOwnProperty.call(manifest, "oauth2")) {
+              failures.push("dist/manifest.json declares oauth2 (full-profile only)");
+            }
+            for (const forbidden of ["identity", "scripting"]) {
+              if (permissions.includes(forbidden)) {
+                failures.push("permissions includes " + forbidden + " (full-profile only)");
+              }
+            }
+            for (const entry of hostEntries) {
+              if (gmailHost.test(entry)) {
+                failures.push("host permission includes a Gmail host: " + entry);
+              }
+            }
+            if (failures.length > 0) {
+              console.error("FAIL: release package does not match the public build profile:");
+              for (const failure of failures) {
+                console.error("  - " + failure);
+              }
+              process.exit(1);
+            }
+            console.log("PASS: dist/manifest.json matches the public build profile (no oauth2, identity, scripting, or Gmail hosts).");
+          '
       - name: Verify version and checksum
         shell: bash
         run: |

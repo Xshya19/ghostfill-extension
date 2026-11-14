@@ -1413,13 +1413,16 @@ export class OTPPageDetector {
   private mutationObserver: MutationObserver | null = null;
   private focusHandler: ((e: FocusEvent) => void) | null = null;
   private popstateHandler: (() => void) | null = null;
+  private hashChangeHandler: (() => void) | null = null;
   private unloadHandler: (() => void) | null = null;
   private formSubmitHandler: ((e: Event) => void) | null = null;
   private formSubmittedRecently = false;
 
   // ── Navigation watcher states ──
-  private urlPollInterval: ReturnType<typeof setInterval> | null = null;
   private titleObserver: MutationObserver | null = null;
+  /** Original history methods captured when the patch was installed. */
+  private originalPushState: History['pushState'] | null = null;
+  private originalReplaceState: History['replaceState'] | null = null;
 
   // ── Metrics ──
   private readonly metrics: DetectionMetrics = {
@@ -1617,26 +1620,62 @@ export class OTPPageDetector {
   private installNavigationWatcher(): void {
     let lastUrl = location.href;
 
+    const fireIfNavigated = (): void => {
+      if (location.href === lastUrl) {
+        return;
+      }
+      lastUrl = location.href;
+      this.onNavigate();
+    };
+
     // Observe title changes (catches most SPA transitions)
     const titleEl = document.querySelector('title');
     if (titleEl) {
       this.titleObserver = new MutationObserver(() => {
-        if (location.href !== lastUrl) {
-          lastUrl = location.href;
-          this.onNavigate();
-        }
+        fireIfNavigated();
       });
       this.titleObserver.observe(titleEl, { childList: true });
     }
 
     // Modern event-driven SPA navigation handling (popstate)
     this.popstateHandler = () => {
-      if (location.href !== lastUrl) {
-        lastUrl = location.href;
-        this.onNavigate();
-      }
+      fireIfNavigated();
     };
     window.addEventListener('popstate', this.popstateHandler);
+
+    // SPA route changes that never touch the document title (2026-11-12):
+    // a sign-up wizard that swaps steps with history.pushState kept the
+    // same <title>, so the detector never re-ran and the OTP field that
+    // appeared on the next step was never noticed. Patch the history
+    // methods (same approach the FAB uses) so every client-side route
+    // change re-triggers detection.
+    const history = window.history;
+    this.originalPushState = history.pushState;
+    this.originalReplaceState = history.replaceState;
+
+    const originalPush = history.pushState;
+    const originalReplace = history.replaceState;
+
+    history.pushState = function patchedPushState(
+      this: History,
+      ...args: Parameters<History['pushState']>
+    ): void {
+      originalPush.apply(this, args);
+      fireIfNavigated();
+    };
+    history.replaceState = function patchedReplaceState(
+      this: History,
+      ...args: Parameters<History['replaceState']>
+    ): void {
+      originalReplace.apply(this, args);
+      fireIfNavigated();
+    };
+
+    // Hash-based routers (some wizards) do not touch history at all.
+    this.hashChangeHandler = () => {
+      fireIfNavigated();
+    };
+    window.addEventListener('hashchange', this.hashChangeHandler);
 
     this.unloadHandler = () => this.restoreHistoryMethods();
     window.addEventListener('pagehide', this.unloadHandler);
@@ -1647,9 +1686,19 @@ export class OTPPageDetector {
       this.titleObserver.disconnect();
       this.titleObserver = null;
     }
-    if (this.urlPollInterval) {
-      clearInterval(this.urlPollInterval);
-      this.urlPollInterval = null;
+    if (this.hashChangeHandler) {
+      window.removeEventListener('hashchange', this.hashChangeHandler);
+      this.hashChangeHandler = null;
+    }
+    // Restore the site's own history methods — the extension must not
+    // leave a patched pushState behind after the page is done with it.
+    if (this.originalPushState) {
+      window.history.pushState = this.originalPushState;
+      this.originalPushState = null;
+    }
+    if (this.originalReplaceState) {
+      window.history.replaceState = this.originalReplaceState;
+      this.originalReplaceState = null;
     }
   }
 
@@ -2200,7 +2249,9 @@ export class OTPPageDetector {
   //  STATE BROADCAST HANDLER
   // ═══════════════════════════════════════════════════════════
 
-  handlePollingStateChange(state: 'ANALYZING_EMAIL' | 'LINK_ACTIVATION_STARTED'): void {
+  handlePollingStateChange(
+    state: 'ANALYZING_EMAIL' | 'LINK_ACTIVATION_STARTED' | 'OFFLINE' | 'ONLINE'
+  ): void {
     if (this.destroyed) {
       return;
     }
@@ -2211,6 +2262,15 @@ export class OTPPageDetector {
     } else if (state === 'LINK_ACTIVATION_STARTED') {
       log.info('🔗 PollingManager activated a background link');
       pageStatus.success('Activation link handled in background', 5000);
+    } else if (state === 'OFFLINE') {
+      // Connectivity broadcast (2026-11-12): the user is watching this
+      // page while waiting for a code that cannot arrive offline. Say so
+      // once per outage; ONLINE clears it without an extra flash.
+      log.warn('📡 Machine is offline — inbox checks paused');
+      pageStatus.show('No internet — waiting for connection…', 'loading', 0);
+    } else if (state === 'ONLINE') {
+      log.info('📡 Back online — resuming inbox checks');
+      pageStatus.hide();
     }
   }
 

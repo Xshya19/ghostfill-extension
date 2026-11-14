@@ -360,6 +360,42 @@ const EXTENDED_ANTI_PATTERNS: Array<{
     severity: 'medium',
   },
   {
+    // B3 fix (2026-11-12): dashed phone-style numbers become high-confidence
+    // OTPs. The existing 'phone' rule never sees them because sanitization
+    // strips dashes from the VALUE before anti-patterns run ("555-867-5309"
+    // → value "555867" @89%, "1-800-555-0199" → "800555" @87% — both were
+    // auto-filled). The raw text at the token index still has the dashes,
+    // so anchor there: a run of ≥3 dash-separated digit groups totalling
+    // ≥9 digits is a phone/SSN/card-style number, and the candidate is a
+    // prefix of it aligned at a group boundary.
+    name: 'phone-dashed-group',
+    test: (v, ctx, idx) => {
+      if (!/^\d{5,10}$/.test(v)) {return false;}
+      if (idx === undefined || idx < 0) {return false;}
+      const slice = ctx.slice(idx, idx + 24);
+      const run = /^\d{1,4}(?:-\d{1,4}){2,3}/.exec(slice);
+      if (!run) {return false;}
+      const groups = run[0].split('-');
+      const totalDigits = groups.reduce((n, g) => n + g.length, 0);
+      if (totalDigits < 9) {return false;}
+      const concat = groups.join('');
+      const boundaries: number[] = [];
+      let off = 0;
+      for (const g of groups) {
+        boundaries.push(off);
+        off += g.length;
+      }
+      const aligns = boundaries.some((b) => concat.slice(b).startsWith(v));
+      if (!aligns) {return false;}
+      // Escape hatch: an explicitly labeled dashed code ("code 123-456-789")
+      // must survive. A phone number is never introduced by code language.
+      const before = ctx.slice(Math.max(0, idx - 60), idx).toLowerCase();
+      return !/(?:\bcode|otp|pin|passcode|verification|one[- ]?time|security)/.test(before);
+    },
+    severity: 'high',
+    reject: true,
+  },
+  {
     name: 'email-embedded-code',
     test: (v, ctx, idx) => {
       if (!/^\d{2,12}$/.test(v)) {return false;}

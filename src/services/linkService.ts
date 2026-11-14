@@ -15,7 +15,7 @@
 // └──────────────────────────────────────────────────────────────────┘
 // ─────────────────────────────────────────────────────────────────────
 
-import { Email } from '../types';
+import { Email, EmailAccount } from '../types';
 import { sleep } from '../utils/core';
 import { getSenderDomain } from '../utils/emailIdentity';
 import { createLogger } from '../utils/logger';
@@ -151,6 +151,26 @@ class LinkService {
   private readonly activatedUrls = new Set<string>();
   private sessionGeneration = 0;
 
+  /**
+   * The account whose signup origin binds the auto-open gate. Gmail-
+   * preferred sessions keep the disposable account (with its origin)
+   * only under `disposableEmail`; Temp-Mail sessions use
+   * `currentEmail`. Reading only one key silently locked Gmail-tab
+   * users out of the auto-open flow (2026-11-14).
+   */
+  private async getBoundAccount(): Promise<EmailAccount | undefined> {
+    try {
+      const current = await storageService.get('currentEmail');
+      if (current) {
+        return current as EmailAccount;
+      }
+      const disposable = await storageService.get('disposableEmail');
+      return (disposable as EmailAccount | undefined) ?? undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   private readonly metrics: LinkMetrics = {
     emailsScanned: 0,
     linksDetected: 0,
@@ -215,7 +235,7 @@ class LinkService {
       });
 
       // ── Auto-confirm: Check user setting before opening link ──
-      const account = await storageService.get('currentEmail');
+      const account = await this.getBoundAccount();
       if (generation !== this.sessionGeneration) {return;}
       if (!canAutoOpenVerificationLink(account, email.from, linkUrl)) {
         this.metrics.linksBlocked++;
@@ -341,7 +361,7 @@ class LinkService {
       });
 
       // ── Auto-confirm: Check user setting before opening link ──
-      const account = await storageService.get('currentEmail');
+      const account = await this.getBoundAccount();
       if (generation !== this.sessionGeneration) {return;}
       const canAutomaticallyActivate =
         detection.decision?.canAutoAct === true &&
@@ -560,6 +580,15 @@ class LinkService {
       record.tabId = tab.id;
       log.info('🪟 Tab opened', { tabId: tab.id });
 
+      // Page-load watchdog (2026-11-12): opening a tab is not the same as
+      // the page loading. When the destination fails to load (offline,
+      // DNS, TLS), the user gets a browser error page and the link "never
+      // opened" — the activation looked successful. Watch the tab
+      // asynchronously (no added latency on the happy path) and, when
+      // the load failed, close the dead tab, release the claim and hand
+      // the user a one-tap "open the link" notification.
+      this.watchTabLoad(record, tab.id, generation);
+
       // GRANDMASTER FIX: Do not wait for tab load (which can block for 10s on heavy SPAs).
       // We proceed immediately to probeContentScript, which will poll until the content
       // script is injected. This shaves off massive amounts of unnecessary waiting time.
@@ -632,13 +661,17 @@ class LinkService {
       // No tab was opened: release only the link claim so an explicit retry works.
       this.activatedUrls.delete(record.url);
       await this.updateProcessed(record.emailId, record.accountId, false);
-      // Use messaging pattern instead of direct import
+      // "Link ready — tap to open" (2026-11-12): the old message was a
+      // dead end ("please click it manually") with no way to do that from
+      // the notification. The link now travels with the notification so
+      // the user can open it with one tap.
       safeSendMessage({
         action: 'SHOW_NOTIFICATION',
         payload: {
-          title: 'GhostFill: Verification Failed',
-          message: 'Could not open the link automatically. Please click it manually.',
-          type: 'error',
+          title: 'GhostFill: Verification link ready',
+          message: 'Could not open the link automatically — tap to open it now.',
+          type: 'link',
+          link: record.url,
         },
       }).catch(() => {
         /* ignore notification errors */
@@ -646,6 +679,98 @@ class LinkService {
     }
 
     if (generation === this.sessionGeneration) {this.finalize(record, t0);}
+  }
+
+  /**
+   * Watch a freshly opened activation tab for a failed page load.
+   *
+   * Runs asynchronously so the happy path is not slowed down: the tab is
+   * already open and the code is already delivered. Only when the browser
+   * reports an error page (or the tab disappears) does the activation
+   * get repaired — the dead tab is closed, the link claim is released so
+   * a later attempt can succeed, and the user receives a one-tap
+   * "open the link" notification.
+   */
+  private watchTabLoad(record: ActivationRecord, tabId: number, generation: number): void {
+    if (typeof chrome === 'undefined' || !chrome.tabs?.onUpdated?.addListener) {
+      return;
+    }
+
+    let settled = false;
+    const cleanup = (): void => {
+      settled = true;
+      try {
+        chrome.tabs.onUpdated.removeListener(onUpdated);
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const onUpdated = (
+      updatedTabId: number,
+      changeInfo: { status?: string | undefined; url?: string | undefined }
+    ): void => {
+      if (settled || updatedTabId !== tabId) {
+        return;
+      }
+      const url = changeInfo.url ?? '';
+      const failed =
+        url.startsWith('chrome-error://') ||
+        url.startsWith('chrome://') ||
+        url.startsWith('about:neterror') ||
+        changeInfo.status === 'complete' && url.startsWith('chrome-error://');
+
+      if (!failed) {
+        // The page started loading normally — stop watching. The load may
+        // still fail later, but the browser will show its own error page
+        // and the notification fallback below covers the manual case.
+        if (changeInfo.status === 'complete' || url.startsWith('http')) {
+          cleanup();
+        }
+        return;
+      }
+
+      cleanup();
+      if (generation !== this.sessionGeneration) {
+        return;
+      }
+
+      log.warn('Activation tab failed to load the verification page', {
+        url: maskUrl(record.url),
+        tabId,
+      });
+
+      // Close the dead tab so the user is not left staring at an error
+      // page, and release the claim so a retry can work.
+      chrome.tabs.remove(tabId).catch(() => {
+        /* ignore */
+      });
+      record.tabId = null;
+      record.status = 'failed';
+      this.metrics.linksFailed++;
+      this.activatedUrls.delete(record.url);
+      void this.updateProcessed(record.emailId, record.accountId, false);
+
+      safeSendMessage({
+        action: 'SHOW_NOTIFICATION',
+        payload: {
+          title: 'GhostFill: Verification link ready',
+          message: 'The verification page did not load — tap to open the link again.',
+          type: 'link',
+          link: record.url,
+        },
+      }).catch(() => {
+        /* ignore notification errors */
+      });
+    };
+
+    chrome.tabs.onUpdated.addListener(onUpdated);
+
+    // Safety net: stop watching after a bounded window so a listener is
+    // never left behind for a tab that neither loads nor errors.
+    setTimeout(() => {
+      cleanup();
+    }, CONFIG.TAB_LOAD_TIMEOUT_MS);
   }
 
   private finalize(record: ActivationRecord, t0: number): void {

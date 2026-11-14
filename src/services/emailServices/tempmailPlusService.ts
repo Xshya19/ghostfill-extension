@@ -6,6 +6,7 @@ import { getSenderSource } from '../../utils/emailIdentity';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
 import { isRetryableError, throttledWarn, throwIfRetryableStatus } from './isRetryableError';
+import { extractMessageList } from './messageListShape';
 
 const log = createLogger('TempmailPlusService');
 const BASE_URL = 'https://tempmail.plus/api/mails';
@@ -47,7 +48,12 @@ export class TempmailPlusService {
       throwIfRetryableStatus(response, 'Tempmail.plus getMessages');
 
       const data = await response.json();
-      const mailList: any[] = data.mail_list || data.mails || data.result || [];
+      // Malformed payloads must throw — mapping them onto [] would look like
+      // an empty inbox and the aggregator would score the check as a success
+      // (no circuit breaker, no fallback provider).
+      const mailList = extractMessageList(data, 'Tempmail.plus getMessages', {
+        keys: ['mail_list', 'mails', 'result'],
+      }) as any[];
 
       // Fetch detail bodies for up to 5 most recent messages in parallel
       const recentMails = mailList.slice(0, 5);
@@ -73,8 +79,10 @@ export class TempmailPlusService {
         })
       );
 
-      return recentMails.map((rawMsg: any, idx: number) => {
-        const msg = detailedMails[idx] || rawMsg;
+      // Map over the FULL list: returning only the 5 enriched messages made
+      // every mail after the fifth invisible for the rest of the session.
+      return mailList.map((rawMsg: any, idx: number) => {
+        const msg = (idx < 5 ? detailedMails[idx] : undefined) || rawMsg;
         const htmlStr = contentToString(msg.html || msg.body || msg.text);
         const textStr = contentToString(msg.text || msg.body);
         const bodyStr = textStr || htmlStr;

@@ -550,18 +550,11 @@ function registerCommands(): void {
     }
   });
 
-  register('check-inbox', async () => {
-    const { emailService } = await import('../services/emailServices');
-    const { notifySuccess, notifyError } = await import('./notifications');
-
-    const current = await emailService.getCurrentEmail();
-    if (!current) {
-      await notifyError('No Email', 'Generate an email first');
-      return;
-    }
-    const emails = await emailService.checkInbox(current);
-    await notifySuccess('Inbox Checked', `${emails.length} email(s)`);
-  });
+  // NOTE: the 'check-inbox' command intentionally has NO registration
+  // here — the manifest declares no keyboard shortcut for it, so this
+  // listener would never fire. The context-menu path implements its own
+  // check-inbox (contextMenu.ts). Registering it here only produced a
+  // dead handler and an unreachable metrics bucket (2026-11-14).
 }
 
 function register(name: string, handler: () => Promise<void>): void {
@@ -611,7 +604,11 @@ function installListeners(): void {
   // Suspend cleanup (SECURITY FIX C12)
   chrome.runtime.onSuspend.addListener(() => {
     log.info('Extension suspending, cleaning up resources');
-    import('./offscreenManager').then(({ closeOffscreenDocument }) => closeOffscreenDocument()).catch(() => {});
+    // H2 fix: the offscreen document is deliberately designed to outlive
+    // service-worker suspension (it hosts the long-lived Mail.tm SSE
+    // relay). Closing it here destroyed the push stream exactly when the
+    // worker went idle, degrading every delivery to the 1-minute alarm
+    // poll. The document is torn down on update/uninstall instead.
     import('./serviceWorker')
       .then(({ clearDeferredTimers }) => {
         clearDeferredTimers();
@@ -627,7 +624,7 @@ async function handleCommand(cmd: string): Promise<void> {
   // NOTE: The `_execute_action` command (extension popup) is handled natively
   // by Chrome and never reaches this listener, so the keyboard-shortcuts
   // toggle only gates the custom commands below (generate-email,
-  // generate-password, auto-fill, check-inbox).
+  // generate-password, auto-fill).
   try {
     const { storageService } = await import('../services/storageService');
     const settings = await storageService.getSettings();

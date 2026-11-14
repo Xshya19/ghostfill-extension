@@ -43,3 +43,7 @@ jobs:
       - run: npm run zip
       - name: Verify package checksum
         run: sha256sum --check ghostfill-extension-v*.zip.sha256
+      - name: Verify public release profile
+        run: npm run build:public
+      - name: Check public bundle size
+        run: npm run bundle:check

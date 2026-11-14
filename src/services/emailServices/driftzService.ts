@@ -1,8 +1,8 @@
 import { EmailAccount, Email } from '../../types';
-import { fetchWithTimeout, contentToString, isValidEmail } from '../../utils/core';
+import { fetchWithTimeout, contentToString, isValidEmail, safeParseDate } from '../../utils/core';
 import { getSenderSource } from '../../utils/emailIdentity';
 import { createLogger } from '../../utils/logger';
-import { isRetryableError, throttledWarn } from './isRetryableError';
+import { isRetryableError, throttledWarn, throwIfRetryableStatus } from './isRetryableError';
 
 const log = createLogger('DriftzService');
 const BASE_URL = 'https://api.driftz.net';
@@ -13,7 +13,11 @@ export class DriftzService {
     try {
       const response = await fetchWithTimeout(`${BASE_URL}/domains`, { signal: signal ?? null });
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        // Use the shared helper so the status reaches the shared classifier
+        // ("HTTP error! status: 403" was NOT recognised → a hard failure was
+        // scored as an empty inbox and the provider stayed "healthy").
+        throwIfRetryableStatus(response, 'Driftz getDomains');
+        throw new Error(`Driftz getDomains failed: HTTP ${response.status}`);
       }
       const data = await response.json();
       if (!data.success) {
@@ -56,7 +60,7 @@ export class DriftzService {
         continue;
       }
       const expiresAt = data.result.expiresAt
-        ? Number(data.result.expiresAt) * 1000
+        ? safeParseDate(data.result.expiresAt)
         : Date.now() + 24 * 60 * 60 * 1000;
       return {
         id: address,
@@ -79,7 +83,10 @@ export class DriftzService {
         if (response.status === 404) {
           return [];
         } // Empty or expired
-        throw new Error(`HTTP error! status: ${response.status}`);
+        // Shared helper → the status reaches the shared classifier, so a
+        // 400/403 is treated as a provider failure instead of an empty inbox.
+        throwIfRetryableStatus(response, 'Driftz getMessages');
+        throw new Error(`Driftz getMessages failed: HTTP ${response.status}`);
       }
       const data = await response.json();
       if (!data.success) {
@@ -123,7 +130,7 @@ export class DriftzService {
           from: getSenderSource(msg.fromName, msg.fromAddress),
           to: contentToString(msg.toAddress || address),
           subject: contentToString(msg.subject, '(No Subject)'),
-          date: msg.receivedAt ? Number(msg.receivedAt) * 1000 : Date.now(),
+          date: msg.receivedAt ? safeParseDate(msg.receivedAt) : Date.now(),
           body: '',
           read: false,
           attachments: [],
@@ -156,7 +163,8 @@ export class DriftzService {
         { signal: signal ?? null }
       );
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throwIfRetryableStatus(response, 'Driftz getMessage');
+        throw new Error(`Driftz message ${emailId} not found (HTTP ${response.status})`);
       }
       const data = await response.json();
       if (!data.success) {
@@ -173,7 +181,7 @@ export class DriftzService {
         from: getSenderSource(msg.fromName, msg.fromAddress),
         to: contentToString(msg.toAddress || address),
         subject: contentToString(msg.subject, '(No Subject)'),
-        date: msg.receivedAt ? Number(msg.receivedAt) * 1000 : Date.now(),
+        date: msg.receivedAt ? safeParseDate(msg.receivedAt) : Date.now(),
         body: bodyStr,
         htmlBody: htmlStr,
         textBody: textStr,
@@ -209,7 +217,8 @@ export class DriftzService {
         if (response.status === 404) {
           return [];
         }
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throwIfRetryableStatus(response, 'Driftz getPermanentMessages');
+        throw new Error(`Driftz getPermanentMessages failed: HTTP ${response.status}`);
       }
       const data = await response.json();
       if (!data.success) {
@@ -221,7 +230,7 @@ export class DriftzService {
         from: getSenderSource(msg.fromName, msg.fromAddress),
         to: contentToString(msg.toAddress || address),
         subject: contentToString(msg.subject, '(No Subject)'),
-        date: msg.receivedAt ? Number(msg.receivedAt) * 1000 : Date.now(),
+        date: msg.receivedAt ? safeParseDate(msg.receivedAt) : Date.now(),
         body: '',
         read: false,
         attachments: [],
@@ -251,7 +260,8 @@ export class DriftzService {
       { headers, signal: signal ?? null }
     );
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      throwIfRetryableStatus(response, 'Driftz getPermanentMessage');
+      throw new Error(`Driftz getPermanentMessage failed: HTTP ${response.status}`);
     }
     const data = await response.json();
     if (!data.success) {
@@ -268,7 +278,7 @@ export class DriftzService {
       from: getSenderSource(msg.fromName, msg.fromAddress),
       to: contentToString(msg.toAddress || ''),
       subject: contentToString(msg.subject, '(No Subject)'),
-      date: msg.receivedAt ? Number(msg.receivedAt) * 1000 : Date.now(),
+      date: msg.receivedAt ? safeParseDate(msg.receivedAt) : Date.now(),
       body: bodyStr,
       htmlBody: htmlStr,
       textBody: textStr,

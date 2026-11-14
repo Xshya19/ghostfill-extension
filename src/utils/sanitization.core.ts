@@ -518,7 +518,15 @@ interface GlobalWithTrustedTypes {
           if (safe === '' || safe === 'return this') {
             return s;
           }
-          log.warn('Blocked uncontrolled script string via Trusted Types');
+          // Silent drop in production: this sink fires once per page
+          // load from browser/library-internal code paths we cannot
+          // attribute from outside Chrome, blocks nothing the app
+          // needs (the popup is fully functional with it) and was
+          // never actionable for users. debugMode-gated with a snippet
+          // so anyone diagnosing can see what was dropped.
+          log.debug('Blocked uncontrolled script string via Trusted Types', {
+            snippet: safe.slice(0, 120),
+          });
           return '';
         },
       });

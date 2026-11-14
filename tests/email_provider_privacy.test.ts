@@ -131,13 +131,25 @@ describe('email provider inbox privacy', () => {
     ).toBe(false);
   });
 
-  it('uses sender-to-link matching for older accounts without a captured signup site', () => {
+  it('fails closed for older accounts without a captured signup site', () => {
+    // SECURITY (2026-11-12): the sender-to-link fallback was removed. A
+    // self-consistent phishing mail (sender domain == link domain) passed it
+    // on every account without a signup origin, so the automatic open
+    // completed with zero warnings. Without an origin there is nothing
+    // independent to bind the destination to, so the link is not opened.
     const driftz = account('driftz');
     expect(
       canAutoOpenVerificationLink(driftz, 'verify@example.com', 'https://example.com/verify')
-    ).toBe(true);
+    ).toBe(false);
     expect(
       canAutoOpenVerificationLink(driftz, 'verify@example.com', 'https://other.com/verify')
+    ).toBe(false);
+    expect(
+      canAutoOpenVerificationLink(
+        driftz,
+        'verify@evil-phish.example',
+        'https://evil-phish.example/verify?token=abc123456'
+      )
     ).toBe(false);
   });
 });

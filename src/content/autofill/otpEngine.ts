@@ -4,6 +4,7 @@ import { FrameworkType, PageContext } from '../../types/form.types';
 import { deepQuerySelectorAll, getDeepActiveElement } from '../../utils/core';
 import { createLogger } from '../../utils/logger';
 import { OTPFieldGroup, OTPFillOutcome , FieldSetter, PhantomTyper, delay, VisibilityEngine, EventFactory } from './formFiller';
+import { setTrackedValue } from './nativeValue';
 
 
 const log = createLogger('AutofillOTPEngine');
@@ -685,28 +686,51 @@ export class OTPFiller {
         return true;
       }
 
-      // Rollback on failure
-      for (let i = 0; i < fields.length; i++) {
-        const field = fields[i];
-        if (field) {
-          field.value = originalValues[i] ?? '';
-          field.dispatchEvent(new Event('input', { bubbles: true }));
-        }
+      // Rollback on failure (2026-11-12): restore through the same
+      // tracker-aware path a normal fill uses. Writing `.value` directly
+      // left controlled inputs (React) believing the pasted digits were
+      // still committed, so the page's state and the visible value
+      // diverged — the classic "the code is there but the site does not
+      // see it" symptom. The restore is also announced with input/change
+      // so site listeners (including keyboard-driven splitters) follow it.
+      const restored = this.restoreSplitValues(fields, originalValues);
+      if (!restored) {
+        log.warn('OTP rollback could not restore the original field values', {
+          expected: originalValues.join(''),
+          actual: this.readSplitValue(fields),
+        });
       }
       if (activeElBefore instanceof HTMLElement) {
         activeElBefore.focus({ preventScroll: true });
       }
       return false;
     } catch {
-      for (let i = 0; i < fields.length; i++) {
-        const field = fields[i];
-        if (field) {
-          field.value = originalValues[i] ?? '';
-        }
-      }
+      this.restoreSplitValues(fields, originalValues);
       return false;
     }
   }
+
+  /**
+   * Restore the original values of a split-OTP group.
+   *
+   * Uses the shared tracker-aware setter so controlled inputs stay in
+   * sync with the DOM, and verifies the result — a silent restore that
+   * the page ignores would leave GhostFill believing the fields are
+   * empty while the site still holds the pasted digits.
+   */
+  private static restoreSplitValues(
+    fields: HTMLInputElement[],
+    originalValues: string[]
+  ): boolean {
+    for (let i = 0; i < fields.length; i++) {
+      const field = fields[i];
+      if (field) {
+        setTrackedValue(field, originalValues[i] ?? '');
+      }
+    }
+    const current = this.readSplitValue(fields);
+    const expected = originalValues.join('');
+    return current.slice(0, expected.length) === expected;  }
 
   private static readSplitValue(fields: HTMLInputElement[]): string {
     return fields.map((field) => field.value ?? '').join('');

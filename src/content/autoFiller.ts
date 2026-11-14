@@ -37,6 +37,15 @@ const SMART_FILL_RETRY_DELAYS_MS = [0, 40, 120, 350, 800] as const;
 const OTP_DISCOVERY_RETRIES = 8;
 const OTP_DISCOVERY_RETRY_DELAY_MS = 60;
 
+/**
+ * Window during which a repeat delivery of the same OTP code is treated as a
+ * duplicate of the last successful fill instead of a fresh fill request.
+ * Calibrated against the background OTPDeliveryEngine retry schedule
+ * ([0, 60, 180, 400, 900] ms, 4.5 s message timeout): retries must land well
+ * inside the window, while a later manual refill must still get through.
+ */
+const OTP_REFILL_DEDUPE_TTL_MS = 5_000;
+
 /** Minimum number of single-character boxes for a valid split-OTP layout. */
 const MIN_SPLIT_OTP_FIELDS = 4;
 /** Maximum number of single-character boxes we will treat as one OTP group. */
@@ -136,6 +145,12 @@ export class AutoFiller {
   private fillLock = false;
   /** The most recent OTP request received while a fill was already running. */
   private latestPendingOTP: PendingOTPRequest | null = null;
+  /**
+   * Last OTP code that was actually written to the page (separator-stripped)
+   * and when that fill succeeded. Used to suppress duplicate deliveries of the
+   * same code within OTP_REFILL_DEDUPE_TTL_MS.
+   */
+  private lastFilledOTP: { code: string; at: number } | null = null;
 
   /** Content-side identity cache to deduplicate rapid GET_IDENTITY + GET_LAST_OTP calls. */
   private static readonly IDENTITY_CACHE_TTL_MS = 500;
@@ -235,6 +250,29 @@ export class AutoFiller {
       if (cleanOTP.length === 0) {
         log.debug('fillOTP called with an empty code, skipping');
         return false;
+      }
+
+      // ── Duplicate-delivery dedupe ──
+      // WHY: the background OTP delivery engine re-sends AUTO_FILL_OTP with the
+      // same code whenever the first fill's response is slow or lost (retry
+      // delays [0, 60, 180, 400, 900] ms, 4.5 s message timeout), and a queued
+      // request can also re-run after the first fill already succeeded.
+      // Writing the identical code twice doubles every input event on split
+      // OTP widgets and can trip widgets that validate keystroke-by-keystroke.
+      // The marker is only recorded after a fill actually SUCCEEDED
+      // (markOTPUsed), so failed fills always allow an immediate retry, and
+      // the TTL keeps a manual refill of an older code working.
+      const now = Date.now();
+      if (
+        this.lastFilledOTP &&
+        this.lastFilledOTP.code === cleanOTP &&
+        now - this.lastFilledOTP.at < OTP_REFILL_DEDUPE_TTL_MS
+      ) {
+        log.debug('🔁 Duplicate OTP delivery suppressed within dedupe window', {
+          length: cleanOTP.length,
+          ageMs: now - this.lastFilledOTP.at,
+        });
+        return true;
       }
 
       log.info('🔑 OTP Fill Pipeline Started', {
@@ -901,22 +939,43 @@ export class AutoFiller {
       const safeGroup = group ? this.normalizeOTPGroup(group, cleanOTP.length, context) : null;
       otpGroup = safeGroup;
       if (safeGroup) {
-        const result = await OTPFiller.fill(
-          this.resolveOtpValueForGroup(safeGroup, otpCode, cleanOTP),
-          safeGroup,
-          context.framework
-        );
-        if (result.success) {
-          filledCount += result.filledCount;
-          this.markOTPUsed(otpCode);
-          this.saveTrustedSelector('otp', this.buildFieldSelector(safeGroup.fields[0]));
-          details.push({
-            fieldType: 'otp',
-            selector: this.buildFieldSelector(safeGroup.fields[0]),
-            strategy: result.strategy,
-            success: true,
+        // WHY: the background AUTO_FILL_OTP delivery runs inside fillOTP under
+        // this.fillLock. If a FAB / popup Smart Fill races that delivery, both
+        // writers would interleave per-digit writes on the same split group.
+        // When the lock is held, the in-flight fill owns the OTP fields, so
+        // skip the duplicate write here — otpGroup is still recorded above so
+        // the generic candidate loop below keeps skipping those boxes.
+        if (this.fillLock) {
+          log.debug('Smart Fill skipped OTP write: another fill currently owns the lock', {
+            strategy: safeGroup.strategy,
+            fieldCount: safeGroup.fields.length,
           });
-          void AutoSubmitDetector.checkAndHighlight(safeGroup);
+        } else {
+          this.fillLock = true;
+          try {
+            const result = await OTPFiller.fill(
+              this.resolveOtpValueForGroup(safeGroup, otpCode, cleanOTP),
+              safeGroup,
+              context.framework
+            );
+            if (result.success) {
+              filledCount += result.filledCount;
+              this.markOTPUsed(otpCode);
+              this.saveTrustedSelector('otp', this.buildFieldSelector(safeGroup.fields[0]));
+              details.push({
+                fieldType: 'otp',
+                selector: this.buildFieldSelector(safeGroup.fields[0]),
+                strategy: result.strategy,
+                success: true,
+              });
+              void AutoSubmitDetector.checkAndHighlight(safeGroup);
+            }
+          } finally {
+            this.fillLock = false;
+            // fillOTP queues behind smartFill's OTP write as well, so drain
+            // the queue here exactly like fillOTP does on completion.
+            this.processNextOTPInQueue();
+          }
         }
       }
     }
@@ -1680,8 +1739,20 @@ export class AutoFiller {
   }
 
   markOTPUsed(code?: string): void {
+    if (code) {
+      // WHY: record the delivered code the moment a fill succeeds so that a
+      // duplicate delivery (background retry or queued re-fill) can be
+      // suppressed by fillOTP's dedupe window instead of being written twice.
+      const cleaned = code.replace(/[-\s]/g, '');
+      this.lastFilledOTP = { code: cleaned, at: Date.now() };
+    }
     void safeSendMessage({ action: 'MARK_OTP_USED', ...(code ? { payload: { code } } : {}) }).catch(
-      () => {}
+      (error) => {
+        // WHY: the failure itself is non-actionable (service worker asleep or
+        // extension context invalidated), but silently discarding the error
+        // hid dedupe-marker / telemetry problems during diagnosis.
+        log.debug('MARK_OTP_USED message failed (non-fatal)', error);
+      }
     );
   }
 

@@ -164,10 +164,8 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
     return (
       <div className="hub-gmail-not-connected">
         <GmailLogo size={44} className="hub-gmail-logo-img" />
-        <span className="hub-gmail-title">Connect Gmail</span>
-        <span className="hub-gmail-desc">
-          Create site-specific aliases and sync OTP emails from your Gmail account.
-        </span>
+        <span className="hub-gmail-title">{t('connectGmail')}</span>
+        <span className="hub-gmail-desc">{t('connectGmailDescription')}</span>
         <button
           type="button"
           onClick={() => {
@@ -178,10 +176,10 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
         >
           {gmailSigningIn ? (
             <span>
-              <RefreshCw size={14} className="spin" /> Connecting…
+              <RefreshCw size={14} className="spin" /> {t('connecting')}
             </span>
           ) : (
-            <span>Connect Gmail</span>
+            <span>{t('connectGmail')}</span>
           )}
         </button>
       </div>
@@ -192,7 +190,7 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
 
   const currentDisconnectHandler = onSignOut;
 
-  const providerLabel = !isReal ? t('emailLabel') : 'Gmail Alias';
+  const providerLabel = !isReal ? t('emailLabel') : t('gmailAliasLabel');
   const isDisposableExpired =
     !isReal && typeof emailAccount?.expiresAt === 'number' && Date.now() >= emailAccount.expiresAt;
 
@@ -207,7 +205,7 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
           {!isReal && (
             <CountdownTimer
               expiresAt={emailAccount?.expiresAt}
-              expiredLabel={t('expiredLabel') || 'Expired'}
+              expiredLabel={t('expiredLabel')}
             />
           )}
         </div>
@@ -216,7 +214,7 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
             ? Boolean(activeEmailAddress)
             : Boolean(emailAccount?.fullEmail);
           const rawEmail = isReal
-            ? activeEmailAddress || 'Connected'
+            ? activeEmailAddress || t('connectedBadge')
             : emailAccount?.fullEmail ||
               (isGeneratingEmail ? t('syncingIdentity') : t('noEmailAddressYet'));
           const atIndex = rawEmail.indexOf('@');
@@ -231,7 +229,7 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
                 role="status"
                 aria-live="polite"
               >
-                {isReal ? 'Gmail connected; no active address is available.' : rawEmail}
+                {isReal ? t('gmailConnectedNoAddress') : rawEmail}
               </span>
             );
           }
@@ -240,9 +238,9 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
             <button
               type="button"
               className="identity-value hub-val hub-val-email"
-              title={`Click to copy: ${rawEmail}`}
+              title={t('clickToCopy', [rawEmail])}
               onClick={onCopyEmail}
-              aria-label={`Copy email address ${rawEmail}`}
+              aria-label={t('copyEmailAddressInterpolated', [rawEmail])}
             >
               {hasAt ? (
                 <>
@@ -259,7 +257,9 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
           currentOriginalBase &&
           activeEmailAddress &&
           activeEmailAddress !== currentOriginalBase && (
-            <div className="identity-original-email">Original: {currentOriginalBase}</div>
+            <div className="identity-original-email">
+              {t('originalLabel')} {currentOriginalBase}
+            </div>
           )}
       </div>
       <div className="identity-actions">
@@ -268,8 +268,8 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
           className={`action-icon ${emailCopied ? 'success' : ''}`}
           onClick={onCopyEmail}
           disabled={isReal ? !activeEmailAddress : !emailAccount?.fullEmail}
-          title="Copy email"
-          aria-label="Copy email address to clipboard"
+          title={t('copyEmailTooltip')}
+          aria-label={t('copyEmailAddressToClipboard')}
         >
           {emailCopied ? <Check size={14} /> : <Copy size={14} />}
         </button>
@@ -282,15 +282,15 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
             aria-busy={isGeneratingEmail}
             title={
               isGeneratingEmail
-                ? 'Generating new identity…'
+                ? t('generatingNewIdentity')
                 : isDisposableExpired
                   ? t('generateNewAddress')
-                  : 'New identity'
+                  : t('newIdentity')
             }
             aria-label={
               emailAccount?.fullEmail
-                ? 'Generate new disposable email'
-                : 'Generate disposable email'
+                ? t('generateNewDisposableEmail')
+                : t('generateDisposableEmail')
             }
           >
             <RefreshCw size={14} className={isGeneratingEmail ? 'spin' : ''} />
@@ -301,8 +301,8 @@ const AccountCardComponent: React.FC<AccountCardProps> = ({
             type="button"
             className="action-icon"
             onClick={currentDisconnectHandler}
-            title="Disconnect account"
-            aria-label="Disconnect email account"
+            title={t('disconnectAccount')}
+            aria-label={t('disconnectEmailAccount')}
           >
             <LogOut size={14} />
           </button>
@@ -331,18 +331,18 @@ interface HistoryTabProps {
 }
 
 const HistoryTab: React.FC<HistoryTabProps> = ({ history, onClear, onToast }) => (
-  <div className="inbox-section" role="region" aria-label="Alias tracker">
+  <div className="inbox-section" role="region" aria-label={t('aliasTracker')}>
     <div className="inbox-header-row">
       <div className="inbox-title-group">
         <Shield size={14} />
         <span role="heading" aria-level={2}>
-          Alias tracker
+          {t('aliasTracker')}
         </span>
         {history.length > 0 && <span className="inbox-count">{history.length}</span>}
       </div>
       {history.length > 0 && (
         <button type="button" className="alias-clear-history-btn" onClick={onClear}>
-          Clear All
+          {t('clearAllLabel')}
         </button>
       )}
     </div>
@@ -351,7 +351,7 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ history, onClear, onToast }) =>
       {history.length === 0 ? (
         <div className="hub-empty-state">
           <Shield size={16} strokeWidth={1.5} color="var(--gf-primary)" />
-          <span>No aliases tracked yet.</span>
+          <span>{t('noAliasesTrackedYetPeriod')}</span>
         </div>
       ) : (
         history.map((item) => (
@@ -360,7 +360,7 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ history, onClear, onToast }) =>
             <div className="inbox-item-content">
               <div className="inbox-item-header">
                 <span className="inbox-item-from truncate">
-                  {item.website || 'general'}
+                  {item.website || t('generalFallback')}
                   <span className="alias-history-type-badge">{item.type}</span>
                 </span>
                 <span className="inbox-item-date">
@@ -375,11 +375,13 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ history, onClear, onToast }) =>
             <button
               type="button"
               className="action-icon"
-              aria-label={`Copy ${item.alias}`}
+              aria-label={t('copyAliasInterpolated', [item.alias])}
               onClick={() =>
-                void copyToClipboard(item.alias).then((ok) => onToast(ok ? 'Copied' : 'Failed'))
+                void copyToClipboard(item.alias).then((ok) =>
+                  onToast(ok ? t('copiedShort') : t('genericFailed'))
+                )
               }
-              title="Copy alias"
+              title={t('copyAlias')}
             >
               <Copy size={14} />
             </button>
@@ -421,12 +423,12 @@ const InboxTab: React.FC<InboxTabProps> = ({
   const showList = !isManual && inbox.length > 0;
 
   return (
-    <div className="inbox-section" role="region" aria-label="Recent inbox">
+    <div className="inbox-section" role="region" aria-label={t('recentInbox')}>
       <div className="inbox-header-row">
         <div className="inbox-title-group">
           <Inbox size={14} />
           <span role="heading" aria-level={2}>
-            Recent inbox
+            {t('recentInbox')}
           </span>
           {!isManual && inbox.length > 0 && <span className="inbox-count">{inbox.length}</span>}
         </div>
@@ -437,7 +439,7 @@ const InboxTab: React.FC<InboxTabProps> = ({
             onClick={onRefresh}
             disabled={loading}
             aria-busy={loading}
-            aria-label="Refresh inbox"
+            aria-label={t('refreshInbox')}
           >
             <RefreshCw size={14} className={loading ? 'spin' : ''} />
           </button>
@@ -452,9 +454,9 @@ const InboxTab: React.FC<InboxTabProps> = ({
           <Inbox size={22} color="var(--gf-primary)" />
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
             <span style={{ fontWeight: 600, color: 'var(--gf-ink)', fontSize: '12px' }}>
-              Inbox needs Google sign-in
+              {t('inboxNeedsGoogleSignIn')}
             </span>
-            <span style={{ fontSize: '10px' }}>Manual connection generates aliases only.</span>
+            <span style={{ fontSize: '10px' }}>{t('manualConnectionAliasesOnly')}</span>
           </div>
           <button
             type="button"
@@ -473,7 +475,7 @@ const InboxTab: React.FC<InboxTabProps> = ({
             }}
           >
             {signingIn ? <RefreshCw size={13} className="spin" /> : <LogIn size={13} />}
-            <span>{signingIn ? 'Connecting…' : 'Use Google sign-in'}</span>
+            <span>{signingIn ? t('connecting') : t('useGoogleSignIn')}</span>
           </button>
         </div>
       )}
@@ -492,14 +494,14 @@ const InboxTab: React.FC<InboxTabProps> = ({
       {showLoading && (
         <div className="hub-empty-state" style={{ marginTop: 8 }}>
           <RefreshCw size={16} strokeWidth={1.5} className="spin" color="var(--gf-primary)" />
-          <span>Syncing Gmail…</span>
+          <span>{t('syncingGmailEllipsis')}</span>
         </div>
       )}
 
       {showEmpty && (
         <div className="hub-empty-state" style={{ marginTop: 8 }}>
           <Inbox size={16} strokeWidth={1.5} color="var(--gf-primary)" />
-          <span>All caught up. No recent emails.</span>
+          <span>{t('allCaughtUpNoRecentEmails')}</span>
         </div>
       )}
 
@@ -516,7 +518,11 @@ const InboxTab: React.FC<InboxTabProps> = ({
               className={`inbox-item ${msg.isUnread ? 'alias-inbox-item--unread' : ''}`}
               onClick={() => onOpenMessage(msg)}
               disabled={openingMessageId === msg.id}
-              aria-label={`${msg.isUnread ? 'Open unread email' : 'Open email'} from ${senderLabel}: ${msg.subject}`}
+              aria-label={t('openEmailFrom', [
+                t(msg.isUnread ? 'openUnreadEmail' : 'openEmail'),
+                senderLabel,
+                msg.subject,
+              ])}
               aria-busy={openingMessageId === msg.id}
             >
               <EmailAvatar
@@ -533,7 +539,7 @@ const InboxTab: React.FC<InboxTabProps> = ({
                     {msg.dateFormatted || formatInboxRelativeDate(new Date(msg.date).getTime())}
                   </span>
                 </span>
-                <span className="inbox-item-subject truncate">{msg.subject || '(No subject)'}</span>
+                <span className="inbox-item-subject truncate">{msg.subject || t('noSubject')}</span>
               </span>
               {openingMessageId === msg.id ? (
                 <RefreshCw size={14} className="inbox-item-open-chevron spin" aria-hidden="true" />
@@ -559,7 +565,7 @@ const AppSkeleton = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDi
         ref={ref}
         className={`app-skeleton app-view-container ${className || ''}`}
         role="status"
-        aria-label="Loading GhostFill"
+        aria-label={t('loadingGhostfillAriaLabel')}
         {...props}
       >
         <div className="header skeleton-header-gap">
@@ -642,8 +648,8 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   isOpen,
   title,
   message,
-  confirmText = 'Confirm',
-  cancelText = 'Cancel',
+  confirmText = t('confirm'),
+  cancelText = t('cancel'),
   onConfirm,
   onCancel,
   isDestructive = false,
@@ -789,7 +795,7 @@ interface CountdownTimerProps {
 
 export const CountdownTimer: React.FC<CountdownTimerProps> = ({
   expiresAt,
-  expiredLabel = 'Expired',
+  expiredLabel = t('expiredLabel'),
 }) => {
   const [timeLeft, setTimeLeft] = useState<string>('');
 
@@ -841,7 +847,7 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
     <span
       className={`expiry-badge ${isExpired ? 'expired' : ''}`}
       role="timer"
-      aria-label={isExpired ? 'Expired' : `Expires in ${timeLeft}`}
+      aria-label={isExpired ? t('expiredLabel') : t('expiresIn', [timeLeft])}
     >
       {timeLeft}
     </span>
@@ -2023,10 +2029,8 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
             <div className="error-icon-box">
               <AlertCircle className="error-icon-large" size={30} aria-hidden="true" />
             </div>
-            <h2 className="error-title">System error</h2>
-            <p className="error-message-box">
-              The popup interface failed to render. Reset the interface to reload GhostFill.
-            </p>
+            <h2 className="error-title">{t('systemError')}</h2>
+            <p className="error-message-box">{t('popupRenderFailed')}</p>
             <button
               type="button"
               onClick={() => {
@@ -2035,7 +2039,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, State> {
               }}
               className="gf-btn gf-btn--primary error-reset-btn"
             >
-              Reset Interface
+              {t('resetInterface')}
             </button>
           </div>
         </div>
@@ -2116,13 +2120,13 @@ const Header: React.FC<HeaderProps> = React.memo(({ onOpenSettings, onOpenHelp }
       </div>
       <div className="header-actions">
         <IconButton
-          label="Open help center"
-          title="Help center (guides & FAQ)"
+          label={t('openHelpCenter')}
+          title={t('helpCenterTitle')}
           onClick={onOpenHelp}
         >
           <HelpCircle size={18} strokeWidth={2} />
         </IconButton>
-        <IconButton label="Open settings" title="Settings" onClick={onOpenSettings}>
+        <IconButton label={t('openSettings')} title={t('settingsTitle')} onClick={onOpenSettings}>
           <Settings size={18} strokeWidth={2.2} />
         </IconButton>
       </div>
@@ -2262,7 +2266,7 @@ export interface InboxListProps {
 }
 
 const formatInboxRelativeDate = (timestamp: number): string =>
-  Number.isFinite(timestamp) ? formatRelativeTime(timestamp) : 'Date unavailable';
+  Number.isFinite(timestamp) ? formatRelativeTime(timestamp) : t('dateUnavailable');
 
 const InboxListComponent: React.FC<InboxListProps> = ({
   preferredEmailType,
@@ -2300,15 +2304,15 @@ const InboxListComponent: React.FC<InboxListProps> = ({
   const canRefreshGmail = preferredEmailType === 'gmail' && gmailConnected && !gmailIsManual;
 
   return (
-    <div className="inbox-section" role="region" aria-label="Inbox" data-empty={inboxCount === 0}>
+    <div className="inbox-section" role="region" aria-label={t('recentMessages')} data-empty={inboxCount === 0}>
       <div className="inbox-header-row">
         <div className="inbox-title-group">
           <Inbox size={16} className="inbox-title-icon" aria-hidden="true" />
           <span className="inbox-title-text" role="heading" aria-level={2}>
-            Inbox
+            {t('recentMessages')}
           </span>
           {inboxCount > 0 && (
-            <span className="inbox-count" aria-label={`${inboxCount} messages`}>
+            <span className="inbox-count" aria-label={t('messagesCount', [String(inboxCount)])}>
               {inboxCount}
             </span>
           )}
@@ -2319,9 +2323,9 @@ const InboxListComponent: React.FC<InboxListProps> = ({
             className="view-all-btn"
             onClick={() => void onFetchGmailInbox()}
             disabled={gmailInboxLoading}
-            aria-label={gmailInboxLoading ? 'Refreshing Gmail inbox' : 'Refresh Gmail inbox'}
+            aria-label={gmailInboxLoading ? t('refreshingGmailInbox') : t('refreshGmailInbox')}
           >
-            {gmailInboxLoading ? 'Refreshing…' : 'Refresh'}
+            {gmailInboxLoading ? t('refreshingEllipsis') : t('refresh')}
           </button>
         )}
         {canOpenInbox && (
@@ -2329,7 +2333,7 @@ const InboxListComponent: React.FC<InboxListProps> = ({
             type="button"
             className="view-all-btn"
             onClick={() => onNavigate('email')}
-            aria-label="View full inbox"
+            aria-label={t('viewFullInbox')}
           >
             {t('inboxViewAll')}
             <ChevronRight size={15} />
@@ -2340,9 +2344,9 @@ const InboxListComponent: React.FC<InboxListProps> = ({
             type="button"
             className="view-all-btn"
             onClick={() => onNavigate('aliases')}
-            aria-label="Open alias manager"
+            aria-label={t('openAliasManager')}
           >
-            Aliases
+            {t('aliasTabGenerator')}
             <ChevronRight size={15} />
           </button>
         )}
@@ -2358,7 +2362,7 @@ const InboxListComponent: React.FC<InboxListProps> = ({
             onClick={() => void onFetchGmailInbox()}
             disabled={gmailInboxLoading}
           >
-            {gmailInboxLoading ? 'Retrying…' : 'Retry'}
+            {gmailInboxLoading ? t('retryingEllipsis') : t('retry')}
           </button>
         </div>
       )}
@@ -2367,19 +2371,17 @@ const InboxListComponent: React.FC<InboxListProps> = ({
         {preferredEmailType === 'gmail' && !gmailConnected ? (
           <div className="hub-empty-state">
             <AlertCircle size={18} strokeWidth={1.7} color="var(--gf-coral)" />
-            <span className="hub-empty-text">Connect Gmail above to sync OTP emails.</span>
+            <span className="hub-empty-text">{t('connectGmailSyncOtp')}</span>
           </div>
         ) : preferredEmailType === 'gmail' && gmailIsManual ? (
           <div className="hub-empty-state">
             <AlertCircle size={18} strokeWidth={1.7} color="var(--gf-amber)" />
-            <span className="hub-empty-text">
-              Use Google sign-in to sync messages automatically.
-            </span>
+            <span className="hub-empty-text">{t('useGoogleSignInSync')}</span>
           </div>
         ) : preferredEmailType === 'gmail' && gmailInboxLoading && inboxCount === 0 ? (
           <div className="hub-empty-state">
             <RefreshCw size={18} strokeWidth={1.5} className="spin" color="var(--gf-primary)" />
-            <span>Syncing Gmail</span>
+            <span>{t('syncingGmail')}</span>
           </div>
         ) : preferredEmailType === 'gmail' &&
           gmailInboxError &&
@@ -2457,7 +2459,7 @@ const InboxListComponent: React.FC<InboxListProps> = ({
                                 onCopyOTP(emailItem.otpCode);
                               }
                             }}
-                            aria-label={`Copy verification code ${emailItem.otpCode}`}
+                            aria-label={t('copyVerificationCode', [emailItem.otpCode])}
                           >
                             <span className="inbox-action-label" aria-hidden="true">
                               {t('copyShort')}
@@ -2477,10 +2479,10 @@ const InboxListComponent: React.FC<InboxListProps> = ({
                                 void onOpenLink(e, emailItem.activationLink);
                               }
                             }}
-                            aria-label="Open verification link"
+                            aria-label={t('openVerificationLinkAriaLabel')}
                           >
                             <span className="otp-badge-code" aria-hidden="true">
-                              Open link
+                              {t('openLink')}
                             </span>
                             <ChevronRight size={12} />
                           </button>
@@ -2491,7 +2493,11 @@ const InboxListComponent: React.FC<InboxListProps> = ({
                   <button
                     type="button"
                     className="inbox-item-open-button"
-                    aria-label={`${emailItem.read ? 'Open email' : 'Open unread email'} from ${senderLabel}: ${emailItem.subject}`}
+                    aria-label={t('openEmailFrom', [
+                      t(emailItem.read ? 'openEmail' : 'openUnreadEmail'),
+                      senderLabel,
+                      emailItem.subject,
+                    ])}
                     aria-busy={openingEmailId === emailItem.id}
                     disabled={openingEmailId === emailItem.id}
                     onClick={() => openDisplayedEmail(emailItem)}
@@ -2650,7 +2656,7 @@ const OTPTimerBar: React.FC<{ lastOTP: LastOTP | null }> = ({ lastOTP }) => {
 
       if (remaining <= 0) {
         setTimePercentage(0);
-        setTimeText(hasExplicitExpiry ? 'Expired' : 'Likely expired');
+        setTimeText(hasExplicitExpiry ? t('expiredLabel') : t('likelyExpired'));
       } else {
         setTimePercentage((remaining / total) * 100);
         const remainingSeconds = Math.ceil(remaining / 1000);
@@ -2673,8 +2679,8 @@ const OTPTimerBar: React.FC<{ lastOTP: LastOTP | null }> = ({ lastOTP }) => {
         aria-valuenow={timePercentage}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-label="Verification code time remaining"
-        aria-valuetext={timeText || 'Checking expiry'}
+        aria-label={t('verificationCodeTimeRemaining')}
+        aria-valuetext={timeText || t('checkingExpiry')}
       >
         <div
           className="otp-timer-fill"
@@ -2687,16 +2693,16 @@ const OTPTimerBar: React.FC<{ lastOTP: LastOTP | null }> = ({ lastOTP }) => {
       <div
         className="otp-timer-info"
         role="timer"
-        aria-label={`Verification code expiry ${timeText}`}
+        aria-label={t('verificationCodeExpiry', [timeText])}
       >
         <span className="otp-timer-label">
-          {lastOTP?.expiresAt ? 'Expiring in ' : 'Est. expiry in '}
+          {lastOTP?.expiresAt ? t('expiringIn') : t('estExpiryIn')}
           <span className={timePercentage < 20 ? 'otp-timer-expired' : 'otp-timer-active'}>
             {timeText}
           </span>
         </span>
         <span className="otp-source-label">
-          {lastOTP?.source === 'email' ? 'Real-time Sync' : 'Direct'}
+          {lastOTP?.source === 'email' ? t('realTimeSync') : t('directSource')}
         </span>
       </div>
     </div>
@@ -2774,18 +2780,18 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
     try {
       const copiedToClipboard = await copyToClipboard(activeOTP.code);
       if (!copiedToClipboard) {
-        onToast('Copy failed');
+        onToast(t('copyFailed'));
         return;
       }
       setCopied(true);
-      onToast('Verification code copied');
+      onToast(t('verificationCodeCopied'));
 
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
       timeoutRef.current = setTimeout(() => setCopied(false), 2500); // Longer confirmation
     } catch {
-      onToast('Copy failed');
+      onToast(t('copyFailed'));
     }
   }, [activeOTP, onToast]);
 
@@ -2796,12 +2802,12 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
     setFilling(true);
     try {
       if (typeof chrome === 'undefined' || typeof chrome.tabs?.query !== 'function') {
-        onToast('Couldn’t access the active page. Copy the code instead.');
+        onToast(t('otpActivePageUnavailable'));
         return;
       }
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab?.id) {
-        onToast('Open a page with a verification form, then try again.');
+        onToast(t('otpFormPageRequired'));
         return;
       }
       const res = await safeSendTabMessage(tab.id, {
@@ -2809,13 +2815,13 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
         payload: { otp: activeOTP.code },
       });
       if (res?.success) {
-        onToast('Verification code filled');
+        onToast(t('otpFilled'));
         // Don't close popup - let user verify
       } else {
-        onToast('Couldn’t fill a code on this page. Copy it instead.');
+        onToast(t('otpFillFailed'));
       }
     } catch {
-      onToast('Couldn’t fill a code on this page. Copy it instead.');
+      onToast(t('otpFillFailed'));
     } finally {
       setFilling(false);
     }
@@ -2835,7 +2841,7 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
         <div className="identity-header-row">
           <div className="widget-label widget-label-no-margin">
             <Hash size={16} className="sf-icon" />
-            Verification Code
+            {t('passcodeSync')}
           </div>
           <ShieldCheck size={22} color="var(--gf-mint)" />
         </div>
@@ -2848,7 +2854,7 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
               type="button"
               className="otp-box"
               onClick={handleCopyOTP}
-              aria-label={`Copy OTP code ${activeOTP.code.split('').join(' ')}`}
+              aria-label={t('copyOtpCode', [activeOTP.code.split('').join(' ')])}
             >
               {activeOTP.code.split('').map((char: string, i: number) => (
                 <span key={i} className="otp-digit">
@@ -2861,7 +2867,7 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
 
             {activeOTP.confidence && (
               <div className="otp-confidence-row">
-                <span className="otp-confidence-label">Confidence</span>
+                <span className="otp-confidence-label">{t('confidenceLabel')}</span>
                 <div className="otp-confidence-bar">
                   <div
                     className="otp-confidence-fill"
@@ -2890,11 +2896,11 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
                 loading={filling}
                 leftIcon={<Zap size={18} fill="white" />}
               >
-                {filling ? 'Filling…' : 'Fill code'}
+                {filling ? t('fillingEllipsis') : t('fillCode')}
               </Button>
               <Button className="otp-action-secondary" onClick={handleCopyOTP}>
                 {copied ? <Check size={18} color="var(--gf-success)" /> : <Copy size={18} />}
-                {copied ? 'Copied' : 'Copy'}
+                {copied ? t('copiedShort') : t('copyShort')}
               </Button>
             </div>
           </div>
@@ -2904,11 +2910,11 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
               <Inbox size={30} color="var(--gf-primary)" strokeWidth={1.5} />
             </div>
 
-            <h3 className="otp-empty-title">{lastOTP ? 'Code expired' : 'Listening for codes'}</h3>
+            <h3 className="otp-empty-title">
+              {lastOTP ? t('codeExpired') : t('listeningForCodes')}
+            </h3>
             <p className="otp-empty-desc">
-              {lastOTP
-                ? 'Check your inbox for a fresh verification code.'
-                : 'Verification codes from your ghost inbox will appear here instantly.'}
+              {lastOTP ? t('checkInboxFreshCode') : t('codesAppearHere')}
             </p>
           </div>
         )}
@@ -2917,16 +2923,17 @@ const OTPDisplay: React.FC<OTPDisplayProps> = ({ onToast }) => {
       <div className="memphis-card efficiency-tip-card">
         <div className="widget-label widget-label-no-margin">
           <Info size={16} className="sf-icon" />
-          Shortcut
+          {t('shortcutLabel')}
         </div>
         <div className="efficiency-tip-text">
           {autoFillShortcut ? (
             <>
-              Press <kbd className="kbd-key">{autoFillShortcut}</kbd> on a page to fill the current
-              form.
+              {t('pressShortcutBefore')}
+              <kbd className="kbd-key">{autoFillShortcut}</kbd>
+              {t('pressShortcutAfter')}
             </>
           ) : (
-            <>Assign an Auto-fill shortcut in Chrome, or use Copy above.</>
+            <>{t('assignAutoFillShortcut')}</>
           )}
         </div>
       </div>
@@ -2943,6 +2950,23 @@ const log = createLogger('PasswordGenerator');
 
 // Strength score (0-4) -> fill percentage shown in the meter.
 const STRENGTH_PERCENTS = [8, 20, 45, 75, 100] as const;
+
+/** Display label for the strength meter; the raw `level` drives CSS via data-level. */
+const passwordStrengthLevelLabel = (level: string): string => {
+  switch (level) {
+    case 'weak':
+      return t('strengthWeak');
+    case 'fair':
+      return t('strengthFair');
+    case 'good':
+      return t('strengthGood');
+    case 'strong':
+    case 'very-strong':
+      return t('strengthStrong');
+    default:
+      return level;
+  }
+};
 const strengthPercent = (score: number): number => STRENGTH_PERCENTS[score] ?? 8;
 
 // Map score 0-4 to a semantic level name (drives CSS color via [data-level]).
@@ -3000,6 +3024,148 @@ const describeExistingPassword = (pw: string): GeneratedPassword => {
   };
 };
 
+// --- Password preview decision model ---
+//
+// The password tab can show two different things:
+//   1. the stored account password (described, never regenerated), and
+//   2. a password produced by the generator from the current recipe.
+//
+// `reducePasswordPreview` is the single place that decides which one wins.
+// It is pure so the rules stay verifiable outside React:
+//   - the stored account password is described only when it actually changes,
+//   - a recipe change always regenerates (the stored password never wins), and
+//   - a password the user asked for is never replaced by a late account update.
+
+export interface PasswordPreviewState {
+  /** Recipe the preview was last reconciled against. */
+  baselineOptions: PasswordOptions;
+  /** True while the preview shows the stored account password. */
+  showingExisting: boolean;
+  /** True once the user explicitly asked for a new password ("Generate again"). */
+  userGenerated: boolean;
+  /** True while a password is on screen. */
+  hasPreview: boolean;
+}
+
+export type PasswordPreviewEvent =
+  | { type: 'stored-password'; currentPassword?: string | undefined }
+  | { type: 'recipe-restored'; options: PasswordOptions }
+  | { type: 'options-changed'; options: PasswordOptions }
+  | { type: 'user-generate'; options: PasswordOptions };
+
+export type PasswordPreviewEffect =
+  | { kind: 'none' }
+  | { kind: 'describe-stored'; password: string }
+  | { kind: 'generate'; options: PasswordOptions };
+
+export interface PasswordPreviewOutcome {
+  state: PasswordPreviewState;
+  effect: PasswordPreviewEffect;
+}
+
+/** Compare two recipes by value; the generator only reacts to real changes. */
+export const arePasswordOptionsEqual = (a: PasswordOptions, b: PasswordOptions): boolean =>
+  a.length === b.length &&
+  a.uppercase === b.uppercase &&
+  a.lowercase === b.lowercase &&
+  a.numbers === b.numbers &&
+  a.symbols === b.symbols &&
+  a.excludeAmbiguous === b.excludeAmbiguous &&
+  a.excludeSimilar === b.excludeSimilar &&
+  (a.customCharset ?? '') === (b.customCharset ?? '') &&
+  (a.minUppercase ?? 0) === (b.minUppercase ?? 0) &&
+  (a.minLowercase ?? 0) === (b.minLowercase ?? 0) &&
+  (a.minNumbers ?? 0) === (b.minNumbers ?? 0) &&
+  (a.minSymbols ?? 0) === (b.minSymbols ?? 0);
+
+export const createPasswordPreviewState = (
+  options: PasswordOptions
+): PasswordPreviewState => ({
+  baselineOptions: options,
+  showingExisting: false,
+  userGenerated: false,
+  hasPreview: false,
+});
+
+/**
+ * Decide what the password tab should display next.
+ *
+ * The stored account password used to win every reconciliation, which froze
+ * the preview: option changes never produced a new password and a password
+ * the user generated by hand could be thrown away. The stored password is now
+ * only described when it actually changes, and a recipe change always
+ * regenerates from the current options.
+ */
+export const reducePasswordPreview = (
+  state: PasswordPreviewState,
+  event: PasswordPreviewEvent
+): PasswordPreviewOutcome => {
+  switch (event.type) {
+    case 'stored-password': {
+      const stored = event.currentPassword ?? '';
+      if (!stored || state.userGenerated) {
+        // Nothing to describe, or the user already owns the preview.
+        return { state, effect: { kind: 'none' } };
+      }
+      return {
+        state: { ...state, showingExisting: true, hasPreview: true },
+        effect: { kind: 'describe-stored', password: stored },
+      };
+    }
+
+    case 'recipe-restored': {
+      // Restoring the saved recipe is not a user edit: adopt it silently and
+      // refresh a generated preview so it matches the recipe. A stored account
+      // password keeps the screen.
+      const next: PasswordPreviewState = { ...state, baselineOptions: event.options };
+      if (state.showingExisting) {
+        return { state: next, effect: { kind: 'none' } };
+      }
+      return {
+        state: { ...next, hasPreview: true },
+        effect: { kind: 'generate', options: event.options },
+      };
+    }
+
+    case 'options-changed': {
+      const changed = !arePasswordOptionsEqual(state.baselineOptions, event.options);
+      const next: PasswordPreviewState = { ...state, baselineOptions: event.options };
+      if (!changed) {
+        // Same recipe: only fill an empty preview.
+        if (state.hasPreview) {
+          return { state: next, effect: { kind: 'none' } };
+        }
+        return {
+          state: { ...next, hasPreview: true },
+          effect: { kind: 'generate', options: event.options },
+        };
+      }
+      // The recipe changed: always regenerate. The stored account password
+      // must never win here - that is what froze the preview.
+      return {
+        state: { ...next, showingExisting: false, hasPreview: true },
+        effect: { kind: 'generate', options: event.options },
+      };
+    }
+
+    case 'user-generate': {
+      return {
+        state: {
+          ...state,
+          baselineOptions: event.options,
+          showingExisting: false,
+          userGenerated: true,
+          hasPreview: true,
+        },
+        effect: { kind: 'generate', options: event.options },
+      };
+    }
+
+    default:
+      return { state, effect: { kind: 'none' } };
+  }
+};
+
 interface PasswordGeneratorProps {
   onToast: (message: string) => void;
   currentPassword?: string;
@@ -3013,6 +3179,35 @@ const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({ onToast, currentP
   const [copied, setCopied] = useState(false);
   const [localLength, setLocalLength] = useState(options.length);
 
+  // Bookkeeping for "which password is on screen". It is not render state, so
+  // it lives in a ref and every change goes through `reducePasswordPreview`.
+  const previewStateRef = useRef<PasswordPreviewState>(createPasswordPreviewState(options));
+
+  const generatePassword = useCallback(
+    async (recipe?: PasswordOptions) => {
+      setLoading(true);
+      try {
+        if (!chrome?.runtime?.id) {
+          return;
+        }
+        const response = await safeSendMessage({
+          action: 'GENERATE_PASSWORD',
+          payload: recipe ?? options,
+        });
+        const typedResponse = response as GeneratePasswordResponse;
+        if (typedResponse.result) {
+          setPassword(typedResponse.result);
+        }
+      } catch (error) {
+        log.error('Failed to generate password', error);
+        onToast(t('passwordGenerateFailed'));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [options, onToast]
+  );
+
   // Seed from Options > Passwords so the page reflects the saved recipe.
   // Runs once per mount (the popup remounts on every open).
   useEffect(() => {
@@ -3022,6 +3217,16 @@ const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({ onToast, currentP
       .then((s) => {
         if (!cancelled && s?.passwordDefaults) {
           const stored = { ...s.passwordDefaults };
+          // Restoring the saved recipe is not a user edit, so it must not
+          // replace the stored account password that is on screen.
+          const outcome = reducePasswordPreview(previewStateRef.current, {
+            type: 'recipe-restored',
+            options: stored,
+          });
+          previewStateRef.current = outcome.state;
+          if (outcome.effect.kind === 'generate') {
+            void generatePassword(outcome.effect.options);
+          }
           setOptions(stored);
           setLocalLength(stored.length);
         }
@@ -3034,28 +3239,6 @@ const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({ onToast, currentP
     };
   }, []);
 
-  const generatePassword = useCallback(async () => {
-    setLoading(true);
-    try {
-      if (!chrome?.runtime?.id) {
-        return;
-      }
-      const response = await safeSendMessage({
-        action: 'GENERATE_PASSWORD',
-        payload: options,
-      });
-      const typedResponse = response as GeneratePasswordResponse;
-      if (typedResponse.result) {
-        setPassword(typedResponse.result);
-      }
-    } catch (error) {
-      log.error('Failed to generate password', error);
-      onToast(t('passwordGenerateFailed'));
-    } finally {
-      setLoading(false);
-    }
-  }, [options, onToast]);
-
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       setOptions((prev) => ({ ...prev, length: localLength }));
@@ -3063,24 +3246,31 @@ const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({ onToast, currentP
     return () => clearTimeout(timeoutId);
   }, [localLength]);
 
-  const passwordRef = useRef<GeneratedPassword | null>(null);
+  // The stored account password is described only when it actually changes.
+  // It must never win over a password the user generated.
   useEffect(() => {
-    passwordRef.current = password;
-  }, [password]);
-
-  const prevOptionsRef = useRef(options);
-
-  useEffect(() => {
-    if (currentPassword) {
-      setPassword(describeExistingPassword(currentPassword));
-    } else {
-      const optionsChanged = JSON.stringify(prevOptionsRef.current) !== JSON.stringify(options);
-      if (!passwordRef.current || optionsChanged) {
-        void generatePassword();
-        prevOptionsRef.current = options;
-      }
+    const outcome = reducePasswordPreview(previewStateRef.current, {
+      type: 'stored-password',
+      currentPassword,
+    });
+    previewStateRef.current = outcome.state;
+    if (outcome.effect.kind === 'describe-stored') {
+      setPassword(describeExistingPassword(outcome.effect.password));
     }
-  }, [currentPassword, generatePassword, options]);
+  }, [currentPassword]);
+
+  // The recipe drives the preview: every option change regenerates, even
+  // while an account password exists.
+  useEffect(() => {
+    const outcome = reducePasswordPreview(previewStateRef.current, {
+      type: 'options-changed',
+      options,
+    });
+    previewStateRef.current = outcome.state;
+    if (outcome.effect.kind === 'generate') {
+      void generatePassword(outcome.effect.options);
+    }
+  }, [options, generatePassword]);
 
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -3115,7 +3305,16 @@ const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({ onToast, currentP
   };
 
   const handleGeneratePassword = () => {
-    void generatePassword();
+    // "Generate again" is an explicit user request: remember it so a later
+    // account update cannot replace the password the user just asked for.
+    const outcome = reducePasswordPreview(previewStateRef.current, {
+      type: 'user-generate',
+      options,
+    });
+    previewStateRef.current = outcome.state;
+    if (outcome.effect.kind === 'generate') {
+      void generatePassword(outcome.effect.options);
+    }
   };
 
   const handleCopyPassword = () => {
@@ -3170,7 +3369,7 @@ const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({ onToast, currentP
                 className="strength-level-label"
                 data-level={strengthLevel(password.strength.score)}
               >
-                {password.strength.level}
+                {passwordStrengthLevelLabel(password.strength.level)}
               </span>
               <span
                 className="strength-level-percent"
@@ -3326,8 +3525,8 @@ const QuickActionsComponent: React.FC<QuickActionsProps> = ({
           type="button"
           className={`action-icon ${passwordCopied ? 'success' : ''}`}
           onClick={onCopyPassword}
-          title="Copy password"
-          aria-label="Copy password to clipboard"
+          title={t('copyPasswordTitle')}
+          aria-label={t('copyPasswordToClipboard')}
           disabled={!password || isGeneratingPassword}
         >
           {passwordCopied ? <Check size={14} /> : <Copy size={14} />}
@@ -3336,8 +3535,8 @@ const QuickActionsComponent: React.FC<QuickActionsProps> = ({
           type="button"
           className="action-icon"
           onClick={onToggleShowPassword}
-          title={showPassword ? 'Hide' : 'Show'}
-          aria-label={showPassword ? 'Hide password' : 'Show password'}
+          title={showPassword ? t('hideLabel') : t('showLabel')}
+          aria-label={showPassword ? t('passwordHide') : t('passwordShow')}
           disabled={!password || isGeneratingPassword}
         >
           {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -3346,8 +3545,8 @@ const QuickActionsComponent: React.FC<QuickActionsProps> = ({
           type="button"
           className="action-icon"
           onClick={onGeneratePassword}
-          title="Generate new password"
-          aria-label="Generate new secure password"
+          title={t('generateNewPassword')}
+          aria-label={t('generateNewSecurePassword')}
           disabled={isGeneratingPassword}
         >
           <RefreshCw size={14} className={isGeneratingPassword ? 'spin' : ''} />

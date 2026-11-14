@@ -98,7 +98,7 @@ const formatHistoryDate = (ts: number): string => {
   }
 };
 
-const errorMessage = (e: unknown, fallback = 'Error'): string =>
+const errorMessage = (e: unknown, fallback = t('genericError')): string =>
   e instanceof Error ? e.message : fallback;
 
 // ─── Brand Logos ──────────────────────────────────────────
@@ -139,7 +139,7 @@ const GeneratorTab: React.FC<GeneratorTabProps> = ({
     <div className="alias-gen-card">
       <div className="alias-gen-input-group">
         <label htmlFor="alias-domain-input" className="alias-gen-label">
-          <Globe size={13} className="alias-gen-label-icon" /> Website Domain
+          <Globe size={13} className="alias-gen-label-icon" /> {t('websiteDomain')}
         </label>
         <div className="setup-input-wrapper generator-input-wrapper">
           <Globe size={15} className="input-icon-left" />
@@ -191,7 +191,7 @@ const GeneratorTab: React.FC<GeneratorTabProps> = ({
               className={`alias-copy-btn ${isCopied ? 'alias-copy-btn--copied' : ''}`}
             >
               {isCopied ? <Check size={12} /> : <Copy size={12} />}
-              <span>{isCopied ? 'Copied!' : 'Copy'}</span>
+              <span>{isCopied ? t('copiedExclamation') : t('copyShort')}</span>
             </button>
           </div>
           <div
@@ -200,7 +200,7 @@ const GeneratorTab: React.FC<GeneratorTabProps> = ({
           >
             <span className="alias-result-type">
               <span className="alias-result-type-dot" />
-              Combined dot + plus
+              {t('combinedDotPlus')}
             </span>
             <span className="alias-result-domain truncate">{cleanDomain}</span>
             {gmailBase && (
@@ -208,7 +208,7 @@ const GeneratorTab: React.FC<GeneratorTabProps> = ({
                 className="alias-result-original truncate"
                 style={{ fontSize: '11px', color: 'var(--gf-text-muted)', opacity: 0.8 }}
               >
-                Original: {gmailBase}
+                {t('originalLabel')} {gmailBase}
               </span>
             )}
           </div>
@@ -219,8 +219,8 @@ const GeneratorTab: React.FC<GeneratorTabProps> = ({
             <HelpCircle size={22} />
           </div>
           <div className="alias-gen-empty-text">
-            <span className="alias-gen-empty-title">Enter a domain above</span>
-            <span className="alias-gen-empty-sub">Your alias will appear here instantly</span>
+            <span className="alias-gen-empty-title">{t('enterDomainAbove')}</span>
+            <span className="alias-gen-empty-sub">{t('aliasWillAppear')}</span>
           </div>
         </div>
       )}
@@ -234,8 +234,9 @@ const GeneratorTab: React.FC<GeneratorTabProps> = ({
         >
           <Sparkles size={11} />{' '}
           <span>
-            Same domain always generates the same alias.
-            <kbd className="alias-kbd">Enter</kbd> to copy.
+            {t('sameDomainSameAlias')}{' '}
+            <kbd className="alias-kbd">Enter</kbd>
+            {t('toCopySuffix')}
           </span>
         </motion.div>
       )}
@@ -271,12 +272,12 @@ const InboxTab: React.FC<InboxTabProps> = ({
   const showList = !isManual && inbox.length > 0;
 
   return (
-    <div className="alias-inbox-card" role="region" aria-label="Recent inbox">
+    <div className="alias-inbox-card" role="region" aria-label={t('recentInbox')}>
       <div className="alias-inbox-header">
         <div className="alias-inbox-title-row">
           <Inbox size={15} className="alias-inbox-title-icon" />
           <span className="alias-inbox-title" role="heading" aria-level={2}>
-            Recent inbox
+            {t('recentInbox')}
           </span>
           {!isManual && inbox.length > 0 && (
             <span className="alias-inbox-count">{inbox.length}</span>
@@ -289,7 +290,7 @@ const InboxTab: React.FC<InboxTabProps> = ({
             onClick={onRefresh}
             disabled={loading}
             aria-busy={loading}
-            aria-label="Refresh inbox"
+            aria-label={t('refreshInbox')}
           >
             <RefreshCw size={14} className={loading ? 'gf-spin' : ''} aria-hidden="true" />
           </button>
@@ -301,8 +302,8 @@ const InboxTab: React.FC<InboxTabProps> = ({
           <div className="alias-inbox-manual-icon">
             <Inbox size={24} />
           </div>
-          <span className="alias-inbox-manual-title">Inbox needs Google sign-in</span>
-          <span className="alias-inbox-manual-desc">Manual connection generates aliases only.</span>
+          <span className="alias-inbox-manual-title">{t('inboxNeedsGoogleSignIn')}</span>
+          <span className="alias-inbox-manual-desc">{t('manualConnectionAliasesOnly')}</span>
           <button
             type="button"
             onClick={onSignIn}
@@ -310,7 +311,7 @@ const InboxTab: React.FC<InboxTabProps> = ({
             className="alias-oauth-connect-btn"
           >
             {signingIn ? <RefreshCw size={13} className="spin" /> : <LogIn size={13} />}
-            <span>{signingIn ? 'Connecting…' : 'Use Google sign-in'}</span>
+            <span>{signingIn ? t('connecting') : t('useGoogleSignIn')}</span>
           </button>
         </div>
       )}
@@ -327,7 +328,7 @@ const InboxTab: React.FC<InboxTabProps> = ({
           <div className="alias-inbox-spinner" aria-hidden="true">
             <RefreshCw size={20} className="spin" />
           </div>
-          <span>Loading inbox…</span>
+          <span>{t('loadingInboxEllipsis')}</span>
         </div>
       )}
 
@@ -336,8 +337,8 @@ const InboxTab: React.FC<InboxTabProps> = ({
           <div className="alias-inbox-empty-icon">
             <Inbox size={26} />
           </div>
-          <span className="alias-inbox-empty-title">All caught up</span>
-          <span className="alias-inbox-empty-sub">No recent emails in the last 3 days</span>
+          <span className="alias-inbox-empty-title">{t('allCaughtUp')}</span>
+          <span className="alias-inbox-empty-sub">{t('noRecentEmailsThreeDays')}</span>
         </div>
       )}
 
@@ -364,7 +365,7 @@ const InboxTab: React.FC<InboxTabProps> = ({
                     <span className="alias-inbox-date">{msg.dateFormatted}</span>
                   </div>
                   <span className="alias-inbox-subject truncate">
-                    {msg.subject || '(No subject)'}
+                    {msg.subject || t('noSubject')}
                   </span>
                 </div>
               </div>
@@ -372,7 +373,11 @@ const InboxTab: React.FC<InboxTabProps> = ({
                 type="button"
                 className="alias-inbox-open-btn"
                 onClick={() => onOpenMessage(msg)}
-                aria-label={`${msg.isUnread ? 'Open unread message' : 'Open message'} from ${getSenderLabel(getSenderSource(msg.fromName, msg.fromEmail || msg.from), msg.subject, null, msg.htmlBody || msg.body || msg.snippet)}: ${msg.subject}`}
+                aria-label={t('openMessageFrom', [
+                  t(msg.isUnread ? 'openUnreadMessage' : 'openMessage'),
+                  getSenderLabel(getSenderSource(msg.fromName, msg.fromEmail || msg.from), msg.subject, null, msg.htmlBody || msg.body || msg.snippet),
+                  msg.subject,
+                ])}
                 disabled={openingMessageId === msg.id}
               >
                 {openingMessageId === msg.id ? (
@@ -396,18 +401,18 @@ interface HistoryTabProps {
 }
 
 const HistoryTab: React.FC<HistoryTabProps> = ({ history, onClear, onToast }) => (
-  <div className="alias-history-card" role="region" aria-label="Alias tracker">
+  <div className="alias-history-card" role="region" aria-label={t('aliasTracker')}>
     <div className="alias-history-header">
       <div className="alias-history-title-group">
         <Shield size={15} />
         <span role="heading" aria-level={2}>
-          Alias tracker
+          {t('aliasTracker')}
         </span>
         {history.length > 0 && <span className="alias-history-count">{history.length}</span>}
       </div>
       {history.length > 0 && (
         <button type="button" className="alias-clear-history-btn" onClick={onClear}>
-          Clear All
+          {t('clearAllLabel')}
         </button>
       )}
     </div>
@@ -418,8 +423,8 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ history, onClear, onToast }) =>
           <div className="alias-history-empty-icon">
             <Shield size={24} />
           </div>
-          <span className="alias-history-empty-title">No aliases tracked yet</span>
-          <span className="alias-history-empty-sub">Copy an alias from the generator</span>
+          <span className="alias-history-empty-title">{t('noAliasesTrackedYet')}</span>
+          <span className="alias-history-empty-sub">{t('copyAliasFromGenerator')}</span>
         </div>
       ) : (
         history.map((item) => (
@@ -438,9 +443,11 @@ const HistoryTab: React.FC<HistoryTabProps> = ({ history, onClear, onToast }) =>
             <button
               type="button"
               className="alias-history-copy-btn"
-              aria-label={`Copy ${item.alias}`}
+              aria-label={t('copyAliasInterpolated', [item.alias])}
               onClick={() =>
-                void copyToClipboard(item.alias).then((ok) => onToast(ok ? 'Copied' : 'Failed'))
+                void copyToClipboard(item.alias).then((ok) =>
+                  onToast(ok ? t('copiedShort') : t('genericFailed'))
+                )
               }
             >
               <Copy size={12} />
@@ -694,12 +701,12 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast }) => {
         }
       } else {
         if (requestSeq === inboxRequestSeqRef.current) {
-          setGmailInboxError(res?.error || 'Failed to fetch');
+          setGmailInboxError(res?.error || t('failedToFetch'));
         }
       }
     } catch (e) {
       if (requestSeq === inboxRequestSeqRef.current) {
-        setGmailInboxError(errorMessage(e, 'Network error'));
+        setGmailInboxError(errorMessage(e, t('networkError')));
       }
     } finally {
       if (requestSeq === inboxRequestSeqRef.current) {
@@ -788,14 +795,14 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast }) => {
             });
           }
         } else {
-          setMessageError(res?.error || 'Failed to load message');
-          onToast(res?.error || 'Failed to load message');
+          setMessageError(res?.error || t('failedToLoadMessage'));
+          onToast(res?.error || t('failedToLoadMessage'));
         }
       } catch (e) {
         if (requestSeq !== messageRequestSeqRef.current) {
           return;
         }
-        const msg = errorMessage(e, 'Failed to load message');
+        const msg = errorMessage(e, t('failedToLoadMessage'));
         setMessageError(msg);
         onToast(msg);
       } finally {
@@ -817,18 +824,18 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast }) => {
   const handleCopy = useCallback(
     (alias: string, type: AliasHistoryItem['type'], website: string) => {
       if (!alias) {
-        onToast('Enter a domain first');
+        onToast(t('enterDomainFirst'));
         return;
       }
       void copyToClipboard(alias)
         .then((ok) => {
           if (!ok) {
-            onToast('Failed to copy');
+            onToast(t('copyFailed'));
             return;
           }
           setCopiedAlias(alias);
           setCopyCelebrating(true);
-          onToast('Alias copied');
+          onToast(t('aliasCopied'));
 
           if (gmailBase) {
             const site = website || 'general';
@@ -850,7 +857,7 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast }) => {
             setCopyCelebrating(false);
           }, COPY_RESET_MS);
         })
-        .catch(() => onToast('Failed to copy'));
+        .catch(() => onToast(t('copyFailed')));
     },
     [gmailBase, addAliasToHistory, onToast]
   );
@@ -881,12 +888,12 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast }) => {
         applyConnection(res.profile, false);
         await persistGmailConnection(res.profile, false);
         setGmailSetupRequired(false);
-        onToast(`Connected: ${res.profile.email}`);
+        onToast(t('connectedWithEmail', [res.profile.email]));
       } else {
         const setupRequired = isGmailSetupResponse(res);
         const err = setupRequired
           ? formatGmailSetupError(res?.error)
-          : res?.error || 'Sign-in failed';
+          : res?.error || t('signInFailed');
         setGmailSetupRequired(setupRequired);
         setSignInError(err);
         onToast(err);
@@ -910,7 +917,7 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast }) => {
       setGmailInbox([]);
       setGmailIsManual(false);
       setPreferredEmailType('disposable');
-      onToast('Disconnected');
+      onToast(t('disconnected'));
     } catch (e) {
       onToast(errorMessage(e));
     }
@@ -941,7 +948,7 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast }) => {
               </div>
               <div className="alias-signin-error">
                 <div className="alias-signin-error-title">
-                  <AlertCircle size={12} /> Sign-in failed
+                  <AlertCircle size={12} /> {t('signInFailed')}
                 </div>
                 <div className="alias-signin-error-text">{signInError}</div>
               </div>
@@ -952,7 +959,7 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast }) => {
                 className="alias-connect-btn"
               >
                 {signingIn ? <RefreshCw size={14} className="spin" /> : <LogIn size={14} />}
-                <span>{signingIn ? 'Connecting…' : 'Try again'}</span>
+                <span>{signingIn ? t('connecting') : t('tryAgain')}</span>
               </button>
               {gmailSetupRequired && (
                 <button
@@ -962,7 +969,7 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast }) => {
                   className="alias-connect-btn secondary-btn"
                 >
                   <Settings size={14} />
-                  <span>Gmail settings</span>
+                  <span>{t('gmailSettingsLabel')}</span>
                 </button>
               )}
             </>
@@ -974,10 +981,8 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast }) => {
               {hydrated ? (
                 <>
                   <div className="alias-setup-copy">
-                    <h3 className="alias-setup-title">Create Gmail aliases</h3>
-                    <p className="alias-setup-subtitle">
-                      Sign in to generate and track unlimited Gmail aliases.
-                    </p>
+                    <h3 className="alias-setup-title">{t('createGmailAliases')}</h3>
+                    <p className="alias-setup-subtitle">{t('signInGenerateTrackAliases')}</p>
                   </div>
                   <button
                     type="button"
@@ -986,7 +991,7 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast }) => {
                     className="alias-connect-btn"
                   >
                     {signingIn ? <RefreshCw size={14} className="spin" /> : <LogIn size={14} />}
-                    <span>{signingIn ? 'Connecting…' : 'Connect with Google'}</span>
+                    <span>{signingIn ? t('connecting') : t('connectWithGoogle')}</span>
                   </button>
                 </>
               ) : (
@@ -994,7 +999,7 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast }) => {
                   className="alias-signin-error-title"
                   style={{ justifyContent: 'center', marginTop: 8 }}
                 >
-                  <RefreshCw size={14} className="spin" /> Loading…
+                  <RefreshCw size={14} className="spin" /> {t('loadingEllipsis')}
                 </div>
               )}
             </>
@@ -1032,8 +1037,8 @@ const AliasPanel: React.FC<Props> = ({ initialTab = 'generator', onToast }) => {
           type="button"
           className="alias-signout-btn"
           onClick={() => void handleSignOut()}
-          aria-label="Disconnect"
-          title="Disconnect"
+          aria-label={t('disconnect')}
+          title={t('disconnect')}
         >
           <LogOut size={14} />
         </button>

@@ -301,7 +301,15 @@ export function extractLinkCognitive(
     embeddedCodeParam: null,
     anchorText: best.anchorText,
     context: best.surrounding || best.anchorText,
-    domainTrust: best.originBound ? 90 : Math.max(40, finalGate.quality * 0.7),
+    // Domain trust (2026-11-12 security fix): an unknown domain must be able
+    // to score a genuinely low trust. The previous floor (Math.max(40, …))
+    // silently promoted every unknown destination to a trust the decision
+    // engine can never penalise (< 20 / < 40), so a phishing host with a
+    // convincing activation URL always looked "trusted enough". The trust is
+    // now the activation quality scaled down for an unbound destination; only
+    // a destination that is actually bound to the expected origin keeps the
+    // high value.
+    domainTrust: best.originBound ? 90 : finalGate.quality * 0.7,
     originBound: best.originBound,
     isShortened: false,
     redirectChain: [],

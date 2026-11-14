@@ -106,7 +106,20 @@ try {
     if ($incoming.version -ne $releaseVersion -or [version]$incoming.version -lt [version]$current.version) {
         throw 'The package version is invalid or older than the installed version.'
     }
-    if ($incoming.key -ne $current.key) { throw 'This package changes the extension identity. The installed version was left unchanged.' }
+    # Manifest 'key' is optional and no shipped manifest defines one today. If either
+    # side defines it, identity must match exactly or the update is rejected. If neither
+    # does, identity cannot be verified from the manifest at all: say so loudly instead
+    # of silently passing, and make clear that integrity rests solely on the SHA-256
+    # checksum verified above.
+    $incomingHasKey = $null -ne $incoming.key
+    $currentHasKey = $null -ne $current.key
+    if ($incomingHasKey -or $currentHasKey) {
+        if (-not ($incomingHasKey -and $currentHasKey) -or $incoming.key -ne $current.key) {
+            throw 'This package changes the extension identity. The installed version was left unchanged.'
+        }
+    } else {
+        Write-Host 'WARNING: Neither the installed nor the incoming manifest defines a key. Extension identity cannot be verified from the manifest; integrity is enforced only via the SHA-256 checksum of this package.' -ForegroundColor Yellow
+    }
     if ([bool]$incoming.oauth2 -ne [bool]$current.oauth2) { throw 'Use the same build profile: Gmail-enabled and temporary-email-only packages cannot be swapped by this updater.' }
 
     $backup = [IO.Path]::GetFullPath((Join-Path $parent ('.ghostfill-backup-' + $current.version + '-' + [guid]::NewGuid().ToString('N'))))

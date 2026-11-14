@@ -236,6 +236,7 @@ vitest-out.txt
 # Local Scripts & IDE Tools
 # ───────────────────────────────────────────────────────────────────
 .serena/
+.playwright-mcp/
 
 # Preserve agent workflow docs
 !.agents/**

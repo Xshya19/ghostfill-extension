@@ -1,6 +1,6 @@
 import { rootDomain } from '../utils/core';
 import { verificationSiteRoot } from '../utils/verificationSite';
-import { scoreActivationLink } from './extraction/activationLinkGuard';
+import { hostMatchesExpectation, scoreActivationLink } from './extraction/activationLinkGuard';
 import type {
   EmailDecision,
   EmailDecisionAction,
@@ -14,6 +14,12 @@ interface DecisionInput {
   extraction: ExtractionResult;
   sender?: string;
   expectedDomains?: string[];
+  /**
+   * The account's signup origin — the site the user is actually registering
+   * on. Callers that know the account supply it so the destination of an
+   * activation link can be bound to a host the attacker does not control.
+   */
+  originUrl?: string | undefined;
 }
 
 const SUSPICIOUS_TLDS = new Set(['tk', 'ml', 'ga', 'cf', 'gq', 'buzz', 'top', 'xyz']);
@@ -83,6 +89,19 @@ function expectedRootSet(expectedDomains: string[] | undefined): Set<string> {
     }
   }
   return roots;
+}
+
+/** Registrable root of the account's signup origin, when it is known. */
+function originRoot(originUrl: string | undefined): string | null {
+  if (!originUrl) {
+    return null;
+  }
+  try {
+    const host = new URL(originUrl).hostname.toLowerCase();
+    return host.includes('.') ? rootDomain(host) : null;
+  } catch {
+    return null;
+  }
 }
 
 function getLinkTrust(link: ExtractionResult['link']): number | null {
@@ -346,13 +365,55 @@ export function assessEmailDecision(input: DecisionInput): EmailDecision {
 
   if (extraction.link?.url && (action === 'open-link' || action === 'fill-otp-and-open-link')) {
     const link = extraction.link;
+    // Domain binding (2026-11-12 security fix): the destination must be a
+    // host the extension can vouch for. The trusted set is the site the user
+    // is actually signing up for (waiting tabs / the account origin) plus the
+    // sender's domain. The sender is attacker controlled, so it may only
+    // corroborate a destination — it can never replace the site context.
+    const siteContextRoots = new Set<string>(expectedRootSet(input.expectedDomains).values());
+    const origin = originRoot(input.originUrl);
+    if (origin) {
+      siteContextRoots.add(origin);
+    }
+    const senderDomain = senderRoot(input.sender);
+    const trustedHosts = [
+      ...siteContextRoots,
+      ...(senderDomain ? [verificationSiteRoot(senderDomain)] : []),
+    ];
     const gate = scoreActivationLink(
       link.url,
       link.anchorText || '',
-      'context' in link ? link.context || '' : ''
+      'context' in link ? link.context || '' : '',
+      { trustedHosts }
     );
     reasons.push(`link-gate:${gate.cls}:q${gate.quality}`);
-    if (!gate.canAutoOpen || risk !== 'low' || domainContext.warnings.length > 0) {
+
+    let linkHost = '';
+    try {
+      linkHost = new URL(link.url).hostname;
+    } catch {
+      /* the gate already rejects malformed destinations */
+    }
+    // A self-consistent phishing email (sender domain == link domain) proves
+    // nothing: both sides are written by the attacker. The link may only be
+    // opened automatically when it points at the site the user is signing up
+    // for. Without such a site context the automatic open is refused.
+    const siteBound =
+      siteContextRoots.size > 0 && hostMatchesExpectation(linkHost, [...siteContextRoots]);
+    if (!siteBound) {
+      warnings.push(
+        siteContextRoots.size > 0
+          ? 'link-not-bound-to-site-context'
+          : 'auto-open-requires-site-context'
+      );
+    }
+
+    if (
+      !gate.canAutoOpen ||
+      !siteBound ||
+      risk !== 'low' ||
+      domainContext.warnings.length > 0
+    ) {
       action = extraction.otp ? 'fill-otp' : 'show-review';
       warnings.push('link-requires-review');
     }

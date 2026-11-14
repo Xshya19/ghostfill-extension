@@ -68,6 +68,10 @@ function validateDist() {
     'options.css',
     'offscreen.html',
     'offscreen.js',
+    // Production builds (both profiles) emit a shared vendor chunk for the
+    // popup/options entries (see webpack.config.cjs splitChunks), and
+    // scripts/update-extension.ps1 refuses to install a package missing it.
+    'vendor.js',
   ]);
 
   const manifestPath = path.join(DIST_DIR, 'manifest.json');

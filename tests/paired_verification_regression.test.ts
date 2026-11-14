@@ -92,9 +92,16 @@ describe('paired verification messages', () => {
     expect(scoreActivationLink(notionLink('451612'), 'Sign in with Magic Link').cls).toBe(
       'magic-login'
     );
-    expect(scoreActivationLink(notionLink('451612'), 'Sign in with Magic Link').canAutoOpen).toBe(
-      true
-    );
+    // The automatic open additionally needs a domain binding (2026-11-12):
+    // the destination has to be a host the caller vouches for.
+    expect(
+      scoreActivationLink(notionLink('451612'), 'Sign in with Magic Link', '', {
+        trustedHosts: ['app.notion.com'],
+      }).canAutoOpen
+    ).toBe(true);
+    expect(
+      scoreActivationLink(notionLink('451612'), 'Sign in with Magic Link').canAutoOpen
+    ).toBe(false);
     expect(
       scoreActivationLink(
         'https://app.example.com/redirect?state=fixture_state_123456789',

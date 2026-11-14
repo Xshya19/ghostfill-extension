@@ -12,6 +12,7 @@ import {
 } from '../../services/extraction/explicitCode';
 import { storageService } from '../../services/storageService';
 import { Email, StorageSchema } from '../../types';
+import { watchConnectivity } from '../../utils/connectivity';
 import { contentFingerprint } from '../../utils/contentFingerprint';
 import { contentToString, isWebUrl } from '../../utils/core';
 import { safeSendMessage } from '../../utils/messaging';
@@ -211,4 +212,56 @@ export function useStorageSubscription<K extends keyof StorageSchema>(
   }, [key]);
 
   return value;
+}
+
+/**
+ * Track machine connectivity for the popup (2026-11-12).
+ *
+ * Two sources are combined on purpose:
+ * - window online/offline events update instantly for this window;
+ * - the background's CONNECTIVITY_CHANGE broadcast carries the
+ *   authoritative, probe-informed state (e.g. it knows a fetch just
+ *   failed at the network level while navigator still says online).
+ *
+ * Generation of passwords and identity fields is local and works
+ * offline; only provider-backed operations (temp addresses, inbox
+ * checks) actually need the network.
+ */
+export function useConnectivity(): { online: boolean } {
+  const [online, setOnline] = useState<boolean>(() =>
+    typeof navigator === 'undefined' ? true : navigator.onLine !== false
+  );
+
+  useEffect(() => {
+    const unsubscribe = watchConnectivity(setOnline);
+
+    const onRuntimeMessage = (message: unknown): undefined => {
+      const typed = message as { action?: string; payload?: { online?: boolean } };
+      if (
+        typed &&
+        typed.action === 'CONNECTIVITY_CHANGE' &&
+        typeof typed.payload?.online === 'boolean'
+      ) {
+        setOnline(typed.payload.online);
+      }
+      return undefined; // no async response — close the message channel
+    };
+
+    try {
+      chrome.runtime.onMessage.addListener(onRuntimeMessage);
+    } catch {
+      /* runtime unavailable (tests/previews) — window events still work */
+    }
+
+    return () => {
+      unsubscribe();
+      try {
+        chrome.runtime.onMessage.removeListener(onRuntimeMessage);
+      } catch {
+        /* ignore */
+      }
+    };
+  }, []);
+
+  return { online };
 }

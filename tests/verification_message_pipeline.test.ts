@@ -90,6 +90,17 @@ function waitOnNotion() {
     deliveryAttempts: 0,
   });
 }
+function waitOnClaude() {
+  const tabs = getOTPWaitingTabs() as Map<number, unknown>;
+  tabs.set(11, {
+    url: 'https://claude.ai/login',
+    hostname: 'claude.ai',
+    fieldSelectors: ['#otp'],
+    registeredAt: Date.now(),
+    priority: 1,
+    deliveryAttempts: 0,
+  });
+}
 
 beforeAll(() => {
   setupMessageHandler();
@@ -113,6 +124,10 @@ afterEach(() => {
 
 describe('message-to-page verification flow', () => {
   it('preserves the extracted button text when the popup hands off a magic link', async () => {
+    // The automatic hand-off is bound to the site the user is waiting on
+    // (2026-11-12 security fix): a mail that is only consistent with itself
+    // must never open a destination automatically.
+    waitOnClaude();
     const url = 'https://claude.ai/magic-link#fixture_auth_token_123456789';
     const response = await send(message({
       subject: 'Sign in to Claude.ai',
@@ -186,10 +201,15 @@ describe('message-to-page verification flow', () => {
     );
     expect(linkService.handleDetectedLink).not.toHaveBeenCalled();
   });
-  it('can use the approved companion link when there is no waiting code page', async () => {
+  it('keeps the companion link for the user when no site context confirms the destination', async () => {
+    // Without a site context (no waiting tab, no account origin) the
+    // companion link is reported but NOT opened automatically
+    // (2026-11-12 security fix): a mail that is only consistent with itself
+    // must never drive an automatic navigation. The user can still open it
+    // explicitly from the popup.
     const response = await send(message());
     expect(response).toMatchObject({ success: true, otp: '451612', link });
-    expect(linkService.handleDetectedLink).toHaveBeenCalledTimes(1);
+    expect(linkService.handleDetectedLink).not.toHaveBeenCalled();
     expect(safeSendTabMessage).not.toHaveBeenCalled();
   });
   it('uses the approved companion link after a matching page refuses the code', async () => {

@@ -6,6 +6,7 @@ import { getSenderSource } from '../../utils/emailIdentity';
 import { getRandomInt, getRandomString } from '../../utils/encryption';
 import { generateHumanLikeUsername } from '../../utils/humanNameGenerator';
 import { createLogger } from '../../utils/logger';
+import { extractMessageList } from './messageListShape';
 
 const log = createLogger('MailTmService');
 
@@ -655,7 +656,12 @@ export class MailTmService {
         }
 
         const data = await retryResponse.json();
-        const messages: MailTmMessage[] = data['hydra:member'] || [];
+        // Malformed payloads must throw — mapping them onto [] would look
+        // like an empty inbox and the aggregator would score the check as a
+        // success (no circuit breaker, no fallback provider).
+        const messages = extractMessageList(data, 'Mail.tm getMessages', {
+          keys: ['hydra:member'],
+        }) as MailTmMessage[];
 
         this.consecutiveErrors = 0;
         return this.enrichWithFullBody(messages, signal);
@@ -666,7 +672,9 @@ export class MailTmService {
       }
 
       const data = await response.json();
-      const messages: MailTmMessage[] = data['hydra:member'] || [];
+      const messages = extractMessageList(data, 'Mail.tm getMessages', {
+        keys: ['hydra:member'],
+      }) as MailTmMessage[];
 
       this.consecutiveErrors = 0;
       return this.enrichWithFullBody(messages, signal);
