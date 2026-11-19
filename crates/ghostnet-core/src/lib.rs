@@ -1,15 +1,17 @@
 pub mod action;
 pub mod encoder;
 pub mod pointer;
+pub mod tokenizer;
 
 use wasm_bindgen::prelude::*;
 pub use action::*;
 pub use encoder::*;
 pub use pointer::*;
+pub use tokenizer::*;
 
 #[wasm_bindgen]
 pub fn ghostnet_version() -> String {
-    "GhostNet v2 (Rust/Wasm Core 0.4.0)".to_string()
+    "GhostNet v2 (Rust/Wasm Core 0.5.0)".to_string()
 }
 
 /// SIMD / Scalar accelerated GEMM: C[seq][out] += A[seq][in] * W[out][in]
