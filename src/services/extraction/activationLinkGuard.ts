@@ -78,7 +78,7 @@ const STRONG_PATH_RE =
   /\/(?:verify(?:[-_]?(?:email|account|address|user|phone|identity|mail))?|verification(?:[-_]?(?:email|account|link|code))?|e[-_]?verify|email[-_]?verif(?:y|ication)|verif(?:y|ication)[-_]?email|activate(?:[-_]?(?:email|account|user|membership|subscription|mail))?|activation(?:[-_]?(?:email|account|link))?|active[-_]?(?:email|account|mail|user)?|confirm(?:[-_]?(?:email|account|address|user|identity|registration|signup|sign[-_]?up|mail))?|confirmation(?:[-_]?(?:email|account|link))?|email[-_]?confirm(?:ation)?|confirm[-_]?email|validate(?:[-_]?(?:email|account|address|user|identity))?|validation(?:[-_]?(?:email|account))?|email[-_]?validat(?:e|ion)|register(?:ation)?(?:[-_]?(?:confirm|verify|activate|complete|finish))?|signup|sign[-_]?up|complete[-_]?(?:signup|sign[-_]?up|registration|setup|account|email|profile|onboarding)?|finish[-_]?(?:signup|sign[-_]?up|registration|setup|account)?|onboard(?:ing)?(?:[-_]?(?:complete|finish|verify|confirm))?|welcome(?:[-_]?(?:aboard|back))?|magic(?:[-_]?(?:link|login|auth))?|passwordless|signin[-_]?link|sign[-_]?in[-_]?link|login[-_]?link|log[-_]?in[-_]?link|email[-_]?(?:login|signin|sign[-_]?in|link|action)|email\/action|auth\/action|__\/auth\/action|auth(?:enticate)?[-_]?(?:link|email|action|verify|confirm)?|accept[-_]?(?:invite|invitation|request)?|invitation|invite(?:[-_]?(?:accept|join|link))?|join[-_]?(?:workspace|team|org|organization|organisation|group|project|board)?|authorize|authorise|approve|authenticate|device[-_]?(?:confirm|auth|trust|verify|approve)?|trust[-_]?device|reset[-_]?password|password[-_]?reset|forgot[-_]?password|password[-_]?forgot|recover[-_]?(?:password|account)|change[-_]?password|set[-_]?password|create[-_]?password|choose[-_]?password|unlock(?:[-_]?account)?|enable(?:[-_]?(?:account|email|2fa|mfa))?|claim(?:[-_]?(?:account|profile|invite))?|consent|acknowledge|prove[-_]?(?:identity|ownership)?|email[-_]?action|user(?:s)?\/(?:activate|verify|confirm|validate|enable)|account(?:s)?\/(?:activate|verify|confirm|validate|enable)|member(?:s)?\/(?:activate|verify|confirm)|oauth\/callback|callback|link\/(?:login|auth|verify)|login\/link|auth\/link|continue(?:[-_]?(?:signup|registration|setup))?|proceed|secure[-_]?(?:account|link)?)(?:\/|$|\?|#)/i;
 
 const STRONG_QUERY =
-  /[?&#](?:token|confirmation[_-]?token|confirm[_-]?token|activation[_-]?token|verify[_-]?token|verification[_-]?token|validation[_-]?token|invite[_-]?token|invitation[_-]?token|magic[_-]?token|access[_-]?token|id[_-]?token|email[_-]?token|auth[_-]?token|login[_-]?token|reset[_-]?token|recovery[_-]?token|oob[_-]?code|oobCode|mode=(?:verifyEmail|resetPassword|recoverEmail|signIn)|action=(?:verify|confirm|activate|validate|reset|accept)|type=(?:activation|verification|confirm|email[_-]?verif|invite))=/i;
+  /[?&#](?:token|confirmation[_-]?token|confirm[_-]?token|activation[_-]?token|verify[_-]?token|verification[_-]?token|validation[_-]?token|invite[_-]?token|invitation[_-]?token|magic[_-]?token|session|session[_-]?token|access[_-]?token|id[_-]?token|email[_-]?token|auth[_-]?token|login[_-]?token|reset[_-]?token|recovery[_-]?token|oob[_-]?code|oobCode|mode=(?:verifyEmail|resetPassword|recoverEmail|signIn)|action=(?:verify|confirm|activate|validate|reset|accept)|type=(?:activation|verification|confirm|email[_-]?verif|invite))=/i;
 
 /**
  * Anchor / button / nearby copy synonyms.
@@ -127,7 +127,7 @@ const SOFT_MARKETING =
 
 function hasAuthToken(url: string): boolean {
   return (
-    /[?&#](?:token|code|sig|signature|access_token|id_token|confirmation_token|invite_token|oobCode|oob_code|reset_token|magic_token|login_token)=[A-Za-z0-9._%-]{8,}/i.test(
+    /[?&#](?:token|code|sig|signature|session|session_token|access_token|id_token|confirmation_token|invite_token|oobCode|oob_code|reset_token|magic_token|login_token)=[A-Za-z0-9._%-]{8,}/i.test(
       url
     ) || /#(?:token|code|oobCode)=[A-Za-z0-9._%-]{8,}/i.test(url)
   );
@@ -198,6 +198,7 @@ function classifyPath(url: string, anchorText = ''): ActivationLinkClass {
   }
   if (
     EMAIL_LOGIN_PATH_RE.test(parsed.pathname) ||
+    (/\/(?:oauth|auth)\/callback(?:\/|$)/i.test(parsed.pathname) && hasAuthToken(url)) ||
     /magic|passwordless|signin[-_]?link|login[-_]?link|email[-_]?login|mode=signIn|one[\s-]?click/i.test(
       hay
     )
@@ -388,9 +389,12 @@ export function scoreActivationLink(
   }
 
   // A generic page plus a token is common in navigation and click tracking.
+  const isAuthCallback =
+    /\/(?:oauth|auth)\/callback(?:\/|$)/i.test(parsed.pathname) && hasAuthToken(url);
   if (
     !DIRECT_ACTION_PATH_RE.test(parsed.pathname) &&
     !emailLoginPath &&
+    !isAuthCallback &&
     !anchorStrong &&
     !EXPLICIT_ACTION_QUERY_RE.test(`${parsed.search}${parsed.hash}`)
   ) {
@@ -420,7 +424,8 @@ export function scoreActivationLink(
     cls !== 'unknown' &&
     quality >= AUTO_OPEN_MIN_QUALITY &&
     parsed.protocol === 'https:' &&
-    (((DIRECT_ACTION_PATH_RE.test(parsed.pathname) || emailLoginPath) && (token || anchorStrong)) ||
+    (((DIRECT_ACTION_PATH_RE.test(parsed.pathname) || emailLoginPath || isAuthCallback) &&
+      (token || anchorStrong)) ||
       (anchorStrong && token && softPath));
 
   // Domain binding (2026-11-12 security fix): a structurally perfect

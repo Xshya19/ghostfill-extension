@@ -293,8 +293,10 @@ export function extractOTPCognitive(
       // Classic 6-digit codes dominate real OTP mail — slight prior
       if (/^\d{6}$/.test(code)) {
         points += 8;
-      } else if (/^\d{4}$/.test(code) || /^\d{8}$/.test(code)) {
-        points += 4;
+      } else if (/^\d{4,5}$/.test(code) || /^\d{7,8}$/.test(code)) {
+        points += 5;
+      } else if (/^(?=.*\d)(?=.*[A-Z])[A-Z0-9]{4,8}$/.test(code)) {
+        points += 6;
       }
 
       // Run curated KnowledgeBase label patterns against the LOCAL block only
@@ -349,9 +351,21 @@ export function extractOTPCognitive(
   }
 
   // ── Strategy D: dominant single-candidate floor (SMS-autofill heuristic) ─
-  const numericCandidates = [...byCode.values()].filter((c) => /^\d{4,8}$/.test(c.code));
-  if (numericCandidates.length === 1 && numericCandidates[0]) {
-    numericCandidates[0].points = Math.max(numericCandidates[0].points, 62);
+  // Only apply when email context signals verification/OTP and candidate context
+  // isn't an order/tracking/promo reference (prevents newsletter "50000" false fills).
+  const hasOtpCue =
+    intent.intent === 'verification' || OTP_INTENT_RE.test(`${normalizedSubject} ${fullText}`);
+  const codeCandidates = [...byCode.values()].filter(
+    (c) => /^\d{4,8}$/.test(c.code) || /^(?=.*\d)(?=.*[A-Z])[A-Z0-9]{4,8}$/.test(c.code)
+  );
+  if (
+    hasOtpCue &&
+    codeCandidates.length === 1 &&
+    codeCandidates[0] &&
+    !ANTI_ORDER_RE.test(codeCandidates[0].contextSample) &&
+    !ANTI_PROMO_RE.test(codeCandidates[0].contextSample)
+  ) {
+    codeCandidates[0].points = Math.max(codeCandidates[0].points, 62);
   }
 
   if (byCode.size === 0) {

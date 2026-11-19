@@ -249,6 +249,28 @@ export interface ActivationLink {
   visualWeight: number;
 }
 
+/** Live page context supplied by the active verification tab */
+export interface PageVerificationExpectation {
+  hasOtpInputs?: boolean;
+  expectedOtpLength?: number | null;
+  expectedOtpFormat?: 'numeric' | 'alphanumeric' | null;
+  hasMagicLinkPrompt?: boolean;
+}
+
+/** Diagnostic telemetry produced by GhostNet neural/structural inference */
+export interface GhostNetTelemetry {
+  modelVersion?: number;
+  intent?: string;
+  intentConfidence?: number;
+  intentProbs: Record<string, number>;
+  nullOtpProb: number;
+  nullLinkProb: number;
+  action?: EmailDecisionAction;
+  actionConfidence?: number;
+  actionProbs: Record<string, number>;
+  inferenceMs: number;
+}
+
 /** Unified extraction result */
 export interface ExtractionResult {
   intent: EmailIntent;
@@ -273,6 +295,7 @@ export interface ExtractionResult {
     secondaryIntent?: EmailIntent | null;
     securityScore?: number;
     securityRisk?: string;
+    ghostNet?: GhostNetTelemetry;
   };
 }
 

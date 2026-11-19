@@ -8,6 +8,7 @@ import type {
   EmailDecisionRisk,
   EmailIntent,
   ExtractionResult,
+  PageVerificationExpectation,
 } from './types/extraction.types';
 
 interface DecisionInput {
@@ -20,6 +21,7 @@ interface DecisionInput {
    * activation link can be bound to a host the attacker does not control.
    */
   originUrl?: string | undefined;
+  pageExpectation?: PageVerificationExpectation | undefined;
 }
 
 const SUSPICIOUS_TLDS = new Set(['tk', 'ml', 'ga', 'cf', 'gq', 'buzz', 'top', 'xyz']);
@@ -261,10 +263,22 @@ function chooseAction(
   extraction: ExtractionResult,
   purpose: EmailDecisionPurpose,
   risk: EmailDecisionRisk,
-  confidence: number
+  confidence: number,
+  pageExpectation?: PageVerificationExpectation
 ): EmailDecisionAction {
   const hasOTP = Boolean(extraction.otp);
   const hasLink = Boolean(extraction.link);
+  const gn = extraction.debugInfo.ghostNet;
+
+  if (
+    gn?.action === 'ignore' &&
+    gn.actionConfidence !== undefined &&
+    gn.actionConfidence >= 0.8 &&
+    !hasOTP &&
+    !hasLink
+  ) {
+    return 'ignore';
+  }
 
   if (risk === 'high' && hasLink && !hasOTP) {
     return 'show-review';
@@ -278,6 +292,20 @@ function chooseAction(
   }
 
   if (hasOTP && hasLink) {
+    if (pageExpectation?.hasOtpInputs && risk === 'low') {
+      return 'fill-otp';
+    }
+    if (pageExpectation?.hasMagicLinkPrompt && !pageExpectation?.hasOtpInputs && risk === 'low') {
+      return 'open-link';
+    }
+    if (
+      gn?.action === 'fill-otp-and-open-link' &&
+      gn.actionConfidence !== undefined &&
+      gn.actionConfidence >= 0.68 &&
+      risk === 'low'
+    ) {
+      return 'fill-otp-and-open-link';
+    }
     // Activation / invite / magic-login emails usually need the link, not a
     // flaky alphanumeric "OTP". Prefer opening the link so we never block
     // activate-account flows because a weak code was also scored.
@@ -299,6 +327,17 @@ function chooseAction(
 
   if (hasLink) {
     return risk === 'low' && confidence >= 0.65 ? 'open-link' : 'show-review';
+  }
+
+  if (
+    !hasOTP &&
+    !hasLink &&
+    (purpose === 'activation' ||
+      purpose === 'password-reset' ||
+      purpose === 'magic-login' ||
+      (gn?.action === 'show-review' && (gn.actionConfidence ?? 0) >= 0.7))
+  ) {
+    return 'show-review';
   }
 
   if (
@@ -361,7 +400,7 @@ export function assessEmailDecision(input: DecisionInput): EmailDecision {
   );
   const riskPenalty = risk === 'high' ? 0.35 : risk === 'medium' ? 0.12 : 0;
   const confidence = clamp01(signalConfidence - riskPenalty);
-  let action = chooseAction(extraction, purpose, risk, confidence);
+  let action = chooseAction(extraction, purpose, risk, confidence, input.pageExpectation);
 
   if (extraction.link?.url && (action === 'open-link' || action === 'fill-otp-and-open-link')) {
     const link = extraction.link;
@@ -408,7 +447,21 @@ export function assessEmailDecision(input: DecisionInput): EmailDecision {
       );
     }
 
-    if (!gate.canAutoOpen || !siteBound || risk !== 'low' || domainContext.warnings.length > 0) {
+    const gn = extraction.debugInfo.ghostNet;
+    const ghostNetConfirmedOpen = Boolean(
+      !gate.hardReject &&
+      gate.quality >= 40 &&
+      (gn?.action === 'open-link' || gn?.action === 'fill-otp-and-open-link') &&
+      (gn.actionConfidence ?? 0) >= 0.85 &&
+      (gn.nullLinkProb ?? 1) <= 0.15
+    );
+
+    if (
+      !(gate.canAutoOpen || ghostNetConfirmedOpen) ||
+      !siteBound ||
+      risk !== 'low' ||
+      domainContext.warnings.length > 0
+    ) {
       action = extraction.otp ? 'fill-otp' : 'show-review';
       warnings.push('link-requires-review');
     }
@@ -434,10 +487,14 @@ export function selectVerificationAction(
     otpDelivered: boolean;
     hasMatchingOTPPage: boolean;
     otpDeliveryComplete?: boolean;
+    pageExpectation?: PageVerificationExpectation;
   }
 ): EmailDecisionAction {
   if (decision.action !== 'fill-otp-and-open-link') {
     return decision.action;
+  }
+  if (context.pageExpectation?.hasMagicLinkPrompt && !context.pageExpectation?.hasOtpInputs) {
+    return 'open-link';
   }
   // Prefer the code while delivery is pending. Once delivery has finished,
   // a refused fill may use the independently approved companion link.

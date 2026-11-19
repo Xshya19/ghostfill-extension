@@ -970,11 +970,22 @@ async function handleMessage(
     // ── OTP PAGE DETECTION (from content script) ─────────────────
     case 'OTP_PAGE_DETECTED': {
       if (message.action === 'OTP_PAGE_DETECTED' && message.payload) {
-        const { url, fieldSelectors, confidence, verdict } = message.payload as {
+        const {
+          url,
+          fieldSelectors,
+          confidence,
+          verdict,
+          expectedOtpLength,
+          expectedOtpFormat,
+          hasMagicLinkPrompt,
+        } = message.payload as {
           url: string;
           fieldSelectors?: string[];
           confidence?: number;
           verdict?: string;
+          expectedOtpLength?: number;
+          expectedOtpFormat?: 'numeric' | 'alphanumeric';
+          hasMagicLinkPrompt?: boolean;
         };
         // fieldSelectors is schema-optional; a legal omission used to throw here.
         const selectors = Array.isArray(fieldSelectors) ? fieldSelectors : [];
@@ -997,7 +1008,12 @@ async function handleMessage(
             });
             onContentScriptReady(sender.tab.id);
           }
-          startFastOTPPolling(sender.tab.id, url, selectors, sender.frameId, confidence, verdict);
+          startFastOTPPolling(sender.tab.id, url, selectors, sender.frameId, confidence, verdict, {
+            hasOtpInputs: selectors.length > 0,
+            ...(expectedOtpLength !== undefined ? { expectedOtpLength } : {}),
+            ...(expectedOtpFormat !== undefined ? { expectedOtpFormat } : {}),
+            ...(hasMagicLinkPrompt !== undefined ? { hasMagicLinkPrompt } : {}),
+          });
           // The email may arrive before SPA hydration exposes the code input.
           const saved = await otpService.getLastOTP();
           if (

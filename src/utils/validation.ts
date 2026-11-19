@@ -287,6 +287,9 @@ export const otpPageDetectedPayloadSchema = z.object({
   fieldSelectors: z.array(safeString).max(MAX_ARRAY_LENGTH).optional(),
   confidence: safeNumber.min(0).max(1).optional(),
   verdict: z.enum(['otp-page', 'possible-otp', 'not-otp', 'maybe-otp']).optional(),
+  expectedOtpLength: safeNumber.min(1).max(32).optional().nullable(),
+  expectedOtpFormat: z.enum(['numeric', 'alphanumeric']).optional().nullable(),
+  hasMagicLinkPrompt: safeBoolean.optional(),
 });
 
 export const autoFillOTPPayloadSchema = z.object({

@@ -323,7 +323,10 @@ export function getContextAround(text: string, term: string, radius: number = 15
     return '';
   }
 
-  const idx = text.toLowerCase().indexOf(term.toLowerCase());
+  let idx = text.indexOf(term);
+  if (idx === -1) {
+    idx = text.toLowerCase().indexOf(term.toLowerCase());
+  }
   if (idx === -1) {
     return text.substring(0, radius * 2);
   }

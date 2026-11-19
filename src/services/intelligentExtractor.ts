@@ -13,8 +13,10 @@ import {
 import { extractLinkCognitive } from './extraction/cognitiveLinkExtractor';
 import { extractOTPCognitive } from './extraction/cognitiveOtpExtractor';
 import { normalizeForExtraction } from './extraction/domEngine';
+import { compileEmailDocument } from './extraction/emailDocument';
 import { extractExplicitVerificationCode, isSubjectDomainToken } from './extraction/explicitCode';
-import intentModel from './extraction/knowledge/intent_model.json';
+import { runGhostNet } from './extraction/ghostNet';
+import { GHOSTNET_WEIGHTS } from './extraction/ghostNetWeights';
 import { extractLink, getAnchorInfo } from './extraction/linkExtractor';
 import {
   extractOTP,
@@ -34,78 +36,10 @@ import type {
   ExtractedOTP,
   ExtractedLink,
   IntentSignal,
+  LinkType,
+  PageVerificationExpectation,
 } from './types/extraction.types';
 import { stripQuotedHistory, hasFreshCodeSignal } from './utils/extraction.utils';
-
-interface ModelData {
-  priors: Record<string, number>;
-  likelihoods: Record<string, Record<string, number>>;
-  vocabSize: number;
-}
-
-const model = intentModel as unknown as ModelData;
-
-export class IntentClassifier {
-  private static tokenize(text: string): string[] {
-    return (
-      text
-        .toLowerCase()
-        // Preserve hyphens and equals for OTP codes like 123-456 and token=abc
-        .replace(/[^\w\s\-=]/g, ' ')
-        .split(/\s+/)
-        .filter((w) => w.length > 2)
-    );
-  }
-
-  static classify(subject: string, body: string): { intent: string; confidence: number } {
-    const rawTokens = this.tokenize(`${subject} ${body}`);
-
-    // GRANDMASTER FIX: Pre-compute token frequencies.
-    // Eliminates duplicate dictionary lookups and redundant Math.log() calls.
-    const tokenCounts = new Map<string, number>();
-    for (const t of rawTokens) {
-      tokenCounts.set(t, (tokenCounts.get(t) || 0) + 1);
-    }
-
-    const results: Record<string, number> = {};
-    const vocabPenalty = Math.log(1 / (model.vocabSize * 10));
-
-    for (const label in model.priors) {
-      let logProb = Math.log(model.priors[label] || 1e-10);
-      const likelihoods = model.likelihoods[label];
-
-      for (const [token, count] of tokenCounts) {
-        const likelihood = likelihoods?.[token];
-        if (likelihood) {
-          logProb += Math.log(likelihood) * count;
-        } else {
-          logProb += vocabPenalty * count;
-        }
-      }
-      results[label] = logProb;
-    }
-
-    const maxLogProb = Math.max(...Object.values(results));
-    const expProbs = Object.fromEntries(
-      Object.entries(results).map(([label, logProb]) => [label, Math.exp(logProb - maxLogProb)])
-    );
-
-    // GRANDMASTER FIX: Guard against division by zero in edge cases
-    const sumExpProbs = Object.values(expProbs).reduce((a, b) => a + b, 0) || 1;
-
-    const finalProbs = Object.fromEntries(
-      Object.entries(expProbs).map(([label, prob]) => [label, prob / sumExpProbs])
-    );
-
-    const sorted = Object.entries(finalProbs).sort((a, b) => b[1] - a[1]);
-    if (sorted.length === 0) {
-      return { intent: 'unknown', confidence: 0 };
-    }
-
-    const [bestIntent, confidence] = sorted[0]!;
-    return { intent: bestIntent, confidence };
-  }
-}
 
 const log = createLogger('IntelligentExtractor');
 
@@ -127,13 +61,14 @@ const CONFIG = {
 } as const;
 
 const ACTIVATION_INTENT_PATTERNS = [
-  /activate(?: your| my| the)? account/i,
-  /active(?: your| my| the)? (?:mail|email|account)/i,
+  /activate(?: your| my| the)?(?:\s+[\w.-]+)?\s+account/i,
+  /active(?: your| my| the)?(?:\s+[\w.-]+)?\s+(?:mail|email|account)/i,
   /activation link/i,
-  /verify(?: your| my| the)? email(?: address)?/i,
+  /validate(?: your| my| the)?(?:\s+[\w.-]+)?\s+email(?: address)?/i,
+  /verify(?: your| my| the)?(?:\s+[\w.-]+)?\s+email(?: address)?/i,
   /email verification/i,
-  /confirm(?: your| my| the)? email(?: address)?/i,
-  /confirm(?: your| my| the)? account/i,
+  /confirm(?: your| my| the)?(?:\s+[\w.-]+)?\s+email(?: address)?/i,
+  /confirm(?: your| my| the)?(?:\s+[\w.-]+)?\s+account/i,
   /complete(?: your)? (?:registration|signup|sign-up|account setup|setup)/i,
   /finish(?: creating)?(?: your)? account/i,
   /finish(?: signing| sign) up/i,
@@ -170,6 +105,9 @@ const VERIFICATION_CODE_INTENT_PATTERNS = [
   /\bpasscode\b/i,
   /(?:your|the) code (?:is|:)/i,
 ] as const;
+
+const ANTI_SCAM_NEGATION_RE =
+  /\b(?:never\s+(?:phone|call|ask|share|enter|type)|do\s+not\s+(?:enter|share|type)|don't\s+(?:enter|share|type)|hang\s+up|impersonat\w*|scam\w*|retired\s+\d+[- ]?digit|only\s+as\s+an\s+example|example\s+numbers?)\b/i;
 
 const PASSWORD_RESET_INTENT_PATTERNS = [
   /reset(?: your| my| the)? password/i,
@@ -460,6 +398,8 @@ function refineIntent(subject: string, body: string, currentIntent: EmailIntent)
   // Tier 1: Fast Path (High-confidence regex rules)
   if (
     /verify.*email/i.test(subject) ||
+    /validate.*email/i.test(subject) ||
+    /confirm.*account/i.test(subject) ||
     /activate.*account/i.test(subject) ||
     /confirm.*registration/i.test(subject) ||
     /welcome.*verify/i.test(subject)
@@ -492,27 +432,22 @@ function refineIntent(subject: string, body: string, currentIntent: EmailIntent)
     };
   }
 
-  // Tier 2: Smart Path (Naive Bayes ML Model)
-  const mlResult = IntentClassifier.classify(subject, body);
-  if (mlResult.confidence > 0.6) {
-    log.info(`ML Intent match: ${mlResult.intent} (conf=${mlResult.confidence.toFixed(2)})`);
-    return {
-      intent: mlResult.intent as EmailIntent,
-      confidence: mlResult.confidence,
-      signals: [
-        {
-          type: 'ml',
-          source: 'naive-bayes',
-          detail: `predicted-${mlResult.intent}`,
-          weight: mlResult.confidence,
-        },
-      ],
-      scores: { [mlResult.intent]: mlResult.confidence },
-      secondaryIntent: null,
-    };
-  }
-
   return { intent: currentIntent, confidence: 0.5, signals: [], scores: {}, secondaryIntent: null };
+}
+
+function mapGateClsToLinkType(cls: string): LinkType {
+  switch (cls) {
+    case 'magic-login':
+      return 'magic-link';
+    case 'password-reset':
+      return 'password-reset';
+    case 'invite':
+      return 'invite-acceptance';
+    case 'activation':
+      return 'email-verification';
+    default:
+      return 'unknown-verification';
+  }
 }
 
 /**
@@ -567,7 +502,8 @@ export function extractAll(
   body: string,
   htmlBody: string = '',
   senderEmail: string = '',
-  expectedDomains: string[] = []
+  expectedDomains: string[] = [],
+  pageExpectation?: PageVerificationExpectation
 ): ExtractionResult {
   const startTime = performance.now();
   const timings: Record<string, number> = {};
@@ -612,7 +548,12 @@ export function extractAll(
   const freshHasCode = hasFreshCodeSignal(strippedBody) || hasFreshCodeSignal(strippedHtmlText);
   const effectiveBody = freshHasCode ? strippedBody : sanitizedBody;
   const effectiveHtmlText = freshHasCode ? strippedHtmlText : htmlText;
-  const bodyText = effectiveBody || effectiveHtmlText;
+  const preferHtmlBody = Boolean(
+    effectiveHtmlText &&
+    (!effectiveBody ||
+      (!/\d/.test(effectiveBody) && effectiveHtmlText.length > effectiveBody.length * 2))
+  );
+  const bodyText = preferHtmlBody ? effectiveHtmlText : effectiveBody;
   const plainText = `${sanitizedSubject}\n\n${bodyText}`;
   const explicitBodyCode =
     extractExplicitVerificationCode(effectiveBody) ||
@@ -640,14 +581,60 @@ export function extractAll(
 
   t = performance.now();
   const security = calculateSecurityScore(allUrls, sanitizedBody);
-  const intentResult = refineIntent(
+  const compiledDoc = compileEmailDocument(
     sanitizedSubject,
-    sanitizedBody,
-    provider?.emailIntent || 'other'
+    normBody,
+    normHtmlBody,
+    sanitizedSenderEmail,
+    expectedDomains
   );
+  const ghostActive = GHOSTNET_WEIGHTS.trainedSamples >= 1000;
+  const ghostRes = runGhostNet(compiledDoc, {
+    ...(provider?.otpLength !== undefined ? { providerOtpLength: provider.otpLength } : {}),
+    securityScore: security.score,
+    securityRisk: security.risk,
+    expectedDomains,
+    ...(pageExpectation !== undefined ? { pageExpectation } : {}),
+  });
 
-  // Link intent result into result object
-  intentResult.secondaryIntent = null;
+  const intentResult = refineIntent(sanitizedSubject, bodyText, provider?.emailIntent || 'other');
+  const hasAntiScamNegation = ANTI_SCAM_NEGATION_RE.test(bodyText);
+
+  if (ghostActive) {
+    const sortedIntents = Object.entries(ghostRes.intentProbs).sort((a, b) => b[1] - a[1]);
+    const topNeural = sortedIntents[0]?.[0] as EmailIntent | undefined;
+    const secondNeural = sortedIntents[1];
+    const heuristicStrong = intentResult.signals.length > 0 && intentResult.confidence >= 0.88;
+    if (!heuristicStrong && topNeural && ghostRes.intentConfidence >= 0.55) {
+      intentResult.intent = topNeural;
+      intentResult.confidence = ghostRes.intentConfidence;
+      intentResult.signals.push({
+        type: 'ml',
+        source: 'ghostnet',
+        detail: `ghostnet-${topNeural}`,
+        weight: ghostRes.intentConfidence,
+      });
+    } else if (
+      topNeural &&
+      (topNeural === 'marketing' || topNeural === 'transactional') &&
+      ghostRes.intentConfidence >= 0.78 &&
+      ghostRes.action === 'ignore' &&
+      ghostRes.actionConfidence >= 0.78 &&
+      (!heuristicStrong || hasAntiScamNegation)
+    ) {
+      intentResult.intent = topNeural;
+      intentResult.confidence = ghostRes.intentConfidence;
+    }
+    intentResult.scores = { ...ghostRes.intentProbs, ...intentResult.scores };
+    if (
+      secondNeural &&
+      secondNeural[1] >= 0.22 &&
+      secondNeural[0] !== intentResult.intent &&
+      !intentResult.secondaryIntent
+    ) {
+      intentResult.secondaryIntent = secondNeural[0] as EmailIntent;
+    }
+  }
   timings.security = performance.now() - t;
 
   t = performance.now();
@@ -756,15 +743,41 @@ export function extractAll(
     otp = null;
   }
   // An explicitly labeled code in the message body outranks a brand token
-  // from the subject (for example LLM7.io versus "Your verification code is: 382804").
-  if (explicitBodyCode && otp?.code !== explicitBodyCode) {
+  // from the subject (for example LLM7.io versus "Your verification code is: 382804"),
+  // unless GhostNet strongly resolves temporal superseding / negation in favor of another visible code.
+  const ghostOtpCode =
+    ghostActive && ghostRes.bestOtp ? sanitizeOTP(ghostRes.bestOtp.candidate.code) : null;
+  const ghostSupersedesExplicit = Boolean(
+    ghostActive &&
+    ghostRes.bestOtp &&
+    ghostOtpCode &&
+    explicitBodyCode &&
+    ghostOtpCode !== explicitBodyCode &&
+    ghostRes.bestOtp.probability >= 0.75 &&
+    !ghostRes.bestOtp.candidate.fromQuotedRegion &&
+    !ghostRes.bestOtp.candidate.embeddedInEmailHandle
+  );
+  const ghostSuppressesAllOtps = Boolean(
+    ghostActive &&
+    ghostRes.action === 'ignore' &&
+    ghostRes.actionConfidence >= 0.85 &&
+    ghostRes.nullOtpProb >= 0.78 &&
+    (!explicitBodyCode || hasAntiScamNegation)
+  );
+
+  if (
+    explicitBodyCode &&
+    otp?.code !== explicitBodyCode &&
+    !ghostSupersedesExplicit &&
+    !ghostSuppressesAllOtps
+  ) {
     otp = {
       code: explicitBodyCode,
       rawCode: explicitBodyCode,
       score: 94,
       confidence: 0.94,
       type: 'otp',
-      format: 'numeric',
+      format: /^\d+$/.test(explicitBodyCode) ? 'numeric' : 'alphanumeric',
       strategy: 'explicit-label',
       length: explicitBodyCode.length,
       context: 'Explicit verification code label in the email body',
@@ -790,6 +803,60 @@ export function extractAll(
       },
     };
   }
+
+  if (ghostActive && ghostRes.bestOtp && ghostOtpCode && !ghostSuppressesAllOtps) {
+    const gnProb = ghostRes.bestOtp.probability;
+    const cand = ghostRes.bestOtp.candidate;
+    const isUnsafeHandleOnly = cand.embeddedInEmailHandle && !cand.inVisibleBodyOutsideUrls;
+    const isDomBrandToken = isSubjectDomainToken(ghostOtpCode, sanitizedSubject);
+    if (!isUnsafeHandleOnly && !isDomBrandToken) {
+      if (otp && otp.code === ghostOtpCode) {
+        otp.score = Math.min(100, Math.max(otp.score, Math.round(58 + gnProb * 40)));
+        otp.confidence = otp.score / 100;
+      } else if ((!otp && gnProb >= 0.55) || (gnProb >= 0.75 && !cand.fromQuotedRegion)) {
+        const gnScore = Math.min(98, Math.round(56 + gnProb * 42));
+        otp = {
+          code: ghostOtpCode,
+          rawCode: cand.rawCode,
+          score: gnScore,
+          confidence: gnScore / 100,
+          type: 'otp',
+          format: cand.format,
+          strategy: 'proximity-inference',
+          length: ghostOtpCode.length,
+          context: cand.tightBlockText || cand.rowText,
+          label: null,
+          fromUrl: cand.insideUrlOnly,
+          urlParam: null,
+          sourceUrl: null,
+          visualProminence: cand.domProminence.fontSizePx,
+          providerMatch: provider
+            ? {
+                name: provider.name,
+                expectedLength: provider.otpLength ?? ghostOtpCode.length,
+                expectedFormat: provider.otpFormat ?? 'numeric',
+                confidence: providerConfidence,
+              }
+            : null,
+          matchedSignals: [],
+          antiSignals: [],
+          reasoning: {
+            steps: [
+              {
+                layer: 'ghostnet-pointer',
+                observation: `GhostNet sequence pointer selected '${ghostOtpCode}' (p=${gnProb.toFixed(2)}).`,
+                conclusion: 'Selected active verification token in discourse context.',
+                impact: 'strong-positive',
+              },
+            ],
+            summary: 'ghostnet-span-pointer',
+            confidenceExplanation: 'Selected by GhostNet contextual span pointer.',
+          },
+        };
+      }
+    }
+  }
+
   timings.otp = performance.now() - t;
 
   t = performance.now();
@@ -815,6 +882,28 @@ export function extractAll(
   );
 
   let link = pickBestActivationLink(cogLink, tradLink);
+  if (ghostActive && !link && ghostRes.bestLink && ghostRes.bestLink.probability >= 0.55) {
+    const gl = ghostRes.bestLink.candidate;
+    const glGate = scoreActivationLink(gl.url, gl.anchorText || '', gl.surroundingText || '');
+    if (!glGate.hardReject && glGate.cls !== 'unknown' && glGate.quality >= SELECT_MIN_QUALITY) {
+      const conf = Math.min(0.98, Math.max(ghostRes.bestLink.probability, glGate.quality / 100));
+      link = {
+        url: gl.url,
+        score: Math.round(conf * 100),
+        confidence: conf,
+        type: mapGateClsToLinkType(glGate.cls),
+        hasEmbeddedCode: Boolean(otp && gl.url.toLowerCase().includes(otp.code.toLowerCase())),
+        embeddedCode: null,
+        embeddedCodeParam: null,
+        anchorText: gl.anchorText,
+        context: gl.surroundingText,
+        domainTrust: gl.hostMatchesExpected ? 90 : gl.hostMatchesSender ? 75 : 50,
+        originBound: gl.hostMatchesExpected,
+        isShortened: false,
+        redirectChain: [],
+      };
+    }
+  }
   const credible = [...new Set(allUrls.map((url) => unwrapEspTrackingUrl(url) || url))]
     .map((url) => ({
       url,
@@ -826,9 +915,19 @@ export function extractAll(
     .sort((a, b) => b.gate.quality - a.gate.quality);
   // Two equally credible, distinct actions are ambiguous: ask for review.
   if (
-    credible.length > 1 &&
-    credible[0]!.gate.quality >= 80 &&
-    credible[1]!.gate.quality >= credible[0]!.gate.quality - 8
+    (ghostActive && ghostRes.ambiguousDualLinks) ||
+    (credible.length > 1 &&
+      credible[0]!.gate.quality >= 80 &&
+      credible[1]!.gate.quality >= credible[0]!.gate.quality - 8)
+  ) {
+    link = null;
+  }
+  if (
+    ghostActive &&
+    link &&
+    (ghostRes.intent === 'marketing' || ghostRes.intent === 'transactional') &&
+    ghostRes.nullLinkProb >= 0.72 &&
+    scoreActivationLink(link.url, link.anchorText || '').cls === 'unknown'
   ) {
     link = null;
   }
@@ -842,6 +941,19 @@ export function extractAll(
     if (gate.cls === 'magic-login') {
       link.type = 'magic-link-login';
     }
+    if (
+      (intentResult.intent === 'marketing' ||
+        intentResult.intent === 'transactional' ||
+        intentResult.intent === 'other') &&
+      gate.quality >= SELECT_MIN_QUALITY &&
+      (gate.cls === 'activation' ||
+        gate.cls === 'magic-login' ||
+        gate.cls === 'invitation' ||
+        gate.cls === 'password-reset')
+    ) {
+      intentResult.intent =
+        gate.cls === 'magic-login' ? 'magic-link-login' : gate.cls;
+    }
     if (cogLink?.url && tradLink?.url && cogLink.url !== tradLink.url) {
       log.info(
         `Link dual-engine: cog=${cogLink.url.substring(0, 50)} trad=${tradLink.url.substring(0, 50)} → ${link.url.substring(0, 50)}`
@@ -851,6 +963,37 @@ export function extractAll(
   timings.link = performance.now() - t;
 
   t = performance.now();
+  const hasOtpRegexSignal =
+    (intentResult.intent === 'verification' || intentResult.secondaryIntent === 'verification') &&
+    intentResult.signals.some((s) => s.type === 'regex');
+  const hasDualEngineAuthConsensus = Boolean(
+    cogOtp && tradOtp && cogOtp.code === tradOtp.code && (hasOtpRegexSignal || Boolean(link))
+  );
+  if (
+    ghostActive &&
+    otp &&
+    ghostRes.action !== 'fill-otp' &&
+    ghostRes.action !== 'fill-otp-and-open-link' &&
+    (hasAntiScamNegation || (!explicitBodyCode && !hasDualEngineAuthConsensus)) &&
+    ((ghostRes.action === 'ignore' && ghostRes.actionConfidence >= 0.75) ||
+      (ghostRes.nullOtpProb >= 0.75 && !explicitBodyCode)) &&
+    !otp.matchedSignals?.some((s) => s.name === 'subject-body-agreement')
+  ) {
+    otp = null;
+  }
+  if (
+    ghostActive &&
+    !otp &&
+    !link &&
+    ghostRes.action === 'ignore' &&
+    ghostRes.actionConfidence >= 0.78 &&
+    (intentResult.signals.every((s) => s.type === 'ml') || !hasOtpRegexSignal)
+  ) {
+    intentResult.intent =
+      (ghostRes.intentProbs.marketing ?? 0) >= (ghostRes.intentProbs.transactional ?? 0)
+        ? 'marketing'
+        : 'transactional';
+  }
   // A strong link must not turn a weak footer number into a second sign-in action.
   if (otp && link && otp.confidence < 0.7 && !explicitBodyCode) {
     log.info('Discarding weak code candidate from a verification-link email');
@@ -883,7 +1026,8 @@ export function extractAll(
   }
 
   // H6: Emergency fallback — if both OTP and link are null, try emergency regex patterns
-  if (!otp && !link) {
+  // (skipped when GhostNet classifies email as safe non-auth 'ignore')
+  if (!otp && !link && !ghostSuppressesAllOtps) {
     // GRANDMASTER FIX: Moved EMERGENCY_PATTERNS to module scope. Zero allocation overhead here.
     // Strip zero-width characters and RTL/LTR marks
     const textToSearch = `${subject} ${body}`
@@ -897,7 +1041,7 @@ export function extractAll(
       if (match?.[1]) {
         const code = match[1].replace(/[-\s]/g, '');
         const numVal = parseInt(code, 10);
-        const isYear = !isNaN(numVal) && numVal >= 1970 && numVal <= currentYear + 2;
+        const isYear = /^\d{4}$/.test(code) && numVal >= 1970 && numVal <= currentYear + 2;
         if (isYear) {
           continue; // Skip year-like matches
         }
@@ -909,7 +1053,9 @@ export function extractAll(
           score: 50,
           confidence: 0.5,
           type: 'otp' as const,
-          format: 'numeric' as const,
+          format: (/^\d+$/.test(sanitizedCode) ? 'numeric' : 'alphanumeric') as
+            | 'numeric'
+            | 'alphanumeric',
           strategy: 'emergency-regex' as const,
           length: code.length,
           context: '',
@@ -975,6 +1121,18 @@ export function extractAll(
       secondaryIntent: intentResult.secondaryIntent,
       securityScore: security.score,
       securityRisk: security.risk,
+      ghostNet: {
+        modelVersion: GHOSTNET_WEIGHTS.version,
+        intent: ghostRes.intent,
+        intentConfidence: ghostRes.intentConfidence,
+        intentProbs: { ...ghostRes.intentProbs },
+        nullOtpProb: ghostRes.nullOtpProb,
+        nullLinkProb: ghostRes.nullLinkProb,
+        action: ghostRes.action,
+        actionConfidence: ghostRes.actionConfidence,
+        actionProbs: { ...ghostRes.actionProbs },
+        inferenceMs: ghostRes.inferenceMs,
+      },
     },
   };
 }

@@ -10,7 +10,11 @@ import { sanitizeText } from '../utils/sanitization.core';
 import { assessEmailDecision } from './emailDecisionEngine';
 import { extractAll } from './intelligentExtractor';
 import { storageService } from './storageService';
-import type { DetectionResult, EncryptedCacheEntry } from './types/extraction.types';
+import type {
+  DetectionResult,
+  EncryptedCacheEntry,
+  PageVerificationExpectation,
+} from './types/extraction.types';
 
 const log = createLogger('OTPService');
 
@@ -63,9 +67,11 @@ const OTP_FRESHNESS = {
 class SmartDetectionService {
   private readonly CACHE_TTL = 2 * 60 * 1000;
   private readonly CACHE_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+  private readonly L1_CACHE_LIMIT = 64;
   private cacheKey: CryptoKey | null = null;
   private lastCacheCleanupAt = 0;
   private cacheCleanupPromise: Promise<void> | null = null;
+  private l1Cache = new Map<string, { result: DetectionResult; expiresAt: number }>();
 
   constructor() {
     log.info(`👻 GhostFill Intelligence Engine Initializing...`);
@@ -74,6 +80,7 @@ class SmartDetectionService {
   }
 
   private async initializeCacheEncryption(): Promise<void> {
+    this.l1Cache.clear();
     try {
       this.cacheKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, [
         'encrypt',
@@ -135,7 +142,35 @@ class SmartDetectionService {
   private destroyCache(): void {
     this.cacheCleanupPromise = null;
     this.cacheKey = null;
+    this.l1Cache.clear();
     log.debug('Cache destroyed');
+  }
+
+  private getL1Cached(key: string): DetectionResult | null {
+    const entry = this.l1Cache.get(key);
+    if (!entry) {
+      return null;
+    }
+    if (Date.now() > entry.expiresAt) {
+      this.l1Cache.delete(key);
+      return null;
+    }
+    // LRU touch
+    this.l1Cache.delete(key);
+    this.l1Cache.set(key, entry);
+    return entry.result;
+  }
+
+  private setL1Cached(key: string, result: DetectionResult): void {
+    if (this.l1Cache.has(key)) {
+      this.l1Cache.delete(key);
+    } else if (this.l1Cache.size >= this.L1_CACHE_LIMIT) {
+      const oldestKey = this.l1Cache.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.l1Cache.delete(oldestKey);
+      }
+    }
+    this.l1Cache.set(key, { result, expiresAt: Date.now() + this.CACHE_TTL });
   }
 
   /**
@@ -179,7 +214,8 @@ class SmartDetectionService {
     body: unknown = '',
     htmlBody: unknown = '',
     sender: unknown = '',
-    expectedDomains: string[] = []
+    expectedDomains: string[] = [],
+    pageExpectation?: PageVerificationExpectation
   ): Promise<DetectionResult> {
     const sSubject = toSafeString(subject);
     const sBody = toSafeString(body);
@@ -198,32 +234,44 @@ class SmartDetectionService {
     const contextDomains =
       expectedDomains.length > 0 ? expectedDomains : this.originHost(originUrl);
 
-    const contextKey = contextDomains
-      .map((domain) => toSafeString(domain).toLowerCase())
-      .sort()
-      .join(',');
+    const expSuffix = pageExpectation
+      ? `|otp=${pageExpectation.hasOtpInputs ? '1' : '0'}:${pageExpectation.expectedOtpLength ?? ''}:${pageExpectation.expectedOtpFormat ?? ''}:ml=${pageExpectation.hasMagicLinkPrompt ? '1' : '0'}`
+      : '';
+    const contextKey =
+      contextDomains
+        .map((domain) => toSafeString(domain).toLowerCase())
+        .sort()
+        .join(',') + expSuffix;
     const cacheKey = this.fastCacheKey(sSender, sSubject, sBody, sHtml, contextKey);
+
+    const l1Hit = this.getL1Cached(cacheKey);
+    if (l1Hit) {
+      log.debug('[SmartDetection] Returning L1 cached result');
+      return l1Hit;
+    }
+
     const cachedResult = await this.getCachedResult(cacheKey);
     if (cachedResult) {
+      this.setL1Cached(cacheKey, cachedResult);
       log.debug('[SmartDetection] Returning cached result');
       return cachedResult;
     }
 
-    let intelligentResult = extractAll(sSubject, sBody, sHtml, sSender, contextDomains);
-
-    if (!intelligentResult.otp && !intelligentResult.link && sHtml) {
-      log.info('[SmartDetection] Primary extraction returned nothing. Trying HTML fallback...');
-      const fallbackPlain = this.cleanHTML(sHtml);
-      if (fallbackPlain && fallbackPlain !== sBody) {
-        intelligentResult = extractAll(sSubject, fallbackPlain, sHtml, sSender, contextDomains);
-      }
-    }
+    const intelligentResult = extractAll(
+      sSubject,
+      sBody,
+      sHtml,
+      sSender,
+      contextDomains,
+      pageExpectation
+    );
 
     const decision = assessEmailDecision({
       extraction: intelligentResult,
       sender: sSender,
       expectedDomains: contextDomains,
       originUrl,
+      pageExpectation,
     });
 
     log.info(`📊 [SmartDetection] Intent: ${intelligentResult.intent}`);
@@ -276,6 +324,7 @@ class SmartDetectionService {
       `[SmartDetection] Decision: ${decision.action} risk=${decision.risk} purpose=${decision.purpose} auto=${decision.canAutoAct}`
     );
 
+    this.setL1Cached(cacheKey, mergedResult);
     await this.cacheResult(cacheKey, mergedResult);
     return mergedResult;
   }

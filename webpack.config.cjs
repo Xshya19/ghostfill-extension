@@ -154,6 +154,11 @@ module.exports = (env = {}, argv = {}) => {
   const bgConfig = Object.assign({}, commonConfig, {
     name: 'background',
     target: 'webworker', // CRITICAL: No DOM access
+    resolve: Object.assign({}, commonConfig.resolve, {
+      alias: Object.assign({}, commonConfig.resolve.alias, {
+        dompurify: path.resolve(__dirname, 'src/utils/dompurify.sw-stub.ts'),
+      }),
+    }),
     entry: {
       background: './src/background/index.ts',
     },

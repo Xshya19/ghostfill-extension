@@ -1,6 +1,6 @@
 {
   "name": "ghostfill-extension",
-  "version": "1.1.7",
+  "version": "1.2.0",
   "description": "Chrome extension for disposable email, password generation, and deterministic OTP extraction during signup verification.",
   "private": true,
   "homepage": "https://github.com/Xshya19/ghostfill-extension#readme",
@@ -30,6 +30,8 @@
     "test:watch": "vitest",
     "type-check": "tsc --noEmit",
     "eval": "tsx src/intelligence/eval/runEval.ts --sample",
+    "brain:train": "tsx scripts/ghostnet/trainGhostNet.ts",
+    "brain:eval": "tsx scripts/ghostnet/evalGhostNet.ts",
     "clean": "rimraf dist",
     "zip": "node scripts/build-zip.js",
     "icons:brand": "python scripts/update-brand-icons.py",

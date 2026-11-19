@@ -181,6 +181,9 @@ interface TabRegistration {
   readonly frameId?: number;
   readonly pageConfidence?: number;
   readonly verdict?: string;
+  readonly expectedOtpLength?: number;
+  readonly expectedOtpFormat?: 'numeric' | 'alphanumeric';
+  readonly hasMagicLinkPrompt?: boolean;
   readonly registeredAt: number;
   readonly lastDetectedAt?: number;
   readonly priority: number;
@@ -939,7 +942,8 @@ export class OTPCodeExtractor {
     /(?:confirmation|verification|security|login|access)\s+code\s*:?\s*\b([A-Z0-9]{4,10})\b/i,
     /your\s+(?:\w+\s+)?(?:code|pin|otp)\s*(?:is|:)\s*\b([A-Z0-9]{4,10})\b/i,
     /\b([A-Z0-9]{4,10})\s+is\s+your\s+(?:\w+\s+)?(?:code|pin|otp)/i,
-    // Hyphenated or spaced codes (e.g., 123-456 or 123 456)
+    // Hyphenated or spaced codes (e.g., 123-456, 123 456, K9X-4B2)
+    /(?:code|pin|otp|passcode)\s*(?:is|:|=)\s*\b([A-Z0-9]{3,4}[\s-][A-Z0-9]{3,4})\b/i,
     /\b(\d{3}[\s-]\d{3})\b/,
     /\b(\d{4}[\s-]\d{4})\b/,
   ];
@@ -969,7 +973,7 @@ export class OTPCodeExtractor {
   }
 
   static extract(
-    detection: { type: string; code?: string; link?: string },
+    detection: { type: string; code?: string; link?: string; decision?: { action?: string } },
     fullEmail: { body?: unknown; htmlBody?: unknown; subject?: unknown; textBody?: unknown }
   ): string | null {
     // Source 1: Direct detection
@@ -994,9 +998,12 @@ export class OTPCodeExtractor {
     // Source 2: Emergency regex (labeled human copy)
     for (const rx of this.EMERGENCY_PATTERNS) {
       const match = textOutsideLinks.match(rx);
-      if (match?.[1] && this.isPlausibleOtp(match[1])) {
-        log.info('🚨 OTP via emergency regex', { code: match[1] });
-        return match[1];
+      if (match?.[1]) {
+        const candidate = match[1].replace(/[\s-]/g, '');
+        if (this.isPlausibleOtp(candidate)) {
+          log.info('🚨 OTP via emergency regex', { code: candidate });
+          return candidate;
+        }
       }
     }
 
@@ -1007,14 +1014,32 @@ export class OTPCodeExtractor {
       return null;
     }
 
-    // Source 3: Short email standalone number
-    if (textOutsideLinks.length < 300) {
+    // Source 3: Short email standalone number or WICG origin-bound / cued alphanumeric OTP
+    if (detection.decision?.action !== 'ignore' && textOutsideLinks.length < 300) {
+      const wicgMatch = textOutsideLinks.match(
+        /(?:^|[\r\n\s])@[a-z0-9.-]+\.[a-z]{2,}\s+#([A-Za-z0-9]{4,10})\b/i
+      );
+      if (wicgMatch?.[1] && this.isPlausibleOtp(wicgMatch[1])) {
+        log.info('🚨 OTP from WICG origin-bound short email', { code: wicgMatch[1] });
+        return wicgMatch[1];
+      }
+
       const standaloneMatch = textOutsideLinks.match(
         /\b(?!(?:20[0-9]{2})\b)(?!\d{9,})(\d{6,8})(?!\d)\b/
       );
       if (standaloneMatch?.[1] && this.isPlausibleOtp(standaloneMatch[1])) {
         log.info('🚨 OTP from short email', { code: standaloneMatch[1] });
         return standaloneMatch[1];
+      }
+
+      if (/\b(?:otp|code|pin|passcode|verify|verification)\b/i.test(textOutsideLinks)) {
+        const cuedMatch = textOutsideLinks.match(
+          /\b(?!(?:19|20)[0-9]{2}\b)(?!\d{9,})(\d{4,8}|(?=.*\d)(?=.*[A-Z])[A-Z0-9]{5,8})\b/
+        );
+        if (cuedMatch?.[1] && this.isPlausibleOtp(cuedMatch[1])) {
+          log.info('🚨 OTP from cued short email', { code: cuedMatch[1] });
+          return cuedMatch[1];
+        }
       }
     }
 
@@ -1611,12 +1636,14 @@ async function processEmail(
         const fullEmail = await emailService.readEmail(emailId, currentEmail);
         metrics.emailsProcessed++;
         const expectedDomains = collectExpectedDomains();
+        const pageExpectation = collectPageExpectation();
         const detection = await smartDetectionService.detect(
           fullEmail.subject,
           fullEmail.body,
           fullEmail.htmlBody,
           fullEmail.from,
-          expectedDomains.length > 0 ? expectedDomains : undefined
+          expectedDomains.length > 0 ? expectedDomains : undefined,
+          pageExpectation
         );
         const code = OTPCodeExtractor.extract(detection, fullEmail);
         return {
@@ -2344,7 +2371,13 @@ export function startFastOTPPolling(
   fieldSelectors: string[],
   frameId?: number,
   pageConfidence?: number,
-  verdict?: string
+  verdict?: string,
+  pageExpectation?: {
+    hasOtpInputs?: boolean;
+    expectedOtpLength?: number;
+    expectedOtpFormat?: 'numeric' | 'alphanumeric';
+    hasMagicLinkPrompt?: boolean;
+  }
 ): void {
   let hostname = '';
   try {
@@ -2365,6 +2398,15 @@ export function startFastOTPPolling(
     ...(frameId !== undefined ? { frameId } : {}),
     ...(pageConfidence !== undefined ? { pageConfidence } : {}),
     ...(verdict !== undefined ? { verdict } : {}),
+    ...(pageExpectation?.expectedOtpLength !== undefined
+      ? { expectedOtpLength: pageExpectation.expectedOtpLength }
+      : {}),
+    ...(pageExpectation?.expectedOtpFormat !== undefined
+      ? { expectedOtpFormat: pageExpectation.expectedOtpFormat }
+      : {}),
+    ...(pageExpectation?.hasMagicLinkPrompt !== undefined
+      ? { hasMagicLinkPrompt: pageExpectation.hasMagicLinkPrompt }
+      : {}),
     registeredAt: sameWait ? existing.registeredAt : detectedAt,
     lastDetectedAt: detectedAt,
     priority: sameWait ? existing.priority : priorityCounter++,
@@ -2591,6 +2633,34 @@ function collectExpectedDomains(): string[] {
     }
   }
   return Array.from(seen);
+}
+
+function collectPageExpectation():
+  | {
+      hasOtpInputs?: boolean;
+      expectedOtpLength?: number;
+      expectedOtpFormat?: 'numeric' | 'alphanumeric';
+      hasMagicLinkPrompt?: boolean;
+    }
+  | undefined {
+  if (otpWaitingTabs.size === 0) {
+    return undefined;
+  }
+  let top: TabRegistration | null = null;
+  for (const reg of otpWaitingTabs.values()) {
+    if (!top || reg.priority < top.priority) {
+      top = reg;
+    }
+  }
+  if (!top) {
+    return undefined;
+  }
+  return {
+    hasOtpInputs: top.fieldSelectors.length > 0,
+    ...(top.expectedOtpLength !== undefined ? { expectedOtpLength: top.expectedOtpLength } : {}),
+    ...(top.expectedOtpFormat !== undefined ? { expectedOtpFormat: top.expectedOtpFormat } : {}),
+    ...(top.hasMagicLinkPrompt !== undefined ? { hasMagicLinkPrompt: top.hasMagicLinkPrompt } : {}),
+  };
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {

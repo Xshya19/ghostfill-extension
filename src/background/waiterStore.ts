@@ -17,6 +17,9 @@ export interface PersistedTabRegistration {
   readonly frameId?: number;
   readonly pageConfidence?: number;
   readonly verdict?: string;
+  readonly expectedOtpLength?: number;
+  readonly expectedOtpFormat?: 'numeric' | 'alphanumeric';
+  readonly hasMagicLinkPrompt?: boolean;
   readonly registeredAt: number;
   readonly priority: number;
   deliveryAttempts: number;

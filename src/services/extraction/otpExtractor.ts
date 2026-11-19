@@ -205,6 +205,8 @@ const LABEL_PATTERNS = [
   /(?:^|[.!?\n]\s*)(?:code|pin|otp|token|passcode)\s*[:=]\s*([A-Za-z0-9]{4,10})\b/gim,
   // standalone number on its own line
   /^\s*(\d{4,8})\s*$/gm,
+  // standalone uppercase+digit alphanumeric code on its own line
+  /^[ \t]*((?=.*\d)(?=.*[A-Z])[A-Z0-9]{5,8})[ \t]*$/gm,
   // dash/space separated groups (123 456 / 12-34-56 / AB-12-CD)
   /(?:code|pin|otp|passcode|token)\s*(?:is|:|=)\s*([A-Za-z0-9][A-Za-z0-9\s-]{2,14}[A-Za-z0-9])/gi,
   // Multilingual common labels

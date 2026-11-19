@@ -237,6 +237,7 @@ vitest-out.txt
 # ───────────────────────────────────────────────────────────────────
 .serena/
 .playwright-mcp/
+.cache/
 
 # Preserve agent workflow docs
 !.agents/**

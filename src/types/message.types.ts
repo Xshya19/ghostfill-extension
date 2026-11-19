@@ -299,6 +299,9 @@ export interface OTPPageDetectedMessage extends BaseMessage {
     fieldSelectors: string[];
     confidence?: number;
     verdict?: 'otp-page' | 'possible-otp' | 'not-otp' | 'maybe-otp';
+    expectedOtpLength?: number | null;
+    expectedOtpFormat?: 'numeric' | 'alphanumeric' | null;
+    hasMagicLinkPrompt?: boolean;
   };
 }
 

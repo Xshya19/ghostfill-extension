@@ -2085,7 +2085,7 @@ export class OTPPageDetector {
   private async waitForOtpInput(timeoutMs = 1500): Promise<boolean> {
     const find = () =>
       deepQuerySelectorAll<HTMLInputElement>(
-        'input[autocomplete~="one-time-code" i], input[name*="otp" i], input[name*="code" i], input[type="tel"], input[type="text"][maxlength="1"], input[type="text"][maxlength="6"], input[type="text"][maxlength="8"], input[inputmode="numeric"]'
+        'input[autocomplete~="one-time-code" i], input[name*="otp" i], input[name*="code" i], input[type="tel"], input[type="text"][maxlength="1"], input[type="text"][maxlength="4"], input[type="text"][maxlength="5"], input[type="text"][maxlength="6"], input[type="text"][maxlength="7"], input[type="text"][maxlength="8"], input[type="text"][maxlength="10"], input[inputmode="numeric"]'
       )[0];
 
     const check = () => {
@@ -2281,10 +2281,65 @@ export class OTPPageDetector {
   //  BACKGROUND NOTIFICATION
   // ═══════════════════════════════════════════════════════════
 
+  private buildPageExpectation(): {
+    expectedOtpLength?: number;
+    expectedOtpFormat?: 'numeric' | 'alphanumeric';
+    hasMagicLinkPrompt?: boolean;
+  } {
+    let expectedOtpLength: number | undefined;
+    let expectedOtpFormat: 'numeric' | 'alphanumeric' | undefined;
+
+    if (this.fields.length > 0) {
+      const grouped = this.fields.find((f) => f.groupSize >= 4 && f.groupSize <= 10);
+      if (grouped) {
+        expectedOtpLength = grouped.groupSize;
+      } else {
+        const sized = this.fields.find((f) => f.maxLength >= 4 && f.maxLength <= 10);
+        if (sized) {
+          expectedOtpLength = sized.maxLength;
+        }
+      }
+
+      const hasNumericHint = this.fields.some(
+        (f) =>
+          f.inputMode === 'numeric' ||
+          f.element.type === 'tel' ||
+          /\\d|0-9|\[0-9\]/.test(f.element.pattern || '')
+      );
+      if (hasNumericHint) {
+        expectedOtpFormat = 'numeric';
+      } else if (this.fields.some((f) => /\[A-Za-z/.test(f.element.pattern || ''))) {
+        expectedOtpFormat = 'alphanumeric';
+      }
+    }
+
+    let hasMagicLinkPrompt: boolean | undefined;
+    if (typeof document !== 'undefined' && document.body) {
+      const snippet = (document.body.innerText || '').slice(0, 2500);
+      if (
+        /\b(?:magic\s+link|sign[- ]?in\s+link|login\s+link|click\s+(?:the\s+)?link\s+(?:in\s+your|we\s+sent)|check\s+your\s+email\s+to\s+(?:sign|log)\s+in)\b/i.test(
+          snippet
+        )
+      ) {
+        hasMagicLinkPrompt = true;
+      } else if (this.fields.length > 0) {
+        hasMagicLinkPrompt = false;
+      }
+    }
+
+    return {
+      ...(expectedOtpLength !== undefined ? { expectedOtpLength } : {}),
+      ...(expectedOtpFormat !== undefined ? { expectedOtpFormat } : {}),
+      ...(hasMagicLinkPrompt !== undefined ? { hasMagicLinkPrompt } : {}),
+    };
+  }
+
   private async notifyBackground(action: 'OTP_PAGE_DETECTED' | 'OTP_PAGE_LEFT'): Promise<void> {
     if (this.destroyed && action !== 'OTP_PAGE_LEFT') {
       return;
     }
+
+    const expectation = action === 'OTP_PAGE_DETECTED' ? this.buildPageExpectation() : {};
 
     const message: ExtensionMessage =
       action === 'OTP_PAGE_DETECTED'
@@ -2296,6 +2351,7 @@ export class OTPPageDetector {
               fieldSelectors: this.fields.map((f) => f.selector),
               confidence: this.confidence,
               verdict: this.verdict,
+              ...expectation,
             },
           } as ExtensionMessage)
         : ({ action } as ExtensionMessage);
