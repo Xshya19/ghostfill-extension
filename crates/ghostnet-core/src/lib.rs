@@ -5,6 +5,7 @@ pub mod field_intelligence;
 pub mod generator;
 pub mod password;
 pub mod pointer;
+pub mod polling;
 pub mod tokenizer;
 pub mod validation;
 
@@ -16,12 +17,13 @@ pub use field_intelligence::*;
 pub use generator::*;
 pub use password::*;
 pub use pointer::*;
+pub use polling::*;
 pub use tokenizer::*;
 pub use validation::*;
 
 #[wasm_bindgen]
 pub fn ghostnet_version() -> String {
-    "GhostNet v2 (Rust/Wasm Core 0.9.0)".to_string()
+    "GhostNet v2 (Rust/Wasm Core 0.10.0)".to_string()
 }
 
 /// SIMD / Scalar accelerated GEMM: C[seq][out] += A[seq][in] * W[out][in]
