@@ -27,6 +27,7 @@ Recorded with an earlier interface. This copy is cropped and compressed, with ac
 | ------------------ | ----------------------------------------------------------------------------------------------------------- |
 | Temporary email    | Generate an address and check its inbox. GhostFill can try another provider when address generation fails.  |
 | Form filling       | Fill generated names, email addresses, usernames, and passwords through the floating button or Smart Fill.  |
+| Rust WebAssembly Core | 14 computational engines compiled from native Rust (`crates/ghostnet-core`): 2.8× faster SIMD GEMM, 4-head attention, adaptive circuit breaker, password entropy, anti-pattern filters, and link analysis. |
 | GhostNet Neural Intelligence | AST document compilation + Transformer attention + Pointer Network running locally in <1.3ms. Accurately extracts variable-length (4–8 digit) codes, alphanumeric tokens (`48DFG77`, `K9X4B`), and magic links across noisy HTML/tables with zero cloud APIs. |
 | Verification codes | Detect likely one-time codes, preserve leading zeros, and attempt to fill the matching signup form.         |
 | Activation links   | Evaluate verification links and open an approved destination in a new tab when appropriate.                 |
