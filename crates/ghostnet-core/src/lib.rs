@@ -9,6 +9,7 @@ pub mod pointer;
 pub mod polling;
 pub mod tokenizer;
 pub mod validation;
+pub mod weight_decoder;
 
 use wasm_bindgen::prelude::*;
 pub use action::*;
@@ -22,10 +23,11 @@ pub use pointer::*;
 pub use polling::*;
 pub use tokenizer::*;
 pub use validation::*;
+pub use weight_decoder::*;
 
 #[wasm_bindgen]
 pub fn ghostnet_version() -> String {
-    "GhostNet v2 (Rust/Wasm Core 0.11.0)".to_string()
+    "GhostNet v2 (Rust/Wasm Core 0.12.0)".to_string()
 }
 
 /// SIMD / Scalar accelerated GEMM: C[seq][out] += A[seq][in] * W[out][in]
